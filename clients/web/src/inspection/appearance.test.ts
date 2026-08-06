@@ -49,6 +49,39 @@ describe("appearance preferences", () => {
     }
   });
 
+  it("validates version-2 fields independently during migration", () => {
+    expect(
+      loadAppearancePreferences(
+        stored(
+          JSON.stringify({
+            version: 2,
+            interfaceSize: "huge",
+            colorTheme: "dark",
+          }),
+        ),
+      ),
+    ).toEqual({
+      interfaceSize: "standard",
+      colorTheme: "dark",
+      dataUnits: "decimal",
+    });
+    expect(
+      loadAppearancePreferences(
+        stored(
+          JSON.stringify({
+            version: 2,
+            interfaceSize: "compact",
+            colorTheme: "sepia",
+          }),
+        ),
+      ),
+    ).toEqual({
+      interfaceSize: "compact",
+      colorTheme: "auto",
+      dataUnits: "decimal",
+    });
+  });
+
   it("round trips every accepted appearance combination", () => {
     for (const interfaceSize of ["compact", "standard", "spacious"] as const) {
       for (const colorTheme of ["auto", "light", "dark"] as const) {
@@ -163,7 +196,7 @@ describe("appearance preferences", () => {
     expect(root.dataset.interfaceSize).toBe("compact");
 
     applyAppearancePreferences(
-      { interfaceSize: "standard", colorTheme: "auto", dataUnits: "decimal" },
+      { interfaceSize: "standard", colorTheme: "auto" },
       root,
     );
     expect(root.dataset.colorTheme).toBe("auto");

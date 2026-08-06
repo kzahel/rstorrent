@@ -1,22 +1,18 @@
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
-import {
-  formatBytes,
-  formatProgress,
-  formatRate,
-} from "../format";
+import type { DataUnits } from "../appearance";
+import { formatBytes, formatProgress, formatRate } from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
-import {
-  VirtualTable,
-  type VirtualColumn,
-} from "./VirtualTable";
+import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import { TorrentStatus } from "./TorrentStatus";
 import { TorrentContextMenu } from "./TorrentContextMenu";
 import tableStyles from "./TorrentTable.module.css";
 
-const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
+const columns = (
+  dataUnits: DataUnits,
+): readonly VirtualColumn<TorrentRow>[] => [
   {
     id: "name",
     label: "Name",
@@ -71,7 +67,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => Math.max(row.downloadRate, row.uploadRate ?? 0),
-    render: (row) => transferRate(row),
+    render: (row) => transferRate(row, dataUnits),
   },
   {
     id: "size",
@@ -81,7 +77,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.sizeBytes,
-    render: (row) => formatBytes(row.sizeBytes),
+    render: (row) => formatBytes(row.sizeBytes, dataUnits),
   },
 ];
 
@@ -107,6 +103,8 @@ export function TransferTable() {
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const rows = useMemo(
     () =>
       order
@@ -126,7 +124,7 @@ export function TransferTable() {
       label="Transfer queue"
       rows={rows}
       getRowId={(row) => row.id}
-      columns={COLUMNS}
+      columns={displayColumns}
       interfaceSize={interfaceSize}
       currentRowId={currentTorrentId}
       selection={{
@@ -158,9 +156,10 @@ export function TransferTable() {
   );
 }
 
-function transferRate(row: TorrentRow): string {
-  if (row.downloadRate > 0) return formatRate(row.downloadRate);
-  if ((row.uploadRate ?? 0) > 0) return `${formatRate(row.uploadRate)} up`;
+function transferRate(row: TorrentRow, dataUnits: DataUnits): string {
+  if (row.downloadRate > 0) return formatRate(row.downloadRate, dataUnits);
+  if ((row.uploadRate ?? 0) > 0)
+    return `${formatRate(row.uploadRate, dataUnits)} up`;
   return "—";
 }
 

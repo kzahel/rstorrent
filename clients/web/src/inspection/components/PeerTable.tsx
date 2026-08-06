@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
+import type { DataUnits } from "../appearance";
 import { formatBytes, formatProgress, formatRate } from "../format";
 import type { PeerRow, ViewMaterialization } from "../model";
 import {
@@ -13,14 +14,21 @@ import {
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./PeerTable.module.css";
 
-const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
+const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
   {
     id: "state",
     label: "State",
     width: 104,
     sortable: true,
     sortValue: (row) => row.state,
-    sortOrder: ["connected", "choked", "stalled", "handshaking", "connecting", "disconnecting"],
+    sortOrder: [
+      "connected",
+      "choked",
+      "stalled",
+      "handshaking",
+      "connecting",
+      "disconnecting",
+    ],
     render: (row) => (
       <span className={styles.state} data-state={row.state}>
         <span aria-hidden="true" />
@@ -43,7 +51,9 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     width: 154,
     sortable: true,
     sortValue: (row) => row.client,
-    render: (row) => <span title={row.client ?? undefined}>{row.client ?? "—"}</span>,
+    render: (row) => (
+      <span title={row.client ?? undefined}>{row.client ?? "—"}</span>
+    ),
   },
   {
     id: "source",
@@ -63,7 +73,8 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     sortable: true,
     sortValue: (row) => row.progress,
     sortKind: "number",
-    render: (row) => (row.progress === null ? "—" : formatProgress(row.progress)),
+    render: (row) =>
+      row.progress === null ? "—" : formatProgress(row.progress),
   },
   {
     id: "down",
@@ -73,7 +84,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     sortable: true,
     sortValue: (row) => row.downloadRate,
     sortKind: "number",
-    render: (row) => formatRate(row.downloadRate),
+    render: (row) => formatRate(row.downloadRate, dataUnits),
   },
   {
     id: "downloaded",
@@ -84,7 +95,7 @@ const COLUMNS: readonly VirtualColumn<PeerRow>[] = [
     sortable: true,
     sortValue: (row) => row.downloadedBytes,
     sortKind: "number",
-    render: (row) => formatBytes(row.downloadedBytes),
+    render: (row) => formatBytes(row.downloadedBytes, dataUnits),
   },
   {
     id: "requests",
@@ -173,6 +184,8 @@ function PeerFlagLegend() {
 }
 
 export function PeerTable({ torrentId }: { readonly torrentId: string }) {
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const peerSet = useInspectionStore(
     (state) => state.peersByTorrent[torrentId],
   );
@@ -198,7 +211,7 @@ export function PeerTable({ torrentId }: { readonly torrentId: string }) {
       label="Active peer connections"
       rows={rows}
       getRowId={(row) => row.connectionId}
-      columns={COLUMNS}
+      columns={displayColumns}
       interfaceSize={interfaceSize}
       currentRowId={currentPeerId}
       onActivate={(row) => setCurrentPeer(row.connectionId)}

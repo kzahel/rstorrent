@@ -237,6 +237,18 @@ describe("inspection store", () => {
     expect(restored.colorTheme).toBe("dark");
     expect(restored.dataUnits).toBe("binary");
   });
+
+  it("keeps live data-unit changes when browser storage writes fail", () => {
+    const store = createInspectionStore({
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("denied");
+      },
+    });
+
+    expect(() => store.getState().setDataUnits("binary")).not.toThrow();
+    expect(store.getState().presentation.dataUnits).toBe("binary");
+  });
 });
 
 function row(id: string, status: TorrentRow["status"]): TorrentRow {

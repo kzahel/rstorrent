@@ -1,12 +1,8 @@
 import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
-import {
-  formatBytes,
-  formatEta,
-  formatProgress,
-  formatRate,
-} from "../format";
+import type { DataUnits } from "../appearance";
+import { formatBytes, formatEta, formatProgress, formatRate } from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { TorrentStatus } from "./TorrentStatus";
@@ -14,7 +10,9 @@ import { TorrentContextMenu } from "./TorrentContextMenu";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./TorrentTable.module.css";
 
-const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
+const columns = (
+  dataUnits: DataUnits,
+): readonly VirtualColumn<TorrentRow>[] => [
   {
     id: "name",
     label: "Name",
@@ -23,7 +21,11 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     sortValue: (row) => row.name,
     render: (row) => (
       <span className={styles.name} title={row.name}>
-        <span className={styles.stateDot} data-status={row.status} aria-hidden="true" />
+        <span
+          className={styles.stateDot}
+          data-status={row.status}
+          aria-hidden="true"
+        />
         <span>{row.name}</span>
       </span>
     ),
@@ -36,7 +38,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.sizeBytes,
-    render: (row) => formatBytes(row.sizeBytes),
+    render: (row) => formatBytes(row.sizeBytes, dataUnits),
   },
   {
     id: "progress",
@@ -47,9 +49,13 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     sortValue: (row) => row.progress,
     render: (row) => (
       <span className={styles.progressCell}>
-        <span className={styles.progressLabel}>{formatProgress(row.progress)}</span>
+        <span className={styles.progressLabel}>
+          {formatProgress(row.progress)}
+        </span>
         <span className={styles.progressTrack} aria-hidden="true">
-          <span style={{ width: `${Math.round((row.progress ?? 0) * 100)}%` }} />
+          <span
+            style={{ width: `${Math.round((row.progress ?? 0) * 100)}%` }}
+          />
         </span>
       </span>
     ),
@@ -71,7 +77,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.downloadRate,
-    render: (row) => formatRate(row.downloadRate),
+    render: (row) => formatRate(row.downloadRate, dataUnits),
   },
   {
     id: "up",
@@ -81,7 +87,7 @@ const COLUMNS: readonly VirtualColumn<TorrentRow>[] = [
     align: "right",
     sortable: true,
     sortValue: (row) => row.uploadRate,
-    render: (row) => formatRate(row.uploadRate),
+    render: (row) => formatRate(row.uploadRate, dataUnits),
   },
   {
     id: "peers",
@@ -127,10 +133,14 @@ export function TorrentTable() {
     (state) => state.openTorrentDetail,
   );
   const demo = useInspectionStore((state) => state.demo);
-  const materialization = useInspectionStore((state) => state.viewStatus.library);
+  const materialization = useInspectionStore(
+    (state) => state.viewStatus.library,
+  );
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const rows = useMemo(
     () =>
       order
@@ -150,7 +160,7 @@ export function TorrentTable() {
       label="Torrent library"
       rows={rows}
       getRowId={(row) => row.id}
-      columns={COLUMNS}
+      columns={displayColumns}
       interfaceSize={interfaceSize}
       currentRowId={currentTorrentId}
       selection={{
@@ -175,8 +185,8 @@ export function TorrentTable() {
           : category === "all" && demo === null
             ? "No torrents are present in the live engine."
             : category === "all"
-          ? "No torrents yet. Add a generated demo transfer or choose another scenario."
-          : `No torrents in ${category}.`
+              ? "No torrents yet. Add a generated demo transfer or choose another scenario."
+              : `No torrents in ${category}.`
       }
       initialSort={{ columnId: "name", direction: "asc" }}
     />

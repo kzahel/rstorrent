@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DhtBucketView, DhtInspectionView } from "../../api";
 import { useInspectionStore } from "../context";
-import { formatDecimalBytes, formatTime } from "../format";
+import { formatExactBytes, formatTime } from "../format";
 import type { DhtVisualizationMode } from "../dht-preferences";
 import styles from "./DhtPanel.module.css";
 
@@ -16,6 +16,7 @@ export function DhtPanel() {
     (state) => state.presentation.dhtVisualizationMode,
   );
   const setMode = useInspectionStore((state) => state.setDhtVisualizationMode);
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
 
   if (status.status === "unsupported" || status.status === "unavailable") {
     return <div className={styles.message}>{status.reason}</div>;
@@ -57,7 +58,7 @@ export function DhtPanel() {
 
       <StatusFacts inspection={inspection} stale={status.status === "stale"} />
       <RoutingDistribution inspection={inspection} mode={mode} />
-      <OperationalFacts inspection={inspection} />
+      <OperationalFacts inspection={inspection} dataUnits={dataUnits} />
       <LookupTable inspection={inspection} />
       <ExactBucketTable inspection={inspection} />
     </div>
@@ -71,7 +72,10 @@ function StatusFacts({
   readonly inspection: DhtInspectionView;
   readonly stale: boolean;
 }) {
-  const questionable = sum(inspection.buckets_v4, (bucket) => bucket.questionable_nodes);
+  const questionable = sum(
+    inspection.buckets_v4,
+    (bucket) => bucket.questionable_nodes,
+  );
   const aging = inspection.buckets_v4.filter((bucket) => {
     const age = decimalNumber(bucket.oldest_live_response_age_millis);
     return bucket.questionable_nodes === 0 && age >= 12 * 60 * 1_000;
@@ -91,9 +95,11 @@ function StatusFacts({
       />
       <Fact
         label="Deepest prefix"
-        value={inspection.deepest_shared_prefix_bits_v4 === null
-          ? "—"
-          : `${inspection.deepest_shared_prefix_bits_v4} bits`}
+        value={
+          inspection.deepest_shared_prefix_bits_v4 === null
+            ? "—"
+            : `${inspection.deepest_shared_prefix_bits_v4} bits`
+        }
         detail="Shared with local ID"
       />
       <Fact
@@ -141,10 +147,14 @@ function RoutingDistribution({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
-  const tail = useMemo(() => summarizeTail(inspection.buckets_v4), [inspection]);
-  const description = mode === "normalized"
-    ? `Normalized shared-prefix depth zero through 31, followed by a 128-band tail. ${tail.live} live nodes occupy the tail.`
-    : "Literal engine bucket indices zero through 159. Equal pixel widths represent engine slots, not equal keyspace volumes.";
+  const tail = useMemo(
+    () => summarizeTail(inspection.buckets_v4),
+    [inspection],
+  );
+  const description =
+    mode === "normalized"
+      ? `Normalized shared-prefix depth zero through 31, followed by a 128-band tail. ${tail.live} live nodes occupy the tail.`
+      : "Literal engine bucket indices zero through 159. Equal pixel widths represent engine slots, not equal keyspace volumes.";
 
   useEffect(() => {
     const element = wrapRef.current;
@@ -272,7 +282,11 @@ function drawRouting(
       if (depth % 4 === 0 || depth === 31) {
         context.fillStyle = colors.text;
         context.textAlign = "center";
-        context.fillText(String(depth), left + (depth + 0.5) * columnWidth, bottomLabelY);
+        context.fillText(
+          String(depth),
+          left + (depth + 0.5) * columnWidth,
+          bottomLabelY,
+        );
       }
     }
     context.textAlign = "left";
@@ -289,18 +303,28 @@ function drawRouting(
   } else {
     const columnWidth = (cssWidth - left - right) / 160;
     for (let index = 0; index < 160; index += 1) {
-      drawBucket(context, inspection.buckets_v4[index]!, left + index * columnWidth, columnWidth, {
-        baseline,
-        liveHeight,
-        replacementHeight,
-        railY,
-        colors,
-      });
+      drawBucket(
+        context,
+        inspection.buckets_v4[index]!,
+        left + index * columnWidth,
+        columnWidth,
+        {
+          baseline,
+          liveHeight,
+          replacementHeight,
+          railY,
+          colors,
+        },
+      );
     }
     for (const index of [0, 40, 80, 120, 159]) {
       context.fillStyle = colors.text;
       context.textAlign = "center";
-      context.fillText(String(index), left + (index + 0.5) * columnWidth, bottomLabelY);
+      context.fillText(
+        String(index),
+        left + (index + 0.5) * columnWidth,
+        bottomLabelY,
+      );
     }
     context.textAlign = "left";
     context.fillText("engine bucket index · closest → farthest", left, 292);
@@ -334,9 +358,15 @@ function drawBucket(
   const barWidth = Math.max(1, width - Math.min(3, width * 0.18));
   const offset = (width - barWidth) / 2;
   const goodHeight = (bucket.good_nodes / K) * geometry.liveHeight;
-  const questionableHeight = (bucket.questionable_nodes / K) * geometry.liveHeight;
+  const questionableHeight =
+    (bucket.questionable_nodes / K) * geometry.liveHeight;
   context.fillStyle = geometry.colors.good;
-  context.fillRect(x + offset, geometry.baseline - goodHeight, barWidth, goodHeight);
+  context.fillRect(
+    x + offset,
+    geometry.baseline - goodHeight,
+    barWidth,
+    goodHeight,
+  );
   context.fillStyle = geometry.colors.questionable;
   context.fillRect(
     x + offset,
@@ -347,27 +377,39 @@ function drawBucket(
   if (questionableHeight > 2 && barWidth > 2) {
     context.strokeStyle = geometry.colors.surface;
     context.lineWidth = 1;
-    for (let y = geometry.baseline - goodHeight - questionableHeight + 2; y < geometry.baseline - goodHeight; y += 4) {
+    for (
+      let y = geometry.baseline - goodHeight - questionableHeight + 2;
+      y < geometry.baseline - goodHeight;
+      y += 4
+    ) {
       context.beginPath();
       context.moveTo(x + offset, y);
-      context.lineTo(x + offset + barWidth, y + Math.min(3, questionableHeight));
+      context.lineTo(
+        x + offset + barWidth,
+        y + Math.min(3, questionableHeight),
+      );
       context.stroke();
     }
   }
-  const replacementHeight = (bucket.replacement_candidates / K) * geometry.replacementHeight;
+  const replacementHeight =
+    (bucket.replacement_candidates / K) * geometry.replacementHeight;
   context.fillStyle = geometry.colors.replacement;
   context.globalAlpha = 0.68;
-  context.fillRect(x + offset, geometry.baseline + 2, barWidth, replacementHeight);
+  context.fillRect(
+    x + offset,
+    geometry.baseline + 2,
+    barWidth,
+    replacementHeight,
+  );
   context.globalAlpha = 1;
   if (bucket.oldest_live_response_age_millis !== null) {
     const age = Math.min(
       QUESTIONABLE_AGE_MILLIS,
       decimalNumber(bucket.oldest_live_response_age_millis),
     );
-    context.fillStyle = age >= 12 * 60 * 1_000
-      ? geometry.colors.aging
-      : geometry.colors.fresh;
-    context.globalAlpha = 0.35 + 0.65 * age / QUESTIONABLE_AGE_MILLIS;
+    context.fillStyle =
+      age >= 12 * 60 * 1_000 ? geometry.colors.aging : geometry.colors.fresh;
+    context.globalAlpha = 0.35 + (0.65 * age) / QUESTIONABLE_AGE_MILLIS;
     context.fillRect(x + offset, geometry.railY, barWidth, 5);
     context.globalAlpha = 1;
   }
@@ -400,7 +442,9 @@ function drawTail(
   context.fillText(`${tail.replacements} replacements`, x + 11, baseline + 28);
   context.fillText(`max occupancy ${tail.maximum}`, x + 11, baseline + 48);
   context.fillText(
-    tail.deepest === null ? "no occupied outlier" : `deepest ${tail.deepest} bits`,
+    tail.deepest === null
+      ? "no occupied outlier"
+      : `deepest ${tail.deepest} bits`,
     x + 11,
     baseline + 68,
   );
@@ -423,45 +467,85 @@ function summarizeTail(buckets: readonly DhtBucketView[]): TailSummary {
     live += occupancy;
     replacements += bucket.replacement_candidates;
     maximum = Math.max(maximum, occupancy);
-    if (occupancy > 0) deepest = Math.max(deepest ?? 0, 159 - bucket.bucket_index);
+    if (occupancy > 0)
+      deepest = Math.max(deepest ?? 0, 159 - bucket.bucket_index);
   }
   return { live, replacements, maximum, deepest };
 }
 
-function OperationalFacts({ inspection }: { readonly inspection: DhtInspectionView }) {
+function OperationalFacts({
+  inspection,
+  dataUnits,
+}: {
+  readonly inspection: DhtInspectionView;
+  readonly dataUnits: import("../appearance").DataUnits;
+}) {
   return (
-    <section className={styles.operations} aria-labelledby="dht-operations-title">
+    <section
+      className={styles.operations}
+      aria-labelledby="dht-operations-title"
+    >
       <h3 id="dht-operations-title">Cumulative session activity</h3>
       <dl>
         <Metric label="Queries sent" value={inspection.queries_sent} />
-        <Metric label="Responses received" value={inspection.responses_received} />
+        <Metric
+          label="Responses received"
+          value={inspection.responses_received}
+        />
         <Metric label="Queries received" value={inspection.queries_received} />
         <Metric
           label="Datagram traffic"
-          value={`${formatDecimalBytes(inspection.datagram_bytes_received)} in · ${formatDecimalBytes(inspection.datagram_bytes_sent)} out`}
+          value={`${formatExactBytes(inspection.datagram_bytes_received, dataUnits)} in · ${formatExactBytes(inspection.datagram_bytes_sent, dataUnits)} out`}
         />
         <Metric label="Peers discovered" value={inspection.discovered_peers} />
         <Metric label="Malformed" value={inspection.malformed_received} />
         <Metric label="Rate limited" value={inspection.rate_limited} />
-        <Metric label="Bootstrap attempts" value={inspection.bootstrap_attempts} />
-        <Metric label="Routing refreshes" value={inspection.routing_refreshes} />
+        <Metric
+          label="Bootstrap attempts"
+          value={inspection.bootstrap_attempts}
+        />
+        <Metric
+          label="Routing refreshes"
+          value={inspection.routing_refreshes}
+        />
       </dl>
-      <p>Traffic is complete UDP datagram bytes at the socket boundary, not payload throughput.</p>
+      <p>
+        Traffic is complete UDP datagram bytes at the socket boundary, not
+        payload throughput.
+      </p>
     </section>
   );
 }
 
-function Metric({ label, value }: { readonly label: string; readonly value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
+function Metric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
 }
 
-function LookupTable({ inspection }: { readonly inspection: DhtInspectionView }) {
+function LookupTable({
+  inspection,
+}: {
+  readonly inspection: DhtInspectionView;
+}) {
   return (
     <section className={styles.lookups} aria-labelledby="dht-lookups-title">
       <div className={styles.sectionHeading}>
         <div>
           <h3 id="dht-lookups-title">Active lookups</h3>
-          <p>Closest progress includes responded candidates with known node IDs only.</p>
+          <p>
+            Closest progress includes responded candidates with known node IDs
+            only.
+          </p>
         </div>
         <span>{inspection.lookups.length} of 16</span>
       </div>
@@ -470,17 +554,48 @@ function LookupTable({ inspection }: { readonly inspection: DhtInspectionView })
       ) : (
         <div className={styles.tableWrap}>
           <table>
-            <thead><tr>
-              <th>Target</th><th>Convergence</th><th>Candidates</th><th>Elapsed / left</th><th>Peers</th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th>Target</th>
+                <th>Convergence</th>
+                <th>Candidates</th>
+                <th>Elapsed / left</th>
+                <th>Peers</th>
+              </tr>
+            </thead>
             <tbody>
               {inspection.lookups.map((lookup) => (
                 <tr key={lookup.lookup_id}>
-                  <td><code title={lookup.target_id}>{abbreviateId(lookup.target_id)}</code><small>lookup {lookup.lookup_id}</small></td>
-                  <td><strong>{lookup.closest_responded_prefix_bits === null ? "No response" : `${lookup.closest_responded_prefix_bits} shared bits`}</strong><small>{lookup.last_convergence_improvement_age_millis === null ? "No improvement yet" : `${formatDuration(lookup.last_convergence_improvement_age_millis)} since improvement`}</small></td>
-                  <td><CandidateBar lookup={lookup} /></td>
-                  <td><strong>{formatDuration(lookup.age_millis)}</strong><small>{formatDuration(lookup.deadline_in_millis)} left</small></td>
-                  <td><strong>{lookup.discovered_peers}</strong></td>
+                  <td>
+                    <code title={lookup.target_id}>
+                      {abbreviateId(lookup.target_id)}
+                    </code>
+                    <small>lookup {lookup.lookup_id}</small>
+                  </td>
+                  <td>
+                    <strong>
+                      {lookup.closest_responded_prefix_bits === null
+                        ? "No response"
+                        : `${lookup.closest_responded_prefix_bits} shared bits`}
+                    </strong>
+                    <small>
+                      {lookup.last_convergence_improvement_age_millis === null
+                        ? "No improvement yet"
+                        : `${formatDuration(lookup.last_convergence_improvement_age_millis)} since improvement`}
+                    </small>
+                  </td>
+                  <td>
+                    <CandidateBar lookup={lookup} />
+                  </td>
+                  <td>
+                    <strong>{formatDuration(lookup.age_millis)}</strong>
+                    <small>
+                      {formatDuration(lookup.deadline_in_millis)} left
+                    </small>
+                  </td>
+                  <td>
+                    <strong>{lookup.discovered_peers}</strong>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -504,27 +619,62 @@ function CandidateBar({
   ] as const;
   const total = parts.reduce((sum, [, count]) => sum + count, 0);
   return (
-    <div className={styles.candidates} aria-label={parts.map(([, count, label]) => `${label} ${count}`).join(", ")}>
+    <div
+      className={styles.candidates}
+      aria-label={parts
+        .map(([, count, label]) => `${label} ${count}`)
+        .join(", ")}
+    >
       <div aria-hidden="true">
-        {parts.map(([kind, count]) => count === 0 ? null : (
-          <i key={kind} data-kind={kind} style={{ flexGrow: count / Math.max(1, total) }} />
-        ))}
+        {parts.map(([kind, count]) =>
+          count === 0 ? null : (
+            <i
+              key={kind}
+              data-kind={kind}
+              style={{ flexGrow: count / Math.max(1, total) }}
+            />
+          ),
+        )}
       </div>
       <small>{parts.map(([, count]) => count).join(" / ")}</small>
     </div>
   );
 }
 
-function ExactBucketTable({ inspection }: { readonly inspection: DhtInspectionView }) {
+function ExactBucketTable({
+  inspection,
+}: {
+  readonly inspection: DhtInspectionView;
+}) {
   return (
     <table className={styles.srOnly}>
       <caption>Exact DHT routing bucket observations</caption>
-      <thead><tr><th>Shared prefix depth</th><th>Bucket index</th><th>Good</th><th>Questionable</th><th>Replacements</th><th>Oldest response age</th></tr></thead>
-      <tbody>{inspection.buckets_v4.map((bucket) => (
-        <tr key={bucket.bucket_index}>
-          <td>{159 - bucket.bucket_index}</td><td>{bucket.bucket_index}</td><td>{bucket.good_nodes}</td><td>{bucket.questionable_nodes}</td><td>{bucket.replacement_candidates}</td><td>{bucket.oldest_live_response_age_millis === null ? "Empty" : formatDuration(bucket.oldest_live_response_age_millis)}</td>
+      <thead>
+        <tr>
+          <th>Shared prefix depth</th>
+          <th>Bucket index</th>
+          <th>Good</th>
+          <th>Questionable</th>
+          <th>Replacements</th>
+          <th>Oldest response age</th>
         </tr>
-      ))}</tbody>
+      </thead>
+      <tbody>
+        {inspection.buckets_v4.map((bucket) => (
+          <tr key={bucket.bucket_index}>
+            <td>{159 - bucket.bucket_index}</td>
+            <td>{bucket.bucket_index}</td>
+            <td>{bucket.good_nodes}</td>
+            <td>{bucket.questionable_nodes}</td>
+            <td>{bucket.replacement_candidates}</td>
+            <td>
+              {bucket.oldest_live_response_age_millis === null
+                ? "Empty"
+                : formatDuration(bucket.oldest_live_response_age_millis)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
     </table>
   );
 }
@@ -554,18 +704,25 @@ function formatDuration(value: string): string {
 
 function lifecycleLabel(lifecycle: DhtInspectionView["lifecycle"]): string {
   switch (lifecycle) {
-    case "offline": return "Offline";
-    case "bootstrap_empty": return "Bootstrapping";
-    case "participating": return "Participating";
-    case "inactive": return "Inactive";
+    case "offline":
+      return "Offline";
+    case "bootstrap_empty":
+      return "Bootstrapping";
+    case "participating":
+      return "Participating";
+    case "inactive":
+      return "Inactive";
   }
 }
 
 function policyLabel(policy: DhtInspectionView["network_policy"]): string {
   switch (policy) {
-    case "offline": return "Network disabled";
-    case "loopback_only": return "Loopback only";
-    case "online": return "Online policy";
+    case "offline":
+      return "Network disabled";
+    case "loopback_only":
+      return "Loopback only";
+    case "online":
+      return "Online policy";
   }
 }
 

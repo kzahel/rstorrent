@@ -13,7 +13,8 @@ const trackerUrl = process.env.RSTORRENT_LIVE_TRACKER_URL;
 const gatewayToken = process.env.RSTORRENT_LIVE_GATEWAY_TOKEN;
 const storagePath = process.env.RSTORRENT_LIVE_STORAGE_PATH;
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
-const expectDiskPressure = process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
+const expectDiskPressure =
+  process.env.RSTORRENT_LIVE_EXPECT_DISK_PRESSURE === "1";
 const expectPieces = process.env.RSTORRENT_LIVE_EXPECT_PIECES === "1";
 const transportBenchmark =
   process.env.RSTORRENT_LIVE_TRANSPORT_BENCHMARK === "1";
@@ -38,7 +39,9 @@ test("client settings apply live, persist, and recover bind failure", async ({
   );
   await page.setViewportSize({ width: 1_024, height: 800 });
   await page.goto(liveUrl());
-  await expect(page.getByRole("grid", { name: "Transfer queue" })).toBeVisible();
+  await expect(
+    page.getByRole("grid", { name: "Transfer queue" }),
+  ).toBeVisible();
 
   if (clientSettingsPhase === "configure") {
     const torrentRow = await addAndOpenInWorkbench(page, magnet!, torrentId!);
@@ -174,7 +177,9 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   await expect(row).toContainText(torrentName!, { timeout: 10_000 });
   await expect.poll(() => binaryFrames).toBe(1);
 
-  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
     (violation) =>
       violation.impact === "serious" || violation.impact === "critical",
   );
@@ -264,13 +269,17 @@ test("live disk inspection observes pressure and exact recovery", async ({
   await expect(page.getByLabel("Disk pressure Backpressured")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("intake paused now", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("intake paused now", { exact: true }),
+  ).toBeVisible();
   await expect
     .poll(async () => Number(await pieces.getAttribute("aria-rowcount")))
     .toBeGreaterThan(1);
   await capture(page, "live-disk-backpressured-wide.png");
 
-  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
     (violation) =>
       violation.impact === "serious" || violation.impact === "critical",
   );
@@ -283,7 +292,9 @@ test("live disk inspection observes pressure and exact recovery", async ({
   await expect(pieces).toHaveAttribute("aria-rowcount", "1");
   await expect(page.getByText("intake is open", { exact: true })).toBeVisible();
   await capture(page, "live-disk-recovered-wide.png");
-  console.log("disk_live_milestones pressure=backpressured completion=verified recovery=idle");
+  console.log(
+    "disk_live_milestones pressure=backpressured completion=verified recovery=idle",
+  );
 });
 
 test("live piece inspection follows active work through verification", async ({
@@ -311,7 +322,9 @@ test("live piece inspection follows active work through verification", async ({
   const firstActiveMs = Math.round(performance.now() - startedAt);
   await capture(page, "live-pieces-active-wide.png");
 
-  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
     (violation) =>
       violation.impact === "serious" || violation.impact === "critical",
   );
@@ -395,9 +408,13 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await page.getByRole("tab", { name: "Files" }).click();
   const files = page.getByRole("grid", { name: "Torrent files" });
   const expectedFileCount = Number(fileCount!);
-  await expect(files).toHaveAttribute("aria-rowcount", String(expectedFileCount + 1), {
-    timeout: 20_000,
-  });
+  await expect(files).toHaveAttribute(
+    "aria-rowcount",
+    String(expectedFileCount + 1),
+    {
+      timeout: 20_000,
+    },
+  );
   await scrollToEnd(files);
   const prefixFile = files.getByRole("row").filter({ hasText: "prefix.bin" });
   const payloadFile = files.getByRole("row").filter({ hasText: "payload.bin" });
@@ -425,37 +442,52 @@ test("live peer inspection follows a controlled verified transfer", async ({
   await expect
     .poll(async () => Number(await peers.getAttribute("aria-rowcount")))
     .toBeGreaterThan(1);
-  await expect(peers.getByText("127.0.0.1", { exact: false }).first()).toBeVisible();
+  await expect(
+    peers.getByText("127.0.0.1", { exact: false }).first(),
+  ).toBeVisible();
   await capture(page, "live-peer-wide.png");
 
   await page.getByRole("tab", { name: "Swarm" }).click();
   const swarm = page.getByRole("grid", { name: "Known swarm peers" });
-  await expect(swarm).toHaveAttribute("aria-rowcount", "2", { timeout: 20_000 });
-  await expect(swarm.getByText("127.0.0.1", { exact: false }).first()).toBeVisible();
+  await expect(swarm).toHaveAttribute("aria-rowcount", "2", {
+    timeout: 20_000,
+  });
+  await expect(
+    swarm.getByText("127.0.0.1", { exact: false }).first(),
+  ).toBeVisible();
   await expect(swarm.getByText(/TRACKER · Magnet/).first()).toBeVisible({
     timeout: 20_000,
   });
   await capture(page, "live-swarm-wide.png");
 
-  const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(
-    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
   );
   expect(violations).toEqual([]);
 
   await expect(torrentRow).toContainText("complete", { timeout: 30_000 });
-  await expect(swarm).toHaveAttribute("aria-rowcount", "1", { timeout: 10_000 });
+  await expect(swarm).toHaveAttribute("aria-rowcount", "1", {
+    timeout: 10_000,
+  });
   await expect(page.getByText("The peer registry is inactive.")).toBeVisible();
   await page.getByRole("tab", { name: "Peers" }).click();
   await expect
     .poll(async () => Number(await peers.getAttribute("aria-rowcount")))
     .toBe(1);
   await page.getByRole("tab", { name: "Files" }).click();
-  await expect(files).toHaveAttribute("aria-rowcount", String(expectedFileCount + 1), {
-    timeout: 10_000,
-  });
+  await expect(files).toHaveAttribute(
+    "aria-rowcount",
+    String(expectedFileCount + 1),
+    {
+      timeout: 10_000,
+    },
+  );
   await scrollToEnd(files);
-  await expect(prefixFile).toContainText("6.8 KiB");
-  await expect(payloadFile).toContainText("39.0 KiB");
+  await expect(prefixFile).toContainText("6.9 kB");
+  await expect(payloadFile).toContainText("39.9 kB");
   expect(firstVerifiedMs).toBeGreaterThanOrEqual(firstDoneMs);
   expect(applicationUpgrades).toBe(1);
   expect(semanticHttpRequests).toEqual([]);

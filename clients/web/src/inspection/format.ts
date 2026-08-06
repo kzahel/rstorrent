@@ -1,16 +1,32 @@
-export function formatBytes(value: number | null): string {
+import type { DataUnits } from "./appearance";
+
+const UNIT_SYSTEMS = {
+  decimal: { base: 1000, suffixes: ["B", "kB", "MB", "GB", "TB", "PB"] },
+  binary: { base: 1024, suffixes: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] },
+} as const satisfies Record<
+  DataUnits,
+  { readonly base: number; readonly suffixes: readonly string[] }
+>;
+
+export function formatBytes(
+  value: number | null,
+  dataUnits: DataUnits,
+): string {
   if (value === null) return "—";
   if (value === 0) return "0 B";
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const { base, suffixes } = UNIT_SYSTEMS[dataUnits];
   const exponent = Math.min(
-    Math.floor(Math.log(Math.abs(value)) / Math.log(1024)),
-    units.length - 1,
+    Math.floor(Math.log(Math.abs(value)) / Math.log(base)),
+    suffixes.length - 1,
   );
-  const scaled = value / 1024 ** exponent;
-  return `${scaled >= 100 || exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[exponent]}`;
+  const scaled = value / base ** exponent;
+  return `${scaled >= 100 || exponent === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${suffixes[exponent]}`;
 }
 
-export function formatDecimalBytes(value: string | null): string {
+export function formatExactBytes(
+  value: string | null,
+  dataUnits: DataUnits,
+): string {
   if (value === null) return "—";
   let bytes: bigint;
   try {
@@ -19,17 +35,20 @@ export function formatDecimalBytes(value: string | null): string {
     return "—";
   }
   if (bytes <= 0n) return "0 B";
-  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+  const { base, suffixes } = UNIT_SYSTEMS[dataUnits];
+  const bigintBase = BigInt(base);
   let exponent = 0;
   let divisor = 1n;
-  while (exponent < units.length - 1 && bytes >= divisor * 1024n) {
+  while (exponent < suffixes.length - 1 && bytes >= divisor * bigintBase) {
     exponent += 1;
-    divisor *= 1024n;
+    divisor *= bigintBase;
   }
   const whole = bytes / divisor;
-  if (exponent === 0 || whole >= 100n) return `${whole.toString()} ${units[exponent]}`;
+  if (exponent === 0 || whole >= 100n) {
+    return `${whole.toString()} ${suffixes[exponent]}`;
+  }
   const tenth = ((bytes * 10n) / divisor) % 10n;
-  return `${whole.toString()}.${tenth.toString()} ${units[exponent]}`;
+  return `${whole.toString()}.${tenth.toString()} ${suffixes[exponent]}`;
 }
 
 export function formatDecimalProgress(done: string, length: string): string {
@@ -46,8 +65,10 @@ export function formatDecimalProgress(done: string, length: string): string {
   }
 }
 
-export function formatRate(value: number | null): string {
-  return value === null || value <= 0 ? "—" : `${formatBytes(value)}/s`;
+export function formatRate(value: number | null, dataUnits: DataUnits): string {
+  return value === null || value <= 0
+    ? "—"
+    : `${formatBytes(value, dataUnits)}/s`;
 }
 
 export function formatProgress(value: number | null): string {

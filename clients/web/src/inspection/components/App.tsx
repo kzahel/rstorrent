@@ -12,10 +12,7 @@ import { applyAppearancePreferences } from "../appearance";
 import { useInspectionCommand, useInspectionStore } from "../context";
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
-import {
-  MAX_DETAIL_PANE_PERCENT,
-  MIN_DETAIL_PANE_PERCENT,
-} from "../state";
+import { MAX_DETAIL_PANE_PERCENT, MIN_DETAIL_PANE_PERCENT } from "../state";
 import { DetailPane } from "./DetailPane";
 import { Icon, type IconName } from "./Icon";
 import { LibraryView } from "./LibraryView";
@@ -70,6 +67,7 @@ function AppContent() {
   const colorTheme = useInspectionStore(
     (state) => state.presentation.colorTheme,
   );
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const selectDestination = useInspectionStore(
     (state) => state.selectDestination,
   );
@@ -83,6 +81,7 @@ function AppContent() {
     (state) => state.setInterfaceSize,
   );
   const setColorTheme = useInspectionStore((state) => state.setColorTheme);
+  const setDataUnits = useInspectionStore((state) => state.setDataUnits);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resizingDetail, setResizingDetail] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -204,9 +203,18 @@ function AppContent() {
             </button>
           ))}
         </nav>
-        <div className={styles.sessionStats} aria-label="Session transfer rates">
-          <span><b aria-hidden="true">↓</b> {formatRate(session.downloadRate)}</span>
-          <span><b aria-hidden="true">↑</b> {formatRate(session.uploadRate)}</span>
+        <div
+          className={styles.sessionStats}
+          aria-label="Session transfer rates"
+        >
+          <span>
+            <b aria-hidden="true">↓</b>{" "}
+            {formatRate(session.downloadRate, dataUnits)}
+          </span>
+          <span>
+            <b aria-hidden="true">↑</b>{" "}
+            {formatRate(session.uploadRate, dataUnits)}
+          </span>
         </div>
         <div className={styles.connection} data-state={session.connection}>
           <span aria-hidden="true" />
@@ -294,6 +302,7 @@ function AppContent() {
         <SettingsDialog
           colorTheme={colorTheme}
           interfaceSize={interfaceSize}
+          dataUnits={dataUnits}
           storage={storage}
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
@@ -301,6 +310,7 @@ function AppContent() {
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}
+          onDataUnitsChange={setDataUnits}
           onChooseFolder={async (repairRoot) => {
             const result = await execute({
               type: "choose_download_root",

@@ -1,12 +1,15 @@
 import { useMemo, type CSSProperties } from "react";
 
 import { useInspectionStore } from "../context";
+import type { DataUnits } from "../appearance";
 import { formatBytes, formatRate } from "../format";
 import type { DiskPieceRow, DiskPipeline, ViewMaterialization } from "../model";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./DiskPanel.module.css";
 
-const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
+const diskColumns = (
+  dataUnits: DataUnits,
+): readonly VirtualColumn<DiskPieceRow>[] => [
   {
     id: "torrent",
     label: "Torrent",
@@ -56,7 +59,7 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
     minimumViewport: 520,
     sortKind: "number",
     sortValue: (row) => row.requestedBytes,
-    render: (row) => formatBytes(row.requestedBytes),
+    render: (row) => formatBytes(row.requestedBytes, dataUnits),
   },
   {
     id: "received",
@@ -66,7 +69,7 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
     minimumViewport: 620,
     sortKind: "number",
     sortValue: (row) => row.receivedBytes,
-    render: (row) => formatBytes(row.receivedBytes),
+    render: (row) => formatBytes(row.receivedBytes, dataUnits),
   },
   {
     id: "stored",
@@ -76,7 +79,7 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
     minimumViewport: 700,
     sortKind: "number",
     sortValue: (row) => row.storedBytes,
-    render: (row) => formatBytes(row.storedBytes),
+    render: (row) => formatBytes(row.storedBytes, dataUnits),
   },
   {
     id: "queueAge",
@@ -115,7 +118,9 @@ const DISK_COLUMNS: readonly VirtualColumn<DiskPieceRow>[] = [
     minimumWidth: 140,
     maximumWidth: 680,
     sortValue: (row) => row.error,
-    render: (row) => <span title={row.error ?? undefined}>{row.error ?? "—"}</span>,
+    render: (row) => (
+      <span title={row.error ?? undefined}>{row.error ?? "—"}</span>
+    ),
   },
 ];
 
@@ -125,6 +130,8 @@ export function DiskPanel() {
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
   );
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => diskColumns(dataUnits), [dataUnits]);
   const rows = useMemo(
     () =>
       disk.order
@@ -134,12 +141,21 @@ export function DiskPanel() {
   );
   return (
     <div className={styles.panel}>
-      <DiskSummary pipeline={disk.pipeline} activePieces={rows.length} />
-      <section className={styles.tableSection} aria-labelledby="active-disk-pieces">
+      <DiskSummary
+        pipeline={disk.pipeline}
+        activePieces={rows.length}
+        dataUnits={dataUnits}
+      />
+      <section
+        className={styles.tableSection}
+        aria-labelledby="active-disk-pieces"
+      >
         <div className={styles.tableHeading}>
           <div>
             <h2 id="active-disk-pieces">Active storage pieces</h2>
-            <p>Piece-level work only; 16 KiB block jobs stay inside the engine.</p>
+            <p>
+              Piece-level work only; 16 KiB block jobs stay inside the engine.
+            </p>
           </div>
           <span>{rows.length.toLocaleString()} active</span>
         </div>
@@ -148,7 +164,7 @@ export function DiskPanel() {
           label="Active storage pieces"
           rows={rows}
           getRowId={(row) => row.id}
-          columns={DISK_COLUMNS}
+          columns={displayColumns}
           interfaceSize={interfaceSize}
           emptyMessage={diskEmptyMessage(materialization)}
           initialSort={{ columnId: "queueAge", direction: "desc" }}
@@ -161,9 +177,11 @@ export function DiskPanel() {
 function DiskSummary({
   pipeline,
   activePieces,
+  dataUnits,
 }: {
   readonly pipeline: DiskPipeline;
   readonly activePieces: number;
+  readonly dataUnits: DataUnits;
 }) {
   const pipelineMaximum = Math.max(
     1,
@@ -185,18 +203,23 @@ function DiskSummary({
       <div className={styles.summaryHeading}>
         <div>
           <p className={styles.eyebrow}>Session storage</p>
-          <h2 id="disk-pipeline-title">Receive → write → verify → checkpoint</h2>
+          <h2 id="disk-pipeline-title">
+            Receive → write → verify → checkpoint
+          </h2>
         </div>
         <span className={styles.pressure} data-pressure={pipeline.pressure}>
           <span aria-hidden="true" />
           {pressureLabel}
         </span>
       </div>
-      <div className={styles.pipeline} aria-label={`Disk pressure ${pressureLabel}`}>
+      <div
+        className={styles.pipeline}
+        aria-label={`Disk pressure ${pressureLabel}`}
+      >
         {stages.map(([label, value]) => (
           <div key={label}>
             <span>{label}</span>
-            <strong>{formatBytes(value)}</strong>
+            <strong>{formatBytes(value, dataUnits)}</strong>
             <span className={styles.bar} aria-hidden="true">
               <span
                 style={
@@ -212,18 +235,18 @@ function DiskSummary({
       <dl className={styles.metrics}>
         <Metric
           label="Resident / limit"
-          value={`${formatBytes(pipeline.residentBytes)} / ${formatBytes(pipeline.residentLimitBytes)}`}
-          detail={`high ${formatBytes(pipeline.residentHighWatermarkBytes)} · low ${formatBytes(pipeline.residentLowWatermarkBytes)}`}
+          value={`${formatBytes(pipeline.residentBytes, dataUnits)} / ${formatBytes(pipeline.residentLimitBytes, dataUnits)}`}
+          detail={`high ${formatBytes(pipeline.residentHighWatermarkBytes, dataUnits)} · low ${formatBytes(pipeline.residentLowWatermarkBytes, dataUnits)}`}
         />
         <Metric
           label="Receive / write"
-          value={`${formatRate(pipeline.receiveRateBytes)} / ${formatRate(pipeline.writeRateBytes)}`}
+          value={`${formatRate(pipeline.receiveRateBytes, dataUnits)} / ${formatRate(pipeline.writeRateBytes, dataUnits)}`}
           detail={`${formatDuration(pipeline.sampleMillis)} sample`}
         />
         <Metric
           label="Stored / verified"
-          value={`${formatBytes(pipeline.storedBytesTotal)} / ${formatBytes(pipeline.verifiedBytesTotal)}`}
-          detail={`${formatRate(pipeline.hashRateBytes)} verify rate`}
+          value={`${formatBytes(pipeline.storedBytesTotal, dataUnits)} / ${formatBytes(pipeline.verifiedBytesTotal, dataUnits)}`}
+          detail={`${formatRate(pipeline.hashRateBytes, dataUnits)} verify rate`}
         />
         <Metric
           label="Pending work"
@@ -247,8 +270,8 @@ function DiskSummary({
         />
         <Metric
           label="Checkpoint backlog"
-          value={`${pipeline.checkpointDirtyPieces.toLocaleString()} pieces · ${formatBytes(pipeline.checkpointDirtyBytes)}`}
-          detail={`oldest ${formatDuration(pipeline.checkpointOldestDirtyMillis)} · high ${pipeline.checkpointDirtyPieceHighWater.toLocaleString()} pieces / ${formatBytes(pipeline.checkpointDirtyByteHighWater)}`}
+          value={`${pipeline.checkpointDirtyPieces.toLocaleString()} pieces · ${formatBytes(pipeline.checkpointDirtyBytes, dataUnits)}`}
+          detail={`oldest ${formatDuration(pipeline.checkpointOldestDirtyMillis)} · high ${pipeline.checkpointDirtyPieceHighWater.toLocaleString()} pieces / ${formatBytes(pipeline.checkpointDirtyByteHighWater, dataUnits)}`}
         />
         <Metric
           label="Checkpoint stage"
@@ -272,7 +295,11 @@ function DiskSummary({
         <Metric
           label="Backpressured"
           value={formatDuration(pipeline.backpressuredMillisTotal)}
-          detail={pipeline.intakeBackpressured ? "intake paused now" : "intake is open"}
+          detail={
+            pipeline.intakeBackpressured
+              ? "intake paused now"
+              : "intake is open"
+          }
         />
       </dl>
       {pipeline.lastError === null ? null : (
@@ -327,7 +354,8 @@ function formatMicros(micros: number): string {
 function formatDuration(milliseconds: number): string {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "0 ms";
   if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`;
-  if (milliseconds < 60_000) return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
+  if (milliseconds < 60_000)
+    return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
   return `${Math.floor(milliseconds / 60_000)}m ${Math.floor((milliseconds % 60_000) / 1_000)}s`;
 }
 

@@ -1,11 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useInspectionStore } from "../context";
-import {
-  formatBytes,
-  formatProgress,
-  formatRate,
-} from "../format";
+import { formatBytes, formatProgress, formatRate } from "../format";
 import type { DetailTab } from "../model";
 import { DETAIL_TABS } from "../tabs";
 import { PeerTable } from "./PeerTable";
@@ -62,11 +58,16 @@ export function DetailPane() {
 
   const selectAdjacentTab = (tab: DetailTab, direction: -1 | 1) => {
     const index = DETAIL_TABS.findIndex((candidate) => candidate.id === tab);
-    const next = DETAIL_TABS[(index + direction + DETAIL_TABS.length) % DETAIL_TABS.length];
+    const next =
+      DETAIL_TABS[
+        (index + direction + DETAIL_TABS.length) % DETAIL_TABS.length
+      ];
     if (next === undefined) return;
     selectTab(next.id);
     requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`[data-tab-id="${next.id}"]`)?.focus();
+      document
+        .querySelector<HTMLElement>(`[data-tab-id="${next.id}"]`)
+        ?.focus();
     });
   };
 
@@ -117,7 +118,11 @@ export function DetailPane() {
         role="tabpanel"
         aria-labelledby={`tab-${activeTab}`}
       >
-        {torrent === undefined && activeTab !== "logs" && activeTab !== "disk" && activeTab !== "speed" && activeTab !== "dht" ? (
+        {torrent === undefined &&
+        activeTab !== "logs" &&
+        activeTab !== "disk" &&
+        activeTab !== "speed" &&
+        activeTab !== "dht" ? (
           <EmptyDetail />
         ) : activeTab === "peers" && currentTorrentId !== null ? (
           <PeerTable torrentId={currentTorrentId} />
@@ -158,6 +163,7 @@ function GeneralDetail({
   const clearDetailTarget = useInspectionStore(
     (state) => state.clearDetailTarget,
   );
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -186,18 +192,38 @@ function GeneralDetail({
         <div className={styles.largeProgress}>
           <strong>{formatProgress(torrent.progress)}</strong>
           <span aria-hidden="true">
-            <span style={{ width: `${Math.round((torrent.progress ?? 0) * 100)}%` }} />
+            <span
+              style={{ width: `${Math.round((torrent.progress ?? 0) * 100)}%` }}
+            />
           </span>
         </div>
       </section>
       <dl className={styles.metrics}>
         <Metric label="Status" value={torrent.status} />
-        <Metric label="Size" value={formatBytes(torrent.sizeBytes)} />
-        <Metric label="Downloaded" value={formatBytes(torrent.downloadedBytes)} />
-        <Metric label="Uploaded" value={formatBytes(torrent.uploadedBytes)} />
-        <Metric label="Download speed" value={formatRate(torrent.downloadRate)} />
-        <Metric label="Upload speed" value={formatRate(torrent.uploadRate)} />
-        <Metric label="Connected peers" value={torrent.peersConnected.toLocaleString()} />
+        <Metric
+          label="Size"
+          value={formatBytes(torrent.sizeBytes, dataUnits)}
+        />
+        <Metric
+          label="Downloaded"
+          value={formatBytes(torrent.downloadedBytes, dataUnits)}
+        />
+        <Metric
+          label="Uploaded"
+          value={formatBytes(torrent.uploadedBytes, dataUnits)}
+        />
+        <Metric
+          label="Download speed"
+          value={formatRate(torrent.downloadRate, dataUnits)}
+        />
+        <Metric
+          label="Upload speed"
+          value={formatRate(torrent.uploadRate, dataUnits)}
+        />
+        <Metric
+          label="Connected peers"
+          value={torrent.peersConnected.toLocaleString()}
+        />
         <Metric
           label="Known peers"
           value={torrent.peersKnown?.toLocaleString() ?? "—"}
@@ -208,12 +234,7 @@ function GeneralDetail({
         <code>{torrent.infoHash}</code>
       </div>
       {torrent.error === null ? null : (
-        <div
-          ref={errorRef}
-          className={styles.error}
-          role="alert"
-          tabIndex={-1}
-        >
+        <div ref={errorRef} className={styles.error} role="alert" tabIndex={-1}>
           <strong>Storage needs attention</strong>
           <span>{torrent.error}</span>
         </div>
@@ -230,7 +251,13 @@ function useCurrentTorrent() {
   );
 }
 
-function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+function Metric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}) {
   return (
     <div>
       <dt>{label}</dt>
@@ -242,7 +269,9 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
 function EmptyDetail() {
   return (
     <div className={styles.empty}>
-      <span className={styles.emptyMark} aria-hidden="true">↙</span>
+      <span className={styles.emptyMark} aria-hidden="true">
+        ↙
+      </span>
       <strong>Select a torrent to inspect it</strong>
       <p>The detail surface preserves its tab and navigation context.</p>
     </div>
@@ -252,7 +281,9 @@ function EmptyDetail() {
 function UnavailableDetail({ tab }: { readonly tab: DetailTab }) {
   return (
     <div className={styles.empty}>
-      <span className={styles.emptyMark} aria-hidden="true">◇</span>
+      <span className={styles.emptyMark} aria-hidden="true">
+        ◇
+      </span>
       <strong>{titleCase(tab)} view scaffold</strong>
       <p>
         This named projection is not connected yet. The empty state is

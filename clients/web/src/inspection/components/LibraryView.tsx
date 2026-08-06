@@ -7,10 +7,14 @@ import {
   type UIEvent,
 } from "react";
 
-import type { InterfaceSize } from "../appearance";
+import type { DataUnits, InterfaceSize } from "../appearance";
 import { useInspectionStore } from "../context";
 import { formatBytes, formatProgress } from "../format";
-import type { LibraryCategory, TorrentRow, ViewMaterialization } from "../model";
+import type {
+  LibraryCategory,
+  TorrentRow,
+  ViewMaterialization,
+} from "../model";
 import { torrentMatchesLibraryCategory } from "../state";
 import { Icon } from "./Icon";
 import styles from "./LibraryView.module.css";
@@ -18,7 +22,11 @@ import styles from "./LibraryView.module.css";
 const GRID_METRICS: Readonly<
   Record<
     InterfaceSize,
-    { readonly minimumCardWidth: number; readonly rowHeight: number; readonly gap: number }
+    {
+      readonly minimumCardWidth: number;
+      readonly rowHeight: number;
+      readonly gap: number;
+    }
   >
 > = {
   compact: { minimumCardWidth: 176, rowHeight: 224, gap: 10 },
@@ -29,6 +37,7 @@ const GRID_METRICS: Readonly<
 const OVERSCAN_ROWS = 2;
 
 export function LibraryView() {
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const order = useInspectionStore((state) => state.torrentOrder);
   const torrents = useInspectionStore((state) => state.torrents);
   const category = useInspectionStore(
@@ -83,7 +92,8 @@ export function LibraryView() {
           <p className={styles.eyebrow}>Library</p>
           <h1 id="library-heading">{categoryLabel(category)}</h1>
           <p>
-            {rows.length.toLocaleString()} torrent-backed content {rows.length === 1 ? "source" : "sources"}
+            {rows.length.toLocaleString()} torrent-backed content{" "}
+            {rows.length === 1 ? "source" : "sources"}
             <span aria-hidden="true"> · </span>
             <span>media details are not connected yet</span>
           </p>
@@ -109,6 +119,7 @@ export function LibraryView() {
           rows={rows}
           currentId={currentTorrentId}
           interfaceSize={interfaceSize}
+          dataUnits={dataUnits}
           onActivate={selectOnlyTorrent}
         />
       )}
@@ -120,11 +131,13 @@ function VirtualLibraryGrid({
   rows,
   currentId,
   interfaceSize,
+  dataUnits,
   onActivate,
 }: {
   readonly rows: readonly TorrentRow[];
   readonly currentId: string | null;
   readonly interfaceSize: InterfaceSize;
+  readonly dataUnits: DataUnits;
   readonly onActivate: (torrentId: string) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -225,7 +238,7 @@ function VirtualLibraryGrid({
                         <span className={styles.cardBody}>
                           <strong title={row.name}>{row.name}</strong>
                           <span>{availabilityLabel(row)}</span>
-                          <span>{formatBytes(row.sizeBytes)}</span>
+                          <span>{formatBytes(row.sizeBytes, dataUnits)}</span>
                         </span>
                         {row.progress === null ? null : (
                           <span
@@ -237,7 +250,9 @@ function VirtualLibraryGrid({
                             aria-valuenow={Math.round(row.progress * 100)}
                           >
                             <span
-                              style={{ width: `${Math.round(row.progress * 100)}%` }}
+                              style={{
+                                width: `${Math.round(row.progress * 100)}%`,
+                              }}
                             />
                           </span>
                         )}

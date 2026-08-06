@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import type { ClientSettings, ClientSettingsRuntimeView } from "../../api";
-import type { ColorTheme, InterfaceSize } from "../appearance";
+import type { ColorTheme, DataUnits, InterfaceSize } from "../appearance";
 import type { DownloadRoot, DownloadStorageSettings } from "../model";
 import { AppearanceSettingsSection } from "./AppearanceSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
@@ -18,6 +18,7 @@ import styles from "./SettingsDialog.module.css";
 export interface SettingsDialogProps {
   readonly colorTheme: ColorTheme;
   readonly interfaceSize: InterfaceSize;
+  readonly dataUnits: DataUnits;
   readonly storage: DownloadStorageSettings;
   readonly clientSettings: ClientSettingsRuntimeView;
   readonly downloadsManageable: boolean;
@@ -25,7 +26,10 @@ export interface SettingsDialogProps {
   readonly returnFocus: RefObject<HTMLButtonElement | null>;
   readonly onColorThemeChange: (colorTheme: ColorTheme) => void;
   readonly onInterfaceSizeChange: (interfaceSize: InterfaceSize) => void;
-  readonly onChooseFolder: (repairRoot?: string) => Promise<DownloadRoot | null>;
+  readonly onDataUnitsChange: (dataUnits: DataUnits) => void;
+  readonly onChooseFolder: (
+    repairRoot?: string,
+  ) => Promise<DownloadRoot | null>;
   readonly onDefaultRootChange: (rootId: string) => Promise<void>;
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
@@ -36,6 +40,7 @@ export interface SettingsDialogProps {
 export function SettingsDialog({
   colorTheme,
   interfaceSize,
+  dataUnits,
   storage,
   clientSettings,
   downloadsManageable,
@@ -43,6 +48,7 @@ export function SettingsDialog({
   returnFocus,
   onColorThemeChange,
   onInterfaceSizeChange,
+  onDataUnitsChange,
   onChooseFolder,
   onDefaultRootChange,
   onShowAddOptionsChange,
@@ -113,8 +119,10 @@ export function SettingsDialog({
           <AppearanceSettingsSection
             colorTheme={colorTheme}
             interfaceSize={interfaceSize}
+            dataUnits={dataUnits}
             onColorThemeChange={onColorThemeChange}
             onInterfaceSizeChange={onInterfaceSizeChange}
+            onDataUnitsChange={onDataUnitsChange}
           />
           <DownloadSettingsSection
             storage={storage}

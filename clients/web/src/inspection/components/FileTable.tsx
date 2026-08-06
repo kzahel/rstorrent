@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useInspectionCommand, useInspectionStore } from "../context";
-import {
-  resolveFileActions,
-  type FileActionId,
-} from "../file-actions";
-import { formatDecimalBytes, formatDecimalProgress } from "../format";
+import type { DataUnits } from "../appearance";
+import { resolveFileActions, type FileActionId } from "../file-actions";
+import { formatExactBytes, formatDecimalProgress } from "../format";
 import type { FileRow, ViewMaterialization } from "../model";
 import { FileActionsMenu } from "./FileActionsMenu";
 import { FileActionMenuItems } from "./FileActionMenuItems";
@@ -13,7 +11,7 @@ import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import { ActionMenuPopover } from "./overlays/AnchoredOverlay";
 import styles from "./FileTable.module.css";
 
-const COLUMNS: readonly VirtualColumn<FileRow>[] = [
+const columns = (dataUnits: DataUnits): readonly VirtualColumn<FileRow>[] => [
   {
     id: "name",
     label: "Name",
@@ -21,7 +19,11 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     minimumWidth: 130,
     maximumWidth: 620,
     sortValue: (row) => row.name,
-    render: (row) => <span className={styles.name} title={row.name}>{row.name}</span>,
+    render: (row) => (
+      <span className={styles.name} title={row.name}>
+        {row.name}
+      </span>
+    ),
   },
   {
     id: "folder",
@@ -52,7 +54,7 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     align: "right",
     sortValue: (row) => row.lengthBytes,
     sortKind: "decimal",
-    render: (row) => formatDecimalBytes(row.lengthBytes),
+    render: (row) => formatExactBytes(row.lengthBytes, dataUnits),
   },
   {
     id: "progress",
@@ -65,7 +67,11 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     render: (row) => (
       <span className={styles.progress}>
         <span aria-hidden="true">
-          <span style={{ width: formatDecimalProgress(row.doneBytes, row.lengthBytes) }} />
+          <span
+            style={{
+              width: formatDecimalProgress(row.doneBytes, row.lengthBytes),
+            }}
+          />
         </span>
         {formatDecimalProgress(row.doneBytes, row.lengthBytes)}
       </span>
@@ -78,7 +84,7 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     align: "right",
     sortValue: (row) => row.doneBytes,
     sortKind: "decimal",
-    render: (row) => formatDecimalBytes(row.doneBytes),
+    render: (row) => formatExactBytes(row.doneBytes, dataUnits),
   },
   {
     id: "verified",
@@ -88,7 +94,7 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     align: "right",
     sortValue: (row) => row.verifiedBytes,
     sortKind: "decimal",
-    render: (row) => formatDecimalBytes(row.verifiedBytes),
+    render: (row) => formatExactBytes(row.verifiedBytes, dataUnits),
   },
   {
     id: "extension",
@@ -116,7 +122,7 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     defaultVisible: false,
     sortValue: (row) => row.torrentOffsetBytes,
     sortKind: "decimal",
-    render: (row) => formatDecimalBytes(row.torrentOffsetBytes),
+    render: (row) => formatExactBytes(row.torrentOffsetBytes, dataUnits),
   },
   {
     id: "pieces",
@@ -141,11 +147,15 @@ const COLUMNS: readonly VirtualColumn<FileRow>[] = [
     maximumWidth: 900,
     defaultVisible: false,
     sortValue: (row) => row.storagePath,
-    render: (row) => <span title={row.storagePath ?? undefined}>{row.storagePath ?? "—"}</span>,
+    render: (row) => (
+      <span title={row.storagePath ?? undefined}>{row.storagePath ?? "—"}</span>
+    ),
   },
 ];
 
 export function FileTable({ torrentId }: { readonly torrentId: string }) {
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<ReadonlySet<string>>(
     new Set(),
@@ -154,7 +164,9 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const [priorityStatus, setPriorityStatus] = useState("");
   const execute = useInspectionCommand();
   const demo = useInspectionStore((state) => state.demo);
-  const fileSet = useInspectionStore((state) => state.filesByTorrent[torrentId]);
+  const fileSet = useInspectionStore(
+    (state) => state.filesByTorrent[torrentId],
+  );
   const materialization = useInspectionStore((state) => state.viewStatus.files);
   const interfaceSize = useInspectionStore(
     (state) => state.presentation.interfaceSize,
@@ -266,7 +278,9 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     <div className={styles.filePanel}>
       <div className={styles.summary}>
         <span>{rows.length.toLocaleString()} files</span>
-        {paddingCount > 0 ? <span>{paddingCount.toLocaleString()} padding hidden</span> : null}
+        {paddingCount > 0 ? (
+          <span>{paddingCount.toLocaleString()} padding hidden</span>
+        ) : null}
         <span
           className={styles.storagePath}
           title={fileSet?.filesystemContentBase ?? undefined}
@@ -287,7 +301,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         label="Torrent files"
         rows={rows}
         getRowId={(row) => row.id}
-        columns={COLUMNS}
+        columns={displayColumns}
         interfaceSize={interfaceSize}
         currentRowId={currentFileId}
         selection={{
@@ -307,9 +321,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
               <ActionMenuPopover label="File actions">
                 <FileActionMenuItems
                   actions={actions}
-                  onAction={(actionId) =>
-                    void setPriority(actionId, targetIds)
-                  }
+                  onAction={(actionId) => void setPriority(actionId, targetIds)}
                 />
               </ActionMenuPopover>
             );
@@ -342,7 +354,8 @@ function progressBasisPoints(row: FileRow): number {
 
 function fileEmptyMessage(
   materialization: ViewMaterialization,
-  catalogState: "metadata_pending" | "available" | "torrent_missing" | undefined,
+  catalogState:
+    "metadata_pending" | "available" | "torrent_missing" | undefined,
 ): string {
   switch (materialization.status) {
     case "not_requested":
@@ -354,8 +367,10 @@ function fileEmptyMessage(
     case "stale":
       return materialization.reason;
     case "ready":
-      if (catalogState === "metadata_pending") return "Files are available after metadata is verified.";
-      if (catalogState === "torrent_missing") return "The torrent is no longer present.";
+      if (catalogState === "metadata_pending")
+        return "Files are available after metadata is verified.";
+      if (catalogState === "torrent_missing")
+        return "The torrent is no longer present.";
       return "This torrent has no ordinary files to display.";
   }
 }

@@ -1,4 +1,4 @@
-import type { ColorTheme, InterfaceSize } from "../appearance";
+import type { ColorTheme, DataUnits, InterfaceSize } from "../appearance";
 import styles from "./SettingsDialog.module.css";
 
 const COLOR_THEME_OPTIONS: readonly {
@@ -6,9 +6,21 @@ const COLOR_THEME_OPTIONS: readonly {
   readonly label: string;
   readonly description: string;
 }[] = [
-  { value: "auto", label: "Auto", description: "Follow your system appearance." },
-  { value: "light", label: "Light", description: "Always use the light appearance." },
-  { value: "dark", label: "Dark", description: "Always use the dark appearance." },
+  {
+    value: "auto",
+    label: "Auto",
+    description: "Follow your system appearance.",
+  },
+  {
+    value: "light",
+    label: "Light",
+    description: "Always use the light appearance.",
+  },
+  {
+    value: "dark",
+    label: "Dark",
+    description: "Always use the dark appearance.",
+  },
 ];
 
 const INTERFACE_SIZE_OPTIONS: readonly {
@@ -33,18 +45,39 @@ const INTERFACE_SIZE_OPTIONS: readonly {
   },
 ];
 
+const DATA_UNITS_OPTIONS: readonly {
+  readonly value: DataUnits;
+  readonly label: string;
+  readonly description: string;
+}[] = [
+  {
+    value: "decimal",
+    label: "Decimal",
+    description: "Use kB, MB, and GB in powers of 1000.",
+  },
+  {
+    value: "binary",
+    label: "Binary",
+    description: "Use KiB, MiB, and GiB in powers of 1024.",
+  },
+];
+
 interface AppearanceSettingsSectionProps {
   readonly colorTheme: ColorTheme;
   readonly interfaceSize: InterfaceSize;
+  readonly dataUnits: DataUnits;
   readonly onColorThemeChange: (colorTheme: ColorTheme) => void;
   readonly onInterfaceSizeChange: (interfaceSize: InterfaceSize) => void;
+  readonly onDataUnitsChange: (dataUnits: DataUnits) => void;
 }
 
 export function AppearanceSettingsSection({
   colorTheme,
   interfaceSize,
+  dataUnits,
   onColorThemeChange,
   onInterfaceSizeChange,
+  onDataUnitsChange,
 }: AppearanceSettingsSectionProps) {
   return (
     <fieldset className={styles.section}>
@@ -94,6 +127,33 @@ export function AppearanceSettingsSection({
                 value={option.value}
                 checked={interfaceSize === option.value}
                 onChange={() => onInterfaceSizeChange(option.value)}
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.description}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div
+        className={styles.settingGroup}
+        role="group"
+        aria-labelledby="data-units-heading"
+      >
+        <div className={styles.settingHeading}>
+          <strong id="data-units-heading">Data units</strong>
+          <span>Changes apply immediately.</span>
+        </div>
+        <div className={styles.options}>
+          {DATA_UNITS_OPTIONS.map((option) => (
+            <label key={option.value} className={styles.option}>
+              <input
+                type="radio"
+                name="data-units"
+                value={option.value}
+                checked={dataUnits === option.value}
+                onChange={() => onDataUnitsChange(option.value)}
               />
               <span>
                 <strong>{option.label}</strong>

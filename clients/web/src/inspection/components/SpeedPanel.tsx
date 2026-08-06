@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SpeedHistoryView, SpeedMetric, SpeedRange } from "../../api";
+import type { DataUnits } from "../appearance";
 import { useInspectionStore } from "../context";
-import { formatBytes, formatDecimalBytes } from "../format";
-import { contiguousRuns, decayedScaleMaximum, monotoneTangents } from "./speed-geometry";
+import { formatBytes, formatExactBytes } from "../format";
+import {
+  contiguousRuns,
+  decayedScaleMaximum,
+  monotoneTangents,
+} from "./speed-geometry";
 import styles from "./SpeedPanel.module.css";
 
 const RANGES: readonly { value: SpeedRange; label: string }[] = [
@@ -63,14 +68,20 @@ export function SpeedPanel() {
   const history = useInspectionStore((state) => state.speed);
   const status = useInspectionStore((state) => state.viewStatus.speed);
   const range = useInspectionStore((state) => state.presentation.speedRange);
-  const selected = useInspectionStore((state) => state.presentation.speedMetrics);
+  const selected = useInspectionStore(
+    (state) => state.presentation.speedMetrics,
+  );
   const setRange = useInspectionStore((state) => state.setSpeedRange);
   const toggleMetric = useInspectionStore((state) => state.toggleSpeedMetric);
+  const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const current = useMemo(
-    () => new Map(history?.current.map((entry) => [
-      entry.metric,
-      entry.bytes === null ? null : number(entry.bytes),
-    ])),
+    () =>
+      new Map(
+        history?.current.map((entry) => [
+          entry.metric,
+          entry.bytes === null ? null : number(entry.bytes),
+        ]),
+      ),
     [history],
   );
 
@@ -81,26 +92,38 @@ export function SpeedPanel() {
           <p className={styles.eyebrow}>Session · All torrents</p>
           <h2>Transfer velocity</h2>
           <p className={styles.subtitle}>
-            Received, staged, and verified bytes stay visually distinct—including retries.
+            Received, staged, and verified bytes stay visually
+            distinct—including retries.
           </p>
         </div>
         <label className={styles.range}>
           <span>History</span>
-          <select value={range} onChange={(event) => setRange(event.target.value as SpeedRange)}>
+          <select
+            value={range}
+            onChange={(event) => setRange(event.target.value as SpeedRange)}
+          >
             {RANGES.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </label>
       </header>
 
       <div className={styles.heroRates} aria-label="Current transfer rates">
-        {(["payload_received", "staged_write", "payload_verified"] as const).map((metric) => (
+        {(
+          ["payload_received", "staged_write", "payload_verified"] as const
+        ).map((metric) => (
           <div key={metric}>
-            <span style={{ "--series-color": COLORS[metric] } as React.CSSProperties}>
+            <span
+              style={
+                { "--series-color": COLORS[metric] } as React.CSSProperties
+              }
+            >
               {METRIC_LABELS[metric]}
             </span>
-            <strong>{nullableSpeedRate(current.get(metric))}</strong>
+            <strong>{nullableSpeedRate(current.get(metric), dataUnits)}</strong>
           </div>
         ))}
       </div>
@@ -111,8 +134,12 @@ export function SpeedPanel() {
         <div className={styles.message}>Preparing speed history…</div>
       ) : (
         <>
-          <SpeedCanvas history={history} stale={status.status === "stale"} />
-          <WindowSummaries history={history} />
+          <SpeedCanvas
+            history={history}
+            stale={status.status === "stale"}
+            dataUnits={dataUnits}
+          />
+          <WindowSummaries history={history} dataUnits={dataUnits} />
         </>
       )}
 
@@ -123,7 +150,9 @@ export function SpeedPanel() {
             <span>{selected.length} of 8</span>
           </div>
           {history?.persistence === "degraded" ? (
-            <span className={styles.warning}>History persistence interrupted</span>
+            <span className={styles.warning}>
+              History persistence interrupted
+            </span>
           ) : null}
         </div>
         <div className={styles.chips}>
@@ -146,12 +175,26 @@ export function SpeedPanel() {
         </div>
       </section>
 
-      {history === null ? null : <TrafficBreakdown history={history} current={current} />}
+      {history === null ? null : (
+        <TrafficBreakdown
+          history={history}
+          current={current}
+          dataUnits={dataUnits}
+        />
+      )}
     </div>
   );
 }
 
-function SpeedCanvas({ history, stale }: { history: SpeedHistoryView; stale: boolean }) {
+function SpeedCanvas({
+  history,
+  stale,
+  dataUnits,
+}: {
+  history: SpeedHistoryView;
+  stale: boolean;
+  dataUnits: DataUnits;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const phaseRef = useRef({ complete: "", started: performance.now() });
@@ -189,15 +232,30 @@ function SpeedCanvas({ history, stale }: { history: SpeedHistoryView; stale: boo
         started: performance.now(),
       };
     }
-    const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const reduced =
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+      false;
     let frame = 0;
     const render = (now: number) => {
-      const animating = history.live && !frozen && !reduced &&
+      const animating =
+        history.live &&
+        !frozen &&
+        !reduced &&
         document.visibilityState === "visible";
       const phase = animating
         ? Math.min(1, (now - phaseRef.current.started) / bucketMillis)
         : 1;
-      drawChart(canvasRef.current, history, size, phase, cursor, scaleRef.current, now, animating);
+      drawChart(
+        canvasRef.current,
+        history,
+        size,
+        phase,
+        cursor,
+        scaleRef.current,
+        now,
+        animating,
+        dataUnits,
+      );
       if (animating && phase < 1) frame = requestAnimationFrame(render);
     };
     const visibilityChanged = () => {
@@ -210,19 +268,26 @@ function SpeedCanvas({ history, stale }: { history: SpeedHistoryView; stale: boo
       document.removeEventListener("visibilitychange", visibilityChanged);
       cancelAnimationFrame(frame);
     };
-  }, [bucketMillis, cursor, frozen, history, size]);
+  }, [bucketMillis, cursor, dataUnits, frozen, history, size]);
 
   const selectAt = (clientX: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect === undefined || samples === 0) return;
     const plotLeft = 58;
     const plotRight = Math.max(plotLeft + 1, rect.width - 18);
-    const index = Math.round(((clientX - rect.left - plotLeft) / (plotRight - plotLeft)) * (samples - 1));
+    const index = Math.round(
+      ((clientX - rect.left - plotLeft) / (plotRight - plotLeft)) *
+        (samples - 1),
+    );
     setCursor(Math.max(0, Math.min(samples - 1, index)));
   };
 
   return (
-    <div className={styles.chartWrap} ref={wrapRef} data-stale={frozen || undefined}>
+    <div
+      className={styles.chartWrap}
+      ref={wrapRef}
+      data-stale={frozen || undefined}
+    >
       <canvas
         ref={canvasRef}
         className={styles.canvas}
@@ -236,10 +301,14 @@ function SpeedCanvas({ history, stale }: { history: SpeedHistoryView; stale: boo
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
           event.preventDefault();
           const delta = event.key === "ArrowLeft" ? -1 : 1;
-          setCursor((value) => Math.max(0, Math.min(samples - 1, (value ?? samples - 1) + delta)));
+          setCursor((value) =>
+            Math.max(0, Math.min(samples - 1, (value ?? samples - 1) + delta)),
+          );
         }}
       />
-      {cursor === null ? null : <ExactSample history={history} index={cursor} />}
+      {cursor === null ? null : (
+        <ExactSample history={history} index={cursor} dataUnits={dataUnits} />
+      )}
       {frozen ? <span className={styles.stale}>Frozen · stale</span> : null}
     </div>
   );
@@ -254,6 +323,7 @@ function drawChart(
   scale: { maximum: number; updated: number },
   now: number,
   animateScale: boolean,
+  dataUnits: DataUnits,
 ): void {
   if (canvas === null) return;
   const ratio = Math.min(3, globalThis.devicePixelRatio || 1);
@@ -267,7 +337,8 @@ function drawChart(
   const css = getComputedStyle(canvas);
   const text = css.getPropertyValue("--text-muted").trim() || "#87909f";
   const grid = css.getPropertyValue("--border-soft").trim() || "#29313d";
-  const background = css.getPropertyValue("--surface-secondary").trim() || "#111720";
+  const background =
+    css.getPropertyValue("--surface-secondary").trim() || "#111720";
   context.fillStyle = background;
   context.fillRect(0, 0, size.width, size.height);
   const left = 58;
@@ -278,9 +349,14 @@ function drawChart(
   const height = Math.max(1, bottom - top);
   const bucket = number(history.bucket_millis);
   const rates = history.series.map((series) =>
-    series.values.map((value) => value === null ? null : number(value) * 1000 / bucket),
+    series.values.map((value) =>
+      value === null ? null : (number(value) * 1000) / bucket,
+    ),
   );
-  const visibleMaximum = Math.max(0, ...rates.flatMap((values) => values.filter(isNumber)));
+  const visibleMaximum = Math.max(
+    0,
+    ...rates.flatMap((values) => values.filter(isNumber)),
+  );
   const targetMaximum = Math.max(1_024, niceMaximum(visibleMaximum * 1.1));
   const maximum = decayedScaleMaximum(
     scale.maximum,
@@ -295,14 +371,18 @@ function drawChart(
   context.strokeStyle = grid;
   context.lineWidth = 1;
   for (let line = 0; line <= 4; line += 1) {
-    const y = top + height * line / 4;
+    const y = top + (height * line) / 4;
     context.beginPath();
     context.moveTo(left, y + 0.5);
     context.lineTo(right, y + 0.5);
     context.stroke();
     context.textAlign = "right";
     context.textBaseline = "middle";
-    context.fillText(shortRate(maximum * (1 - line / 4)), left - 8, y);
+    context.fillText(
+      `${formatBytes(maximum * (1 - line / 4), dataUnits)}/s`,
+      left - 8,
+      y,
+    );
   }
   const count = Math.max(1, rates[0]?.length ?? 1);
   const spacing = width / count;
@@ -319,10 +399,22 @@ function drawChart(
     context.lineJoin = "round";
     context.lineCap = "round";
     for (const run of contiguousRuns(values)) {
-      const path = curvePath(run.start, run.values, left, bottom, spacing, height, maximum, phase);
+      const path = curvePath(
+        run.start,
+        run.values,
+        left,
+        bottom,
+        spacing,
+        height,
+        maximum,
+        phase,
+      );
       if (series.metric === "payload_received" && run.values.length > 1) {
         const fill = new Path2D(path);
-        fill.lineTo(left + (run.start + run.values.length + 1 - phase) * spacing, bottom);
+        fill.lineTo(
+          left + (run.start + run.values.length + 1 - phase) * spacing,
+          bottom,
+        );
         fill.lineTo(left + (run.start + 2 - phase) * spacing, bottom);
         fill.closePath();
         const gradient = context.createLinearGradient(0, top, 0, bottom);
@@ -364,8 +456,9 @@ function curvePath(
 ): Path2D {
   const path = new Path2D();
   const tangents = monotoneTangents(values);
-  const x = (index: number) => left + (startIndex + index + 2 - phase) * spacing;
-  const y = (value: number) => bottom - value / maximum * height;
+  const x = (index: number) =>
+    left + (startIndex + index + 2 - phase) * spacing;
+  const y = (value: number) => bottom - (value / maximum) * height;
   path.moveTo(x(0), y(values[0] ?? 0));
   for (let index = 0; index < values.length - 1; index += 1) {
     path.bezierCurveTo(
@@ -380,37 +473,69 @@ function curvePath(
   return path;
 }
 
-function ExactSample({ history, index }: { history: SpeedHistoryView; index: number }) {
+function ExactSample({
+  history,
+  index,
+  dataUnits,
+}: {
+  history: SpeedHistoryView;
+  index: number;
+  dataUnits: DataUnits;
+}) {
   const bucketMillis = number(history.bucket_millis);
   const timestamp = number(history.start_millis) + (index + 1) * bucketMillis;
   return (
     <div className={styles.tooltip} role="status" aria-live="polite">
-      <strong>{new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong>
+      <strong>
+        {new Date(timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}
+      </strong>
       {history.series.map((series) => (
         <span key={series.metric}>
           <i style={{ background: COLORS[series.metric] ?? "#94a3b8" }} />
           {METRIC_LABELS[series.metric]}
-          <b>{sampleLabel(series.values[index], bucketMillis)}</b>
+          <b>{sampleLabel(series.values[index], bucketMillis, dataUnits)}</b>
         </span>
       ))}
     </div>
   );
 }
 
-function WindowSummaries({ history }: { history: SpeedHistoryView }) {
+function WindowSummaries({
+  history,
+  dataUnits,
+}: {
+  history: SpeedHistoryView;
+  dataUnits: DataUnits;
+}) {
   const bucketMillis = number(history.bucket_millis);
   return (
-    <section className={styles.windowSummary} aria-label="Selected speed window summaries">
+    <section
+      className={styles.windowSummary}
+      aria-label="Selected speed window summaries"
+    >
       <div className={styles.summaryHeader} aria-hidden="true">
-        <span>Series</span><span>Current</span><span>Average</span><span>Peak</span><span>Total</span>
+        <span>Series</span>
+        <span>Current</span>
+        <span>Average</span>
+        <span>Peak</span>
+        <span>Total</span>
       </div>
       {history.series.map((series) => {
-        const covered = series.values.filter((value): value is string => value !== null);
+        const covered = series.values.filter(
+          (value): value is string => value !== null,
+        );
         const total = covered.reduce((sum, value) => sum + BigInt(value), 0n);
-        const rates = covered.map((value) => number(value) * 1_000 / bucketMillis);
-        const average = covered.length === 0
-          ? 0
-          : Number(total) * 1_000 / (covered.length * bucketMillis);
+        const rates = covered.map(
+          (value) => (number(value) * 1_000) / bucketMillis,
+        );
+        const average =
+          covered.length === 0
+            ? 0
+            : (Number(total) * 1_000) / (covered.length * bucketMillis);
         const peak = rates.length === 0 ? 0 : Math.max(...rates);
         return (
           <div className={styles.summaryRow} key={series.metric}>
@@ -418,17 +543,24 @@ function WindowSummaries({ history }: { history: SpeedHistoryView }) {
               <i style={{ background: COLORS[series.metric] ?? "#94a3b8" }} />
               {METRIC_LABELS[series.metric]}
               {covered.length === series.values.length ? null : (
-                <small>{covered.length}/{series.values.length} covered</small>
+                <small>
+                  {covered.length}/{series.values.length} covered
+                </small>
               )}
             </strong>
             <span data-label="Current">
               {nullableSpeedRate(
-                series.current_rate_bytes === null ? null : number(series.current_rate_bytes),
+                series.current_rate_bytes === null
+                  ? null
+                  : number(series.current_rate_bytes),
+                dataUnits,
               )}
             </span>
-            <span data-label="Average">{speedRate(average)}</span>
-            <span data-label="Peak">{speedRate(peak)}</span>
-            <span data-label="Total">{formatDecimalBytes(total.toString())}</span>
+            <span data-label="Average">{speedRate(average, dataUnits)}</span>
+            <span data-label="Peak">{speedRate(peak, dataUnits)}</span>
+            <span data-label="Total">
+              {formatExactBytes(total.toString(), dataUnits)}
+            </span>
           </div>
         );
       })}
@@ -439,9 +571,11 @@ function WindowSummaries({ history }: { history: SpeedHistoryView }) {
 function TrafficBreakdown({
   history,
   current,
+  dataUnits,
 }: {
   history: SpeedHistoryView;
   current: ReadonlyMap<SpeedMetric, number | null>;
+  dataUnits: DataUnits;
 }) {
   const rows: readonly [string, SpeedMetric, SpeedMetric][] = [
     ["Peer wire", "peer_wire_received", "peer_wire_sent"],
@@ -453,25 +587,39 @@ function TrafficBreakdown({
   return (
     <details className={styles.breakdown}>
       <summary>Traffic breakdown</summary>
-      <div className={styles.breakdownGrid} aria-label="Current traffic breakdown">
-        <span>Source</span><span>In</span><span>Out</span>
+      <div
+        className={styles.breakdownGrid}
+        aria-label="Current traffic breakdown"
+      >
+        <span>Source</span>
+        <span>In</span>
+        <span>Out</span>
         {rows.map(([label, incoming, outgoing]) => (
           <div className={styles.breakdownRow} key={label}>
             <strong>{label}</strong>
-            <span>{nullableSpeedRate(current.get(incoming))}</span>
-            <span>{nullableSpeedRate(current.get(outgoing))}</span>
+            <span>{nullableSpeedRate(current.get(incoming), dataUnits)}</span>
+            <span>{nullableSpeedRate(current.get(outgoing), dataUnits)}</span>
           </div>
         ))}
         <div className={styles.breakdownRow}>
-          <strong>Hash read</strong><span>{nullableSpeedRate(current.get("logical_hash_read"))}</span><span>—</span>
+          <strong>Hash read</strong>
+          <span>
+            {nullableSpeedRate(current.get("logical_hash_read"), dataUnits)}
+          </span>
+          <span>—</span>
         </div>
         <div className={styles.breakdownRow}>
           <strong>Redundant / failed</strong>
-          <span>{nullableSpeedRate(current.get("payload_redundant"))}</span>
-          <span>{nullableSpeedRate(current.get("payload_hash_failed"))}</span>
+          <span>
+            {nullableSpeedRate(current.get("payload_redundant"), dataUnits)}
+          </span>
+          <span>
+            {nullableSpeedRate(current.get("payload_hash_failed"), dataUnits)}
+          </span>
         </div>
       </div>
-      {history.catalog.find((entry) => entry.metric === "payload_uploaded")?.available === false ? (
+      {history.catalog.find((entry) => entry.metric === "payload_uploaded")
+        ?.available === false ? (
         <p>Payload upload is unavailable until upload and seeding exist.</p>
       ) : null}
     </details>
@@ -479,39 +627,49 @@ function TrafficBreakdown({
 }
 
 function timeLabel(history: SpeedHistoryView, index: number): string {
-  const timestamp = number(history.start_millis) + index * number(history.bucket_millis);
+  const timestamp =
+    number(history.start_millis) + index * number(history.bucket_millis);
   if (!history.live) {
-    return new Date(timestamp).toLocaleDateString([], { month: "short", day: "numeric" });
+    return new Date(timestamp).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    });
   }
-  const seconds = Math.max(0, Math.round((number(history.complete_through_millis) - timestamp) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.round((number(history.complete_through_millis) - timestamp) / 1000),
+  );
   return seconds === 0 ? "now" : `−${seconds}s`;
 }
 
-function sampleLabel(value: string | null | undefined, bucketMillis: number): string {
+function sampleLabel(
+  value: string | null | undefined,
+  bucketMillis: number,
+  dataUnits: DataUnits,
+): string {
   if (value === null || value === undefined) return "gap";
-  return `${speedRate(number(value) * 1_000 / bucketMillis)} · ${formatDecimalBytes(value)}`;
+  return `${speedRate((number(value) * 1_000) / bucketMillis, dataUnits)} · ${formatExactBytes(value, dataUnits)}`;
 }
 
-function speedRate(value: number): string {
-  return `${formatBytes(Math.max(0, value))}/s`;
+function speedRate(value: number, dataUnits: DataUnits): string {
+  return `${formatBytes(Math.max(0, value), dataUnits)}/s`;
 }
 
-function nullableSpeedRate(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : speedRate(value);
+function nullableSpeedRate(
+  value: number | null | undefined,
+  dataUnits: DataUnits,
+): string {
+  return value === null || value === undefined
+    ? "—"
+    : speedRate(value, dataUnits);
 }
 
 function niceMaximum(value: number): number {
   const exponent = 10 ** Math.floor(Math.log10(value));
   const normalized = value / exponent;
-  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const nice =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
   return nice * exponent;
-}
-
-function shortRate(value: number): string {
-  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)}G`;
-  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)}M`;
-  if (value >= 1024) return `${(value / 1024).toFixed(0)}K`;
-  return `${Math.round(value)}`;
 }
 
 function number(value: string): number {

@@ -53,7 +53,7 @@
 .error {
   border-left: 3px solid var(--danger);
   padding: 0.5rem 0.65rem;
-  color: var(--danger) !important;
+  color: var(--danger-strong) !important;
   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
