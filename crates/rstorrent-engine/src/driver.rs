@@ -3963,13 +3963,15 @@ impl<'a> ContentSwarmDownload<'a> {
                 let Ok(block) = BlockKey::new(request.index, request.begin, request.length) else {
                     return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
                 };
-                if !matches!(
-                    self.state
-                        .reject_request(connection, block)
-                        .map_err(DownloadError::Swarm)?,
-                    RejectDisposition::Accepted { .. }
-                ) {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                match self
+                    .state
+                    .reject_request(connection, block)
+                    .map_err(DownloadError::Swarm)?
+                {
+                    RejectDisposition::Accepted { .. } | RejectDisposition::Stale => {}
+                    RejectDisposition::NeverRequested => {
+                        return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    }
                 }
             }
             PeerMessage::Piece {
