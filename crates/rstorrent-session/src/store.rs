@@ -841,16 +841,7 @@ impl SessionStore {
                 ),
             )
         } else {
-            match add_torrent_bytes(
-                &transaction,
-                request,
-                &prepared.source,
-                &prepared.source_digest,
-                &prepared.projection,
-                prepared.selection_default,
-                &prepared.selection_exceptions,
-                current_revision,
-            ) {
+            match add_torrent_bytes(&transaction, request, prepared, current_revision) {
                 Ok((revision, result)) => ResponseEnvelope::success(
                     request.request_id.clone(),
                     revision,
@@ -3029,13 +3020,14 @@ enum AddTorrentBytesError {
 fn add_torrent_bytes(
     transaction: &Transaction<'_>,
     request: &AddTorrentBytesRequest,
-    source: &[u8],
-    source_digest: &[u8],
-    projection: &MetainfoProjection,
-    selection_default: FilePriority,
-    selection_exceptions: &[u32],
+    prepared: &PreparedTorrentBytes,
     current_revision: u64,
 ) -> Result<(u64, AddTorrentResult), AddTorrentBytesError> {
+    let source = &prepared.source;
+    let source_digest = &prepared.source_digest;
+    let projection = &prepared.projection;
+    let selection_default = prepared.selection_default;
+    let selection_exceptions = &prepared.selection_exceptions;
     let metainfo = &projection.metainfo;
     let torrent_id = encode_info_hash(metainfo.info_hash);
     let exists = transaction

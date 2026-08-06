@@ -729,8 +729,8 @@ impl ApplicationService {
                 let torrent_id = rstorrent_protocol::magnet::Magnet::parse(&magnet)
                     .map(|magnet| encode_info_hash(magnet.info_hash))
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-                let disposition = response.result.as_ref().and_then(|result| match result {
-                    CommandResult::AddTorrent { result } => Some(&result.disposition),
+                let disposition = response.result.as_ref().map(|result| match result {
+                    CommandResult::AddTorrent { result } => &result.disposition,
                 });
                 match disposition {
                     Some(AddTorrentDisposition::Added) => {
