@@ -19,10 +19,10 @@ use sha2::{Digest as Sha256Digest, Sha256};
 
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, Command, CommandResult,
-    ErrorCode, FilePriority, FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
-    decode_info_hash, encode_info_hash, parse_revision, validate_add_torrent_bytes_request,
-    validate_identifier, validate_request,
+    ErrorCode, FilePriority, FileSelectionIntent, MAX_FILE_SELECTION_ENTRIES, RemovalDataPolicy,
+    RemovalState, RequestEnvelope, ResponseEnvelope, ServiceSnapshot, StorageState,
+    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
+    validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
 use crate::settings::{
@@ -331,6 +331,12 @@ fn project_file_selection(
         });
         if wanted {
             exceptions.push(index_u32);
+            if exceptions.len() > MAX_FILE_SELECTION_ENTRIES {
+                return Err((
+                    ErrorCode::ResourceLimit,
+                    format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} exceptions"),
+                ));
+            }
         }
     }
     Ok((FilePriority::Skip, exceptions))
@@ -1140,6 +1146,7 @@ impl SessionStore {
         if selection_default == "skipped" {
             let ranges = read_pending_ranges(&transaction, &expected_info_hash)
                 .map_err(|(_, message)| StoreError::DurableState(message))?;
+            let mut selected = Vec::new();
             for range in ranges {
                 let end = usize::try_from(range.end)
                     .unwrap_or(usize::MAX)
@@ -1152,17 +1159,27 @@ impl SessionStore {
                     if metainfo.files[index].padding {
                         continue;
                     }
-                    transaction.execute(
-                        "INSERT OR IGNORE INTO file_selection(info_hash, file_index, wanted)
-                         VALUES (?1, ?2, 1)",
-                        params![
-                            expected_info_hash.as_slice(),
-                            i64::try_from(index).map_err(|_| StoreError::DurableState(
-                                "file index overflow".to_owned()
-                            ))?
-                        ],
-                    )?;
+                    selected.push(index);
+                    if selected.len() > MAX_FILE_SELECTION_ENTRIES {
+                        return Err(StoreError::ResourceLimit {
+                            resource: "file selection exceptions",
+                            actual: selected.len(),
+                            maximum: MAX_FILE_SELECTION_ENTRIES,
+                        });
+                    }
                 }
+            }
+            for index in selected {
+                transaction.execute(
+                    "INSERT INTO file_selection(info_hash, file_index, wanted)
+                     VALUES (?1, ?2, 1)",
+                    params![
+                        expected_info_hash.as_slice(),
+                        i64::try_from(index).map_err(|_| StoreError::DurableState(
+                            "file index overflow".to_owned()
+                        ))?
+                    ],
+                )?;
             }
             transaction.execute(
                 "DELETE FROM pending_selection_ranges WHERE info_hash = ?1",
@@ -3417,25 +3434,27 @@ fn add_magnet(
                 "file selection cannot change during repair or publication".to_owned(),
             ));
         }
-        let newly_wanted = expand_duplicate_selection(
-            transaction,
-            &magnet.info_hash,
-            raw_info.as_deref(),
-            &selection_default,
-            select_only.ranges(),
-        )?;
-        if newly_wanted == Some(0) {
-            return Ok((
-                current_revision,
-                add_result(
-                    torrent_id,
-                    AddTorrentDisposition::AlreadyPresent,
-                    current_revision,
-                ),
-            ));
-        }
-        if raw_info.is_none()
-            && !pending_selection_changed(transaction, &magnet.info_hash, select_only.ranges())?
+        let file_plan = raw_info
+            .as_deref()
+            .map(|raw_info| {
+                plan_duplicate_selection(
+                    transaction,
+                    &magnet.info_hash,
+                    raw_info,
+                    &selection_default,
+                    select_only.ranges(),
+                )
+            })
+            .transpose()?;
+        let pending_plan = if raw_info.is_none() {
+            union_pending_selection(transaction, &magnet.info_hash, select_only.ranges())?
+        } else {
+            None
+        };
+        if file_plan
+            .as_ref()
+            .is_some_and(|(_, changes)| changes.is_empty())
+            || raw_info.is_none() && pending_plan.is_none()
         {
             return Ok((
                 current_revision,
@@ -3447,6 +3466,30 @@ fn add_magnet(
             ));
         }
         let revision = next_revision(transaction, current_revision)?;
+        if let Some((wanted_value, changes)) = &file_plan {
+            for index in changes {
+                if *wanted_value {
+                    transaction
+                        .execute(
+                            "INSERT INTO file_selection(info_hash, file_index, wanted)
+                         VALUES (?1, ?2, 1)",
+                            params![magnet.info_hash.as_slice(), i64::from(*index)],
+                        )
+                        .map_err(internal_error)?;
+                } else {
+                    transaction
+                        .execute(
+                            "DELETE FROM file_selection
+                         WHERE info_hash = ?1 AND file_index = ?2 AND wanted = 0",
+                            params![magnet.info_hash.as_slice(), i64::from(*index)],
+                        )
+                        .map_err(internal_error)?;
+                }
+            }
+        }
+        if let Some(ranges) = &pending_plan {
+            write_pending_ranges(transaction, &magnet.info_hash, ranges)?;
+        }
         let next_state = raw_info.as_ref().map(|_| {
             if desired_state == "paused" || archived {
                 "paused"
@@ -3472,7 +3515,7 @@ fn add_magnet(
             add_result(
                 torrent_id,
                 AddTorrentDisposition::SelectionExpanded {
-                    newly_wanted_count: newly_wanted,
+                    newly_wanted_count: file_plan.as_ref().map(|(_, changes)| changes.len() as u32),
                 },
                 revision,
             ),
@@ -3604,16 +3647,13 @@ fn add_result(
     }
 }
 
-fn expand_duplicate_selection(
+fn plan_duplicate_selection(
     transaction: &Transaction<'_>,
     info_hash: &[u8; 20],
-    raw_info: Option<&[u8]>,
+    raw_info: &[u8],
     selection_default: &str,
     ranges: &[MagnetFileIndexRange],
-) -> Result<Option<u32>, (ErrorCode, String)> {
-    let Some(raw_info) = raw_info else {
-        return Ok(None);
-    };
+) -> Result<(bool, Vec<u32>), (ErrorCode, String)> {
     let metainfo = Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
     let wanted_value = match selection_default {
@@ -3625,7 +3665,9 @@ fn expand_duplicate_selection(
             ));
         }
     };
-    let mut newly_wanted = 0_u32;
+    let (_, exceptions) = read_selection_state(transaction, info_hash)
+        .map_err(|error| internal_message(&error.to_string()))?;
+    let mut changes = Vec::new();
     for range in ranges {
         let end = usize::try_from(range.end)
             .unwrap_or(usize::MAX)
@@ -3638,33 +3680,21 @@ fn expand_duplicate_selection(
             if metainfo.files[index].padding {
                 continue;
             }
-            let changed = if wanted_value {
-                transaction
-                    .execute(
-                        "INSERT OR IGNORE INTO file_selection(info_hash, file_index, wanted)
-                     VALUES (?1, ?2, 1)",
-                        params![
-                            info_hash.as_slice(),
-                            i64::try_from(index)
-                                .map_err(|_| internal_message("file index overflow"))?
-                        ],
-                    )
-                    .map_err(internal_error)?
-            } else {
-                transaction.execute(
-                    "DELETE FROM file_selection WHERE info_hash = ?1 AND file_index = ?2 AND wanted = 0",
-                    params![info_hash.as_slice(), i64::try_from(index).map_err(|_| internal_message("file index overflow"))?],
-                ).map_err(internal_error)?
-            };
-            newly_wanted = newly_wanted
-                .checked_add(
-                    u32::try_from(changed)
-                        .map_err(|_| internal_message("selection delta overflow"))?,
-                )
-                .ok_or_else(|| internal_message("selection delta overflow"))?;
+            let index =
+                u32::try_from(index).map_err(|_| internal_message("file index overflow"))?;
+            let is_exception = exceptions.binary_search(&index).is_ok();
+            if wanted_value != is_exception {
+                changes.push(index);
+            }
         }
     }
-    Ok(Some(newly_wanted))
+    if wanted_value && exceptions.len() + changes.len() > MAX_FILE_SELECTION_ENTRIES {
+        return Err((
+            ErrorCode::ResourceLimit,
+            format!("file selection exceeds {MAX_FILE_SELECTION_ENTRIES} exceptions"),
+        ));
+    }
+    Ok((wanted_value, changes))
 }
 
 fn read_pending_ranges(
@@ -3688,11 +3718,11 @@ fn read_pending_ranges(
     rows.collect::<Result<Vec<_>, _>>().map_err(internal_error)
 }
 
-fn pending_selection_changed(
+fn union_pending_selection(
     transaction: &Transaction<'_>,
     info_hash: &[u8; 20],
     added: &[MagnetFileIndexRange],
-) -> Result<bool, (ErrorCode, String)> {
+) -> Result<Option<Vec<MagnetFileIndexRange>>, (ErrorCode, String)> {
     let initial = read_pending_ranges(transaction, info_hash)?;
     let mut all = initial.clone();
     all.extend_from_slice(added);
@@ -3708,10 +3738,9 @@ fn pending_selection_changed(
         }
     }
     if merged == initial {
-        return Ok(false);
+        return Ok(None);
     }
-    write_pending_ranges(transaction, info_hash, &merged)?;
-    Ok(true)
+    Ok(Some(merged))
 }
 
 fn write_pending_ranges(
@@ -4749,7 +4778,7 @@ mod tests {
     use rstorrent_engine::PreparedFileHash;
     use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtSnapshot};
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
-    use rstorrent_protocol::metainfo::MetainfoFile;
+    use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
     use sha2::Sha256;
@@ -5597,6 +5626,48 @@ mod tests {
             store.snapshot().expect("expanded snapshot").torrents[0].selection_exceptions,
             [0, 1]
         );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn select_only_exception_budget_rejects_metadata_atomically() {
+        let root = test_root("select-only-budget");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
+        let source =
+            multi_file_torrent_source((crate::control::MAX_FILE_SELECTION_ENTRIES + 1) as u32);
+        let projection =
+            Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                .expect("bounded metainfo");
+        let raw_info = &source[projection.info_span];
+        let torrent_id = crate::control::encode_info_hash(projection.metainfo.info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "select-budget".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{torrent_id}&so=0-{}",
+                        crate::control::MAX_FILE_SELECTION_ENTRIES
+                    ),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("persist compact pending range");
+        let revision = store.revision().expect("add revision");
+        assert!(matches!(
+            store.record_metadata(&torrent_id, raw_info),
+            Err(StoreError::ResourceLimit {
+                resource: "file selection exceptions",
+                ..
+            })
+        ));
+        assert_eq!(store.revision().expect("unchanged revision"), revision);
+        assert!(!store.snapshot().expect("pending snapshot").torrents[0].metadata_available);
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

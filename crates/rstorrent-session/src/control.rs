@@ -1,6 +1,6 @@
 use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, Magnet};
 
-const MAX_FILE_SELECTION_ENTRIES: usize = 4096;
+pub(crate) const MAX_FILE_SELECTION_ENTRIES: usize = 4096;
 const MAX_FILE_INDEX: usize = 374_998;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
