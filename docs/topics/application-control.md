@@ -68,6 +68,13 @@ new application task owner. Tactical `095` adds no command: the existing
 paged tracker view now projects plaintext HTTP versus encrypted-but-
 unauthenticated HTTPS, while the application composes the same long-lived
 discovery owner for every supported tracker transport.
+Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) extends
+the same complete `set_client_settings` value with tracker HTTPS server
+authentication. It adds no tracker route or mutation task: persistence still
+resolves first, Tactical `097`'s one reconciler applies the domain, and typed
+responses/views distinguish configured intent, optional effective policy,
+degraded construction, and operation-captured tracker security.
 
 ## Scope
 
@@ -327,11 +334,13 @@ stops the local listener.
 
 Tactical `095` keeps HTTP and HTTPS below this semantic boundary. The
 application retains tracker URL, tier, source, lifecycle, redaction, and the
-new closed `TrackerSecurityView`; reqwest clients, DNS, redirects, TLS, gzip,
-and response parsing remain engine-owned infrastructure. Generated JSON
-Schema, TypeScript, React, UniFFI, and Kotlin consumers distinguish
-`unencrypted` from `encrypted_unauthenticated` without adding a certificate
-override, tracker credential command, or presentation-owned success rule.
+closed `TrackerSecurityView`; reqwest clients, DNS, redirects, TLS, gzip, and
+response parsing remain engine-owned infrastructure. Tactical `098` expands
+that value to `unencrypted`, `encrypted_system_trust`, and
+`encrypted_unauthenticated`, and extends the existing complete settings
+command with a default-secure policy plus one advanced compatibility value.
+It adds no certificate route, tracker credential command, environment
+side-channel, or presentation-owned success rule.
 
 The application-owned content supervisor also retains a cancellation-owned
 external discovery sender from metadata transition through content startup.
@@ -339,9 +348,10 @@ That small lifecycle fence prevents a temporarily empty session tracker stream
 from terminating content discovery before a late HTTP/HTTPS observation. Hash-
 verified HTTP and HTTPS only-`peers6` application transfers, shutdown stopped
 events, generated web validation, Android cross-builds, and an owned AVD HTTPS
-run cover the boundary. Certificate and hostname validation remains a later
-platform-trust slice and must change the projected security value when it
-lands.
+run cover the boundary. The authenticated follow-up additionally passes exact
+controlled pinned-libtorrent application transfer, live policy replacement,
+desktop platform trust, and Android product-verifier evidence through those
+same owners.
 
 Later work must define multi-torrent scheduling, stable product error
 taxonomy, capability installation, production remote

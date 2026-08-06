@@ -461,9 +461,11 @@ that scope and its cleanup or compatibility rules explicitly.
   generations while preserving peers, DHT, discovery, accounting, exact
   transfer, and bounded terminal ownership.
 - [`098-authenticated-https-tracker-platform-trust.md`](098-authenticated-https-tracker-platform-trust.md):
-  planned with Tactical `097` complete; defaults HTTPS trackers to desktop and
-  Android platform trust, adds one hidden live compatibility policy, and
-  replaces only the bounded family-specific HTTP client pair.
+  complete; defaults HTTPS trackers to desktop and Android platform trust,
+  retains one hidden live compatibility policy, atomically replaces only the
+  bounded family-specific HTTP client pair, and passes controlled
+  authenticated pinned-libtorrent interoperability plus desktop/AVD runtime
+  evidence.
 - [`099-decimal-and-binary-display-units.md`](099-decimal-and-binary-display-units.md):
   planned; makes Decimal `kB/MB/GB` the fresh browser-presentation default,
   retains Binary `KiB/MiB/GiB` as an explicit choice, and persists the setting

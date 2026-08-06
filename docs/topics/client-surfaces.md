@@ -35,6 +35,13 @@ appearance, download, and connection/seeding sections. Browser-hosted and
 Tauri clients now share one atomic persisted loopback-listener/global-peer/
 upload-slot form and authoritative active/effective/bind status; Android
 receives the generated contract but no Compose settings screen.
+Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
+default-secure tracker HTTPS field to that same contract without rendering an
+ordinary React or Compose control. The React draft, equality, refresh, and
+save paths preserve the hidden authoritative value. Advanced consumers can
+use the generated typed command; tracker rows render authenticated versus
+explicitly unauthenticated encryption without a client-side inference.
 Tactical `036` packages that same production-built live browser path behind
 `./scripts/webui`, with isolated persistent state, default online networking,
 normal-browser opening, and joined terminal-owned shutdown. Tactical `076`
@@ -360,6 +367,14 @@ even though its engine permits routed peers and trackers. Android likewise
 runs the online engine inside its foreground service rather than through a
 socket proxy.
 
+Tactical `098` packages the Cargo-version-matched platform-verifier AAR and
+adds one application bootstrap before either Android service can construct a
+native network owner. JVM ordering tests, both established ABI builds, APK
+inspection, and an API 34 arm64 no-window AVD pass. The AVD rejected a
+controlled invalid certificate before HTTP, accepted a public trusted origin
+through HTTP, and completed the explicit disabled-policy SAF transfer against
+pinned libtorrent. No Compose setting or visible product launch was added.
+
 ## Diagnostics Surfaces
 
 Tactical `012` gave the original shared web/Tauri surface and Android Compose
@@ -416,6 +431,10 @@ future server.
 - Android has no Compose connection/seeding settings screen. Tactical `084`
   deliberately stops at generated contract and build/test coverage there;
   mobile restart UX and connectivity policy require their own product slice.
+- Tracker HTTPS authentication is intentionally absent from ordinary React
+  and Compose settings. The advanced typed `disabled` override exists for
+  compatibility/debug use and remains visibly unauthenticated in tracker
+  rows; custom roots, pins, and certificate-management UI are absent.
 - No HTTP playback server exists.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled

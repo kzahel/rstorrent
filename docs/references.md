@@ -171,6 +171,32 @@ model so application-contract types originate in `rstorrent-session` while
 the exported client object remains in `rstorrent-android`. These are SDK/API
 references; no documentation sample source was imported.
 
+## TLS Platform Trust References
+
+Tactical
+[`098`](tactical/098-authenticated-https-tracker-platform-trust.md) audits the
+locked reqwest/rustls platform-trust path rather than introducing a separate
+TLS implementation. The exact resolved components are reqwest `0.13.4`,
+rustls `0.23.43`, `rustls-platform-verifier` `0.7.0`, and
+`rustls-platform-verifier-android` `0.1.1`. The tactical records the inspected
+reqwest client builder, verifier platform backends and tests, Android
+initialization API, version-matched Maven artifact, and pinned libtorrent and
+JSTorrent comparison paths.
+
+Reqwest, rcgen, and both platform-verifier crates are MIT OR Apache-2.0;
+rustls is Apache-2.0 OR ISC OR MIT. The Android AAR is the support artifact
+published by the already locked verifier dependency and is resolved from its
+Cargo-provided on-disk Maven repository at build time; it is not copied into
+this repository. Rcgen creates independently authored in-process certificate
+fixtures. The external Python interoperability harness invokes the local
+OpenSSL executable only to generate temporary certificates; OpenSSL is not an
+RSTorrent runtime dependency.
+
+No reference source, certificate, private key, CA store, test fixture, or
+tracker credential was copied. Controlled roots exist only inside temporary
+test directories or a feature-gated test process and never enter production
+construction or a platform trust store.
+
 ## Application View And Web Client References
 
 The accepted application-view direction in

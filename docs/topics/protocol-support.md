@@ -6,12 +6,13 @@ Status: RSTorrent implements a bounded subset of the v1 protocol sufficient
 for controlled verified downloads, BEP 9 metadata exchange, scheduled BEP 15
 UDP tracker announces, an IPv4 Mainline DHT foundation, and bounded
 multi-peer payload seeding including one externally verified UPnP-mapped TCP
-path. UDP, HTTP, and encrypted-but-unauthenticated HTTPS trackers share the
-selected family-correct advertisement lifecycle; DHT advertises the selected
+path. UDP, HTTP, and HTTPS trackers share the selected family-correct
+advertisement lifecycle; DHT advertises the selected
 IPv4 TCP endpoint for an eligible completed seed. It does not claim complete
-BEP 3 or BEP 5 support, authenticated HTTPS, full BEP 7 announcing, public-
-swarm advertisement reliability, incomplete-torrent upload policy, uTP, or v2
-support.
+BEP 3 or BEP 5 support, full BEP 7 announcing, public-swarm advertisement
+reliability, incomplete-torrent upload policy, uTP, or v2 support. HTTPS now
+defaults to authenticated desktop/Android platform trust; one explicit hidden
+compatibility policy remains encrypted but unauthenticated.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.
@@ -70,8 +71,12 @@ resource, restart, transport and controlled pinned-libtorrent evidence pass.
 Completed Tactical
 [`095`](../tactical/095-bounded-http-https-tracker-transport.md) extends those
 tiers through bounded HTTP and HTTPS transport, compact/noncompact IPv4/IPv6
-peer intake, and outbound IPv6 transfer. HTTPS certificate and hostname
-validation and v2/hybrid integrity remain absent.
+peer intake, and outbound IPv6 transfer. Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds
+default platform certificate-chain/requested-name validation, live bounded
+client-pair replacement, truthful operation-captured projection, desktop and
+Android runtime evidence, and controlled authenticated tracker introduction
+to pinned libtorrent. V2/hybrid integrity remains absent.
 
 ## Purpose And Claim Policy
 
@@ -106,14 +111,14 @@ BEP is external protocol metadata, not RSTorrent readiness.
 
 | Specification | Claim | Implemented subset and evidence | Deliberate limits and dependencies |
 | --- | --- | --- | --- |
-| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; distinct `length` and `files` publication shapes over one v1 storage/resume pipeline; raw-info SHA-1 identity; outgoing and bounded multi-peer incoming TCP handshakes; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, cancel, and piece messages; bounded multi-peer download scheduling; bounded verified metadata/payload upload from completed published storage under eight fixed seed slots with exact physical accounting; ordinary routed-incoming Peers/Swarm observation; and bounded HTTP tracker announce requests plus success/failure, optional interval/count, tracker-ID, and noncompact-peer responses. Deterministic, scripted adverse, simultaneous controlled libtorrent/RSTorrent, restart, crash, live publication, controlled tracker/DHT discovery, and mapped off-LAN transfers cover the implemented subset. | Upload from incomplete torrents, tit-for-tat and finite-bandwidth/goal policy, authenticated HTTPS trackers, and comparable ordinary-swarm completion performance remain absent. |
+| [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html) | Partial | Strict bounded bencoding; distinct `length` and `files` publication shapes over one v1 storage/resume pipeline; raw-info SHA-1 identity; outgoing and bounded multi-peer incoming TCP handshakes; keepalive, choke, unchoke, interested, not-interested, have, bitfield, request, cancel, and piece messages; bounded multi-peer download scheduling; bounded verified metadata/payload upload from completed published storage under eight fixed seed slots with exact physical accounting; ordinary routed-incoming Peers/Swarm observation; and bounded HTTP tracker announce requests plus success/failure, optional interval/count, tracker-ID, and noncompact-peer responses. Deterministic, scripted adverse, simultaneous controlled libtorrent/RSTorrent, restart, crash, live publication, controlled authenticated tracker/DHT discovery, and mapped off-LAN transfers cover the implemented subset. | Upload from incomplete torrents, tit-for-tat and finite-bandwidth/goal policy, and comparable ordinary-swarm completion performance remain absent. |
 | [BEP 5: DHT Protocol](https://www.bittorrent.org/beps/bep_0005.html) | Partial | Bounded KRPC, fixed-distance K=8 routing and replacements, alpha-3 iterative lookup, exact transaction/source correlation, incoming query handling, token-authenticated peer announcements, bootstrap/refresh, warm persistence, network-policy integration, and ordinary peer-registry delivery. One long-lived session scheduler self-announces the selected explicit TCP port to at most K=8 token-bearing responders only for verified public incoming-routable seeds; the shared IPv4 UDP endpoint remains separate. Deterministic, scripted runtime, controlled DHT-only libtorrent completion, mapped off-LAN wire-port, repeated public metadata acquisition, and public-bootstrap evidence pass. | IPv6 participation and BEP 5 PORT messages remain absent. BEP 5 has no immediate withdrawal query; stopped announcements expire as remote soft state. |
 | [BEP 6: Fast Extension](https://www.bittorrent.org/beps/bep_0006.html) | Unsupported | None. | Have-all, have-none, suggest, reject-request, and allowed-fast negotiation and state are absent. Planned Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) treats the extension as one complete request-lifecycle slice rather than a codec-only change. |
 | [BEP 7: IPv6 Tracker Extension](https://www.bittorrent.org/beps/bep_0007.html) | Partial | HTTP/HTTPS tracker connections may use IPv6 literals or AAAA-only names, family selection precedes query construction, an IPv6 request advertises port `1`, compact `peers6` is accepted independently of tracker family, and returned endpoints feed the ordinary outbound IPv6 TCP path. Scripted AAAA-only/only-`peers6`, application hash-verified IPv6 transfer, and Android HTTPS evidence pass. | The listener, mapping, and advertised reachable endpoint are IPv4-only. There is no dual-stack/multi-interface listener, per-family reachable port, simultaneous family announce, IPv6 pinhole, or physical IPv6 reachability evidence; no full BEP 7 claim is made. |
 | [BEP 9: Extension for Peers to Send Metadata Files](https://www.bittorrent.org/beps/bep_0009.html) | Supported | Bounded v1 `btih` magnets, extension negotiation, metadata size and block bounds, at most two acquisition requests per download peer, request/data/reject messages, duplicate and ordering validation, cross-peer block assembly, assembled info-hash verification and generation recovery, up to eight simultaneous dial/metadata work items, an independent progress deadline, inspectable acquisition state, and bounded diagnostic plus shared multi-peer application-listener metadata upload. Controlled libtorrent runs pass in both directions; the maximum receive proof transfers an exact 31,457,280-byte info dictionary in 1,920 blocks and requests, and local upload serves every block of valid metadata up to 64 MiB. | The first complete hash-verified download generation wins. V2 identities and BEP 53 selection are outside the claim; public-swarm discovery and completion remain variable rather than a reliability claim. |
 | [BEP 10: Extension Protocol](https://www.bittorrent.org/beps/bep_0010.html) | Partial | Reserved-bit negotiation, extended message framing, directional extension IDs, and bounded extended handshake fields needed for `ut_metadata`; deterministic and controlled libtorrent evidence covers outgoing and application-listener directions, including metadata-to-payload continuity. | There is no general recognized-extension map or support for PEX, hole punching, upload-only, client-version fields, or arbitrary extensions. Planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md) adds only the bounded per-connection map and listen-port field required for `ut_metadata` plus `ut_pex`; it is not a plugin framework. |
 | [BEP 11: Peer Exchange](https://www.bittorrent.org/beps/bep_0011.html) | Unsupported | None. | Requires BEP 10 extension growth, multiple live peers, source diversity limits, deduplication, rate bounds, private-torrent gating, and connection lifecycle evidence. Planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md) records the complete bounded slice and depends on peer-ID duplicate resolution plus truthful peer advertisement. |
-| [BEP 12: Multitracker Metadata Extension](https://www.bittorrent.org/beps/bep_0012.html) | Supported | Bounded outer `announce-list` parsing preserves tier order and falls back to `announce`; exact tiers and URL source survive restart. UDP/HTTP/HTTPS rows share deterministic tier scheduling and an eight-operation ceiling; pure tests retain 300 trackers in three tiers, controlled byte intake completes through an imported tracker, and mixed-transport lifecycle tests pass. | Magnet `tr` values still form one synthetic tier because magnets carry no BEP 12 structure. HTTPS is encrypted but unauthenticated until platform certificate validation lands. |
+| [BEP 12: Multitracker Metadata Extension](https://www.bittorrent.org/beps/bep_0012.html) | Supported | Bounded outer `announce-list` parsing preserves tier order and falls back to `announce`; exact tiers and URL source survive restart. UDP/HTTP/HTTPS rows share deterministic tier scheduling and an eight-operation ceiling; pure tests retain 300 trackers in three tiers, controlled byte intake completes through an imported tracker, and mixed-transport lifecycle tests pass. HTTPS defaults to platform chain/name validation and the explicit compatibility value is projected as unauthenticated. | Magnet `tr` values still form one synthetic tier because magnets carry no BEP 12 structure. |
 | [BEP 14: Local Service Discovery](https://www.bittorrent.org/beps/bep_0014.html) | Unsupported | None. | Requires an advertised incoming port, per-interface multicast ownership, local-network permission, and private-torrent policy. |
 | [BEP 15: UDP Tracker Protocol for BitTorrent](https://www.bittorrent.org/beps/bep_0015.html) | Partial | Bounded connect and announce codecs, source/action/transaction/stride validation, IPv4 and IPv6 compact response parsing, DNS and destination policy, connect/announce retransmission, 30-second aggregate operation bounds, 60-second connection-token cache, session-wide eight-operation startup fan-out, multi-tracker fallback, failure backoff, success promotion, interval/corrective reannounce, exact current counters, selected TCP port or port-`1` outbound-only sentinel, and started/completed/stopped lifecycle. One application-lifetime peer ID is shared by tracker and peer handshakes. Scripted loss/lifecycle tests, controlled libtorrent tracker-only completion, mapped off-LAN wire-port transfer, and public metadata acquisitions pass. | Scrape, authentication, proxies, BEP 41 URL data, durable lifetime traffic accounting, and a public-tracker reliability claim remain absent. |
 | [BEP 17: HTTP Seeding (Hoffman-style)](https://www.bittorrent.org/beps/bep_0017.html) | Unsupported | None. | Web seeds need their own hostile-response, range, retry, integrity, and resource policy. |
@@ -192,9 +197,9 @@ Protocol breadth follows the current ownership campaign:
    [`093`](../tactical/093-bep6-fast-request-lifecycle.md) and
    [`094`](../tactical/094-bounded-bep11-peer-exchange.md) against the
    established peer owner;
-5. add platform certificate and hostname validation before promoting HTTPS
-   beyond encrypted-but-unauthenticated transport, and add dual-stack listener
-   and per-family advertisement ownership before any full BEP 7 claim; and
+5. retain completed platform certificate and hostname validation while adding
+   dual-stack listener and per-family advertisement ownership before any full
+   BEP 7 claim; and
 6. evaluate incoming service, uTP, hole punching, web seeds, and v2 only after
    their prerequisite owners and validation plans exist.
 

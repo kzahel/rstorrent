@@ -103,6 +103,15 @@ adds the volatile last successful tracker connection family as only `ipv4` or
 `ipv6`. The schedule owns this diagnostic fact, and presentation does not
 infer it from URL spelling or returned peers. No DNS answer, socket address,
 source address, interface, or peer address enters the application contract.
+Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) expands
+tracker security to `unencrypted`, `encrypted_system_trust`, and
+`encrypted_unauthenticated`, and adds one tracker-authentication application
+domain to the existing complete client-settings value. The domain separately
+reports configured intent, optional effective policy, and
+applying/applied/degraded state. A tracker row retains the policy captured by
+its current or last operation rather than inferring security from the current
+global setting or an HTTP outcome.
 
 ## Purpose And Scope
 
@@ -850,6 +859,13 @@ Tactical `096` additionally projects the optional family of the most recent
 successful physical connection. A failed operation retains that last-success
 fact, while a new or replaced row begins unset. The web keeps `Family` hidden
 by default and renders only `IPv4`, `IPv6`, or an em dash.
+Tactical `098` makes the HTTPS security value operation-captured. A row begun
+under `disabled` remains `encrypted_unauthenticated` if it completes after a
+secure live replacement; a failed `system_trust` attempt remains
+`encrypted_system_trust` without claiming the handshake succeeded. A row
+that has never run uses the effective policy, or configured secure
+requirement when no HTTPS-capable pair exists. The generated contract carries
+coarse redacted TLS categories rather than native exception text.
 
 Same-catalog durable updates preserve live tracker state. Restart reconstructs
 configured inactive rows from the magnet without pretending volatile response
@@ -917,6 +933,15 @@ production React build, Android cross-builds, and the API 34 arm64 AVD HTTPS
 profile pass. The AVD observed `encrypted_unauthenticated` for a wrong-host
 self-signed tracker that returned only `peers6`; this is evidence of the
 declared temporary policy, not authenticated HTTPS.
+
+Tactical `098` preserves the same view kind, page, lease, and reducer path
+while extending both closed enums and the complete settings replacement.
+Generated TypeScript/schema/validators, React fixtures and tests, UniFFI, and
+Kotlin compile checks pass. A controlled in-flight policy change retained the
+old row's unauthenticated truth while the settings value reported the new
+secure effective policy. The API 34 arm64 product run rendered secure-policy
+success/failure rows through its ordinary tracker view; explicit disabled mode
+remained visibly unauthenticated.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

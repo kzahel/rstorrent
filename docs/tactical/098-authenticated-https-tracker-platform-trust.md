@@ -1,10 +1,9 @@
 # Tactical 098: Authenticated HTTPS Tracker Platform Trust
 
-Status: Planned on 2026-08-06 after the maintainer accepted platform trust as
-the default, one hidden compatibility/debug override, and live replacement of
-the small tracker HTTP client pool. Tactical `097` completed later that day;
-the architectural prerequisite is satisfied, but implementation has not
-started.
+Status: Completed on 2026-08-06. Platform trust is the default on desktop and
+Android, the persisted `disabled` compatibility policy remains hidden from
+ordinary product settings, and live changes replace the bounded tracker HTTP
+client pair through Tactical `097`'s existing reconciler.
 
 This tactical was sequenced strictly after Tactical
 [`097`](097-live-client-settings-and-replaceable-session-generations.md).
@@ -673,6 +672,114 @@ trusts the fixture root. Any temporary host/AVD trust state and TLS artifacts
 must be scoped to the harness and removed at teardown. Physical devices,
 private tracker credentials, and external account state are not authorized by
 this tactical.
+
+## Completion Evidence
+
+The slice landed in reviewable implementation and evidence commits from
+`a84cf62` through `774328f`. It keeps the accepted ownership shape:
+
+- schema version 12 adds the closed policy to the existing atomic settings
+  singleton, defaults every fresh and migrated profile to `system_trust`, and
+  rejects malformed stored values;
+- `SessionNetworkRuntime` submits this sixth domain through its one
+  latest-value reconciler, while the engine advertisement owner atomically
+  replaces one passive IPv4/IPv6 client pair;
+- an insecure-to-secure attempt fences new HTTPS work before constructing the
+  candidate, construction failure never falls back, and HTTP/UDP, schedules,
+  DHT, listeners, peers, and torrent generations remain live;
+- each operation captures one `Arc` and one policy. A controlled old disabled
+  operation completed after a secure replacement while new work was rejected
+  by platform trust, and the retired pair dropped when that operation ended;
+- tracker rows now carry `unencrypted`, `encrypted_system_trust`, or
+  `encrypted_unauthenticated` from operation state. The settings view
+  independently reports configured, optional effective, and
+  applying/applied/degraded truth;
+- every effective transition to `disabled` emits one bounded structured
+  warning without a URL or credentials. Ordinary React settings preserve the
+  hidden value across draft refresh and visible-field saves; Compose exposes
+  no control; and
+- stable TLS failures are coarsened to `unknown_issuer`,
+  `expired_or_not_yet_valid`, `name_mismatch`, `invalid_server_purpose`,
+  `certificate_rejected`, `verifier_unavailable`, or `tls_protocol` without
+  retaining native exception text or URL material.
+
+Deterministic generated-certificate tests accept valid DNS and IP SAN chains
+and reject unknown issuer, expired and not-yet-valid leaves, wrong DNS and IP
+names, a missing intermediate, and invalid server purpose before HTTP. They
+also cover every permitted redirect direction, rejection of HTTPS downgrade,
+same-origin credential retention, cross-origin stripping, disabled-policy
+compatibility, timeout/cancellation, same-value retry, stale reconciliation,
+and operation-captured security projection. Thirty-two consecutive scripted
+secure-construction failures followed by recoveries retained command-queue and
+tracker-operation high water `1`; shutdown reported zero tasks,
+registrations, and tracker operations. Steady state retains one pair/two
+clients. The in-flight generation test reaches two pairs/four clients and
+releases the retired pair; the existing eight-operation ceiling continues to
+bound the declared worst case of nine pairs/eighteen clients.
+
+Controlled interoperability uses independently generated certificates and a
+feature-gated root seam that is absent from ordinary product builds. One
+authenticated HTTPS tracker introduced the real application/session path to
+pinned libtorrent `2.0.13.0`; RSTorrent acquired and verified metadata and
+the exact payload and the tracker observed `started`, `completed`, and
+`stopped`. The same harness passed plaintext HTTP and explicitly disabled
+HTTPS, each with the same three lifecycle requests and exact content. Their
+reported security values were respectively `unencrypted`,
+`encrypted_system_trust`, and `encrypted_unauthenticated`.
+
+Runtime platform evidence passed on:
+
+- macOS 26.5.2 arm64: controlled rejection occurred before HTTP; a
+  credential-free request to `https://torrent.ubuntu.com/announce` passed
+  platform chain/name validation;
+- Windows 11 Pro ARM64 build `10.0.26200.0`: the conservative category test,
+  controlled rejection, and a public trusted-origin request passed using the
+  Windows verifier backend; and
+- Ubuntu 24.04.4 ARM64: the same three tests passed using the discovered
+  system bundle and WebPKI verifier.
+
+The macOS no-window Tauri product built successfully after the production web
+build and CSP scan. The Windows testbed needed its normal LLVM/Clang build
+prerequisite for `ring`; that is a test-machine toolchain fact, not a product
+TLS dependency. Linux verifier behavior remains the documented root-bundle
+snapshot without revocation checking.
+
+The Android application packages the Cargo-lock-matched
+`rustls-platform-verifier-android` `0.1.1` AAR from its on-disk Maven
+repository. Both established ABIs cross-built, JVM tests passed, APK
+inspection found the verifier classes and native libraries, and a no-window
+API 34 arm64 AVD initialized the verifier once before either service could
+construct network owners. The ordinary product path produced these results:
+
+- the controlled untrusted/wrong-name tracker was rejected before HTTP with
+  zero tracker requests and an `encrypted_system_trust` row;
+- `https://example.com/announce` passed platform chain/name validation and
+  reached the expected HTTP 404;
+- the credential-free Ubuntu tracker attempt retained
+  `encrypted_system_trust` but failed with the conservative
+  `certificate_rejected` category on this AVD. This is recorded as a current
+  emulator/platform observation, not a reliability or public-tracker success
+  claim; and
+- explicit disabled mode let the controlled HTTPS tracker introduce the
+  product to pinned libtorrent for an exact SAF-backed transfer, truthfully
+  projected `encrypted_unauthenticated`, and observed one tracker request.
+
+That Android transfer retained storage-handle high water `6`, pending-request
+high water `3`, and configured handle limit `40`; process descriptors were
+baseline `113`, high water `140`, and final `140`. The harness removed its SAF
+tree, managed artifacts, reverse transports, certificate directory, and AVD
+process state. The metadata-only system-trust profiles created zero payload
+artifacts.
+
+Generated Rust, JSON Schema, TypeScript/validator, UniFFI, and Kotlin values
+agree on defaults and all closed enums. Workspace format, strict Clippy,
+tests, generated-artifact drift, web typecheck/tests/production build, Android
+Gradle tests/builds, Python syntax, controlled interop, dependency licenses,
+and `git diff --check` pass. The exact locked additions and already-present TLS
+stack are permissive: reqwest `0.13.4`, rcgen `0.14.8`, and both platform
+verifier crates are MIT or Apache-2.0; rustls `0.23.43` is Apache-2.0, ISC, or
+MIT. OpenSSL is used only by the external Python evidence harness to generate
+temporary certificates; RSTorrent's TLS runtime remains reqwest/rustls.
 
 ## Non-Goals And Deliberate Deferrals
 

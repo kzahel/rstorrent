@@ -17,11 +17,12 @@ supplies its actual selected or explicit outbound-only port, exact current
 counters, and completed/stopped lifecycle. Completed Tactical
 [`095`](../tactical/095-bounded-http-https-tracker-transport.md) now runs HTTP
 and encrypted-but-unauthenticated HTTPS through that same owner, including
-IPv4/IPv6 tracker connectivity and IPv6 peer discovery. Authenticated HTTPS
-certificate and hostname validation remains the next security boundary.
-Planned Tactical
-[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) owns that
-boundary now that completed Tactical `097` has landed live settings and the
+IPv4/IPv6 tracker connectivity and IPv6 peer discovery. Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) now
+defaults HTTPS trackers to certificate-chain and requested-name validation
+through desktop and Android platform trust. One persisted hidden `disabled`
+compatibility policy remains explicitly encrypted but unauthenticated; live
+changes replace the one bounded family client pair through Tactical `097`'s
 stable session-network machinery.
 
 ## Scope
@@ -308,6 +309,38 @@ inactive with two attempts, and retained IPv4 as the actual last successful
 connection family. Controlled UDP and AAAA-only HTTP tests independently prove
 IPv4/IPv6 family reporting without retaining a tracker or peer address.
 
+Tactical `098` removes the temporary unauthenticated default without changing
+the tracker schedule or operation ceiling. Schema version 12 persists
+`system_trust` or explicit `disabled`; fresh and migrated profiles select the
+secure value. One session reconciler atomically replaces the current
+IPv4/IPv6 reqwest pair, fences new insecure work while a secure candidate is
+built, retains old pairs only for captured in-flight operations, and never
+falls back on verifier construction failure. Thirty-two scripted failures and
+recoveries retained command-queue and tracker-operation high water `1` and
+terminal zero ownership. A crossing operation proved its captured disabled
+pair could finish while new work used and was rejected by the secure pair,
+after which the retired pair dropped.
+
+Generated-certificate tests cover valid DNS/IP SANs plus unknown issuer,
+validity time, wrong DNS/IP name, missing intermediate, invalid purpose, and
+redirect-hop authentication. A controlled authenticated HTTPS tracker then
+introduced the application to pinned libtorrent `2.0.13.0` for exact
+metadata, payload, and started/completed/stopped lifecycle; HTTP and explicit
+disabled-HTTPS profiles passed the same exact-content gate. macOS 26.5.2,
+Windows 11 Pro ARM64, and Ubuntu 24.04.4 ARM64 each accepted a public trusted
+origin and rejected the controlled invalid certificate before HTTP. The
+macOS credential-free Ubuntu tracker request also passed platform trust.
+
+An API 34 arm64 AVD packaged and initialized the version-matched verifier,
+rejected the controlled invalid tracker with zero HTTP requests, and accepted
+`example.com` through its HTTP 404. Its credential-free Ubuntu tracker attempt
+failed with conservative `certificate_rejected`; that is a current AVD
+observation rather than a public reliability claim. Explicit disabled mode
+completed the controlled pinned-libtorrent SAF transfer and remained
+`encrypted_unauthenticated`. Tracker rows otherwise report
+`encrypted_system_trust` from the policy captured at operation start, whether
+the handshake succeeds or fails.
+
 ## Current Limits And Next Work
 
 The session owner remains volatile. Current transfer
@@ -316,20 +349,21 @@ lifetime accounting. Port mapping success remains distinct from observed
 incoming reachability, and the port-`1` tracker value remains an explicitly
 unconnectable compatibility sentinel rather than an endpoint.
 
-HTTPS server authentication, WebSocket transport, proxies, non-Basic
-authentication, BEP 41 URL data, scrape, and a public-tracker reliability claim
-remain absent. IPv6 tracker connectivity and outbound IPv6 peers are usable,
+WebSocket transport, proxies, non-Basic authentication, BEP 41 URL data,
+scrape, custom roots/pins, client certificates, and a public-tracker
+reliability claim remain absent. IPv6 tracker connectivity and outbound IPv6
+peers are usable,
 but the listener, mapping, and advertised reachable endpoint remain IPv4-only;
 full BEP 7 multi-address announcing is therefore absent. The headless public-
 torrent comparator remains useful changing-network evidence but cannot
 replace controlled protocol and libtorrent tests.
 
 Metadata-only tracker activation now follows the owned metadata task rather
-than content-running intent, including bounded terminal deactivation. The next
-tracker security boundary remains certificate and hostname validation across
-desktop and Android platform trust. A public IPv6-family announce remains
-useful supporting evidence when a native routed host is available, but the
-controlled AAAA-only path remains the support gate.
+than content-running intent, including bounded terminal deactivation. A
+public IPv6-family announce remains useful supporting evidence when a native
+routed host is available, but the controlled AAAA-only path remains the
+support gate. Web-seed authentication must reuse the policy enum only through
+its own separately persisted field and transport owner.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its
@@ -338,8 +372,8 @@ grouping and metainfo source, and now feeds every operational UDP/HTTP/HTTPS
 row into the shared schedule. The bounded paged view projects ordinary
 lifecycle plus plaintext or encrypted-unauthenticated security. The full
 catalog has no 32-record ceiling, while at most eight tracker operations run
-concurrently across every transport. Other tracker wire protocols and
-authenticated HTTPS remain outside this slice.
+concurrently across every transport. Other tracker wire protocols remain
+outside this slice.
 
 The controlled byte-intake proof uploads an exact 26,765-byte metainfo source
 whose 40,000-byte payload spans three pieces, observes the expected UDP

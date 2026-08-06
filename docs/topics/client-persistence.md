@@ -46,6 +46,13 @@ keeps schema version 11 and the atomic singleton authority, commits durable
 intent before asynchronous live convergence, and accepts the same mutation
 for an ephemeral profile's in-memory lifetime. Effective state and mapping
 cleanup remain non-durable runtime facts.
+Completed Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) advances
+that singleton to schema version 12 with a closed tracker HTTPS server-
+authentication policy. Fresh and every migrated profile default to
+`system_trust`; explicit `disabled` survives reopen, no-op, replay, and
+ordinary hidden-field saves; malformed durable values fail closed. Effective
+policy and TLS outcomes remain runtime facts.
 
 ## Scope
 
@@ -674,6 +681,15 @@ disabled-or-UPnP intent to the same atomic group. Version-9 and older profiles
 migrate to mapping disabled. Constraint, corrupt-row, no-op, replay, restart,
 generated-contract, and browser-setting evidence pass; observed endpoints,
 leases, gateway state, and diagnostics remain deliberately ephemeral.
+
+[`../tactical/098-authenticated-https-tracker-platform-trust.md`](../tactical/098-authenticated-https-tracker-platform-trust.md)
+adds schema version `12` without a second settings table or command. Migration
+from all prior schemas inserts `system_trust`; SQLite constraints and typed
+decode reject unknown values; the complete-group transaction retains
+revision, receipt, conflict, rollback, durable reopen, and ephemeral-lifetime
+semantics. A generated typed consumer can select `disabled`, while the
+ordinary React settings draft preserves that hidden authoritative field when
+saving visible connection or seeding values.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

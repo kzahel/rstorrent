@@ -161,14 +161,16 @@ stable incoming, UDP/DHT, discovery, advertised-endpoint, admission,
 scheduling, and accounting state around replaceable transport and
 reachability generations. `ApplicationService` still owns persistence,
 storage roots, torrent runtimes, commands, and views. This is the right
-boundary; the new 1,344-line owner should settle before any size-driven split.
+boundary; the now 1,453-line owner should settle before any size-driven split.
 
-Planned Tactical
+Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) has a
-known insertion point in that session-network owner and the existing focused
-HTTP-tracker runtime. Its bounded same-boundary changes should land before
-reassessing either module. It does not justify a TLS framework, generic
-settings callback system, or new crate.
+settled its known insertion point in that session-network owner and the
+existing focused HTTP-tracker runtime. The session owner submits one added
+domain through its existing reconciler; the engine advertisement owner
+replaces one passive client pair; and Android owns its process bootstrap. No
+TLS framework, generic settings callback system, extra task, or new crate was
+needed.
 
 ## Source-Organization Guidance
 
@@ -222,7 +224,7 @@ substantial new ownership.
 | `SwarmState` | about 3,025 | about 1,527 | 7 | Larger after availability-ranked activation, but `piece_picker` already owns the independently changing activation policy. Retain the remaining deterministic transition owner until another policy separates. |
 | Session view subsystem | 6,362 across the facade and seven child owners | 2,094 across six child files | 8 on `hub.rs` | The Tactical `080` shape remains healthy: one-way dependencies, one coordinator, independent delivery owners, and categorized tests. |
 | `ApplicationService` | about 4,124 | about 5,020 inline | 45 | Strongest current convergence and navigation pressure. The lifecycle owner is legitimate, but callback adapters and several unrelated fixture families have concrete private seams. |
-| `SessionNetworkRuntime` | 1,344 | application-level fixtures live in `application.rs` | 2 as a new file | Newly cohesive owner from Tactical `097`. Let Tactical `098` exercise its intended insertion point before reassessment. |
+| `SessionNetworkRuntime` | 1,453 | application-level fixtures live in `application.rs` | 3 as a new file | Tactical `098` added one settings domain without a second task or channel. It remains a cohesive session-network lifetime owner; size alone does not justify a split. |
 | `SessionStore` | about 4,238 | about 2,388 | 23 | Strong current persistence candidate. One connection owner now contains a long schema/migration chain plus several independently changing mutation and row-decoding families. |
 | Session gateway HTTP plus application WebSocket | about 2,900 across two owners | about 1,924 | 12 on `lib.rs`, 6 on the WebSocket owner | Existing transport split is useful. Metrics, registry, connection pump, attachment, and writer are visible, but current churn does not yet justify another split. |
 | Web `LiveApplication` | 1,455 | 998 in its test file | 13 | The class owns connection/view intent through line 592; the remaining mapping and transition functions form a clear pure boundary. |
@@ -407,9 +409,10 @@ The Android application still lives under
 `experiments/android-engine-bootstrap`. The 793-line legacy `EngineService`
 has no touches in the current 200-commit window, while the 680-line
 `ProductEngineService` is the active Compose/application path; both remain in
-the manifest, and `MainActivity` can still invoke both. Planned Tactical `098`
-must initialize platform trust before either service constructs native
-network owners, which preserves rather than resolves this dual path.
+the manifest, and `MainActivity` can still invoke both. Tactical `098` now
+initializes platform trust through a 40-line application bootstrap before
+either service constructs native network owners, preserving rather than
+resolving this dual path.
 
 Graduation is a product/repository decision, not a response to Kotlin file
 size. It needs its own tactical after the durable Android location is
@@ -420,9 +423,9 @@ mix that decision into an engine, TLS, or storage refactor.
 ## Watch List And Deliberate Non-Work
 
 - **Session network:** Tactical `097` created one cohesive runtime owner, and
-  planned Tactical `098` has an explicit insertion point there. Do not split
-  transport, mapping, DHT, discovery, and settings reconciliation merely
-  because the new file exceeds the review prompt.
+  Tactical `098` reused its reconciler for the tracker trust domain. Do not
+  split transport, mapping, DHT, discovery, and settings reconciliation merely
+  because the file exceeds the review prompt.
 - **Swarm state:** its scheduling, request generations, piece bookkeeping, and
   storage completion remain one deterministic invariant set after the
   independently changing activation policy moved to `piece_picker`. Consider
@@ -445,10 +448,11 @@ mix that decision into an engine, TLS, or storage refactor.
 
 ## Near-Term Recommendation
 
-Do not open a repository-wide umbrella refactor. The authoritative capability
-queue currently points to planned Tactical `098`; allow the focused
-same-boundary refactoring that security feature requires and then refresh the
-new session-network and HTTP-tracker owners from landed evidence.
+Do not open a repository-wide umbrella refactor. Tactical `098` exercised the
+new session-network and HTTP-tracker owners without exposing another
+lifecycle or dependency seam. The strongest repository-wide story therefore
+remains the application callback/test topology rather than a TLS- or
+session-network-driven split.
 
 If a standalone structural tactical is selected instead, the strongest
 repository-wide story is the application callback/test-topology slice. If the
@@ -478,6 +482,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-06:** Completed Tactical `098`. The existing session reconciler
+  gained one tracker-authentication domain; the engine advertisement owner
+  retained one replaceable passive client pair; and the Android adapter gained
+  one process bootstrap. In-flight operations retain old pairs through `Arc`
+  ownership without a generation task or cache. No generic TLS abstraction,
+  callback registry, separate settings owner, or crate split was justified.
 - **2026-08-06:** Refreshed the repository snapshot at `6ffaeff`, 101 commits
   after the prior baseline. Sustained application and persistence growth moves
   the application callback/test topology and session-store schema boundary

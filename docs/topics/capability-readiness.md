@@ -161,32 +161,43 @@ session-wide eight-operation ceiling. Bounded HTTP/1.1, gzip, redirects,
 Basic authentication, compact/noncompact IPv4/IPv6 peers, AAAA-only tracker
 connectivity, only-`peers6` outbound transfer, controlled libtorrent
 introduction, and Android HTTPS product evidence pass. HTTPS is deliberately
-encrypted but unauthenticated; certificate and hostname validation is the
-next security boundary. An opt-in official Ubuntu smoke also reached both
-HTTPS rows and verified metadata. Tactical `096` repairs the metadata-only
-activation gap exposed by that first smoke; its repeat reached both HTTPS
-rows, verified metadata with no payload artifacts, and projected each actual
-last-successful connection family.
+encrypted but unauthenticated at that historical checkpoint. An opt-in
+official Ubuntu smoke also reached both HTTPS rows and verified metadata.
+Tactical `096` repairs the metadata-only activation gap exposed by that first
+smoke; its repeat reached both HTTPS rows, verified metadata with no payload
+artifacts, and projected each actual last-successful connection family.
+
+Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) is
+complete. Schema version 12 defaults every profile to desktop or Android
+platform trust, retains one hidden explicit compatibility value, and applies
+it live through the existing session reconciler and bounded family client
+pair. Generated certificate/name failures, construction fencing, captured
+in-flight generations, redacted categories, cross-platform runtimes, Android
+packaging/product behavior, and authenticated HTTPS tracker introduction to
+pinned libtorrent all pass. The current AVD rejected the credential-free
+Ubuntu tracker certificate while accepting another public trusted origin, so
+that observation does not become a public-tracker reliability claim.
 
 ## Current Queue
 
 ### Now
 
 **Tactical
-[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-is complete.** One stable session-network owner applies all five persisted
-client settings live through bounded desired/effective convergence. Controlled
-incoming and outgoing transfers, DHT identity, discovery registration, upload
-state, and counters survive coordinated transport handover; failed candidates
-retain old effective state, and all platform/build gates pass.
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) is
+complete.** HTTPS trackers now default to platform certificate-chain and
+requested-name validation on every shipping platform. One hidden typed
+compatibility override remains encrypted but unauthenticated; live replacement
+does not restart discovery or torrents; and deterministic, pinned-libtorrent,
+desktop, Android, product, and terminal-resource gates pass.
 
 ### Next
 
 - Execute planned Tactical
-  [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) to add
-  default authenticated tracker HTTPS through desktop and Android platform
-  trust, one hidden compatibility policy, and explicit failure/projection
-  evidence before making a secure-HTTPS claim.
+  [`099`](../tactical/099-decimal-and-binary-display-units.md) as the next
+  independent product slice: make Decimal the browser-local default, preserve
+  Binary as a typed appearance choice, and leave engine/application byte
+  values and exact technical IEC text unchanged.
 - Add PCP and NAT-PMP only with their own bounded tactical and suitable
   controlled or physical gateway evidence; pinned source inspection is not a
   support claim.
@@ -237,7 +248,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling shared with HTTP/HTTPS. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. | [`tracker-discovery`](tracker-discovery.md) |
-| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, AVD, live | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, last-successful connection-family projection, controlled libtorrent discovery, and official Ubuntu HTTPS metadata smokes pass. HTTPS encrypts transport but deliberately does not validate certificates or hostnames; proxies, scrape, other authentication, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
+| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, last-successful connection-family projection, controlled libtorrent discovery, and official Ubuntu HTTPS metadata smokes pass. HTTPS defaults to desktop/Android platform chain and requested-name validation; one hidden typed compatibility value is explicitly encrypted but unauthenticated. Controlled authenticated tracker-to-libtorrent transfer and macOS/Windows/Linux/AVD trust evidence pass. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on peer-ID duplicate resolution, truthful advertisement, bounded extension dispatch, and hostile-source controls recorded in planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
