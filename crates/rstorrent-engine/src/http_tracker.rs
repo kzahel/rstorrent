@@ -2115,6 +2115,31 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "opt-in public platform-trust smoke; set RSTORRENT_PLATFORM_TRUST_URL"]
+    async fn runtime_system_trust_accepts_public_origin() {
+        let raw_url = std::env::var("RSTORRENT_PLATFORM_TRUST_URL")
+            .expect("RSTORRENT_PLATFORM_TRUST_URL is required");
+        let url = url::Url::parse(&raw_url).expect("public platform-trust URL");
+        assert_eq!(url.scheme(), "https", "the smoke requires HTTPS");
+        assert!(
+            url.username().is_empty() && url.password().is_none(),
+            "the smoke must not use credentials"
+        );
+        let clients = HttpTrackerClients::new_with_authentication(
+            NetworkPolicy::Online,
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("system-trust HTTP clients");
+
+        clients
+            .get(AddressFamily::Ipv4)
+            .get(url)
+            .send()
+            .await
+            .expect("platform trust accepts the public chain and requested name");
+    }
+
+    #[tokio::test]
     async fn runtime_system_trust_accepts_valid_dns_and_ip_chains() {
         for case in [GeneratedTlsCase::ValidDns, GeneratedTlsCase::ValidIp] {
             let (response, server) =
