@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import gc
+import os
 import shutil
 import socket
 import ssl
@@ -49,6 +50,7 @@ class ControlledHttpTracker:
         *,
         https: bool = False,
         certificate_root: Path | None = None,
+        trusted_chain: bool = False,
     ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
@@ -56,6 +58,7 @@ class ControlledHttpTracker:
         self.events: list[str] = []
         self.requests: list[str] = []
         self.failure: BaseException | None = None
+        self.root_certificate: Path | None = None
         self.changed = threading.Condition()
         tracker = self
 
@@ -82,33 +85,106 @@ class ControlledHttpTracker:
             certificate_root.mkdir(parents=True, exist_ok=True)
             certificate = certificate_root / "controlled-tracker-cert.pem"
             private_key = certificate_root / "controlled-tracker-key.pem"
-            generated = subprocess.run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-keyout",
-                    str(private_key),
-                    "-out",
-                    str(certificate),
-                    "-days",
-                    "1",
-                    "-nodes",
-                    "-subj",
-                    "/CN=wrong.example",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                check=False,
-            )
-            if generated.returncode != 0:
-                raise ScenarioFailure(
-                    "could not create controlled untrusted certificate\n"
-                    f"stdout:\n{generated.stdout}\nstderr:\n{generated.stderr}"
+            commands: list[list[str]]
+            if trusted_chain:
+                root_certificate = certificate_root / "controlled-root-cert.pem"
+                root_key = certificate_root / "controlled-root-key.pem"
+                request = certificate_root / "controlled-tracker.csr"
+                commands = [
+                    [
+                        "openssl",
+                        "req",
+                        "-x509",
+                        "-newkey",
+                        "rsa:2048",
+                        "-keyout",
+                        str(root_key),
+                        "-out",
+                        str(root_certificate),
+                        "-days",
+                        "1",
+                        "-nodes",
+                        "-subj",
+                        "/CN=RSTorrent controlled tracker root",
+                        "-addext",
+                        "basicConstraints=critical,CA:TRUE",
+                        "-addext",
+                        "keyUsage=critical,keyCertSign,cRLSign",
+                    ],
+                    [
+                        "openssl",
+                        "req",
+                        "-new",
+                        "-newkey",
+                        "rsa:2048",
+                        "-keyout",
+                        str(private_key),
+                        "-out",
+                        str(request),
+                        "-nodes",
+                        "-subj",
+                        "/CN=127.0.0.1",
+                        "-addext",
+                        "subjectAltName=IP:127.0.0.1",
+                        "-addext",
+                        "extendedKeyUsage=serverAuth",
+                        "-addext",
+                        "keyUsage=digitalSignature,keyEncipherment",
+                        "-addext",
+                        "basicConstraints=critical,CA:FALSE",
+                    ],
+                    [
+                        "openssl",
+                        "x509",
+                        "-req",
+                        "-in",
+                        str(request),
+                        "-CA",
+                        str(root_certificate),
+                        "-CAkey",
+                        str(root_key),
+                        "-CAcreateserial",
+                        "-out",
+                        str(certificate),
+                        "-days",
+                        "1",
+                        "-copy_extensions",
+                        "copy",
+                    ],
+                ]
+                self.root_certificate = root_certificate
+            else:
+                commands = [
+                    [
+                        "openssl",
+                        "req",
+                        "-x509",
+                        "-newkey",
+                        "rsa:2048",
+                        "-keyout",
+                        str(private_key),
+                        "-out",
+                        str(certificate),
+                        "-days",
+                        "1",
+                        "-nodes",
+                        "-subj",
+                        "/CN=wrong.example",
+                    ]
+                ]
+            for command in commands:
+                generated = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
                 )
+                if generated.returncode != 0:
+                    raise ScenarioFailure(
+                        "could not create controlled TLS certificate\n"
+                        f"stdout:\n{generated.stdout}\nstderr:\n{generated.stderr}"
+                    )
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(certificate, private_key)
             self.server.socket = context.wrap_socket(
@@ -332,6 +408,90 @@ def run(binary: Path, root: Path, *, https: bool) -> dict[str, Any]:
         gc.collect()
 
 
+def run_authenticated(repository: Path, root: Path) -> dict[str, Any]:
+    fixture = create_fixture(root)
+    diagnostics: list[str] = []
+    session = create_session()
+    handle: lt.torrent_handle | None = None
+    tracker: ControlledHttpTracker | None = None
+    try:
+        peer_port = wait_for_listener(session, diagnostics)
+        handle = add_seed(
+            session,
+            fixture.torrent_info,
+            fixture.seed_directory,
+            diagnostics,
+        )
+        tracker = ControlledHttpTracker(
+            fixture.info_hash,
+            peer_port,
+            https=True,
+            certificate_root=root / "tls",
+            trusted_chain=True,
+        )
+        tracker.start()
+        if tracker.root_certificate is None:
+            raise ScenarioFailure("controlled trusted root is unavailable")
+        application_root = root / "application"
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RSTORRENT_INTEROP_TRACKER_URL": tracker.url,
+                "RSTORRENT_INTEROP_INFO_HASH": fixture.info_hash,
+                "RSTORRENT_INTEROP_ROOT_PEM": str(tracker.root_certificate),
+                "RSTORRENT_INTEROP_APPLICATION_ROOT": str(application_root),
+            }
+        )
+        completed = subprocess.run(
+            [
+                "cargo",
+                "test",
+                "-p",
+                "rstorrent-session",
+                "application::tests::authenticated_https_tracker_introduces_pinned_libtorrent_peer",
+                "--",
+                "--ignored",
+                "--exact",
+            ],
+            cwd=repository,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise ScenarioFailure(
+                "authenticated HTTPS application interoperability failed\n"
+                f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+            )
+        tracker.wait_for_event("started")
+        tracker.wait_for_event("completed")
+        tracker.wait_for_event("stopped")
+        output = application_root / "payload" / "magnet-fixture" / "payload.bin"
+        payload_hash = compare_payloads(fixture.payload_path, output)
+        if payload_hash != fixture.payload_hash:
+            raise ScenarioFailure("authenticated HTTPS payload differs from libtorrent seed")
+        return {
+            "info_hash": fixture.info_hash,
+            "payload_sha1": payload_hash,
+            "events": list(tracker.events),
+            "requests": len(tracker.requests),
+            "libtorrent_binding": lt.__version__,
+            "libtorrent_native": lt.version,
+            "security": "encrypted_system_trust",
+        }
+    finally:
+        if tracker is not None:
+            tracker.close()
+        if handle is not None and handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        handle = None
+        session = None
+        gc.collect()
+
+
 def main() -> int:
     if len(sys.argv) != 1:
         raise ScenarioFailure("this controlled gate accepts no arguments")
@@ -342,6 +502,10 @@ def main() -> int:
         results = {
             "http": run(binary, root / "http", https=False),
             "https_disabled": run(binary, root / "https-disabled", https=True),
+            "https_system_trust": run_authenticated(
+                repository,
+                root / "https-system-trust",
+            ),
         }
         for profile, result in results.items():
             print(f"profile={profile}")
@@ -354,7 +518,7 @@ def main() -> int:
             print(
                 f"tracker_requests={result['requests']} "
                 f"tracker_events={','.join(result['events'])} "
-                f"revision={result['revision']}"
+                f"revision={result.get('revision', 'test-harness')}"
             )
         return 0
     finally:

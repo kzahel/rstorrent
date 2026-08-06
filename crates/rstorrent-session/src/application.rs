@@ -5084,6 +5084,85 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "opt-in pinned-libtorrent HTTPS interoperability harness"]
+    async fn authenticated_https_tracker_introduces_pinned_libtorrent_peer() {
+        let tracker_url = std::env::var("RSTORRENT_INTEROP_TRACKER_URL")
+            .expect("RSTORRENT_INTEROP_TRACKER_URL is required");
+        assert!(tracker_url.starts_with("https://127.0.0.1:"));
+        let torrent_id = std::env::var("RSTORRENT_INTEROP_INFO_HASH")
+            .expect("RSTORRENT_INTEROP_INFO_HASH is required");
+        assert_eq!(torrent_id.len(), 40);
+        assert!(torrent_id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        let root_pem = fs::read(
+            std::env::var("RSTORRENT_INTEROP_ROOT_PEM")
+                .expect("RSTORRENT_INTEROP_ROOT_PEM is required"),
+        )
+        .expect("read controlled root certificate");
+        rstorrent_engine::install_test_platform_root(&root_pem)
+            .expect("install one test-only platform root");
+        let root = PathBuf::from(
+            std::env::var("RSTORRENT_INTEROP_APPLICATION_ROOT")
+                .expect("RSTORRENT_INTEROP_APPLICATION_ROOT is required"),
+        );
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open controlled application");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "authenticated-https-interop-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{torrent_id}&tr={}",
+                        percent_encode_magnet_value(&tracker_url)
+                    ),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add authenticated HTTPS tracker magnet");
+
+        let snapshot = tokio::time::timeout(Duration::from_secs(45), async {
+            for sequence in 0_u64.. {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("authenticated-https-interop-snapshot-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("snapshot authenticated transfer");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("snapshot should succeed");
+                };
+                if snapshot.torrents[0].state == TorrentState::Complete {
+                    return snapshot;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            unreachable!()
+        })
+        .await
+        .expect("authenticated transfer deadline");
+        assert!(snapshot.torrents[0].metadata_available);
+        assert!(snapshot.torrents[0].verified_piece_count > 0);
+        let trackers = torrent_tracker_views(&service, &torrent_id).await;
+        assert_eq!(trackers.len(), 1);
+        assert_eq!(
+            trackers[0].security,
+            TrackerSecurityView::EncryptedSystemTrust
+        );
+        assert_eq!(trackers[0].last_peer_count, Some(1));
+        assert_eq!(trackers[0].last_error, None);
+
+        service.shutdown().await.expect("shutdown application");
+    }
+
+    #[tokio::test]
     async fn metadata_only_add_activates_tracker_until_metadata_is_verified() {
         let root = test_root("metadata-only-tracker");
         let raw_info = multi_file_info();

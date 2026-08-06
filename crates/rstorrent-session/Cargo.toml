@@ -26,4 +26,5 @@ uniffi = { version = "=0.31.0", default-features = false, optional = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
+rstorrent-engine = { path = "../rstorrent-engine", features = ["test-platform-root"] }
 tokio-rustls = "0.26.4"

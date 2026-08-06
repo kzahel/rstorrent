@@ -34,6 +34,9 @@ pub(crate) const HTTP_TRACKER_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const DEFAULT_HTTP_TRACKER_INTERVAL: Duration = Duration::from_secs(30 * 60);
 pub(crate) const MAX_HTTP_TRACKER_RETRY: Duration = Duration::from_secs(24 * 60 * 60);
 
+#[cfg(feature = "test-platform-root")]
+static TEST_PLATFORM_ROOT: std::sync::OnceLock<reqwest::Certificate> = std::sync::OnceLock::new();
+
 const TRACKER_BENCODE_LIMITS: Limits = Limits {
     max_input_length: MAX_HTTP_TRACKER_BODY_LENGTH,
     max_string_length: MAX_HTTP_TRACKER_BODY_LENGTH,
@@ -326,12 +329,29 @@ fn configured_client_builder(
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("RSTorrent/0.1")
         .dns_resolver(TrackerResolver { policy, family });
-    match https_authentication {
+    let builder = match https_authentication {
         TrackerHttpsAuthentication::SystemTrust => builder,
         TrackerHttpsAuthentication::Disabled => builder
             .tls_danger_accept_invalid_certs(true)
             .tls_danger_accept_invalid_hostnames(true),
+    };
+    #[cfg(feature = "test-platform-root")]
+    if https_authentication == TrackerHttpsAuthentication::SystemTrust
+        && let Some(root) = TEST_PLATFORM_ROOT.get()
+    {
+        return builder.tls_certs_merge([root.clone()]);
     }
+    builder
+}
+
+#[cfg(feature = "test-platform-root")]
+#[doc(hidden)]
+pub fn install_test_platform_root(pem: &[u8]) -> Result<(), String> {
+    let root = reqwest::Certificate::from_pem(pem)
+        .map_err(|_| "test platform root is not a PEM certificate".to_owned())?;
+    TEST_PLATFORM_ROOT
+        .set(root)
+        .map_err(|_| "test platform root is already installed".to_owned())
 }
 
 pub(crate) async fn announce_http_tracker(

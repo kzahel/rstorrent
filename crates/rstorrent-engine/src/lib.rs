@@ -53,6 +53,9 @@ pub use driver::{
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
     resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };
+#[cfg(feature = "test-platform-root")]
+#[doc(hidden)]
+pub use http_tracker::install_test_platform_root;
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
