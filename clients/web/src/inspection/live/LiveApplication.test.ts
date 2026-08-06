@@ -491,6 +491,7 @@ describe("LiveApplication", () => {
     expect(tracker).toMatchObject({
       torrentId: TORRENT_ID,
       status: "retry_wait",
+      lastConnectionFamily: "ipv4",
       lastPeerCount: 12,
       seeders: 7,
       leechers: 5,
@@ -705,6 +706,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
               announce_event: null,
               total_attempts: 2,
               consecutive_failures: 1,
+              last_connection_family: "ipv4",
               last_peer_count: 12,
               seeders: 7,
               leechers: 5,

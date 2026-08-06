@@ -62,6 +62,7 @@ describe("DemoApplication", () => {
       ];
     expect(recoveredTracker).toMatchObject({
       status: "reannounce_wait",
+      lastConnectionFamily: "ipv4",
       lastPeerCount: 42,
       seeders: 31,
       leechers: 11,

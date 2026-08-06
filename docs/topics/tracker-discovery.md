@@ -19,6 +19,10 @@ counters, and completed/stopped lifecycle. Completed Tactical
 and encrypted-but-unauthenticated HTTPS through that same owner, including
 IPv4/IPv6 tracker connectivity and IPv6 peer discovery. Authenticated HTTPS
 certificate and hostname validation remains the next security boundary.
+Planned Tactical
+[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) owns that
+boundary after Tactical `097` lands its live settings and session-network
+machinery.
 
 ## Scope
 
@@ -292,10 +296,17 @@ live-server torrent reached both retained HTTPS tracker rows once, received a
 peer from each, and hash-verified metadata in 34.334 seconds before pause and
 cleanup. Ubuntu's IPv6-named tracker was dual-stack at the time, so this is
 public HTTPS application evidence rather than a routed-IPv6 proof. A preceding
-180-second metadata-only add left both rows inactive with zero attempts: the
-external metadata owner was running while tracker registration inherited the
-false content-running intent. This is a live application lifecycle defect,
-not a tracker-transport failure.
+180-second metadata-only add left both rows inactive with zero attempts and
+exposed a discovery-activation defect outside the tracker transport.
+
+Tactical `096` repaired that lifecycle by activating the same session-owned
+discovery registration while the application actually owns a metadata task,
+then restoring durable paused intent after its terminal path. The repeated
+metadata-only Ubuntu run verified metadata in 150.736 seconds with zero
+payload files. Both HTTPS rows completed started and stopped announces, ended
+inactive with two attempts, and retained IPv4 as the actual last successful
+connection family. Controlled UDP and AAAA-only HTTP tests independently prove
+IPv4/IPv6 family reporting without retaining a tracker or peer address.
 
 ## Current Limits And Next Work
 
@@ -313,11 +324,12 @@ full BEP 7 multi-address announcing is therefore absent. The headless public-
 torrent comparator remains useful changing-network evidence but cannot
 replace controlled protocol and libtorrent tests.
 
-Fresh metadata-only magnets do not currently activate session-owned tracker
-rows when content-running intent is false. The next bounded lifecycle repair
-must separate metadata discovery intent from content transfer intent, retain
-pause/remove/shutdown ownership, and prove the tracker-only metadata path
-before repeating the Ubuntu smoke.
+Metadata-only tracker activation now follows the owned metadata task rather
+than content-running intent, including bounded terminal deactivation. The next
+tracker security boundary remains certificate and hostname validation across
+desktop and Android platform trust. A public IPv6-family announce remains
+useful supporting evidence when a native routed host is available, but the
+controlled AAAA-only path remains the support gate.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its

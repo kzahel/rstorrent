@@ -47,6 +47,14 @@ IPv4 endpoint, while every IPv6 tracker request uses port `1`. Returned
 `peers6` can drive outbound IPv6 TCP transfers, but no IPv6 listener,
 reachable endpoint, mapping, or full BEP 7 support is implied.
 
+Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+records the accepted next lifetime boundary: all five existing client settings
+will reconcile without restart through stable incoming, DHT, discovery, and
+accounting owners around replaceable TCP/UDP/reachability generations. No live
+settings behavior has landed yet, so the current truth below remains
+restart-applied until that tactical completes.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
@@ -645,8 +653,6 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - whether automatic port fallback is ever allowed after a fixed bind fails;
 - whether the temporary rule that a desired-running complete torrent seeds
   automatically should become a distinct durable seeding intent;
-- whether a later slice should make listener, connection-limit, or upload-slot
-  changes live, including the required rebind, eviction, and regrant behavior;
 - when ratio and elapsed-time goals become product settings;
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
@@ -660,7 +666,11 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 
 Tactical `084` resolves the initial default, bounds, persistence authority,
 restart semantics, and corrupt-row behavior. External-port and
-multi-interface policy remain focused later slices.
+multi-interface policy remain focused later slices. Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+settles the live listener, mapping, connection-limit, and upload-slot direction
+with explicit rebind, eviction, regrant, desired/effective, and failure
+semantics; implementation evidence remains pending.
 
 ## Campaign Checkpoint And Next Action
 

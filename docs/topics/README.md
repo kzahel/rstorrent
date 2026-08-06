@@ -59,6 +59,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`performance-and-live-evidence.md`](performance-and-live-evidence.md):
   headless libtorrent comparison, public-smoke classification, performance
   measurement, and artifact-safety policy.
+- [`public-torrent-testing.md`](public-torrent-testing.md): dated official
+  public-torrent catalog, distinct protocol roles, refresh policy, and bounded
+  privacy-preserving live-run contract.
 - [`storage-throughput-architecture.md`](storage-throughput-architecture.md):
   proposed maximum-throughput receive-to-storage pipeline, positional I/O,
   write/hash joins, part-file coordination, batched durability, and

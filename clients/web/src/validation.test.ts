@@ -549,6 +549,7 @@ function trackerBatch() {
               announce_event: null,
               total_attempts: 1,
               consecutive_failures: 1,
+              last_connection_family: null,
               last_peer_count: null,
               seeders: null,
               leechers: null,

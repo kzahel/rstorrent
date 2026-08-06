@@ -29,10 +29,10 @@ use rstorrent_session::{
     SpeedSeriesView, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
     StorageState, SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
     SwarmPeerView, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
-    TrackerCatalogState, TrackerNextActionView, TrackerSecurityView, TrackerSourceView,
-    TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
+    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch,
+    UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -175,6 +175,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<TrackerCatalogState>(&mut declarations)?;
     append::<TrackerTransportView>(&mut declarations)?;
     append::<TrackerSecurityView>(&mut declarations)?;
+    append::<TrackerConnectionFamilyView>(&mut declarations)?;
     append::<TrackerSourceView>(&mut declarations)?;
     append::<TrackerStatusView>(&mut declarations)?;
     append::<TrackerAnnounceEventView>(&mut declarations)?;

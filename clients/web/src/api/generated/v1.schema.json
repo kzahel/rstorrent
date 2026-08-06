@@ -4300,6 +4300,13 @@
       ],
       "type": "string"
     },
+    "TrackerConnectionFamilyView": {
+      "enum": [
+        "ipv4",
+        "ipv6"
+      ],
+      "type": "string"
+    },
     "TrackerNextActionView": {
       "enum": [
         "announce",
@@ -4365,6 +4372,16 @@
           "type": [
             "integer",
             "null"
+          ]
+        },
+        "last_connection_family": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackerConnectionFamilyView"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "last_error": {

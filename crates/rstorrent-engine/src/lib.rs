@@ -113,9 +113,9 @@ pub use torrent_peer::{
     IncomingPeerAttachment, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
 };
 pub use tracker::{
-    TrackerAnnounceEvent, TrackerConfig, TrackerEndpoint, TrackerNextAction,
-    TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource,
-    TrackerTransport,
+    TrackerAnnounceEvent, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint,
+    TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot, TrackerRuntimeStatus,
+    TrackerSource, TrackerTransport,
 };
 pub use upload::{
     MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS, UploadAction, UploadCloseReason,

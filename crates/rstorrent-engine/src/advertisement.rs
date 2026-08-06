@@ -26,7 +26,8 @@ use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use crate::torrent_peer::TorrentPeerHandle;
 use crate::tracker::{
-    TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId, TrackerSchedule, TrackerWaitKind,
+    TrackerAcceptedOutcome, TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId,
+    TrackerSchedule, TrackerWaitKind,
 };
 
 pub const OUTBOUND_ONLY_TRACKER_PORT: u16 = 1;
@@ -437,6 +438,7 @@ struct TrackerAnnounceOutcome {
     interval: Duration,
     seeders: Option<u32>,
     leechers: Option<u32>,
+    connection_family: Option<crate::tracker::TrackerConnectionFamily>,
     peers: Vec<SocketAddr>,
     tracker_id: Option<Vec<u8>>,
     warnings: Vec<String>,
@@ -868,17 +870,21 @@ fn fill_tracker_operations(
                                             tracker_label: &tracker,
                                         },
                                     ) => response
-                                        .map(|response| TrackerAnnounceOutcome {
-                                            interval: Duration::from_secs(u64::from(response.interval)),
-                                            seeders: Some(response.seeders),
-                                            leechers: Some(response.leechers),
-                                            peers: response
-                                                .peers
-                                                .into_iter()
-                                                .map(compact_peer_address)
-                                                .collect(),
-                                            tracker_id: None,
-                                            warnings: Vec::new(),
+                                        .map(|result| {
+                                            let response = result.response;
+                                            TrackerAnnounceOutcome {
+                                                interval: Duration::from_secs(u64::from(response.interval)),
+                                                seeders: Some(response.seeders),
+                                                leechers: Some(response.leechers),
+                                                connection_family: Some(result.connection_family),
+                                                peers: response
+                                                    .peers
+                                                    .into_iter()
+                                                    .map(compact_peer_address)
+                                                    .collect(),
+                                                tracker_id: None,
+                                                warnings: Vec::new(),
+                                            }
                                         })
                                         .map_err(|error| {
                                             TrackerOperationFailure::Transport(error.to_string())
@@ -950,6 +956,7 @@ fn fill_tracker_operations(
                                             interval: success.interval,
                                             seeders: success.seeders,
                                             leechers: success.leechers,
+                                            connection_family: success.connection_family,
                                             peers: success
                                                 .peers
                                                 .into_iter()
@@ -1220,10 +1227,13 @@ fn apply_tracker_result(
             let success = entry.schedule.succeeded_outcome(
                 operation.id,
                 now,
-                response.interval,
-                peer_count,
-                response.seeders,
-                response.leechers,
+                TrackerAcceptedOutcome {
+                    requested_interval: response.interval,
+                    peer_count,
+                    seeders: response.seeders,
+                    leechers: response.leechers,
+                    connection_family: response.connection_family,
+                },
             );
             if let Some(tracker_id) = response.tracker_id {
                 entry.http_tracker_ids.insert(operation.id, tracker_id);

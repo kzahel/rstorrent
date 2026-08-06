@@ -289,6 +289,7 @@ export interface TrackerRow {
   readonly announceEvent: "started" | "update" | "completed" | "stopped" | null;
   readonly totalAttempts: number;
   readonly consecutiveFailures: number;
+  readonly lastConnectionFamily: "ipv4" | "ipv6" | null;
   readonly lastPeerCount: number | null;
   readonly seeders: number | null;
   readonly leechers: number | null;

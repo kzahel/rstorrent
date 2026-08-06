@@ -386,9 +386,11 @@ that scope and its cleanup or compatibility rules explicitly.
   one-way private dependencies without changing API or behavior.
 - [`081-v1-torrent-byte-intake.md`](081-v1-torrent-byte-intake.md): planned;
   separates exact source provenance from operational metadata, adds bounded
-  v1 outer-metainfo and tracker-tier persistence, and carries one semantic
-  byte-intake operation through WebSocket, HTTP automation, and raw Tauri IPC
-  without adding visible picker UX or chunking.
+  v1 outer-metainfo and tracker-tier persistence, adopts libtorrent-aligned
+  large-v1 parser/geometry limits with scalable storage and paged catalog
+  owners, and carries one semantic byte-intake operation through WebSocket,
+  HTTP automation, and raw Tauri IPC without adding visible picker UX or
+  chunking.
 - [`082-bounded-multi-peer-upload-ownership.md`](082-bounded-multi-peer-upload-ownership.md):
   completed; replaces the one-peer upload proof with shared connection
   budgets, eight fair seed upload slots, adaptive bounded reads/writes, and
@@ -449,6 +451,18 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds bounded HTTP and encrypted-but-unauthenticated HTTPS tracker
   transport, compact/noncompact IPv4/IPv6 peer intake, family-correct
   advertisement, and controlled libtorrent plus Android product evidence.
+- [`096-metadata-tracker-activation-and-family-observability.md`](096-metadata-tracker-activation-and-family-observability.md):
+  complete; activates session-owned discovery only while a paused metadata
+  task is actually live, projects the last successful tracker connection
+  family without addresses, and passes controlled plus Ubuntu evidence.
+- [`097-live-client-settings-and-replaceable-session-generations.md`](097-live-client-settings-and-replaceable-session-generations.md):
+  planned; applies every existing client setting without restart through one
+  stable session-network owner and replaceable TCP/UDP/reachability
+  generations while preserving peers, DHT, discovery, and accounting.
+- [`098-authenticated-https-tracker-platform-trust.md`](098-authenticated-https-tracker-platform-trust.md):
+  planned after Tactical `097`; defaults HTTPS trackers to desktop and Android
+  platform trust, adds one hidden live compatibility policy, and replaces only
+  the bounded family-specific HTTP client pair.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

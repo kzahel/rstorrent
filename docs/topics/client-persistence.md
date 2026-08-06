@@ -547,8 +547,10 @@ successful mutation unreadable after upgrade.
   listener policy, explicit port-mapping policy, the ordinary global peer
   ceiling, and payload upload slots. Tactical `088` adds the version-10
   local-network and UPnP values without persisting observed interfaces,
-  gateway identity, mappings, or public addresses. Finite bandwidth, durable
-  upload totals, ratio/time seeding goals, and live setting application remain
+  gateway identity, mappings, or public addresses. Planned Tactical
+  [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+  now owns live application and desired/effective convergence for that group.
+  Finite bandwidth, durable upload totals, and ratio/time seeding goals remain
   later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database

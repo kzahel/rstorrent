@@ -52,6 +52,12 @@ listener and explicit UPnP mapping intent. The existing torrent-list summary
 projects disabled, ineligible, discovering, mapping, mapped,
 renewal-failed/failed, and stopping runtime state; gateway work and mapped
 addresses do not become commands or durable authority.
+Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+keeps the command and persistence waist but replaces restart application with
+one asynchronous desired-to-effective reconciliation owner. Successful no-op
+and replayed saves can retry degraded runtime convergence without inventing a
+second command or settings route.
 Tactical `085` adds the minimal projected `force_recheck_available` capability
 and composes existing per-torrent commands sequentially in the React action
 owner. It does not add a batch command, atomic multi-torrent semantics, or a
@@ -164,10 +170,11 @@ resume.
 An opt-in official Ubuntu smoke on 2026-08-06 exposed a gap in that accepted
 policy: a fresh metadata-only magnet started its external metadata owner but
 left both session-owned HTTPS tracker rows inactive for 180 seconds because
-their registration inherited the false content-running intent. This is a
-bounded lifecycle defect to repair, not a change to metadata-only semantics;
-content storage must remain unopened while tracker discovery is activated and
-owned for metadata acquisition.
+their registration inherited the false content-running intent. Tactical `096`
+repairs the boundary by combining durable content intent with the presence of
+the actually owned metadata task only during discovery reconciliation. A
+controlled tracker-only case and the repeated Ubuntu smoke prove activation,
+terminal stopped announces, paused final state, and no payload artifacts.
 
 Force recheck is likewise semantic. A replayed successful request cannot
 start another generation, and a stale request mutates neither runtime nor
@@ -347,8 +354,12 @@ Tactical
 adds an atomic durable client-settings replacement while deliberately keeping
 listener, global peer-limit, and upload-slot enforcement restart-applied. A
 later live-control slice must own safe listener rebind, connection eviction,
-slot regrant, cancellation, and torrent-intent preservation. Android network
-binding and VPN leak prevention require separate platform evidence.
+slot regrant, cancellation, and torrent-intent preservation. Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+now settles that slice with independent applying/applied/degraded domains,
+stable peers and discovery, and replaceable transport generations. No such
+runtime behavior has landed yet. Android network binding and VPN leak
+prevention require separate platform evidence.
 
 The production browser/gateway proof saves automatic/37/one, observes the
 configured/active mismatch, joins and reopens onto those active owners, seeds

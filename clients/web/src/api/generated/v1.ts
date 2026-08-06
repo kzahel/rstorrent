@@ -193,6 +193,8 @@ export type TrackerTransportView = "udp" | "http" | "https";
 
 export type TrackerSecurityView = "unencrypted" | "encrypted_unauthenticated";
 
+export type TrackerConnectionFamilyView = "ipv4" | "ipv6";
+
 export type TrackerSourceView = "magnet" | "metainfo";
 
 export type TrackerStatusView = "unsupported" | "inactive" | "disabled" | "idle" | "announcing" | "retry_wait" | "reannounce_wait";
@@ -201,7 +203,7 @@ export type TrackerAnnounceEventView = "started" | "update" | "completed" | "sto
 
 export type TrackerNextActionView = "announce" | "retry" | "reannounce";
 
-export type TrackerView = { tracker_id: string, url: string, transport: TrackerTransportView, security: TrackerSecurityView, source: TrackerSourceView, tier: number, status: TrackerStatusView, announce_event: TrackerAnnounceEventView | null, total_attempts: number, consecutive_failures: number, last_peer_count: number | null, seeders: number | null, leechers: number | null, interval_seconds: number | null, next_action: TrackerNextActionView | null, next_action_in_millis: string | null, last_success_age_millis: string | null, last_failure_age_millis: string | null, last_error: string | null, };
+export type TrackerView = { tracker_id: string, url: string, transport: TrackerTransportView, security: TrackerSecurityView, source: TrackerSourceView, tier: number, status: TrackerStatusView, announce_event: TrackerAnnounceEventView | null, total_attempts: number, consecutive_failures: number, last_connection_family: TrackerConnectionFamilyView | null, last_peer_count: number | null, seeders: number | null, leechers: number | null, interval_seconds: number | null, next_action: TrackerNextActionView | null, next_action_in_millis: string | null, last_success_age_millis: string | null, last_failure_age_millis: string | null, last_error: string | null, };
 
 export type ViewSnapshot = { "type": "torrent_list", torrents: Array<TorrentView>, storage: StorageSettingsSnapshot, client_settings: ClientSettingsRuntimeView, } | { "type": "torrent", torrent: TorrentView | null, } | { "type": "piece_activity", torrent_id: string, piece_count: number, verified: Array<IndexRange>, active: Array<ActivePiece>, } | { "type": "session_disk", pipeline: DiskPipelineView, pieces: Array<DiskPieceView>, } | { "type": "session_dht", inspection: DhtInspectionView, } | { "type": "session_speed", history: SpeedHistoryView, } | { "type": "peers", torrent_id: string, peers: Array<PeerView>, } | { "type": "swarm", torrent_id: string, state: SwarmCatalogState, captured_millis: string, maximum_records: number, counts: SwarmCountsView, peers: Array<SwarmPeerView>, } | { "type": "files", torrent_id: string, state: FileCatalogState, filesystem_content_base: string | null, page: CatalogPageView, files: Array<FileView>, } | { "type": "trackers", torrent_id: string, state: TrackerCatalogState, page: CatalogPageView, trackers: Array<TrackerView>, } | { "type": "diagnostics", events: Array<DiagnosticEvent>, retention: DiagnosticRetention, };
 

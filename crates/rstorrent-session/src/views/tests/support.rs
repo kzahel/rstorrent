@@ -113,6 +113,7 @@ pub(super) fn tracker_snapshot(
             announce_event: None,
             total_attempts: attempts,
             consecutive_failures: u8::from(matches!(status, TrackerRuntimeStatus::RetryWait)),
+            last_connection_family: None,
             last_peer_count: Some(9),
             seeders: Some(4),
             leechers: Some(5),

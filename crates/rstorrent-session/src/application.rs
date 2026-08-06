@@ -2589,6 +2589,8 @@ impl ApplicationService {
         let handle = runtime.handle();
         let counters = handle.tracker_counters();
         let (privacy, left) = tracker_metadata_state(&resume)?;
+        let metadata_discovery_active =
+            resume.raw_info.is_none() && self.active_torrent.as_deref() == Some(torrent_id);
         counters.set_left(left);
         let registration = DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
@@ -2596,7 +2598,7 @@ impl ApplicationService {
                 ApplicationError::Configuration("invalid torrent identity".to_owned())
             })?,
             trackers: operational_trackers(&resume.trackers)?,
-            desired_running: resume.desired_running,
+            desired_running: resume.desired_running || metadata_discovery_active,
             complete: resume.state == TorrentState::Complete,
             incoming_registered: handle.has_seed_registration(),
             privacy,
@@ -4419,9 +4421,10 @@ mod tests {
         PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
         ProgressDisposition, ProgressReason, RemovalDataPolicy, RemovalState, RequestEnvelope,
         ResponseOutcome, SessionStore, StorageState, SubscriptionSpec, SwarmCatalogState,
-        SwarmPeerState, SwarmPeerView, TorrentState, TrackerSecurityView, TrackerView,
-        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
-        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        SwarmPeerState, SwarmPeerView, TorrentState, TrackerConnectionFamilyView,
+        TrackerSecurityView, TrackerView, ViewDeliveryPolicy, ViewPatch, ViewProjection,
+        ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate, ViewSnapshot, ViewSpec,
+        ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -4961,6 +4964,23 @@ mod tests {
         response
     }
 
+    fn compact_ipv4_http_response(peer: SocketAddr) -> Vec<u8> {
+        let IpAddr::V4(address) = peer.ip() else {
+            panic!("fixture peer must be IPv4");
+        };
+        let mut body = b"d8:intervali900e5:peers6:".to_vec();
+        body.extend_from_slice(&address.octets());
+        body.extend_from_slice(&peer.port().to_be_bytes());
+        body.push(b'e');
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(&body);
+        response
+    }
+
     async fn serve_tracker_stream<S>(mut stream: S, peer: SocketAddr) -> (String, bool)
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -5146,6 +5166,10 @@ mod tests {
         assert_eq!(trackers.len(), 1);
         assert_eq!(trackers[0].last_peer_count, Some(1));
         assert_eq!(
+            trackers[0].last_connection_family,
+            Some(TrackerConnectionFamilyView::Ipv4)
+        );
+        assert_eq!(
             trackers[0].security,
             if https {
                 TrackerSecurityView::EncryptedUnauthenticated
@@ -5184,6 +5208,122 @@ mod tests {
     #[tokio::test]
     async fn unauthenticated_https_tracker_completes_hash_verified_application_transfer() {
         run_tracker_only_peers6_application_transfer(true).await;
+    }
+
+    #[tokio::test]
+    async fn metadata_only_add_activates_tracker_until_metadata_is_verified() {
+        let root = test_root("metadata-only-tracker");
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let (peer, peer_task) = spawn_metadata_peer(raw_info).await;
+
+        let tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind metadata tracker");
+        let tracker_url = format!(
+            "http://{}/announce",
+            tracker.local_addr().expect("tracker address")
+        );
+        let response = compact_ipv4_http_response(peer);
+        let (announce_sender, mut announce_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<String>();
+        let tracker_task = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = tracker.accept().await.expect("accept tracker announce");
+                let request = read_http_request(&mut stream).await;
+                stream
+                    .write_all(&response)
+                    .await
+                    .expect("write tracker response");
+                stream.shutdown().await.expect("close tracker response");
+                let stopped = request.contains("&event=stopped ");
+                announce_sender
+                    .send(request)
+                    .expect("report tracker request");
+                if stopped {
+                    break;
+                }
+            }
+        });
+
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "metadata-only-tracker-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!(
+                        "magnet:?xt=urn:btih:{torrent_id}&tr={}",
+                        percent_encode_magnet_value(&tracker_url)
+                    ),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add metadata-only tracker magnet");
+
+        let started = tokio::time::timeout(Duration::from_secs(2), announce_receiver.recv())
+            .await
+            .expect("started announce deadline")
+            .expect("tracker ended before started announce");
+        assert!(started.contains("&event=started "), "{started}");
+
+        let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
+            for sequence in 0_u64..500 {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("metadata-only-tracker-snapshot-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("metadata snapshot");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("snapshot should succeed");
+                };
+                if snapshot.torrents[0].metadata_available {
+                    return snapshot;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            panic!("metadata did not become available");
+        })
+        .await
+        .expect("metadata-only tracker deadline");
+        assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
+        assert_eq!(snapshot.torrents[0].storage_state, StorageState::None);
+
+        let stopped = tokio::time::timeout(Duration::from_secs(2), announce_receiver.recv())
+            .await
+            .expect("stopped announce deadline")
+            .expect("tracker ended before stopped announce");
+        assert!(stopped.contains("&event=stopped "), "{stopped}");
+        let trackers = torrent_tracker_views(&service, &torrent_id).await;
+        assert_eq!(trackers.len(), 1);
+        assert_eq!(trackers[0].total_attempts, 2);
+        assert_eq!(
+            trackers[0].last_connection_family,
+            Some(TrackerConnectionFamilyView::Ipv4)
+        );
+
+        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
+            .expect("storage paths");
+        assert!(!paths.output.exists());
+        assert!(!paths.staging.exists());
+        assert!(!paths.part.exists());
+
+        peer_task.await.expect("metadata peer task");
+        tracker_task.await.expect("metadata tracker task");
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]

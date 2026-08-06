@@ -15,7 +15,11 @@ listen-socket/UDP waist completed by Tactical
 feature-driven lifetime seam completed by Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md), with
 the transport-specific HTTP runtime boundary completed by Tactical
-[`095`](../tactical/095-bounded-http-https-tracker-transport.md).
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md). On
+2026-08-06, planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+selected the concrete session-network lifetime seam required for live client
+settings.
 
 Topic: `code-organization-and-refactoring`
 
@@ -357,13 +361,26 @@ first seeding slice deliberately excludes Android product work.
 
 ## Near-Term Recommendation
 
-There should not be one umbrella refactor tactical. Tacticals `084`, `086`,
-`088`, and `089` confirm that focused child modules work: settings, per-torrent
-peer lifetime, reachability, coordinated bind policy, and UDP receive ownership
-became independently testable while the store and application retained their
-real owners. Selective storage remains the leading engine-only refactor
-candidate when a feature next changes its large coordinator; size alone does
-not authorize the work.
+There should not be one repository-wide umbrella refactor tactical. Tacticals
+`084`, `086`, `088`, and `089` confirm that focused child modules work:
+settings, per-torrent peer lifetime, reachability, coordinated bind policy,
+and UDP receive ownership became independently testable while the store and
+application retained their real owners.
+
+Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+now exposes concrete pressure one level above those children. The five
+existing settings cannot apply live while TCP acceptance, UDP/DHT transport,
+reachability, discovery, admission, upload scheduling, and shutdown are
+assembled as immutable application-generation siblings. The selected private
+`SessionNetworkRuntime` is therefore a cohesive feature-driven lifetime owner
+with replaceable transport generations; it does not absorb persistence,
+torrent catalogs, storage, views, or product adapters and does not justify a
+new crate or generic service framework.
+
+Selective storage remains the leading engine-only refactor candidate when a
+feature next changes its large coordinator; size alone does not authorize the
+work.
 
 ## Maintenance Contract
 
@@ -386,6 +403,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-06:** Planned Tactical `097` after live client settings exposed a
+  concrete session lifetime mismatch. The selected private session-network
+  owner keeps incoming peers, DHT, discovery, admission, scheduling, and
+  accounting stable around replaceable TCP/UDP/reachability generations; the
+  store, application, torrent runtimes, crate graph, and public engine
+  architecture retain their existing responsibilities.
 - **2026-08-05:** Completed Tactical `095`. A private engine HTTP tracker
   owner now meets the existing transport-neutral schedule through explicit
   enum dispatch; protocol retains pure catalog parsing, the long-lived

@@ -1394,6 +1394,12 @@ function validateTrackerView(value: unknown): void {
   }
   boundedInteger(tracker.total_attempts, "tracker attempts", 0, MAX_U32);
   boundedInteger(tracker.consecutive_failures, "tracker failures", 0, 127);
+  if (tracker.last_connection_family !== null) {
+    oneOf(tracker.last_connection_family, "tracker connection family", [
+      "ipv4",
+      "ipv6",
+    ]);
+  }
   ["last_peer_count", "seeders", "leechers", "interval_seconds"].forEach(
     (field) => optionalInteger(tracker[field], `tracker ${field}`, MAX_U32),
   );

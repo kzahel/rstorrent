@@ -177,6 +177,19 @@ function trackerColumns(nowMs: number): readonly VirtualColumn<TrackerRow>[] {
       ),
     },
     {
+      id: "family",
+      label: "Family",
+      width: 74,
+      defaultVisible: false,
+      sortValue: (row) => row.lastConnectionFamily,
+      render: (row) =>
+        row.lastConnectionFamily === null
+          ? "—"
+          : row.lastConnectionFamily === "ipv4"
+            ? "IPv4"
+            : "IPv6",
+    },
+    {
       id: "source",
       label: "Source",
       width: 82,

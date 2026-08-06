@@ -28,6 +28,21 @@ pub enum TrackerTransport {
     Https,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrackerConnectionFamily {
+    Ipv4,
+    Ipv6,
+}
+
+impl TrackerConnectionFamily {
+    pub(crate) const fn matches(self, address: std::net::SocketAddr) -> bool {
+        matches!(
+            (self, address),
+            (Self::Ipv4, std::net::SocketAddr::V4(_)) | (Self::Ipv6, std::net::SocketAddr::V6(_))
+        )
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TrackerEndpoint {
     Udp(UdpTrackerUrl),
@@ -130,6 +145,7 @@ pub struct TrackerRuntimeRecordSnapshot {
     pub announce_event: Option<TrackerAnnounceEvent>,
     pub total_attempts: u32,
     pub consecutive_failures: u8,
+    pub last_connection_family: Option<TrackerConnectionFamily>,
     pub last_peer_count: Option<u32>,
     pub seeders: Option<u32>,
     pub leechers: Option<u32>,
@@ -175,6 +191,7 @@ pub(crate) struct TrackerRecord {
     updating: bool,
     last_success: Option<Duration>,
     last_failure: Option<Duration>,
+    last_connection_family: Option<TrackerConnectionFamily>,
     next_announce: Duration,
     interval: Option<Duration>,
     last_peer_count: Option<u32>,
@@ -202,6 +219,7 @@ impl TrackerRecord {
             updating: false,
             last_success: None,
             last_failure: None,
+            last_connection_family: None,
             next_announce: Duration::ZERO,
             interval: None,
             last_peer_count: None,
@@ -254,6 +272,15 @@ pub(crate) struct TrackerFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TrackerSuccess {
     pub interval: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TrackerAcceptedOutcome {
+    pub requested_interval: Duration,
+    pub peer_count: u32,
+    pub seeders: Option<u32>,
+    pub leechers: Option<u32>,
+    pub connection_family: Option<TrackerConnectionFamily>,
 }
 
 #[derive(Debug)]
@@ -536,10 +563,13 @@ impl TrackerSchedule {
         self.succeeded_outcome(
             id,
             now,
-            Duration::from_secs(u64::from(interval_seconds)),
-            peer_count,
-            Some(seeders),
-            Some(leechers),
+            TrackerAcceptedOutcome {
+                requested_interval: Duration::from_secs(u64::from(interval_seconds)),
+                peer_count,
+                seeders: Some(seeders),
+                leechers: Some(leechers),
+                connection_family: None,
+            },
         )
     }
 
@@ -547,12 +577,11 @@ impl TrackerSchedule {
         &mut self,
         id: TrackerId,
         now: Duration,
-        requested_interval: Duration,
-        peer_count: u32,
-        seeders: Option<u32>,
-        leechers: Option<u32>,
+        outcome: TrackerAcceptedOutcome,
     ) -> TrackerSuccess {
-        let interval = requested_interval.clamp(TRACKER_ANNOUNCE_MIN, TRACKER_ANNOUNCE_MAX);
+        let interval = outcome
+            .requested_interval
+            .clamp(TRACKER_ANNOUNCE_MIN, TRACKER_ANNOUNCE_MAX);
         let position = self
             .records
             .iter()
@@ -585,10 +614,11 @@ impl TrackerSchedule {
                 None => {}
             }
             record.last_success = Some(now);
+            record.last_connection_family = outcome.connection_family;
             record.interval = Some(interval);
-            record.last_peer_count = Some(peer_count);
-            record.seeders = seeders;
-            record.leechers = leechers;
+            record.last_peer_count = Some(outcome.peer_count);
+            record.seeders = outcome.seeders;
+            record.leechers = outcome.leechers;
             record.last_error = None;
             record.next_announce = now.saturating_add(interval);
         }
@@ -676,6 +706,7 @@ impl TrackerRecord {
             announce_event,
             total_attempts: self.total_attempts,
             consecutive_failures: self.failures,
+            last_connection_family: self.last_connection_family,
             last_peer_count: self.last_peer_count,
             seeders: self.seeders,
             leechers: self.leechers,
@@ -725,9 +756,9 @@ fn tracker_failure_delay(failures: u8) -> Duration {
 mod tests {
     use super::{
         MAX_TRACKER_ERROR_LENGTH, TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX,
-        TrackerAction, TrackerAnnounceEvent, TrackerConfig, TrackerEndpoint, TrackerNextAction,
-        TrackerRuntimeStatus, TrackerSchedule, TrackerSource, TrackerWaitKind,
-        tracker_failure_delay,
+        TrackerAcceptedOutcome, TrackerAction, TrackerAnnounceEvent, TrackerConfig,
+        TrackerConnectionFamily, TrackerEndpoint, TrackerNextAction, TrackerRuntimeStatus,
+        TrackerSchedule, TrackerSource, TrackerWaitKind, tracker_failure_delay,
     };
     use rstorrent_protocol::magnet::UdpTrackerUrl;
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
@@ -904,6 +935,34 @@ mod tests {
                 ..
             } if endpoint == TrackerEndpoint::Udp(second)
         ));
+    }
+
+    #[test]
+    fn snapshot_retains_only_the_last_successful_connection_family() {
+        let mut schedule = TrackerSchedule::new(vec![tracker("tracker.example", 80)]);
+        let id = announce(&mut schedule, Duration::ZERO);
+        schedule.succeeded_outcome(
+            id,
+            Duration::from_secs(1),
+            TrackerAcceptedOutcome {
+                requested_interval: Duration::from_secs(600),
+                peer_count: 0,
+                seeders: None,
+                leechers: None,
+                connection_family: Some(TrackerConnectionFamily::Ipv6),
+            },
+        );
+        assert_eq!(
+            schedule.snapshot(Duration::from_secs(2), true).records[0].last_connection_family,
+            Some(TrackerConnectionFamily::Ipv6)
+        );
+
+        let id = announce(&mut schedule, Duration::from_secs(601));
+        schedule.failed(id, Duration::from_secs(601), "timeout");
+        assert_eq!(
+            schedule.snapshot(Duration::from_secs(602), true).records[0].last_connection_family,
+            Some(TrackerConnectionFamily::Ipv6)
+        );
     }
 
     #[test]

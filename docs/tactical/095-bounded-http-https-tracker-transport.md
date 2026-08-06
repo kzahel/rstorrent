@@ -783,12 +783,11 @@ metainfo, and payload root were removed after the run.
 
 ## Deliberate Deferrals And Next Boundary
 
-- **Metadata-only tracker activation.** A fresh metadata-only magnet whose
-  useful discovery comes from session-owned trackers currently waits without
-  activating those rows. Repair the distinction between metadata-discovery
-  intent and content-running intent, add deterministic tracker-only coverage,
-  and repeat the bounded Ubuntu metadata-only smoke before treating this
-  product path as live.
+- **Metadata-only tracker activation.** Tactical
+  [`096`](096-metadata-tracker-activation-and-family-observability.md) repaired
+  the distinction between live metadata discovery and durable content-running
+  intent. Controlled tracker-only and repeated Ubuntu metadata-only evidence
+  now passes without opening content storage.
 - **Authenticated HTTPS certificates.** The immediate follow-up tactical must
   enable certificate-chain and hostname validation, integrate and initialize
   `rustls-platform-verifier` with its Android Kotlin/Gradle component, prove
@@ -818,13 +817,12 @@ metainfo, and payload root were removed after the run.
   public-tracker reliability, or stable external compatibility claim from this
   initial transport slice.
 
-The recommended immediate repair is the bounded metadata-only tracker
-activation gap because it blocks an already accepted product intent. The next
-security slice remains authenticated platform certificate validation. If
-evidence instead shows that proper IPv6 listener/advertisement ownership is
-required for target trackers to return useful peers, stop at the honest
-outbound-only support level and create the dual-stack reachability tactical
-before broadening BEP 7 claims.
+Tactical `096` completed the recommended metadata-only activation repair. The
+next tracker security slice remains authenticated platform certificate
+validation. If evidence instead shows that proper IPv6 listener/advertisement
+ownership is required for target trackers to return useful peers, stop at the
+honest outbound-only support level and create the dual-stack reachability
+tactical before broadening BEP 7 claims.
 
 ## Escalation Contract
 

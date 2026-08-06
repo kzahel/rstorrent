@@ -65,7 +65,8 @@ use crate::swarm::{
 };
 use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
 use crate::tracker::{
-    TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId, TrackerSchedule, TrackerWaitKind,
+    TrackerAction, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint, TrackerId,
+    TrackerSchedule, TrackerWaitKind,
 };
 
 mod control;
@@ -1020,7 +1021,13 @@ struct TrackerOperationResult {
     id: TrackerId,
     tracker: String,
     token_cache: UdpTrackerTokenCache,
-    result: Result<AnnounceResponse, DownloadError>,
+    result: Result<UdpTrackerAnnounceResult, DownloadError>,
+}
+
+#[derive(Debug)]
+pub(crate) struct UdpTrackerAnnounceResult {
+    pub response: AnnounceResponse,
+    pub connection_family: TrackerConnectionFamily,
 }
 
 #[derive(Debug)]
@@ -1478,7 +1485,8 @@ async fn run_active_tracker_manager(
             token_caches.insert(operation.id, operation.token_cache);
             let now = started_at.elapsed();
             match operation.result {
-                Ok(response) => {
+                Ok(result) => {
+                    let response = result.response;
                     let peer_count = response.peers.len().try_into().unwrap_or(u32::MAX);
                     let success = schedule.succeeded(
                         operation.id,
@@ -2743,7 +2751,7 @@ pub(crate) async fn announce_udp_tracker(
     token_cache: &mut UdpTrackerTokenCache,
     announce: UdpTrackerAnnounce,
     exchange: UdpTrackerExchange<'_>,
-) -> Result<AnnounceResponse, DownloadError> {
+) -> Result<UdpTrackerAnnounceResult, DownloadError> {
     if !network_policy.permits_dns() {
         return Err(DownloadError::NetworkDisabled);
     }
@@ -2774,7 +2782,7 @@ async fn announce_udp_tracker_address(
     token_cache: &mut UdpTrackerTokenCache,
     announce: UdpTrackerAnnounce,
     exchange: UdpTrackerExchange<'_>,
-) -> Result<AnnounceResponse, DownloadError> {
+) -> Result<UdpTrackerAnnounceResult, DownloadError> {
     let bind_address = match address {
         SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
         SocketAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
@@ -2845,7 +2853,13 @@ async fn announce_udp_tracker_address(
     if result.is_err() {
         token_cache.remove(address);
     }
-    result
+    result.map(|response| UdpTrackerAnnounceResult {
+        response,
+        connection_family: match family {
+            TrackerAddressFamily::Ipv4 => TrackerConnectionFamily::Ipv4,
+            TrackerAddressFamily::Ipv6 => TrackerConnectionFamily::Ipv6,
+        },
+    })
 }
 
 async fn send_udp_tracker_packet(

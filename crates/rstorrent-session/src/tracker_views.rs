@@ -7,8 +7,9 @@ use ts_rs::TS;
 
 use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
 use rstorrent_engine::{
-    TrackerAnnounceEvent, TrackerEndpoint, TrackerNextAction, TrackerRuntimeRecordSnapshot,
-    TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+    TrackerAnnounceEvent, TrackerConnectionFamily, TrackerEndpoint, TrackerNextAction,
+    TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource,
+    TrackerTransport,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 
@@ -35,6 +36,14 @@ pub enum TrackerTransportView {
 pub enum TrackerSecurityView {
     Unencrypted,
     EncryptedUnauthenticated,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum TrackerConnectionFamilyView {
+    Ipv4,
+    Ipv6,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -90,6 +99,7 @@ pub struct TrackerView {
     pub announce_event: Option<TrackerAnnounceEventView>,
     pub total_attempts: u32,
     pub consecutive_failures: u32,
+    pub last_connection_family: Option<TrackerConnectionFamilyView>,
     pub last_peer_count: Option<u32>,
     pub seeders: Option<u32>,
     pub leechers: Option<u32>,
@@ -125,6 +135,7 @@ impl TrackerView {
             announce_event: None,
             total_attempts: 0,
             consecutive_failures: 0,
+            last_connection_family: None,
             last_peer_count: None,
             seeders: None,
             leechers: None,
@@ -202,6 +213,10 @@ impl From<&TrackerRuntimeRecordSnapshot> for TrackerView {
             }),
             total_attempts: record.total_attempts,
             consecutive_failures: u32::from(record.consecutive_failures),
+            last_connection_family: record.last_connection_family.map(|family| match family {
+                TrackerConnectionFamily::Ipv4 => TrackerConnectionFamilyView::Ipv4,
+                TrackerConnectionFamily::Ipv6 => TrackerConnectionFamilyView::Ipv6,
+            }),
             last_peer_count: record.last_peer_count,
             seeders: record.seeders,
             leechers: record.leechers,
@@ -337,11 +352,14 @@ mod tests {
 
     use crate::store::{StoredTracker, StoredTrackerSource, StoredTrackerTransport};
     use rstorrent_engine::{
-        TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
-        TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+        TrackerConnectionFamily, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+        TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
     };
 
-    use super::{TrackerNextActionView, TrackerSecurityView, TrackerStatusView, TrackerViewModel};
+    use super::{
+        TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView, TrackerStatusView,
+        TrackerViewModel,
+    };
 
     #[test]
     fn durable_catalog_redacts_credentials_and_projects_transport_security() {
@@ -398,6 +416,7 @@ mod tests {
                 announce_event: None,
                 total_attempts: 2,
                 consecutive_failures: 1,
+                last_connection_family: Some(TrackerConnectionFamily::Ipv6),
                 last_peer_count: Some(20),
                 seeders: Some(12),
                 leechers: Some(8),
@@ -416,6 +435,10 @@ mod tests {
         assert_eq!(row.last_success_age_millis.as_deref(), Some("8000"));
         assert_eq!(row.last_failure_age_millis.as_deref(), Some("250"));
         assert_eq!(row.interval_seconds, Some(600));
+        assert_eq!(
+            row.last_connection_family,
+            Some(TrackerConnectionFamilyView::Ipv6)
+        );
         assert_eq!(row.url, "udp://tracker.example:6969");
     }
 

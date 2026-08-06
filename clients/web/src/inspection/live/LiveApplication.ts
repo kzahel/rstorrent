@@ -1252,6 +1252,7 @@ function mapTracker(
     announceEvent: tracker.announce_event,
     totalAttempts: tracker.total_attempts,
     consecutiveFailures: tracker.consecutive_failures,
+    lastConnectionFamily: tracker.last_connection_family,
     lastPeerCount: tracker.last_peer_count,
     seeders: tracker.seeders,
     leechers: tracker.leechers,

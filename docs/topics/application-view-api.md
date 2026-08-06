@@ -70,6 +70,13 @@ the durable preferred listen port and an observed `session_udp_status` to that
 same value. The latter reports actual address, port, and whether its numeric
 port is coordinated with the live TCP listener; generated validators reject a
 false coordination claim. The view still owns no socket or runtime task.
+Planned Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+will replace the monolithic configured/active/restart-required shape with
+configured intent, effective transport/mapping/admission/slot state, and
+per-domain applying/applied/degraded status. Runtime owners remain producers;
+the existing torrent-list view remains a task-free complete replacement and
+gains no command or retry authority.
 Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) extends
 that complete value with selected advertisement source and outbound-only,
@@ -85,6 +92,12 @@ tracker-security value to the existing paged tracker row. HTTP is
 hostname validation lands. Generated TypeScript/schema, React, UniFFI, and
 Kotlin consumers carry that distinction without adding a view kind, task,
 queue, inferred security rule, or contract-version change.
+Completed Tactical
+[`096`](../tactical/096-metadata-tracker-activation-and-family-observability.md)
+adds the volatile last successful tracker connection family as only `ipv4` or
+`ipv6`. The schedule owns this diagnostic fact, and presentation does not
+infer it from URL spelling or returned peers. No DNS answer, socket address,
+source address, interface, or peer address enters the application contract.
 
 ## Purpose And Scope
 
@@ -819,6 +832,10 @@ operational UDP/HTTP/HTTPS rows to one shared eight-operation ceiling and
 projects their ordinary lifecycle. The row's new security field separates
 plaintext HTTP from encrypted-but-unauthenticated HTTPS; it does not infer
 certificate verification from scheme, announce success, or transport status.
+Tactical `096` additionally projects the optional family of the most recent
+successful physical connection. A failed operation retains that last-success
+fact, while a new or replaced row begins unset. The web keeps `Family` hidden
+by default and renders only `IPv4`, `IPv6`, or an em dash.
 
 Same-catalog durable updates preserve live tracker state. Restart reconstructs
 configured inactive rows from the magnet without pretending volatile response

@@ -1,5 +1,5 @@
 use super::*;
-use crate::PeerBudget;
+use crate::{PeerBudget, TrackerConnectionFamily};
 
 #[tokio::test]
 async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
@@ -884,7 +884,8 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
     )
     .await
     .expect("loss-recovered announce");
-    assert!(first.peers.is_empty());
+    assert!(first.response.peers.is_empty());
+    assert_eq!(first.connection_family, TrackerConnectionFamily::Ipv4);
     let second = announce_udp_tracker_address(
         tracker_address,
         &mut tokens,
@@ -910,7 +911,8 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
     )
     .await
     .expect("cached-token announce");
-    assert!(second.peers.is_empty());
+    assert!(second.response.peers.is_empty());
+    assert_eq!(second.connection_family, TrackerConnectionFamily::Ipv4);
     server.await.expect("scripted tracker");
 
     let retransmissions = {

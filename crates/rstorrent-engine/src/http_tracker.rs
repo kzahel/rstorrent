@@ -19,6 +19,7 @@ use tokio::net::lookup_host;
 
 use crate::network::NetworkPolicy;
 use crate::peer::PeerEndpoint;
+use crate::tracker::TrackerConnectionFamily as AddressFamily;
 
 pub(crate) const MAX_HTTP_TRACKER_TARGET_LENGTH: usize = 4 * 1024;
 pub(crate) const MAX_HTTP_TRACKER_BODY_LENGTH: usize = 1024 * 1024;
@@ -84,6 +85,7 @@ pub(crate) struct HttpTrackerSuccess {
     pub interval: Duration,
     pub seeders: Option<u32>,
     pub leechers: Option<u32>,
+    pub connection_family: Option<AddressFamily>,
     pub peers: Vec<TrackerPeer>,
     pub warning: Option<String>,
     pub tracker_id: Option<Vec<u8>>,
@@ -185,21 +187,6 @@ impl fmt::Display for HttpTrackerError {
 }
 
 impl Error for HttpTrackerError {}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AddressFamily {
-    Ipv4,
-    Ipv6,
-}
-
-impl AddressFamily {
-    fn matches(self, address: SocketAddr) -> bool {
-        match self {
-            Self::Ipv4 => address.is_ipv4(),
-            Self::Ipv6 => address.is_ipv6(),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 struct TrackerResolver {
@@ -312,6 +299,7 @@ async fn announce_http_tracker_inner(
         let url = url::Url::parse(&target.url).map_err(|_| HttpTrackerError::InvalidUrl)?;
         match request_family(clients.get(family), url, target.auth, policy, family).await {
             Ok(HttpTrackerResponse::Success(mut success)) => {
+                success.connection_family = Some(family);
                 success.peers = resolve_peer_addresses(success.peers, policy).await;
                 return Ok(HttpTrackerResponse::Success(success));
             }
@@ -868,6 +856,7 @@ pub(crate) fn parse_tracker_response(body: &[u8]) -> Result<HttpTrackerResponse,
         interval,
         seeders,
         leechers,
+        connection_family: None,
         peers,
         warning,
         tracker_id,
@@ -1739,6 +1728,7 @@ mod tests {
         let HttpTrackerResponse::Success(success) = response else {
             panic!("expected tracker success");
         };
+        assert_eq!(success.connection_family, Some(AddressFamily::Ipv6));
         assert_eq!(
             success.peers,
             [TrackerPeer::Address(
