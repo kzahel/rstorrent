@@ -250,6 +250,7 @@ pub enum RequestDisposition {
     PayloadReceived,
     Expired,
     Choked,
+    Rejected,
     Disconnected,
     Superseded,
     Cancelled,
@@ -289,6 +290,13 @@ pub struct RequestCancellation {
     pub attempt: RequestAttemptId,
     pub connection: ConnectionId,
     pub block: BlockKey,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RejectDisposition {
+    Accepted { attempt: RequestAttemptId },
+    NeverRequested,
+    Stale,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -413,6 +421,7 @@ struct ConnectionState {
     availability: PieceAvailability,
     wanted_piece_count: usize,
     choking: bool,
+    fast_extension: bool,
     connected_at: Duration,
     last_useful_at: Option<Duration>,
     active_request_count: usize,
@@ -1149,6 +1158,7 @@ impl SwarmState {
                 availability: PieceAvailability::empty(self.piece_count),
                 wanted_piece_count: 0,
                 choking: true,
+                fast_extension: false,
                 connected_at: now,
                 last_useful_at: None,
                 active_request_count: 0,
@@ -1276,11 +1286,57 @@ impl SwarmState {
         if changed {
             self.picker.note_eligibility_change();
         }
-        if choking {
+        if choking && !self.connection(id)?.fast_extension {
             self.release_requests_for_connection(id, RequestDisposition::Choked)
         } else {
             Ok(Vec::new())
         }
+    }
+
+    pub fn set_fast_extension(
+        &mut self,
+        id: ConnectionId,
+        enabled: bool,
+    ) -> Result<(), SwarmError> {
+        let connection = self.connection_mut(id)?;
+        if connection.active_request_count != 0 {
+            return Err(SwarmError::InvalidTransition(
+                "Fast capability cannot change after requests begin",
+            ));
+        }
+        connection.fast_extension = enabled;
+        Ok(())
+    }
+
+    pub fn reject_request(
+        &mut self,
+        connection: ConnectionId,
+        block: BlockKey,
+    ) -> Result<RejectDisposition, SwarmError> {
+        if !self.connection(connection)?.fast_extension {
+            return Ok(RejectDisposition::NeverRequested);
+        }
+        let Some(state) = self.blocks.get(&block) else {
+            return Ok(RejectDisposition::NeverRequested);
+        };
+        let matching = state
+            .attempts
+            .iter()
+            .filter(|attempt| attempt.connection == connection)
+            .collect::<Vec<_>>();
+        let Some(active) = matching
+            .iter()
+            .find(|attempt| attempt.disposition.is_active())
+        else {
+            return Ok(if matching.is_empty() {
+                RejectDisposition::NeverRequested
+            } else {
+                RejectDisposition::Stale
+            });
+        };
+        let attempt = active.id;
+        self.terminate_requested(block, attempt, RequestDisposition::Rejected)?;
+        Ok(RejectDisposition::Accepted { attempt })
     }
 
     pub fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, SwarmError> {
@@ -2213,6 +2269,12 @@ impl SwarmState {
     fn connection_mut(&mut self, id: ConnectionId) -> Result<&mut ConnectionState, SwarmError> {
         self.connections
             .get_mut(&id)
+            .ok_or(SwarmError::UnknownConnection(id))
+    }
+
+    fn connection(&self, id: ConnectionId) -> Result<&ConnectionState, SwarmError> {
+        self.connections
+            .get(&id)
             .ok_or(SwarmError::UnknownConnection(id))
     }
 
@@ -3695,6 +3757,66 @@ mod tests {
         assert_eq!(
             state.snapshot(Duration::ZERO).requested_blocks,
             assigned.len() - peer_one
+        );
+    }
+
+    #[test]
+    fn fast_choke_retains_requests_and_exact_reject_refills_immediately() {
+        let mut state = state(1, vec![plan(0, 4)], 4);
+        add_peer(&mut state, connection(1), &[0], false);
+        add_peer(&mut state, connection(2), &[0], false);
+        state
+            .set_fast_extension(connection(1), true)
+            .expect("enable Fast before requests");
+        let assigned = state.schedule(Duration::ZERO).expect("schedule");
+        let rejected = assigned
+            .iter()
+            .find(|request| request.connection == connection(1))
+            .copied()
+            .expect("Fast peer request");
+        let before = state.snapshot(Duration::ZERO);
+
+        assert!(
+            state
+                .set_choking(connection(1), true)
+                .expect("Fast choke")
+                .is_empty()
+        );
+        assert_eq!(
+            state.snapshot(Duration::ZERO).requested_blocks,
+            before.requested_blocks
+        );
+        assert_eq!(
+            state
+                .reject_request(connection(1), rejected.block)
+                .expect("exact reject"),
+            RejectDisposition::Accepted {
+                attempt: rejected.attempt
+            }
+        );
+        let after_reject = state.snapshot(Duration::ZERO);
+        assert_eq!(
+            after_reject.outstanding_request_bytes,
+            before.outstanding_request_bytes - BLOCK as usize
+        );
+        let refill = state.schedule(Duration::ZERO).expect("immediate refill");
+        assert_eq!(refill.len(), 1);
+        assert_eq!(refill[0].connection, connection(2));
+        assert_eq!(refill[0].block, rejected.block);
+        assert_eq!(
+            state
+                .reject_request(connection(1), rejected.block)
+                .expect("stale duplicate reject"),
+            RejectDisposition::Stale
+        );
+        assert_eq!(
+            state
+                .reject_request(
+                    connection(1),
+                    BlockKey::new(0, 4 * BLOCK, BLOCK).expect("valid never-sent block")
+                )
+                .expect("never-sent reject"),
+            RejectDisposition::NeverRequested
         );
     }
 
