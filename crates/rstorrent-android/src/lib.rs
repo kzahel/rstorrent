@@ -1464,6 +1464,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::Metainfo(_)
         | DownloadError::Layout(_) => FailureKind::Configuration,
         DownloadError::Metadata(_)
+        | DownloadError::Pex(_)
         | DownloadError::ExtensionProtocolUnsupported
         | DownloadError::MetadataExtensionDisabled
         | DownloadError::InvalidPremetadataState(_)
