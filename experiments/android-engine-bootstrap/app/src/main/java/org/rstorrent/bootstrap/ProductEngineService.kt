@@ -100,6 +100,7 @@ class ProductEngineService : Service() {
         }
         scope.launch {
             try {
+                PlatformTrustBootstrap.ensureInitialized(applicationContext)
                 val profile = File(filesDir, "product-profile")
                 check(profile.mkdirs() || profile.isDirectory)
                 client =

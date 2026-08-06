@@ -62,6 +62,7 @@ class EngineService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification("Starting engine"))
         try {
+            PlatformTrustBootstrap.ensureInitialized(applicationContext)
             val actual = interfaceVersion()
             check(actual == BootstrapContract.EXPECTED_INTERFACE) {
                 "native interface $actual does not match " +

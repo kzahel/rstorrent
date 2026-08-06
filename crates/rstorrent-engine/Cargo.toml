@@ -31,4 +31,6 @@ tokio-util = { workspace = true, features = ["rt"] }
 url = { workspace = true }
 
 [dev-dependencies]
+rcgen = "0.14.8"
+time = { version = "0.3.54", default-features = false }
 tokio-rustls = "0.26.4"

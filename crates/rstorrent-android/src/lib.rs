@@ -38,6 +38,20 @@ const MAX_ANDROID_PATH_BYTES: usize = 4 * 1024;
 
 uniffi::setup_scaffolding!();
 
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_rstorrent_bootstrap_PlatformTrustBootstrap_initializeNative<
+    'local,
+>(
+    mut unowned_env: jni::EnvUnowned<'local>,
+    _class: jni::objects::JClass<'local>,
+    context: jni::objects::JObject<'local>,
+) {
+    unowned_env
+        .with_env(|env| rustls_platform_verifier::android::init_with_env(env, context))
+        .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct AndroidApplicationConfig {
     pub profile_root: String,

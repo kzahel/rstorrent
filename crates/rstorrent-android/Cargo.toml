@@ -25,3 +25,7 @@ rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 sha1.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
 uniffi = { version = "=0.31.0", default-features = false, features = ["tokio"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "=0.22.4", default-features = false }
+rustls-platform-verifier = "=0.7.0"

@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -26,6 +28,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -46,6 +49,26 @@ android {
     }
 }
 
+val rustlsPlatformVerifierVersion = run {
+    val metadata = providers.exec {
+        workingDir = rootProject.projectDir
+        commandLine(
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--filter-platform",
+            "aarch64-linux-android",
+            "--manifest-path",
+            "../../crates/rstorrent-android/Cargo.toml",
+        )
+    }.standardOutput.asText.get()
+    @Suppress("UNCHECKED_CAST")
+    val packages =
+        (JsonSlurper().parseText(metadata) as Map<String, Any?>)["packages"] as List<Map<String, Any?>>
+    packages.single { it["name"] == "rustls-platform-verifier-android" }.getValue("version") as String
+}
+
 kotlin {
     jvmToolchain(17)
 }
@@ -61,6 +84,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("net.java.dev.jna:jna:5.17.0@aar")
+    implementation("rustls:rustls-platform-verifier:$rustlsPlatformVerifierVersion@aar")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }

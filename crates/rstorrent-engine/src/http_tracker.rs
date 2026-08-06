@@ -272,6 +272,25 @@ impl HttpTrackerClients {
         }
     }
 
+    #[cfg(test)]
+    fn new_with_extra_root(
+        policy: NetworkPolicy,
+        https_authentication: TrackerHttpsAuthentication,
+        root: reqwest::Certificate,
+    ) -> Result<Self, HttpTrackerError> {
+        let build = |family| {
+            configured_client_builder(policy, family, https_authentication)
+                .tls_certs_merge([root.clone()])
+                .build()
+                .map_err(redacted_reqwest_error)
+        };
+        Ok(Self {
+            ipv4: build(AddressFamily::Ipv4)?,
+            ipv6: build(AddressFamily::Ipv6)?,
+            https_authentication: Some(https_authentication),
+        })
+    }
+
     pub(crate) const fn https_authentication(&self) -> Option<TrackerHttpsAuthentication> {
         self.https_authentication
     }
@@ -289,6 +308,16 @@ fn build_client(
     family: AddressFamily,
     https_authentication: TrackerHttpsAuthentication,
 ) -> Result<reqwest::Client, HttpTrackerError> {
+    configured_client_builder(policy, family, https_authentication)
+        .build()
+        .map_err(redacted_reqwest_error)
+}
+
+fn configured_client_builder(
+    policy: NetworkPolicy,
+    family: AddressFamily,
+    https_authentication: TrackerHttpsAuthentication,
+) -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder()
         .http1_only()
         .no_proxy()
@@ -297,13 +326,12 @@ fn build_client(
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("RSTorrent/0.1")
         .dns_resolver(TrackerResolver { policy, family });
-    let builder = match https_authentication {
+    match https_authentication {
         TrackerHttpsAuthentication::SystemTrust => builder,
         TrackerHttpsAuthentication::Disabled => builder
             .tls_danger_accept_invalid_certs(true)
             .tls_danger_accept_invalid_hostnames(true),
-    };
-    builder.build().map_err(redacted_reqwest_error)
+    }
 }
 
 pub(crate) async fn announce_http_tracker(
@@ -1222,6 +1250,282 @@ mod tests {
         String::from_utf8(request).expect("ASCII TLS request")
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum GeneratedTlsCase {
+        ValidDns,
+        ValidIp,
+        UnknownIssuer,
+        Expired,
+        NotYetValid,
+        WrongDns,
+        WrongIp,
+        WildcardBoundary,
+        MissingIntermediate,
+        WrongIntermediate,
+        InvalidServerPurpose,
+    }
+
+    struct GeneratedTlsFixture {
+        host: &'static str,
+        root: reqwest::Certificate,
+        server: tokio_rustls::rustls::ServerConfig,
+    }
+
+    fn generated_tls_fixture(case: GeneratedTlsCase) -> GeneratedTlsFixture {
+        use rcgen::{
+            BasicConstraints, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
+            ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, date_time_ymd,
+        };
+        use tokio_rustls::rustls::ServerConfig;
+        use tokio_rustls::rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+
+        fn ca_params(common_name: &str) -> CertificateParams {
+            let mut distinguished_name = DistinguishedName::new();
+            distinguished_name.push(DnType::CommonName, common_name);
+            let mut params = CertificateParams::default();
+            params.distinguished_name = distinguished_name;
+            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            params.key_usages = vec![
+                KeyUsagePurpose::DigitalSignature,
+                KeyUsagePurpose::KeyCertSign,
+                KeyUsagePurpose::CrlSign,
+            ];
+            params.not_before = date_time_ymd(2020, 1, 1);
+            params.not_after = date_time_ymd(2090, 1, 1);
+            params
+        }
+
+        let trusted_root = CertifiedIssuer::self_signed(
+            ca_params("RSTorrent test trusted root"),
+            KeyPair::generate().expect("trusted root key"),
+        )
+        .expect("trusted root certificate");
+        let untrusted_root = CertifiedIssuer::self_signed(
+            ca_params("RSTorrent test unknown root"),
+            KeyPair::generate().expect("unknown root key"),
+        )
+        .expect("unknown root certificate");
+        let issuer = if matches!(case, GeneratedTlsCase::UnknownIssuer) {
+            &*untrusted_root
+        } else {
+            &*trusted_root
+        };
+
+        let correct_intermediate = CertifiedIssuer::signed_by(
+            ca_params("RSTorrent test intermediate"),
+            KeyPair::generate().expect("intermediate key"),
+            issuer,
+        )
+        .expect("intermediate certificate");
+        let wrong_intermediate = CertifiedIssuer::signed_by(
+            ca_params("RSTorrent test wrong intermediate"),
+            KeyPair::generate().expect("wrong intermediate key"),
+            issuer,
+        )
+        .expect("wrong intermediate certificate");
+
+        let (host, names) = match case {
+            GeneratedTlsCase::ValidIp => ("127.0.0.1", vec!["127.0.0.1".to_owned()]),
+            GeneratedTlsCase::WrongDns => ("localhost", vec!["wrong.example".to_owned()]),
+            GeneratedTlsCase::WrongIp => ("127.0.0.1", vec!["127.0.0.2".to_owned()]),
+            GeneratedTlsCase::WildcardBoundary => {
+                ("a.b.example.test", vec!["*.example.test".to_owned()])
+            }
+            GeneratedTlsCase::ValidDns
+            | GeneratedTlsCase::UnknownIssuer
+            | GeneratedTlsCase::Expired
+            | GeneratedTlsCase::NotYetValid
+            | GeneratedTlsCase::MissingIntermediate
+            | GeneratedTlsCase::WrongIntermediate
+            | GeneratedTlsCase::InvalidServerPurpose => ("localhost", vec!["localhost".to_owned()]),
+        };
+        let mut leaf_params = CertificateParams::new(names).expect("leaf names");
+        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        leaf_params.extended_key_usages =
+            vec![if matches!(case, GeneratedTlsCase::InvalidServerPurpose) {
+                ExtendedKeyUsagePurpose::ClientAuth
+            } else {
+                ExtendedKeyUsagePurpose::ServerAuth
+            }];
+        let now = time::OffsetDateTime::now_utc();
+        match case {
+            GeneratedTlsCase::Expired => {
+                leaf_params.not_before = now - time::Duration::days(60);
+                leaf_params.not_after = now - time::Duration::days(30);
+            }
+            GeneratedTlsCase::NotYetValid => {
+                leaf_params.not_before = now + time::Duration::days(30);
+                leaf_params.not_after = now + time::Duration::days(60);
+            }
+            _ => {
+                leaf_params.not_before = now - time::Duration::days(1);
+                leaf_params.not_after = now + time::Duration::days(30);
+            }
+        }
+        let leaf_key = KeyPair::generate().expect("leaf key");
+        let uses_intermediate = matches!(
+            case,
+            GeneratedTlsCase::MissingIntermediate | GeneratedTlsCase::WrongIntermediate
+        );
+        let leaf = leaf_params
+            .signed_by(
+                &leaf_key,
+                if uses_intermediate {
+                    &*correct_intermediate
+                } else {
+                    issuer
+                },
+            )
+            .expect("leaf certificate");
+        let mut chain = vec![leaf.der().clone()];
+        if matches!(case, GeneratedTlsCase::WrongIntermediate) {
+            chain.push(wrong_intermediate.der().clone());
+        }
+        let server = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                chain,
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der())),
+            )
+            .expect("generated TLS server config");
+        GeneratedTlsFixture {
+            host,
+            root: reqwest::Certificate::from_der(trusted_root.der().as_ref())
+                .expect("reqwest test root"),
+            server,
+        }
+    }
+
+    async fn serve_generated_tls_response_once(
+        listener: TcpListener,
+        config: tokio_rustls::rustls::ServerConfig,
+        response: Vec<u8>,
+    ) -> Result<String, String> {
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let (stream, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let mut stream = acceptor
+            .accept(stream)
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut request = Vec::new();
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut chunk = [0_u8; 1024];
+            let length = stream
+                .read(&mut chunk)
+                .await
+                .map_err(|error| error.to_string())?;
+            if length == 0 {
+                return Err("TLS client closed before sending HTTP".to_owned());
+            }
+            request.extend_from_slice(&chunk[..length]);
+            if request.len() > 16 * 1024 {
+                return Err("TLS request exceeded the fixture bound".to_owned());
+            }
+        }
+        stream
+            .write_all(&response)
+            .await
+            .map_err(|error| error.to_string())?;
+        stream.shutdown().await.map_err(|error| error.to_string())?;
+        String::from_utf8(request).map_err(|error| error.to_string())
+    }
+
+    async fn serve_generated_tls_once(
+        listener: TcpListener,
+        config: tokio_rustls::rustls::ServerConfig,
+    ) -> Result<String, String> {
+        serve_generated_tls_response_once(listener, config, http_response(&[], b"de")).await
+    }
+
+    async fn exercise_generated_tls(
+        case: GeneratedTlsCase,
+        authentication: TrackerHttpsAuthentication,
+    ) -> (
+        Result<reqwest::Response, reqwest::Error>,
+        Result<String, String>,
+    ) {
+        let fixture = generated_tls_fixture(case);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("generated TLS listener");
+        let address = listener.local_addr().expect("generated TLS address");
+        let server = tokio::spawn(serve_generated_tls_once(listener, fixture.server));
+        let client = configured_client_builder(
+            NetworkPolicy::LoopbackOnly,
+            AddressFamily::Ipv4,
+            authentication,
+        )
+        .tls_certs_merge([fixture.root])
+        .resolve(fixture.host, address)
+        .build()
+        .expect("generated TLS client");
+        let response = client
+            .get(format!(
+                "https://{}:{}/announce",
+                fixture.host,
+                address.port()
+            ))
+            .send()
+            .await;
+        let server = server.await.expect("generated TLS server task");
+        (response, server)
+    }
+
+    async fn exercise_tls_redirect(
+        authentication: TrackerHttpsAuthentication,
+    ) -> (
+        Result<HttpTrackerResponse, HttpTrackerError>,
+        Result<String, String>,
+        Result<String, String>,
+    ) {
+        let destination_fixture = generated_tls_fixture(GeneratedTlsCase::UnknownIssuer);
+        let destination = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("redirect destination listener");
+        let destination_address = destination.local_addr().expect("destination address");
+        let destination_url = format!("https://localhost:{}/result", destination_address.port());
+        let destination_task = tokio::spawn(serve_generated_tls_once(
+            destination,
+            destination_fixture.server,
+        ));
+
+        let origin_fixture = generated_tls_fixture(GeneratedTlsCase::ValidIp);
+        let origin = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("redirect origin listener");
+        let origin_address = origin.local_addr().expect("origin address");
+        let origin_url = format!("https://{origin_address}/announce");
+        let redirect = format!(
+            "HTTP/1.1 302 Found\r\nLocation: {destination_url}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .into_bytes();
+        let origin_task = tokio::spawn(serve_generated_tls_response_once(
+            origin,
+            origin_fixture.server,
+            redirect,
+        ));
+        let clients = HttpTrackerClients::new_with_extra_root(
+            NetworkPolicy::LoopbackOnly,
+            authentication,
+            origin_fixture.root,
+        )
+        .expect("redirect clients");
+        let response = announce_http_tracker(
+            &clients,
+            &origin_url,
+            NetworkPolicy::LoopbackOnly,
+            false,
+            &announce(AnnounceEvent::Started),
+            Duration::from_secs(5),
+        )
+        .await;
+        (
+            response,
+            origin_task.await.expect("redirect origin task"),
+            destination_task.await.expect("redirect destination task"),
+        )
+    }
+
     fn http_response(headers: &[(&str, &str)], body: &[u8]) -> Vec<u8> {
         let mut response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n", body.len());
         for (name, value) in headers {
@@ -1709,6 +2013,148 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("certificate")
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_system_trust_accepts_valid_dns_and_ip_chains() {
+        for case in [GeneratedTlsCase::ValidDns, GeneratedTlsCase::ValidIp] {
+            let (response, server) =
+                exercise_generated_tls(case, TrackerHttpsAuthentication::SystemTrust).await;
+            assert!(
+                response
+                    .expect("valid platform-trust response")
+                    .status()
+                    .is_success()
+            );
+            assert!(
+                server
+                    .expect("valid platform-trust request")
+                    .starts_with("GET /announce ")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_system_trust_rejects_certificate_and_name_matrix_before_http() {
+        for case in [
+            GeneratedTlsCase::UnknownIssuer,
+            GeneratedTlsCase::Expired,
+            GeneratedTlsCase::NotYetValid,
+            GeneratedTlsCase::WrongDns,
+            GeneratedTlsCase::WrongIp,
+            GeneratedTlsCase::WildcardBoundary,
+            GeneratedTlsCase::MissingIntermediate,
+            GeneratedTlsCase::WrongIntermediate,
+            GeneratedTlsCase::InvalidServerPurpose,
+        ] {
+            let (response, server) =
+                exercise_generated_tls(case, TrackerHttpsAuthentication::SystemTrust).await;
+            assert!(response.is_err(), "{case:?} must fail platform trust");
+            assert!(server.is_err(), "{case:?} must not reach HTTP");
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_disabled_reaches_http_for_certificate_failure_matrix() {
+        for case in [
+            GeneratedTlsCase::UnknownIssuer,
+            GeneratedTlsCase::Expired,
+            GeneratedTlsCase::NotYetValid,
+            GeneratedTlsCase::WrongDns,
+            GeneratedTlsCase::WrongIp,
+            GeneratedTlsCase::WildcardBoundary,
+            GeneratedTlsCase::MissingIntermediate,
+            GeneratedTlsCase::WrongIntermediate,
+            GeneratedTlsCase::InvalidServerPurpose,
+        ] {
+            let (response, server) =
+                exercise_generated_tls(case, TrackerHttpsAuthentication::Disabled).await;
+            assert!(
+                response
+                    .unwrap_or_else(|error| panic!("{case:?} disabled request: {error}"))
+                    .status()
+                    .is_success()
+            );
+            assert!(
+                server
+                    .unwrap_or_else(|error| panic!("{case:?} disabled server: {error}"))
+                    .starts_with("GET /announce ")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_https_redirect_authenticates_every_hop_under_system_trust() {
+        let (response, origin, destination) =
+            exercise_tls_redirect(TrackerHttpsAuthentication::SystemTrust).await;
+        assert!(matches!(response, Err(HttpTrackerError::Client(_))));
+        assert!(
+            origin
+                .expect("authenticated redirect origin")
+                .starts_with("GET ")
+        );
+        assert!(
+            destination.is_err(),
+            "the untrusted second hop must not receive HTTP"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_https_redirect_reaches_invalid_second_hop_only_when_disabled() {
+        let (response, origin, destination) =
+            exercise_tls_redirect(TrackerHttpsAuthentication::Disabled).await;
+        assert!(matches!(response, Ok(HttpTrackerResponse::Success(_))));
+        assert!(
+            origin
+                .expect("disabled redirect origin")
+                .starts_with("GET ")
+        );
+        assert!(
+            destination
+                .expect("disabled redirect destination")
+                .starts_with("GET ")
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_malformed_tls_is_rejected_under_both_policies() {
+        for authentication in [
+            TrackerHttpsAuthentication::SystemTrust,
+            TrackerHttpsAuthentication::Disabled,
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("malformed TLS listener");
+            let address = listener.local_addr().expect("malformed TLS address");
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.expect("accept TLS client");
+                let mut hello = [0_u8; 512];
+                let length = stream.read(&mut hello).await.expect("read ClientHello");
+                assert_ne!(length, 0);
+                assert_eq!(hello[0], 22, "client must begin a TLS handshake");
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                    .await
+                    .expect("write malformed TLS response");
+            });
+            let clients = HttpTrackerClients::new_with_authentication(
+                NetworkPolicy::LoopbackOnly,
+                authentication,
+            )
+            .expect("malformed TLS clients");
+            let error = announce_http_tracker(
+                &clients,
+                &format!("https://{address}/announce"),
+                NetworkPolicy::LoopbackOnly,
+                false,
+                &announce(AnnounceEvent::Started),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect_err("plaintext cannot satisfy TLS");
+            assert!(matches!(error, HttpTrackerError::Client(_)));
+            server.await.expect("malformed TLS server task");
+        }
     }
 
     #[tokio::test]
