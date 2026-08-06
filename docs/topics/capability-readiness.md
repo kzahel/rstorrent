@@ -196,8 +196,12 @@ retain old effective state, and all platform/build gates pass.
 Complete IPv6 DHT operation, finite bandwidth and seeding goals,
 multi-interface and IPv6 binding, PEX,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
-playback-oriented file priorities, dynamic VPN and metered-network controls,
-and production remote access remain important. After core parity,
+playback-oriented file priorities, BEP 53 select-only magnet intake, dynamic
+VPN and metered-network controls, and production remote access remain
+important. Planned Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) owns
+the BEP 53 slice and its deliberately narrow duplicate-add product policy.
+After core parity,
 common-denominator versus full-reference deltas and the protocol evidence
 matrix choose BEP breadth; visible novelty alone does not.
 
@@ -219,6 +223,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | --- | --- | --- | --- | --- |
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 `.torrent` ingestion passes; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical, live | Only a v1 `btih` identity and supported magnet fields survive canonicalization. Controlled tracker-only and official Ubuntu metadata-only paths activate discovery during acquisition, remain durably paused, and create no payload artifacts. | [`client-persistence`](client-persistence.md) |
+| BEP 53 select-only magnet intent | Absent | none | Planned Tactical [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) requires strict bounded `so` ranges, compact pre-metadata and durable selection, additive duplicate promotion, typed duplicate outcomes, and maximum-geometry evidence without complement expansion. | [`protocol-support`](protocol-support.md), [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |

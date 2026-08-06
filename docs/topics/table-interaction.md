@@ -124,6 +124,14 @@ If a table has rows but no current row when row navigation receives focus, the
 focused row becomes the singleton selection. Empty tables ignore selection
 shortcuts.
 
+Planned Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) adds
+one programmatic singleton transition: a successful new or duplicate add makes
+the typed result torrent current and selected, chooses a category that can
+show it when necessary, and asks the virtual table to reveal it. This does not
+move DOM focus into row navigation, open detail, or create an independent
+highlight state; the Add control retains focus for repeated intake.
+
 ## Sorting, Filtering, And Virtualization
 
 Range and select-all resolve against the complete logical row model after the

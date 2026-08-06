@@ -220,6 +220,16 @@ This change is internal while no stable public wire promise exists and must be
 made with reducer and retry evidence rather than as an incidental transport
 optimization.
 
+Planned Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) makes
+the add paths the first concrete use of that direction. Magnet and metainfo
+adds return the affected torrent identity and distinguish `added`,
+`already_present`, and BEP 53 `selection_expanded` outcomes with the resulting
+revision. A plain duplicate is a successful no-op rather than a generic merge;
+only an explicit `so` selection may promote skipped files. Exact request replay
+returns the stored result without reapplying the transition, and adapters do
+not infer duplicate state from messages or snapshot differences.
+
 ## Invariants
 
 - Every mutation has one application-service instance and one session

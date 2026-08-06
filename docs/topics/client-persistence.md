@@ -487,6 +487,17 @@ same revision. A no-op is replay-safe. Metadata-only add uses ordinary durable
 paused intent while allowing the metadata worker to finish; restart restores
 that acquisition without preparing payload storage.
 
+Planned Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) must
+generalize that one-sided sparse representation before accepting BEP 53
+select-only magnets. File selection becomes one explicit wanted-or-skipped
+default plus bounded opposite exceptions. Existing rows migrate to a wanted
+default with skipped exceptions; a select-only magnet can retain a skipped
+default with wanted exceptions without materializing the complement. Pending
+pre-metadata ranges, metadata-time padding/out-of-catalog filtering, request
+receipts, paged file views, and active-owner priority fencing all preserve that
+compact meaning across restart.
+
 Tactical `040` implements that removal boundary. A torrent row remains the
 foreign-key authority while a bounded removal job records generation, data
 policy, stage, and error. Startup finishes pending path work before restoring

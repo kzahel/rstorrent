@@ -81,6 +81,13 @@ retains magnet validation. The existing root/start dialog owns options while
 the component retains only the browser `File`; bytes are read when the add
 begins and no filename, path, digest, or progress percentage enters
 presentation state.
+Planned Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) makes
+new and duplicate add outcomes consistent: a typed result selects and reveals
+the affected torrent and reports added, already-present, or BEP 53 selection-
+expanded status through the existing polite live surface. A plain duplicate
+does not open a merge prompt. Programmatic reveal retains Add DOM focus and
+does not open detail; Compose presentation parity is outside that slice.
 Tactical `085` unifies selection-scoped toolbar, More, and row-context actions.
 Transfers and Workbench expose full-selection Start, Pause, Force recheck,
 Copy magnet links, Archive, Restore, and coordinated Remove; Files exposes the
