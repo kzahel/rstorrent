@@ -78,10 +78,11 @@ their own protocol, ownership, security, and evidence requirements. Completed
 Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) records the
 Fast upload request/reject lifecycle against the established upload owner,
 including terminal cancel/read/shutdown races and controlled pinned-libtorrent
-seeding, while
-planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md)
-records PEX only after truthful advertisement and duplicate-connection
-resolution. Neither changes this campaign's current action.
+seeding, while completed Tactical
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) adds PEX only after
+truthful advertisement and duplicate-connection resolution. Incoming verified
+public registrations advertise `ut_pex` and the actual listener `p`; private
+registrations omit PEX. Neither changes this campaign's current action.
 
 ## Current Truth
 
@@ -672,9 +673,9 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - the eventual relationship among the DHT UDP port, future uTP, and UDP
   mapping; and
 - when incoming MSE/PE, IPv6 firewall pinholes, LSD, or BEP 55 become
-  independently justified tacticals. PEX now has a planned but unauthorized
-  bounded slice in Tactical
-  [`094`](../tactical/094-bounded-bep11-peer-exchange.md).
+  independently justified tacticals. Bounded PEX is complete in Tactical
+  [`094`](../tactical/094-bounded-bep11-peer-exchange.md); it does not itself
+  authorize those transports or discovery mechanisms.
 
 Tactical `084` resolves the initial default, bounds, persistence authority,
 original restart semantics, and corrupt-row behavior. External-port and

@@ -184,10 +184,9 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`094`](../tactical/094-bounded-bep11-peer-exchange.md) is authorized and in
-progress.** Implement bounded bidirectional BEP 11 through the ordinary BEP 10
-map and peer registry. Gate 1 general recognized-extension negotiation and PEX
-codecs are current.
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) is complete; no new
+implementation tactical is authorized.** The current action is to select the
+next bounded slice from recorded evidence rather than silently extending PEX.
 
 ### Next
 
@@ -213,12 +212,11 @@ matrix choose BEP breadth; visible novelty alone does not.
 PCP and NAT-PMP require their own bounded tactical and suitable controlled or
 physical gateway evidence; pinned source inspection is not a support claim.
 
-Availability-ranked activation and the complete BEP 6 request lifecycle are
-complete in Tacticals
+Availability-ranked activation, the complete BEP 6 request lifecycle, and
+bounded BEP 11 PEX are complete in Tacticals
 [`091`](../tactical/091-availability-ranked-piece-activation.md) and
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md). Bounded BEP 11 PEX in
-Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md) is the next
-planned engine download-liveness slice. Full snub
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md), and
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md). Full snub
 and parole selection remain evidence-gated rather than preplanned slices.
 
 ## Capability Scoreboard
@@ -245,7 +243,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, last-successful connection-family projection, controlled libtorrent discovery, and official Ubuntu HTTPS metadata smokes pass. HTTPS defaults to desktop/Android platform chain and requested-name validation; one hidden typed compatibility value is explicitly encrypted but unauthenticated. Controlled authenticated tracker-to-libtorrent transfer and macOS/Windows/Linux/AVD trust evidence pass. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
-| Peer exchange | Absent | none | BEP 11 depends on peer-ID duplicate resolution, truthful advertisement, bounded extension dispatch, and hostile-source controls recorded in planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
+| Peer exchange | Implemented | deterministic, runtime, interop | Verified-public BEP 11 uses bounded directional BEP 10 negotiation, 16-KiB/50-contact messages, 50-per-source and 200-per-torrent admission, a 4,096-event shared timeline, exact provenance/privacy cleanup, and the ordinary registry/dial owner. A controlled complementary two-hop pinned-libtorrent run captures one addition, an oracle-observed RSTorrent drop, and exact 16-MiB completion; underpopulated recent-peer exemptions, BEP 40, and durable PEX state remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
 ### Peer And Swarm Lifecycle

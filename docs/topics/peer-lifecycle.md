@@ -442,9 +442,9 @@ LSD, uTP, NAT traversal, persistent peer caches, and dynamic VPN or metered
 policy remain separate future tacticals. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
-[`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX after that
-identity boundary and truthful peer advertisement. The planned PEX slice does
-not change the authoritative readiness queue. Completed Tactical `092` feeds
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after
+that identity boundary and truthful peer advertisement. It does not add peer
+scoring or change the authoritative readiness queue. Completed Tactical `092` feeds
 the generation-fenced selected TCP endpoint into tracker and DHT discovery;
 endpoint selection remains distinct from observed incoming reachability.
 
@@ -640,7 +640,12 @@ runtime, generated-contract, and controlled libtorrent evidence. Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
 measured picker refinement with exact availability accounting and preserves
 unique unplanned-piece retention across replacement. Tactical
-[`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX's bounded
-discovery path. Full parole selection still requires adversarial evidence that
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX's
+bounded discovery path through the ordinary registry. It retains exact source
+provenance, 50-per-source and 200-per-torrent ceilings, private-transition and
+disconnect cleanup, a shared 4,096-event timeline, and one cursor per
+negotiated connection. Deterministic PEX-only second-hop coverage and pinned
+libtorrent complementary-peer evidence pass. Full parole selection still
+requires adversarial evidence that
 the existing retry and suspicion policy cannot recover; persisted peer caches
 also remain unplanned.

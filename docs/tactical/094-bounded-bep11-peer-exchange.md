@@ -1,7 +1,8 @@
 # Tactical 094: Bounded BEP 11 Peer Exchange
 
-Status: Authorized and in progress on 2026-08-06. Gate 1 general bounded
-BEP 10 negotiation and PEX codecs are the current executable action.
+Status: Complete on 2026-08-06. Bounded bidirectional BEP 11, its recognized
+BEP 10 map, privacy/source controls, ordinary peer-owner integration, and
+controlled two-hop evidence pass.
 
 Topics: `protocol-support`, `peer-lifecycle`, `download-correctness`,
 `application-control`, `incoming-reachability-and-seeding`,
@@ -267,6 +268,48 @@ bounded peer registry -> existing dial selector and connection budgets
 
 No public swarm, visible client, schema migration, new dependency, or physical
 device is required.
+
+## Execution Record
+
+The implementation landed in five bounded slices:
+
+- `5350b68` generalized BEP 10 negotiation for recognized `ut_metadata` and
+  `ut_pex` IDs, repeated additive handshakes, disable-by-zero, and `p`, while
+  retaining the existing BEP 9 API;
+- `5764999` installed privacy-gated incoming admission, source provenance,
+  the shared bounded outgoing timeline, connection cursors, incoming/outgoing
+  runtime dispatch, and lifecycle cleanup;
+- `a135f42` proved that PEX alone can introduce a useful second hop through
+  the ordinary registry and scheduler;
+- `dc84000` covered NAT-compatible same-address contacts and added the pinned
+  libtorrent two-hop lifecycle harness; and
+- `abc0337` kept Android's exhaustive typed failure classification current.
+
+The retained exact high waters are 16 KiB per PEX frame, 50 additions and 50
+drops per frame, 50 PEX-only contacts per source, 200 per torrent, and 4,096
+timeline events. Lagging cursors reset through a bounded snapshot; per-peer
+state retains recognized IDs, cadence/strike state, and one cursor rather
+than a peer-set copy. Privacy-unknown input is ignored, verified private input
+is neither advertised nor admitted, and a public-to-private transition
+removes PEX provenance before content scheduling.
+
+Deterministic coverage proves strict compact strides and flags, duplicate-IP
+normalization, self/network filters, exact source and torrent quotas,
+one-minute cadence and strikes, independent registry provenance, matching
+incoming drops, transient elision, cursor reset, and PEX-only second-hop
+completion. The controlled pinned-libtorrent `2.0.13.0` run negotiated local
+IDs `1` and `2`, captured one compact libtorrent addition, made RSTorrent dial
+the complementary PEX-only peer, let libtorrent observe one RSTorrent drop,
+and hash-verified 16,777,216 bytes in 164.083 seconds with SHA-1
+`b6aa1fc08b12669308b1b8fdb12c3e780b8d9d46`. The deterministic source-owner
+case supplies the opposite incoming matching-drop proof because
+libtorrent's winning duplicate connection can move later diffs away from the
+capture proxy.
+
+Focused validation passed six engine PEX tests, Android's six tests, engine
+and Android clippy with warnings denied, and the controlled Python harness.
+The final workspace formatting, clippy, and test baseline is recorded in the
+completion commit.
 
 ## Escalation And Next Boundary
 

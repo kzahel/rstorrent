@@ -659,9 +659,11 @@ libtorrent crossed orderings pass with terminal zero ownership. Peer IDs
 remain spoofable live claims and do not merge endpoint history or reputation.
 
 Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) is complete.
-Authorized Tactical
-[`094`](../tactical/094-bounded-bep11-peer-exchange.md) is now the active
-engine slice. Its current executable action is Gate 1: generalize the bounded
-recognized BEP 10 map and add deterministic BEP 11 codecs without changing
-BEP 9 behavior. No peer scoring, tit-for-tat, or unrelated extension framework
-is implied.
+Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md) is also
+complete. Its bounded recognized BEP 10 map, verified-public bidirectional
+BEP 11 owner, exact source/privacy quotas, deterministic PEX-only second hop,
+and controlled pinned-libtorrent complementary transfer pass. No peer
+scoring, tit-for-tat, underpopulated recent-peer policy, BEP 40, or unrelated
+extension framework was added. No new engine tactical is authorized; the
+readiness queue next records a selection checkpoint and independent planned
+product Tactical `100`.

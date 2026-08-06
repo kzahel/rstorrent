@@ -367,11 +367,12 @@ without treating the diagnostic WebSocket gateway as a product daemon.
 [`../tactical/013-explicit-live-network-policy.md`](../tactical/013-explicit-live-network-policy.md)
 records explicit offline, loopback-only, and online engine policy selection.
 The current application configuration is immutable for the service lifetime.
-Planned Tactical
+Completed Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) reuses that policy for
 PEX address admission and dialing, adds no application setting, and keeps PEX
-disabled until verified metadata establishes a public torrent. It is a
-recorded later slice rather than a change to current control behavior.
+disabled until verified metadata establishes a public torrent. PEX failures
+remain typed protocol failures on Android; the slice adds no command, durable
+preference, or generated application contract.
 Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 adds an atomic durable client-settings replacement while deliberately keeping

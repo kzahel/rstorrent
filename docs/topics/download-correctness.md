@@ -241,7 +241,7 @@ related unit test exists.
 | DL-C29 | Simultaneous incoming and outgoing sockets complete with the same remote peer ID | Both clients retain the same one usable connection; the loser releases every request, upload, descriptor, registry-generation, and task charge exactly once without merging endpoint reputation. | Passing pure, saturated scripted-runtime, generated-contract, and both controlled pinned-libtorrent peer-ID orderings from Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md). Opposite admission orders evict one active uploader and one outgoing generation with a decoded content request; connection high-water is two and terminal pending, established, and torrent-generation counts are zero. |
 | DL-C30 | Eligible inactive pieces have deliberately skewed live availability, including a maximum-geometry hostile case | Existing requestable partial work finishes first within explicit byte/count/partial-pressure limits, then the picker activates availability-one and lower-availability pieces before common pieces with bounded seeded rotations; optimized and naive choices agree, active block assignment performs no inactive scan, rank rebuild, sort, or candidate allocation, and a full peer request window stops before inactive activation. | Passing deterministic, maximum-geometry, release CPU/memory, controlled throughput, and controlled libtorrent `2.0.13.0` evidence from Tactical [`091`](../tactical/091-availability-ranked-piece-activation.md). The hostile active trace performs 204.8 million visits with zero rarity work, 100,000 full-window attempts visit zero inactive pieces, and the skewed eight-piece swarm verifies its sole availability-one piece first. |
 | DL-C31 | A negotiated Fast peer chokes and explicitly rejects outstanding requests | Each request receives exactly one piece/reject outcome; exact rejection immediately releases and reassigns the block without waiting for timeout, while ordinary non-Fast choke behavior remains compatible. | Passing deterministic ownership/race tests and controlled Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) evidence. A scripted Choke then exact Reject Request retries the rejected block once in under one millisecond, transfers exactly 40,000 payload bytes, and verifies the expected SHA-1; both pinned-libtorrent directions negotiate Fast and verify the same content. |
-| DL-C32 | A public torrent learns its only useful second-hop peer through a hostile-capable PEX source | Bounded PEX admits the eligible endpoint through the ordinary registry and completes, while rate/source/address limits hold and privacy-unknown or private torrents admit no PEX peer. | Planned in Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md); PEX is currently absent. |
+| DL-C32 | A public torrent learns its only useful second-hop peer through a hostile-capable PEX source | Bounded PEX admits the eligible endpoint through the ordinary registry and completes, while rate/source/address limits hold and privacy-unknown or private torrents admit no PEX peer. | Passing deterministic source/quota/privacy cases and controlled pinned-libtorrent `2.0.13.0` complementary two-hop evidence from Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). The oracle run captures one compact addition, observes one RSTorrent drop, and hash-verifies 16,777,216 bytes in 164.083 seconds. |
 
 ## Required Scheduler Observability
 
@@ -369,10 +369,9 @@ artifact. No singular `.rstorrent-part` artifact was created.
 Routine engine validation remains headless; no additional product UI is
 required by that slice.
 
-Completed Tacticals `090` and `093` own DL-C29 and DL-C31; planned Tactical
-`094` owns DL-C32 after the authoritative readiness queue reaches it. These
-records do not
-reopen the completed liveness cases or authorize implementation. Full snub
+Completed Tacticals `090`, `093`, and `094` own DL-C29, DL-C31, and DL-C32.
+These records do not reopen the completed liveness cases or authorize new
+implementation. Full snub
 semantics and parole piece isolation remain unplanned until a stable
 adversarial case shows that the current one-probe stalled policy or corruption
 retry cannot complete within existing bounds.
