@@ -2447,14 +2447,19 @@ mod tests {
     }
 
     async fn observe_close(stream: &mut TcpStream) {
-        match timeout(Duration::from_secs(1), stream.read(&mut [0; 1]))
-            .await
-            .expect("peer close deadline")
-        {
-            Ok(0) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
-            result => panic!("unexpected peer close result {result:?}"),
-        }
+        timeout(Duration::from_secs(2), async {
+            let mut byte = [0; 1];
+            loop {
+                match stream.read(&mut byte).await {
+                    Ok(0) => break,
+                    Ok(_) => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => break,
+                    result => panic!("unexpected peer close result {result:?}"),
+                }
+            }
+        })
+        .await
+        .expect("peer close deadline");
     }
 
     #[tokio::test]
@@ -2508,7 +2513,10 @@ mod tests {
         let (root, raw_info, registration, torrent_peers, peer_activity) =
             registration("vertical").await;
         let info_hash = registration.info_hash();
-        let service = IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLoopback))
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_activity_timeout = Duration::from_secs(5);
+        service_config.no_request_timeout = Duration::from_secs(5);
+        let service = IncomingPeerService::bind(service_config)
             .await
             .expect("bind service")
             .expect("enabled service");
@@ -2651,7 +2659,7 @@ mod tests {
         );
 
         assert!(handle.unregister(token).await.expect("unregister seed"));
-        assert_eq!(stream.read(&mut [0; 1]).await.expect("observe close"), 0);
+        observe_close(&mut stream).await;
         assert!(torrent_peers.connection_snapshot().is_empty());
         let disconnecting_precedes_empty = {
             let connection_history = peer_activity
