@@ -1,8 +1,7 @@
 # Tactical 094: Bounded BEP 11 Peer Exchange
 
-Status: Planned. This document records a decision-complete candidate slice;
-it does not authorize implementation. Its prerequisite sequence is complete,
-but selection remains a separate readiness decision.
+Status: Authorized and in progress on 2026-08-06. Gate 1 general bounded
+BEP 10 negotiation and PEX codecs are the current executable action.
 
 Topics: `protocol-support`, `peer-lifecycle`, `download-correctness`,
 `application-control`, `incoming-reachability-and-seeding`,

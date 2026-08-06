@@ -184,18 +184,13 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is complete.** The
-bilateral BEP 6 request lifecycle, ordinary-peer compatibility, exact reject
-ownership, bounded advisory state, canonical IPv4 allowed-fast generation,
-and controlled bidirectional pinned-libtorrent evidence pass. No new engine
-tactical is authorized by that completion alone.
+[`094`](../tactical/094-bounded-bep11-peer-exchange.md) is authorized and in
+progress.** Implement bounded bidirectional BEP 11 through the ordinary BEP 10
+map and peer registry. Gate 1 general recognized-extension negotiation and PEX
+codecs are current.
 
 ### Next
 
-- Select and authorize planned Tactical
-  [`094`](../tactical/094-bounded-bep11-peer-exchange.md) when continuing the
-  engine sequence. Its hard prerequisites Tacticals `090` and `093` are now
-  complete.
 - Execute planned Tactical
   [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) as
   the next independent product slice when product work is selected over the
