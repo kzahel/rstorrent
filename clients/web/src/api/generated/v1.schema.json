@@ -2987,6 +2987,8 @@
       "enum": [
         "connect",
         "handshake",
+        "self_connection",
+        "duplicate_peer_id",
         "protocol",
         "remote_closed"
       ],

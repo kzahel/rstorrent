@@ -175,7 +175,7 @@ export type PeerRequestPhase = "slow_start" | "steady" | "stalled";
 
 export type PeerSourceView = "tracker" | "peer_exchange" | "dht" | "local_discovery" | "incoming" | "manual" | "magnet_hint" | "cache";
 
-export type PeerDisconnectReason = "connect" | "handshake" | "protocol" | "remote_closed";
+export type PeerDisconnectReason = "connect" | "handshake" | "self_connection" | "duplicate_peer_id" | "protocol" | "remote_closed";
 
 export type PeerFieldCapabilities = { local_endpoint: CapabilityStatus, client_name: CapabilityStatus, ut_metadata: CapabilityStatus, interest_directions: CapabilityStatus, local_choke: CapabilityStatus, piece_availability: CapabilityStatus, protocol_rates: CapabilityStatus, upload: CapabilityStatus, metadata_stage: CapabilityStatus, };
 
