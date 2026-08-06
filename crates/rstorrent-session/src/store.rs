@@ -3362,7 +3362,8 @@ fn add_magnet(
     }
     let existing = transaction
         .query_row(
-            "SELECT raw_info, selection_default,
+            "SELECT raw_info, selection_default, state, storage_state,
+                    desired_state, archived,
                     EXISTS(SELECT 1 FROM removal_jobs r
                            WHERE r.info_hash = torrents.info_hash)
              FROM torrents WHERE info_hash = ?1",
@@ -3371,13 +3372,26 @@ fn add_magnet(
                 Ok((
                     row.get::<_, Option<Vec<u8>>>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, bool>(6)?,
                 ))
             },
         )
         .optional()
         .map_err(internal_error)?;
-    if let Some((raw_info, selection_default, removing)) = existing {
+    if let Some((
+        raw_info,
+        selection_default,
+        state,
+        storage_state,
+        desired_state,
+        archived,
+        removing,
+    )) = existing
+    {
         if removing {
             return Err((
                 ErrorCode::InvalidTorrentState,
@@ -3394,6 +3408,15 @@ fn add_magnet(
                 ),
             ));
         };
+        if raw_info.is_some()
+            && (matches!(state.as_str(), "needs_repair" | "awaiting_publication")
+                || matches!(storage_state.as_str(), "needs_repair" | "prepared"))
+        {
+            return Err((
+                ErrorCode::InvalidTorrentState,
+                "file selection cannot change during repair or publication".to_owned(),
+            ));
+        }
         let newly_wanted = expand_duplicate_selection(
             transaction,
             &magnet.info_hash,
@@ -3424,12 +3447,23 @@ fn add_magnet(
             ));
         }
         let revision = next_revision(transaction, current_revision)?;
+        let next_state = raw_info.as_ref().map(|_| {
+            if desired_state == "paused" || archived {
+                "paused"
+            } else {
+                "checking"
+            }
+        });
         transaction
             .execute(
-                "UPDATE torrents SET updated_revision = ?2 WHERE info_hash = ?1",
+                "UPDATE torrents SET updated_revision = ?2,
+                    state = COALESCE(?3, state),
+                    error = CASE WHEN ?3 IS NULL THEN error ELSE NULL END
+                 WHERE info_hash = ?1",
                 params![
                     magnet.info_hash.as_slice(),
-                    sql_revision(revision).map_err(|e| internal_message(&e.to_string()))?
+                    sql_revision(revision).map_err(|e| internal_message(&e.to_string()))?,
+                    next_state,
                 ],
             )
             .map_err(internal_error)?;

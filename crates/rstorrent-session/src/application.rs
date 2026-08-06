@@ -588,9 +588,28 @@ impl ApplicationService {
             Command::SetFilePriorityRanges { .. } => true,
             _ => false,
         };
+        let add_magnet_duplicate = match &command {
+            Command::AddMagnet { magnet, .. } => {
+                let target = rstorrent_protocol::magnet::Magnet::parse(magnet)
+                    .ok()
+                    .map(|magnet| encode_info_hash(magnet.info_hash));
+                if let Some(target) = target {
+                    self.store_mut()?
+                        .snapshot()?
+                        .torrents
+                        .iter()
+                        .any(|torrent| torrent.torrent_id == target)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
         let selected_root = match &command {
-            Command::AddMagnet { storage_root, .. }
-            | Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.as_str()),
+            Command::AddMagnet { storage_root, .. } if !add_magnet_duplicate => {
+                Some(storage_root.as_str())
+            }
+            Command::SetDefaultStorageRoot { storage_root } => Some(storage_root.as_str()),
             _ => None,
         };
         if let Some(storage_root) = selected_root
@@ -633,7 +652,7 @@ impl ApplicationService {
                 }
                 _ => None,
             };
-            if target.is_some_and(|target| target != active_torrent) {
+            if target.is_some_and(|target| target != active_torrent) && !add_magnet_duplicate {
                 return Ok(ResponseEnvelope::error(
                     request.request_id,
                     self.store_mut()?.revision()?,
@@ -862,8 +881,30 @@ impl ApplicationService {
         source: Vec<u8>,
     ) -> Result<ResponseEnvelope, ApplicationError> {
         self.reap_finished().await?;
-        if !self.storage_roots.contains_key(&request.storage_root) {
-            let snapshot = self.store_mut()?.snapshot()?;
+        let prepare_request = request.clone();
+        let prepared = match tokio::task::spawn_blocking(move || {
+            prepare_torrent_bytes(&prepare_request, source)
+        })
+        .await
+        .map_err(|error| ApplicationError::Join(error.to_string()))?
+        {
+            Ok(prepared) => prepared,
+            Err((code, message)) => {
+                return Ok(ResponseEnvelope::error(
+                    request.request_id,
+                    self.store_mut()?.revision()?,
+                    code,
+                    message,
+                ));
+            }
+        };
+        let torrent_id = prepared.torrent_id();
+        let snapshot = self.store_mut()?.snapshot()?;
+        let duplicate = snapshot
+            .torrents
+            .iter()
+            .any(|torrent| torrent.torrent_id == torrent_id);
+        if !duplicate && !self.storage_roots.contains_key(&request.storage_root) {
             let known = snapshot
                 .storage
                 .roots
@@ -887,27 +928,9 @@ impl ApplicationService {
                 },
             ));
         }
-
-        let prepare_request = request.clone();
-        let prepared = match tokio::task::spawn_blocking(move || {
-            prepare_torrent_bytes(&prepare_request, source)
-        })
-        .await
-        .map_err(|error| ApplicationError::Join(error.to_string()))?
-        {
-            Ok(prepared) => prepared,
-            Err((code, message)) => {
-                return Ok(ResponseEnvelope::error(
-                    request.request_id,
-                    self.store_mut()?.revision()?,
-                    code,
-                    message,
-                ));
-            }
-        };
-        let torrent_id = prepared.torrent_id();
         if let Some((active_torrent, _)) = self.active_download()
             && active_torrent != torrent_id
+            && !duplicate
         {
             let active_torrent = active_torrent.to_owned();
             return Ok(ResponseEnvelope::error(
@@ -942,15 +965,25 @@ impl ApplicationService {
         }
         self.refresh_views()?;
         self.reconcile_discovery_catalog().await?;
-        self.views.record_diagnostic(
-            DiagnosticSeverity::Info,
-            category::LIFECYCLE_TORRENT,
-            "torrent_bytes_added",
-            Some(&torrent_id),
-            "Torrent metainfo bytes added to the session",
-            &[],
-        )?;
-        self.start_if_possible(&torrent_id).await?;
+        if matches!(
+            response.result,
+            Some(CommandResult::AddTorrent {
+                result: crate::AddTorrentResult {
+                    disposition: AddTorrentDisposition::Added,
+                    ..
+                }
+            })
+        ) {
+            self.views.record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::LIFECYCLE_TORRENT,
+                "torrent_bytes_added",
+                Some(&torrent_id),
+                "Torrent metainfo bytes added to the session",
+                &[],
+            )?;
+            self.start_if_possible(&torrent_id).await?;
+        }
         self.reconcile_discovery_torrent(&torrent_id).await?;
         Ok(response)
     }
