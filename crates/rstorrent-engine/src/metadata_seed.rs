@@ -299,6 +299,15 @@ impl MetadataSeedServer {
                 PeerMessage::Piece { .. } => {
                     return Err(MetadataSeedError::UnexpectedMessage("payload data"));
                 }
+                PeerMessage::SuggestPiece(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone
+                | PeerMessage::RejectRequest(_)
+                | PeerMessage::AllowedFast(_) => {
+                    return Err(MetadataSeedError::UnexpectedMessage(
+                        "unnegotiated Fast message",
+                    ));
+                }
             }
         }
     }

@@ -12,6 +12,8 @@ pub const MAX_FRAME_LENGTH: usize = 1 + MAX_BITFIELD_PAYLOAD_LENGTH;
 pub const MAX_DECODER_INPUT_LENGTH: usize = 64 * 1024;
 pub const EXTENSION_PROTOCOL_RESERVED_INDEX: usize = 5;
 pub const EXTENSION_PROTOCOL_RESERVED_BIT: u8 = 0x10;
+pub const FAST_EXTENSION_RESERVED_INDEX: usize = 7;
+pub const FAST_EXTENSION_RESERVED_BIT: u8 = 0x04;
 const MAX_MESSAGES_PER_PUSH: usize = 1024;
 const PROTOCOL_NAME: &[u8; 19] = b"BitTorrent protocol";
 
@@ -24,6 +26,26 @@ pub struct Handshake {
 impl Handshake {
     pub fn supports_extensions(&self) -> bool {
         self.reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] & EXTENSION_PROTOCOL_RESERVED_BIT != 0
+    }
+
+    pub fn supports_fast_extension(&self) -> bool {
+        self.reserved[FAST_EXTENSION_RESERVED_INDEX] & FAST_EXTENSION_RESERVED_BIT != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NegotiatedPeerCapabilities {
+    pub fast_extension: bool,
+}
+
+impl NegotiatedPeerCapabilities {
+    pub fn negotiate(local_reserved: [u8; 8], remote: &Handshake) -> Self {
+        Self {
+            fast_extension: local_reserved[FAST_EXTENSION_RESERVED_INDEX]
+                & FAST_EXTENSION_RESERVED_BIT
+                != 0
+                && remote.supports_fast_extension(),
+        }
     }
 }
 
@@ -121,6 +143,11 @@ pub enum PeerMessage {
         begin: u32,
         block: Vec<u8>,
     },
+    SuggestPiece(u32),
+    HaveAll,
+    HaveNone,
+    RejectRequest(BlockRequest),
+    AllowedFast(u32),
     Extended {
         id: u8,
         payload: Vec<u8>,
@@ -269,12 +296,15 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.push(5);
             payload.extend_from_slice(bitfield);
         }
-        PeerMessage::Request(request) | PeerMessage::Cancel(request) => {
+        PeerMessage::Request(request)
+        | PeerMessage::Cancel(request)
+        | PeerMessage::RejectRequest(request) => {
             validate_request_length(request.length)?;
-            payload.push(if matches!(message, PeerMessage::Request(_)) {
-                6
-            } else {
-                8
+            payload.push(match message {
+                PeerMessage::Request(_) => 6,
+                PeerMessage::Cancel(_) => 8,
+                PeerMessage::RejectRequest(_) => 16,
+                _ => unreachable!("request-shaped message match is exhaustive"),
             });
             payload.extend_from_slice(&request.index.to_be_bytes());
             payload.extend_from_slice(&request.begin.to_be_bytes());
@@ -295,6 +325,16 @@ pub fn encode_message(message: &PeerMessage) -> Result<Vec<u8>, FrameError> {
             payload.extend_from_slice(&index.to_be_bytes());
             payload.extend_from_slice(&begin.to_be_bytes());
             payload.extend_from_slice(block);
+        }
+        PeerMessage::SuggestPiece(index) => {
+            payload.push(13);
+            payload.extend_from_slice(&index.to_be_bytes());
+        }
+        PeerMessage::HaveAll => payload.push(14),
+        PeerMessage::HaveNone => payload.push(15),
+        PeerMessage::AllowedFast(index) => {
+            payload.push(17);
+            payload.extend_from_slice(&index.to_be_bytes());
         }
         PeerMessage::Extended {
             id,
@@ -358,7 +398,7 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
             frame.drain(..5);
             Ok(PeerMessage::Bitfield(frame))
         }
-        6 | 8 => {
+        6 | 8 | 16 => {
             exact_length(id, length, 13)?;
             let request = BlockRequest {
                 index: read_u32(&frame, 5),
@@ -366,10 +406,11 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
                 length: read_u32(&frame, 13),
             };
             validate_request_length(request.length)?;
-            Ok(if id == 6 {
-                PeerMessage::Request(request)
-            } else {
-                PeerMessage::Cancel(request)
+            Ok(match id {
+                6 => PeerMessage::Request(request),
+                8 => PeerMessage::Cancel(request),
+                16 => PeerMessage::RejectRequest(request),
+                _ => unreachable!("request-shaped message ID match is exhaustive"),
             })
         }
         7 => {
@@ -385,6 +426,17 @@ fn decode_frame(mut frame: Vec<u8>) -> Result<PeerMessage, FrameError> {
                 block: frame,
             })
         }
+        13 | 17 => {
+            exact_length(id, length, 5)?;
+            let index = read_u32(&frame, 5);
+            Ok(if id == 13 {
+                PeerMessage::SuggestPiece(index)
+            } else {
+                PeerMessage::AllowedFast(index)
+            })
+        }
+        14 => exact_length(id, length, 1).map(|()| PeerMessage::HaveAll),
+        15 => exact_length(id, length, 1).map(|()| PeerMessage::HaveNone),
         20 => {
             if length < 2 {
                 return Err(FrameError::InvalidMessageLength { id, length });
@@ -429,8 +481,9 @@ fn validate_request_length(length: u32) -> Result<(), FrameError> {
 mod tests {
     use super::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, FrameError, HandshakeError, MAX_BITFIELD_PAYLOAD_LENGTH,
-        MAX_EXTENSION_PAYLOAD_LENGTH, MAX_FRAME_LENGTH, PeerMessage, decode_handshake,
+        FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, FrameDecoder, FrameError,
+        HandshakeError, MAX_BITFIELD_PAYLOAD_LENGTH, MAX_EXTENSION_PAYLOAD_LENGTH,
+        MAX_FRAME_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
         encode_handshake, encode_handshake_with_reserved, encode_message,
     };
 
@@ -470,6 +523,23 @@ mod tests {
 
         assert_eq!(handshake.reserved, reserved);
         assert!(handshake.supports_extensions());
+    }
+
+    #[test]
+    fn fast_extension_negotiation_is_bilateral() {
+        let mut local = [0; 8];
+        local[FAST_EXTENSION_RESERVED_INDEX] = FAST_EXTENSION_RESERVED_BIT;
+        let remote_without_fast = super::Handshake {
+            peer_id: [1; 20],
+            reserved: [0; 8],
+        };
+        assert!(!NegotiatedPeerCapabilities::negotiate(local, &remote_without_fast).fast_extension);
+
+        let mut remote_with_fast = remote_without_fast;
+        remote_with_fast.reserved[FAST_EXTENSION_RESERVED_INDEX] = FAST_EXTENSION_RESERVED_BIT;
+        assert!(remote_with_fast.supports_fast_extension());
+        assert!(NegotiatedPeerCapabilities::negotiate(local, &remote_with_fast).fast_extension);
+        assert!(!NegotiatedPeerCapabilities::negotiate([0; 8], &remote_with_fast).fast_extension);
     }
 
     #[test]
@@ -582,6 +652,41 @@ mod tests {
                 maximum: super::MAX_REQUEST_BLOCK_LENGTH,
             })
         );
+    }
+
+    #[test]
+    fn fast_messages_round_trip_with_exact_lengths() {
+        let request = BlockRequest {
+            index: 17,
+            begin: 16_384,
+            length: 16_384,
+        };
+        let messages = [
+            PeerMessage::SuggestPiece(9),
+            PeerMessage::HaveAll,
+            PeerMessage::HaveNone,
+            PeerMessage::RejectRequest(request),
+            PeerMessage::AllowedFast(11),
+        ];
+        let mut combined = Vec::new();
+        for message in &messages {
+            combined.extend(encode_message(message).expect("encode Fast message"));
+        }
+        assert_eq!(
+            FrameDecoder::new()
+                .push(&combined)
+                .expect("decode coalesced Fast messages"),
+            messages
+        );
+
+        for (id, length) in [(13, 1), (14, 5), (15, 5), (16, 5), (17, 1)] {
+            let mut frame = vec![0, 0, 0, length as u8, id];
+            frame.resize(4 + length, 0);
+            assert_eq!(
+                FrameDecoder::new().push(&frame),
+                Err(FrameError::InvalidMessageLength { id, length })
+            );
+        }
     }
 
     #[test]

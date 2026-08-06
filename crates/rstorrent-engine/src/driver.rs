@@ -927,6 +927,15 @@ impl PremetadataPeerState {
                     "extension message was dispatched as core peer state",
                 ));
             }
+            PeerMessage::SuggestPiece(_)
+            | PeerMessage::HaveAll
+            | PeerMessage::HaveNone
+            | PeerMessage::RejectRequest(_)
+            | PeerMessage::AllowedFast(_) => {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "Fast message arrived without negotiated support",
+                ));
+            }
         }
         Ok(())
     }
@@ -3928,6 +3937,13 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Request(_)
             | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
+            PeerMessage::SuggestPiece(_)
+            | PeerMessage::HaveAll
+            | PeerMessage::HaveNone
+            | PeerMessage::RejectRequest(_)
+            | PeerMessage::AllowedFast(_) => {
+                return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+            }
         }
         Ok(ContentMessageDisposition::Continue)
     }

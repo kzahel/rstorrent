@@ -414,6 +414,11 @@ impl OnePieceDownload {
             }
             PeerMessage::Request(_) => Err(PieceError::UnexpectedMessage("request")),
             PeerMessage::Extended { .. } => Err(PieceError::UnexpectedMessage("extended")),
+            PeerMessage::SuggestPiece(_)
+            | PeerMessage::HaveAll
+            | PeerMessage::HaveNone
+            | PeerMessage::RejectRequest(_)
+            | PeerMessage::AllowedFast(_) => Err(PieceError::UnexpectedMessage("fast extension")),
         }
     }
 
