@@ -7,12 +7,46 @@ pub const MAX_PEER_HINTS: usize = 32;
 pub const MAX_TRACKERS: usize = 32;
 pub const MAX_HOST_LENGTH: usize = 253;
 pub const MAX_TRACKER_URL_LENGTH: usize = 2 * 1024;
+pub const MAX_FILE_INDEX: u32 = 374_998;
+pub const MAX_SELECT_ONLY_RANGES: usize = 4_096;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileIndexRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SelectOnly {
+    ranges: Vec<FileIndexRange>,
+}
+
+impl SelectOnly {
+    pub fn ranges(&self) -> &[FileIndexRange] {
+        &self.ranges
+    }
+
+    pub fn canonical(&self) -> String {
+        self.ranges
+            .iter()
+            .map(|range| {
+                if range.start == range.end {
+                    range.start.to_string()
+                } else {
+                    format!("{}-{}", range.start, range.end)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Magnet {
     pub info_hash: [u8; 20],
     pub peer_hints: Vec<PeerHint>,
     pub trackers: Vec<TrackerUrl>,
+    pub select_only: Option<SelectOnly>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -131,6 +165,9 @@ pub enum MagnetError {
     UnsupportedV2,
     TooManyPeerHints { maximum: usize },
     TooManyTrackers { maximum: usize },
+    InvalidSelectOnly,
+    SelectOnlyIndexOutOfRange { maximum_exclusive: u32 },
+    TooManySelectOnlyRanges { maximum: usize },
 }
 
 impl fmt::Display for MagnetError {
@@ -159,6 +196,15 @@ impl fmt::Display for MagnetError {
             Self::TooManyTrackers { maximum } => {
                 write!(formatter, "magnet has more than {maximum} valid trackers")
             }
+            Self::InvalidSelectOnly => write!(formatter, "magnet has an invalid select-only value"),
+            Self::SelectOnlyIndexOutOfRange { maximum_exclusive } => write!(
+                formatter,
+                "select-only file index must be less than {maximum_exclusive}"
+            ),
+            Self::TooManySelectOnlyRanges { maximum } => write!(
+                formatter,
+                "magnet has more than {maximum} select-only ranges"
+            ),
         }
     }
 }
@@ -193,6 +239,8 @@ impl Magnet {
         let mut has_v2_identity = false;
         let mut peer_hints = Vec::new();
         let mut trackers = Vec::new();
+        let mut select_only_ranges = Vec::new();
+        let mut has_select_only = false;
         for parameter in parameters {
             let (encoded_name, encoded_value) =
                 parameter.split_once('=').unwrap_or((parameter, ""));
@@ -232,6 +280,9 @@ impl Magnet {
                     });
                 }
                 trackers.push(tracker);
+            } else if name.eq_ignore_ascii_case("so") {
+                has_select_only = true;
+                parse_select_only(&value, &mut select_only_ranges)?;
             }
         }
 
@@ -242,8 +293,74 @@ impl Magnet {
             info_hash: info_hash.ok_or(MagnetError::MissingInfoHash)?,
             peer_hints,
             trackers,
+            select_only: has_select_only.then(|| SelectOnly {
+                ranges: canonicalize_ranges(select_only_ranges),
+            }),
         })
     }
+}
+
+fn parse_select_only(value: &str, ranges: &mut Vec<FileIndexRange>) -> Result<(), MagnetError> {
+    if value.is_empty() || !value.is_ascii() {
+        return Err(MagnetError::InvalidSelectOnly);
+    }
+    for token in value.split(',') {
+        if token.is_empty() {
+            return Err(MagnetError::InvalidSelectOnly);
+        }
+        let (start, end) = match token.split_once('-') {
+            Some((start, end)) if !start.is_empty() && !end.is_empty() && !end.contains('-') => (
+                parse_select_only_index(start)?,
+                parse_select_only_index(end)?,
+            ),
+            Some(_) => return Err(MagnetError::InvalidSelectOnly),
+            None => {
+                let index = parse_select_only_index(token)?;
+                (index, index)
+            }
+        };
+        if start > end {
+            return Err(MagnetError::InvalidSelectOnly);
+        }
+        ranges.push(FileIndexRange { start, end });
+    }
+    let canonical_count = canonicalize_ranges(ranges.clone()).len();
+    if canonical_count > MAX_SELECT_ONLY_RANGES {
+        return Err(MagnetError::TooManySelectOnlyRanges {
+            maximum: MAX_SELECT_ONLY_RANGES,
+        });
+    }
+    Ok(())
+}
+
+fn parse_select_only_index(value: &str) -> Result<u32, MagnetError> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(MagnetError::InvalidSelectOnly);
+    }
+    let index = value
+        .parse::<u32>()
+        .map_err(|_| MagnetError::InvalidSelectOnly)?;
+    if index >= MAX_FILE_INDEX {
+        return Err(MagnetError::SelectOnlyIndexOutOfRange {
+            maximum_exclusive: MAX_FILE_INDEX,
+        });
+    }
+    Ok(index)
+}
+
+fn canonicalize_ranges(mut ranges: Vec<FileIndexRange>) -> Vec<FileIndexRange> {
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut canonical: Vec<FileIndexRange> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if let Some(last) = canonical.last_mut()
+            && range.start <= last.end.saturating_add(1)
+        {
+            last.end = last.end.max(range.end);
+        } else {
+            canonical.push(range);
+        }
+    }
+    canonical
 }
 
 fn percent_decode(input: &str) -> Result<String, MagnetError> {
@@ -580,12 +697,61 @@ fn hex_value(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
-        MAX_TRACKER_URL_LENGTH, MAX_TRACKERS, Magnet, MagnetError, PeerHint, TrackerUrlTransport,
+        MAX_FILE_INDEX, MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
+        MAX_SELECT_ONLY_RANGES, MAX_TRACKER_URL_LENGTH, MAX_TRACKERS, Magnet, MagnetError,
+        PeerHint, TrackerUrlTransport,
     };
 
     const HEX_HASH: &str = "0123456789abcdef0123456789abcdef01234567";
     const BASE32_HASH: &str = "AERUKZ4JVPG66AJDIVTYTK6N54ASGRLH";
+
+    #[test]
+    fn select_only_is_strict_compact_and_canonical() {
+        let magnet = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{HEX_HASH}&so=8,2-4,3-6&so=0%2C1,7"
+        ))
+        .expect("select-only magnet");
+        let selection = magnet.select_only.expect("selection");
+        assert_eq!(selection.canonical(), "0-8");
+        assert_eq!(selection.ranges().len(), 1);
+
+        let maximum = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{HEX_HASH}&so=0-{}",
+            MAX_FILE_INDEX - 1
+        ))
+        .expect("compact maximum range");
+        assert_eq!(
+            maximum.select_only.expect("selection").canonical(),
+            format!("0-{}", MAX_FILE_INDEX - 1)
+        );
+    }
+
+    #[test]
+    fn select_only_rejects_malformed_and_bounded_inputs() {
+        for value in [
+            "", ",1", "1,", "1,,2", "-1", "1-", "2-1", "1-2-3", "+1", " 1", "١",
+        ] {
+            assert!(
+                Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&so={value}")).is_err(),
+                "{value:?}"
+            );
+        }
+        assert!(matches!(
+            Magnet::parse(&format!(
+                "magnet:?xt=urn:btih:{HEX_HASH}&so={MAX_FILE_INDEX}"
+            )),
+            Err(MagnetError::SelectOnlyIndexOutOfRange { .. })
+        ));
+
+        let values = (0..=MAX_SELECT_ONLY_RANGES)
+            .map(|index| (index * 2).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(matches!(
+            Magnet::parse(&format!("magnet:?xt=urn:btih:{HEX_HASH}&so={values}")),
+            Err(MagnetError::TooLong { .. }) | Err(MagnetError::TooManySelectOnlyRanges { .. })
+        ));
+    }
 
     #[test]
     fn accepts_hex_base32_repetition_and_bounded_peer_forms() {
