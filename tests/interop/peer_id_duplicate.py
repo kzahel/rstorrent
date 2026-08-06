@@ -39,9 +39,13 @@ class Fixture:
 class GatedProxy:
     """Hold RSTorrent's outgoing handshake until libtorrent dials it."""
 
-    def __init__(self, target_port: int) -> None:
+    def __init__(self, target_port: int, hold_upstream_after_handshake: bool = False) -> None:
         self.target_port = target_port
+        self.hold_upstream_after_handshake = hold_upstream_after_handshake
         self.gate = threading.Event()
+        self.upstream_payload_gate = threading.Event()
+        if not hold_upstream_after_handshake:
+            self.upstream_payload_gate.set()
         self.accepted = threading.Event()
         self.stop_requested = threading.Event()
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -54,7 +58,7 @@ class GatedProxy:
         self.error: BaseException | None = None
         self.downstream_bytes = 0
         self.upstream_bytes = 0
-        self.downstream_prefix = bytearray()
+        self.downstream_trace = bytearray()
         self.thread = threading.Thread(target=self._run, name="peer-id-race-proxy")
 
     def start(self) -> None:
@@ -63,9 +67,13 @@ class GatedProxy:
     def release(self) -> None:
         self.gate.set()
 
+    def release_upstream_payload(self) -> None:
+        self.upstream_payload_gate.set()
+
     def shutdown(self) -> None:
         self.stop_requested.set()
         self.gate.set()
+        self.upstream_payload_gate.set()
         try:
             self.listener.close()
         except OSError:
@@ -121,12 +129,23 @@ class GatedProxy:
                 target = upstream if source is downstream else downstream
                 if source is downstream:
                     self.downstream_bytes += len(payload)
-                    if len(self.downstream_prefix) < 68:
-                        self.downstream_prefix.extend(
-                            payload[: 68 - len(self.downstream_prefix)]
+                    if len(self.downstream_trace) < 4096:
+                        self.downstream_trace.extend(
+                            payload[: 4096 - len(self.downstream_trace)]
                         )
                 else:
+                    forwarded = self.upstream_bytes
                     self.upstream_bytes += len(payload)
+                    if self.hold_upstream_after_handshake:
+                        handshake_bytes = max(0, min(len(payload), 68 - forwarded))
+                        if handshake_bytes > 0:
+                            target.sendall(payload[:handshake_bytes])
+                        payload = payload[handshake_bytes:]
+                        while payload and not self.upstream_payload_gate.wait(0.05):
+                            if self.stop_requested.is_set():
+                                return
+                        if not payload:
+                            continue
                 try:
                     target.sendall(payload)
                 except (BrokenPipeError, ConnectionResetError):
@@ -163,6 +182,19 @@ def free_port() -> int:
     port = listener.getsockname()[1]
     listener.close()
     return int(port)
+
+
+def trace_contains_request(trace: bytearray) -> bool:
+    snapshot = bytes(trace)
+    offset = 68
+    while offset + 4 <= len(snapshot):
+        length = int.from_bytes(snapshot[offset : offset + 4], "big")
+        if offset + 4 + length > len(snapshot):
+            return False
+        if length > 0 and snapshot[offset + 4] == 6:
+            return True
+        offset += 4 + length
+    return False
 
 
 def libtorrent_session(peer_fingerprint: str) -> lt.session:
@@ -237,6 +269,7 @@ def run_case(
     parameters.flags &= ~lt.torrent_flags.paused
     parameters.flags &= ~lt.torrent_flags.auto_managed
     handle = session.add_torrent(parameters)
+    handle.set_upload_limit(64 * 1024)
     libtorrent_port = wait_for_leecher(session, handle)
     proxy = GatedProxy(libtorrent_port)
     proxy.start()
@@ -275,30 +308,71 @@ def run_case(
         if not proxy.accepted.wait(5):
             raise ScenarioFailure("RSTorrent did not begin the gated outgoing dial")
         ready_port = int(str(ready.get("listen", "")).rpartition(":")[2])
-        incoming_proxy = GatedProxy(ready_port)
+        incoming_proxy = GatedProxy(
+            ready_port,
+            hold_upstream_after_handshake=expected_direction == "incoming",
+        )
         incoming_proxy.start()
         incoming_proxy.release()
-        incoming_port = int(incoming_proxy.address.rpartition(":")[2])
-        handle.connect_peer(("127.0.0.1", incoming_port))
-        if not incoming_proxy.accepted.wait(5):
-            raise ScenarioFailure("libtorrent did not begin the crossed outgoing dial")
-        incoming_deadline = time.monotonic() + 5
-        while (
-            time.monotonic() < incoming_deadline
-            and incoming_proxy.upstream_bytes < 68
-        ):
-            time.sleep(0.05)
-        if incoming_proxy.upstream_bytes < 68:
-            process.stdin.write("stop\n")
-            process.stdin.flush()
-            diagnostic = process.stdout.readline()
-            raise ScenarioFailure(
-                "libtorrent crossed outgoing dial did not handshake; "
-                f"forwarded={incoming_proxy.downstream_bytes}/"
-                f"{incoming_proxy.upstream_bytes} "
-                f"prefix={incoming_proxy.downstream_prefix.hex()}; probe={diagnostic}"
-            )
-        proxy.release()
+
+        def start_crossed_incoming() -> None:
+            incoming_port = int(incoming_proxy.address.rpartition(":")[2])
+            handle.connect_peer(("127.0.0.1", incoming_port))
+            if not incoming_proxy.accepted.wait(5):
+                raise ScenarioFailure("libtorrent did not begin the crossed outgoing dial")
+            incoming_deadline = time.monotonic() + 5
+            while (
+                time.monotonic() < incoming_deadline
+                and incoming_proxy.upstream_bytes < 68
+            ):
+                time.sleep(0.05)
+            if incoming_proxy.upstream_bytes < 68:
+                raise ScenarioFailure(
+                    "libtorrent crossed outgoing dial did not handshake; "
+                    f"forwarded={incoming_proxy.downstream_bytes}/"
+                    f"{incoming_proxy.upstream_bytes} "
+                    f"trace={incoming_proxy.downstream_trace.hex()}"
+                )
+
+        def start_source(upload_limit: int = 0) -> tuple[lt.session, lt.torrent_handle]:
+            controlled_source = libtorrent_session("-LS0001-")
+            source_parameters = lt.add_torrent_params()
+            source_parameters.ti = fixture.torrent_info
+            source_parameters.save_path = str(fixture.seed_root)
+            source_parameters.flags |= lt.torrent_flags.seed_mode
+            source_parameters.flags &= ~lt.torrent_flags.paused
+            source_parameters.flags &= ~lt.torrent_flags.auto_managed
+            controlled_handle = controlled_source.add_torrent(source_parameters)
+            if upload_limit > 0:
+                controlled_handle.set_upload_limit(upload_limit)
+            source_port = wait_for_seed(controlled_source, controlled_handle)
+            handle.connect_peer(("127.0.0.1", source_port))
+            return controlled_source, controlled_handle
+
+        if expected_direction == "outgoing":
+            start_crossed_incoming()
+            proxy.release()
+        else:
+            proxy.release()
+            outgoing_deadline = time.monotonic() + 5
+            while time.monotonic() < outgoing_deadline and proxy.upstream_bytes < 68:
+                time.sleep(0.05)
+            if proxy.upstream_bytes < 68:
+                raise ScenarioFailure("RSTorrent outgoing leg did not handshake first")
+            source_session, source_handle = start_source(64 * 1024)
+            request_deadline = time.monotonic() + 15
+            while (
+                time.monotonic() < request_deadline
+                and not trace_contains_request(proxy.downstream_trace)
+            ):
+                time.sleep(0.05)
+            if not trace_contains_request(proxy.downstream_trace):
+                raise ScenarioFailure("outgoing loser did not own a content request")
+            source_session.remove_torrent(source_handle)
+            source_handle = None
+            source_session.pause()
+            start_crossed_incoming()
+
         convergence_deadline = time.monotonic() + 5
         while time.monotonic() < convergence_deadline:
             if len(handle.get_peer_info()) == 1:
@@ -306,19 +380,13 @@ def run_case(
             time.sleep(0.05)
         else:
             raise ScenarioFailure(
-                f"crossed connections did not converge: libtorrent_peers={len(handle.get_peer_info())}"
+                f"{expected_direction} crossed connections did not converge: "
+                f"libtorrent_peers={len(handle.get_peer_info())}"
             )
+        incoming_proxy.release_upstream_payload()
 
-        source_session = libtorrent_session("-LS0001-")
-        source_parameters = lt.add_torrent_params()
-        source_parameters.ti = fixture.torrent_info
-        source_parameters.save_path = str(fixture.seed_root)
-        source_parameters.flags |= lt.torrent_flags.seed_mode
-        source_parameters.flags &= ~lt.torrent_flags.paused
-        source_parameters.flags &= ~lt.torrent_flags.auto_managed
-        source_handle = source_session.add_torrent(source_parameters)
-        source_port = wait_for_seed(source_session, source_handle)
-        handle.connect_peer(("127.0.0.1", source_port))
+        if expected_direction == "outgoing":
+            source_session, source_handle = start_source()
 
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
@@ -344,7 +412,7 @@ def run_case(
         winner_field = f"{expected_direction}_winner_observed"
         if not completed.get(winner_field):
             raise ScenarioFailure(f"probe did not observe {expected_direction} winner: {completed}")
-        if int(completed.get("duplicate_rows", 0)) < 1:
+        if completed.get("duplicate_connections") != 1:
             raise ScenarioFailure(f"probe lacks typed duplicate evidence: {completed}")
         for field in ("terminal_pending", "terminal_established", "terminal_connections"):
             if completed.get(field) != 0:
@@ -353,7 +421,7 @@ def run_case(
             "fingerprint": peer_fingerprint,
             "winner": expected_direction,
             "libtorrent_crossed_peers": 1,
-            "duplicate_rows": completed["duplicate_rows"],
+            "duplicate_connections": completed["duplicate_connections"],
             "connection_high_water": completed["connection_high_water"],
             "payload_sha1": fixture.payload_sha1,
         }

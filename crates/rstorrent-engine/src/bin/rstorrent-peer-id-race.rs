@@ -1,5 +1,6 @@
 //! Controlled crossed-connection diagnostic sharing one torrent peer owner.
 
+use std::collections::BTreeSet;
 use std::env;
 use std::error::Error;
 use std::io::Write;
@@ -120,13 +121,15 @@ async fn run() -> Result<(), Box<dyn Error>> {
         .connections
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let duplicate_rows = history
+    let duplicate_connections = history
         .iter()
         .flatten()
         .filter(|peer| {
             peer.close_reason == Some(rstorrent_engine::peer::PeerFailure::DuplicatePeerId)
         })
-        .count();
+        .map(|peer| peer.connection_id)
+        .collect::<BTreeSet<_>>()
+        .len();
     let outgoing_winners = history
         .iter()
         .filter(|peers| {
@@ -150,7 +153,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             "download_completed": download.is_ok(),
             "live_established": live.established,
             "connection_high_water": live.peer_budget.total_high_water,
-            "duplicate_rows": duplicate_rows,
+            "duplicate_connections": duplicate_connections,
             "outgoing_winner_observed": outgoing_winners > 0,
             "incoming_winner_observed": incoming_winners > 0,
             "terminal_pending": terminal.pending,
