@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download from a pinned libtorrent seed discovered only through HTTP."""
+"""Download from a pinned libtorrent seed through HTTP and compatibility HTTPS."""
 
 from __future__ import annotations
 
@@ -223,7 +223,7 @@ def tracker_magnet(info_hash: str, tracker_url: str) -> str:
     return f"magnet:?xt=urn:btih:{info_hash}&tr={quote(tracker_url, safe='')}"
 
 
-def run(binary: Path, root: Path) -> dict[str, Any]:
+def run(binary: Path, root: Path, *, https: bool) -> dict[str, Any]:
     fixture = create_fixture(root)
     diagnostics: list[str] = []
     session = create_session()
@@ -238,7 +238,12 @@ def run(binary: Path, root: Path) -> dict[str, Any]:
             fixture.seed_directory,
             diagnostics,
         )
-        tracker = ControlledHttpTracker(fixture.info_hash, peer_port)
+        tracker = ControlledHttpTracker(
+            fixture.info_hash,
+            peer_port,
+            https=https,
+            certificate_root=root / "tls" if https else None,
+        )
         tracker.start()
         payload_root = root / "payload"
         process = start_process(
@@ -259,6 +264,9 @@ def run(binary: Path, root: Path) -> dict[str, Any]:
                         "port_mapping": "disabled",
                         "peer_connection_limit": 200,
                         "upload_slots": 8,
+                        "tracker_https_server_authentication": (
+                            "disabled" if https else "system_trust"
+                        ),
                     },
                 },
             ),
@@ -307,6 +315,9 @@ def run(binary: Path, root: Path) -> dict[str, Any]:
             "requests": len(tracker.requests),
             "libtorrent_binding": lt.__version__,
             "libtorrent_native": lt.version,
+            "security": (
+                "encrypted_unauthenticated" if https else "unencrypted"
+            ),
         }
     finally:
         if process is not None:
@@ -327,18 +338,24 @@ def main() -> int:
     repository = Path(__file__).resolve().parents[2]
     root = Path(tempfile.mkdtemp(prefix="rstorrent-http-tracker-application-"))
     try:
-        result = run(build_binary(repository), root)
-        print(f"libtorrent_binding_version={result['libtorrent_binding']}")
-        print(f"libtorrent_native_version={result['libtorrent_native']}")
-        print(
-            "http_tracker_application=verified metadata=verified content=verified "
-            "payload_sha1=verified"
-        )
-        print(
-            f"tracker_requests={result['requests']} "
-            f"tracker_events={','.join(result['events'])} "
-            f"revision={result['revision']}"
-        )
+        binary = build_binary(repository)
+        results = {
+            "http": run(binary, root / "http", https=False),
+            "https_disabled": run(binary, root / "https-disabled", https=True),
+        }
+        for profile, result in results.items():
+            print(f"profile={profile}")
+            print(f"libtorrent_binding_version={result['libtorrent_binding']}")
+            print(f"libtorrent_native_version={result['libtorrent_native']}")
+            print(
+                "http_tracker_application=verified metadata=verified "
+                f"content=verified payload_sha1=verified security={result['security']}"
+            )
+            print(
+                f"tracker_requests={result['requests']} "
+                f"tracker_events={','.join(result['events'])} "
+                f"revision={result['revision']}"
+            )
         return 0
     finally:
         shutil.rmtree(root, ignore_errors=True)
