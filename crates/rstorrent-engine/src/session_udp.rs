@@ -61,6 +61,8 @@ pub(crate) enum SessionUdpIngress {
 pub struct SessionUdpTransport {
     current: Arc<RwLock<SessionUdpCurrent>>,
     ingress: mpsc::Receiver<SessionUdpIngress>,
+    ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    stats: Arc<SessionUdpStats>,
 }
 
 #[derive(Debug)]
@@ -73,6 +75,8 @@ struct SessionUdpCurrent {
 #[derive(Clone, Debug)]
 pub struct SessionUdpHandle {
     current: Arc<RwLock<SessionUdpCurrent>>,
+    ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    stats: Arc<SessionUdpStats>,
 }
 
 impl SessionUdpHandle {
@@ -82,6 +86,10 @@ impl SessionUdpHandle {
 
     pub fn local_address(&self) -> SocketAddr {
         self.current_guard().local_address
+    }
+
+    pub fn snapshot(&self) -> SessionUdpSnapshot {
+        self.stats.snapshot(&self.ingress_sender)
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -99,6 +107,8 @@ impl SessionUdpTransport {
     pub fn handle(&self) -> SessionUdpHandle {
         SessionUdpHandle {
             current: self.current.clone(),
+            ingress_sender: self.ingress_sender.clone(),
+            stats: self.stats.clone(),
         }
     }
 
@@ -230,21 +240,32 @@ impl SessionUdpService {
         let active = start_generation(socket, ingress_sender.clone(), stats.clone());
         let handle = SessionUdpHandle {
             current: current.clone(),
+            ingress_sender: ingress_sender.clone(),
+            stats: stats.clone(),
         };
         Ok((
             Self {
                 handle,
                 active: Some(active),
                 next_generation: 2,
+                ingress_sender: ingress_sender.clone(),
+                stats: stats.clone(),
+            },
+            SessionUdpTransport {
+                current,
+                ingress,
                 ingress_sender,
                 stats,
             },
-            SessionUdpTransport { current, ingress },
         ))
     }
 
     pub fn local_address(&self) -> SocketAddr {
         self.handle.local_address()
+    }
+
+    pub fn handle(&self) -> SessionUdpHandle {
+        self.handle.clone()
     }
 
     pub fn generation(&self) -> u64 {

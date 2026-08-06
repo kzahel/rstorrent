@@ -1,10 +1,5 @@
 //! Task-free generation fencing for live client-settings reconciliation.
 
-#![allow(
-    dead_code,
-    reason = "the pure Gate 1 model is wired into the reconciler in Gate 4 of Tactical 097"
-)]
-
 use std::array;
 use std::error::Error;
 use std::fmt;
@@ -45,6 +40,16 @@ pub(crate) struct SettingsDomainGeneration {
     attempt: u64,
     domain: SettingsDomain,
     generation: u64,
+}
+
+impl SettingsDomainGeneration {
+    pub(crate) const fn attempt(self) -> u64 {
+        self.attempt
+    }
+
+    pub(crate) const fn domain(self) -> SettingsDomain {
+        self.domain
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +124,11 @@ impl SettingsConvergenceModel {
         }
         *current = state;
         true
+    }
+
+    pub(crate) fn is_current(&self, generation: SettingsDomainGeneration) -> bool {
+        generation.attempt == self.next_attempt
+            && generation.generation == self.domain_generations[generation.domain.index()]
     }
 
     pub(crate) fn state(&self, domain: SettingsDomain) -> &ClientSettingsApplicationState {

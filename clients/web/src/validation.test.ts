@@ -146,6 +146,31 @@ describe("client settings validation", () => {
     expect(() => decodeUpdateBatch(JSON.stringify(mismatchedUdp))).toThrow(
       /coordinated session UDP endpoint differs/,
     );
+
+    const uncertainCleanup = torrentBatch("Uncertain cleanup");
+    uncertainCleanup.updates[0]!.snapshot.client_settings = {
+      ...clientSettingsRuntimeFixture(),
+      effective_port_mapping: "upnp",
+      port_mapping_status: {
+        type: "cleanup_failed",
+        external_address: "203.0.113.10",
+        external_port: 48_001,
+        remaining_lease_seconds: 42,
+        detail: "delete verification failed",
+      },
+      port_mapping_application: {
+        type: "degraded",
+        reason: "port_mapping_cleanup_failed",
+        detail: "delete verification failed",
+      },
+    };
+    expect(decodeUpdateBatch(JSON.stringify(uncertainCleanup)).updates).toHaveLength(1);
+    const invalidCleanupStatus = uncertainCleanup.updates[0]!.snapshot.client_settings
+      .port_mapping_status as unknown as Record<string, unknown>;
+    invalidCleanupStatus.remaining_lease_seconds = -1;
+    expect(() => decodeUpdateBatch(JSON.stringify(uncertainCleanup))).toThrow(
+      /remaining_lease_seconds must be >= 0/,
+    );
   });
 });
 

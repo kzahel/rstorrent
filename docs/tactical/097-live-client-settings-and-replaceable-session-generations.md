@@ -1,15 +1,17 @@
 # Tactical 097: Live Client Settings And Replaceable Session Generations
 
-Status: In progress on 2026-08-06. Gates 1 through 3 are complete: the public
+Status: In progress on 2026-08-06. Gates 1 through 4 are complete: the public
 runtime contract now exposes configured intent, effective values for four
 independently converging domains, and bounded applying/applied/degraded state;
 the task-free attempt/domain generation model rejects stale results and
 nonzero-generation overflow; and the engine now keeps incoming registrations,
 peer tasks, upload state, UDP routing, and DHT state stable around replaceable
 transport generations. Session composition moves behind the private owner at
-Gate 3, including its joined dependency-ordered shutdown. Live reconciliation
-begins at Gate 4. This document does not reorder the existing tactical queue;
-completed
+Gate 3, including its joined dependency-ordered shutdown. Gate 4 wires all
+five settings through one latest-value reconciler, candidate-first transport
+handover, deterministic admission/slot changes, and finite-lease mapping
+cleanup. Gate 5 product, platform, and workspace closure remains. This
+document does not reorder the existing tactical queue; completed
 Tactical
 [`096`](096-metadata-tracker-activation-and-family-observability.md) retained
 priority and closed independently later that day.
@@ -700,6 +702,50 @@ limit and upload-slot changes, coordinated socket handover, stable DHT,
 endpoint fencing, reachability replacement/cleanup, partial failure, no-op
 retry, and rapid-generation cases. Preserve active transfers throughout the
 controlled handover cases.
+
+Completed evidence on 2026-08-06:
+
+- every successful durable or ephemeral `SetClientSettings`, including an
+  unchanged save and exact request replay, now submits the store's
+  authoritative group with a fresh attempt to one coalescing watch cell and
+  one joined reconciliation task. Per-attempt view publication is fenced at
+  the view hub, and a rapid fixed-port A-to-B-to-C application test leaves
+  only C configured, effective, and accepting;
+- peer-limit changes reconfigure the stable descriptor-clamped `PeerBudget`.
+  A live mixed connecting/established application case decreases from 14
+  permits to the effective-one-plus-ten-slack bound, observes cancellation of
+  the three newest connecting generations, then increases to 20 and admits
+  immediately. Slot changes reconfigure the stable upload scheduler, preserve
+  registration/peer identity and counters, and prove exact zero-slot choking;
+- listener/preference changes prepare a coordinated TCP/UDP candidate before
+  withdrawing the old advertisable endpoint, keep DHT and discovery owners
+  stable, and retain the old effective transport on bind failure. Controlled
+  tests record old and new TCP/UDP ports, unchanged DHT node ID, a UDP
+  receive-task high-water of two, new-endpoint acceptance, old-endpoint
+  rejection, same-value recovery after releasing a fixed-port conflict, and
+  preference-only fixed-policy application without socket churn;
+- an established incoming seed peer requests payload both before and after a
+  listener handover with the same torrent registration and peer owner and
+  exact `3 -> 7` payload-byte accounting. The controlled HTTP and HTTPS
+  tracker paths pause an outgoing payload request across the same handover and
+  complete one hash-verified piece after release without replacing the active
+  torrent task;
+- reachability generations use selector-issued mapping fences and
+  settings-attempt fences. A scripted IGD v2 exchange executes discovery,
+  description, external-address lookup, add, verification, and failed delete;
+  the old external endpoint becomes one non-advertised uncertain finite lease,
+  blocks another mapping, exposes bounded cleanup/remaining-lease truth, and
+  becomes eligible for automatic reconciliation only after expiry. The
+  engine's existing scripted normal add/verify/renew/delete and ambiguous-add
+  cases continue to pass; and
+- a clean full session run passed 174 executable tests (167 library, two
+  profile, one seed CLI, and four main tests) with one maximum-allocation case
+  ignored. All 315 executable engine library tests passed with six live/manual
+  cases ignored.
+  Session and engine all-target Clippy passed with warnings denied, as did 179
+  web tests with two intentionally skipped, TypeScript typecheck, production
+  build, and the CSP bundle scan. Gate 5 will repeat the complete matrix after
+  platform and documentation closure.
 
 ### Gate 5: persistence and product closure
 

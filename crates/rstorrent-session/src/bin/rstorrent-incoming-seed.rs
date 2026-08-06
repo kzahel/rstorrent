@@ -460,6 +460,11 @@ async fn wait_for_mapping(
                         "UPnP mapping renewal failed before readiness: {detail}"
                     )));
                 }
+                Some(PortMappingStatus::CleanupFailed { detail, .. }) => {
+                    return Err(SeedHarnessError::Catalog(format!(
+                        "prior UPnP mapping cleanup remains uncertain: {detail}"
+                    )));
+                }
                 _ => {}
             }
         }

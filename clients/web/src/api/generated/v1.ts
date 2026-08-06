@@ -23,7 +23,7 @@ export type PortMappingMechanism = "upnp_igd_v2";
 
 export type PortMappingFailureStage = "discovery" | "description" | "external_address" | "add" | "verify" | "renewal" | "delete";
 
-export type PortMappingStatus = { "type": "disabled" } | { "type": "ineligible" } | { "type": "discovering" } | { "type": "mapping" } | { "type": "mapped", mechanism: PortMappingMechanism, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds: number, } | { "type": "failed", stage: PortMappingFailureStage, detail: string, } | { "type": "renewal_failed", external_address: string, external_port: number, detail: string, } | { "type": "stopping" };
+export type PortMappingStatus = { "type": "disabled" } | { "type": "ineligible" } | { "type": "discovering" } | { "type": "mapping" } | { "type": "mapped", mechanism: PortMappingMechanism, local_address: string, local_port: number, external_address: string, external_port: number, lease_seconds: number, } | { "type": "failed", stage: PortMappingFailureStage, detail: string, } | { "type": "renewal_failed", external_address: string, external_port: number, detail: string, } | { "type": "cleanup_failed", external_address: string, external_port: number, remaining_lease_seconds: number, detail: string, } | { "type": "stopping" };
 
 export type AdvertisedPeerEndpointScope = "loopback" | "local_network";
 

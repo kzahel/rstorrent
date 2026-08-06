@@ -699,7 +699,6 @@ impl SessionStore {
         }
 
         let request_json = serde_json::to_string(request)?;
-        let durable_profile = self.database_path.is_some();
         let transaction = self.connection.transaction()?;
         if let Some((stored_request, stored_response)) = transaction
             .query_row(
@@ -747,13 +746,7 @@ impl SessionStore {
                 ),
             )
         } else {
-            apply_mutation(
-                &transaction,
-                request,
-                current_revision,
-                &self.profile_id,
-                durable_profile,
-            )?
+            apply_mutation(&transaction, request, current_revision, &self.profile_id)?
         };
 
         let response_json = serde_json::to_string(&response)?;
@@ -2762,17 +2755,8 @@ fn apply_mutation(
     request: &RequestEnvelope,
     current_revision: u64,
     profile_id: &str,
-    durable_profile: bool,
 ) -> Result<ResponseEnvelope, StoreError> {
     if let Command::SetClientSettings { settings } = &request.command {
-        if !durable_profile {
-            return Ok(ResponseEnvelope::error(
-                request.request_id.clone(),
-                current_revision,
-                ErrorCode::InvalidDurableState,
-                "client settings cannot be changed in an ephemeral profile because they require an application restart",
-            ));
-        }
         let changed = replace_client_settings(transaction, settings)?;
         let revision = if changed {
             next_revision_strict(transaction, current_revision)?
@@ -6416,7 +6400,7 @@ mod tests {
     }
 
     #[test]
-    fn client_settings_are_atomic_replayable_restartable_and_durable_only() {
+    fn client_settings_are_atomic_replayable_and_profile_scoped() {
         let root = test_root("client-settings-command");
         let configured_root = configured_root(&root);
         let mut store =
@@ -6542,7 +6526,7 @@ mod tests {
 
         let mut ephemeral =
             SessionStore::open_ephemeral("ephemeral", &[]).expect("open ephemeral store");
-        let rejected = ephemeral
+        let accepted = ephemeral
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "ephemeral-settings".to_owned(),
@@ -6554,20 +6538,15 @@ mod tests {
                     },
                 },
             })
-            .expect("reject ephemeral settings");
-        assert!(matches!(
-            rejected.outcome,
-            ResponseOutcome::Error {
-                error: crate::ErrorResponse {
-                    code: ErrorCode::InvalidDurableState,
-                    ..
-                }
-            }
-        ));
-        assert_eq!(ephemeral.revision().unwrap(), 0);
+            .expect("accept ephemeral settings");
+        assert!(matches!(accepted.outcome, ResponseOutcome::Success { .. }));
+        assert_eq!(ephemeral.revision().unwrap(), 1);
         assert_eq!(
             ephemeral.client_settings().unwrap(),
-            ClientSettings::default()
+            ClientSettings {
+                peer_connection_limit: 199,
+                ..ClientSettings::default()
+            }
         );
         fs::remove_dir_all(root).expect("remove profile");
     }

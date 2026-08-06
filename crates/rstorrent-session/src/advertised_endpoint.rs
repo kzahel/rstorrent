@@ -170,6 +170,12 @@ impl AdvertisedPeerEndpointSelector {
         endpoint_changed
     }
 
+    pub(crate) fn begin_mapping_generation(&self) -> u64 {
+        let mut state = self.selector_state();
+        state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
+        state.latest_mapping_generation
+    }
+
     pub(crate) fn renewal_failed(
         &self,
         mapping_generation: u64,
@@ -234,6 +240,18 @@ impl AdvertisedPeerEndpointSelector {
             return false;
         }
         state.incoming_observed = true;
+        true
+    }
+
+    pub(crate) fn replace_listener(&self, listener_status: &ListenerStatus) -> bool {
+        let mut state = self.selector_state();
+        let (local_endpoint, endpoint) = initial_endpoint(listener_status);
+        let generation = next_generation(state.endpoint.generation());
+        state.local_endpoint = local_endpoint;
+        state.incoming_observed = false;
+        state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
+        state.endpoint = with_generation(endpoint, generation);
+        self.publish(&state.endpoint);
         true
     }
 
@@ -346,6 +364,30 @@ fn initial_endpoint(
 
 fn next_generation(generation: u64) -> u64 {
     generation.saturating_add(1)
+}
+
+fn with_generation(
+    endpoint: AdvertisedPeerEndpointState,
+    generation: u64,
+) -> AdvertisedPeerEndpointState {
+    match endpoint {
+        AdvertisedPeerEndpointState::OutboundOnly { reason, .. } => {
+            AdvertisedPeerEndpointState::OutboundOnly { generation, reason }
+        }
+        AdvertisedPeerEndpointState::Local {
+            local_endpoint,
+            scope,
+            ..
+        } => AdvertisedPeerEndpointState::Local {
+            generation,
+            local_endpoint,
+            scope,
+        },
+        AdvertisedPeerEndpointState::Mapped { .. }
+        | AdvertisedPeerEndpointState::Stopping { .. } => {
+            unreachable!("initial listener projection cannot be mapped or stopping")
+        }
+    }
 }
 
 fn project_status(
@@ -482,6 +524,28 @@ mod tests {
     }
 
     #[test]
+    fn explicit_mapping_generations_fence_retired_listener_work() {
+        let selector = local_selector();
+        let now = Instant::now();
+        let first = selector.begin_mapping_generation();
+        let old_external = SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 20), 48_001);
+        assert!(selector.mapping_verified(first, old_external, Duration::from_secs(60), now));
+
+        selector.replace_listener(&ListenerStatus::Listening {
+            address: "192.168.50.12".to_owned(),
+            port: 41_235,
+        });
+        let replacement = selector.begin_mapping_generation();
+        assert!(replacement > first);
+        assert!(!selector.mapping_verified(first, old_external, Duration::from_secs(60), now,));
+        let new_external = SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 21), 48_002);
+        assert!(
+            selector.mapping_verified(replacement, new_external, Duration::from_secs(60), now,)
+        );
+        assert_eq!(selector.current().wire_endpoint(now), Some(new_external));
+    }
+
+    #[test]
     fn same_mapping_renewal_extends_deadline_without_wire_generation_change() {
         let selector = local_selector();
         let now = Instant::now();
@@ -517,6 +581,46 @@ mod tests {
         assert!(matches!(
             selector.current(),
             AdvertisedPeerEndpointState::Stopping { .. }
+        ));
+    }
+
+    #[test]
+    fn listener_replacement_clears_mapping_and_incoming_evidence() {
+        let selector = local_selector();
+        let now = Instant::now();
+        assert!(selector.observe_incoming());
+        assert!(selector.mapping_verified(
+            12,
+            SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 20), 48_001),
+            Duration::from_secs(60),
+            now,
+        ));
+        let previous_generation = selector.current().generation();
+        assert!(selector.replace_listener(&ListenerStatus::Listening {
+            address: "192.168.50.13".to_owned(),
+            port: 41_235,
+        }));
+        assert!(matches!(
+            selector.current(),
+            AdvertisedPeerEndpointState::Local {
+                generation,
+                local_endpoint,
+                ..
+            } if generation == previous_generation + 1
+                && local_endpoint == SocketAddrV4::new(Ipv4Addr::new(192, 168, 50, 13), 41_235)
+        ));
+        assert!(matches!(
+            selector.status(now),
+            AdvertisedPeerEndpointStatus::Local {
+                incoming_observed: false,
+                ..
+            }
+        ));
+        assert!(!selector.mapping_verified(
+            12,
+            SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 21), 48_002),
+            Duration::from_secs(60),
+            now,
         ));
     }
 

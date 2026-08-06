@@ -240,6 +240,14 @@ pub enum PortMappingStatus {
         #[schemars(length(max = 512))]
         detail: String,
     },
+    CleanupFailed {
+        #[schemars(length(max = 64))]
+        external_address: String,
+        external_port: u16,
+        remaining_lease_seconds: u32,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
     Stopping,
 }
 

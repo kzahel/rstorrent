@@ -142,8 +142,12 @@ impl UpnpDiscoveryConfig {
         })
     }
 
-    #[cfg(test)]
-    fn scripted(local_address: Ipv4Addr, discovery_endpoint: SocketAddrV4) -> Self {
+    /// Builds a loopback-scoped configuration for deterministic protocol tests.
+    ///
+    /// Product code must use [`Self::new`], which enforces a concrete local-
+    /// network address and multicast discovery.
+    #[doc(hidden)]
+    pub fn scripted_for_testing(local_address: Ipv4Addr, discovery_endpoint: SocketAddrV4) -> Self {
         Self {
             local_address,
             discovery_endpoint,
@@ -1449,7 +1453,7 @@ mod tests {
 
     #[test]
     fn scripted_config_is_strictly_loopback_scoped() {
-        let config = UpnpDiscoveryConfig::scripted(
+        let config = UpnpDiscoveryConfig::scripted_for_testing(
             Ipv4Addr::LOCALHOST,
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 19_000),
         );
@@ -1558,7 +1562,7 @@ mod tests {
             SocketAddr::V4(endpoint) => endpoint,
             SocketAddr::V6(_) => unreachable!(),
         };
-        let config = UpnpDiscoveryConfig::scripted(Ipv4Addr::LOCALHOST, endpoint);
+        let config = UpnpDiscoveryConfig::scripted_for_testing(Ipv4Addr::LOCALHOST, endpoint);
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         let error = discover_igd_v2(config, &cancellation)
@@ -1703,7 +1707,7 @@ mod tests {
             ssdp.send_to(response.as_bytes(), peer).await.unwrap();
         });
         (
-            UpnpDiscoveryConfig::scripted(Ipv4Addr::LOCALHOST, ssdp_endpoint),
+            UpnpDiscoveryConfig::scripted_for_testing(Ipv4Addr::LOCALHOST, ssdp_endpoint),
             transcript,
             udp_task,
             http_task,

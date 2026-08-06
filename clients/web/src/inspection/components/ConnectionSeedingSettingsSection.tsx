@@ -451,6 +451,19 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
           Session UDP is not available in this snapshot.
         </span>
       )}
+      {settings.effective_listener == null ? (
+        <span className={styles.runtimeWarning}>
+          No incoming-listener policy has converged yet.
+        </span>
+      ) : (
+        <span>
+          Effective listener policy: {listenerPolicyLabel(settings.effective_listener.listener)};
+          preferred automatic port {settings.effective_listener.preferred_listen_port}.
+        </span>
+      )}
+      <span>
+        Effective gateway mapping policy: {settings.effective_port_mapping === "upnp" ? "UPnP IGD v2" : "off"}.
+      </span>
       <PortMappingRuntime status={settings.port_mapping_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
       <ApplicationState label="Transport" state={settings.transport_application} />
@@ -479,8 +492,24 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
           {settings.effective_peer_connection_limit}.
         </span>
       )}
+      <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
     </div>
   );
+}
+
+function listenerPolicyLabel(listener: ListenerPolicy): string {
+  switch (listener.type) {
+    case "disabled":
+      return "off";
+    case "automatic_loopback":
+      return "automatic device-only";
+    case "fixed_loopback":
+      return `fixed device-only port ${listener.port}`;
+    case "automatic_local_network":
+      return "automatic local-network";
+    case "fixed_local_network":
+      return `fixed local-network port ${listener.port}`;
+  }
 }
 
 function ApplicationState({
@@ -577,6 +606,12 @@ function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) 
       return (
         <span className={styles.runtimeWarning}>
           The mapping at {status.external_address}:{status.external_port} could not be renewed: {status.detail}
+        </span>
+      );
+    case "cleanup_failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          The old mapping at {status.external_address}:{status.external_port} could not be confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
         </span>
       );
     case "stopping":

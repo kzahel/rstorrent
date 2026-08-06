@@ -1161,6 +1161,7 @@ function validateClientSettingsRuntime(value: unknown): void {
       "mapped",
       "failed",
       "renewal_failed",
+      "cleanup_failed",
       "stopping",
     ],
   );
@@ -1218,6 +1219,25 @@ function validateClientSettingsRuntime(value: unknown): void {
       65_535,
     );
     boundedString(mappingStatus.detail, "mapping renewal failure detail", 512);
+  } else if (mappingStatusType === "cleanup_failed") {
+    boundedString(
+      mappingStatus.external_address,
+      "cleanup-failed external address",
+      64,
+    );
+    boundedInteger(
+      mappingStatus.external_port,
+      "cleanup-failed external port",
+      1,
+      65_535,
+    );
+    boundedInteger(
+      mappingStatus.remaining_lease_seconds,
+      "cleanup-failed remaining lease",
+      0,
+      MAX_U32,
+    );
+    boundedString(mappingStatus.detail, "mapping cleanup failure detail", 512);
   }
 }
 

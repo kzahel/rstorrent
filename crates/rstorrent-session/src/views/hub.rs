@@ -28,8 +28,9 @@ use crate::diagnostics::{
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::settings::{
-    AdvertisedPeerEndpointStatus, ClientSettingsRuntimeView, PortMappingStatus,
-    StorageSettingsSnapshot,
+    AdvertisedPeerEndpointStatus, ClientSettingsApplicationState, ClientSettingsDegradedReason,
+    ClientSettingsRuntimeView, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus,
+    SettingsDomainGeneration, StorageSettingsSnapshot, bounded_utf8,
 };
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
@@ -63,6 +64,8 @@ pub(crate) struct HubState {
     pub(super) torrents: BTreeMap<String, TorrentModel>,
     storage: StorageSettingsSnapshot,
     client_settings: ClientSettingsRuntimeView,
+    client_settings_attempt_generation: Option<u64>,
+    client_settings_mapping_generation: Option<SettingsDomainGeneration>,
     disk: DiskSessionModel,
     dht: DhtInspectionView,
     speed: Arc<Mutex<SessionRateHistory>>,
@@ -133,6 +136,8 @@ impl ViewHub {
                     .collect(),
                 storage: snapshot.storage.clone(),
                 client_settings,
+                client_settings_attempt_generation: None,
+                client_settings_mapping_generation: None,
                 disk: DiskSessionModel::default(),
                 dht,
                 speed,
@@ -413,21 +418,96 @@ impl ViewHub {
         Ok(())
     }
 
-    pub(crate) fn set_port_mapping_status(
+    pub(crate) fn set_client_settings_mapping_generation(
         &self,
-        status: PortMappingStatus,
+        generation: SettingsDomainGeneration,
     ) -> Result<(), SubscriptionError> {
         let mut hub = self
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        hub.client_settings_attempt_generation = Some(generation.attempt());
+        hub.client_settings_mapping_generation = Some(generation);
+        Ok(())
+    }
+
+    pub(crate) fn begin_client_settings_attempt(
+        &self,
+        generation: SettingsDomainGeneration,
+        configured: crate::ClientSettings,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous_torrents = hub.torrents.clone();
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings_attempt_generation = Some(generation.attempt());
+        hub.client_settings_mapping_generation = Some(generation);
+        hub.client_settings.configured = configured;
+        hub.client_settings.transport_application = ClientSettingsApplicationState::Applying;
+        hub.client_settings.port_mapping_application = ClientSettingsApplicationState::Applying;
+        hub.client_settings.peer_connections_application = ClientSettingsApplicationState::Applying;
+        hub.client_settings.upload_slots_application = ClientSettingsApplicationState::Applying;
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
+    }
+
+    pub(crate) fn set_port_mapping_status_for(
+        &self,
+        generation: SettingsDomainGeneration,
+        status: PortMappingStatus,
+    ) -> Result<bool, SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings_mapping_generation != Some(generation) {
+            return Ok(false);
+        }
         if hub.client_settings.port_mapping_status == status {
-            return Ok(());
+            return Ok(true);
         }
         let previous_torrents = hub.torrents.clone();
         let previous_client_settings = hub.client_settings.clone();
+        let degraded = match &status {
+            PortMappingStatus::Failed { detail, .. }
+            | PortMappingStatus::RenewalFailed { detail, .. }
+            | PortMappingStatus::CleanupFailed { detail, .. } => {
+                Some(ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::PortMappingFailed,
+                    detail: bounded_utf8(detail, MAX_RUNTIME_DETAIL_BYTES),
+                })
+            }
+            _ => None,
+        };
         hub.client_settings.set_port_mapping_status(status);
-        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
+        if let Some(degraded) = degraded {
+            hub.client_settings.port_mapping_application = degraded;
+        }
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
+        Ok(true)
+    }
+
+    pub(crate) fn update_client_settings_runtime_for(
+        &self,
+        generation: SettingsDomainGeneration,
+        update: impl FnOnce(&mut ClientSettingsRuntimeView),
+    ) -> Result<bool, SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings_attempt_generation != Some(generation.attempt()) {
+            return Ok(false);
+        }
+        let previous_client_settings = hub.client_settings.clone();
+        update(&mut hub.client_settings);
+        if hub.client_settings == previous_client_settings {
+            return Ok(true);
+        }
+        let previous_torrents = hub.torrents.clone();
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
+        Ok(true)
     }
 
     pub(crate) fn set_advertised_peer_endpoint(

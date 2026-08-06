@@ -1,6 +1,9 @@
 //! Projection mapping and typed-patch behavior.
 
 use super::support::*;
+use crate::settings::{
+    ClientSettings, PortMappingStatus, SettingsConvergenceModel, SettingsDomain,
+};
 
 #[tokio::test]
 async fn dht_view_replaces_and_coalesces_one_complete_observation() {
@@ -618,4 +621,45 @@ fn disabled_network_is_blocked_without_changing_torrent_intent() {
     assert_eq!(assessment.disposition, ProgressDisposition::Blocked);
     assert_eq!(assessment.reason, ProgressReason::NetworkDisabled);
     assert_eq!(assessment.actions, vec![ProgressAction::EnableNetwork]);
+}
+
+#[test]
+fn stale_settings_attempts_cannot_publish_runtime_or_mapping_facts() {
+    let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+    let mut convergence = SettingsConvergenceModel::default();
+    let first = convergence
+        .begin(ClientSettings::default())
+        .expect("first attempt");
+    hub.set_client_settings_mapping_generation(first.domain(SettingsDomain::PortMapping))
+        .expect("install first generation");
+    let second = convergence
+        .begin(ClientSettings::default())
+        .expect("second attempt");
+    hub.begin_client_settings_attempt(
+        second.domain(SettingsDomain::PortMapping),
+        ClientSettings::default(),
+    )
+    .expect("install second generation");
+
+    assert!(
+        !hub.set_port_mapping_status_for(
+            first.domain(SettingsDomain::PortMapping),
+            PortMappingStatus::Mapping,
+        )
+        .expect("reject stale mapping status")
+    );
+    assert!(
+        hub.set_port_mapping_status_for(
+            second.domain(SettingsDomain::PortMapping),
+            PortMappingStatus::Mapping,
+        )
+        .expect("accept current mapping status")
+    );
+    let stale_transport = first.domain(SettingsDomain::Transport);
+    assert!(
+        !hub.update_client_settings_runtime_for(stale_transport, |runtime| {
+            runtime.effective_upload_slots = 50;
+        })
+        .expect("ignore stale runtime patch")
+    );
 }

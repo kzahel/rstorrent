@@ -134,7 +134,7 @@ pub(crate) fn classify_listener_bind_failure(error: &io::Error) -> ListenerStatu
     }
 }
 
-pub(super) fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
+pub(crate) fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
     if value.len() <= maximum_bytes {
         return value.to_owned();
     }

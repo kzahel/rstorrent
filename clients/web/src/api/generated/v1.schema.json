@@ -3495,6 +3495,42 @@
         {
           "additionalProperties": false,
           "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "external_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "external_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "remaining_lease_seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "cleanup_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "external_address",
+            "external_port",
+            "remaining_lease_seconds",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "type": {
               "const": "stopping",
               "type": "string"

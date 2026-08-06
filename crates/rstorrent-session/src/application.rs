@@ -815,9 +815,14 @@ impl ApplicationService {
             Command::RemoveStorageRoot { .. } => {
                 self.reload_storage_roots()?;
             }
-            Command::SetDefaultStorageRoot { .. }
-            | Command::SetShowAddOptions { .. }
-            | Command::SetClientSettings { .. } => {}
+            Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
+            Command::SetClientSettings { .. } => {
+                let settings = self.store_mut()?.snapshot()?.client_settings;
+                self.session_network
+                    .as_mut()
+                    .expect("session network exists while settings are accepted")
+                    .submit_settings(settings)?;
+            }
             Command::Shutdown => {
                 self.shutdown().await?;
             }
@@ -1535,8 +1540,22 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        if let Some(session_network) = self.session_network.as_mut() {
+            session_network.begin_shutdown();
+        }
         if let Some((_, active)) = self.active_download() {
             active.control.cancel();
+        }
+        if let Some((_, active)) = self.take_active_download() {
+            match active.task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) if active_join_error.is_none() => active_join_error = Some(error),
+                Err(error) if error.is_cancelled() => {}
+                Err(error) if active_join_error.is_none() => {
+                    active_join_error = Some(error.to_string());
+                }
+                Ok(Err(_)) | Err(_) => {}
+            }
         }
         if let Some(session_network) = self.session_network.take() {
             let terminal = session_network.shutdown(&self.views).await;
@@ -1550,19 +1569,10 @@ impl ApplicationService {
             if let Some(error) = terminal.dht_error {
                 shutdown_error = Some(error.into());
             }
-            if let Some(error) = terminal.join_error {
+            if let Some(error) = terminal.join_error
+                && active_join_error.is_none()
+            {
                 active_join_error = Some(error);
-            }
-        }
-        if let Some((_, active)) = self.take_active_download() {
-            match active.task.await {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) if active_join_error.is_none() => active_join_error = Some(error),
-                Err(error) if error.is_cancelled() => {}
-                Err(error) if active_join_error.is_none() => {
-                    active_join_error = Some(error.to_string());
-                }
-                Ok(Err(_)) | Err(_) => {}
             }
         }
         for runtime in self.torrent_runtimes.values_mut() {
@@ -4121,7 +4131,7 @@ mod tests {
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, DEFAULT_PEER_ID, DownloadError, NetworkConfig, NetworkPolicy,
-        PublicationShape, torrent_storage_paths,
+        PeerBudgetDirection, PublicationShape, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -4321,6 +4331,49 @@ mod tests {
             panic!("expected torrent-list client settings snapshot");
         };
         client_settings
+    }
+
+    async fn dht_runtime(service: &ApplicationService) -> crate::DhtInspectionView {
+        let subscription = service
+            .subscribe(SubscriptionSpec {
+                selector: ViewSelector::SessionDht,
+                projection: ViewProjection::Dht,
+                delivery: DeliveryPolicy {
+                    min_interval_millis: 0,
+                    max_queue_bytes: 256 * 1024,
+                },
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe to DHT runtime");
+        let update = subscription
+            .next_update()
+            .await
+            .expect("initial DHT runtime snapshot");
+        let ViewUpdatePayload::Snapshot {
+            snapshot: ViewSnapshot::SessionDht { inspection },
+        } = update.payload
+        else {
+            panic!("expected session DHT snapshot");
+        };
+        inspection
+    }
+
+    async fn wait_for_client_settings(
+        service: &ApplicationService,
+        predicate: impl Fn(&crate::ClientSettingsRuntimeView) -> bool,
+    ) -> crate::ClientSettingsRuntimeView {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let runtime = client_settings_runtime(service).await;
+                if predicate(&runtime) {
+                    break runtime;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("client settings convergence deadline")
     }
 
     async fn torrent_peer_views(service: &ApplicationService, torrent_id: &str) -> Vec<PeerView> {
@@ -4547,7 +4600,13 @@ mod tests {
         (address, task)
     }
 
-    async fn serve_single_piece_peer(listener: TcpListener, info_hash: [u8; 20], payload: Vec<u8>) {
+    async fn serve_single_piece_peer(
+        listener: TcpListener,
+        info_hash: [u8; 20],
+        payload: Vec<u8>,
+        request_started: tokio::sync::oneshot::Sender<()>,
+        payload_release: tokio::sync::oneshot::Receiver<()>,
+    ) {
         let (mut stream, _) = listener.accept().await.expect("accept content peer");
         let mut handshake = [0; HANDSHAKE_LENGTH];
         stream
@@ -4565,6 +4624,8 @@ mod tests {
             .expect("send content bitfield");
         let mut decoder = FrameDecoder::new();
         let mut pending = std::collections::VecDeque::new();
+        let mut request_started = Some(request_started);
+        let mut payload_release = Some(payload_release);
         loop {
             match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
                 PeerMessage::Interested => {
@@ -4578,6 +4639,12 @@ mod tests {
                     let begin = usize::try_from(request.begin).expect("request begin");
                     let length = usize::try_from(request.length).expect("request length");
                     let end = begin.checked_add(length).expect("request end");
+                    if let Some(started) = request_started.take() {
+                        let _ = started.send(());
+                    }
+                    if let Some(release) = payload_release.take() {
+                        release.await.expect("release controlled peer payload");
+                    }
                     stream
                         .write_all(
                             &encode_message(&PeerMessage::Piece {
@@ -4765,10 +4832,14 @@ mod tests {
             Err(_) => return,
         };
         let peer_address = peer_listener.local_addr().expect("IPv6 peer address");
+        let (request_started_sender, request_started) = tokio::sync::oneshot::channel();
+        let (payload_release, payload_release_receiver) = tokio::sync::oneshot::channel();
         let peer_task = tokio::spawn(serve_single_piece_peer(
             peer_listener,
             info_hash,
             payload.clone(),
+            request_started_sender,
+            payload_release_receiver,
         ));
 
         let tracker = TcpListener::bind("127.0.0.1:0")
@@ -4840,6 +4911,37 @@ mod tests {
             .expect("first tracker announce deadline")
             .expect("tracker server ended before first announce");
         assert!(first_announce.contains("&event=started "));
+        tokio::time::timeout(Duration::from_secs(2), request_started)
+            .await
+            .expect("outgoing payload request deadline")
+            .expect("outgoing peer ended before payload request");
+        let live_port = available_port_on(Ipv4Addr::LOCALHOST)
+            .await
+            .expect("find live listener port during download");
+        let live_settings = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback { port: live_port },
+            ..ClientSettings::default()
+        };
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: format!("live-listener-during-{scheme}-download"),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: live_settings.clone(),
+                },
+            })
+            .await
+            .expect("apply listener while outgoing download is active");
+        wait_for_client_settings(&service, |runtime| {
+            runtime.configured == live_settings
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert!(service.active_download().is_some());
+        payload_release
+            .send(())
+            .expect("release controlled outgoing payload");
         let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
             let mut sequence = 0_u64;
             loop {
@@ -5505,6 +5607,38 @@ mod tests {
             .expect("open offline ephemeral application");
         assert_eq!(service.revision().expect("offline revision"), 0);
         assert!(!absent_profile.exists());
+        let settings = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            peer_connection_limit: 17,
+            upload_slots: 0,
+            ..ClientSettings::default()
+        };
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "ephemeral-live-client-settings".to_owned(),
+                expected_revision: Some("0".to_owned()),
+                command: Command::SetClientSettings {
+                    settings: settings.clone(),
+                },
+            })
+            .await
+            .expect("apply ephemeral client settings");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        let runtime = wait_for_client_settings(&service, |runtime| {
+            runtime.configured == settings
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.upload_slots_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(runtime.effective_peer_connection_limit, 17);
+        assert_eq!(runtime.effective_upload_slots, 0);
+        assert!(service.incoming_peer_snapshot().is_some());
+        assert_eq!(service.revision().expect("ephemeral revision"), 1);
+        assert!(!absent_profile.exists());
         service
             .shutdown()
             .await
@@ -5635,15 +5769,272 @@ mod tests {
             .await
             .expect("connect observed TCP endpoint");
         drop(tcp);
+        let dht_node_id = dht_runtime(&application).await.local_node_id;
+        let replacement_port = available_port_on(Ipv4Addr::LOCALHOST)
+            .await
+            .expect("find replacement coordinated port");
+        let replacement = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback {
+                port: replacement_port,
+            },
+            preferred_listen_port: preferred_port,
+            ..ClientSettings::default()
+        };
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "replace-coordinated-session-sockets".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: replacement.clone(),
+                },
+            })
+            .await
+            .expect("replace coordinated session sockets");
+        let replaced = wait_for_client_settings(&application, |runtime| {
+            runtime.configured == replacement
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && matches!(
+                    runtime.listener_status,
+                    ListenerStatus::Listening { port, .. } if port == replacement_port
+                )
+        })
+        .await;
+        assert!(matches!(
+            replaced.session_udp_status,
+            crate::SessionUdpStatus::Bound {
+                port,
+                coordinated_with_tcp: true,
+                ..
+            } if port == replacement_port
+        ));
+        assert_eq!(dht_runtime(&application).await.local_node_id, dht_node_id);
+        TcpStream::connect((Ipv4Addr::LOCALHOST, replacement_port))
+            .await
+            .expect("new TCP endpoint accepts after handover");
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, tcp_port))
+                .await
+                .is_err()
+        );
         assert_eq!(
             application
                 .session_network()
                 .session_udp_snapshot()
                 .task_high_water,
-            1
+            2
         );
         application.shutdown().await.expect("joined shutdown");
         assert!(application.session_network.is_none());
+        drop(application);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn rapid_client_settings_changes_converge_only_to_latest_generation() {
+        let root = test_root("rapid-client-settings");
+        let mut reservations = Vec::new();
+        while reservations.len() < 3 {
+            let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("reserve rapid-settings TCP port");
+            let port = tcp.local_addr().expect("reserved TCP address").port();
+            if let Ok(udp) = UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).await {
+                reservations.push((tcp, udp, port));
+            }
+        }
+        let ports = reservations
+            .iter()
+            .map(|(_, _, port)| *port)
+            .collect::<Vec<_>>();
+        drop(reservations);
+        let mut application = ApplicationService::open(config(&root))
+            .await
+            .expect("open rapid-settings application");
+        let dht_node_id = dht_runtime(&application).await.local_node_id;
+        let attempts = [
+            ClientSettings {
+                listener: ListenerPolicy::FixedLoopback { port: ports[0] },
+                preferred_listen_port: ports[0],
+                peer_connection_limit: 101,
+                upload_slots: 1,
+                ..ClientSettings::default()
+            },
+            ClientSettings {
+                listener: ListenerPolicy::FixedLoopback { port: ports[1] },
+                preferred_listen_port: ports[1],
+                peer_connection_limit: 102,
+                upload_slots: 2,
+                ..ClientSettings::default()
+            },
+            ClientSettings {
+                listener: ListenerPolicy::FixedLoopback { port: ports[2] },
+                preferred_listen_port: ports[2],
+                peer_connection_limit: 103,
+                upload_slots: 3,
+                ..ClientSettings::default()
+            },
+        ];
+        for (index, settings) in attempts.iter().enumerate() {
+            application
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("rapid-settings-{index}"),
+                    expected_revision: None,
+                    command: Command::SetClientSettings {
+                        settings: settings.clone(),
+                    },
+                })
+                .await
+                .expect("accept rapid settings generation");
+        }
+        let final_settings = attempts.last().expect("final settings").clone();
+        let final_runtime = wait_for_client_settings(&application, |runtime| {
+            runtime.configured == final_settings
+                && runtime.effective_listener
+                    == Some(crate::EffectiveListenerSettings::from_settings(
+                        &final_settings,
+                    ))
+                && runtime.effective_peer_connection_limit == 103
+                && runtime.effective_upload_slots == 3
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.port_mapping_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.upload_slots_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert!(matches!(
+            final_runtime.listener_status,
+            ListenerStatus::Listening { port, .. } if port == ports[2]
+        ));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            client_settings_runtime(&application).await.configured,
+            final_settings
+        );
+        assert_eq!(dht_runtime(&application).await.local_node_id, dht_node_id);
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, ports[0]))
+                .await
+                .is_err()
+        );
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, ports[1]))
+                .await
+                .is_err()
+        );
+        TcpStream::connect((Ipv4Addr::LOCALHOST, ports[2]))
+            .await
+            .expect("latest listener accepts");
+        assert_eq!(
+            application
+                .session_network()
+                .session_udp_snapshot()
+                .task_high_water,
+            2
+        );
+        application.shutdown().await.expect("joined shutdown");
+        drop(application);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn live_peer_limit_decrease_cancels_to_absolute_bound_then_increases() {
+        let root = test_root("live-peer-limit");
+        let mut application = ApplicationService::open(config(&root))
+            .await
+            .expect("open peer-limit application");
+        let budget = application.session_network().peer_budget();
+        let mut permits = Vec::new();
+        for index in 0..14 {
+            let direction = if index % 2 == 0 {
+                PeerBudgetDirection::Outgoing
+            } else {
+                PeerBudgetDirection::Incoming
+            };
+            let mut permit = budget.try_acquire(direction).expect("acquire test permit");
+            if index < 7 {
+                permit.mark_established();
+            }
+            permits.push(permit);
+        }
+        let expected_cancelled = permits[11..]
+            .iter()
+            .map(|permit| permit.generation())
+            .collect::<Vec<_>>();
+        let reduced = ClientSettings {
+            peer_connection_limit: 1,
+            ..ClientSettings::default()
+        };
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "decrease-live-peer-limit".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: reduced.clone(),
+                },
+            })
+            .await
+            .expect("decrease live peer limit");
+        let cancelled = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let cancelled = permits
+                    .iter()
+                    .filter(|permit| permit.cancellation_token().is_cancelled())
+                    .map(|permit| permit.generation())
+                    .collect::<Vec<_>>();
+                if cancelled.len() == 3 {
+                    break cancelled;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("peer cancellation requests");
+        assert_eq!(cancelled, expected_cancelled);
+        permits.retain(|permit| !permit.cancellation_token().is_cancelled());
+        let runtime = wait_for_client_settings(&application, |runtime| {
+            runtime.configured == reduced
+                && runtime.effective_peer_connection_limit == 1
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(runtime.effective_peer_connection_limit, 1);
+        assert_eq!(budget.snapshot().total, 11);
+
+        let increased = ClientSettings {
+            peer_connection_limit: 20,
+            ..reduced
+        };
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "increase-live-peer-limit".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: increased.clone(),
+                },
+            })
+            .await
+            .expect("increase live peer limit");
+        wait_for_client_settings(&application, |runtime| {
+            runtime.configured == increased
+                && runtime.effective_peer_connection_limit == 20
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        let admitted = budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .expect("increased limit admits immediately");
+        drop(admitted);
+        drop(permits);
+        application.shutdown().await.expect("joined shutdown");
         drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -7927,7 +8318,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn durable_complete_torrent_seeds_across_restart_and_fences_lifecycle() {
+    async fn durable_complete_torrent_applies_slots_live_and_fences_lifecycle() {
         let root = test_root("incoming-seed-lifecycle");
         let payload = b"abcdefg";
         let raw_info = single_file_info("seed.bin", payload, 4);
@@ -8110,6 +8501,73 @@ mod tests {
         assert_eq!(connected_swarm_peer.state, SwarmPeerState::Connected);
         assert!(!connected_swarm_peer.connectable);
 
+        let handover_port = available_port_on(Ipv4Addr::LOCALHOST)
+            .await
+            .expect("find incoming handover port");
+        let handover_settings = ClientSettings {
+            listener: ListenerPolicy::FixedLoopback {
+                port: handover_port,
+            },
+            preferred_listen_port: 6_881,
+            port_mapping: crate::PortMappingPolicy::Disabled,
+            peer_connection_limit: 1,
+            upload_slots: 1,
+        };
+        first
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "handover-established-incoming-upload".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: handover_settings.clone(),
+                },
+            })
+            .await
+            .expect("handover established incoming upload");
+        wait_for_client_settings(&first, |runtime| {
+            runtime.configured == handover_settings
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        let handover_snapshot = first
+            .incoming_peer_snapshot()
+            .expect("incoming runtime remains active after handover");
+        assert_eq!(handover_snapshot.listen_address.port(), handover_port);
+        assert_eq!(handover_snapshot.registrations, 1);
+        assert_eq!(handover_snapshot.established, 1);
+        assert_eq!(handover_snapshot.payload_bytes_sent, 3);
+        peer.write_all(
+            &encode_message(&PeerMessage::Request(
+                rstorrent_protocol::peer_wire::BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 4,
+                },
+            ))
+            .expect("encode post-handover payload request"),
+        )
+        .await
+        .expect("send post-handover payload request");
+        assert_eq!(
+            read_peer_message(&mut peer, &mut decoder, &mut pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: b"abcd".to_vec(),
+            }
+        );
+        TcpStream::connect((Ipv4Addr::LOCALHOST, handover_port))
+            .await
+            .expect("replacement listener accepts");
+        assert!(TcpStream::connect(listener_endpoint).await.is_err());
+        assert_eq!(
+            first
+                .incoming_peer_snapshot()
+                .expect("incoming runtime remains observable")
+                .payload_bytes_sent,
+            7
+        );
+
         drop(peer);
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -8139,11 +8597,8 @@ mod tests {
         assert!(!closed_swarm_peer.connectable);
 
         let zero_slots = ClientSettings {
-            listener: ListenerPolicy::AutomaticLoopback,
-            preferred_listen_port: 6_881,
-            port_mapping: crate::PortMappingPolicy::Disabled,
-            peer_connection_limit: 1,
             upload_slots: 0,
+            ..handover_settings
         };
         first
             .dispatch(RequestEnvelope {
@@ -8156,19 +8611,19 @@ mod tests {
             })
             .await
             .expect("persist zero upload slots");
-        let configured = client_settings_runtime(&first).await;
+        let configured = wait_for_client_settings(&first, |runtime| {
+            runtime.effective_upload_slots == 0
+                && runtime.upload_slots_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
         assert_eq!(configured.configured, zero_slots);
-        assert_eq!(configured.effective_upload_slots, 1);
+        assert_eq!(configured.effective_upload_slots, 0);
         assert_eq!(
             configured.upload_slots_application,
-            crate::ClientSettingsApplicationState::Applying
+            crate::ClientSettingsApplicationState::Applied
         );
-        first.shutdown().await.expect("shutdown first lifetime");
-        drop(first);
-
-        let mut second = ApplicationService::open(configuration)
-            .await
-            .expect("open restarted application");
+        let mut second = first;
         let second_runtime = client_settings_runtime(&second).await;
         assert_eq!(second_runtime.configured, zero_slots);
         assert_eq!(second_runtime.effective_upload_slots, 0);
@@ -8380,9 +8835,58 @@ mod tests {
                 .port_mapping_status,
             crate::PortMappingStatus::Ineligible
         );
+        let mapping_disabled = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            port_mapping: crate::PortMappingPolicy::Disabled,
+            ..ClientSettings::default()
+        };
+        ineligible
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "disable-ineligible-live-mapping".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: mapping_disabled.clone(),
+                },
+            })
+            .await
+            .expect("disable mapping live");
+        let disabled_mapping = wait_for_client_settings(&ineligible, |runtime| {
+            runtime.configured == mapping_disabled
+                && runtime.port_mapping_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.port_mapping_status == crate::PortMappingStatus::Disabled
+        })
+        .await;
         assert_eq!(
-            ineligible.session_network().reachability_owner_counts(),
-            crate::reachability::ReachabilityOwnerCounts::default()
+            disabled_mapping.effective_port_mapping,
+            crate::PortMappingPolicy::Disabled
+        );
+        let mapping_enabled = ClientSettings {
+            port_mapping: crate::PortMappingPolicy::Upnp,
+            ..mapping_disabled
+        };
+        ineligible
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "reenable-ineligible-live-mapping".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: mapping_enabled.clone(),
+                },
+            })
+            .await
+            .expect("reenable mapping live");
+        let enabled_mapping = wait_for_client_settings(&ineligible, |runtime| {
+            runtime.configured == mapping_enabled
+                && runtime.port_mapping_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.port_mapping_status == crate::PortMappingStatus::Ineligible
+        })
+        .await;
+        assert_eq!(
+            enabled_mapping.effective_port_mapping,
+            crate::PortMappingPolicy::Upnp
         );
         ineligible
             .shutdown()
@@ -8397,6 +8901,7 @@ mod tests {
             .expect("bind incoming port blocker");
         let port = blocker.local_addr().expect("blocker address").port();
         let mut configuration = config(&fixed_root);
+        configuration.peer_budget_max_open_files_for_testing = Some(25);
         persist_client_settings(
             &configuration,
             ClientSettings {
@@ -8470,31 +8975,25 @@ mod tests {
             .await
             .expect("repair listener settings through command path");
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
-        let configured = client_settings_runtime(&conflicted).await;
+        let configured = wait_for_client_settings(&conflicted, |runtime| {
+            runtime.configured == repaired
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && runtime.peer_connections_application
+                    == crate::ClientSettingsApplicationState::Applied
+                && runtime.upload_slots_application
+                    == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
         assert_eq!(configured.configured, repaired);
-        assert_eq!(configured.effective_listener, None);
         assert_eq!(
-            configured.transport_application,
-            crate::ClientSettingsApplicationState::Applying
+            configured.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(&repaired))
         );
-        assert!(matches!(
-            configured.listener_status,
-            ListenerStatus::BindFailed { .. }
-        ));
-        conflicted
-            .shutdown()
-            .await
-            .expect("shutdown conflicted app");
-        drop(blocker);
-        drop(conflicted);
-
-        configuration.peer_budget_max_open_files_for_testing = Some(25);
-        let mut repaired_service = ApplicationService::open(configuration.clone())
-            .await
-            .expect("reopen repaired listener");
-        let incoming = repaired_service
+        assert_eq!(configured.effective_peer_connection_limit, 5);
+        assert_eq!(configured.effective_upload_slots, 0);
+        let incoming = conflicted
             .incoming_peer_snapshot()
-            .expect("automatic listener starts after repair");
+            .expect("automatic listener starts through live repair");
         assert_eq!(
             incoming.listen_address.ip(),
             "127.0.0.1".parse::<IpAddr>().unwrap()
@@ -8503,63 +9002,78 @@ mod tests {
         assert_eq!(incoming.peer_budget.configured_limit, 321);
         assert_eq!(incoming.peer_budget.effective_limit, 5);
         assert_eq!(incoming.peer_budget.incoming_slack, 10);
-        let runtime = client_settings_runtime(&repaired_service).await;
-        assert_eq!(runtime.configured, repaired);
-        assert_eq!(
-            runtime.effective_listener,
-            Some(crate::EffectiveListenerSettings::from_settings(&repaired))
-        );
-        assert_eq!(
-            runtime.transport_application,
-            crate::ClientSettingsApplicationState::Applied
-        );
-        assert_eq!(runtime.effective_peer_connection_limit, 5);
-        assert_eq!(
-            runtime.listener_status,
-            ListenerStatus::Listening {
-                address: "127.0.0.1".to_owned(),
-                port: incoming.listen_address.port(),
-            }
-        );
+        let automatic_port = incoming.listen_address.port();
         let fixed = ClientSettings {
             listener: ListenerPolicy::FixedLoopback { port },
             ..repaired.clone()
         };
-        repaired_service
+        conflicted
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
-                request_id: "select-released-fixed-listener".to_owned(),
+                request_id: "select-blocked-fixed-listener".to_owned(),
                 expected_revision: None,
                 command: Command::SetClientSettings {
                     settings: fixed.clone(),
                 },
             })
             .await
-            .expect("select released fixed port");
-        let pending_fixed = client_settings_runtime(&repaired_service).await;
-        assert_eq!(pending_fixed.configured, fixed);
+            .expect("select blocked fixed port");
+        let blocked_fixed = wait_for_client_settings(&conflicted, |runtime| {
+            runtime.configured == fixed
+                && matches!(
+                    runtime.transport_application,
+                    crate::ClientSettingsApplicationState::Degraded {
+                        reason: crate::ClientSettingsDegradedReason::TransportBindFailed,
+                        ..
+                    }
+                )
+        })
+        .await;
         assert_eq!(
-            pending_fixed.effective_listener,
+            blocked_fixed.effective_listener,
             Some(crate::EffectiveListenerSettings::from_settings(&repaired))
         );
         assert_eq!(
-            pending_fixed.transport_application,
-            crate::ClientSettingsApplicationState::Applying
+            blocked_fixed.listener_status,
+            ListenerStatus::Listening {
+                address: "127.0.0.1".to_owned(),
+                port: automatic_port,
+            }
         );
-        repaired_service
-            .shutdown()
-            .await
-            .expect("shutdown repaired service");
-        drop(repaired_service);
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, automatic_port))
+                .await
+                .is_ok()
+        );
 
-        let mut fixed_service = ApplicationService::open(configuration)
+        drop(blocker);
+        conflicted
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "retry-released-fixed-listener".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: fixed.clone(),
+                },
+            })
             .await
-            .expect("retry exact fixed listener on next generation");
-        let incoming = fixed_service
+            .expect("retry unchanged fixed settings");
+        let runtime = wait_for_client_settings(&conflicted, |runtime| {
+            runtime.configured == fixed
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+                && matches!(
+                    runtime.listener_status,
+                    ListenerStatus::Listening {
+                        port: active_port,
+                        ..
+                    } if active_port == port
+                )
+        })
+        .await;
+        let incoming = conflicted
             .incoming_peer_snapshot()
-            .expect("fixed listener starts after conflict is gone");
+            .expect("fixed listener starts after same-value retry");
         assert_eq!(incoming.listen_address.port(), port);
-        let runtime = client_settings_runtime(&fixed_service).await;
         assert_eq!(runtime.configured, fixed);
         assert_eq!(
             runtime.effective_listener,
@@ -8576,11 +9090,52 @@ mod tests {
                 port,
             }
         );
-        fixed_service
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, automatic_port))
+                .await
+                .is_err()
+        );
+        let fixed_future_preference = ClientSettings {
+            preferred_listen_port: 6_882,
+            ..fixed.clone()
+        };
+        let udp_generation = conflicted.session_network().session_udp_generation();
+        conflicted
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "change-fixed-future-preference".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: fixed_future_preference.clone(),
+                },
+            })
+            .await
+            .expect("change fixed listener future preference");
+        let runtime = wait_for_client_settings(&conflicted, |runtime| {
+            runtime.configured == fixed_future_preference
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(
+            runtime.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(
+                &fixed_future_preference
+            ))
+        );
+        assert!(matches!(
+            runtime.listener_status,
+            ListenerStatus::Listening { port: active, .. } if active == port
+        ));
+        assert_eq!(
+            conflicted.session_network().session_udp_generation(),
+            udp_generation,
+            "fixed future preference must not churn transport"
+        );
+        conflicted
             .shutdown()
             .await
-            .expect("shutdown fixed service");
-        drop(fixed_service);
+            .expect("shutdown live-reconfigured service");
+        drop(conflicted);
         fs::remove_dir_all(fixed_root).expect("remove fixed-conflict root");
     }
 }

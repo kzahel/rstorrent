@@ -1556,6 +1556,71 @@ describe("inspection application", () => {
     expect(within(dialog).getByRole("button", { name: "Save settings" })).toBeDisabled();
   });
 
+  it("shows configured intent and an uncertain effective mapping without restart copy", async () => {
+    const user = userEvent.setup();
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: {
+        ...liveSnapshot({ roots: [], defaultRoot: null, showAddOptions: true }),
+        clientSettings: {
+          ...clientSettingsRuntimeFixture(),
+          configured: {
+            ...clientSettingsRuntimeFixture().configured,
+            listener: { type: "automatic_local_network" },
+            port_mapping: "disabled",
+          },
+          effective_listener: {
+            listener: { type: "automatic_local_network" },
+            preferred_listen_port: 6_881,
+          },
+          effective_port_mapping: "upnp",
+          port_mapping_application: {
+            type: "degraded",
+            reason: "port_mapping_cleanup_failed",
+            detail: "delete verification failed; the prior lease may remain",
+          },
+          listener_status: {
+            type: "listening",
+            address: "192.168.50.12",
+            port: 41_234,
+          },
+          session_udp_status: {
+            type: "bound",
+            address: "192.168.50.12",
+            port: 41_234,
+            coordinated_with_tcp: true,
+          },
+          port_mapping_status: {
+            type: "cleanup_failed",
+            external_address: "203.0.113.10",
+            external_port: 48_001,
+            remaining_lease_seconds: 42,
+            detail: "delete verification failed",
+          },
+          advertised_peer_endpoint: {
+            type: "local",
+            generation: "9",
+            address: "192.168.50.12",
+            port: 41_234,
+            scope: "local_network",
+            incoming_observed: false,
+          },
+        },
+      },
+    });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+
+    expect(
+      within(dialog).getByRole("checkbox", { name: /Map incoming TCP with UPnP/ }),
+    ).not.toBeChecked();
+    expect(within(dialog).getByText(/Effective gateway mapping policy: UPnP/i)).toBeVisible();
+    expect(within(dialog).getByText(/may remain for 42 seconds/i)).toBeVisible();
+    expect(within(dialog).getByText(/Port mapping: degraded/i)).toBeVisible();
+    expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
+  });
+
   it("copies selected torrents' canonical magnets with truthful feedback", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn<(value: string) => Promise<void>>();
