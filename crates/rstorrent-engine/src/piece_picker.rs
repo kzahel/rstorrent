@@ -440,7 +440,8 @@ impl AvailabilityPicker {
         if self.tie_seed == 0 {
             return piece as u64;
         }
-        splitmix64(self.tie_seed ^ piece as u64)
+        let offset = (self.tie_seed % self.counts.len() as u64) as usize;
+        ((piece + self.counts.len() - offset) % self.counts.len()) as u64
     }
 }
 
@@ -453,6 +454,7 @@ pub(crate) fn picker_seed(info_hash: [u8; 20], peer_id: [u8; 20]) -> u64 {
     state
 }
 
+#[cfg(test)]
 fn splitmix64(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -483,6 +485,23 @@ mod tests {
         rarest.increment_piece(0).expect("common piece");
         assert_eq!(in_order.reserve_best_matching(|_| true), Some(0));
         assert_eq!(rarest.reserve_best_matching(|_| true), Some(1));
+    }
+
+    #[test]
+    fn equal_rarity_uses_a_seeded_contiguous_rotation() {
+        let mut picker =
+            AvailabilityPicker::new(8, (0..8).collect(), PieceActivationPolicy::RarestFirst, 3)
+                .expect("rotated picker");
+        for piece in 0..8 {
+            picker.increment_piece(piece).expect("availability");
+        }
+        for expected in [3, 4, 5, 6, 7, 0, 1, 2] {
+            let selected = picker.reserve_best_matching(|_| true).expect("selection");
+            assert_eq!(selected, expected);
+            picker
+                .mark_planned(selected as usize)
+                .expect("consume selection");
+        }
     }
 
     #[test]

@@ -3693,18 +3693,12 @@ impl<'a> ContentSwarmDownload<'a> {
     }
 
     fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, DownloadError> {
-        let mut assignments = Vec::new();
-        loop {
-            let planned = self.prepare_next_piece()?;
-            let batch = self.state.schedule(now).map_err(DownloadError::Swarm)?;
-            let progressed = !batch.is_empty();
-            assignments.extend(batch);
-            if !progressed {
-                debug_assert!(!planned || self.state.planned_piece_count() != 0);
+        while self.state.planned_piece_count() < MAX_PLANNED_CONTENT_PIECES {
+            if !self.prepare_next_piece()? {
                 break;
             }
         }
-        Ok(assignments)
+        self.state.schedule(now).map_err(DownloadError::Swarm)
     }
 
     async fn handle_message(

@@ -855,8 +855,11 @@ pub struct SwarmState {
     pieces: BTreeMap<u32, PieceState>,
     blocks: BTreeMap<BlockKey, BlockState>,
     incomplete_pieces: BTreeSet<usize>,
+    inactive_ranked_pieces: Vec<u32>,
+    inactive_rank_dirty: bool,
     active_pieces: BTreeSet<usize>,
     requestable_active_pieces: BTreeSet<usize>,
+    requestable_active_block_keys: BTreeMap<usize, BlockKey>,
     requestable_active_blocks: usize,
     active_piece_bytes: usize,
     active_attempts: BTreeMap<RequestAttemptId, RequestAttempt>,
@@ -929,8 +932,11 @@ impl SwarmState {
             pieces: BTreeMap::new(),
             blocks: BTreeMap::new(),
             incomplete_pieces: BTreeSet::new(),
+            inactive_ranked_pieces: Vec::new(),
+            inactive_rank_dirty: false,
             active_pieces: BTreeSet::new(),
             requestable_active_pieces: BTreeSet::new(),
+            requestable_active_block_keys: BTreeMap::new(),
             requestable_active_blocks: 0,
             active_piece_bytes: 0,
             active_attempts: BTreeMap::new(),
@@ -963,6 +969,7 @@ impl SwarmState {
 
     pub fn append_piece_plans(&mut self, plans: Vec<PiecePlan>) -> Result<(), SwarmError> {
         for plan in plans {
+            let plan_index = plan.index;
             if usize::try_from(plan.index).map_or(true, |index| index >= self.piece_count) {
                 return Err(SwarmError::PieceOutOfRange {
                     piece: plan.index,
@@ -1008,6 +1015,16 @@ impl SwarmState {
                 usize::try_from(plan.index)
                     .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
             );
+            if self.inactive_rank_dirty {
+                self.inactive_ranked_pieces.push(plan_index);
+            } else {
+                let position = self.inactive_ranked_pieces.partition_point(|candidate| {
+                    !self
+                        .picker
+                        .precedes(plan_index as usize, *candidate as usize)
+                });
+                self.inactive_ranked_pieces.insert(position, plan_index);
+            }
             self.picker
                 .mark_planned(plan.index as usize)
                 .map_err(SwarmError::Invariant)?;
@@ -1054,18 +1071,14 @@ impl SwarmState {
     }
 
     pub fn reserve_piece_for_planning(&mut self, maximum_planned_pieces: usize) -> Option<u32> {
-        if self.pieces.len() >= maximum_planned_pieces
-            || self.outstanding_request_bytes >= self.config.max_outstanding_request_bytes
-        {
+        if self.pieces.len() >= maximum_planned_pieces {
             return None;
         }
         let connections = &self.connections;
         self.picker.reserve_best_matching(|piece| {
-            connections.values().any(|connection| {
-                !connection.choking
-                    && connection.active_request_count < connection.request_window.target
-                    && connection.availability.contains(piece)
-            })
+            connections
+                .values()
+                .any(|connection| !connection.choking && connection.availability.contains(piece))
         })
     }
 
@@ -1174,6 +1187,7 @@ impl SwarmState {
         }
         self.remove_availability_contribution(&removed.availability)?;
         self.picker.rebuild_after_bulk_update();
+        self.inactive_rank_dirty = true;
         Ok(released)
     }
 
@@ -1230,6 +1244,7 @@ impl SwarmState {
         self.picker
             .increment_piece(index)
             .map_err(SwarmError::Invariant)?;
+        self.inactive_rank_dirty = true;
         if became_seed {
             let pieces = self
                 .connections
@@ -1749,6 +1764,14 @@ impl SwarmState {
         self.picker
             .mark_completed(piece_index)
             .map_err(SwarmError::Invariant)?;
+        let ranked_position = self
+            .inactive_ranked_pieces
+            .iter()
+            .position(|&candidate| candidate == piece)
+            .ok_or(SwarmError::Invariant(
+                "verified piece is absent from the inactive rank",
+            ))?;
+        self.inactive_ranked_pieces.remove(ranked_position);
         for connection in self.connections.values_mut() {
             if connection.availability.contains(piece_index) {
                 connection.wanted_piece_count = connection
@@ -1937,6 +1960,7 @@ impl SwarmState {
         }
         self.active_pieces.clear();
         self.requestable_active_pieces.clear();
+        self.requestable_active_block_keys.clear();
         self.requestable_active_blocks = 0;
         self.active_piece_bytes = 0;
         self.pending_dials.clear();
@@ -2220,6 +2244,7 @@ impl SwarmState {
             }
         }
         self.picker.rebuild_after_bulk_update();
+        self.inactive_rank_dirty = true;
         Ok(())
     }
 
@@ -2270,11 +2295,9 @@ impl SwarmState {
         if connection.choking {
             return Ok(None);
         }
-        for piece in &self.requestable_active_pieces {
+        for (&piece, &block) in &self.requestable_active_block_keys {
             self.active_piece_visits = self.active_piece_visits.saturating_add(1);
-            if connection.availability.contains(*piece)
-                && let Some(block) = self.first_missing_block(*piece as u32)
-            {
+            if connection.availability.contains(piece) {
                 return Ok(Some(block));
             }
         }
@@ -2282,16 +2305,28 @@ impl SwarmState {
     }
 
     fn next_inactive_assignment(&mut self) -> Result<Option<(ConnectionId, BlockKey)>, SwarmError> {
+        if self.inactive_rank_dirty {
+            let picker = &self.picker;
+            self.inactive_ranked_pieces.sort_unstable_by(|lhs, rhs| {
+                if picker.precedes(*lhs as usize, *rhs as usize) {
+                    std::cmp::Ordering::Less
+                } else if picker.precedes(*rhs as usize, *lhs as usize) {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            });
+            self.inactive_rank_dirty = false;
+        }
         let ordered_connections = self.ordered_connection_ids();
-        let mut selected: Option<(usize, ConnectionId, BlockKey)> = None;
-        for &piece in &self.incomplete_pieces {
+        for &piece_u32 in &self.inactive_ranked_pieces {
             self.inactive_planned_piece_visits =
                 self.inactive_planned_piece_visits.saturating_add(1);
+            let piece = usize::try_from(piece_u32)
+                .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
             if self.active_pieces.contains(&piece) || !self.can_activate_piece(piece) {
                 continue;
             }
-            let piece_u32 =
-                u32::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
             let Some(block) = self.first_missing_block(piece_u32) else {
                 continue;
             };
@@ -2307,14 +2342,9 @@ impl SwarmState {
             }) else {
                 continue;
             };
-            if selected
-                .as_ref()
-                .is_none_or(|(current, _, _)| self.picker.precedes(piece, *current))
-            {
-                selected = Some((piece, connection, block));
-            }
+            return Ok(Some((connection, block)));
         }
-        Ok(selected.map(|(_, connection, block)| (connection, block)))
+        Ok(None)
     }
 
     fn request_budget_allows(&self, block: BlockKey) -> Result<bool, SwarmError> {
@@ -2659,14 +2689,26 @@ impl SwarmState {
     fn refresh_requestable_piece(&mut self, piece: u32) -> Result<(), SwarmError> {
         let index =
             usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
-        let has_missing = self
+        let piece_state = self
             .pieces
             .get(&piece)
-            .ok_or(SwarmError::UnknownPiece(piece))?
-            .missing_blocks
-            != 0;
-        if self.active_pieces.contains(&index) && has_missing {
-            if self.requestable_active_pieces.insert(index) {
+            .ok_or(SwarmError::UnknownPiece(piece))?;
+        let next_missing = piece_state
+            .blocks
+            .get(piece_state.first_missing_block)
+            .copied();
+        if self.active_pieces.contains(&index)
+            && let Some(block) = next_missing
+        {
+            let inserted_piece = self.requestable_active_pieces.insert(index);
+            let inserted_block = self
+                .requestable_active_block_keys
+                .insert(index, block)
+                .is_none();
+            if inserted_piece != inserted_block {
+                return Err(SwarmError::Invariant("requestable active indexes disagree"));
+            }
+            if inserted_piece {
                 self.requestable_active_blocks = self
                     .requestable_active_blocks
                     .checked_add(
@@ -2688,7 +2730,17 @@ impl SwarmState {
 
     fn remove_requestable_piece(&mut self, index: usize) -> Result<(), SwarmError> {
         if !self.requestable_active_pieces.remove(&index) {
+            if self.requestable_active_block_keys.contains_key(&index) {
+                return Err(SwarmError::Invariant(
+                    "requestable active block exists without its piece",
+                ));
+            }
             return Ok(());
+        }
+        if self.requestable_active_block_keys.remove(&index).is_none() {
+            return Err(SwarmError::Invariant(
+                "requestable active piece has no cached block",
+            ));
         }
         let piece =
             u32::try_from(index).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
@@ -3130,6 +3182,18 @@ mod tests {
             })
             .collect::<BTreeSet<_>>();
         assert_eq!(state.requestable_active_pieces, requestable_active_pieces);
+        let requestable_active_block_keys = requestable_active_pieces
+            .iter()
+            .map(|&piece| {
+                let piece_u32 = u32::try_from(piece).expect("piece index");
+                let state = &state.pieces[&piece_u32];
+                (piece, state.blocks[state.first_missing_block])
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            state.requestable_active_block_keys,
+            requestable_active_block_keys
+        );
         assert_eq!(
             state.requestable_active_blocks,
             requestable_active_pieces
@@ -4199,6 +4263,22 @@ mod tests {
             state.snapshot(Duration::ZERO).picker_candidate_inspections,
             258
         );
+    }
+
+    #[test]
+    fn plan_lookahead_is_independent_from_the_current_request_window() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(2 * BLOCK as usize),
+            2,
+            vec![0, 1],
+            vec![plan(0, 2)],
+            0,
+        )
+        .expect("lookahead swarm");
+        add_peer(&mut state, connection(1), &[0, 1], false);
+        assert_eq!(state.schedule(Duration::ZERO).expect("schedule").len(), 2);
+        assert_eq!(state.connection_request_count(connection(1)), 2);
+        assert_eq!(state.reserve_piece_for_planning(256), Some(1));
     }
 
     #[test]
