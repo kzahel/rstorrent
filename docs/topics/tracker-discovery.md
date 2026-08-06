@@ -285,7 +285,17 @@ verticals hash-verified content from an IPv6 loopback peer; a controlled HTTP
 tracker independently introduced the application to pinned libtorrent
 `2.0.13.0` for verified metadata, payload, publication, and all lifecycle
 events. An owned API 34 arm64 AVD repeated the unauthenticated HTTPS/only-
-`peers6` product path through dynamic SAF. Public live evidence was not run.
+`peers6` product path through dynamic SAF.
+
+An opt-in 2026-08-06 headless smoke against the official Ubuntu 24.04.4
+live-server torrent reached both retained HTTPS tracker rows once, received a
+peer from each, and hash-verified metadata in 34.334 seconds before pause and
+cleanup. Ubuntu's IPv6-named tracker was dual-stack at the time, so this is
+public HTTPS application evidence rather than a routed-IPv6 proof. A preceding
+180-second metadata-only add left both rows inactive with zero attempts: the
+external metadata owner was running while tracker registration inherited the
+false content-running intent. This is a live application lifecycle defect,
+not a tracker-transport failure.
 
 ## Current Limits And Next Work
 
@@ -302,6 +312,12 @@ but the listener, mapping, and advertised reachable endpoint remain IPv4-only;
 full BEP 7 multi-address announcing is therefore absent. The headless public-
 torrent comparator remains useful changing-network evidence but cannot
 replace controlled protocol and libtorrent tests.
+
+Fresh metadata-only magnets do not currently activate session-owned tracker
+rows when content-running intent is false. The next bounded lifecycle repair
+must separate metadata discovery intent from content transfer intent, retain
+pause/remove/shutdown ownership, and prove the tracker-only metadata path
+before repeating the Ubuntu smoke.
 
 Tactical `081` parses and persists every valid unique
 `announce-list`/`announce` URL admitted by its

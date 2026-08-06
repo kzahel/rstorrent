@@ -161,6 +161,14 @@ cancelled and joined. Metadata acquisition may continue for a paused
 start-content intent, but content storage remains unopened until explicit
 resume.
 
+An opt-in official Ubuntu smoke on 2026-08-06 exposed a gap in that accepted
+policy: a fresh metadata-only magnet started its external metadata owner but
+left both session-owned HTTPS tracker rows inactive for 180 seconds because
+their registration inherited the false content-running intent. This is a
+bounded lifecycle defect to repair, not a change to metadata-only semantics;
+content storage must remain unopened while tracker discovery is activated and
+owned for metadata acquisition.
+
 Force recheck is likewise semantic. A replayed successful request cannot
 start another generation, and a stale request mutates neither runtime nor
 durable state. During checking, presentation exposes no old verified total as

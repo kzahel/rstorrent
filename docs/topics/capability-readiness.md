@@ -161,7 +161,9 @@ Basic authentication, compact/noncompact IPv4/IPv6 peers, AAAA-only tracker
 connectivity, only-`peers6` outbound transfer, controlled libtorrent
 introduction, and Android HTTPS product evidence pass. HTTPS is deliberately
 encrypted but unauthenticated; certificate and hostname validation is the
-next security boundary.
+next security boundary. An opt-in official Ubuntu smoke also reached both
+HTTPS rows and verified metadata, while exposing that metadata-only adds leave
+session-owned trackers inactive when content-running intent is false.
 
 ## Current Queue
 
@@ -176,6 +178,8 @@ No successor is selected for implementation in this update.
 
 ### Next
 
+- Repair metadata-only tracker activation by separating metadata-discovery
+  intent from content-running intent, then repeat the bounded Ubuntu smoke.
 - Add authenticated tracker HTTPS certificate and hostname validation through
   desktop and Android platform trust, with explicit failure and projection
   evidence, before making a secure-HTTPS claim.
@@ -210,7 +214,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
 | Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 `.torrent` ingestion passes; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
-| Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. | [`client-persistence`](client-persistence.md) |
+| Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical | Only a v1 `btih` identity and supported magnet fields survive canonicalization. A live tracker-only metadata path currently remains inactive when added with content paused. | [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
@@ -224,7 +228,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling shared with HTTP/HTTPS. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. | [`tracker-discovery`](tracker-discovery.md) |
-| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, AVD | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, and controlled libtorrent discovery pass. HTTPS encrypts transport but deliberately does not validate certificates or hostnames; proxies, scrape, other authentication, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
+| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, AVD, live | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, controlled libtorrent discovery, and an official Ubuntu HTTPS metadata smoke pass. HTTPS encrypts transport but deliberately does not validate certificates or hostnames; metadata-only tracker activation, proxies, scrape, other authentication, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Absent | none | BEP 11 depends on peer-ID duplicate resolution, truthful advertisement, bounded extension dispatch, and hostile-source controls recorded in planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |

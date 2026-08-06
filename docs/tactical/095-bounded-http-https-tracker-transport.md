@@ -755,13 +755,40 @@ The closure validation run on 2026-08-05 passed:
 - the owned API 34 arm64 no-window AVD HTTPS product profile; and
 - `tests/interop/http_tracker_application.py` against pinned libtorrent.
 
-The optional live Ubuntu/public-tracker row did not run because no live-smoke
-opt-in was granted. It is supporting changing-network evidence and was not a
-stopping condition substitute for the deterministic, controlled, and AVD
-gates above.
+After explicit maintainer opt-in, a bounded headless Ubuntu public-tracker
+smoke ran on 2026-08-06 against the official Ubuntu 24.04.4 live-server
+metainfo. A running add reached both retained HTTPS rows,
+`torrent.ubuntu.com` and `ipv6.torrent.ubuntu.com`, exactly once; both accepted
+the announce, returned one peer plus the same advisory 1,233-seeder,
+10-leecher counts and 1,800-second interval, and remained in reannounce wait
+without a recorded failure. The application hash-verified metadata after
+34.334 seconds and was paused immediately, before any full 3,405,469,696-byte
+payload claim. This is supporting changing-network evidence, not a public-
+tracker reliability claim.
+
+The hostname named `ipv6.torrent.ubuntu.com` was dual-stack during the run,
+and the current application request path did not prefer IPv6. The smoke
+therefore does not prove a routed IPv6 tracker connection or the address
+family of the returned peer. The controlled AAAA-only and only-`peers6`
+verticals remain the IPv6 support evidence.
+
+A preceding 180-second add of the same magnet with `start_content=false`
+exposed an application lifecycle gap: both tracker rows remained inactive
+with zero attempts. Metadata-only intent starts the external-discovery
+metadata owner, but tracker registration currently inherits the false content
+running intent and never activates. This is not an HTTP transport failure; it
+contradicts the accepted application-control policy that metadata acquisition
+may continue while content is paused. The temporary profile, databases,
+metainfo, and payload root were removed after the run.
 
 ## Deliberate Deferrals And Next Boundary
 
+- **Metadata-only tracker activation.** A fresh metadata-only magnet whose
+  useful discovery comes from session-owned trackers currently waits without
+  activating those rows. Repair the distinction between metadata-discovery
+  intent and content-running intent, add deterministic tracker-only coverage,
+  and repeat the bounded Ubuntu metadata-only smoke before treating this
+  product path as live.
 - **Authenticated HTTPS certificates.** The immediate follow-up tactical must
   enable certificate-chain and hostname validation, integrate and initialize
   `rustls-platform-verifier` with its Android Kotlin/Gradle component, prove
@@ -791,9 +818,11 @@ gates above.
   public-tracker reliability, or stable external compatibility claim from this
   initial transport slice.
 
-The recommended next slice is authenticated platform certificate validation.
-If evidence instead shows that proper IPv6 listener/advertisement ownership is
-required for the target trackers to return useful peers, stop at the honest
+The recommended immediate repair is the bounded metadata-only tracker
+activation gap because it blocks an already accepted product intent. The next
+security slice remains authenticated platform certificate validation. If
+evidence instead shows that proper IPv6 listener/advertisement ownership is
+required for target trackers to return useful peers, stop at the honest
 outbound-only support level and create the dual-stack reachability tactical
 before broadening BEP 7 claims.
 
