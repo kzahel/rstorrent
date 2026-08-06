@@ -51,7 +51,8 @@ pub use driver::{
     download_magnet_metadata_with_dht_and_peers, download_magnet_metadata_with_external_discovery,
     download_magnet_with_control, download_verified_piece,
     download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
-    resume_magnet, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    download_verified_piece_with_peer_state, resume_magnet,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
 };
 #[cfg(feature = "test-platform-root")]
 #[doc(hidden)]

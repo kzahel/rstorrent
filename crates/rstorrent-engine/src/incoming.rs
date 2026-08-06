@@ -2945,7 +2945,13 @@ mod tests {
         let (root, _raw_info, registration, torrent_peers, peer_activity) =
             registration("duplicate-peer-id").await;
         let info_hash = registration.info_hash();
-        let service = IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLoopback))
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.peer_budget = PeerBudget::new(PeerBudgetConfig {
+            configured_limit: 1,
+            incoming_slack: 1,
+            max_open_files: 10_000,
+        });
+        let service = IncomingPeerService::bind(service_config)
             .await
             .expect("bind service")
             .expect("enabled service");
@@ -2969,6 +2975,7 @@ mod tests {
         let live = handle.snapshot();
         assert_eq!(live.pending, 0);
         assert_eq!(live.established, 1);
+        assert_eq!(live.peer_budget.total_high_water, 2);
         assert_eq!(live.peer_uploads.len(), 1);
         let peers = torrent_peers.connection_snapshot();
         assert_eq!(peers.len(), 1);

@@ -678,10 +678,51 @@ pub async fn download_verified_piece_with_control(
     }
 
     let output_path = config.output_path.clone();
-    let result = run_download(config, control.clone(), None).await;
+    let result = run_download(config, control.clone(), None, None).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
 
+    match result {
+        Ok(report) => Ok(report),
+        Err(error) if preserves_existing_artifact(&error) => Err(error),
+        Err(error) => {
+            let cleanup = async {
+                remove_selective_staging_if_present(&output_path).await?;
+                remove_selective_part_if_present(&output_path).await
+            }
+            .await;
+            match cleanup {
+                Ok(()) => Err(error),
+                Err(source) => Err(DownloadError::CleanupAfterFailure {
+                    failure: error.to_string(),
+                    source,
+                }),
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub async fn download_verified_piece_with_peer_state(
+    config: DownloadConfig,
+    control: DownloadControl,
+    peer_budget: PeerBudget,
+    torrent_peers: TorrentPeerHandle,
+) -> Result<DownloadReport, DownloadError> {
+    validate_download_config(&config)?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
+    let output_path = config.output_path.clone();
+    let result = run_download(
+        config,
+        control.clone(),
+        None,
+        Some((peer_budget, torrent_peers)),
+    )
+    .await;
+    let result = require_terminal_owner_cleanup(&control, result);
+    control.clear_buffered_payload();
     match result {
         Ok(report) => Ok(report),
         Err(error) if preserves_existing_artifact(&error) => Err(error),
@@ -711,7 +752,7 @@ pub async fn download_verified_piece_to_descriptors_with_control(
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
-    let result = run_download(config, control.clone(), Some(descriptors)).await;
+    let result = run_download(config, control.clone(), Some(descriptors), None).await;
     let result = require_terminal_owner_cleanup(&control, result);
     control.clear_buffered_payload();
     result
@@ -3508,16 +3549,29 @@ async fn run_download(
     config: DownloadConfig,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
+    peer_state: Option<(PeerBudget, TorrentPeerHandle)>,
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
     let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
-    let mut peers = TorrentPeerCoordinator::from_endpoint_with_control(
-        config.peer,
-        PeerSource::Manual,
-        config.network,
-        control.clone(),
-    )?;
+    let mut peers = match peer_state {
+        Some((peer_budget, torrent_peers)) => {
+            let mut peers = TorrentPeerCoordinator::new_with_peer_state(
+                config.network,
+                control.clone(),
+                peer_budget,
+                Some(torrent_peers),
+            )?;
+            peers.observe_address(config.peer, PeerSource::Manual)?;
+            peers
+        }
+        None => TorrentPeerCoordinator::from_endpoint_with_control(
+            config.peer,
+            PeerSource::Manual,
+            config.network,
+            control.clone(),
+        )?,
+    };
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
