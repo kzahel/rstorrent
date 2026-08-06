@@ -664,6 +664,8 @@ complete. Its bounded recognized BEP 10 map, verified-public bidirectional
 BEP 11 owner, exact source/privacy quotas, deterministic PEX-only second hop,
 and controlled pinned-libtorrent complementary transfer pass. No peer
 scoring, tit-for-tat, underpopulated recent-peer policy, BEP 40, or unrelated
-extension framework was added. No new engine tactical is authorized; the
-readiness queue next records a selection checkpoint and independent planned
-product Tactical `100`.
+extension framework was added. Independent product Tactical
+[`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) is
+also complete with bounded BEP 53 intake and duplicate-add feedback. No new
+engine or product tactical is authorized; the readiness queue records a
+selection checkpoint.

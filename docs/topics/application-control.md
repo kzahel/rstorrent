@@ -227,7 +227,7 @@ This change is internal while no stable public wire promise exists and must be
 made with reducer and retry evidence rather than as an incidental transport
 optimization.
 
-Planned Tactical
+Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) makes
 the add paths the first concrete use of that direction. Magnet and metainfo
 adds return the affected torrent identity and distinguish `added`,

@@ -472,7 +472,7 @@ that scope and its cleanup or compatibility rules explicitly.
   every shared React byte/rate display without changing raw application data,
   sorting, chart geometry, or exact technical IEC copy.
 - [`100-bep53-select-only-and-duplicate-add-feedback.md`](100-bep53-select-only-and-duplicate-add-feedback.md):
-  planned; adds bounded BEP 53 select-only magnets and their monotonic
+  complete; adds bounded BEP 53 select-only magnets and their monotonic
   duplicate-selection rule, makes ordinary duplicate adds successful no-ops,
   and consistently reveals the typed add target with accessible feedback.
 

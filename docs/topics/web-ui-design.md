@@ -81,7 +81,7 @@ retains magnet validation. The existing root/start dialog owns options while
 the component retains only the browser `File`; bytes are read when the add
 begins and no filename, path, digest, or progress percentage enters
 presentation state.
-Planned Tactical
+Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) makes
 new and duplicate add outcomes consistent: a typed result selects and reveals
 the affected torrent and reports added, already-present, or BEP 53 selection-

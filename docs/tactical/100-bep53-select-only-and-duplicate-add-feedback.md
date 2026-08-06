@@ -1,8 +1,8 @@
 # Tactical 100: BEP 53 Select-Only And Duplicate Add Feedback
 
-Status: Authorized and in progress on 2026-08-06. The maintainer selected
-this as the next bounded product slice and authorized end-to-end execution
-with incremental commits.
+Status: Complete on 2026-08-06. The maintainer selected this as the next
+bounded product slice and authorized end-to-end execution with incremental
+commits.
 
 Topics: `protocol-support`, `client-persistence`, `application-control`,
 `application-view-api`, `table-interaction`, `web-ui-design`,
@@ -504,6 +504,66 @@ fixture, or test data is imported.
 - Run the proportional workspace format, clippy, test, web typecheck/test/build,
   adapter compile, and Android cross-build baselines. Do not launch Tauri, an
   AVD, or a physical ChromeOS session merely for this planned slice.
+
+## Implementation And Evidence
+
+The protocol magnet codec now retains `so` as sorted, coalesced inclusive
+ranges. Parsing is strict after percent decoding, unions repeated parameters,
+accepts indices only through `374,997`, and remains inside the existing
+16-KiB URI and 128-parameter bounds. The accepted representation never
+enumerates a range; a maximum-span `0-374997` value remains one eight-byte
+`FileIndexRange` value.
+
+Session schema 13 records an explicit wanted-or-skipped selection default,
+sparse opposite exceptions, and compact pending pre-metadata ranges. Its
+transactional migration preserves prior wanted-by-default rows. Metadata
+acceptance filters out-of-catalog and padding indices before committing,
+retains an intentional all-skipped result when nothing valid remains, and
+rejects a catalog that would require more than 4,096 exceptions before
+writing metadata or selection state. The 4,097-file rejection fixture passes
+in 0.01 seconds and leaves the metadata and exception tables unchanged.
+
+Magnet and metainfo adds now return one generated `AddTorrentResult` through
+the Rust, JSON Schema, TypeScript, WebSocket, Tauri, and UniFFI/Kotlin
+adapters. Plain duplicates are revision-stable successful no-ops. An explicit
+duplicate `so` union is the only add-time merge: it promotes skipped files,
+uses the existing active-owner cancellation/recheck fence, and preserves
+paused or archived intent. Exact receipt replay returns the stored result.
+
+The shared React controller consumes that result directly. It makes the
+target the singleton current selection, reveals archived targets or retains a
+visible current category, scrolls the logical virtual row without moving DOM
+focus, leaves detail closed, and announces Added, Already present, or the
+exact selection-expansion count through the existing polite status surface.
+A pending reveal target prevents an older list snapshot from replacing this
+explicit command result.
+
+Evidence recorded on 2026-08-06:
+
+- the complete pinned libtorrent `test_magnet` executable passed, including
+  its BEP 53 select-only, overlap, repetition, inversion, bounds, malformed,
+  and magnet round-trip cases;
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` passed; the workspace run included 88 protocol,
+  348 engine, 170 session, 20 gateway, desktop, Android bridge, platform, and
+  binary tests, with only explicitly ignored opt-in/maximum-resource tests;
+- the focused post-cleanup session/gateway rerun passed 170 session and 20
+  gateway tests, including compact selection, schema reopen, duplicate union,
+  atomic exception-budget rejection, typed replay, runtime fences, and the
+  existing hash-verified application/libtorrent transfer paths;
+- `npm run generate`, `npm run typecheck`, `npm test -- --run`, and
+  `npm run build` passed in `clients/web`: 201 tests passed, two remained
+  explicitly skipped, generated artifacts were stable, CSP inspection passed,
+  and the existing large-bundle warning remained informational; and
+- `experiments/android-engine-bootstrap/build.sh` passed the x86_64 and arm64
+  release Rust cross-builds, regenerated both Kotlin bindings, and passed
+  `assembleDebug` plus `testDebugUnitTest`.
+
+There is no new peer-wire extension in BEP 53. The interoperability claim is
+therefore limited to matching the pinned oracle's URI behavior and composing
+the resulting durable file plan with the already controlled metadata and
+hash-verified payload paths; it does not claim that another peer observes an
+`so` value on the wire.
 
 ## Explicit Non-Goals
 

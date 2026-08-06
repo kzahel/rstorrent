@@ -636,7 +636,7 @@ Remote retry safety may later use bounded request-ID deduplication in addition
 to explicitly idempotent commands. View cursors are not command receipts.
 Diagnostics are not parsed to infer command success or product state.
 
-Planned Tactical
+Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) uses
 this boundary for magnet and metainfo adds: the command result identifies the
 torrent and distinguishes a new add, an existing no-op, and an additive BEP 53
