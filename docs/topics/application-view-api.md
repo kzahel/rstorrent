@@ -70,13 +70,16 @@ the durable preferred listen port and an observed `session_udp_status` to that
 same value. The latter reports actual address, port, and whether its numeric
 port is coordinated with the live TCP listener; generated validators reject a
 false coordination claim. The view still owns no socket or runtime task.
-Planned Tactical
+In-progress Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-will replace the monolithic configured/active/restart-required shape with
+has completed its contract gate: it replaces the monolithic
+configured/active/restart-required shape with
 configured intent, effective transport/mapping/admission/slot state, and
 per-domain applying/applied/degraded status. Runtime owners remain producers;
 the existing torrent-list view remains a task-free complete replacement and
-gains no command or retry authority.
+gains no command or retry authority. Generated TypeScript, JSON Schema,
+validators, fixtures, React presentation, and the Android reducer fixture use
+the new shape; live owner convergence remains the later gates of that tactical.
 Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) extends
 that complete value with selected advertisement source and outbound-only,

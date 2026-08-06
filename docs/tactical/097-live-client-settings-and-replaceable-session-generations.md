@@ -1,8 +1,10 @@
 # Tactical 097: Live Client Settings And Replaceable Session Generations
 
-Status: Planned on 2026-08-06 after the maintainer accepted live application
-for every existing client setting and the concrete session-lifetime refactor
-needed to support it. Implementation has not started. This document does not
+Status: In progress on 2026-08-06. Gate 1 is complete: the public runtime
+contract now exposes configured intent, effective values for four independently
+converging domains, and bounded applying/applied/degraded state; the task-free
+attempt/domain generation model rejects stale results and nonzero-generation
+overflow. Transport ownership and live reconciliation begin at Gate 2. This document does not
 reorder the existing tactical queue; completed Tactical
 [`096`](096-metadata-tracker-activation-and-family-observability.md) retained
 priority and closed independently later that day.
@@ -600,6 +602,26 @@ restart-required semantics, define the monotonic desired/domain transition
 model, and cover all pure transitions and stale-event rejection. Update
 generated TypeScript/JSON Schema/UniFFI output and fixtures. No socket lifetime
 changes land behind an ambiguous public state.
+
+Completed evidence on 2026-08-06:
+
+- `ClientSettingsRuntimeView` now carries optional effective listener policy,
+  effective mapping/descriptor-clamped peer/slot values, and four typed domain
+  application states. The old `active` and `restart_required` fields are
+  absent from Rust, generated TypeScript, JSON Schema, validators, fixtures,
+  React presentation, and the Android reducer fixture.
+- the pure convergence model assigns a fresh nonzero attempt and four domain
+  generations to same-value retries, accepts domain outcomes independently,
+  fences A-to-B-to-C stale results, bounds degraded detail to 512 UTF-8 bytes,
+  and refuses attempt or domain overflow without mutation;
+- `cargo test -p rstorrent-session --no-fail-fast` passed 167 executable tests
+  (160 library, two profile, one seed CLI, four main; one maximum-allocation
+  library case remained ignored), and focused session/gateway Clippy with
+  warnings denied plus the UniFFI feature check passed; and
+- generated web artifacts were regenerated, TypeScript typecheck passed, and
+  Vitest passed 178 tests with two intentionally skipped. Full workspace,
+  production build, desktop, generated Kotlin, and Android cross-build gates
+  remain Gate 5 evidence.
 
 ### Gate 2: stable engine owners without product behavior change
 

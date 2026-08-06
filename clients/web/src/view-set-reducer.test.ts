@@ -173,7 +173,10 @@ describe("view-set reducer", () => {
             client_settings: {
               ...clientSettingsRuntimeFixture(),
               configured,
-              restart_required: true,
+              transport_application: { type: "applying" },
+              port_mapping_application: { type: "applying" },
+              peer_connections_application: { type: "applying" },
+              upload_slots_application: { type: "applying" },
             },
           },
         },
@@ -182,7 +185,10 @@ describe("view-set reducer", () => {
     expect(state.views.library).toMatchObject({
       type: "torrent_list",
       torrents: [],
-      client_settings: { configured, restart_required: true },
+      client_settings: {
+        configured,
+        transport_application: { type: "applying" },
+      },
     });
   });
 

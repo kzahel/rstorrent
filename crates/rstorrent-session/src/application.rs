@@ -6135,7 +6135,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn client_settings_mutation_publishes_configured_restart_state() {
+    async fn client_settings_mutation_publishes_configured_and_applying_state() {
         let root = test_root("client-settings-view-patch");
         let mut service = ApplicationService::open(config(&root))
             .await
@@ -6163,7 +6163,10 @@ mod tests {
         else {
             panic!("expected settings snapshot");
         };
-        assert!(!initial.restart_required);
+        assert_eq!(
+            initial.transport_application,
+            crate::ClientSettingsApplicationState::Applied
+        );
 
         let configured = ClientSettings {
             listener: ListenerPolicy::AutomaticLoopback,
@@ -6195,8 +6198,16 @@ mod tests {
             panic!("expected settings replacement patch");
         };
         assert_eq!(runtime.configured, configured);
-        assert_eq!(runtime.active, ClientSettings::default());
-        assert!(runtime.restart_required);
+        assert_eq!(
+            runtime.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(
+                &ClientSettings::default()
+            ))
+        );
+        assert_eq!(
+            runtime.transport_application,
+            crate::ClientSettingsApplicationState::Applying
+        );
 
         service
             .dispatch(RequestEnvelope {
@@ -6221,8 +6232,16 @@ mod tests {
             panic!("expected reverted settings replacement patch");
         };
         assert_eq!(runtime.configured, ClientSettings::default());
-        assert_eq!(runtime.active, ClientSettings::default());
-        assert!(!runtime.restart_required);
+        assert_eq!(
+            runtime.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(
+                &ClientSettings::default()
+            ))
+        );
+        assert_eq!(
+            runtime.transport_application,
+            crate::ClientSettingsApplicationState::Applying
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -8226,8 +8245,8 @@ mod tests {
             .await
             .expect("open first application lifetime");
         let first_runtime = client_settings_runtime(&first).await;
-        assert_eq!(first_runtime.active.peer_connection_limit, 1);
-        assert_eq!(first_runtime.active.upload_slots, 1);
+        assert_eq!(first_runtime.effective_peer_connection_limit, 1);
+        assert_eq!(first_runtime.effective_upload_slots, 1);
         assert_eq!(first_runtime.effective_peer_connection_limit, 1);
         let first_incoming = first
             .incoming_peer_snapshot()
@@ -8410,8 +8429,11 @@ mod tests {
             .expect("persist zero upload slots");
         let configured = client_settings_runtime(&first).await;
         assert_eq!(configured.configured, zero_slots);
-        assert_eq!(configured.active.upload_slots, 1);
-        assert!(configured.restart_required);
+        assert_eq!(configured.effective_upload_slots, 1);
+        assert_eq!(
+            configured.upload_slots_application,
+            crate::ClientSettingsApplicationState::Applying
+        );
         first.shutdown().await.expect("shutdown first lifetime");
         drop(first);
 
@@ -8419,8 +8441,12 @@ mod tests {
             .await
             .expect("open restarted application");
         let second_runtime = client_settings_runtime(&second).await;
-        assert_eq!(second_runtime.active, zero_slots);
-        assert!(!second_runtime.restart_required);
+        assert_eq!(second_runtime.configured, zero_slots);
+        assert_eq!(second_runtime.effective_upload_slots, 0);
+        assert_eq!(
+            second_runtime.upload_slots_application,
+            crate::ClientSettingsApplicationState::Applied
+        );
         wait_for_seed_registrations(&second, 1).await;
         let runtime_generation = second
             .torrent_runtimes
@@ -8658,11 +8684,14 @@ mod tests {
             .expect("fixed bind conflict keeps application available");
         assert!(conflicted.incoming_peer_snapshot().is_none());
         let runtime = client_settings_runtime(&conflicted).await;
-        assert_eq!(
-            runtime.active.listener,
-            ListenerPolicy::FixedLoopback { port }
-        );
-        assert!(!runtime.restart_required);
+        assert_eq!(runtime.effective_listener, None);
+        assert!(matches!(
+            runtime.transport_application,
+            crate::ClientSettingsApplicationState::Degraded {
+                reason: crate::ClientSettingsDegradedReason::TransportBindFailed,
+                ..
+            }
+        ));
         assert!(matches!(
             runtime.listener_status,
             ListenerStatus::BindFailed {
@@ -8718,11 +8747,11 @@ mod tests {
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
         let configured = client_settings_runtime(&conflicted).await;
         assert_eq!(configured.configured, repaired);
+        assert_eq!(configured.effective_listener, None);
         assert_eq!(
-            configured.active.listener,
-            ListenerPolicy::FixedLoopback { port }
+            configured.transport_application,
+            crate::ClientSettingsApplicationState::Applying
         );
-        assert!(configured.restart_required);
         assert!(matches!(
             configured.listener_status,
             ListenerStatus::BindFailed { .. }
@@ -8751,8 +8780,14 @@ mod tests {
         assert_eq!(incoming.peer_budget.incoming_slack, 10);
         let runtime = client_settings_runtime(&repaired_service).await;
         assert_eq!(runtime.configured, repaired);
-        assert_eq!(runtime.active, repaired);
-        assert!(!runtime.restart_required);
+        assert_eq!(
+            runtime.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(&repaired))
+        );
+        assert_eq!(
+            runtime.transport_application,
+            crate::ClientSettingsApplicationState::Applied
+        );
         assert_eq!(runtime.effective_peer_connection_limit, 5);
         assert_eq!(
             runtime.listener_status,
@@ -8778,8 +8813,14 @@ mod tests {
             .expect("select released fixed port");
         let pending_fixed = client_settings_runtime(&repaired_service).await;
         assert_eq!(pending_fixed.configured, fixed);
-        assert_eq!(pending_fixed.active, repaired);
-        assert!(pending_fixed.restart_required);
+        assert_eq!(
+            pending_fixed.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(&repaired))
+        );
+        assert_eq!(
+            pending_fixed.transport_application,
+            crate::ClientSettingsApplicationState::Applying
+        );
         repaired_service
             .shutdown()
             .await
@@ -8795,8 +8836,14 @@ mod tests {
         assert_eq!(incoming.listen_address.port(), port);
         let runtime = client_settings_runtime(&fixed_service).await;
         assert_eq!(runtime.configured, fixed);
-        assert_eq!(runtime.active, fixed);
-        assert!(!runtime.restart_required);
+        assert_eq!(
+            runtime.effective_listener,
+            Some(crate::EffectiveListenerSettings::from_settings(&fixed))
+        );
+        assert_eq!(
+            runtime.transport_application,
+            crate::ClientSettingsApplicationState::Applied
+        );
         assert_eq!(
             runtime.listener_status,
             ListenerStatus::Listening {

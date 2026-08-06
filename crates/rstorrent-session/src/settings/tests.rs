@@ -6,8 +6,9 @@ use rstorrent_engine::{
 use rusqlite::Connection;
 
 use super::{
-    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsError,
-    ClientSettingsRuntimeView, ListenerPolicy, ListenerStatus, PortMappingPolicy,
+    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings,
+    ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
+    EffectiveListenerSettings, ListenerPolicy, ListenerStatus, PortMappingPolicy,
     PortMappingStatus, SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
     create_client_settings, read_client_settings, replace_client_settings,
 };
@@ -152,8 +153,7 @@ fn listener_json_is_closed_and_tagged() {
 }
 
 #[test]
-fn runtime_view_distinguishes_configured_active_effective_and_observed() {
-    let active = ClientSettings::default();
+fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() {
     let configured = ClientSettings {
         listener: ListenerPolicy::AutomaticLoopback,
         preferred_listen_port: 42_000,
@@ -163,9 +163,17 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
     };
     let view = ClientSettingsRuntimeView {
         configured: configured.clone(),
-        active: active.clone(),
-        restart_required: true,
+        effective_listener: Some(EffectiveListenerSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            preferred_listen_port: 41_000,
+        }),
+        effective_port_mapping: PortMappingPolicy::Disabled,
         effective_peer_connection_limit: 120,
+        effective_upload_slots: 8,
+        transport_application: ClientSettingsApplicationState::Applying,
+        port_mapping_application: ClientSettingsApplicationState::Applied,
+        peer_connections_application: ClientSettingsApplicationState::Applied,
+        upload_slots_application: ClientSettingsApplicationState::Applied,
         listener_status: ListenerStatus::Listening {
             address: "127.0.0.1".to_owned(),
             port: 41_000,
@@ -185,8 +193,17 @@ fn runtime_view_distinguishes_configured_active_effective_and_observed() {
         },
     };
     assert_eq!(view.configured, configured);
-    assert_eq!(view.active, active);
-    assert!(view.restart_required);
+    assert_eq!(
+        view.effective_listener,
+        Some(EffectiveListenerSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            preferred_listen_port: 41_000,
+        })
+    );
+    assert_eq!(
+        view.transport_application,
+        ClientSettingsApplicationState::Applying
+    );
     assert_eq!(view.effective_peer_connection_limit, 120);
     assert_eq!(
         view.listener_status,

@@ -11,12 +11,13 @@ use rstorrent_session::{
     ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, AdvertisedPeerEndpointScope,
     AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello,
     ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus,
-    CatalogPageRequest, CatalogPageView, ClientSettings, ClientSettingsRuntimeView, Command,
-    DeliveryMode, DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView,
-    DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField,
-    DiagnosticFilter, DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity,
-    DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView, DiskPieceStageView, DiskPieceView,
-    DiskPipelineView, DiskPressureView, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
+    CatalogPageRequest, CatalogPageView, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, DeliveryMode, DeliveryPolicy,
+    DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
+    DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
+    DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    EffectiveListenerSettings, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
     FilePriority, FileSelectionIntent, FileSelectionView, FileView, IndexRange,
     ListenerBindFailureReason, ListenerPolicy, ListenerStatus, OpenViewSetOptions,
     OpenViewSetRequest, OpenViewSetResponse, PeerDirection, PeerDisconnectReason,
@@ -75,6 +76,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ListenerPolicy>(&mut declarations)?;
     append::<PortMappingPolicy>(&mut declarations)?;
     append::<ClientSettings>(&mut declarations)?;
+    append::<EffectiveListenerSettings>(&mut declarations)?;
+    append::<ClientSettingsDegradedReason>(&mut declarations)?;
+    append::<ClientSettingsApplicationState>(&mut declarations)?;
     append::<ListenerBindFailureReason>(&mut declarations)?;
     append::<ListenerStatus>(&mut declarations)?;
     append::<PortMappingMechanism>(&mut declarations)?;

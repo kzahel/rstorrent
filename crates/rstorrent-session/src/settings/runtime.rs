@@ -3,9 +3,9 @@ use std::io;
 use rstorrent_engine::{IncomingTcpBootstrap, PeerBudgetConfig, UploadSchedulerConfig};
 
 use super::contract::{
-    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsRuntimeView,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_LISTENER_BIND_DETAIL_BYTES,
-    PortMappingStatus, SessionUdpStatus,
+    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsRuntimeView, EffectiveListenerSettings, ListenerBindFailureReason,
+    ListenerPolicy, ListenerStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -41,10 +41,15 @@ impl ClientSettings {
 impl ClientSettingsRuntimeView {
     pub(crate) fn from_configured(settings: ClientSettings) -> Self {
         Self {
+            effective_listener: Some(EffectiveListenerSettings::from_settings(&settings)),
+            effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
+            effective_upload_slots: settings.upload_slots,
             configured: settings.clone(),
-            active: settings,
-            restart_required: false,
+            transport_application: ClientSettingsApplicationState::Applied,
+            port_mapping_application: ClientSettingsApplicationState::Applied,
+            peer_connections_application: ClientSettingsApplicationState::Applied,
+            upload_slots_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
@@ -53,8 +58,14 @@ impl ClientSettingsRuntimeView {
     }
 
     pub(crate) fn set_configured(&mut self, configured: ClientSettings) {
-        self.restart_required = configured != self.active;
+        if self.configured == configured {
+            return;
+        }
         self.configured = configured;
+        self.transport_application = ClientSettingsApplicationState::Applying;
+        self.port_mapping_application = ClientSettingsApplicationState::Applying;
+        self.peer_connections_application = ClientSettingsApplicationState::Applying;
+        self.upload_slots_application = ClientSettingsApplicationState::Applying;
     }
 
     pub(crate) fn from_started(
@@ -69,10 +80,31 @@ impl ClientSettingsRuntimeView {
             .status()
             .clone();
         Self {
-            restart_required: configured != active,
             configured,
-            active,
+            effective_listener: if listener_status == ListenerStatus::Disabled
+                || matches!(listener_status, ListenerStatus::Listening { .. })
+            {
+                Some(EffectiveListenerSettings::from_settings(&active))
+            } else {
+                None
+            },
+            effective_port_mapping: active.port_mapping,
             effective_peer_connection_limit,
+            effective_upload_slots: active.upload_slots,
+            transport_application: if matches!(listener_status, ListenerStatus::BindFailed { .. }) {
+                ClientSettingsApplicationState::Degraded {
+                    reason: super::contract::ClientSettingsDegradedReason::TransportBindFailed,
+                    detail: match &listener_status {
+                        ListenerStatus::BindFailed { detail, .. } => detail.clone(),
+                        _ => unreachable!("matched listener bind failure"),
+                    },
+                }
+            } else {
+                ClientSettingsApplicationState::Applied
+            },
+            port_mapping_application: ClientSettingsApplicationState::Applied,
+            peer_connections_application: ClientSettingsApplicationState::Applied,
+            upload_slots_application: ClientSettingsApplicationState::Applied,
             listener_status,
             session_udp_status,
             port_mapping_status,
@@ -98,11 +130,11 @@ pub(crate) fn classify_listener_bind_failure(error: &io::Error) -> ListenerStatu
     };
     ListenerStatus::BindFailed {
         reason,
-        detail: bounded_utf8(&error.to_string(), MAX_LISTENER_BIND_DETAIL_BYTES),
+        detail: bounded_utf8(&error.to_string(), MAX_RUNTIME_DETAIL_BYTES),
     }
 }
 
-fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
+pub(super) fn bounded_utf8(value: &str, maximum_bytes: usize) -> String {
     if value.len() <= maximum_bytes {
         return value.to_owned();
     }

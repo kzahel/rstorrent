@@ -1456,11 +1456,12 @@ describe("inspection application", () => {
       }),
     );
     expect(
-      within(dialog).getByText(/Restart the application to apply these changes/i),
+      within(dialog).getByText(/Settings accepted and applying/i),
     ).toBeVisible();
     expect(
-      within(dialog).getByText(/Saved settings differ from the running application/i),
+      within(dialog).getByText(/Transport: applying/i),
     ).toBeVisible();
+    expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
 
     await user.clear(peers);
     await user.type(peers, "1999");
@@ -1508,9 +1509,18 @@ describe("inspection application", () => {
             ...active,
             listener: { type: "automatic_loopback" },
           },
-          active,
-          restart_required: true,
+          effective_listener: null,
+          effective_port_mapping: "disabled",
           effective_peer_connection_limit: 200,
+          effective_upload_slots: 8,
+          transport_application: {
+            type: "degraded",
+            reason: "transport_bind_failed",
+            detail: "loopback port 51413 is already in use.",
+          },
+          port_mapping_application: { type: "applied" },
+          peer_connections_application: { type: "applied" },
+          upload_slots_application: { type: "applied" },
           listener_status: {
             type: "bind_failed",
             reason: "address_in_use",
@@ -1538,7 +1548,8 @@ describe("inspection application", () => {
     expect(within(dialog).getByText(/port already in use/i)).toHaveTextContent(
       "loopback port 51413 is already in use",
     );
-    expect(within(dialog).getByText(/Restart is required/i)).toBeVisible();
+    expect(within(dialog).getByText(/Transport: degraded/i)).toBeVisible();
+    expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
     expect(
       within(dialog).getByRole("radio", { name: /Automatic device-only port/ }),
     ).toBeChecked();
@@ -1843,9 +1854,10 @@ class RecordingLiveApplication implements InspectionApplication {
       this.clientSettings = {
         ...this.clientSettings,
         configured: command.settings,
-        restart_required:
-          JSON.stringify(command.settings) !==
-          JSON.stringify(this.clientSettings.active),
+        transport_application: { type: "applying" },
+        port_mapping_application: { type: "applying" },
+        peer_connections_application: { type: "applying" },
+        upload_slots_application: { type: "applying" },
       };
       this.listener?.({
         type: "patch",

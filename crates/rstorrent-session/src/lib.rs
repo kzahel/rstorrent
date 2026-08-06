@@ -48,8 +48,9 @@ pub use rstorrent_engine::{
 };
 pub use settings::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsError,
-    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
+    EffectiveListenerSettings, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
     PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
     SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
 };

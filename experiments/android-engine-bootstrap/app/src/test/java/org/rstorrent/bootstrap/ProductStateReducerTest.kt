@@ -9,6 +9,7 @@ import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.CatalogPageView
 import org.rstorrent.session.uniffi.ClientSettings
+import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.DiagnosticCategory
@@ -16,6 +17,7 @@ import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.DiagnosticRetention
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.DeliveryPolicy
+import org.rstorrent.session.uniffi.EffectiveListenerSettings
 import org.rstorrent.session.uniffi.FileCatalogState
 import org.rstorrent.session.uniffi.FileIndexRange
 import org.rstorrent.session.uniffi.FilePriority
@@ -311,24 +313,28 @@ class ProductStateReducerTest {
             ),
     ): ClientSettingsRuntimeView =
         ClientSettingsRuntimeView(
-            configured,
-            ClientSettings(
-                listener = ListenerPolicy.Disabled,
-                preferredListenPort = 6_881U.toUShort(),
-                portMapping = PortMappingPolicy.DISABLED,
-                peerConnectionLimit = 200U,
-                uploadSlots = 8U.toUShort(),
-            ),
-            configured.listener != ListenerPolicy.Disabled ||
-                configured.preferredListenPort != 6_881U.toUShort() ||
-                configured.portMapping != PortMappingPolicy.DISABLED ||
-                configured.peerConnectionLimit != 200U ||
-                configured.uploadSlots != 8U.toUShort(),
-            200U,
-            ListenerStatus.Disabled,
-            SessionUdpStatus.Unavailable,
-            PortMappingStatus.Disabled,
-            AdvertisedPeerEndpointStatus.Unavailable,
+            configured = configured,
+            effectiveListener =
+                EffectiveListenerSettings(
+                    listener = ListenerPolicy.Disabled,
+                    preferredListenPort = 6_881U.toUShort(),
+                ),
+            effectivePortMapping = PortMappingPolicy.DISABLED,
+            effectivePeerConnectionLimit = 200U,
+            effectiveUploadSlots = 8U.toUShort(),
+            transportApplication =
+                if (configured.listener == ListenerPolicy.Disabled) {
+                    ClientSettingsApplicationState.Applied
+                } else {
+                    ClientSettingsApplicationState.Applying
+                },
+            portMappingApplication = ClientSettingsApplicationState.Applied,
+            peerConnectionsApplication = ClientSettingsApplicationState.Applied,
+            uploadSlotsApplication = ClientSettingsApplicationState.Applied,
+            listenerStatus = ListenerStatus.Disabled,
+            sessionUdpStatus = SessionUdpStatus.Unavailable,
+            portMappingStatus = PortMappingStatus.Disabled,
+            advertisedPeerEndpoint = AdvertisedPeerEndpointStatus.Unavailable,
         )
 
     private fun update(

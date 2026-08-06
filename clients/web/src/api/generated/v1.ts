@@ -9,6 +9,12 @@ export type PortMappingPolicy = "disabled" | "upnp";
 
 export type ClientSettings = { listener: ListenerPolicy, preferred_listen_port: number, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, };
 
+export type EffectiveListenerSettings = { listener: ListenerPolicy, preferred_listen_port: number, };
+
+export type ClientSettingsDegradedReason = "transport_bind_failed" | "transport_handover_failed" | "port_mapping_failed" | "port_mapping_cleanup_failed" | "peer_connection_convergence_failed" | "upload_slot_convergence_failed" | "runtime_stopped";
+
+export type ClientSettingsApplicationState = { "type": "applying" } | { "type": "applied" } | { "type": "degraded", reason: ClientSettingsDegradedReason, detail: string, };
+
 export type ListenerBindFailureReason = "address_in_use" | "permission_denied" | "address_unavailable" | "other";
 
 export type ListenerStatus = { "type": "disabled" } | { "type": "listening", address: string, port: number, } | { "type": "bind_failed", reason: ListenerBindFailureReason, detail: string, };
@@ -27,11 +33,11 @@ export type AdvertisedPeerEndpointStatus = { "type": "unavailable" } | { "type":
 
 export type SessionUdpStatus = { "type": "unavailable" } | { "type": "bound", address: string, port: number, coordinated_with_tcp: boolean, };
 
-export type ClientSettingsRuntimeView = { configured: ClientSettings, active: ClientSettings, restart_required: boolean, effective_peer_connection_limit: number, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, advertised_peer_endpoint: AdvertisedPeerEndpointStatus, };
+export type ClientSettingsRuntimeView = { configured: ClientSettings, effective_listener?: EffectiveListenerSettings | null, effective_port_mapping: PortMappingPolicy, effective_peer_connection_limit: number, effective_upload_slots: number, transport_application: ClientSettingsApplicationState, port_mapping_application: ClientSettingsApplicationState, peer_connections_application: ClientSettingsApplicationState, upload_slots_application: ClientSettingsApplicationState, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, advertised_peer_endpoint: AdvertisedPeerEndpointStatus, };
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8};
 
-export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"active":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"restart_required":false,"effective_peer_connection_limit":200,"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"}};
+export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"disabled"},"preferred_listen_port":6881,"port_mapping":"disabled","peer_connection_limit":200,"upload_slots":8},"effective_listener":{"listener":{"type":"disabled"},"preferred_listen_port":6881},"effective_port_mapping":"disabled","effective_peer_connection_limit":200,"effective_upload_slots":8,"transport_application":{"type":"applied"},"port_mapping_application":{"type":"applied"},"peer_connections_application":{"type":"applied"},"upload_slots_application":{"type":"applied"},"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"}};
 
 export type FilePriority = "normal" | "skip";
 

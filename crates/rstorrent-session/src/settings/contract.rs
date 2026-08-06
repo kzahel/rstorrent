@@ -12,7 +12,7 @@ pub const MIN_PREFERRED_LISTEN_PORT: u16 = 1_024;
 pub const MIN_PEER_CONNECTION_LIMIT: u32 = 1;
 pub const MAX_PEER_CONNECTION_LIMIT: u32 = 2_000;
 pub const MAX_UPLOAD_SLOTS: u16 = 50;
-pub(crate) const MAX_LISTENER_BIND_DETAIL_BYTES: usize = 512;
+pub(crate) const MAX_RUNTIME_DETAIL_BYTES: usize = 512;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -38,6 +38,24 @@ pub enum PortMappingPolicy {
     #[default]
     Disabled,
     Upnp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct EffectiveListenerSettings {
+    pub listener: ListenerPolicy,
+    #[schemars(range(min = 1_024))]
+    pub preferred_listen_port: u16,
+}
+
+impl EffectiveListenerSettings {
+    pub(crate) fn from_settings(settings: &ClientSettings) -> Self {
+        Self {
+            listener: settings.listener,
+            preferred_listen_port: settings.preferred_listen_port,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -296,14 +314,47 @@ pub enum AdvertisedPeerEndpointStatus {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ClientSettingsDegradedReason {
+    TransportBindFailed,
+    TransportHandoverFailed,
+    PortMappingFailed,
+    PortMappingCleanupFailed,
+    PeerConnectionConvergenceFailed,
+    UploadSlotConvergenceFailed,
+    RuntimeStopped,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClientSettingsApplicationState {
+    Applying,
+    #[default]
+    Applied,
+    Degraded {
+        reason: ClientSettingsDegradedReason,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
 pub struct ClientSettingsRuntimeView {
     pub configured: ClientSettings,
-    pub active: ClientSettings,
-    pub restart_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_listener: Option<EffectiveListenerSettings>,
+    pub effective_port_mapping: PortMappingPolicy,
     pub effective_peer_connection_limit: u32,
+    pub effective_upload_slots: u16,
+    pub transport_application: ClientSettingsApplicationState,
+    pub port_mapping_application: ClientSettingsApplicationState,
+    pub peer_connections_application: ClientSettingsApplicationState,
+    pub upload_slots_application: ClientSettingsApplicationState,
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
@@ -314,10 +365,15 @@ impl Default for ClientSettingsRuntimeView {
     fn default() -> Self {
         let settings = ClientSettings::default();
         Self {
+            effective_listener: Some(EffectiveListenerSettings::from_settings(&settings)),
+            effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
+            effective_upload_slots: settings.upload_slots,
             configured: settings.clone(),
-            active: settings,
-            restart_required: false,
+            transport_application: ClientSettingsApplicationState::Applied,
+            port_mapping_application: ClientSettingsApplicationState::Applied,
+            peer_connections_application: ClientSettingsApplicationState::Applied,
+            upload_slots_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,

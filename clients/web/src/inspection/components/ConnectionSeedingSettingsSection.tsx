@@ -132,9 +132,7 @@ export function ConnectionSeedingSettingsSection({
       await onSave(nextSettings);
       setSaveStatus({
         type: "success",
-        message: sameClientSettings(nextSettings, settings.active)
-          ? "Settings saved."
-          : "Settings saved. Restart the application to apply these changes.",
+        message: "Settings accepted and applying.",
       });
     } catch (error) {
       setSaveStatus({
@@ -191,7 +189,7 @@ export function ConnectionSeedingSettingsSection({
             <ListenerOption
               mode="fixed_loopback"
               label="Fixed device-only port"
-              description="Use the exact loopback port entered below at startup."
+              description="Use the exact loopback port entered below."
               selected={listenerMode === "fixed_loopback"}
               disabled={!manageable || pending}
               onSelect={() =>
@@ -201,7 +199,7 @@ export function ConnectionSeedingSettingsSection({
             <ListenerOption
               mode="automatic_local_network"
               label="Automatic local-network port"
-              description="Listen on the IPv4 address selected for this network at startup."
+              description="Listen on the IPv4 address selected for this network."
               selected={listenerMode === "automatic_local_network"}
               disabled={!manageable || pending}
               onSelect={() =>
@@ -258,7 +256,7 @@ export function ConnectionSeedingSettingsSection({
           <span>
             <strong>Map incoming TCP with UPnP</strong>
             <small>
-              Request a temporary IGD v2 gateway mapping at startup. This is
+              Request a temporary IGD v2 gateway mapping. This is
               eligible only with a local-network listener and remains off by default.
             </small>
           </span>
@@ -437,7 +435,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       ) : (
         <span className={styles.runtimeWarning}>
           Listener could not start ({bindFailureLabel(listener.reason)}):{" "}
-          {listener.detail} Save a replacement and restart to try again.
+          {listener.detail} Save settings to retry.
         </span>
       )}
       {settings.session_udp_status.type === "bound" ? (
@@ -455,16 +453,23 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       )}
       <PortMappingRuntime status={settings.port_mapping_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
-      {settings.restart_required ? (
-        <span className={styles.runtimeWarning}>
-          Saved settings differ from the running application. Restart is
-          required before they take effect.
-        </span>
-      ) : null}
+      <ApplicationState label="Transport" state={settings.transport_application} />
+      <ApplicationState
+        label="Port mapping"
+        state={settings.port_mapping_application}
+      />
+      <ApplicationState
+        label="Peer connections"
+        state={settings.peer_connections_application}
+      />
+      <ApplicationState
+        label="Upload slots"
+        state={settings.upload_slots_application}
+      />
       {settings.effective_peer_connection_limit <
-      settings.active.peer_connection_limit ? (
+      settings.configured.peer_connection_limit ? (
         <span>
-          The active {settings.active.peer_connection_limit}-peer setting is
+          The configured {settings.configured.peer_connection_limit}-peer setting is
           safely limited to {settings.effective_peer_connection_limit} by
           available file descriptors.
         </span>
@@ -475,6 +480,24 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         </span>
       )}
     </div>
+  );
+}
+
+function ApplicationState({
+  label,
+  state,
+}: {
+  readonly label: string;
+  readonly state: ClientSettingsRuntimeView["transport_application"];
+}) {
+  if (state.type === "applied") return null;
+  if (state.type === "applying") {
+    return <span>{label}: applying…</span>;
+  }
+  return (
+    <span className={styles.runtimeWarning}>
+      {label}: degraded ({state.detail}). Save settings to retry.
+    </span>
   );
 }
 

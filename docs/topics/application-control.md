@@ -52,12 +52,14 @@ listener and explicit UPnP mapping intent. The existing torrent-list summary
 projects disabled, ineligible, discovering, mapping, mapped,
 renewal-failed/failed, and stopping runtime state; gateway work and mapped
 addresses do not become commands or durable authority.
-Planned Tactical
+In-progress Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 keeps the command and persistence waist but replaces restart application with
 one asynchronous desired-to-effective reconciliation owner. Successful no-op
 and replayed saves can retry degraded runtime convergence without inventing a
-second command or settings route.
+second command or settings route. Its completed first gate removes restart
+semantics from the public runtime view; command-to-reconciler submission lands
+in the later runtime gates.
 Tactical `085` adds the minimal projected `force_recheck_available` capability
 and composes existing per-torrent commands sequentially in the React action
 owner. It does not add a batch command, atomic multi-torrent semantics, or a

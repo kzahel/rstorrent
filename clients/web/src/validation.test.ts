@@ -111,18 +111,21 @@ describe("client settings validation", () => {
     );
 
     const inconsistent = torrentBatch("Inconsistent");
-    inconsistent.updates[0]!.snapshot.client_settings.configured.peer_connection_limit =
-      199;
+    inconsistent.updates[0]!.snapshot.client_settings.listener_status = {
+      type: "listening",
+      address: "127.0.0.1",
+      port: 6_881,
+    };
     expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
-      /restart-required state is inconsistent/,
+      /disabled listener reports a listening status/,
     );
 
     const mismatchedUdp = torrentBatch("Mismatched UDP");
     mismatchedUdp.updates[0]!.snapshot.client_settings = {
       ...clientSettingsRuntimeFixture(),
-      active: {
-        ...clientSettingsRuntimeFixture().active,
+      effective_listener: {
         listener: { type: "automatic_loopback" },
+        preferred_listen_port: 6_881,
       },
       configured: {
         ...clientSettingsRuntimeFixture().configured,

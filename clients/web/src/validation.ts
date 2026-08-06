@@ -1024,23 +1024,49 @@ function validateClientSettings(value: unknown): void {
 function validateClientSettingsRuntime(value: unknown): void {
   const runtime = asRecord(value, "client settings runtime");
   validateClientSettings(runtime.configured);
-  validateClientSettings(runtime.active);
-  const restartRequired = boolean(
-    runtime.restart_required,
-    "client settings restart-required state",
-  );
-  if (restartRequired === clientSettingsEqual(runtime.configured, runtime.active)) {
-    throw new ContractError("client settings restart-required state is inconsistent");
+  const effectiveListenerValue = runtime.effective_listener;
+  let listener: Record<string, unknown> | null = null;
+  if (effectiveListenerValue !== undefined && effectiveListenerValue !== null) {
+    const effective = asRecord(
+      effectiveListenerValue,
+      "effective listener settings",
+    );
+    listener = asRecord(effective.listener, "effective listener policy");
+    const listenerType = oneOf(listener.type, "effective listener policy type", [
+      "disabled",
+      "automatic_loopback",
+      "fixed_loopback",
+      "automatic_local_network",
+      "fixed_local_network",
+    ]);
+    if (listenerType === "fixed_loopback" || listenerType === "fixed_local_network") {
+      boundedInteger(listener.port, "effective fixed listener port", 1_024, 65_535);
+    }
+    boundedInteger(
+      effective.preferred_listen_port,
+      "effective preferred listener port",
+      1_024,
+      65_535,
+    );
   }
+  oneOf(runtime.effective_port_mapping, "effective port mapping policy", [
+    "disabled",
+    "upnp",
+  ]);
   boundedInteger(
     runtime.effective_peer_connection_limit,
     "effective peer connection limit",
     1,
     2_000,
   );
+  boundedInteger(runtime.effective_upload_slots, "effective upload slots", 0, 50);
+  [
+    [runtime.transport_application, "transport application"],
+    [runtime.port_mapping_application, "port mapping application"],
+    [runtime.peer_connections_application, "peer connections application"],
+    [runtime.upload_slots_application, "upload slots application"],
+  ].forEach(([value, label]) => validateSettingsApplicationState(value, String(label)));
 
-  const active = asRecord(runtime.active, "active client settings");
-  const listener = asRecord(active.listener, "active listener policy");
   const status = asRecord(runtime.listener_status, "listener status");
   const statusType = oneOf(status.type, "listener status type", [
     "disabled",
@@ -1050,7 +1076,7 @@ function validateClientSettingsRuntime(value: unknown): void {
   if (statusType === "listening") {
     const address = boundedString(status.address, "listener address", 64);
     const port = boundedInteger(status.port, "listener port", 1, 65_535);
-    if (listener.type === "disabled") {
+    if (listener === null || listener.type === "disabled") {
       throw new ContractError("disabled listener reports a listening status");
     }
     if (
@@ -1080,10 +1106,13 @@ function validateClientSettingsRuntime(value: unknown): void {
       "other",
     ]);
     boundedString(status.detail, "listener bind failure detail", 512);
-    if (listener.type === "disabled") {
+    if (listener !== null && listener.type === "disabled") {
       throw new ContractError("disabled listener reports a bind failure");
     }
-  } else if (listener.type !== "disabled") {
+    if (listener !== null) {
+      throw new ContractError("bind failure cannot retain an effective listener");
+    }
+  } else if (listener === null || listener.type !== "disabled") {
     throw new ContractError("enabled listener reports a disabled status");
   }
 
@@ -1136,10 +1165,10 @@ function validateClientSettingsRuntime(value: unknown): void {
     ],
   );
   if (mappingStatusType === "disabled") {
-    if (active.port_mapping !== "disabled") {
+    if (runtime.effective_port_mapping !== "disabled") {
       throw new ContractError("enabled port mapping reports a disabled status");
     }
-  } else if (active.port_mapping !== "upnp") {
+  } else if (runtime.effective_port_mapping !== "upnp") {
     throw new ContractError("disabled port mapping reports active runtime work");
   }
   if (mappingStatusType === "mapped") {
@@ -1192,19 +1221,24 @@ function validateClientSettingsRuntime(value: unknown): void {
   }
 }
 
-function clientSettingsEqual(left: unknown, right: unknown): boolean {
-  const leftSettings = asRecord(left, "configured client settings");
-  const rightSettings = asRecord(right, "active client settings");
-  const leftListener = asRecord(leftSettings.listener, "configured listener");
-  const rightListener = asRecord(rightSettings.listener, "active listener");
-  return (
-    leftSettings.preferred_listen_port === rightSettings.preferred_listen_port &&
-    leftSettings.peer_connection_limit === rightSettings.peer_connection_limit &&
-    leftSettings.upload_slots === rightSettings.upload_slots &&
-    leftSettings.port_mapping === rightSettings.port_mapping &&
-    leftListener.type === rightListener.type &&
-    leftListener.port === rightListener.port
-  );
+function validateSettingsApplicationState(value: unknown, label: string): void {
+  const state = asRecord(value, label);
+  const stateType = oneOf(state.type, `${label} type`, [
+    "applying",
+    "applied",
+    "degraded",
+  ]);
+  if (stateType !== "degraded") return;
+  oneOf(state.reason, `${label} degraded reason`, [
+    "transport_bind_failed",
+    "transport_handover_failed",
+    "port_mapping_failed",
+    "port_mapping_cleanup_failed",
+    "peer_connection_convergence_failed",
+    "upload_slot_convergence_failed",
+    "runtime_stopped",
+  ]);
+  boundedString(state.detail, `${label} degraded detail`, 512);
 }
 
 function isConcreteNonLoopbackIpv4(value: string): boolean {
