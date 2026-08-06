@@ -447,9 +447,12 @@ the vertical proof:
 - prove download-to-seed continuity, restart, lifecycle fencing, keyed row
   removal, and joined shutdown with RSTorrent and pinned libtorrent peers.
 
-This slice does not add concurrent multi-torrent work, change any listener or
-upload limit, implement mature duplicate-peer policy, or add advertisement,
-mapping, protocol, settings, or UI breadth.
+This slice did not add concurrent multi-torrent work, change any listener or
+upload limit, or add advertisement, mapping, protocol, settings, or UI
+breadth. Completed Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) subsequently
+installed mature duplicate-peer admission at the shared validated-handshake
+boundary without changing those reachability owners.
 
 ### 5. Non-loopback listener and reachability ownership — complete
 

@@ -184,20 +184,17 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) is
-authorized and in progress.** Add the task-free per-torrent peer-ID admission
-index, integrate it at the shared validated-handshake boundary, prove exact
-loser cleanup, and complete controlled RSTorrent/libtorrent crossed-connection
-races without treating peer IDs as authenticated durable identity.
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is the next executable
+engine slice.** Implement negotiated BEP 6 as one complete bounded request
+lifecycle, including exact reject-request ownership and ordinary non-Fast
+compatibility.
 
 ### Next
 
 - Execute planned Tactical
-  [`093`](../tactical/093-bep6-fast-request-lifecycle.md) after Tactical `090`
-  closes the complete duplicate-connection lifecycle.
-- Execute planned Tactical
   [`094`](../tactical/094-bounded-bep11-peer-exchange.md) after its hard
-  Tactical `090` prerequisite and the recorded BEP 6 sequence.
+  prerequisite Tactical `090` and the recorded BEP 6 sequence; `090` is now
+  complete.
 - Execute planned Tactical
   [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) as
   the next independent product slice when product work is selected over the
@@ -222,10 +219,8 @@ physical gateway evidence; pinned source inspection is not a support claim.
 
 Availability-ranked activation is complete in Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md). The remaining
-three planned post-**Now** download-liveness slices retain this default order:
-peer-ID duplicate resolution in Tactical
-[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md), the complete
-BEP 6 request lifecycle in Tactical
+two planned engine download-liveness slices retain this default order: the
+complete BEP 6 request lifecycle in Tactical
 [`093`](../tactical/093-bep6-fast-request-lifecycle.md), and bounded BEP 11 PEX
 in Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). Full snub
 and parole selection remain evidence-gated rather than preplanned slices.
@@ -261,9 +256,9 @@ and parole selection remain evidence-gated rather than preplanned slices.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded peer registry and source merging | Implemented | deterministic, runtime | Records are volatile and peer-ID duplicate resolution is absent; planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) keeps endpoint records separate while admitting one live connection per peer ID. | [`peer-lifecycle`](peer-lifecycle.md) |
-| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, and terminal cleanup are visible; durable history and peer-ID duplicate resolution remain absent. Planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) closes only the live-connection gap. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
-| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime | Selection is intentionally basic; peer-ID duplicate resolution and measured scoring are absent. Planned Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) adds post-handshake duplicate admission without introducing peer scoring. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Bounded peer registry and source merging | Implemented | deterministic, runtime, interop | Records remain volatile and endpoint-keyed while the separate exact peer-ID admission index permits at most one established generation per claimed remote ID. Crossed, same-direction, self, stale-removal, saturation, and pinned-libtorrent cases pass without merging provenance or reputation. | [`peer-lifecycle`](peer-lifecycle.md) |
+| Registry-backed Swarm inspection | Implemented | deterministic, runtime, interop, web | The bounded volatile registry, exact state counts, source merging, retry eligibility, terminal cleanup, and typed self/duplicate closure reasons are visible; durable history remains absent. | [`peer-lifecycle`](peer-lifecycle.md), [`application-view-api`](application-view-api.md) |
+| Deterministic dial selection and guarded attempts | Implemented | deterministic, runtime, interop | Selection remains intentionally basic. Post-handshake peer-ID admission deterministically resolves crossed and repeated connections without introducing peer scoring or treating IDs as durable identity. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |

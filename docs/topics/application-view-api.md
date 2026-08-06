@@ -777,6 +777,14 @@ generated contract passes through the live TypeScript adapter. Authenticated
 gateway evidence follows simultaneous pinned libtorrent and RSTorrent rows
 through nonzero upload, exact removal, inactive pause, and joined shutdown.
 
+Completed Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) extends the
+closed disconnect-reason vocabulary with `self_connection` and
+`duplicate_peer_id`. Generated TypeScript, JSON Schema, validators, and
+UniFFI-facing types carry those bounded diagnostics. Only the admitted
+generation remains in the live Peers set; the reason describes loser closure
+without exposing peer IDs as authenticated identity or joining Swarm records.
+
 `InspectionApplication` now accepts semantic desired views. The live adapter
 maps them to Rust specifications while responsive navigation can retain only a
 phone detail, a library, or a wide list-plus-detail set. Removed projections

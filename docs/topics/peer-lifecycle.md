@@ -58,6 +58,12 @@ immediately; decreases block excess admission first and deterministically
 cancel connecting before established generations until the effective-plus-ten
 incoming-slack bound is restored. Transport handover retains established peer
 tasks and their identities, observations, permits, and exact counters.
+Completed Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) adds one
+task-free exact peer-ID admission index to that torrent owner. Self IDs and
+duplicate losers close before scheduling or upload admission; crossed sockets
+use deterministic byte ordering, while same-direction races retain the first
+generation. Endpoint records and all accumulated history remain independent.
 
 ## Scope
 
@@ -125,7 +131,10 @@ RSTorrent uses these terms:
 The protocol peer ID learned during the handshake is peer identity evidence,
 not the primary key for a discovered endpoint. Multiple endpoints may later
 report the same peer ID, and endpoint duplicate policy remains distinct from
-identity grouping.
+identity grouping. While connections overlap, the torrent peer runtime uses
+exact equality only to admit one live generation. That volatile index is
+generation-fenced, bounded by the connection ceiling, and transfers no source,
+retry, integrity, reputation, or ban state.
 
 The same 20-byte value may contain a conventional client fingerprint. The
 runtime-independent protocol parser recognizes bounded BEP 20 and selected
@@ -430,12 +439,12 @@ multi-peer payload-upload ownership. Completed Tactical
 incoming swarm/view integration and the per-torrent lifetime boundary it
 requires; both now pass controlled interoperability and resource closure.
 LSD, uTP, NAT traversal, persistent peer caches, and dynamic VPN or metered
-policy remain separate future tacticals. Planned Tactical
+policy remain separate future tacticals. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) records PEX after that
-identity boundary and truthful peer advertisement. Neither planned slice
-changes the authoritative readiness queue. Completed Tactical `092` now feeds
+identity boundary and truthful peer advertisement. The planned PEX slice does
+not change the authoritative readiness queue. Completed Tactical `092` feeds
 the generation-fenced selected TCP endpoint into tracker and DHT discovery;
 endpoint selection remains distinct from observed incoming reachability.
 
@@ -624,9 +633,10 @@ wire-port discovery into the same retained peer lifetime. Tactical `097`
 additionally proves deterministic live limit reduction and increase plus
 incoming and outgoing transfer survival across coordinated transport
 handover. Finite upload bandwidth and seeding goals remain later work.
-Planned Tactical
+Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records the
-post-handshake duplicate-connection boundary, Tactical
+post-handshake duplicate-connection boundary with deterministic, saturated
+runtime, generated-contract, and controlled libtorrent evidence. Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
 measured picker refinement with exact availability accounting and preserves
 unique unplanned-piece retention across replacement. Tactical

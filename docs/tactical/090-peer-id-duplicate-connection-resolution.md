@@ -1,8 +1,9 @@
 # Tactical 090: Peer-ID Duplicate Connection Resolution
 
-Status: Authorized and in progress on 2026-08-06. Gate 1 is the current
-executable action after completed Tacticals `091`--`099` and queue
-reconciliation.
+Status: Complete on 2026-08-06. Commits `6ea2576` through `d5b55cd` install
+the task-free admission owner, enforce its decision in every socket owner,
+prove controlled crossed-connection convergence, and publish typed product
+diagnostics.
 
 Topics: `peer-lifecycle`, `download-correctness`, `protocol-support`,
 `capability-readiness`
@@ -200,3 +201,52 @@ client family.
 The next planned slice is the BEP 6 request lifecycle in Tactical
 [`093`](093-bep6-fast-request-lifecycle.md). Peer-ID resolution is also a
 prerequisite for planned bounded PEX in Tactical `094`.
+
+## Implementation Record
+
+The torrent peer runtime now owns one exact-20-byte peer-ID index beside its
+connection-generation map. Admission occurs only after a validated handshake.
+Self IDs are rejected; a same-direction candidate loses to the established
+generation; and crossed directions retain outgoing only on the endpoint whose
+local peer ID is lexicographically greater. Removal checks both peer ID and
+connection generation.
+
+Every incoming, content-download, and metadata-download socket reports the
+validated ID through that owner before it becomes schedulable. A torrent peer
+handle also owns generation-keyed cancellation tokens, so eviction closes the
+losing socket immediately and then lets the existing request, upload,
+descriptor, registry, budget, and joined-task owners perform their ordinary
+exact cleanup. Endpoint records, sources, retry history, integrity state, and
+reputation remain keyed independently and are never merged by peer ID.
+
+`PeerFailure::SelfConnection` and `PeerFailure::DuplicatePeerId` project as
+the generated `self_connection` and `duplicate_peer_id` disconnect reasons.
+No setting, durable identity, UI policy, background task, dependency, or
+schema version was added.
+
+## Closing Evidence
+
+- Pure runtime cases cover first admission, self rejection, same-direction
+  stability, both crossed orderings in both arrival orders, IPv4 and IPv6
+  endpoints, reconnect, and stale generation-fenced removal.
+- Scripted incoming and outgoing owners prove post-handshake admission before
+  upload grants or request scheduling, immediate loser socket closure, typed
+  terminal observation, winner continuity, cancellation, and exact zero
+  request/upload/connection ownership. The duplicate-incoming case reaches
+  its configured two-connection saturation ceiling and returns to one winner.
+- `tests/interop/peer_id_duplicate.py` drives simultaneous crossed TCP
+  connections through the production incoming and outgoing owners against
+  pinned libtorrent `2.0.13.0`. Opposite admission orders make the outgoing
+  winner evict an active incoming uploader and the incoming winner evict an
+  outgoing generation only after a decoded wire trace proves a content
+  request. Both exact peer-ID orderings converge to the agreed direction,
+  retain one libtorrent peer, report one distinct typed loser, reach a
+  connection high-water of two, verify SHA-1
+  `0bfc6cebc1fde20c5325ae7d89d5da5e720bc096`, and terminate with zero pending,
+  established, and torrent connection generations.
+- Fresh generated TypeScript, JSON Schema, and validators pass 200 web tests
+  plus type checking. Session UniFFI and Android Rust binding checks accept the
+  expanded closed enum.
+- `cargo fmt --all -- --check`, warning-denying workspace Clippy, and the full
+  workspace tests pass. The controlled proof opens no public swarm or visible
+  product client and removes its temporary fixture.

@@ -652,8 +652,14 @@ authenticated platform trust. Independent product Tactical `099` completed
 Decimal/Binary browser presentation without changing engine byte semantics.
 Their focused tacticals and owning topics retain the detailed evidence.
 
-Next executable action: execute Gate 1 of authorized Tactical
-[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md): add the
-task-free peer-ID admission index and exact deterministic crossed-connection,
-same-direction, self, reconnect, and generation-fenced removal cases. No BEP 6,
-PEX, durable identity, reputation merging, or peer-scoring work is implied.
+Tactical [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md)
+is complete. Its task-free peer-ID index, shared post-handshake enforcement,
+typed loser cleanup, two-connection saturation proof, and both controlled
+libtorrent crossed orderings pass with terminal zero ownership. Peer IDs
+remain spoofable live claims and do not merge endpoint history or reputation.
+
+Next executable action: execute Gate 1 of planned Tactical
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md): finish the pinned BEP 6
+source-and-test dossier and add bounded deterministic negotiation/message
+state before runtime request lifecycle work. No PEX, peer scoring, tit-for-tat,
+or unrelated extension framework is implied.
