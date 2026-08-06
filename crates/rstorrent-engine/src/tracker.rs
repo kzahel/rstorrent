@@ -788,8 +788,9 @@ mod tests {
     use super::{
         MAX_TRACKER_ERROR_LENGTH, TRACKER_ANNOUNCE_MAX, TRACKER_ANNOUNCE_MIN, TRACKER_RETRY_MAX,
         TrackerAcceptedOutcome, TrackerAction, TrackerAnnounceEvent, TrackerConfig,
-        TrackerConnectionFamily, TrackerEndpoint, TrackerNextAction, TrackerRuntimeStatus,
-        TrackerSchedule, TrackerSource, TrackerWaitKind, tracker_failure_delay,
+        TrackerConnectionFamily, TrackerEndpoint, TrackerHttpsAuthentication, TrackerNextAction,
+        TrackerRuntimeStatus, TrackerSchedule, TrackerSource, TrackerWaitKind,
+        tracker_failure_delay,
     };
     use rstorrent_protocol::magnet::UdpTrackerUrl;
     use rstorrent_protocol::udp_tracker::AnnounceEvent;
@@ -887,6 +888,31 @@ mod tests {
         };
         assert_eq!(url, "http://tracker.example/announce?passkey=abc");
         assert_eq!(endpoint.transport(), super::TrackerTransport::Http);
+    }
+
+    #[test]
+    fn https_row_retains_operation_policy_across_live_policy_change() {
+        let url = "https://tracker.example/announce";
+        let mut schedule = TrackerSchedule::from_configs(vec![TrackerConfig {
+            url: url.to_owned(),
+            endpoint: TrackerEndpoint::from_http_url(url).expect("HTTPS tracker URL"),
+            tier: 0,
+            position: 0,
+            source: TrackerSource::Metainfo,
+        }]);
+        schedule.set_https_authentication(TrackerHttpsAuthentication::Disabled);
+        let id = announce(&mut schedule, Duration::ZERO);
+
+        schedule.set_https_authentication(TrackerHttpsAuthentication::SystemTrust);
+        assert_eq!(
+            schedule.snapshot(Duration::ZERO, true).records[0].https_authentication,
+            Some(TrackerHttpsAuthentication::Disabled)
+        );
+        schedule.failed(id, Duration::from_secs(1), "scripted TLS failure");
+        assert_eq!(
+            schedule.snapshot(Duration::from_secs(1), true).records[0].https_authentication,
+            Some(TrackerHttpsAuthentication::Disabled)
+        );
     }
 
     #[test]

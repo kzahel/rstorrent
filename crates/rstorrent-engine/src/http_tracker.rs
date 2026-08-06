@@ -1147,9 +1147,9 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use tokio::io::AsyncWriteExt as _;
-    use tokio::net::{TcpListener, TcpStream};
+    use tokio::net::TcpListener;
 
-    async fn read_request(stream: &mut TcpStream) -> String {
+    async fn read_request(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> String {
         let mut request = Vec::new();
         while !request.windows(4).any(|window| window == b"\r\n\r\n") {
             let mut chunk = [0_u8; 1024];
@@ -1975,6 +1975,105 @@ mod tests {
         assert!(matches!(response, HttpTrackerResponse::Success(_)));
         let request = server.await.expect("TLS server");
         assert!(request.starts_with("GET /announce?info_hash="));
+    }
+
+    #[tokio::test]
+    async fn runtime_inflight_operation_finishes_on_captured_client_generation() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("old-generation TLS listener");
+        let url = format!("https://{}/announce", listener.local_addr().unwrap());
+        let (observed_sender, observed_receiver) = tokio::sync::oneshot::channel();
+        let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+        let old_server = tokio::spawn(async move {
+            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config()));
+            let (stream, _) = listener.accept().await.expect("accept old TLS request");
+            let mut stream = acceptor.accept(stream).await.expect("old TLS handshake");
+            let request = read_request(&mut stream).await;
+            observed_sender.send(()).expect("report old HTTP request");
+            release_receiver.await.expect("release old HTTP response");
+            stream
+                .write_all(&http_response(&[], b"de"))
+                .await
+                .expect("write old response");
+            request
+        });
+
+        let mut current = Arc::new(
+            HttpTrackerClients::new_with_authentication(
+                NetworkPolicy::LoopbackOnly,
+                TrackerHttpsAuthentication::Disabled,
+            )
+            .expect("disabled clients"),
+        );
+        let old_generation = Arc::downgrade(&current);
+        let captured = current.clone();
+        let old_url = url.clone();
+        let old_operation = tokio::spawn(async move {
+            announce_http_tracker(
+                &captured,
+                &old_url,
+                NetworkPolicy::LoopbackOnly,
+                false,
+                &announce(AnnounceEvent::Started),
+                Duration::from_secs(5),
+            )
+            .await
+        });
+        observed_receiver.await.expect("old request reached HTTP");
+
+        current = Arc::new(
+            HttpTrackerClients::new_with_authentication(
+                NetworkPolicy::LoopbackOnly,
+                TrackerHttpsAuthentication::SystemTrust,
+            )
+            .expect("system-trust clients"),
+        );
+        let new_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("new-generation TLS listener");
+        let new_url = format!("https://{}/announce", new_listener.local_addr().unwrap());
+        let new_server = tokio::spawn(async move {
+            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config()));
+            let (stream, _) = new_listener.accept().await.expect("accept new TLS request");
+            acceptor.accept(stream).await
+        });
+        assert!(
+            announce_http_tracker(
+                &current,
+                &new_url,
+                NetworkPolicy::LoopbackOnly,
+                false,
+                &announce(AnnounceEvent::Started),
+                Duration::from_secs(5),
+            )
+            .await
+            .is_err(),
+            "new work must use the replacement system-trust clients"
+        );
+        assert!(
+            new_server.await.expect("new TLS server task").is_err(),
+            "system trust must reject before HTTP"
+        );
+
+        release_sender.send(()).expect("release old response");
+        assert!(matches!(
+            old_operation
+                .await
+                .expect("old operation task")
+                .expect("old operation result"),
+            HttpTrackerResponse::Success(_)
+        ));
+        assert!(
+            old_server
+                .await
+                .expect("old TLS server task")
+                .starts_with("GET /announce?info_hash=")
+        );
+        assert!(
+            old_generation.upgrade().is_none(),
+            "the retired generation drops after its captured operation completes"
+        );
     }
 
     #[tokio::test]

@@ -19,8 +19,8 @@ use crate::driver::{
     announce_udp_tracker, compact_peer_address, random_nonzero_u32,
 };
 use crate::http_tracker::{
-    HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerResponse,
-    TrackerRetryDirective, announce_http_tracker,
+    HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerError,
+    HttpTrackerResponse, TrackerRetryDirective, announce_http_tracker,
 };
 use crate::network::{NetworkConfig, NetworkPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
@@ -37,6 +37,9 @@ pub const DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY: usize = 256;
 pub const TRACKER_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DHT_LOOKUP_INTERVAL: Duration = Duration::from_secs(60);
 pub const DHT_ANNOUNCE_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+type HttpTrackerClientFactory =
+    fn(NetworkPolicy, TrackerHttpsAuthentication) -> Result<HttpTrackerClients, HttpTrackerError>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerAdvertisementEndpointScope {
@@ -266,11 +269,24 @@ impl DiscoveryAdvertisementService {
         dht: DhtHandle,
         https_authentication: TrackerHttpsAuthentication,
     ) -> Result<Self, DiscoveryAdvertisementError> {
+        Self::start_with_http_client_factory(
+            network,
+            endpoint,
+            dht,
+            https_authentication,
+            HttpTrackerClients::new_with_authentication,
+        )
+    }
+
+    fn start_with_http_client_factory(
+        network: NetworkConfig,
+        endpoint: watch::Receiver<PeerAdvertisementEndpoint>,
+        dht: DhtHandle,
+        https_authentication: TrackerHttpsAuthentication,
+        http_client_factory: HttpTrackerClientFactory,
+    ) -> Result<Self, DiscoveryAdvertisementError> {
         let (http_clients, initial_https_authentication, initial_https_error) =
-            match HttpTrackerClients::new_with_authentication(
-                network.policy,
-                https_authentication,
-            ) {
+            match http_client_factory(network.policy, https_authentication) {
                 Ok(clients) => (clients, Some(https_authentication), None),
                 Err(error) => (
                     HttpTrackerClients::http_only(network.policy).map_err(|fallback| {
@@ -297,6 +313,7 @@ impl DiscoveryAdvertisementService {
                 dht,
                 http_clients: Arc::new(http_clients),
                 desired_https_authentication: https_authentication,
+                http_client_factory,
             },
             receiver,
             queued,
@@ -425,6 +442,7 @@ struct DiscoveryAdvertisementRuntime {
     dht: DhtHandle,
     http_clients: Arc<HttpTrackerClients>,
     desired_https_authentication: TrackerHttpsAuthentication,
+    http_client_factory: HttpTrackerClientFactory,
 }
 
 impl TorrentEntry {
@@ -558,6 +576,7 @@ async fn run_service(
         dht,
         mut http_clients,
         mut desired_https_authentication,
+        http_client_factory,
     } = runtime;
     let mut endpoint = *endpoint_receiver.borrow_and_update();
     let mut entries = BTreeMap::<[u8; 20], TorrentEntry>::new();
@@ -665,10 +684,7 @@ async fn run_service(
                         if fence_unauthenticated {
                             http_clients = Arc::new(http_clients.without_https());
                         }
-                        match HttpTrackerClients::new_with_authentication(
-                            network.policy,
-                            authentication,
-                        ) {
+                        match http_client_factory(network.policy, authentication) {
                             Ok(clients) => {
                                 http_clients = Arc::new(clients);
                                 desired_https_authentication = authentication;
@@ -1548,6 +1564,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingActivity {
         successes: Mutex<usize>,
+        failures: Mutex<Vec<String>>,
         dht_announces: Mutex<Vec<DhtAnnounceReport>>,
         changed: Notify,
     }
@@ -1564,6 +1581,21 @@ mod tests {
                     >= expected
                 {
                     return;
+                }
+                self.changed.notified().await;
+            }
+        }
+
+        async fn wait_for_failures(&self, expected: usize) -> String {
+            loop {
+                {
+                    let failures = self
+                        .failures
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if failures.len() >= expected {
+                        return failures.last().expect("nonempty failures").clone();
+                    }
                 }
                 self.changed.notified().await;
             }
@@ -1597,6 +1629,13 @@ mod tests {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 *successes += 1;
                 drop(successes);
+                self.changed.notify_waiters();
+            }
+            if let DownloadActivityEvent::TrackerAnnounceFailed { detail, .. } = &event {
+                self.failures
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(detail.clone());
                 self.changed.notify_waiters();
             }
             if let DownloadActivityEvent::DhtAnnounceCompleted {
@@ -1801,6 +1840,43 @@ mod tests {
         }
     }
 
+    fn reject_system_trust_client_factory(
+        policy: NetworkPolicy,
+        authentication: TrackerHttpsAuthentication,
+    ) -> Result<HttpTrackerClients, HttpTrackerError> {
+        if authentication == TrackerHttpsAuthentication::SystemTrust {
+            return Err(HttpTrackerError::Client(
+                "scripted platform verifier construction failure".to_owned(),
+            ));
+        }
+        HttpTrackerClients::new_with_authentication(policy, authentication)
+    }
+
+    fn http_registration(
+        info_hash: [u8; 20],
+        url: String,
+        activity_sink: Arc<dyn DownloadActivitySink>,
+    ) -> DiscoveryAdvertisementRegistration {
+        DiscoveryAdvertisementRegistration {
+            generation: 1,
+            info_hash,
+            trackers: vec![TrackerConfig {
+                endpoint: TrackerEndpoint::from_http_url(&url).expect("HTTP tracker endpoint"),
+                url,
+                tier: 0,
+                position: 0,
+                source: crate::TrackerSource::Metainfo,
+            }],
+            desired_running: true,
+            complete: false,
+            incoming_registered: false,
+            privacy: TorrentPrivacy::Private,
+            counters: TrackerCounters::unknown_metadata(),
+            peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
+            activity_sink,
+        }
+    }
+
     async fn read_http_tracker_request(stream: &mut TcpStream) -> String {
         let mut request = Vec::new();
         while !request.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -1829,7 +1905,7 @@ mod tests {
     }
 
     fn empty_http_tracker_response() -> &'static [u8] {
-        b"HTTP/1.1 200 OK\r\nContent-Length: 27\r\nConnection: close\r\n\r\nd8:intervali900e5:peers0:e"
+        b"HTTP/1.1 200 OK\r\nContent-Length: 26\r\nConnection: close\r\n\r\nd8:intervali900e5:peers0:e"
     }
 
     #[tokio::test]
@@ -1943,6 +2019,136 @@ mod tests {
         assert_eq!(terminal.tracker_operations, 0);
         assert_eq!(terminal.tracker_operations_high_water, 1);
         assert_eq!(terminal.tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn failed_secure_replacements_fence_https_but_keep_http_and_owner_alive() {
+        let blocked_https = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind blocked HTTPS tracker");
+        let blocked_https_address = blocked_https
+            .local_addr()
+            .expect("blocked HTTPS tracker address");
+        let http_tracker = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind HTTP tracker");
+        let http_address = http_tracker.local_addr().expect("HTTP tracker address");
+        let http_task = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for _ in 0..2 {
+                let (mut stream, _) = http_tracker.accept().await.expect("accept HTTP announce");
+                requests.push(read_http_tracker_request(&mut stream).await);
+                stream
+                    .write_all(empty_http_tracker_response())
+                    .await
+                    .expect("write HTTP tracker response");
+                stream.shutdown().await.expect("close HTTP response");
+            }
+            requests
+        });
+
+        let (_endpoint_sender, endpoint_receiver) =
+            watch::channel(PeerAdvertisementEndpoint::outbound_only(1));
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service = DiscoveryAdvertisementService::start_with_http_client_factory(
+            network,
+            endpoint_receiver,
+            dht.handle(),
+            TrackerHttpsAuthentication::Disabled,
+            reject_system_trust_client_factory,
+        )
+        .expect("start with disabled authentication");
+        assert_eq!(
+            service.initial_https_authentication(),
+            Some(TrackerHttpsAuthentication::Disabled)
+        );
+        let handle = service.handle();
+
+        for _ in 0..32 {
+            assert!(
+                handle
+                    .replace_https_authentication(TrackerHttpsAuthentication::SystemTrust)
+                    .await
+                    .is_err()
+            );
+            handle
+                .replace_https_authentication(TrackerHttpsAuthentication::Disabled)
+                .await
+                .expect("same-value recovery replacement");
+        }
+        assert!(
+            handle
+                .replace_https_authentication(TrackerHttpsAuthentication::SystemTrust)
+                .await
+                .is_err()
+        );
+
+        let https_activity = Arc::new(RecordingActivity::default());
+        handle
+            .upsert(http_registration(
+                [8; 20],
+                format!("https://{blocked_https_address}/announce?passkey=secret"),
+                https_activity.clone(),
+            ))
+            .await
+            .expect("register fenced HTTPS tracker");
+        let failure =
+            tokio::time::timeout(Duration::from_secs(2), https_activity.wait_for_failures(1))
+                .await
+                .expect("fenced HTTPS failure deadline");
+        assert_eq!(failure, "HTTPS tracker authentication is unavailable");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), blocked_https.accept())
+                .await
+                .is_err(),
+            "fenced HTTPS work must fail before opening a socket"
+        );
+
+        let http_activity = Arc::new(RecordingActivity::default());
+        handle
+            .upsert(http_registration(
+                [9; 20],
+                format!("http://{http_address}/announce?passkey=secret"),
+                http_activity.clone(),
+            ))
+            .await
+            .expect("register surviving HTTP tracker");
+        let http_result = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::select! {
+                _ = http_activity.wait_for_successes(1) => Ok(()),
+                failure = http_activity.wait_for_failures(1) => Err(failure),
+            }
+        })
+        .await
+        .expect("HTTP result deadline");
+        assert_eq!(http_result, Ok(()));
+
+        handle
+            .replace_https_authentication(TrackerHttpsAuthentication::Disabled)
+            .await
+            .expect("recover HTTPS eligibility");
+        handle.remove([8; 20], 1).await.expect("remove HTTPS row");
+        handle.remove([9; 20], 1).await.expect("remove HTTP row");
+        let terminal = service.shutdown().await.expect("shutdown service");
+        dht.shutdown().await.expect("shutdown DHT");
+        let requests = http_task.await.expect("HTTP tracker task");
+
+        assert!(requests[0].contains("event=started"));
+        assert!(requests[1].contains("event=stopped"));
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.registrations, 0);
+        assert_eq!(terminal.tracker_operations, 0);
+        assert_eq!(terminal.tracker_operations_high_water, 1);
+        assert_eq!(terminal.command_queue_high_water, 1);
     }
 
     #[tokio::test]
