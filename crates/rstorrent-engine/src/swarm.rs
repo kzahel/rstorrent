@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::time::Duration;
 
-use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
+use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
@@ -20,6 +20,7 @@ pub const DEFAULT_MAX_TERMINAL_ATTEMPTS_PER_BLOCK: usize = DEFAULT_MAX_ESTABLISH
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_UNPRODUCTIVE_GRACE: Duration = Duration::from_secs(60);
 pub const DEFAULT_REQUEST_QUEUE_TIME: Duration = Duration::from_secs(3);
+pub const MAX_FAST_ADVISORY_PIECES: usize = 32;
 
 const MIN_HEALTHY_REQUESTS_PER_CONNECTION: usize = 2;
 const REQUEST_RATE_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
@@ -299,6 +300,14 @@ pub enum RejectDisposition {
     Stale,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FastPeerSnapshot {
+    pub negotiated: bool,
+    pub initial_availability_received: bool,
+    pub suggestions: usize,
+    pub allowed_fast: usize,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PieceHashFailure {
     pub piece: u32,
@@ -422,10 +431,26 @@ struct ConnectionState {
     wanted_piece_count: usize,
     choking: bool,
     fast_extension: bool,
+    initial_availability_received: bool,
+    suggestions: VecDeque<u32>,
+    allowed_fast: BTreeSet<u32>,
     connected_at: Duration,
     last_useful_at: Option<Duration>,
     active_request_count: usize,
     request_window: RequestWindow,
+}
+
+impl ConnectionState {
+    fn can_request_piece(&self, piece: usize) -> bool {
+        self.availability.contains(piece)
+            && (!self.choking
+                || self.fast_extension
+                    && u32::try_from(piece).is_ok_and(|piece| self.allowed_fast.contains(&piece)))
+    }
+
+    fn has_choked_fast_work(&self) -> bool {
+        self.fast_extension && self.choking && !self.allowed_fast.is_empty()
+    }
 }
 
 #[derive(Debug)]
@@ -441,6 +466,19 @@ impl PieceAvailability {
             bytes: vec![0; piece_count.div_ceil(8)],
             piece_count,
             set_count: 0,
+        }
+    }
+
+    fn full(piece_count: usize) -> Self {
+        let mut bytes = vec![0xff; piece_count.div_ceil(8)];
+        let remainder = piece_count % 8;
+        if remainder != 0 {
+            bytes[piece_count / 8] &= 0xff << (8 - remainder);
+        }
+        Self {
+            bytes,
+            piece_count,
+            set_count: piece_count,
         }
     }
 
@@ -1087,7 +1125,7 @@ impl SwarmState {
         self.picker.reserve_best_matching(|piece| {
             connections
                 .values()
-                .any(|connection| !connection.choking && connection.availability.contains(piece))
+                .any(|connection| connection.can_request_piece(piece))
         })
     }
 
@@ -1159,6 +1197,9 @@ impl SwarmState {
                 wanted_piece_count: 0,
                 choking: true,
                 fast_extension: false,
+                initial_availability_received: false,
+                suggestions: VecDeque::new(),
+                allowed_fast: BTreeSet::new(),
                 connected_at: now,
                 last_useful_at: None,
                 active_request_count: 0,
@@ -1212,6 +1253,7 @@ impl SwarmState {
                 expected: self.piece_count,
             });
         }
+        self.mark_initial_availability(id)?;
         self.replace_connection_availability(id, PieceAvailability::from_flags(availability))
     }
 
@@ -1227,7 +1269,18 @@ impl SwarmState {
                 expected: self.piece_count,
             },
         )?;
+        self.mark_initial_availability(id)?;
         self.replace_connection_availability(id, availability)
+    }
+
+    pub fn set_have_all(&mut self, id: ConnectionId) -> Result<(), SwarmError> {
+        self.mark_initial_availability(id)?;
+        self.replace_connection_availability(id, PieceAvailability::full(self.piece_count))
+    }
+
+    pub fn set_have_none(&mut self, id: ConnectionId) -> Result<(), SwarmError> {
+        self.mark_initial_availability(id)?;
+        self.replace_connection_availability(id, PieceAvailability::empty(self.piece_count))
     }
 
     pub fn peer_has(&mut self, id: ConnectionId, piece: u32) -> Result<(), SwarmError> {
@@ -1305,7 +1358,80 @@ impl SwarmState {
             ));
         }
         connection.fast_extension = enabled;
+        connection.initial_availability_received = false;
+        connection.suggestions.clear();
+        connection.allowed_fast.clear();
         Ok(())
+    }
+
+    pub fn observe_fast_message(
+        &mut self,
+        id: ConnectionId,
+        message: &PeerMessage,
+    ) -> Result<(), SwarmError> {
+        let piece_count = self.piece_count;
+        let connection = self.connection_mut(id)?;
+        let fast_message = matches!(
+            message,
+            PeerMessage::SuggestPiece(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone
+                | PeerMessage::RejectRequest(_)
+                | PeerMessage::AllowedFast(_)
+        );
+        if !connection.fast_extension {
+            return if fast_message {
+                Err(SwarmError::InvalidTransition(
+                    "Fast message arrived without bilateral negotiation",
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        let initial = matches!(
+            message,
+            PeerMessage::Bitfield(_) | PeerMessage::HaveAll | PeerMessage::HaveNone
+        );
+        if !connection.initial_availability_received && !initial {
+            return Err(SwarmError::InvalidTransition(
+                "Fast initial availability is missing",
+            ));
+        }
+        if connection.initial_availability_received && initial {
+            return Err(SwarmError::InvalidTransition(
+                "Fast initial availability was repeated",
+            ));
+        }
+        let advisory = match message {
+            PeerMessage::SuggestPiece(piece) => Some((*piece, true)),
+            PeerMessage::AllowedFast(piece) => Some((*piece, false)),
+            _ => None,
+        };
+        if let Some((piece, suggestion)) = advisory {
+            if usize::try_from(piece).map_or(true, |piece| piece >= piece_count) {
+                return Err(SwarmError::PieceOutOfRange { piece, piece_count });
+            }
+            if suggestion {
+                if !connection.suggestions.contains(&piece)
+                    && connection.suggestions.len() < MAX_FAST_ADVISORY_PIECES
+                {
+                    connection.suggestions.push_front(piece);
+                }
+            } else if connection.allowed_fast.len() < MAX_FAST_ADVISORY_PIECES {
+                connection.allowed_fast.insert(piece);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn fast_peer_snapshot(&self, id: ConnectionId) -> Result<FastPeerSnapshot, SwarmError> {
+        let connection = self.connection(id)?;
+        Ok(FastPeerSnapshot {
+            negotiated: connection.fast_extension,
+            initial_availability_received: connection.initial_availability_received,
+            suggestions: connection.suggestions.len(),
+            allowed_fast: connection.allowed_fast.len(),
+        })
     }
 
     pub fn reject_request(
@@ -1336,6 +1462,9 @@ impl SwarmState {
         };
         let attempt = active.id;
         self.terminate_requested(block, attempt, RequestDisposition::Rejected)?;
+        let connection = self.connection_mut(connection)?;
+        connection.allowed_fast.remove(&block.piece);
+        connection.suggestions.retain(|piece| *piece != block.piece);
         Ok(RejectDisposition::Accepted { attempt })
     }
 
@@ -1349,7 +1478,8 @@ impl SwarmState {
             let mut ordered = self.ordered_connection_ids();
             ordered.retain(|connection| {
                 self.connections.get(connection).is_some_and(|state| {
-                    !state.choking && state.active_request_count < state.request_window.target
+                    (!state.choking || state.has_choked_fast_work())
+                        && state.active_request_count < state.request_window.target
                 })
             });
             if ordered.is_empty() {
@@ -2278,6 +2408,20 @@ impl SwarmState {
             .ok_or(SwarmError::UnknownConnection(id))
     }
 
+    fn mark_initial_availability(&mut self, id: ConnectionId) -> Result<(), SwarmError> {
+        let connection = self.connection_mut(id)?;
+        if !connection.fast_extension {
+            return Ok(());
+        }
+        if connection.initial_availability_received {
+            return Err(SwarmError::InvalidTransition(
+                "Fast initial availability was repeated",
+            ));
+        }
+        connection.initial_availability_received = true;
+        Ok(())
+    }
+
     fn replace_connection_availability(
         &mut self,
         id: ConnectionId,
@@ -2350,12 +2494,9 @@ impl SwarmState {
             .connections
             .get(&connection)
             .ok_or(SwarmError::UnknownConnection(connection))?;
-        if connection.choking {
-            return Ok(None);
-        }
         for (&piece, &block) in &self.requestable_active_block_keys {
             self.active_piece_visits = self.active_piece_visits.saturating_add(1);
-            if connection.availability.contains(piece) {
+            if connection.can_request_piece(piece) {
                 return Ok(Some(block));
             }
         }
@@ -2399,7 +2540,7 @@ impl SwarmState {
             let Some(connection) = ordered_connections.iter().copied().find(|connection| {
                 self.connections
                     .get(connection)
-                    .is_some_and(|state| state.availability.contains(piece))
+                    .is_some_and(|state| state.can_request_piece(piece))
             }) else {
                 continue;
             };
@@ -2425,9 +2566,6 @@ impl SwarmState {
             .connections
             .get(&connection)
             .ok_or(SwarmError::UnknownConnection(connection))?;
-        if connection_state.choking {
-            return Ok(None);
-        }
         Ok(self.blocks.iter().find_map(|(block, block_state)| {
             let piece = usize::try_from(block.piece).ok()?;
             (matches!(block_state.phase, BlockPhase::Requested)
@@ -2438,7 +2576,7 @@ impl SwarmState {
                 && !block_state.attempts.iter().any(|attempt| {
                     attempt.disposition.is_active() && attempt.connection == connection
                 })
-                && connection_state.availability.contains(piece))
+                && connection_state.can_request_piece(piece))
             .then_some(*block)
         }))
     }
@@ -3817,6 +3955,99 @@ mod tests {
                 )
                 .expect("never-sent reject"),
             RejectDisposition::NeverRequested
+        );
+    }
+
+    #[test]
+    fn fast_initial_availability_and_advisories_are_strict_and_bounded() {
+        let mut state = state(64, vec![plan(0, 1)], 1);
+        let peer = connection(1);
+        state.add_connection(peer, Duration::ZERO).expect("peer");
+        state
+            .set_fast_extension(peer, true)
+            .expect("enable Fast before messages");
+        assert!(
+            state
+                .observe_fast_message(peer, &PeerMessage::KeepAlive)
+                .is_err()
+        );
+        state
+            .observe_fast_message(peer, &PeerMessage::HaveNone)
+            .expect("initial have-none");
+        state.set_have_none(peer).expect("apply have-none");
+        assert!(
+            state
+                .observe_fast_message(peer, &PeerMessage::HaveAll)
+                .is_err()
+        );
+        for piece in 0..64 {
+            state
+                .observe_fast_message(peer, &PeerMessage::SuggestPiece(piece))
+                .expect("bounded suggestion");
+            state
+                .observe_fast_message(peer, &PeerMessage::AllowedFast(piece))
+                .expect("bounded allowed-fast");
+        }
+        for _ in 0..8 {
+            state
+                .observe_fast_message(peer, &PeerMessage::SuggestPiece(0))
+                .expect("duplicate suggestion");
+            state
+                .observe_fast_message(peer, &PeerMessage::AllowedFast(0))
+                .expect("duplicate allowed-fast");
+        }
+        assert_eq!(
+            state.fast_peer_snapshot(peer).expect("Fast snapshot"),
+            FastPeerSnapshot {
+                negotiated: true,
+                initial_availability_received: true,
+                suggestions: MAX_FAST_ADVISORY_PIECES,
+                allowed_fast: MAX_FAST_ADVISORY_PIECES,
+            }
+        );
+        assert!(
+            state
+                .observe_fast_message(peer, &PeerMessage::SuggestPiece(64))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn received_allowed_fast_permits_only_that_piece_while_choked() {
+        let mut state = state(2, vec![plan(0, 1), plan(1, 1)], 2);
+        let peer = connection(1);
+        state.add_connection(peer, Duration::ZERO).expect("peer");
+        state
+            .set_fast_extension(peer, true)
+            .expect("enable Fast before messages");
+        let bitfield = PeerMessage::Bitfield(vec![0b1100_0000]);
+        state
+            .observe_fast_message(peer, &bitfield)
+            .expect("initial bitfield");
+        state
+            .set_compact_bitfield(peer, vec![0b1100_0000])
+            .expect("apply initial bitfield");
+        state
+            .observe_fast_message(peer, &PeerMessage::AllowedFast(1))
+            .expect("allowed-fast piece");
+        let assignment = state
+            .schedule(Duration::ZERO)
+            .expect("choked Fast schedule");
+        assert_eq!(assignment.len(), 1);
+        assert_eq!(assignment[0].block.piece, 1);
+        assert_eq!(
+            state
+                .reject_request(peer, assignment[0].block)
+                .expect("allowed-fast reject"),
+            RejectDisposition::Accepted {
+                attempt: assignment[0].attempt
+            }
+        );
+        assert!(
+            state
+                .schedule(Duration::ZERO)
+                .expect("no remaining Fast work")
+                .is_empty()
         );
     }
 
