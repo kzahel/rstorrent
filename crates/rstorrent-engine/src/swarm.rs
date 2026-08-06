@@ -1290,13 +1290,16 @@ impl SwarmState {
         let mut assignments = Vec::new();
         loop {
             let mut progress = false;
-            let ordered = self.ordered_connection_ids();
-            for connection in ordered {
-                if self.connection_request_count(connection)
-                    >= self.connection_target(connection)?
-                {
-                    continue;
-                }
+            let mut ordered = self.ordered_connection_ids();
+            ordered.retain(|connection| {
+                self.connections.get(connection).is_some_and(|state| {
+                    !state.choking && state.active_request_count < state.request_window.target
+                })
+            });
+            if ordered.is_empty() {
+                break;
+            }
+            for connection in ordered.iter().copied() {
                 let Some(block) = self.next_active_block_for_connection(connection)? else {
                     continue;
                 };
@@ -1311,7 +1314,7 @@ impl SwarmState {
             if progress {
                 continue;
             }
-            let Some((connection, block)) = self.next_inactive_assignment()? else {
+            let Some((connection, block)) = self.next_inactive_assignment(&ordered)? else {
                 break;
             };
             let assignment = self.assign(connection, block, now, false)?;
@@ -2266,13 +2269,6 @@ impl SwarmState {
         Ok(())
     }
 
-    fn connection_target(&self, id: ConnectionId) -> Result<usize, SwarmError> {
-        self.connections
-            .get(&id)
-            .map(|connection| connection.request_window.target)
-            .ok_or(SwarmError::UnknownConnection(id))
-    }
-
     fn ordered_connection_ids(&self) -> Vec<ConnectionId> {
         let mut ids = self.connections.keys().copied().collect::<Vec<_>>();
         if let Some(last) = self.last_scheduled_connection
@@ -2304,7 +2300,13 @@ impl SwarmState {
         Ok(None)
     }
 
-    fn next_inactive_assignment(&mut self) -> Result<Option<(ConnectionId, BlockKey)>, SwarmError> {
+    fn next_inactive_assignment(
+        &mut self,
+        ordered_connections: &[ConnectionId],
+    ) -> Result<Option<(ConnectionId, BlockKey)>, SwarmError> {
+        if self.outstanding_request_bytes >= self.config.max_outstanding_request_bytes {
+            return Ok(None);
+        }
         if self.inactive_rank_dirty {
             let picker = &self.picker;
             self.inactive_ranked_pieces.sort_unstable_by(|lhs, rhs| {
@@ -2318,7 +2320,6 @@ impl SwarmState {
             });
             self.inactive_rank_dirty = false;
         }
-        let ordered_connections = self.ordered_connection_ids();
         for &piece_u32 in &self.inactive_ranked_pieces {
             self.inactive_planned_piece_visits =
                 self.inactive_planned_piece_visits.saturating_add(1);
@@ -2334,11 +2335,9 @@ impl SwarmState {
                 continue;
             }
             let Some(connection) = ordered_connections.iter().copied().find(|connection| {
-                self.connections.get(connection).is_some_and(|state| {
-                    !state.choking
-                        && state.active_request_count < state.request_window.target
-                        && state.availability.contains(piece)
-                })
+                self.connections
+                    .get(connection)
+                    .is_some_and(|state| state.availability.contains(piece))
             }) else {
                 continue;
             };
@@ -4278,7 +4277,42 @@ mod tests {
         add_peer(&mut state, connection(1), &[0, 1], false);
         assert_eq!(state.schedule(Duration::ZERO).expect("schedule").len(), 2);
         assert_eq!(state.connection_request_count(connection(1)), 2);
+        state.inactive_planned_piece_visits = 0;
+        assert!(
+            state
+                .schedule(Duration::ZERO)
+                .expect("full window")
+                .is_empty()
+        );
+        assert_eq!(state.inactive_planned_piece_visits, 0);
         assert_eq!(state.reserve_piece_for_planning(256), Some(1));
+    }
+
+    #[test]
+    fn full_request_window_never_visits_the_inactive_lookahead() {
+        const PLANNED: u32 = 256;
+        const ATTEMPTS: usize = 100_000;
+        let plans = (0..PLANNED).map(|piece| plan(piece, 1)).collect();
+        let mut state = SwarmState::new(
+            SwarmConfig::for_request_limit(2 * BLOCK as usize),
+            PLANNED as usize,
+            plans,
+        )
+        .expect("hostile lookahead swarm");
+        let pieces = (0..PLANNED as usize).collect::<Vec<_>>();
+        add_peer(&mut state, connection(1), &pieces, false);
+        assert_eq!(state.schedule(Duration::ZERO).expect("schedule").len(), 2);
+
+        state.inactive_planned_piece_visits = 0;
+        for _ in 0..ATTEMPTS {
+            assert!(
+                state
+                    .schedule(Duration::ZERO)
+                    .expect("full request window")
+                    .is_empty()
+            );
+        }
+        assert_eq!(state.inactive_planned_piece_visits, 0);
     }
 
     #[test]

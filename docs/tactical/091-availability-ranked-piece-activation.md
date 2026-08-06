@@ -62,8 +62,9 @@ This tactical is complete when all of the following hold:
 3. among eligible inactive pieces, availability one is selected before higher
    availability and lower positive availability is selected before higher
    availability;
-4. equal-rarity candidates use a stable per-torrent dispersed order rather
-   than global ascending index, without runtime randomness inside pure state;
+4. equal-rarity candidates use a stable per-torrent/client rotated order with
+   dispersed starting offsets rather than one global ascending start, without
+   runtime randomness inside pure state;
 5. availability counts remain exact through bitfield, duplicate `Have`,
    have-all/have-none once supported, connection replacement, and disconnect;
 6. block assignment from already-active work performs no global inactive-piece
@@ -251,8 +252,9 @@ existing request-attempt assignment and storage pipeline
   background urgency band. The boundary permits a future bounded urgent band
   to precede it without changing background rarity semantics.
 - Within inactive eligible background work, the comparison key is availability
-  first and dispersed tie order second. Piece index is only a final total-order
-  fallback.
+  first and a seeded contiguous rotation second. Piece index is only a final
+  total-order fallback. Different client peer IDs disperse starting offsets
+  while contiguous traversal retains storage and hashing locality.
 - `InOrder` and optimized `RarestFirst` differ only in inactive background
   activation order. They share eligibility, active-first, ownership, limits,
   and connection-capacity rules.
@@ -415,7 +417,7 @@ libtorrent reference does.
 ### Deterministic and runtime evidence
 
 - A 10,000-transition seeded differential trace compares the indexed selector
-  with the test-only full-scan oracle. Separate cases cover dispersed ties,
+  with the test-only full-scan oracle. Separate cases cover rotated ties,
   in-order policy, duplicate `Have`, dense bitfields, seed conversion,
   disconnect, exact cached counts, rare high-index promotion, bounded blocked
   candidate progress, unique unplanned retention, count/byte/peer/block
@@ -487,6 +489,41 @@ gate also remained green with exact 1,048,576-byte publication.
   tests/interop/rarest_first_activation.py`; and
 - `uv run --project tests/interop python
   tests/interop/multi_peer_liveness.py`.
+
+### 2026-08-06 throughput follow-up
+
+A controlled throughput comparison after graduation exposed a scheduler cost
+that the isolated active-picker timing profile did not cover. Once every
+unchoked peer had filled its request window, `SwarmState::schedule` still
+entered inactive activation and walked the retained 256-piece detailed
+lookahead even though no connection could accept another request. Repeating
+that work after each received 16-KiB block delayed hashing on the diagnostic's
+current-thread runtime; the rarity heap itself was not the hot path.
+
+The scheduler now constructs one fair ordered list containing only unchoked
+connections with request capacity, shares that list across the active and
+inactive phases, and stops before inactive activation when the list is empty.
+An already-exhausted global request-byte budget also stops before the inactive
+walk. The active-first ordering, connection rotation, rarity order, request
+ownership, and activation pressure limits are unchanged. A hostile operation
+test fills a two-request window in front of all 256 planned pieces, repeats
+100,000 scheduling attempts, and observes zero inactive planned-piece visits.
+
+Three-run 1-GiB loopback cohorts on the retained M4 Pro host used the same
+optimized development profile, 4/4 write/hash concurrency, exact payload
+validation, and rotating client order:
+
+| Piece size | Pre-091 | Settled rarest-first | Capacity fast path | Change from settled | Change from pre-091 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 256 KiB | 475.1 MiB/s | 397.6 MiB/s | 447.5 MiB/s | +12.6% | -5.8% |
+| 1 MiB | 476.1 MiB/s | 369.2 MiB/s | 469.7 MiB/s | +27.2% | -1.3% |
+
+Median aggregate hash-service time fell from 4.14 to 3.68 seconds for the
+256-KiB case and from 3.60 to 2.75 seconds for the 1-MiB case. These are
+warm-uncontrolled local cohorts rather than new stable floors, but the paired
+revision comparison plus the zero-visit operation proof establish that the
+improvement comes from removing useless scheduling work rather than doing less
+download, write, or hash work.
 
 ## Escalation And Next Boundary
 

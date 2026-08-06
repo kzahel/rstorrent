@@ -1181,6 +1181,17 @@ useful source. RSTorrent verified piece 7 first, then published all 524,288
 exact bytes with 65,536 resident payload bytes under the 262,144-byte limit.
 The retained mixed-peer gate also repassed its exact 1-MiB publication.
 
+A 2026-08-06 follow-up found that a full peer request window still caused an
+inactive scan across the bounded detailed lookahead after each received block.
+The scheduler now reuses one capacity-filtered fair connection order for its
+active and inactive phases and never enters inactive activation without a
+request slot. A 100,000-attempt hostile trace with all 256 planned pieces
+reports zero inactive visits. Three-run 1-GiB cohorts improved from 397.6 to
+447.5 MiB/s at 256-KiB pieces and from 369.2 to 469.7 MiB/s at 1-MiB pieces;
+the matching exact pre-091 cohorts were 475.1 and 476.1 MiB/s. Hash-service
+time returned close to the pre-091 range. These warm-uncontrolled measurements
+are revision-comparison evidence, not replacement calibrated floors.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them
