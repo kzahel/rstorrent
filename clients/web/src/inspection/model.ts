@@ -51,7 +51,8 @@ export type LibraryCategory =
   | "all"
   | "recent"
   | "available"
-  | "downloading";
+  | "downloading"
+  | "archived";
 
 export type TorrentCategory =
   | "all"
@@ -581,4 +582,12 @@ export interface CommandResult {
   readonly accepted: boolean;
   readonly message: string;
   readonly storageRoot?: DownloadRoot | null;
+  readonly torrentId?: string;
+  readonly addDisposition?:
+    | { readonly type: "added" }
+    | { readonly type: "already_present" }
+    | {
+        readonly type: "selection_expanded";
+        readonly newlyWantedCount?: number | null;
+      };
 }

@@ -8,6 +8,7 @@ import {
   type PeerSourceView,
   type PeerView,
   type RequestEnvelope,
+  type ResponseEnvelope,
   type StorageRootSnapshot,
   type StorageSettingsSnapshot,
   type SwarmPeerView,
@@ -209,7 +210,7 @@ export class LiveApplication implements InspectionApplication {
         storage: mapStorage(response.snapshot.storage),
       };
       this.emit({ type: "snapshot", snapshot: this.snapshot });
-      return { accepted: true, message: "Torrent added" };
+      return addCommandResult(response);
     }
     if (
       command.type !== "add_magnet" &&
@@ -292,12 +293,13 @@ export class LiveApplication implements InspectionApplication {
       storage: mapStorage(response.snapshot.storage),
     };
     this.emit({ type: "snapshot", snapshot: this.snapshot });
+    if (command.type === "add_magnet") {
+      return addCommandResult(response);
+    }
     return {
       accepted: true,
       message:
-        command.type === "add_magnet"
-          ? "Torrent added"
-          : command.type === "set_file_priority"
+        command.type === "set_file_priority"
             ? command.priority === "skip"
               ? "Selected files skipped"
               : "Selected files set to normal"
@@ -588,6 +590,43 @@ export class LiveApplication implements InspectionApplication {
   private ensureOpen(): void {
     if (this.closed) throw new Error("live inspection application is closed");
   }
+}
+
+function addCommandResult(response: ResponseEnvelope): CommandResult {
+  const result = response.result;
+  if (result?.type !== "add_torrent") {
+    return { accepted: true, message: "Added" };
+  }
+  const disposition = result.result.disposition;
+  if (disposition.type === "already_present") {
+    return {
+      accepted: true,
+      message: "Already in your session",
+      torrentId: result.result.torrent_id,
+      addDisposition: { type: "already_present" },
+    };
+  }
+  if (disposition.type === "selection_expanded") {
+    const count = disposition.newly_wanted_count;
+    return {
+      accepted: true,
+      message:
+        count === undefined || count === null
+          ? "File selection expanded"
+          : `${count} additional ${count === 1 ? "file" : "files"} selected`,
+      torrentId: result.result.torrent_id,
+      addDisposition: {
+        type: "selection_expanded",
+        ...(count === undefined ? {} : { newlyWantedCount: count }),
+      },
+    };
+  }
+  return {
+    accepted: true,
+    message: "Added",
+    torrentId: result.result.torrent_id,
+    addDisposition: { type: "added" },
+  };
 }
 
 function mapViewState(

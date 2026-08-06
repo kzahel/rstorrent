@@ -12,7 +12,8 @@ use rstorrent_session::{
     AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello,
     ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus,
     CatalogPageRequest, CatalogPageView, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, DeliveryMode, DeliveryPolicy,
+    AddTorrentDisposition, AddTorrentResult, ClientSettingsDegradedReason,
+    ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode, DeliveryPolicy,
     DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView,
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
     DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
@@ -110,6 +111,9 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<FileSelectionIntent>(&mut declarations)?;
     append::<AddTorrentBytesRequest>(&mut declarations)?;
     append::<RequestEnvelope>(&mut declarations)?;
+    append::<AddTorrentDisposition>(&mut declarations)?;
+    append::<AddTorrentResult>(&mut declarations)?;
+    append::<CommandResult>(&mut declarations)?;
     append::<ResponseOutcome>(&mut declarations)?;
     append::<ResponseEnvelope>(&mut declarations)?;
     append::<TorrentState>(&mut declarations)?;

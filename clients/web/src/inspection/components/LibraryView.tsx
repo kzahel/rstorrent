@@ -291,6 +291,8 @@ function categoryLabel(category: LibraryCategory): string {
       return "Available offline";
     case "downloading":
       return "Downloading";
+    case "archived":
+      return "Archived";
   }
 }
 
@@ -321,6 +323,8 @@ function emptyMessage(category: LibraryCategory): string {
       return "No content is available offline";
     case "downloading":
       return "No content is downloading";
+    case "archived":
+      return "No archived content";
   }
 }
 

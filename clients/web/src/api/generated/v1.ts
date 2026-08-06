@@ -59,6 +59,12 @@ export type AddTorrentBytesRequest = { version: number, request_id: string, expe
 
 export type RequestEnvelope = { version: number, request_id: string, expected_revision?: string | null, command: Command, };
 
+export type AddTorrentDisposition = { "type": "added" } | { "type": "already_present" } | { "type": "selection_expanded", newly_wanted_count?: number | null, };
+
+export type AddTorrentResult = { torrent_id: string, disposition: AddTorrentDisposition, resulting_revision: string, };
+
+export type CommandResult = { "type": "add_torrent", result: AddTorrentResult, };
+
 export type ResponseOutcome = { "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, };
 
 export type ResponseEnvelope = { version: number, request_id: string, revision: string, result?: CommandResult | null, } & ({ "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, });

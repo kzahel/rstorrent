@@ -72,6 +72,18 @@ class FakeLiveClient implements ApplicationViewClient {
       version: 1,
       request_id: request.request_id,
       revision: "4",
+      ...(request.command.type === "add_magnet"
+        ? {
+            result: {
+              type: "add_torrent" as const,
+              result: {
+                torrent_id: TORRENT_ID,
+                disposition: { type: "added" as const },
+                resulting_revision: "4",
+              },
+            },
+          }
+        : {}),
       status: "success",
       snapshot: {
         profile_id: "live",
@@ -92,6 +104,14 @@ class FakeLiveClient implements ApplicationViewClient {
       version: 1,
       request_id: request.request_id,
       revision: "4",
+      result: {
+        type: "add_torrent",
+        result: {
+          torrent_id: TORRENT_ID,
+          disposition: { type: "already_present" },
+          resulting_revision: "4",
+        },
+      },
       status: "success",
       snapshot: {
         profile_id: "live",
@@ -202,7 +222,12 @@ describe("LiveApplication", () => {
         storageRoot: "root_a",
         startContent: false,
       }),
-    ).resolves.toEqual({ accepted: true, message: "Torrent added" });
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Added",
+      torrentId: TORRENT_ID,
+      addDisposition: { type: "added" },
+    });
     expect(client.requests).toHaveLength(1);
     expect(client.requests[0]?.command).toEqual({
       type: "add_magnet",
@@ -259,7 +284,12 @@ describe("LiveApplication", () => {
         storageRoot: "root_a",
         startContent: false,
       }),
-    ).resolves.toEqual({ accepted: true, message: "Torrent added" });
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Already in your session",
+      torrentId: TORRENT_ID,
+      addDisposition: { type: "already_present" },
+    });
     expect(client.uploads).toHaveLength(1);
     expect(client.uploads[0]).toEqual({
       request: {

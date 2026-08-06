@@ -223,6 +223,19 @@ export function VirtualTable<Row>({
   }, [currentRowId, getRowId, sortedRows]);
 
   useEffect(() => {
+    if (currentRowId === null) return;
+    const index = sortedRows.findIndex((row) => getRowId(row) === currentRowId);
+    const viewport = viewportRef.current;
+    if (index < 0 || viewport === null) return;
+    const top = tableHeaderHeight + index * tableRowHeight;
+    if (top < viewport.scrollTop + tableHeaderHeight) {
+      viewport.scrollTop = Math.max(0, top - tableHeaderHeight);
+    } else if (top + tableRowHeight > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = top + tableRowHeight - viewport.clientHeight;
+    }
+  }, [currentRowId, getRowId, sortedRows, tableHeaderHeight, tableRowHeight]);
+
+  useEffect(() => {
     if (sort === null || liveSort || frozenOrder !== null) return;
     const column = columns.find((candidate) => candidate.id === sort.columnId);
     if (column?.sortValue === undefined) return;

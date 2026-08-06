@@ -22,6 +22,7 @@ const LIBRARY_CATEGORIES: readonly {
   { id: "recent", label: "Recently added", symbol: "◷" },
   { id: "available", label: "Available offline", symbol: "✓" },
   { id: "downloading", label: "Downloading", symbol: "↓" },
+  { id: "archived", label: "Archived", symbol: "▣" },
 ];
 
 const TORRENT_CATEGORIES: readonly {

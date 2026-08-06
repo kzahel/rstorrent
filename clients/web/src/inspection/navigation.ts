@@ -15,6 +15,7 @@ export const LIBRARY_CATEGORIES = [
   "recent",
   "available",
   "downloading",
+  "archived",
 ] as const;
 
 export const TORRENT_CATEGORIES = [

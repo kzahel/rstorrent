@@ -54,6 +54,7 @@ export interface PresentationState {
   readonly currentTorrentId: string | null;
   readonly torrentSelectionInitialized: boolean;
   readonly selectedTorrentIds: readonly string[];
+  readonly pendingRevealTorrentId: string | null;
   readonly currentPeerId: string | null;
   readonly activeTab: DetailTab;
   readonly detailPanePercent: number;
@@ -95,6 +96,7 @@ export interface InspectionActions {
     currentTorrentId: string | null,
   ) => void;
   readonly selectOnlyTorrent: (torrentId: string) => void;
+  readonly revealTorrent: (torrentId: string) => void;
   readonly openTorrentDetail: (torrentId: string) => void;
   readonly openTorrentInWorkbench: (torrentId: string) => void;
   readonly openTorrentErrorDetail: (torrentId: string) => void;
@@ -186,6 +188,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   currentTorrentId: null,
   torrentSelectionInitialized: false,
   selectedTorrentIds: [],
+  pendingRevealTorrentId: null,
   currentPeerId: null,
   activeTab: "peers",
   detailPanePercent: DEFAULT_DETAIL_PANE_PERCENT,
@@ -328,6 +331,15 @@ export function createInspectionStore(
               },
             },
       );
+    },
+    revealTorrent: (torrentId) => {
+      set((state) => ({
+        presentation: revealTorrentPresentation(
+          state.presentation,
+          torrentId,
+          state.torrents[torrentId],
+        ),
+      }));
     },
     openTorrentDetail: (torrentId) => {
       set((state) => {
@@ -608,14 +620,22 @@ export function reduceInspectionUpdate(
       update.snapshot.torrentOrder,
       update.snapshot.torrents,
     );
+    const didReveal = state.presentation.pendingRevealTorrentId !== null &&
+      update.snapshot.torrents[state.presentation.pendingRevealTorrentId] !== undefined
+    const presentation = didReveal
+        ? revealTorrentPresentation(
+            state.presentation,
+            state.presentation.pendingRevealTorrentId,
+            update.snapshot.torrents[state.presentation.pendingRevealTorrentId],
+          )
+        : { ...state.presentation, ...torrentPresentation };
     return {
       ...update.snapshot,
       presentation: {
-        ...state.presentation,
-        ...torrentPresentation,
+        ...presentation,
         currentPeerId: null,
         detailOpen:
-          torrentPresentation.currentTorrentId === previousCurrent
+          didReveal || torrentPresentation.currentTorrentId === previousCurrent
             ? state.presentation.detailOpen
             : false,
         detailTarget:
@@ -771,6 +791,15 @@ export function reduceInspectionUpdate(
     torrentOrder,
     torrents,
   );
+  const revealedPresentation =
+    state.presentation.pendingRevealTorrentId !== null &&
+    torrents[state.presentation.pendingRevealTorrentId] !== undefined
+      ? revealTorrentPresentation(
+          state.presentation,
+          state.presentation.pendingRevealTorrentId,
+          torrents[state.presentation.pendingRevealTorrentId],
+        )
+      : { ...state.presentation, ...torrentPresentation };
 
   return {
     revision: update.revision,
@@ -790,14 +819,19 @@ export function reduceInspectionUpdate(
     logs,
     logLoss,
     presentation: {
-      ...state.presentation,
-      ...torrentPresentation,
+      ...revealedPresentation,
       currentPeerId:
-        torrentPresentation.currentTorrentId === currentId
+        revealedPresentation.pendingRevealTorrentId === null &&
+        revealedPresentation.currentTorrentId !== currentId
+          ? null
+          : torrentPresentation.currentTorrentId === currentId
           ? state.presentation.currentPeerId
           : null,
       detailOpen:
-        torrentPresentation.currentTorrentId === currentId
+        revealedPresentation.pendingRevealTorrentId === null &&
+        revealedPresentation.currentTorrentId !== torrentPresentation.currentTorrentId
+          ? state.presentation.detailOpen
+          : torrentPresentation.currentTorrentId === currentId
           ? state.presentation.detailOpen
           : false,
       detailTarget:
@@ -805,6 +839,53 @@ export function reduceInspectionUpdate(
           ? state.presentation.detailTarget
           : null,
     },
+  };
+}
+
+function revealTorrentPresentation(
+  presentation: PresentationState,
+  torrentId: string,
+  torrent: TorrentRow | undefined,
+): PresentationState {
+  if (torrent === undefined) {
+    return { ...presentation, pendingRevealTorrentId: torrentId };
+  }
+  const category = torrent.archived ? "archived" : "all";
+  return {
+    ...presentation,
+    ...(presentation.destination === "library"
+      ? {
+          libraryCategory: torrentMatchesLibraryCategory(
+            torrent,
+            presentation.libraryCategory,
+            torrent.addedAtMs,
+          )
+            ? presentation.libraryCategory
+            : category,
+        }
+      : presentation.destination === "transfers"
+        ? {
+            transfersCategory: torrentMatchesCategory(
+              torrent,
+              presentation.transfersCategory,
+            )
+              ? presentation.transfersCategory
+              : category,
+          }
+        : {
+            workbenchCategory: torrentMatchesCategory(
+              torrent,
+              presentation.workbenchCategory,
+            )
+              ? presentation.workbenchCategory
+              : category,
+          }),
+    currentTorrentId: torrentId,
+    selectedTorrentIds: [torrentId],
+    torrentSelectionInitialized: true,
+    pendingRevealTorrentId: null,
+    currentPeerId: null,
+    detailTarget: null,
   };
 }
 
@@ -835,6 +916,7 @@ export function torrentMatchesLibraryCategory(
   category: LibraryCategory,
   newestAddedAtMs: number | null,
 ): boolean {
+  if (category === "archived") return torrent.archived === true;
   if (torrent.archived === true) return false;
   switch (category) {
     case "all":

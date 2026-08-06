@@ -5,6 +5,32 @@ import type { InspectionSnapshot, TorrentRow } from "./model";
 import { createInspectionStore, emptyDiskSet } from "./state";
 
 describe("inspection store", () => {
+  it("retains a command-result reveal until the target row arrives", () => {
+    const store = createInspectionStore(null);
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("first", "downloading")]),
+    });
+    store.getState().selectTorrentCategory("paused");
+    store.getState().revealTorrent("added");
+    expect(store.getState().presentation.pendingRevealTorrentId).toBe("added");
+    expect(store.getState().presentation.currentTorrentId).toBe("first");
+
+    store.getState().applyUpdate({
+      type: "patch",
+      revision: 2,
+      torrents: {
+        upsert: [row("added", "downloading")],
+        removed: [],
+        order: ["first", "added"],
+      },
+    });
+    expect(store.getState().presentation.currentTorrentId).toBe("added");
+    expect(store.getState().presentation.selectedTorrentIds).toEqual(["added"]);
+    expect(store.getState().presentation.transfersCategory).toBe("all");
+    expect(store.getState().presentation.pendingRevealTorrentId).toBeNull();
+    expect(store.getState().presentation.detailOpen).toBe(false);
+  });
   it("preserves unrelated row references across keyed patches", () => {
     const store = createInspectionStore();
     const first = row("first", "downloading");

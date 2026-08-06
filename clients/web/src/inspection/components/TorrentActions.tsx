@@ -41,6 +41,7 @@ export function TorrentActions() {
   const storage = useInspectionStore((state) => state.storage);
   const dispatch = useInspectionDispatch();
   const execute = useInspectionCommand();
+  const revealTorrent = useInspectionStore((state) => state.revealTorrent);
   const {
     status,
     pendingAction,
@@ -107,6 +108,7 @@ export function TorrentActions() {
     setAdding(true);
     try {
       const result = await executePendingAdd(source, storageRoot, startContent);
+      if (result.torrentId !== undefined) revealTorrent(result.torrentId);
       setStatus(result.message);
       if (source.type === "magnet" && source.clearInputOnSuccess) {
         setTorrentInput("");
@@ -198,6 +200,7 @@ export function TorrentActions() {
     setAdding(true);
     try {
       const result = await executePendingAdd(pendingAdd, rootId, startContent);
+      if (result.torrentId !== undefined) revealTorrent(result.torrentId);
       let message = result.message;
       if (dontShowAgain) {
         try {
