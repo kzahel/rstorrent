@@ -17,6 +17,7 @@ mod peer_budget;
 mod peer_io;
 mod peer_runtime;
 mod peer_socket;
+mod pex;
 mod piece_picker;
 pub mod port_mapping;
 mod positional_io;
@@ -86,6 +87,7 @@ pub use peer_runtime::{
     PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
     PeerTransport, PeerUploadActivity, PeerUploadGrant,
 };
+pub use pex::PexError;
 pub use piece_picker::PieceActivationPolicy;
 pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
 pub use selective_storage::{

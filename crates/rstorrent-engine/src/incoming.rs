@@ -12,10 +12,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
+use rstorrent_protocol::extension::{
+    ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
+    encode_extension_handshake as encode_recognized_extension_handshake,
+    parse_extension_handshake as parse_recognized_extension_handshake,
+};
 use rstorrent_protocol::metadata::{
     MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
-    UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data, encode_metadata_reject,
-    parse_extension_handshake, parse_metadata_message,
+    UT_METADATA_LOCAL_ID, encode_metadata_data, encode_metadata_reject, parse_extension_handshake,
+    parse_metadata_message,
 };
 use rstorrent_protocol::peer_wire::{
     BlockRequest, HANDSHAKE_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
@@ -31,13 +36,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::network::DEFAULT_PEER_ID;
-use crate::peer::PeerFailure;
+use crate::network::NetworkPolicy;
+use crate::peer::{PeerEndpoint, PeerFailure};
 use crate::peer_budget::{
     DEFAULT_LISTEN_BACKLOG, PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetSnapshot,
 };
 use crate::peer_io::{PeerIo, record_bytes};
 use crate::peer_runtime::{PeerConnectionRole, PeerUploadActivity, PeerUploadGrant};
 use crate::peer_socket::advertised_reserved_bits;
+use crate::pex::{PexReceiveContext, PexReceiveDisposition};
 use crate::seed_content::SeedContent;
 use crate::swarm::MAX_FAST_ADVISORY_PIECES;
 use crate::torrent_peer::{IncomingPeerAttachment, TorrentPeerHandle};
@@ -128,6 +135,7 @@ pub struct SeedRegistration {
     piece_lengths: Arc<[u32]>,
     availability: Arc<[bool]>,
     torrent_peers: TorrentPeerHandle,
+    private: bool,
 }
 
 impl SeedRegistration {
@@ -150,6 +158,7 @@ impl SeedRegistration {
             .piece_lengths()
             .map_err(|_| IncomingPeerError::InvalidRegistration("invalid seed piece geometry"))?;
         let availability = Arc::from(content.availability());
+        let private = content.is_private();
         Ok(Self {
             info_hash,
             raw_info,
@@ -157,6 +166,7 @@ impl SeedRegistration {
             piece_lengths: piece_lengths.into(),
             availability,
             torrent_peers,
+            private,
         })
     }
 
@@ -440,6 +450,78 @@ impl IncomingPeerAttachmentGuard {
     fn set_metadata_extension(&self, supported: bool) -> Result<(), ()> {
         self.peers
             .set_incoming_metadata_extension(self.attachment, supported)
+            .map_err(|_| ())
+    }
+
+    fn apply_extension_handshake(
+        &self,
+        handshake: rstorrent_protocol::extension::ExtensionHandshake,
+        remote: SocketAddr,
+        verified_public: bool,
+        policy: NetworkPolicy,
+    ) -> Result<ExtensionMap, ()> {
+        let map = self.peers.with_state(|state| {
+            let map = state
+                .pex
+                .apply_extension_handshake(self.attachment.connection_id(), handshake);
+            if verified_public
+                && let Some(port) = map.listen_port()
+                && let Ok(endpoint) = PeerEndpoint::new(SocketAddr::new(remote.ip(), port))
+                && policy.allows(endpoint.address())
+            {
+                state.pex.peer_established(endpoint, PexFlags::default());
+            }
+            map
+        });
+        self.peers.publish_active(true).map_err(|_| ())?;
+        Ok(map)
+    }
+
+    fn receive_pex(
+        &self,
+        payload: &[u8],
+        remote: SocketAddr,
+        verified_public: bool,
+        policy: NetworkPolicy,
+        self_endpoint: SocketAddr,
+    ) -> Result<PexReceiveDisposition, ()> {
+        let now = self.peers.elapsed();
+        let disposition = self
+            .peers
+            .with_state(|state| {
+                state.pex.receive(
+                    self.attachment.connection_id(),
+                    payload,
+                    PexReceiveContext {
+                        source_endpoint: remote,
+                        now,
+                        verified_public,
+                        network_policy: policy,
+                        self_endpoints: &[self_endpoint],
+                    },
+                    &mut state.registry,
+                )
+            })
+            .map_err(|_| ())?;
+        self.peers.publish_active(true).map_err(|_| ())?;
+        Ok(disposition)
+    }
+
+    fn next_pex(&self, remote: SocketAddr) -> Result<Option<(u8, Vec<u8>)>, ()> {
+        let now = self.peers.elapsed();
+        self.peers
+            .with_state(|state| {
+                let connection = self.attachment.connection_id();
+                let remote_id = state.pex.extension_map(connection).pex_id();
+                let receiver = PeerEndpoint::new(remote).ok();
+                match (remote_id, receiver) {
+                    (Some(remote_id), Some(receiver)) => state
+                        .pex
+                        .next_outbound(connection, receiver, now)
+                        .map(|payload| payload.map(|payload| (remote_id, payload))),
+                    _ => Ok(None),
+                }
+            })
             .map_err(|_| ())
     }
 
@@ -1724,6 +1806,16 @@ async fn run_incoming_peer_loop(
     let upload_peer = runtime.upload_peer;
     let grants = &mut runtime.grants;
     let peer_upload = &runtime.peer_upload;
+    let self_endpoint = shared
+        .listener
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .listen_address;
+    let network_policy = if self_endpoint.ip().is_loopback() {
+        NetworkPolicy::LoopbackOnly
+    } else {
+        NetworkPolicy::Online
+    };
     let mut upload = match UploadPeerState::from_shared(
         registration.piece_lengths.clone(),
         registration.availability.clone(),
@@ -1781,7 +1873,13 @@ async fn run_incoming_peer_loop(
         && io
             .send_message(&PeerMessage::Extended {
                 id: 0,
-                payload: encode_extension_handshake(Some(registration.raw_info.len())),
+                payload: encode_recognized_extension_handshake(ExtensionAdvertisement {
+                    metadata_id: Some(UT_METADATA_LOCAL_ID),
+                    pex_id: (!registration.private).then_some(UT_PEX_LOCAL_ID),
+                    metadata_size: Some(registration.raw_info.len()),
+                    listen_port: Some(self_endpoint.port()),
+                })
+                .expect("verified local extension advertisement is valid"),
             })
             .await
             .is_err()
@@ -1900,6 +1998,18 @@ async fn run_incoming_peer_loop(
                     join_read(read.take()).await;
                     return PeerTermination::InactivityTimeout;
                 }
+                match peer_attachment.next_pex(remote) {
+                    Ok(Some((id, payload))) => {
+                        if io
+                            .queue_message(&PeerMessage::Extended { id, payload })
+                            .is_err()
+                        {
+                            return PeerTermination::Closed;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(()) => return PeerTermination::Protocol,
+                }
                 if now.saturating_duration_since(last_keepalive) >= shared.keepalive_interval {
                     last_keepalive = now;
                     vec![UploadAction::Send(PeerMessage::KeepAlive)]
@@ -1964,6 +2074,40 @@ async fn run_incoming_peer_loop(
                 }
                 if matches!(message, PeerMessage::Request(_)) {
                     last_request_or_unchoke = last_peer_activity;
+                }
+                if let PeerMessage::Extended { id: 0, payload } = &message {
+                    let handshake = match parse_recognized_extension_handshake(payload) {
+                        Ok(handshake) => handshake,
+                        Err(_) => return PeerTermination::Protocol,
+                    };
+                    if peer_attachment
+                        .apply_extension_handshake(
+                            handshake,
+                            remote,
+                            !registration.private,
+                            network_policy,
+                        )
+                        .is_err()
+                    {
+                        return PeerTermination::Protocol;
+                    }
+                } else if let PeerMessage::Extended {
+                    id: UT_PEX_LOCAL_ID,
+                    payload,
+                } = &message
+                {
+                    match peer_attachment.receive_pex(
+                        payload,
+                        remote,
+                        !registration.private,
+                        network_policy,
+                        self_endpoint,
+                    ) {
+                        Ok(PexReceiveDisposition::RateLimited { close: true, .. }) | Err(()) => {
+                            return PeerTermination::Protocol;
+                        }
+                        Ok(_) => {}
+                    }
                 }
                 match message {
                     PeerMessage::NotInterested => queued_piece_frames.cancel_all(),

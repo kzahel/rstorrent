@@ -7,6 +7,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rstorrent_protocol::extension::{ExtensionHandshake, ExtensionMap};
 use rstorrent_protocol::peer_wire::{
     EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
     FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH, Handshake,
@@ -44,6 +45,7 @@ pub(crate) struct PeerConnection {
     attempt: DialAttempt,
     io: PeerIo,
     fast_extension: bool,
+    extension_map: ExtensionMap,
     _budget_permit: Option<Box<PeerBudgetPermit>>,
 }
 
@@ -58,6 +60,14 @@ impl PeerConnection {
 
     pub(crate) const fn supports_fast_extension(&self) -> bool {
         self.fast_extension
+    }
+
+    pub(crate) const fn extension_map(&self) -> ExtensionMap {
+        self.extension_map
+    }
+
+    pub(crate) fn apply_extension_handshake(&mut self, handshake: ExtensionHandshake) {
+        self.extension_map.apply(handshake);
     }
 
     pub(crate) fn prepend_messages(&mut self, messages: VecDeque<PeerMessage>) {
@@ -76,6 +86,7 @@ impl PeerConnection {
             attempt,
             io: PeerIo::new(stream, io_timeout, None),
             fast_extension: false,
+            extension_map: ExtensionMap::default(),
             _budget_permit: None,
         }
     }
@@ -215,6 +226,7 @@ async fn connect_with_progress(
             attempt,
             io: PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink),
             fast_extension: capabilities.fast_extension,
+            extension_map: ExtensionMap::default(),
             _budget_permit: budget_permit.map(Box::new),
         },
         handshake,

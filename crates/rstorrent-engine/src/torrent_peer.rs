@@ -17,6 +17,7 @@ use crate::peer_runtime::{
     IncomingPeerStart, PeerAdmissionOutcome, PeerConnectionObservation, PeerConnectionRole,
     PeerRuntime, PeerRuntimeError, PeerTransport, PeerUploadActivity,
 };
+use crate::pex::{PexError, PexState};
 use crate::swarm::ConnectionId;
 
 const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
@@ -47,6 +48,7 @@ impl IncomingPeerAttachment {
 pub enum TorrentPeerError {
     Registry(PeerRegistryError),
     Runtime(PeerRuntimeError),
+    Pex(PexError),
     ConnectionIdentifierOverflow,
 }
 
@@ -55,6 +57,7 @@ impl fmt::Display for TorrentPeerError {
         match self {
             Self::Registry(error) => write!(formatter, "peer registry: {error}"),
             Self::Runtime(error) => write!(formatter, "peer runtime: {error}"),
+            Self::Pex(error) => write!(formatter, "peer exchange: {error}"),
             Self::ConnectionIdentifierOverflow => {
                 formatter.write_str("peer connection identifier overflow")
             }
@@ -67,6 +70,7 @@ impl Error for TorrentPeerError {
         match self {
             Self::Registry(error) => Some(error),
             Self::Runtime(error) => Some(error),
+            Self::Pex(error) => Some(error),
             Self::ConnectionIdentifierOverflow => None,
         }
     }
@@ -84,6 +88,12 @@ impl From<PeerRuntimeError> for TorrentPeerError {
     }
 }
 
+impl From<PexError> for TorrentPeerError {
+    fn from(error: PexError) -> Self {
+        Self::Pex(error)
+    }
+}
+
 #[derive(Debug, Default)]
 struct RegistryPublicationState {
     active: bool,
@@ -95,6 +105,7 @@ struct RegistryPublicationState {
 pub(crate) struct TorrentPeerState {
     pub(crate) registry: PeerRegistry,
     pub(crate) runtime: PeerRuntime,
+    pub(crate) pex: PexState,
     next_connection_id: u64,
     last_connections_emitted: Vec<PeerConnectionObservation>,
     last_connections_emitted_at: Option<Duration>,
@@ -106,6 +117,7 @@ impl TorrentPeerState {
         Ok(Self {
             registry: PeerRegistry::new(config)?,
             runtime: PeerRuntime::default(),
+            pex: PexState::default(),
             next_connection_id: 1,
             last_connections_emitted: Vec::new(),
             last_connections_emitted_at: None,
@@ -233,6 +245,19 @@ impl TorrentPeerState {
         )?;
         if peer.record_id != Some(attachment.record_id) {
             return Err(PeerRuntimeError::UnknownConnection(attachment.connection_id).into());
+        }
+        let remote_endpoint = peer.endpoint;
+        let advertised = self
+            .pex
+            .extension_map(attachment.connection_id)
+            .listen_port()
+            .and_then(|port| {
+                crate::peer::PeerEndpoint::new(SocketAddr::new(remote_endpoint.ip(), port)).ok()
+            });
+        self.pex
+            .remove_source(attachment.connection_id, &mut self.registry);
+        if let Some(endpoint) = advertised {
+            self.pex.peer_dropped(endpoint);
         }
         self.runtime.remove(attachment.connection_id)?;
         self.registry

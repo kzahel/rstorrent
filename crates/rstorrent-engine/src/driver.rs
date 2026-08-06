@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::extension::{
+    ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
+    encode_extension_handshake as encode_recognized_extension_handshake,
+    parse_extension_handshake as parse_recognized_extension_handshake,
+};
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, TrackerUrl, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataError, MetadataExtensionUpdate, MetadataInstant, MetadataMessage,
@@ -53,6 +58,7 @@ use crate::peer_runtime::{
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
+use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
 use crate::piece_picker::picker_seed;
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, PublicationShape, ResumeArtifactState, ResumedStorage,
@@ -108,6 +114,14 @@ const MAX_METADATA_PEERS: usize = 8;
 const METADATA_SCHEDULER_TICK: Duration = Duration::from_millis(100);
 const MAX_ENGINE_PIECES: usize = MAX_METAINFO_PIECES;
 const MAX_PLANNED_CONTENT_PIECES: usize = 256;
+
+fn public_pex_extension_handshake() -> Vec<u8> {
+    encode_recognized_extension_handshake(ExtensionAdvertisement {
+        pex_id: Some(UT_PEX_LOCAL_ID),
+        ..ExtensionAdvertisement::default()
+    })
+    .expect("the stable local PEX extension ID is valid")
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DownloadResourceLimits {
@@ -314,6 +328,7 @@ pub enum DownloadError {
     UdpTracker(UdpTrackerError),
     PeerRegistry(PeerRegistryError),
     PeerRuntime(PeerRuntimeError),
+    Pex(PexError),
     PeerTask(String),
     StorageTask(String),
     Swarm(SwarmError),
@@ -382,6 +397,7 @@ impl fmt::Display for DownloadError {
             Self::UdpTracker(error) => write!(formatter, "UDP tracker: {error}"),
             Self::PeerRegistry(error) => write!(formatter, "peer registry: {error}"),
             Self::PeerRuntime(error) => write!(formatter, "peer runtime: {error}"),
+            Self::Pex(error) => write!(formatter, "peer exchange: {error}"),
             Self::PeerTask(error) => write!(formatter, "peer task set: {error}"),
             Self::StorageTask(error) => write!(formatter, "content storage task: {error}"),
             Self::Swarm(error) => write!(formatter, "swarm state: {error}"),
@@ -470,6 +486,7 @@ impl Error for DownloadError {
             Self::UdpTracker(error) => Some(error),
             Self::PeerRegistry(error) => Some(error),
             Self::PeerRuntime(error) => Some(error),
+            Self::Pex(error) => Some(error),
             Self::Swarm(error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::Handshake(error) => Some(error),
@@ -493,6 +510,7 @@ fn map_torrent_peer_error(error: TorrentPeerError) -> DownloadError {
     match error {
         TorrentPeerError::Registry(error) => DownloadError::PeerRegistry(error),
         TorrentPeerError::Runtime(error) => DownloadError::PeerRuntime(error),
+        TorrentPeerError::Pex(error) => DownloadError::Pex(error),
         TorrentPeerError::ConnectionIdentifierOverflow => {
             DownloadError::PeerRegistry(PeerRegistryError::IdentifierOverflow("peer connection"))
         }
@@ -1967,10 +1985,17 @@ impl TorrentPeerCoordinator {
             .peers
             .with_state(|state| {
                 state.registry.dial_succeeded(attempt, now)?;
-                state
+                let outcome = state
                     .runtime
                     .handshake_completed(connection_id, handshake, self.network.peer_id, now)
-                    .map_err(TorrentPeerError::Runtime)
+                    .map_err(TorrentPeerError::Runtime)?;
+                if matches!(outcome, PeerAdmissionOutcome::Admitted { .. }) {
+                    state.pex.peer_established(
+                        attempt.endpoint(),
+                        PexFlags::from_bits(PexFlags::OUTGOING),
+                    );
+                }
+                Ok::<_, TorrentPeerError>(outcome)
             })
             .map_err(map_torrent_peer_error);
         let outcome = match outcome {
@@ -2067,6 +2092,8 @@ impl TorrentPeerCoordinator {
         let now = self.elapsed();
         self.peers
             .with_state(|state| {
+                state.pex.remove_source(connection, &mut state.registry);
+                state.pex.peer_dropped(attempt.endpoint());
                 state.registry.connection_closed(attempt, now, failure)?;
                 state
                     .runtime
@@ -2076,6 +2103,90 @@ impl TorrentPeerCoordinator {
             })
             .map_err(map_torrent_peer_error)?;
         self.peers.unregister_connection_cancellation(connection);
+        self.publish_peer_runtime(true)
+    }
+
+    fn apply_extension_handshake(
+        &mut self,
+        connection: ConnectionId,
+        payload: &[u8],
+    ) -> Result<ExtensionMap, DownloadError> {
+        let handshake = parse_recognized_extension_handshake(payload)
+            .map_err(|error| DownloadError::Pex(PexError::Extension(error)))?;
+        Ok(self
+            .peers
+            .with_state(|state| state.pex.apply_extension_handshake(connection, handshake)))
+    }
+
+    fn install_extension_map(&mut self, connection: ConnectionId, map: ExtensionMap) {
+        self.peers
+            .with_state(|state| state.pex.install_extension_map(connection, map));
+    }
+
+    fn receive_pex(
+        &mut self,
+        connection: ConnectionId,
+        payload: &[u8],
+        verified_public: bool,
+    ) -> Result<PexReceiveDisposition, DownloadError> {
+        let source_endpoint = self
+            .peers
+            .with_state(|state| {
+                state
+                    .runtime
+                    .observation(connection)
+                    .map(|peer| peer.endpoint)
+            })
+            .ok_or(DownloadError::PeerRuntime(
+                PeerRuntimeError::UnknownConnection(connection),
+            ))?;
+        let now = self.elapsed();
+        let disposition = self
+            .peers
+            .with_state(|state| {
+                state.pex.receive(
+                    connection,
+                    payload,
+                    PexReceiveContext {
+                        source_endpoint,
+                        now,
+                        verified_public,
+                        network_policy: self.network.policy,
+                        self_endpoints: &[],
+                    },
+                    &mut state.registry,
+                )
+            })
+            .map_err(DownloadError::Pex)?;
+        self.publish_peer_runtime(true)?;
+        Ok(disposition)
+    }
+
+    fn next_pex(
+        &mut self,
+        connection: ConnectionId,
+    ) -> Result<Option<(u8, Vec<u8>)>, DownloadError> {
+        let now = self.elapsed();
+        self.peers.with_state(|state| {
+            let remote_id = state.pex.extension_map(connection).pex_id();
+            let receiving_peer = state
+                .runtime
+                .observation(connection)
+                .and_then(|peer| PeerEndpoint::new(peer.endpoint).ok());
+            match (remote_id, receiving_peer) {
+                (Some(remote_id), Some(receiving_peer)) => state
+                    .pex
+                    .next_outbound(connection, receiving_peer, now)
+                    .map(|payload| payload.map(|payload| (remote_id, payload)))
+                    .map_err(DownloadError::Pex),
+                _ => Ok(None),
+            }
+        })
+    }
+
+    fn purge_pex_for_private(&mut self) -> Result<(), DownloadError> {
+        self.peers
+            .with_state(|state| state.pex.purge(&mut state.registry));
         self.publish_peer_runtime(true)
     }
 
@@ -2719,6 +2830,7 @@ impl TorrentPeerCoordinator {
     }
 
     async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
+        self.purge_pex_for_private()?;
         let current_is_dht_only = self.connection.as_ref().is_some_and(|connection| {
             self.peers.with_state(|state| {
                 state
@@ -3439,6 +3551,9 @@ async fn acquire_metadata_from_connection(
         control.metadata_peer_message(peer.attempt().id());
         match message {
             PeerMessage::Extended { id: 0, payload } => {
+                let recognized = parse_recognized_extension_handshake(&payload)
+                    .map_err(|error| DownloadError::Metadata(error.into()))?;
+                peer.apply_extension_handshake(recognized);
                 let handshake =
                     parse_extension_handshake(&payload).map_err(DownloadError::Metadata)?;
                 if !received_extension_handshake
@@ -3911,6 +4026,7 @@ impl<'a> ContentSwarmDownload<'a> {
 
     async fn handle_message(
         &mut self,
+        peers: &mut TorrentPeerCoordinator,
         sockets: &PeerSocketSet,
         connection: ConnectionId,
         message: PeerMessage,
@@ -4060,6 +4176,23 @@ impl<'a> ContentSwarmDownload<'a> {
                     }
                 }
             }
+            PeerMessage::Extended { id: 0, payload } => {
+                if peers
+                    .apply_extension_handshake(connection, &payload)
+                    .is_err()
+                {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                }
+            }
+            PeerMessage::Extended {
+                id: UT_PEX_LOCAL_ID,
+                payload,
+            } => match peers.receive_pex(connection, &payload, !self.metainfo.private) {
+                Ok(PexReceiveDisposition::RateLimited { close: true, .. }) | Err(_) => {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                }
+                Ok(_) => {}
+            },
             PeerMessage::KeepAlive
             | PeerMessage::Interested
             | PeerMessage::NotInterested
@@ -4393,7 +4526,7 @@ fn fill_content_dials(
         if let Err(error) = sockets.begin_dial(
             attempt,
             info_hash,
-            false,
+            true,
             peers.network,
             peers.control.byte_metric_sink(),
         ) {
@@ -4433,6 +4566,33 @@ async fn close_content_connection(
         .remove_connection(connection, ConnectionRemoval::Disconnected)
         .map_err(DownloadError::Swarm)?;
     peers.connection_closed(attempt, failure)
+}
+
+async fn send_due_pex(
+    peers: &mut TorrentPeerCoordinator,
+    sockets: &PeerSocketSet,
+) -> Result<Vec<ConnectionId>, DownloadError> {
+    let mut failed = Vec::new();
+    for attempt in sockets.connection_attempts() {
+        let connection = connection_id(attempt);
+        let Some((remote_id, payload)) = peers.next_pex(connection)? else {
+            continue;
+        };
+        if sockets
+            .send(
+                connection,
+                PeerMessage::Extended {
+                    id: remote_id,
+                    payload,
+                },
+            )
+            .await
+            .is_err()
+        {
+            failed.push(connection);
+        }
+    }
+    Ok(failed)
 }
 
 async fn replace_content_connection(
@@ -4649,6 +4809,7 @@ async fn run_selective_swarm_loop(
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         let fast_extension = connection.supports_fast_extension();
+        let extension_map = connection.extension_map();
         peers.handoff_to_content(attempt)?;
         let id = sockets
             .add_connection(connection)
@@ -4657,6 +4818,28 @@ async fn run_selective_swarm_loop(
             .state
             .add_connection(id, peers.elapsed())
             .map_err(DownloadError::Swarm)?;
+        peers.install_extension_map(id, extension_map);
+        if !download.metainfo.private
+            && sockets
+                .send(
+                    id,
+                    PeerMessage::Extended {
+                        id: 0,
+                        payload: public_pex_extension_handshake(),
+                    },
+                )
+                .await
+                .is_err()
+        {
+            close_content_connection(
+                peers,
+                sockets,
+                &mut download.state,
+                id,
+                Some(PeerFailure::RemoteClosed),
+            )
+            .await?;
+        }
         download
             .state
             .set_fast_extension(id, fast_extension)
@@ -4700,6 +4883,16 @@ async fn run_selective_swarm_loop(
             download.control.observe_swarm(&download.state, now);
             download.control.emit_storage_state();
             peers.observe_content_peers(&download.state)?;
+            for connection in send_due_pex(peers, sockets).await? {
+                close_content_connection(
+                    peers,
+                    sockets,
+                    &mut download.state,
+                    connection,
+                    Some(PeerFailure::RemoteClosed),
+                )
+                .await?;
+            }
             next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
         }
 
@@ -4894,13 +5087,36 @@ async fn run_selective_swarm_loop(
                             .add_connection(id, peers.elapsed())
                             .map_err(DownloadError::Swarm)?;
                         let capabilities = NegotiatedPeerCapabilities::negotiate(
-                            peer_socket::advertised_reserved_bits(false),
+                            peer_socket::advertised_reserved_bits(true),
                             &handshake,
                         );
                         download
                             .state
                             .set_fast_extension(id, capabilities.fast_extension)
                             .map_err(DownloadError::Swarm)?;
+                        if handshake.supports_extensions()
+                            && !download.metainfo.private
+                            && sockets
+                                .send(
+                                    id,
+                                    PeerMessage::Extended {
+                                        id: 0,
+                                        payload: public_pex_extension_handshake(),
+                                    },
+                                )
+                                .await
+                                .is_err()
+                        {
+                            close_content_connection(
+                                peers,
+                                sockets,
+                                &mut download.state,
+                                id,
+                                Some(PeerFailure::RemoteClosed),
+                            )
+                            .await?;
+                            continue;
+                        }
                         if capabilities.fast_extension
                             && sockets.send(id, PeerMessage::HaveNone).await.is_err()
                         {
@@ -4941,7 +5157,7 @@ async fn run_selective_swarm_loop(
                     continue;
                 }
                 let disposition = download
-                    .handle_message(sockets, id, message, peers.elapsed())
+                    .handle_message(peers, sockets, id, message, peers.elapsed())
                     .await?;
                 apply_content_disposition(peers, sockets, download, Some(id), disposition).await?;
             }

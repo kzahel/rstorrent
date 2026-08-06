@@ -567,6 +567,25 @@ impl PeerRegistry {
         before - self.records.len()
     }
 
+    /// Remove one discovery source from one endpoint and discard a now-
+    /// source-less idle record.
+    pub fn remove_endpoint_source(&mut self, endpoint: PeerEndpoint, source: PeerSource) -> bool {
+        let Some(index) = self
+            .records
+            .iter()
+            .position(|record| record.endpoint == endpoint)
+        else {
+            return false;
+        };
+        self.records[index].sources.remove(source);
+        if self.records[index].sources.is_empty() && self.records[index].phase == PeerPhase::Idle {
+            self.records.swap_remove(index);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn observe(
         &mut self,
         observation: PeerObservation,

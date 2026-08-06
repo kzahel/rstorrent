@@ -450,6 +450,7 @@ async fn serve_content_peer_recording(
     loop {
         match next_peer_message(&mut peer).await {
             Ok(PeerMessage::Interested) => {}
+            Ok(PeerMessage::Extended { id: 0, .. }) => {}
             Ok(PeerMessage::Request(request)) => {
                 if let Some(requested_pieces) = &requested_pieces {
                     requested_pieces
@@ -1363,6 +1364,7 @@ async fn serve_metadata_then_piece(
     loop {
         match next_peer_message(&mut peer).await {
             Ok(PeerMessage::Interested) => {}
+            Ok(PeerMessage::Extended { id: 0, .. }) => {}
             Ok(PeerMessage::Request(request)) => {
                 assert_eq!(request.index, 0);
                 let begin = request.begin as usize;
