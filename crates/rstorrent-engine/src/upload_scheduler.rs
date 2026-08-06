@@ -153,6 +153,11 @@ impl UploadScheduler {
             .or_insert_with(|| PeerState::new(peer, now));
     }
 
+    pub fn reconfigure_slots(&mut self, slots: usize, now: Duration) -> Vec<UploadDecision> {
+        self.config.slots = slots;
+        self.evaluate(now)
+    }
+
     pub fn remove_peer(&mut self, peer: UploadPeerId) {
         self.peers.remove(&peer);
     }
@@ -473,9 +478,37 @@ mod tests {
         scheduler.evaluate(Duration::ZERO);
         assert_eq!(scheduler.grant(id(1)), Some(UploadGrant::Optimistic));
 
-        scheduler.config.slots = 0;
-        let decisions = scheduler.evaluate(Duration::from_secs(1));
+        let decisions = scheduler.reconfigure_slots(0, Duration::from_secs(1));
         assert_eq!(decisions.len(), 1);
         assert_eq!(scheduler.grant(id(1)), Some(UploadGrant::Choked));
+    }
+
+    #[test]
+    fn slot_reconfiguration_preserves_peers_counters_and_timing_state() {
+        let mut scheduler = UploadScheduler::default();
+        for value in 1..=10 {
+            scheduler.update_peer(peer(value, value * 100), Duration::ZERO);
+        }
+        scheduler.evaluate(Duration::ZERO);
+        let before = scheduler.snapshot();
+        assert_eq!((before.regular, before.optimistic), (7, 1));
+
+        scheduler.reconfigure_slots(0, Duration::from_secs(1));
+        let zero = scheduler.snapshot();
+        assert_eq!(zero.peers, 10);
+        assert_eq!((zero.regular, zero.optimistic), (0, 0));
+        assert_eq!(zero.optimistic_rotations, before.optimistic_rotations);
+
+        scheduler.reconfigure_slots(1, Duration::from_secs(2));
+        let one = scheduler.snapshot();
+        assert_eq!((one.regular, one.optimistic), (0, 1));
+        scheduler.reconfigure_slots(8, Duration::from_secs(3));
+        let eight = scheduler.snapshot();
+        assert_eq!((eight.regular, eight.optimistic), (7, 1));
+        scheduler.reconfigure_slots(50, Duration::from_secs(4));
+        let fifty = scheduler.snapshot();
+        assert_eq!(fifty.interested, 10);
+        assert_eq!(fifty.regular + fifty.optimistic, 10);
+        assert!(fifty.evaluations >= before.evaluations + 4);
     }
 }

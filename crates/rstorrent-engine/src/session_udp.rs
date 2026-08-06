@@ -4,8 +4,8 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use rstorrent_protocol::dht::MAX_DATAGRAM_SIZE;
 use tokio::net::UdpSocket;
@@ -59,14 +59,47 @@ pub(crate) enum SessionUdpIngress {
 
 #[derive(Debug)]
 pub struct SessionUdpTransport {
+    current: Arc<RwLock<SessionUdpCurrent>>,
+    ingress: mpsc::Receiver<SessionUdpIngress>,
+}
+
+#[derive(Debug)]
+struct SessionUdpCurrent {
+    generation: u64,
     socket: Arc<UdpSocket>,
     local_address: SocketAddr,
-    ingress: mpsc::Receiver<SessionUdpIngress>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionUdpHandle {
+    current: Arc<RwLock<SessionUdpCurrent>>,
+}
+
+impl SessionUdpHandle {
+    pub fn generation(&self) -> u64 {
+        self.current_guard().generation
+    }
+
+    pub fn local_address(&self) -> SocketAddr {
+        self.current_guard().local_address
+    }
+
+    fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 impl SessionUdpTransport {
     pub fn local_address(&self) -> SocketAddr {
-        self.local_address
+        self.current_guard().local_address
+    }
+
+    pub fn handle(&self) -> SessionUdpHandle {
+        SessionUdpHandle {
+            current: self.current.clone(),
+        }
     }
 
     pub(crate) async fn receive(&mut self) -> Result<(Vec<u8>, SocketAddr), SessionUdpError> {
@@ -87,10 +120,17 @@ impl SessionUdpTransport {
         bytes: &[u8],
         target: SocketAddr,
     ) -> Result<usize, SessionUdpError> {
-        self.socket
+        let socket = self.current_guard().socket.clone();
+        socket
             .send_to(bytes, target)
             .await
             .map_err(SessionUdpError::Io)
+    }
+
+    fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -142,11 +182,37 @@ fn saturating_add(value: &AtomicU64, increment: u64) {
 
 #[derive(Debug)]
 pub struct SessionUdpService {
-    local_address: SocketAddr,
-    cancellation: CancellationToken,
-    task: Option<JoinHandle<Result<(), SessionUdpError>>>,
+    handle: SessionUdpHandle,
+    active: Option<SessionUdpGeneration>,
+    next_generation: u64,
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
     stats: Arc<SessionUdpStats>,
+}
+
+#[derive(Debug)]
+struct SessionUdpGeneration {
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<Result<(), SessionUdpError>>>,
+}
+
+impl SessionUdpGeneration {
+    async fn shutdown(mut self) -> Result<(), SessionUdpError> {
+        self.cancellation.cancel();
+        self.task
+            .take()
+            .expect("session UDP generation task exists before shutdown")
+            .await
+            .map_err(|error| SessionUdpError::TaskJoin(error.to_string()))?
+    }
+}
+
+impl Drop for SessionUdpGeneration {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
 }
 
 impl SessionUdpService {
@@ -155,56 +221,107 @@ impl SessionUdpService {
         let socket = Arc::new(socket);
         let (ingress_sender, ingress) = mpsc::channel(SESSION_UDP_DHT_QUEUE);
         let stats = Arc::new(SessionUdpStats::default());
-        stats.tasks.store(1, Ordering::Relaxed);
-        stats.task_high_water.store(1, Ordering::Relaxed);
-        let cancellation = CancellationToken::new();
-        let task = tokio::spawn(run_receive_loop(
-            socket.clone(),
-            ingress_sender.clone(),
-            stats.clone(),
-            cancellation.clone(),
-        ));
+        let generation = 1;
+        let current = Arc::new(RwLock::new(SessionUdpCurrent {
+            generation,
+            socket: socket.clone(),
+            local_address,
+        }));
+        let active = start_generation(socket, ingress_sender.clone(), stats.clone());
+        let handle = SessionUdpHandle {
+            current: current.clone(),
+        };
         Ok((
             Self {
-                local_address,
-                cancellation,
-                task: Some(task),
+                handle,
+                active: Some(active),
+                next_generation: 2,
                 ingress_sender,
                 stats,
             },
-            SessionUdpTransport {
-                socket,
-                local_address,
-                ingress,
-            },
+            SessionUdpTransport { current, ingress },
         ))
     }
 
     pub fn local_address(&self) -> SocketAddr {
-        self.local_address
+        self.handle.local_address()
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.handle.generation()
     }
 
     pub fn snapshot(&self) -> SessionUdpSnapshot {
         self.stats.snapshot(&self.ingress_sender)
     }
 
+    pub async fn replace_socket(&mut self, socket: UdpSocket) -> Result<(), SessionUdpError> {
+        let local_address = socket.local_addr().map_err(SessionUdpError::Io)?;
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.checked_add(1).ok_or_else(|| {
+            SessionUdpError::Io(io::Error::other("session UDP generation exhausted"))
+        })?;
+        let socket = Arc::new(socket);
+        let candidate = start_generation(
+            socket.clone(),
+            self.ingress_sender.clone(),
+            self.stats.clone(),
+        );
+        {
+            let mut current = self.current_guard();
+            *current = SessionUdpCurrent {
+                generation,
+                socket,
+                local_address,
+            };
+        }
+        let previous = self
+            .active
+            .replace(candidate)
+            .expect("session UDP has an active generation before replacement");
+        previous.shutdown().await
+    }
+
     pub async fn shutdown(mut self) -> Result<SessionUdpSnapshot, SessionUdpError> {
-        self.cancellation.cancel();
-        self.task
+        self.active
             .take()
-            .expect("session UDP task exists before shutdown")
-            .await
-            .map_err(|error| SessionUdpError::TaskJoin(error.to_string()))??;
+            .expect("session UDP generation exists before shutdown")
+            .shutdown()
+            .await?;
         Ok(self.snapshot())
+    }
+
+    fn current_guard(&self) -> RwLockWriteGuard<'_, SessionUdpCurrent> {
+        self.handle
+            .current
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
 impl Drop for SessionUdpService {
     fn drop(&mut self) {
-        self.cancellation.cancel();
-        if let Some(task) = self.task.take() {
-            task.abort();
-        }
+        self.active.take();
+    }
+}
+
+fn start_generation(
+    socket: Arc<UdpSocket>,
+    ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    stats: Arc<SessionUdpStats>,
+) -> SessionUdpGeneration {
+    let cancellation = CancellationToken::new();
+    let tasks = stats.tasks.fetch_add(1, Ordering::AcqRel).saturating_add(1);
+    stats.task_high_water.fetch_max(tasks, Ordering::AcqRel);
+    let task = tokio::spawn(run_receive_loop(
+        socket,
+        ingress_sender,
+        stats,
+        cancellation.clone(),
+    ));
+    SessionUdpGeneration {
+        cancellation,
+        task: Some(task),
     }
 }
 
@@ -247,7 +364,7 @@ async fn run_receive_loop(
             }
         }
     };
-    stats.tasks.store(0, Ordering::Relaxed);
+    stats.tasks.fetch_sub(1, Ordering::AcqRel);
     result
 }
 
@@ -332,6 +449,62 @@ mod tests {
         assert_eq!(terminal.task_high_water, 1);
         assert_eq!(terminal.datagrams_received, 1);
         assert_eq!(terminal.datagrams_dropped, 0);
+    }
+
+    #[tokio::test]
+    async fn stable_transport_moves_ingress_send_and_observation_to_replacement_socket() {
+        let (mut service, mut transport) = service().await;
+        let handle = transport.handle();
+        let first_address = handle.local_address();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+
+        remote.send_to(b"first", first_address).await.unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(1), transport.receive())
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
+            b"first"
+        );
+
+        let replacement = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let replacement_address = replacement.local_addr().unwrap();
+        service.replace_socket(replacement).await.unwrap();
+        assert_eq!(service.generation(), 2);
+        assert_eq!(handle.generation(), 2);
+        assert_eq!(transport.local_address(), replacement_address);
+        assert_ne!(replacement_address, first_address);
+
+        remote
+            .send_to(b"second", replacement_address)
+            .await
+            .unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(1), transport.receive())
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
+            b"second"
+        );
+        transport
+            .send_to(b"replacement-source", remote.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut bytes = [0; 32];
+        let (length, source) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&bytes[..length], b"replacement-source");
+        assert_eq!(source, replacement_address);
+        assert_eq!(service.snapshot().task_high_water, 2);
+
+        drop(transport);
+        let terminal = service.shutdown().await.unwrap();
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.queued, 0);
     }
 
     #[tokio::test]

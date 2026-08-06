@@ -20,7 +20,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval};
 use tokio_util::sync::CancellationToken;
 
 use crate::network::{NetworkPolicy, is_valid_outbound_address};
-use crate::{ByteMetric, ByteMetricSink, SessionUdpService, SessionUdpTransport};
+use crate::{ByteMetric, ByteMetricSink, SessionUdpHandle, SessionUdpService, SessionUdpTransport};
 
 pub const DHT_SNAPSHOT_VERSION: u32 = 1;
 pub const MAX_PERSISTED_NODES_PER_FAMILY: usize = 64;
@@ -350,7 +350,7 @@ pub struct DhtService {
     handle: DhtHandle,
     cancellation: CancellationToken,
     task: Option<JoinHandle<Result<DhtSnapshot, DhtError>>>,
-    local_address: SocketAddr,
+    transport: SessionUdpHandle,
     observations: watch::Receiver<DhtObservation>,
     owned_udp: Option<SessionUdpService>,
 }
@@ -397,7 +397,7 @@ impl DhtService {
             .as_ref()
             .map(|snapshot| snapshot.node_id)
             .unwrap_or(random_node_id()?);
-        let local_address = transport.local_address();
+        let transport_handle = transport.handle();
         let bootstrap = resolve_bootstrap(&config, snapshot.as_ref()).await;
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
         let (observation_sender, observations) =
@@ -418,7 +418,7 @@ impl DhtService {
             handle: DhtHandle { sender },
             cancellation,
             task: Some(task),
-            local_address,
+            transport: transport_handle,
             observations,
             owned_udp: None,
         })
@@ -429,7 +429,7 @@ impl DhtService {
     }
 
     pub fn local_address(&self) -> SocketAddr {
-        self.local_address
+        self.transport.local_address()
     }
 
     pub fn subscribe_observations(&self) -> watch::Receiver<DhtObservation> {
@@ -2366,6 +2366,45 @@ mod tests {
             read_only: false,
             byte_metric_sink: None,
         }
+    }
+
+    #[tokio::test]
+    async fn stable_dht_observes_replaced_session_udp_without_losing_identity() {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind initial session UDP");
+        let (mut udp, transport) = SessionUdpService::start(socket).expect("start session UDP");
+        let dht = DhtService::start_with_transport(loopback_config(Vec::new()), transport)
+            .await
+            .expect("start stable DHT");
+        let before_address = dht.local_address();
+        let before = dht.subscribe_observations().borrow().clone();
+
+        let replacement = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind replacement session UDP");
+        let replacement_address = replacement.local_addr().expect("replacement address");
+        udp.replace_socket(replacement)
+            .await
+            .expect("replace session UDP generation");
+        assert_ne!(before_address, replacement_address);
+        assert_eq!(dht.local_address(), replacement_address);
+        let after = dht.subscribe_observations().borrow().clone();
+        assert_eq!(after.local_node_id, before.local_node_id);
+        assert_eq!(after.routing_nodes_v4, before.routing_nodes_v4);
+        assert_eq!(
+            dht.handle()
+                .stats()
+                .await
+                .expect("DHT remains responsive")
+                .active_lookups,
+            0
+        );
+
+        let snapshot = dht.shutdown().await.expect("shutdown DHT");
+        assert_eq!(snapshot.node_id, before.local_node_id);
+        let terminal = udp.shutdown().await.expect("shutdown session UDP");
+        assert_eq!(terminal.tasks, 0);
     }
 
     async fn exchange(socket: &UdpSocket, server: SocketAddr, bytes: &[u8]) -> Message {

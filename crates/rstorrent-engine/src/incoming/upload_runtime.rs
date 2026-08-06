@@ -114,12 +114,28 @@ impl UploadCoordinator {
         self.evaluate_locked(&mut self.state_guard());
     }
 
+    pub fn reconfigure_slots(&self, slots: usize) {
+        let mut state = self.state_guard();
+        let decisions = state
+            .scheduler
+            .reconfigure_slots(slots, self.started_at.elapsed());
+        Self::publish_decisions(&state, decisions);
+    }
+
     pub fn snapshot(&self) -> UploadSchedulerSnapshot {
         self.state_guard().scheduler.snapshot()
     }
 
     fn evaluate_locked(&self, state: &mut CoordinatorState) {
-        for decision in state.scheduler.evaluate(self.started_at.elapsed()) {
+        let decisions = state.scheduler.evaluate(self.started_at.elapsed());
+        Self::publish_decisions(state, decisions);
+    }
+
+    fn publish_decisions(
+        state: &CoordinatorState,
+        decisions: Vec<crate::upload_scheduler::UploadDecision>,
+    ) {
+        for decision in decisions {
             if let Some(peer) = state.peers.get(&decision.peer) {
                 peer.grants.send_replace(decision.grant);
             }
@@ -163,5 +179,31 @@ mod tests {
         coordinator.remove(first.id);
         assert_eq!(*second.grants.borrow(), UploadGrant::Optimistic);
         assert_eq!(coordinator.snapshot().peers, 1);
+    }
+
+    #[test]
+    fn reconfiguration_preserves_memberships_and_immediately_replaces_grants() {
+        let coordinator = coordinator(8);
+        let peers = (1..=10)
+            .map(|value| coordinator.register([value; 20], 16_384))
+            .collect::<Vec<_>>();
+        for peer in &peers {
+            coordinator.update_interest(peer.id, true);
+        }
+        assert_eq!(coordinator.snapshot().regular, 7);
+        assert_eq!(coordinator.snapshot().optimistic, 1);
+
+        coordinator.reconfigure_slots(0);
+        assert!(
+            peers
+                .iter()
+                .all(|peer| *peer.grants.borrow() == UploadGrant::Choked)
+        );
+        coordinator.reconfigure_slots(1);
+        assert_eq!(coordinator.snapshot().peers, 10);
+        assert_eq!(coordinator.snapshot().optimistic, 1);
+        coordinator.reconfigure_slots(8);
+        assert_eq!(coordinator.snapshot().regular, 7);
+        assert_eq!(coordinator.snapshot().optimistic, 1);
     }
 }

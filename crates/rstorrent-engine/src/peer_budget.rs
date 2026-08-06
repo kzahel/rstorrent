@@ -1,8 +1,11 @@
 //! Runtime-independent session TCP peer admission and owned accounting.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
+
+use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_CONNECTION_LIMIT: usize = 200;
 pub const DEFAULT_INCOMING_CONNECTION_SLACK: usize = 10;
@@ -115,6 +118,23 @@ pub struct PeerBudgetRejection {
     pub maximum: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerBudgetReconfiguration {
+    pub configured_limit: usize,
+    pub effective_limit: usize,
+    pub absolute_limit: usize,
+    pub cancellation_requests: usize,
+    pub within_limit: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PeerBudgetEntry {
+    direction: PeerBudgetDirection,
+    phase: PeerBudgetPhase,
+    cancellation: CancellationToken,
+    cancellation_requested: bool,
+}
+
 impl fmt::Display for PeerBudgetRejection {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -137,6 +157,7 @@ struct PeerBudgetState {
     incoming_connecting: usize,
     incoming_established: usize,
     total_high_water: usize,
+    entries: BTreeMap<u64, PeerBudgetEntry>,
 }
 
 impl PeerBudgetState {
@@ -201,6 +222,11 @@ impl PeerBudgetState {
             total_high_water: self.total_high_water,
         }
     }
+
+    fn absolute_limit(&self) -> usize {
+        self.effective_limit
+            .saturating_add(self.config.incoming_slack)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -221,6 +247,7 @@ impl PeerBudget {
                 incoming_connecting: 0,
                 incoming_established: 0,
                 total_high_water: 0,
+                entries: BTreeMap::new(),
             })),
         }
     }
@@ -244,15 +271,94 @@ impl PeerBudget {
             });
         }
         let generation = state.next_generation;
-        state.next_generation = state.next_generation.wrapping_add(1).max(1);
+        if generation == 0 {
+            return Err(PeerBudgetRejection {
+                direction,
+                current,
+                maximum: current,
+            });
+        }
+        state.next_generation = generation.checked_add(1).unwrap_or(0);
+        let cancellation = CancellationToken::new();
+        state.entries.insert(
+            generation,
+            PeerBudgetEntry {
+                direction,
+                phase: PeerBudgetPhase::Connecting,
+                cancellation: cancellation.clone(),
+                cancellation_requested: false,
+            },
+        );
         state.increment(direction, PeerBudgetPhase::Connecting);
         Ok(PeerBudgetPermit {
             state: self.state.clone(),
             generation,
             direction,
             phase: PeerBudgetPhase::Connecting,
+            cancellation,
             active: true,
         })
+    }
+
+    pub fn reconfigure(&self, configured_limit: usize) -> PeerBudgetReconfiguration {
+        let (outcome, cancellations) = {
+            let mut state = self.state_guard();
+            state.config.configured_limit = configured_limit;
+            state.effective_limit = state.config.effective_limit();
+            let absolute_limit = state.absolute_limit();
+            let excess = state.total().saturating_sub(absolute_limit);
+            let already_requested = state
+                .entries
+                .values()
+                .filter(|entry| entry.cancellation_requested)
+                .count();
+            let additional = excess.saturating_sub(already_requested);
+            let mut candidates = state
+                .entries
+                .iter()
+                .filter(|(_, entry)| !entry.cancellation_requested)
+                .map(|(generation, entry)| (*generation, entry.phase))
+                .collect::<Vec<_>>();
+            candidates.sort_by(
+                |(left_generation, left_phase), (right_generation, right_phase)| {
+                    phase_eviction_order(*left_phase)
+                        .cmp(&phase_eviction_order(*right_phase))
+                        .then_with(|| right_generation.cmp(left_generation))
+                },
+            );
+            let selected = candidates
+                .into_iter()
+                .take(additional)
+                .map(|(generation, _)| generation)
+                .collect::<Vec<_>>();
+            let cancellations = selected
+                .iter()
+                .filter_map(|generation| {
+                    let entry = state.entries.get_mut(generation)?;
+                    entry.cancellation_requested = true;
+                    Some(entry.cancellation.clone())
+                })
+                .collect::<Vec<_>>();
+            (
+                PeerBudgetReconfiguration {
+                    configured_limit,
+                    effective_limit: state.effective_limit,
+                    absolute_limit,
+                    cancellation_requests: cancellations.len(),
+                    within_limit: state.total() <= absolute_limit,
+                },
+                cancellations,
+            )
+        };
+        for cancellation in cancellations {
+            cancellation.cancel();
+        }
+        outcome
+    }
+
+    pub fn within_absolute_limit(&self) -> bool {
+        let state = self.state_guard();
+        state.total() <= state.absolute_limit()
     }
 
     pub fn snapshot(&self) -> PeerBudgetSnapshot {
@@ -278,6 +384,7 @@ pub struct PeerBudgetPermit {
     generation: u64,
     direction: PeerBudgetDirection,
     phase: PeerBudgetPhase,
+    cancellation: CancellationToken,
     active: bool,
 }
 
@@ -294,6 +401,10 @@ impl PeerBudgetPermit {
         self.phase
     }
 
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation.clone()
+    }
+
     pub fn mark_established(&mut self) {
         if self.phase == PeerBudgetPhase::Established || !self.active {
             return;
@@ -305,6 +416,10 @@ impl PeerBudgetPermit {
         state.decrement(self.direction, self.phase);
         self.phase = PeerBudgetPhase::Established;
         state.increment(self.direction, self.phase);
+        if let Some(entry) = state.entries.get_mut(&self.generation) {
+            debug_assert_eq!(entry.direction, self.direction);
+            entry.phase = self.phase;
+        }
     }
 }
 
@@ -318,7 +433,15 @@ impl Drop for PeerBudgetPermit {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.entries.remove(&self.generation);
         state.decrement(self.direction, self.phase);
+    }
+}
+
+const fn phase_eviction_order(phase: PeerBudgetPhase) -> u8 {
+    match phase {
+        PeerBudgetPhase::Connecting => 0,
+        PeerBudgetPhase::Established => 1,
     }
 }
 
@@ -390,5 +513,62 @@ mod tests {
         assert_eq!(snapshot.total_high_water, 1);
         permit.mark_established();
         assert_eq!(budget.snapshot(), snapshot);
+    }
+
+    #[test]
+    fn reconfiguration_applies_clamp_before_deterministic_eviction() {
+        let budget = budget(6, 1);
+        let oldest_connecting = budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .expect("oldest connecting");
+        let mut oldest_established = budget
+            .try_acquire(PeerBudgetDirection::Incoming)
+            .expect("oldest established");
+        oldest_established.mark_established();
+        let newest_connecting = budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .expect("newest connecting");
+        let mut newest_established = budget
+            .try_acquire(PeerBudgetDirection::Incoming)
+            .expect("newest established");
+        newest_established.mark_established();
+        let newest = budget
+            .try_acquire(PeerBudgetDirection::Incoming)
+            .expect("newest connection");
+
+        let outcome = budget.reconfigure(1);
+        assert_eq!(outcome.effective_limit, 1);
+        assert_eq!(outcome.absolute_limit, 2);
+        assert_eq!(outcome.cancellation_requests, 3);
+        assert!(!outcome.within_limit);
+        assert!(newest.cancellation_token().is_cancelled());
+        assert!(newest_connecting.cancellation_token().is_cancelled());
+        assert!(oldest_connecting.cancellation_token().is_cancelled());
+        assert!(!newest_established.cancellation_token().is_cancelled());
+        assert!(!oldest_established.cancellation_token().is_cancelled());
+        assert_eq!(budget.reconfigure(1).cancellation_requests, 0);
+
+        drop((newest, newest_connecting, oldest_connecting));
+        assert!(budget.within_absolute_limit());
+        assert!(budget.try_acquire(PeerBudgetDirection::Outgoing).is_err());
+        drop((newest_established, oldest_established));
+        assert_eq!(budget.snapshot().total, 0);
+    }
+
+    #[test]
+    fn increasing_limit_changes_admission_without_cancelling_live_permits() {
+        let budget = budget(1, 0);
+        let first = budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .expect("first permit");
+        assert!(budget.try_acquire(PeerBudgetDirection::Outgoing).is_err());
+        let outcome = budget.reconfigure(2);
+        assert_eq!(outcome.effective_limit, 2);
+        assert_eq!(outcome.cancellation_requests, 0);
+        let second = budget
+            .try_acquire(PeerBudgetDirection::Outgoing)
+            .expect("newly admitted permit");
+        assert!(!first.cancellation_token().is_cancelled());
+        drop((first, second));
     }
 }

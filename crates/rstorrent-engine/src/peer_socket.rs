@@ -49,6 +49,12 @@ impl PeerConnection {
         self.io.prepend_messages(messages);
     }
 
+    fn budget_cancellation(&self) -> Option<CancellationToken> {
+        self._budget_permit
+            .as_ref()
+            .map(|permit| permit.cancellation_token())
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(attempt: DialAttempt, stream: TcpStream, io_timeout: Duration) -> Self {
         Self {
@@ -421,6 +427,7 @@ impl PeerSocketSet {
             .peer_budget
             .try_acquire(PeerBudgetDirection::Outgoing)
             .map_err(PeerSetError::ConnectionLimit)?;
+        let budget_cancellation = budget_permit.cancellation_token();
         let cancellation = CancellationToken::new();
         let progress = self.dial_progress_tx.clone();
         self.pending_attempts
@@ -429,6 +436,7 @@ impl PeerSocketSet {
             let result = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => Err(PeerSocketError::Cancelled),
+                _ = budget_cancellation.cancelled() => Err(PeerSocketError::Cancelled),
                 result = connect_with_progress(
                     attempt,
                     info_hash,
@@ -551,6 +559,7 @@ async fn run_peer_task(
     events: mpsc::Sender<PeerTaskEvent>,
     cancellation: &CancellationToken,
 ) -> Result<(), PeerSocketError> {
+    let budget_cancellation = peer.budget_cancellation();
     let mut pending_messages = std::mem::take(&mut peer.io.queued_messages);
     let mut read_deadline = Instant::now() + peer.io.io_timeout;
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
@@ -559,6 +568,11 @@ async fn run_peer_task(
             tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => return Ok(()),
+                _ = async {
+                    if let Some(cancellation) = &budget_cancellation {
+                        cancellation.cancelled().await;
+                    }
+                }, if budget_cancellation.is_some() => return Ok(()),
                 permit = events.reserve() => {
                     let permit = permit.map_err(|_| PeerSocketError::Io {
                         operation: "deliver peer event",
@@ -587,6 +601,11 @@ async fn run_peer_task(
         tokio::select! {
             biased;
             _ = cancellation.cancelled() => return Ok(()),
+            _ = async {
+                if let Some(cancellation) = &budget_cancellation {
+                    cancellation.cancelled().await;
+                }
+            }, if budget_cancellation.is_some() => return Ok(()),
             command = commands.recv() => match command {
                 Some(PeerTaskCommand::Send(message)) => send_message(&mut peer, &message).await?,
                 None => return Ok(()),

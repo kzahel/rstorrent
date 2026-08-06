@@ -57,12 +57,13 @@ pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_UPLOAD_READ_JOBS,
-    INCOMING_WRITER_NO_PROGRESS_TIMEOUT, IncomingPeerError, IncomingPeerHandle,
-    IncomingPeerService, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, IncomingRejection,
-    IncomingRejectionReason, IncomingTcpBootstrap, MAX_CONFIGURED_UPLOAD_READ_JOBS,
-    MAX_DEFERRED_METADATA_REQUESTS, MAX_INCOMING_PENDING, MAX_INCOMING_WRITER_BYTES,
-    MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK, PeerUploadSnapshot, SeedRegistration,
-    SeedRegistrationToken, TorrentUploadSnapshot, UploadTrafficSnapshot,
+    INCOMING_WRITER_NO_PROGRESS_TIMEOUT, IncomingPeerAcceptor, IncomingPeerError,
+    IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerService, IncomingPeerServiceConfig,
+    IncomingPeerServiceSnapshot, IncomingRejection, IncomingRejectionReason, IncomingTcpBootstrap,
+    MAX_CONFIGURED_UPLOAD_READ_JOBS, MAX_DEFERRED_METADATA_REQUESTS, MAX_INCOMING_PENDING,
+    MAX_INCOMING_WRITER_BYTES, MAX_SEED_REGISTRATIONS, METADATA_SEND_BUFFER_WATERMARK,
+    PeerUploadSnapshot, SeedRegistration, SeedRegistrationToken, TorrentUploadSnapshot,
+    UploadTrafficSnapshot,
 };
 pub use metadata_seed::{
     MetadataSeedConfig, MetadataSeedError, MetadataSeedReport, MetadataSeedServer,
@@ -74,7 +75,7 @@ pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{
     DEFAULT_CONNECTION_LIMIT, DEFAULT_INCOMING_CONNECTION_SLACK, DEFAULT_LISTEN_BACKLOG,
     PeerBudget, PeerBudgetConfig, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetPhase,
-    PeerBudgetRejection, PeerBudgetSnapshot, effective_connection_limit,
+    PeerBudgetReconfiguration, PeerBudgetRejection, PeerBudgetSnapshot, effective_connection_limit,
 };
 pub use peer_runtime::{
     PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
@@ -98,8 +99,8 @@ pub use session_socket::{
     SessionSocketTransport,
 };
 pub use session_udp::{
-    SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpService, SessionUdpSnapshot,
-    SessionUdpTransport,
+    SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpHandle, SessionUdpService,
+    SessionUdpSnapshot, SessionUdpTransport,
 };
 pub use storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PLATFORM_STORAGE_REQUEST_CAPACITY,

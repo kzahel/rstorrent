@@ -1,11 +1,14 @@
 # Tactical 097: Live Client Settings And Replaceable Session Generations
 
-Status: In progress on 2026-08-06. Gate 1 is complete: the public runtime
-contract now exposes configured intent, effective values for four independently
-converging domains, and bounded applying/applied/degraded state; the task-free
-attempt/domain generation model rejects stale results and nonzero-generation
-overflow. Transport ownership and live reconciliation begin at Gate 2. This document does not
-reorder the existing tactical queue; completed Tactical
+Status: In progress on 2026-08-06. Gates 1 and 2 are complete: the public
+runtime contract now exposes configured intent, effective values for four
+independently converging domains, and bounded applying/applied/degraded state;
+the task-free attempt/domain generation model rejects stale results and
+nonzero-generation overflow; and the engine now keeps incoming registrations,
+peer tasks, upload state, UDP routing, and DHT state stable around replaceable
+transport generations. Session composition moves behind the private owner at
+Gate 3. This document does not reorder the existing tactical queue; completed
+Tactical
 [`096`](096-metadata-tracker-activation-and-family-observability.md) retained
 priority and closed independently later that day.
 
@@ -630,6 +633,31 @@ socket-generation aware, keep DHT stable across a scripted replacement, and
 add focused peer-budget/upload-scheduler reconfiguration. Preserve existing
 convenience entry points and prove the current startup/shutdown behavior before
 wiring settings.
+
+Completed evidence on 2026-08-06:
+
+- `IncomingPeerRuntime` now owns stable registration, routed peer, upload
+  scheduler, membership, and accounting state while `IncomingPeerAcceptor`
+  owns only one supplied listener and its accept/pending-handshake tasks. The
+  existing `IncomingPeerService` facade composes both boundaries for focused
+  callers;
+- `SessionUdpTransport` now resolves a current socket generation behind one
+  stable ingress/send handle. Replacement starts the candidate receiver,
+  atomically changes current send/address state, then cancels and joins the
+  retired receiver; the measured receive-task high-water is two and terminal
+  count is zero;
+- DHT observes the stable UDP handle, retains its node ID, routing state, and
+  actor across replacement, and uses the replacement source endpoint for
+  subsequent sends;
+- `PeerBudget` atomically installs a descriptor-clamped limit, records one
+  cancellation token per live permit, and selects connecting permits before
+  established permits and newest generations first without cancelling under
+  its accounting lock;
+- upload-slot reconfiguration preserves peer IDs, interest, byte counters,
+  quota/timing history, and grant receivers while immediately recomputing
+  grants, including exact zero-slot choking; and
+- all 321 engine library tests passed (315 executed and six live/manual cases
+  ignored), followed by all-target engine Clippy with warnings denied.
 
 ### Gate 3: private session-network owner
 
