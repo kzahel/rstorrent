@@ -184,28 +184,29 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) is
-complete.** HTTPS trackers now default to platform certificate-chain and
-requested-name validation on every shipping platform. One hidden typed
-compatibility override remains encrypted but unauthenticated; live replacement
-does not restart discovery or torrents; and deterministic, pinned-libtorrent,
-desktop, Android, product, and terminal-resource gates pass.
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) is
+authorized and in progress.** Add the task-free per-torrent peer-ID admission
+index, integrate it at the shared validated-handshake boundary, prove exact
+loser cleanup, and complete controlled RSTorrent/libtorrent crossed-connection
+races without treating peer IDs as authenticated durable identity.
 
 ### Next
 
 - Execute planned Tactical
-  [`099`](../tactical/099-decimal-and-binary-display-units.md) as the next
-  independent product slice: make Decimal the browser-local default, preserve
-  Binary as a typed appearance choice, and leave engine/application byte
-  values and exact technical IEC text unchanged.
-- Add PCP and NAT-PMP only with their own bounded tactical and suitable
-  controlled or physical gateway evidence; pinned source inspection is not a
-  support claim.
+  [`093`](../tactical/093-bep6-fast-request-lifecycle.md) after Tactical `090`
+  closes the complete duplicate-connection lifecycle.
+- Execute planned Tactical
+  [`094`](../tactical/094-bounded-bep11-peer-exchange.md) after its hard
+  Tactical `090` prerequisite and the recorded BEP 6 sequence.
+- Execute planned Tactical
+  [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) as
+  the next independent product slice when product work is selected over the
+  engine sequence.
 
 ### Later
 
 Complete IPv6 DHT operation, finite bandwidth and seeding goals,
-multi-interface and IPv6 binding, PEX,
+multi-interface and IPv6 binding,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, BEP 53 select-only magnet intake, dynamic
 VPN and metered-network controls, and production remote access remain
@@ -215,6 +216,9 @@ the BEP 53 slice and its deliberately narrow duplicate-add product policy.
 After core parity,
 common-denominator versus full-reference deltas and the protocol evidence
 matrix choose BEP breadth; visible novelty alone does not.
+
+PCP and NAT-PMP require their own bounded tactical and suitable controlled or
+physical gateway evidence; pinned source inspection is not a support claim.
 
 Availability-ranked activation is complete in Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md). The remaining

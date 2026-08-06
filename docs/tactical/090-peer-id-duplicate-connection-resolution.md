@@ -1,8 +1,8 @@
 # Tactical 090: Peer-ID Duplicate Connection Resolution
 
-Status: Planned. This document records a decision-complete candidate slice;
-it does not authorize implementation or displace the current truthful tracker
-and DHT advertisement work.
+Status: Authorized and in progress on 2026-08-06. Gate 1 is the current
+executable action after completed Tacticals `091`--`099` and queue
+reconciliation.
 
 Topics: `peer-lifecycle`, `download-correctness`, `protocol-support`,
 `capability-readiness`
@@ -12,10 +12,9 @@ Dependencies: completed Tacticals
 [`082`](082-bounded-multi-peer-upload-ownership.md), and
 [`086`](086-long-lived-torrent-peer-runtime.md) establish bounded outgoing and
 incoming connection generations, exact request/upload cleanup, and one
-long-lived per-torrent peer owner. Campaign execution remains sequenced after
-the current **Now** item and Tactical
-[`091`](091-availability-ranked-piece-activation.md) in
-[`capability-readiness`](../topics/capability-readiness.md).
+long-lived per-torrent peer owner. Completed Tactical
+[`091`](091-availability-ranked-piece-activation.md) supplies the ranked piece
+activation prerequisite recorded by the campaign sequence.
 
 ## Decision And Motivation
 

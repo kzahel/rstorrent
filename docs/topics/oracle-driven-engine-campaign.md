@@ -644,11 +644,16 @@ and exact cleanup. The API 34 product path passes provider-rename death and
 fresh published-piece recheck at the established 40-handle/one-pending-request
 high waters.
 
-Next executable action: after explicit implementation authorization, begin
-Gate 1 of planned Tactical
-[`086`](../tactical/086-long-lived-torrent-peer-runtime.md): extract the
-task-free torrent peer-state lifetime waist while preserving exact outgoing
-behavior and generated contracts. No concurrent multi-torrent scheduling,
-pending-write read-through, performance, or BEP breadth slice is implied.
+Tacticals `086`--`098` subsequently completed the long-lived torrent peer
+runtime, incoming reachability and coordinated transport foundations,
+availability-ranked activation, truthful tracker/DHT advertisement, bounded
+HTTP/HTTPS tracker transport, metadata-task activation, live settings, and
+authenticated platform trust. Independent product Tactical `099` completed
+Decimal/Binary browser presentation without changing engine byte semantics.
+Their focused tacticals and owning topics retain the detailed evidence.
 
-Human blocker: **implementation of Tactical `086` is not yet authorized**.
+Next executable action: execute Gate 1 of authorized Tactical
+[`090`](../tactical/090-peer-id-duplicate-connection-resolution.md): add the
+task-free peer-ID admission index and exact deterministic crossed-connection,
+same-direction, self, reconnect, and generation-fenced removal cases. No BEP 6,
+PEX, durable identity, reputation merging, or peer-scoring work is implied.
