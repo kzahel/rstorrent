@@ -15,11 +15,11 @@ listen-socket/UDP waist completed by Tactical
 feature-driven lifetime seam completed by Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md), with
 the transport-specific HTTP runtime boundary completed by Tactical
-[`095`](../tactical/095-bounded-http-https-tracker-transport.md). On
-2026-08-06, planned Tactical
+[`095`](../tactical/095-bounded-http-https-tracker-transport.md). Completed
+Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-selected the concrete session-network lifetime seam required for live client
-settings.
+lands the concrete session-network lifetime seam required for live client
+settings without changing the crate graph.
 
 Topic: `code-organization-and-refactoring`
 
@@ -367,18 +367,15 @@ settings, per-torrent peer lifetime, reachability, coordinated bind policy,
 and UDP receive ownership became independently testable while the store and
 application retained their real owners.
 
-In-progress Tactical
+Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-exposed concrete pressure one level above those children. The five
-existing settings cannot apply live while TCP acceptance, UDP/DHT transport,
-reachability, discovery, admission, upload scheduling, and shutdown are
-assembled as immutable application-generation siblings. The selected private
-`SessionNetworkRuntime` is therefore a cohesive feature-driven lifetime owner
-with replaceable transport generations; it does not absorb persistence,
-torrent catalogs, storage, views, or product adapters and does not justify a
-new crate or generic service framework. Its first three gates have now landed
-that private owner and moved joined network shutdown out of the application
-root without changing the crate graph.
+resolved concrete pressure one level above those children. The private
+`SessionNetworkRuntime` now owns one latest-value reconciler and stable
+incoming, UDP/DHT, discovery, endpoint, admission, scheduling, and accounting
+state around replaceable TCP/UDP/reachability generations. It does not absorb
+persistence, torrent catalogs, storage, views, or product adapters. Joined
+network shutdown moved out of the application root, and no new crate, generic
+service framework, or outward dependency was added.
 
 Selective storage remains the leading engine-only refactor candidate when a
 feature next changes its large coordinator; size alone does not authorize the
@@ -405,6 +402,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-06:** Completed Tactical `097`. One private session-network owner
+  now reconciles all five client settings live while peer, upload, DHT,
+  discovery, and endpoint state retain their real long-lived owners.
+  Candidate transport and reachability generations remain concrete children;
+  persistence, torrent runtimes, views, adapters, and the crate graph retain
+  their prior boundaries.
 - **2026-08-06:** Planned Tactical `097` after live client settings exposed a
   concrete session lifetime mismatch. The selected private session-network
   owner keeps incoming peers, DHT, discovery, admission, scheduling, and

@@ -47,13 +47,14 @@ IPv4 endpoint, while every IPv6 tracker request uses port `1`. Returned
 `peers6` can drive outbound IPv6 TCP transfers, but no IPv6 listener,
 reachable endpoint, mapping, or full BEP 7 support is implied.
 
-In-progress Tactical
+Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-has landed its engine and session ownership gates: registrations, peer tasks,
-upload scheduling/accounting, UDP routing, DHT, discovery, and endpoint state
-now have stable owners around replaceable TCP/UDP accept/receive generations.
-The settings reconciler is not wired yet, so the current product truth below
-remains restart-applied until that tactical completes.
+keeps registrations, peer tasks, upload scheduling/accounting, UDP routing,
+DHT, discovery, and endpoint state stable around replaceable TCP/UDP
+accept/receive generations. All five persisted settings now reconcile live in
+durable and ephemeral profiles. Candidate failure retains the prior effective
+transport, mapping cleanup remains finite and non-advertised, and peer and
+slot changes preserve stable peer identity and exact counters.
 
 ## Purpose And Scope
 
@@ -319,7 +320,7 @@ The campaign should use explicit settings rather than one ambiguous
 | Setting or policy | Meaning |
 | --- | --- |
 | Listener policy | `Disabled`, preferred-with-bounded-fallback `Automatic`, or exact `Fixed` local TCP port. |
-| Preferred listen port | First TCP/UDP candidate for automatic listening; default `6881`, restart-applied, and not an actual endpoint. |
+| Preferred listen port | First TCP/UDP candidate for automatic listening; default `6881`, applied live, and not an actual endpoint. |
 | Pending-handshake limit | Maximum unauthenticated sockets admitted before torrent routing. |
 | Incoming-connection limit | Maximum established inbound peers, coordinated with total connection budgets. |
 | Upload-slot limit | Maximum peers currently allowed to receive requested payload. |
@@ -410,9 +411,11 @@ ordinary session-wide peer ceiling, and piece-payload upload slots. It adopts
 the pinned libtorrent defaults where existing owners have equivalent
 semantics while preserving listener-disabled as RSTorrent's default.
 
-The slice now owns validation, typed SQLite persistence, restart-applied
-configured-versus-active semantics, startup enforcement, generated contracts,
-the shared browser/Tauri Settings surface, and equivalent headless behavior.
+The slice originally owned validation, typed SQLite persistence,
+configured-versus-active restart semantics, startup enforcement, generated
+contracts, the shared browser/Tauri Settings surface, and equivalent headless
+behavior. Tactical `097` now applies that persisted group live with explicit
+configured/effective convergence and no schema change.
 Pending-handshake and incoming-slack tuning remain internal safety policy.
 Finite bandwidth and ratio/time seeding goals wait for their own enforcing and
 durability owners.
@@ -665,19 +668,24 @@ After completed Tactical `084`, the campaign direction does not yet settle:
   [`094`](../tactical/094-bounded-bep11-peer-exchange.md).
 
 Tactical `084` resolves the initial default, bounds, persistence authority,
-restart semantics, and corrupt-row behavior. External-port and
-multi-interface policy remain focused later slices. Planned Tactical
+original restart semantics, and corrupt-row behavior. External-port and
+multi-interface policy remain focused later slices. Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 settles the live listener, mapping, connection-limit, and upload-slot direction
 with explicit rebind, eviction, regrant, desired/effective, and failure
-semantics; implementation evidence remains pending.
+semantics. Its controlled handovers retain incoming and outgoing transfers,
+DHT identity, discovery registration, upload counters, and bounded terminal
+ownership. The production gateway proof keeps pinned libtorrent 2.0.13 on the
+same established connection while the listener moves, advances its payload
+counter during convergence, hash-verifies all 8,388,608 bytes, rejects the old
+endpoint, accepts the new endpoint, and recovers a later held fixed port live.
 
 ## Campaign Checkpoint And Next Action
 
 Tacticals
 [`082`](../tactical/082-bounded-multi-peer-upload-ownership.md) and
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
-now complete bounded multi-peer upload ownership and the restart-applied
+now complete bounded multi-peer upload ownership and the original persisted
 product settings boundary. Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now completes the
 long-lived per-torrent peer owner and proves it through truthful incoming
@@ -698,3 +706,9 @@ same port selector and ordering to HTTP/HTTPS and proves the outbound-only IPv6
 case through controlled hash-verified transfers and Android product evidence.
 Dual-stack listen sockets, per-family reachable endpoints, IPv6 pinholes and
 physical IPv6 reachability remain a separate future campaign slice.
+Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+now completes live convergence for listener, preferred port, UPnP mapping,
+session peer limit, and upload slots through one stable session-network owner.
+Finite bandwidth, durable accounting/reset policy, and ratio/time goals remain
+separate future slices.

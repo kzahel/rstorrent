@@ -456,13 +456,14 @@ that scope and its cleanup or compatibility rules explicitly.
   task is actually live, projects the last successful tracker connection
   family without addresses, and passes controlled plus Ubuntu evidence.
 - [`097-live-client-settings-and-replaceable-session-generations.md`](097-live-client-settings-and-replaceable-session-generations.md):
-  planned; applies every existing client setting without restart through one
+  complete; applies every existing client setting without restart through one
   stable session-network owner and replaceable TCP/UDP/reachability
-  generations while preserving peers, DHT, discovery, and accounting.
+  generations while preserving peers, DHT, discovery, accounting, exact
+  transfer, and bounded terminal ownership.
 - [`098-authenticated-https-tracker-platform-trust.md`](098-authenticated-https-tracker-platform-trust.md):
-  planned after Tactical `097`; defaults HTTPS trackers to desktop and Android
-  platform trust, adds one hidden live compatibility policy, and replaces only
-  the bounded family-specific HTTP client pair.
+  planned with Tactical `097` complete; defaults HTTPS trackers to desktop and
+  Android platform trust, adds one hidden live compatibility policy, and
+  replaces only the bounded family-specific HTTP client pair.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

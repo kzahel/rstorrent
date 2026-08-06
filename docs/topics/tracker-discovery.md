@@ -21,8 +21,8 @@ IPv4/IPv6 tracker connectivity and IPv6 peer discovery. Authenticated HTTPS
 certificate and hostname validation remains the next security boundary.
 Planned Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) owns that
-boundary after Tactical `097` lands its live settings and session-network
-machinery.
+boundary now that completed Tactical `097` has landed live settings and the
+stable session-network machinery.
 
 ## Scope
 

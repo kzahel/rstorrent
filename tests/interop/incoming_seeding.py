@@ -571,21 +571,22 @@ def parse_address(ready: dict[str, object]) -> tuple[str, int]:
     return host, int(port)
 
 
-def create_outbound_only_session() -> lt.session:
-    return lt.session(
-        {
-            "listen_interfaces": "127.0.0.1:0",
-            "enable_dht": False,
-            "enable_lsd": False,
-            "enable_upnp": False,
-            "enable_natpmp": False,
-            "enable_incoming_utp": False,
-            "enable_outgoing_utp": False,
-            "enable_incoming_tcp": False,
-            "enable_outgoing_tcp": True,
-            "alert_queue_size": 1000,
-        }
-    )
+def create_outbound_only_session(download_rate_limit: int = 0) -> lt.session:
+    settings = {
+        "listen_interfaces": "127.0.0.1:0",
+        "enable_dht": False,
+        "enable_lsd": False,
+        "enable_upnp": False,
+        "enable_natpmp": False,
+        "enable_incoming_utp": False,
+        "enable_outgoing_utp": False,
+        "enable_incoming_tcp": False,
+        "enable_outgoing_tcp": True,
+        "alert_queue_size": 1000,
+    }
+    if download_rate_limit > 0:
+        settings["download_rate_limit"] = download_rate_limit
+    return lt.session(settings)
 
 
 def await_barrier(barrier: threading.Barrier, timeout_seconds: float) -> None:

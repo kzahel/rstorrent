@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove durable client settings, restarted seeding, and bind recovery."""
+"""Prove live/durable settings, transfer handover, and bind recovery."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -40,9 +41,10 @@ from magnet_metadata import ROOT_NAME, Fixture, create_fixture, magnet_uri
 
 
 OWNER = "0123456789abcdef0123456789abcdef"
-PAYLOAD_SIZE = 2 * 1024 * 1024
+PAYLOAD_SIZE = 8 * 1024 * 1024
 PIECE_SIZE = 64 * 1024
-TRANSFER_TIMEOUT_SECONDS = 30
+TRANSFER_TIMEOUT_SECONDS = 60
+HANDOVER_DOWNLOAD_RATE = 512 * 1024
 
 
 def run_playwright(
@@ -81,7 +83,7 @@ def run_playwright(
             "clients/web",
             "--",
             "--grep",
-            "live client settings persist across restart and recover bind failure",
+            "client settings apply live, persist, and recover bind failure",
         ],
         cwd=repository,
         capture_output=True,
@@ -147,6 +149,8 @@ def set_fixed_settings(
             "type": "set_client_settings",
             "settings": {
                 "listener": {"type": "fixed_loopback", "port": port},
+                "preferred_listen_port": 6881,
+                "port_mapping": "disabled",
                 "peer_connection_limit": 37,
                 "upload_slots": 1,
             },
@@ -155,10 +159,134 @@ def set_fixed_settings(
     )
 
 
-def leech_from_rstorrent(fixture: Fixture, listener_port: int, output: Path) -> str:
-    session = create_outbound_only_session()
+def gateway_json(
+    gateway_address: str,
+    origin: str,
+    method: str,
+    path: str,
+    payload: dict[str, object] | None = None,
+    *,
+    expected_status: int = 200,
+) -> dict[str, object]:
+    encoded = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(
+        f"http://{gateway_address}{path}",
+        data=encoded,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+            "Origin": origin,
+            "X-RSTorrent-Owner": OWNER,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            status = response.status
+            body = response.read()
+    except urllib.error.HTTPError as error:
+        raise ScenarioFailure(
+            f"gateway {method} {path} failed with {error.code}: "
+            f"{error.read().decode(errors='replace')}"
+        ) from error
+    if status != expected_status:
+        raise ScenarioFailure(
+            f"gateway {method} {path} returned {status}, expected {expected_status}"
+        )
+    if not body:
+        return {}
+    decoded = json.loads(body)
+    if not isinstance(decoded, dict):
+        raise ScenarioFailure("gateway response is not a JSON object")
+    return decoded
+
+
+def current_settings_runtime(
+    gateway_address: str, origin: str
+) -> dict[str, object]:
+    opened = gateway_json(
+        gateway_address,
+        origin,
+        "POST",
+        "/api/v1/view-sets",
+        {
+            "views": [
+                {
+                    "type": "torrent_list",
+                    "view_id": "client-settings-runtime",
+                    "delivery": {"min_interval_millis": 0},
+                }
+            ],
+            "options": {},
+        },
+        expected_status=201,
+    )
+    view_set_id = opened.get("view_set_id")
+    if not isinstance(view_set_id, str):
+        raise ScenarioFailure("client-settings view lacks a view-set ID")
+    try:
+        initial = opened.get("initial")
+        if not isinstance(initial, dict):
+            raise ScenarioFailure("client-settings view lacks an initial batch")
+        updates = initial.get("updates")
+        if not isinstance(updates, list):
+            raise ScenarioFailure("client-settings view lacks initial updates")
+        for update in updates:
+            if not isinstance(update, dict):
+                continue
+            snapshot = update.get("snapshot")
+            if not isinstance(snapshot, dict) or snapshot.get("type") != "torrent_list":
+                continue
+            runtime = snapshot.get("client_settings")
+            if isinstance(runtime, dict):
+                return runtime
+        raise ScenarioFailure("client-settings view lacks its runtime snapshot")
+    finally:
+        gateway_json(
+            gateway_address,
+            origin,
+            "DELETE",
+            f"/api/v1/view-sets/{view_set_id}",
+            expected_status=204,
+        )
+
+
+def wait_for_effective_listener(
+    gateway_address: str, origin: str, expected_port: int
+) -> dict[str, object]:
+    deadline = time.monotonic() + 10
+    last_runtime: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        last_runtime = current_settings_runtime(gateway_address, origin)
+        listener = last_runtime.get("listener_status")
+        application = last_runtime.get("transport_application")
+        if (
+            isinstance(listener, dict)
+            and listener.get("type") == "listening"
+            and listener.get("address") == "127.0.0.1"
+            and listener.get("port") == expected_port
+            and isinstance(application, dict)
+            and application.get("type") == "applied"
+        ):
+            return last_runtime
+        time.sleep(0.02)
+    raise ScenarioFailure(
+        f"listener {expected_port} did not converge live: {last_runtime}"
+    )
+
+
+def leech_from_rstorrent_across_handover(
+    fixture: Fixture,
+    listener_port: int,
+    handover_port: int,
+    output: Path,
+    gateway_address: str,
+    origin: str,
+) -> tuple[str, dict[str, object]]:
+    session = create_outbound_only_session(HANDOVER_DOWNLOAD_RATE)
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
+    handover: dict[str, object] | None = None
     try:
         output.mkdir(parents=True)
         parameters = lt.add_torrent_params()
@@ -176,15 +304,65 @@ def leech_from_rstorrent(fixture: Fixture, listener_port: int, output: Path) -> 
                 raise ScenarioFailure(
                     f"libtorrent leech failed: {status.errc.message()}"
                 )
+            if handover is None and status.total_done >= PIECE_SIZE:
+                before_bytes = status.total_done
+                if status.is_seeding:
+                    raise ScenarioFailure(
+                        "libtorrent completed before the live handover: "
+                        f"bytes={status.total_done}, peers={status.num_peers}"
+                    )
+                set_fixed_settings(
+                    gateway_address,
+                    origin,
+                    "client-settings-live-libtorrent-handover",
+                    handover_port,
+                )
+                runtime = wait_for_effective_listener(
+                    gateway_address, origin, handover_port
+                )
+                try:
+                    with socket.create_connection(
+                        ("127.0.0.1", listener_port), timeout=0.5
+                    ):
+                        pass
+                except OSError:
+                    pass
+                else:
+                    raise ScenarioFailure("retired listener still accepted TCP")
+                with socket.create_connection(
+                    ("127.0.0.1", handover_port), timeout=1
+                ):
+                    pass
+                after = handle.status()
+                if after.is_seeding:
+                    raise ScenarioFailure(
+                        "libtorrent completed before handover convergence was observed"
+                    )
+                if after.total_done < before_bytes:
+                    raise ScenarioFailure("libtorrent payload counter moved backward")
+                handover = {
+                    "old_port": listener_port,
+                    "new_port": handover_port,
+                    "bytes_before": before_bytes,
+                    "bytes_after": after.total_done,
+                    "peers_after": after.num_peers,
+                    "transport_state": runtime.get("transport_application"),
+                }
             if status.is_seeding:
+                if handover is None:
+                    raise ScenarioFailure(
+                        "libtorrent completed before the live handover"
+                    )
                 payload = output / ROOT_NAME / "payload.bin"
                 actual_hash = compare_payloads(fixture.payload_path, payload)
                 if actual_hash != fixture.payload_hash:
                     raise ScenarioFailure("libtorrent leech produced the wrong payload hash")
-                return actual_hash
+                handover["verified_bytes"] = fixture.torrent_info.total_size()
+                handover["payload_sha1"] = actual_hash
+                return actual_hash, handover
             time.sleep(0.02)
         raise ScenarioFailure(
-            "libtorrent did not complete from the restarted RSTorrent listener\n"
+            "libtorrent did not complete across the live RSTorrent handover\n"
             + "\n".join(diagnostics[-30:])
         )
     finally:
@@ -268,6 +446,18 @@ def assert_seed_metrics(
         raise ScenarioFailure("RSTorrent did not report the complete seeded payload")
 
 
+def assert_listener_metrics(
+    application: dict[str, object], expected_port: int
+) -> None:
+    incoming = application.get("incoming")
+    if not isinstance(incoming, dict):
+        raise ScenarioFailure("live settings generation lacks incoming metrics")
+    if incoming.get("listen") != f"127.0.0.1:{expected_port}":
+        raise ScenarioFailure(f"live listener metrics differ: {incoming}")
+    if integer_field(incoming, "configured_connection_limit") != 37:
+        raise ScenarioFailure("live listener did not apply the 37-peer limit")
+
+
 def stop_and_observe(
     gateway: subprocess.Popen[str],
 ) -> tuple[dict[str, object], dict[str, object]]:
@@ -319,15 +509,16 @@ def run() -> None:
         vite = build_and_start_production_web(repository, origin, vite_port)
 
         gateway, address = start_gateway(binary, profile, storage, origin)
-        observations.append(
-            run_playwright(
-                repository, origin, address, "configure", fixture, seed_port
-            )
+        configured = run_playwright(
+            repository, origin, address, "configure", fixture, seed_port
         )
+        observations.append(configured)
         _, first_application = stop_and_observe(gateway)
         gateway = None
-        if first_application.get("incoming") is not None:
-            raise ScenarioFailure("default generation unexpectedly owned a listener")
+        configured_port = configured.get("listenerPort")
+        if not isinstance(configured_port, int) or configured_port == 0:
+            raise ScenarioFailure("settings did not start the listener live")
+        assert_listener_metrics(first_application, configured_port)
         verify_payload(storage, ROOT_NAME, fixture.payload_hash)
         close_libtorrent_seed(seed_session, seed_handle)
         seed_session = None
@@ -341,28 +532,40 @@ def run() -> None:
         active_port = active.get("listenerPort")
         if not isinstance(active_port, int) or active_port == 0:
             raise ScenarioFailure("restarted automatic listener did not expose a port")
-        seeded_hash = leech_from_rstorrent(
-            fixture, active_port, run_path / "libtorrent-leech"
+        handover_port = reserve_loopback_port()
+        if handover_port == active_port:
+            raise ScenarioFailure("handover port unexpectedly matches active listener")
+        seeded_hash, handover = leech_from_rstorrent_across_handover(
+            fixture,
+            active_port,
+            handover_port,
+            run_path / "libtorrent-leech",
+            address,
+            origin,
         )
 
         conflict_port = reserve_loopback_port()
         set_fixed_settings(address, origin, "client-settings-fixed-conflict", conflict_port)
+        wait_for_effective_listener(address, origin, conflict_port)
         _, seed_application = stop_and_observe(gateway)
         gateway = None
-        assert_seed_metrics(seed_application, active_port, PAYLOAD_SIZE)
+        assert_seed_metrics(seed_application, conflict_port, PAYLOAD_SIZE)
 
         conflict_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         conflict_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         conflict_listener.bind(("127.0.0.1", conflict_port))
         conflict_listener.listen()
         gateway, address = start_gateway(binary, profile, storage, origin)
-        observations.append(
-            run_playwright(repository, origin, address, "recover", fixture, seed_port)
+        recovered = run_playwright(
+            repository, origin, address, "recover", fixture, seed_port
         )
+        observations.append(recovered)
         _, conflict_application = stop_and_observe(gateway)
         gateway = None
-        if conflict_application.get("incoming") is not None:
-            raise ScenarioFailure("failed fixed bind unexpectedly created incoming owners")
+        recovered_port = recovered.get("listenerPort")
+        if not isinstance(recovered_port, int) or recovered_port == 0:
+            raise ScenarioFailure("same-generation bind recovery lacks a listener")
+        assert_listener_metrics(conflict_application, recovered_port)
         conflict_listener.close()
         conflict_listener = None
 
@@ -393,6 +596,7 @@ def run() -> None:
                     },
                     "phases": observations,
                     "fixed_conflict_port": conflict_port,
+                    "live_handover": handover,
                     "payload_bytes": PAYLOAD_SIZE,
                     "payload_sha1": seeded_hash,
                     "seeding_resources": seed_application,

@@ -24,7 +24,7 @@ const expectTorrentFilePicker =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
 const clientSettingsPhase = process.env.RSTORRENT_LIVE_CLIENT_SETTINGS_PHASE;
 
-test("live client settings persist across restart and recover bind failure", async ({
+test("client settings apply live, persist, and recover bind failure", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -52,7 +52,7 @@ test("live client settings persist across restart and recover bind failure", asy
 
   if (clientSettingsPhase === "configure") {
     await dialog
-      .getByRole("radio", { name: /Automatic local port/ })
+      .getByRole("radio", { name: /Automatic device-only port/ })
       .check();
     await dialog
       .getByRole("spinbutton", { name: "Peer connection limit" })
@@ -62,14 +62,15 @@ test("live client settings persist across restart and recover bind failure", asy
       .fill("1");
     await dialog.getByRole("button", { name: "Save settings" }).click();
     await expect(
-      dialog.getByText(/Restart the application to apply these changes/i),
+      dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
-    await expect(runtime).toContainText(
-      "Incoming TCP is off for this application generation.",
-    );
+    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText("Effective peer connection limit: 37.");
+    await expect(runtime).toContainText("Effective payload upload slots: 1.");
+    await expect(runtime).not.toContainText("Transport: applying");
   } else if (clientSettingsPhase === "observe") {
     await expect(
-      dialog.getByRole("radio", { name: /Automatic local port/ }),
+      dialog.getByRole("radio", { name: /Automatic device-only port/ }),
     ).toBeChecked();
     await expect(
       dialog.getByRole("spinbutton", { name: "Peer connection limit" }),
@@ -77,22 +78,25 @@ test("live client settings persist across restart and recover bind failure", asy
     await expect(
       dialog.getByRole("spinbutton", { name: "Payload upload slots" }),
     ).toHaveValue("1");
-    await expect(
-      dialog.getByText(/Restart is required before they take effect/i),
-    ).toHaveCount(0);
-    await expect(runtime).toContainText(/Listening locally on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText("Effective peer connection limit: 37.");
+    await expect(runtime).toContainText("Effective payload upload slots: 1.");
   } else if (clientSettingsPhase === "recover") {
     await expect(
-      dialog.getByRole("radio", { name: /Fixed local port/ }),
+      dialog.getByRole("radio", { name: /Fixed device-only port/ }),
     ).toBeChecked();
     await expect(runtime).toContainText(/port already in use/i);
+    await expect(runtime).toContainText(/Transport: degraded/i);
     await dialog
-      .getByRole("radio", { name: /Automatic local port/ })
+      .getByRole("radio", { name: /Automatic device-only port/ })
       .check();
     await dialog.getByRole("button", { name: "Save settings" }).click();
     await expect(
-      dialog.getByText(/Restart the application to apply these changes/i),
+      dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
+    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).not.toContainText(/Transport: degraded/i);
+    await expect(runtime).not.toContainText("Transport: applying");
   } else {
     throw new Error(`unknown client settings phase ${clientSettingsPhase}`);
   }
@@ -105,7 +109,7 @@ test("live client settings persist across restart and recover bind failure", asy
   );
   expect(violations).toEqual([]);
   const runtimeText = (await runtime.textContent()) ?? "";
-  const portMatch = /Listening locally on 127\.0\.0\.1:(\d+)/.exec(runtimeText);
+  const portMatch = /Listening on 127\.0\.0\.1:(\d+)/.exec(runtimeText);
   console.log(
     `client_settings_live_milestone ${JSON.stringify({ phase: clientSettingsPhase, listenerPort: portMatch === null ? null : Number(portMatch[1]), axeViolations: violations.length })}`,
   );

@@ -942,7 +942,9 @@ impl ApplicationService {
     }
 
     pub fn incoming_peer_snapshot(&self) -> Option<IncomingPeerServiceSnapshot> {
-        self.session_network().incoming_peer_snapshot()
+        self.session_network
+            .as_ref()
+            .and_then(SessionNetworkRuntime::incoming_peer_snapshot)
     }
 
     pub fn suggested_storage_root_path(
@@ -5643,6 +5645,7 @@ mod tests {
             .shutdown()
             .await
             .expect("shutdown offline ephemeral application");
+        assert!(service.incoming_peer_snapshot().is_none());
         drop(service);
         assert!(!absent_profile.exists());
         assert_eq!(

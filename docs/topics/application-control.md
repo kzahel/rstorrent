@@ -45,21 +45,22 @@ fingerprint, so existing exact replays and different-byte conflicts remain
 unchanged while browser intake needs no source hashing or secure context.
 Tactical `084` adds one atomic typed `set_client_settings` command through the
 same generic HTTP, WebSocket, Tauri, and UniFFI dispatch. Durable configured
-intent changes immediately, while listener, connection budget, and upload
-slots remain truthfully restart-applied.
+intent changes immediately.
 Tactical `088` extends that same closed command group with local-network
 listener and explicit UPnP mapping intent. The existing torrent-list summary
 projects disabled, ineligible, discovering, mapping, mapped,
 renewal-failed/failed, and stopping runtime state; gateway work and mapped
 addresses do not become commands or durable authority.
-In-progress Tactical
+Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 keeps the command and persistence waist but replaces restart application with
 one asynchronous desired-to-effective reconciliation owner. Successful no-op
 and replayed saves can retry degraded runtime convergence without inventing a
-second command or settings route. Its completed first gate removes restart
-semantics from the public runtime view; command-to-reconciler submission lands
-in the later runtime gates.
+second command or settings route. Persistence resolves before submission;
+ephemeral profiles retain the same intent in memory. The response and view
+carry configured intent, effective values, and independent
+applying/applied/degraded domains while stable peers, DHT, discovery, and
+accounting survive transport handover.
 Tactical `085` adds the minimal projected `force_recheck_available` capability
 and composes existing per-torrent commands sequentially in the React action
 owner. It does not add a batch command, atomic multi-torrent semantics, or a
@@ -354,20 +355,21 @@ recorded later slice rather than a change to current control behavior.
 Tactical
 [`084`](../tactical/084-persisted-client-connection-and-seeding-settings.md)
 adds an atomic durable client-settings replacement while deliberately keeping
-listener, global peer-limit, and upload-slot enforcement restart-applied. A
-later live-control slice must own safe listener rebind, connection eviction,
-slot regrant, cancellation, and torrent-intent preservation. Planned Tactical
+listener, global peer-limit, and upload-slot enforcement restart-applied in
+that slice. Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-now settles that slice with independent applying/applied/degraded domains,
-stable peers and discovery, and replaceable transport generations. No such
-runtime behavior has landed yet. Android network binding and VPN leak
-prevention require separate platform evidence.
+settles the live-control boundary with independent
+applying/applied/degraded domains, stable peers and discovery, replaceable
+transport generations, deterministic peer eviction, and immediate slot
+regrant. Android network binding and VPN leak prevention require separate
+platform evidence.
 
-The production browser/gateway proof saves automatic/37/one, observes the
-configured/active mismatch, joins and reopens onto those active owners, seeds
-verified content, then saves a held fixed port and repairs its typed bind
-failure through this same command path. No settings route, adapter-specific
-mutation, live owner mutation, or command-owned background task was added.
+The original production browser/gateway proof saves automatic/37/one, joins
+and reopens onto those owners, seeds verified content, then saves a held fixed
+port and repairs its typed bind failure through this same command path.
+Tactical `097` adds controlled in-process live handover and degraded-retry
+evidence; no settings route, adapter-specific mutation, or command-owned
+background task was added.
 
 [`../tactical/075-ephemeral-application-state.md`](../tactical/075-ephemeral-application-state.md)
 adds an immutable persistence-mode choice at the same service-lifetime

@@ -2,15 +2,15 @@
 
 Status: Planned on 2026-08-06 after the maintainer accepted platform trust as
 the default, one hidden compatibility/debug override, and live replacement of
-the small tracker HTTP client pool. Implementation has not started.
+the small tracker HTTP client pool. Tactical `097` completed later that day;
+the architectural prerequisite is satisfied, but implementation has not
+started.
 
-This tactical is sequenced strictly after Tactical
+This tactical was sequenced strictly after Tactical
 [`097`](097-live-client-settings-and-replaceable-session-generations.md).
-Tactical `097` is a hard architectural prerequisite: its final
-`SessionNetworkRuntime`, settings reconciliation, and configured/effective
-view shape own the insertion point. Do not implement this tactical against the
-pre-`097` application-lifetime machinery or preserve an interim parallel
-settings path if `097` changes the exact private types described below.
+Its completed `SessionNetworkRuntime`, settings reconciliation, and
+configured/effective view shape now own the insertion point. Do not preserve
+an interim parallel settings path.
 
 Topics: `tracker-discovery`, `client-persistence`, `application-control`,
 `application-view-api`, `client-surfaces`, `code-organization-and-refactoring`,
@@ -18,13 +18,13 @@ Topics: `tracker-discovery`, `client-persistence`, `application-control`,
 
 Dependencies: completed Tacticals
 [`084`](084-persisted-client-connection-and-seeding-settings.md),
-[`095`](095-bounded-http-https-tracker-transport.md), and
-[`096`](096-metadata-tracker-activation-and-family-observability.md) establish
-the typed settings waist, bounded HTTP/HTTPS tracker transport, long-lived
-tracker owner, metadata-only activation, and truthful tracker projection.
-Tactical [`097`](097-live-client-settings-and-replaceable-session-generations.md)
-must be complete before implementation begins because it replaces the current
-session-network and live-settings machinery this slice will extend.
+[`095`](095-bounded-http-https-tracker-transport.md),
+[`096`](096-metadata-tracker-activation-and-family-observability.md), and
+[`097`](097-live-client-settings-and-replaceable-session-generations.md)
+establish the typed settings waist, bounded HTTP/HTTPS tracker transport,
+long-lived tracker owner, metadata-only activation, truthful tracker
+projection, and the live session-network reconciliation owner this slice will
+extend.
 
 ## Decision And Motivation
 
@@ -148,10 +148,10 @@ requested tracker, and has no accepted product need. Do not add an `automatic`
 value whose result cannot be inspected. Absence of a usable system store is a
 degraded secure configuration, not implicit authorization to disable checks.
 
-The field is a required member of the post-`097` `ClientSettings` group. The
-schema advances once from the version that Tactical `097` actually lands;
-do not preselect a numeric version in this document. Every supported prior
-schema migrates to `system_trust`. Existing profiles therefore become secure
+The field is a required member of the completed post-`097` `ClientSettings`
+group. The schema advances from version 11 to version 12. Every supported
+prior schema migrates to `system_trust`. Existing profiles therefore become
+secure
 by default rather than silently preserving Tactical `095`'s temporary
 unauthenticated behavior. Malformed values fail closed during profile open and
 are never coerced to `disabled`.
@@ -487,10 +487,10 @@ misleading setting breadth.
 
 ### Locked reqwest/rustls platform verifier
 
-Cargo.lock currently resolves reqwest 0.13.4,
+The post-`097` lockfile still resolves reqwest 0.13.4,
 `rustls-platform-verifier` 0.7.0, and its Android support crate 0.1.1. Before
-implementation, re-check the lockfile after Tactical `097`; if versions moved,
-repeat this source audit and record the new exact paths and behavior here.
+implementation, re-check the lockfile; if versions move, repeat this source
+audit and record the new exact paths and behavior here.
 
 Required inspected upstream paths are:
 
@@ -542,8 +542,13 @@ The pre-implementation survey found:
 - `crates/rstorrent-engine/src/http_tracker.rs::{HttpTrackerClients,
   build_client}` owns the family pair and currently sets both reqwest danger
   flags true;
-- `crates/rstorrent-engine/src/advertisement.rs` constructs one pair for the
-  long-lived discovery service and passes borrowed access into operations;
+- `crates/rstorrent-engine/src/advertisement.rs::run_service` still constructs
+  one fixed pair inside the long-lived discovery task and passes borrowed
+  access into operations; its handle has no client-pair replacement command;
+- `crates/rstorrent-session/src/session_network.rs::SessionNetworkRuntime`
+  now owns one coalescing settings channel and joined reconciler around the
+  stable discovery service, so this is the final application-side insertion
+  point and must reuse that task rather than add another reconciler;
 - `crates/rstorrent-session/src/settings/contract.rs` owns the typed complete
   settings group and generated values;
 - `crates/rstorrent-session/src/tracker_views.rs` currently derives
@@ -556,9 +561,10 @@ The pre-implementation survey found:
 - both Android services can construct native network owners without a prior
   application-level TLS initializer.
 
-Tactical `097` is expected to change the session and client-pair insertion
-point. Reinspect these paths after it lands and update this dossier rather
-than forcing its planned private names onto the resulting code.
+The post-`097` inspection confirms that the engine discovery task requires a
+replaceable shared pair/handle, while `SessionNetworkRuntime` owns the only
+settings reconciliation task. Exact private type placement may change during
+implementation, but those two ownership facts are fixed.
 
 ## Shape-Changing Edge Cases
 

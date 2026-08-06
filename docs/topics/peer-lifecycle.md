@@ -51,6 +51,13 @@ no peer-state owner or flag vocabulary. It proves the same routed generation
 through a direct off-LAN TCP connection: Peers reports incoming direction,
 TCP transport, interest/choke and exact upload activity while Swarm retains
 the incoming source as a bounded non-connectable endpoint after disconnect.
+Completed Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+makes the shared descriptor-clamped session limit live. Increases admit
+immediately; decreases block excess admission first and deterministically
+cancel connecting before established generations until the effective-plus-ten
+incoming-slack bound is restored. Transport handover retains established peer
+tasks and their identities, observations, permits, and exact counters.
 
 ## Scope
 
@@ -613,8 +620,11 @@ Tactical `088` additionally proves those unchanged observations during an
 exact 4,195,035-byte externally dialed transfer through a verified mapping,
 followed by retained Swarm history and terminal resource closure.
 Tactical `092` additionally proves tracker-only, DHT-only, and mapped
-wire-port discovery into the same retained peer lifetime. Finite upload
-bandwidth and seeding goals remain later work. Planned Tactical
+wire-port discovery into the same retained peer lifetime. Tactical `097`
+additionally proves deterministic live limit reduction and increase plus
+incoming and outgoing transfer survival across coordinated transport
+handover. Finite upload bandwidth and seeding goals remain later work.
+Planned Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records the
 post-handshake duplicate-connection boundary, Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the

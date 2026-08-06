@@ -38,8 +38,14 @@ disabled-or-UPnP mapping intent. New and migrated profiles remain mapping
 disabled; concrete local and external endpoints and mapping leases remain
 runtime facts rather than durable state.
 Tactical `089` advances the singleton to schema version `11` with a validated
-restart-applied preferred listen port. Fresh and version-10 profiles default
-to `6881`; actual TCP, UDP, and mapped external ports remain runtime facts.
+preferred listen port. Fresh and version-10 profiles default to `6881`;
+actual TCP, UDP, and mapped external ports remain runtime facts. Completed
+Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+keeps schema version 11 and the atomic singleton authority, commits durable
+intent before asynchronous live convergence, and accepts the same mutation
+for an ephemeral profile's in-memory lifetime. Effective state and mapping
+cleanup remain non-durable runtime facts.
 
 ## Scope
 
@@ -547,9 +553,12 @@ successful mutation unreadable after upgrade.
   listener policy, explicit port-mapping policy, the ordinary global peer
   ceiling, and payload upload slots. Tactical `088` adds the version-10
   local-network and UPnP values without persisting observed interfaces,
-  gateway identity, mappings, or public addresses. Planned Tactical
+  gateway identity, mappings, or public addresses. Completed Tactical
   [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-  now owns live application and desired/effective convergence for that group.
+  owns live application and desired/effective convergence for that group
+  without a schema change or second persistence authority. Successful no-op
+  and exact replay saves resubmit authoritative intent after persistence
+  resolution so degraded runtime state can retry.
   Finite bandwidth, durable upload totals, and ratio/time seeding goals remain
   later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic

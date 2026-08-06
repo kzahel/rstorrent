@@ -146,12 +146,13 @@ ordinary Peers/Swarm state, exact upload, independent deletion, failed
 reconnect, and terminal-zero evidence pass.
 
 Tactical [`089`](../tactical/089-coordinated-session-listen-sockets.md) is
-complete. Schema version 11 adds the restart-applied preferred port with
-default `6881`. One allocator holds coordinated TCP and UDP sockets through a
-shared ten-conflict retry budget and system fallback; one 64-datagram session
-UDP route feeds DHT. Controlled loopback and eligible local-network traffic
-matches the separately reported TCP listener and DHT UDP source, while fixed
-TCP failure retains independent DHT service and all tasks join terminally.
+complete. Schema version 11 adds the preferred port with default `6881`. One
+allocator holds coordinated TCP and UDP sockets through a shared ten-conflict
+retry budget and system fallback; one 64-datagram session UDP route feeds DHT.
+Controlled loopback and eligible local-network traffic matches the separately
+reported TCP listener and DHT UDP source, while fixed TCP failure retains
+independent DHT service and all tasks join terminally. Tactical `097` now
+applies that transport policy live.
 
 Tactical
 [`095`](../tactical/095-bounded-http-https-tracker-transport.md) is complete.
@@ -172,17 +173,16 @@ last-successful connection family.
 ### Now
 
 **Tactical
-[`096`](../tactical/096-metadata-tracker-activation-and-family-observability.md)
-is complete.** Metadata-only adds activate the existing discovery owner only
-while their owned metadata task is live, then return to durable paused intent.
-The actual last successful tracker connection family is visible without an
-address. Controlled and official Ubuntu gates pass with no payload artifacts.
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+is complete.** One stable session-network owner applies all five persisted
+client settings live through bounded desired/effective convergence. Controlled
+incoming and outgoing transfers, DHT identity, discovery registration, upload
+state, and counters survive coordinated transport handover; failed candidates
+retain old effective state, and all platform/build gates pass.
 
 ### Next
 
-- After live settings Tactical
-  [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md),
-  execute planned Tactical
+- Execute planned Tactical
   [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) to add
   default authenticated tracker HTTPS through desktop and Android platform
   trust, one hidden compatibility policy, and explicit failure/projection
@@ -193,8 +193,8 @@ address. Controlled and official Ubuntu gates pass with no payload artifacts.
 
 ### Later
 
-Complete IPv6 DHT operation, live listener/upload-setting application, finite
-bandwidth and seeding goals, multi-interface and IPv6 binding, PEX,
+Complete IPv6 DHT operation, finite bandwidth and seeding goals,
+multi-interface and IPv6 binding, PEX,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic VPN and metered-network controls,
 and production remote access remain important. After core parity,
@@ -247,7 +247,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and currently apply across restart. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tacticals [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md), and [`089`](../tactical/089-coordinated-session-listen-sockets.md) prove retained incoming ownership, exact mapped off-LAN seeding, and coordinated transport. Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) proves tracker-only, DHT-only, and mapped wire-port discovery through that listener with joined terminal cleanup. Planned Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) owns live rebind, mapping, admission, and slot convergence without replacing stable peers, DHT, or discovery. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and apply live in durable and ephemeral profiles. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tacticals [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md), and [`089`](../tactical/089-coordinated-session-listen-sockets.md) prove retained incoming ownership, exact mapped off-LAN seeding, and coordinated transport. Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) proves tracker-only, DHT-only, and mapped wire-port discovery through that listener with joined terminal cleanup. Completed Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) proves live candidate-first rebind, finite mapping cleanup, deterministic admission, and slot convergence without replacing stable peers, DHT, or discovery. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
@@ -262,7 +262,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Implemented | deterministic, runtime, interop, web | Completed published path storage serves exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under currently restart-applied 0--50 session slots, with default eight and one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact multi-peer accounting passes locally and for a 4,195,035-byte direct off-LAN transfer through a verified UPnP mapping. Planned Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) owns live slot regrant without losing peer state or counters. Finite bandwidth, ratio/time goals, incomplete-torrent upload, platform-storage evidence, and discovery-driven public seeding remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop, web | Completed published path storage serves exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under live 0--50 session slots, with default eight and one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact multi-peer accounting passes locally and for a 4,195,035-byte direct off-LAN transfer through a verified UPnP mapping. Completed Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) proves immediate zero-slot choking and live regrant without losing peer identity, state, or counters. Finite bandwidth, ratio/time goals, incomplete-torrent upload, platform-storage evidence, and discovery-driven public seeding remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
 

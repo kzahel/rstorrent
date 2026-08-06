@@ -1,6 +1,6 @@
 # Tactical 097: Live Client Settings And Replaceable Session Generations
 
-Status: In progress on 2026-08-06. Gates 1 through 4 are complete: the public
+Status: Complete on 2026-08-06. The public
 runtime contract now exposes configured intent, effective values for four
 independently converging domains, and bounded applying/applied/degraded state;
 the task-free attempt/domain generation model rejects stale results and
@@ -10,7 +10,8 @@ transport generations. Session composition moves behind the private owner at
 Gate 3, including its joined dependency-ordered shutdown. Gate 4 wires all
 five settings through one latest-value reconciler, candidate-first transport
 handover, deterministic admission/slot changes, and finite-lease mapping
-cleanup. Gate 5 product, platform, and workspace closure remains. This
+cleanup. Gate 5 closes ephemeral persistence, generated product contracts,
+web/desktop/Android consumers, and the complete workspace matrix. This
 document does not reorder the existing tactical queue; completed
 Tactical
 [`096`](096-metadata-tracker-activation-and-family-observability.md) retained
@@ -526,7 +527,7 @@ effective truth but deliberately removes restart as the convergence mechanism.
 It does not copy the large configuration hub, per-key persistence, UI schema,
 or JavaScript runtime ownership. No source, fixture, or UI text is imported.
 
-### Current RSTorrent pressure points
+### Pre-implementation RSTorrent pressure points
 
 The implementation survey that selected this boundary found:
 
@@ -754,6 +755,82 @@ replace restart copy with applying/applied/degraded presentation, and run the
 complete validation matrix. Update this tactical and owning topics with exact
 owner high-water marks, interop outcomes, commands run, deviations, and
 remaining rate/accounting/goal gaps.
+
+Completed evidence on 2026-08-06:
+
+- ephemeral profiles now accept, retain for their in-memory lifetime, and
+  reconcile the same settings group as durable profiles. Durable profiles
+  still commit SQLite authority before submission, reopen from schema version
+  11 without migration, and never persist observed endpoints, mapping leases,
+  or convergence state;
+- the generated schema, TypeScript, validators, UniFFI metadata and Kotlin
+  bindings carry configured/effective values plus independent domain state.
+  The React Settings surface shows progress, degraded detail, effective
+  policy, and uncertain mapping expiry without restart instructions, while
+  validation or persistence failures preserve the draft;
+- steady state has exactly one reconciliation task and one latest-value
+  settings cell. Serialized candidate preparation bounds TCP acceptors and
+  UDP receive generations to current plus candidate; the measured UDP task
+  high-water is two and terminal count is zero. The live peer-limit test
+  reaches 14 permits, deterministically cancels three to return to the
+  effective-one-plus-ten-slack bound, releases all permits, and admits again
+  after an increase. The incoming handover keeps one registration and one
+  established peer, records exact `3 -> 7` payload bytes, and ends with zero
+  registrations and peers. Scripted mapping ownership reaches one finite
+  uncertain lease and ends with zero owned mappings;
+- controlled loopback interoperability proves one incoming seed upload and
+  both HTTP- and HTTPS-discovered outgoing hash-verified downloads survive a
+  coordinated transport handover. DHT keeps its node ID and stable actor,
+  discovery keeps its registration, the new TCP endpoint accepts, and the old
+  endpoint rejects. The production browser/gateway harness independently kept
+  pinned libtorrent 2.0.13 connected while moving the listener from
+  `127.0.0.1:6881` to `127.0.0.1:50030`: observed bytes advanced from
+  737,280 to 1,146,880 with one peer after convergence, then all 8,388,608
+  bytes hash-verified as SHA-1
+  `c995f4a05e42222e94d1133536701d6edd70dbc6`. The old endpoint rejected and
+  the new endpoint accepted; the later fixed-conflict recovery also converged
+  live in the same application generation. This is not public reachability,
+  physical-router compatibility, or performance evidence;
+- that gateway run recorded connection high-water two, established high-water
+  one, pending high-water one, 257 queued requests/4,210,688 queued bytes, one
+  16-KiB read, a 32,794-byte writer buffer, one upload slot, 40 storage owners,
+  one cached file, and exact 8,388,608-byte physical upload. Incoming, storage,
+  cache, platform-request, and gateway-connection owners were all zero
+  after joined shutdown. The opt-in Playwright phases reported zero serious or
+  critical accessibility violations;
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace --no-fail-fast` passed. The latter includes the
+  protocol dependency-direction architecture test; the focused session run
+  passed 174 executable tests with one ignored, and the engine run passed 315
+  with six ignored;
+- `npm run typecheck --prefix clients/web`, `npm run test --prefix
+  clients/web`, and `npm run build --prefix clients/web` passed: 179 web tests
+  passed, two were intentionally skipped, and the production CSP scan passed
+  with only the existing bundle-size warning. Generated artifacts were
+  regenerated before the clean workspace gate;
+- `cargo check -p rstorrent-session --features uniffi` and `cargo check -p
+  rstorrent-desktop --all-targets` passed. `cargo ndk -t x86_64 -t arm64-v8a
+  -P 28 check -p rstorrent-android --lib` passed for both established Android
+  targets; and `experiments/android-engine-bootstrap/build.sh` built both
+  release libraries, generated both Kotlin binding sets, assembled the debug
+  APK, and passed all ten JVM tests. Only pre-existing Android deprecation and
+  generated `ts-rs` attribute warnings were emitted;
+- `uv run --project tests/interop --locked python
+  tests/interop/client_settings_restart.py` passed the production-web,
+  authenticated-gateway, pinned-libtorrent handover, durable reopen, degraded
+  fixed-bind, same-generation recovery, resource-bound, and terminal-zero
+  gate. During its first rerun it exposed a post-shutdown diagnostic snapshot
+  panic; `incoming_peer_snapshot` now truthfully returns absent after the
+  session-network owner joins, with a focused regression assertion, and the
+  final larger-fixture scenario then passed twice consecutively.
+
+No required behavior deviated from the tactical contract. Physical gateway,
+public-swarm, visible-client, AVD, and ChromeOS runs were deliberately not
+performed because this ownership slice requires controlled interoperability
+and cross-build evidence, not new public reachability or platform policy.
+Bandwidth limits, durable accounting/reset policy, ratio/time goals, queue
+automation, IPv6 listening, and additional mapping protocols remain the
+explicit non-goals below.
 
 Each gate must leave the workspace buildable and its selected tests green.
 Do not temporarily emulate live application by restarting `ApplicationService`

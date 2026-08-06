@@ -136,10 +136,11 @@ uv run --project tests/interop --locked \
 ```
 
 This loopback-only harness drives the production web build and ordinary
-authenticated gateway through four application generations. It persists a
-nondefault listener/connection/slot group, seeds verified content to an
-outbound-only libtorrent client after restart, recovers a real fixed-port bind
-conflict through the normal command path, and asserts bounded high-water and
+authenticated gateway through four application generations. It applies and
+persists a nondefault listener/connection/slot group, keeps one pinned
+libtorrent download active and hash-verifies it across a live listener
+handover, recovers a real fixed-port bind conflict in the same application
+generation through the normal command path, and asserts bounded high-water and
 zero-owner shutdown observations.
 
 Add `--disk-pressure` to run the isolated Tactical `044` storage proof. It
