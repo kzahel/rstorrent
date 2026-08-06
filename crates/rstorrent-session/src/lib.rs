@@ -15,6 +15,7 @@ mod file_views;
 mod have;
 mod incoming_seeding;
 mod reachability;
+mod session_network;
 mod settings;
 mod speed;
 mod store;

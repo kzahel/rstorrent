@@ -367,16 +367,18 @@ settings, per-torrent peer lifetime, reachability, coordinated bind policy,
 and UDP receive ownership became independently testable while the store and
 application retained their real owners.
 
-Planned Tactical
+In-progress Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-now exposes concrete pressure one level above those children. The five
+exposed concrete pressure one level above those children. The five
 existing settings cannot apply live while TCP acceptance, UDP/DHT transport,
 reachability, discovery, admission, upload scheduling, and shutdown are
 assembled as immutable application-generation siblings. The selected private
 `SessionNetworkRuntime` is therefore a cohesive feature-driven lifetime owner
 with replaceable transport generations; it does not absorb persistence,
 torrent catalogs, storage, views, or product adapters and does not justify a
-new crate or generic service framework.
+new crate or generic service framework. Its first three gates have now landed
+that private owner and moved joined network shutdown out of the application
+root without changing the crate graph.
 
 Selective storage remains the leading engine-only refactor candidate when a
 feature next changes its large coordinator; size alone does not authorize the

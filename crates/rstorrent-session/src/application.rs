@@ -2,29 +2,27 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService};
+use rstorrent_engine::dht::{DhtConfig, DhtError};
 use rstorrent_engine::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
     DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
-    DiscoveryAdvertisementService, DiskCheckpointStage, DownloadActivityEvent,
-    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
-    DownloadResourceLimits, IncomingPeerError, IncomingPeerService, IncomingPeerServiceConfig,
-    IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage, PeerBudget,
-    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
-    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
-    SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError, SessionUdpService,
-    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
-    TrackerSource, TrackerTransport, download_magnet_metadata_with_external_discovery,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
+    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError,
+    IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage, PlatformStorageClient,
+    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, SessionSocketError,
+    SessionUdpError, StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig,
+    TrackerEndpoint, TrackerSource, TrackerTransport,
+    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
+    verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -33,12 +31,10 @@ use rstorrent_protocol::metainfo::{
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use tokio::task::JoinHandle;
 
-use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::control::{
     AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
     RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageState, TorrentState,
 };
-use crate::dht_views::{DhtObservationRuntime, inspection_view};
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
     category,
@@ -46,11 +42,8 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
-use crate::reachability::ReachabilityCoordinator;
-use crate::settings::{
-    ClientSettingsRuntimeView, ListenerBindFailureReason, ListenerStatus, SessionUdpStatus,
-    StorageRootSnapshot, classify_listener_bind_failure,
-};
+use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
+use crate::settings::StorageRootSnapshot;
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
@@ -66,21 +59,6 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
-}
-
-fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<ListenerStatus> {
-    let kind = match error {
-        SessionSocketError::Bind { source, .. }
-        | SessionSocketError::LocalAddress { source, .. } => source.kind(),
-        SessionSocketError::LocalNetworkAddress(_) => io::ErrorKind::AddrNotAvailable,
-        SessionSocketError::InvalidPreferredPort(_)
-        | SessionSocketError::InvalidFixedPort(_)
-        | SessionSocketError::InvalidUdpFallbackAddress => return None,
-    };
-    Some(classify_listener_bind_failure(&io::Error::new(
-        kind,
-        error.to_string(),
-    )))
 }
 
 fn operational_trackers(
@@ -307,19 +285,10 @@ pub struct ApplicationService {
     publication_delay_for_testing: Duration,
     publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
-    peer_budget: PeerBudget,
-    incoming_seeding: Option<IncomingSeeding>,
-    advertised_endpoint: AdvertisedPeerEndpointSelector,
-    discovery_advertisement: Option<DiscoveryAdvertisementService>,
-    discovery_handle: DiscoveryAdvertisementHandle,
-    reachability: Option<ReachabilityCoordinator>,
-    incoming_service: Option<IncomingPeerService>,
-    session_udp: Option<SessionUdpService>,
+    session_network: Option<SessionNetworkRuntime>,
     torrent_runtimes: BTreeMap<String, TorrentRuntime>,
     active_torrent: Option<String>,
     next_torrent_generation: u64,
-    dht: Option<DhtService>,
-    dht_observations: Option<DhtObservationRuntime>,
     speed_recorder: Arc<SessionSpeedRecorder>,
     speed_history: Option<SpeedHistoryRuntime>,
     views: ViewHub,
@@ -396,16 +365,6 @@ impl ApplicationService {
         };
         let snapshot = store.snapshot()?;
         let active_client_settings = snapshot.client_settings.clone();
-        let mut peer_budget_config = active_client_settings.peer_budget_config();
-        if let Some(maximum) = config.peer_budget_max_open_files_for_testing {
-            peer_budget_config.max_open_files = maximum;
-        }
-        let effective_peer_connection_limit = u32::try_from(peer_budget_config.effective_limit())
-            .map_err(|_| {
-            ApplicationError::Configuration(
-                "effective peer connection limit cannot be represented".to_owned(),
-            )
-        })?;
         let storage_roots = available_storage_roots(store.storage_roots()?);
         let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
             Ok(snapshot) => (snapshot, None),
@@ -422,127 +381,33 @@ impl ApplicationService {
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
-        let peer_budget = PeerBudget::new(peer_budget_config);
-        let mut incoming_config =
-            IncomingPeerServiceConfig::new(active_client_settings.incoming_bootstrap())
-                .with_peer_budget(peer_budget.clone());
-        incoming_config.upload_scheduler = active_client_settings.upload_scheduler_config();
-        incoming_config.upload_read_jobs = config.upload_read_jobs;
-        incoming_config.handshake_timeout = config.incoming_handshake_timeout;
-        incoming_config.peer_activity_timeout = config.incoming_peer_activity_timeout;
-        incoming_config.keepalive_interval = config.incoming_keepalive_interval;
-        incoming_config.no_request_timeout = config.incoming_no_request_timeout;
-        incoming_config.inactivity_timeout = config.incoming_inactivity_timeout;
-        incoming_config.peer_id = network.peer_id;
-        incoming_config.byte_metric_sink = Some(speed_recorder.clone());
-        let mut dht_config = config.dht;
-        dht_config.network_policy = network.policy;
-        dht_config.initial_snapshot = initial_dht_snapshot;
-        dht_config.byte_metric_sink = Some(speed_recorder.clone());
-        let socket_config = SessionSocketConfig::new(
-            active_client_settings.incoming_bootstrap(),
-            active_client_settings.preferred_listen_port,
-            dht_config.bind_address,
-        );
-        let mut listener_failure = None;
-        let socket_set = match SessionSocketSet::bind(socket_config).await {
-            Ok(sockets) => sockets,
-            Err(error)
-                if !matches!(
-                    incoming_config.bootstrap,
-                    crate::IncomingTcpBootstrap::Disabled
-                ) =>
-            {
-                let Some(failure) = classify_session_socket_bind_failure(&error) else {
-                    return Err(error.into());
-                };
-                listener_failure = Some(failure);
-                SessionSocketSet::bind(SessionSocketConfig::new(
-                    crate::IncomingTcpBootstrap::Disabled,
-                    active_client_settings.preferred_listen_port,
-                    dht_config.bind_address,
-                ))
-                .await?
-            }
-            Err(error) => return Err(error.into()),
-        };
-        let tcp_address = socket_set.tcp_address();
-        let udp_address = socket_set.udp_address();
-        let coordinated_with_tcp = socket_set.ports_match();
-        let (tcp_listener, udp_socket) = socket_set.into_parts();
-        let (session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
-        let (mut incoming_service, listener_status) = match tcp_listener {
-            Some(listener) => match IncomingPeerService::start(incoming_config, listener) {
-                Ok(service) => (
-                    Some(service),
-                    ListenerStatus::Listening {
-                        address: tcp_address
-                            .expect("bound TCP listener has an observed address")
-                            .ip()
-                            .to_string(),
-                        port: tcp_address
-                            .expect("bound TCP listener has an observed address")
-                            .port(),
-                    },
-                ),
-                Err(error) => {
-                    drop(dht_transport);
-                    session_udp.shutdown().await?;
-                    return Err(error.into());
-                }
-            },
-            None => (None, listener_failure.unwrap_or(ListenerStatus::Disabled)),
-        };
-        let session_udp_status = SessionUdpStatus::Bound {
-            address: udp_address.ip().to_string(),
-            port: udp_address.port(),
-            coordinated_with_tcp,
-        };
-        let mut session_udp = Some(session_udp);
-        let dht = match DhtService::start_with_transport(dht_config, dht_transport).await {
-            Ok(dht) => dht,
-            Err(error) => {
-                if let Some(incoming) = incoming_service.take() {
-                    incoming.shutdown().await?;
-                }
-                if let Some(udp) = session_udp.take() {
-                    udp.shutdown().await?;
-                }
-                return Err(error.into());
-            }
-        };
-        let dht_observation_receiver = dht.subscribe_observations();
-        let initial_dht_view = inspection_view(&dht_observation_receiver.borrow());
-        let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
-        let discovery_advertisement = DiscoveryAdvertisementService::start(
+        let mut session_network = SessionNetworkRuntime::start(SessionNetworkConfig {
+            settings: active_client_settings,
             network,
-            advertised_endpoint.subscribe_wire(),
-            dht.handle(),
-        );
-        let discovery_handle = discovery_advertisement.handle();
-        let runtime_client_settings = ClientSettingsRuntimeView::from_started(
-            snapshot.client_settings.clone(),
-            active_client_settings.clone(),
-            effective_peer_connection_limit,
-            listener_status.clone(),
-            session_udp_status,
-            advertised_endpoint.status(std::time::Instant::now()),
-        );
+            dht: config.dht,
+            initial_dht_snapshot,
+            byte_metric_sink: speed_recorder.clone(),
+            upload_read_jobs: config.upload_read_jobs,
+            incoming_handshake_timeout: config.incoming_handshake_timeout,
+            incoming_peer_activity_timeout: config.incoming_peer_activity_timeout,
+            incoming_keepalive_interval: config.incoming_keepalive_interval,
+            incoming_no_request_timeout: config.incoming_no_request_timeout,
+            incoming_inactivity_timeout: config.incoming_inactivity_timeout,
+            peer_budget_max_open_files_for_testing: config.peer_budget_max_open_files_for_testing,
+        })
+        .await?;
         let views = ViewHub::new_with_runtime_views(
             &snapshot,
             config.view_set_lease,
             speed.history.clone(),
-            initial_dht_view,
-            runtime_client_settings,
+            session_network.initial_dht_view(),
+            session_network.initial_settings_view(),
         )?;
-        let dht_observations =
-            DhtObservationRuntime::start(dht_observation_receiver, views.clone());
+        session_network.attach_views(views.clone());
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
-        let incoming_seeding = incoming_service
-            .as_ref()
-            .map(|incoming| IncomingSeeding::new(incoming.handle()));
+        let advertised_endpoint = session_network.advertised_endpoint();
         let mut torrent_runtimes = BTreeMap::new();
         let mut next_torrent_generation = 1_u64;
         for torrent in &snapshot.torrents {
@@ -574,19 +439,10 @@ impl ApplicationService {
             publication_delay_for_testing: config.publication_delay_for_testing,
             publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool,
-            peer_budget,
-            incoming_seeding,
-            advertised_endpoint,
-            discovery_advertisement: Some(discovery_advertisement),
-            discovery_handle,
-            reachability: None,
-            incoming_service,
-            session_udp,
+            session_network: Some(session_network),
             torrent_runtimes,
             active_torrent: None,
             next_torrent_generation,
-            dht: Some(dht),
-            dht_observations: Some(dht_observations),
             speed_recorder,
             speed_history: Some(speed_history),
             views,
@@ -604,24 +460,6 @@ impl ApplicationService {
                 ("persistence_mode", config.persistence.diagnostic_name()),
             ],
         )?;
-        let preferred_port = active_client_settings.preferred_listen_port.to_string();
-        let tcp_endpoint =
-            tcp_address.map_or_else(|| "disabled".to_owned(), |address| address.to_string());
-        let udp_endpoint = udp_address.to_string();
-        let coordinated = coordinated_with_tcp.to_string();
-        service.views.record_diagnostic(
-            DiagnosticSeverity::Info,
-            category::PEER_CONNECTION,
-            "session_listen_sockets_bound",
-            None,
-            "Session listen sockets resolved to concrete runtime endpoints",
-            &[
-                ("preferred_port", &preferred_port),
-                ("tcp_endpoint", &tcp_endpoint),
-                ("udp_endpoint", &udp_endpoint),
-                ("coordinated", &coordinated),
-            ],
-        )?;
         if let Some(detail) = dht_state_warning {
             service.views.record_diagnostic(
                 DiagnosticSeverity::Warning,
@@ -632,35 +470,25 @@ impl ApplicationService {
                 &[("detail", &detail)],
             )?;
         }
-        if let ListenerStatus::BindFailed { reason, detail } = &listener_status {
-            let reason = match reason {
-                ListenerBindFailureReason::AddressInUse => "address_in_use",
-                ListenerBindFailureReason::PermissionDenied => "permission_denied",
-                ListenerBindFailureReason::AddressUnavailable => "address_unavailable",
-                ListenerBindFailureReason::Other => "other",
-            };
-            service.views.record_diagnostic(
-                DiagnosticSeverity::Warning,
-                category::PEER_CONNECTION,
-                "incoming_listener_bind_failed",
-                None,
-                "Incoming loopback listener could not start; settings remain available",
-                &[("reason", reason), ("detail", detail)],
-            )?;
-        }
         service.refresh_views()?;
         service.restore_removals().await?;
         service.restore_running().await?;
         service.reconcile_incoming_catalog().await?;
         service.reconcile_discovery_catalog().await?;
         service.refresh_views()?;
-        service.reachability = Some(ReachabilityCoordinator::start(
-            &active_client_settings,
-            &listener_status,
-            service.views.clone(),
-            service.advertised_endpoint.clone(),
-        ));
+        let views = service.views.clone();
+        service
+            .session_network
+            .as_mut()
+            .expect("session network exists after startup")
+            .start_reachability(views);
         Ok(service)
+    }
+
+    fn session_network(&self) -> &SessionNetworkRuntime {
+        self.session_network
+            .as_ref()
+            .expect("session network exists before application shutdown")
     }
 
     fn active_runtime(&self) -> Option<&TorrentRuntime> {
@@ -693,7 +521,7 @@ impl ApplicationService {
                 torrent_id.to_owned(),
                 generation,
                 self.views.clone(),
-                self.advertised_endpoint.clone(),
+                self.session_network().advertised_endpoint(),
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             self.torrent_runtimes.insert(torrent_id.to_owned(), runtime);
@@ -1109,9 +937,7 @@ impl ApplicationService {
     }
 
     pub fn incoming_peer_snapshot(&self) -> Option<IncomingPeerServiceSnapshot> {
-        self.incoming_service
-            .as_ref()
-            .map(IncomingPeerService::snapshot)
+        self.session_network().incoming_peer_snapshot()
     }
 
     pub fn suggested_storage_root_path(
@@ -1390,7 +1216,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             storage_root: PathBuf::new(),
             network: self.network,
-            peer_budget: self.peer_budget.clone(),
+            peer_budget: self.session_network().peer_budget(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -1709,78 +1535,23 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
-        if let Some(discovery) = self.discovery_advertisement.take() {
-            match discovery.shutdown().await {
-                Ok(terminal) => {
-                    let terminal_counts = format!(
-                        "tasks={},registrations={},tracker_operations={},tracker_high_water={},dht_operations={},dht_high_water={},queue_high_water={}",
-                        terminal.tasks,
-                        terminal.registrations,
-                        terminal.tracker_operations,
-                        terminal.tracker_operations_high_water,
-                        terminal.dht_operations,
-                        terminal.dht_operations_high_water,
-                        terminal.command_queue_high_water,
-                    );
-                    let _ = self.views.record_diagnostic(
-                        DiagnosticSeverity::Info,
-                        category::DISCOVERY_PEER,
-                        "discovery_advertisement_service_stopped",
-                        None,
-                        "Discovery and advertisement service stopped with joined owners",
-                        &[("terminal_counts", &terminal_counts)],
-                    );
-                }
-                Err(error) => {
-                    active_join_error = Some(format!("discovery advertisement: {error}"));
-                }
-            }
-        }
-        if let Some(reachability) = self.reachability.take() {
-            match reachability.shutdown().await {
-                Ok(terminal) => {
-                    let terminal_counts =
-                        format!("tasks={},mappings={}", terminal.tasks, terminal.mappings);
-                    let _ = self.views.record_diagnostic(
-                        DiagnosticSeverity::Info,
-                        category::DISCOVERY_REACHABILITY,
-                        "reachability_coordinator_stopped",
-                        None,
-                        "Incoming reachability coordinator stopped with joined owners",
-                        &[("terminal_counts", &terminal_counts)],
-                    );
-                }
-                Err(error) => {
-                    active_join_error = Some(format!("reachability coordinator: {error}"));
-                }
-            }
-        }
-        if let Some(incoming) = self.incoming_seeding.take() {
-            incoming.stop();
-        }
         if let Some((_, active)) = self.active_download() {
             active.control.cancel();
         }
-        if let Some(incoming) = self.incoming_service.take() {
-            match incoming.shutdown().await {
-                Ok(terminal) => {
-                    let terminal_counts = format!(
-                        "pending={},established={},reads={},registrations={}",
-                        terminal.pending,
-                        terminal.established,
-                        terminal.reads,
-                        terminal.registrations
-                    );
-                    let _ = self.views.record_diagnostic(
-                        DiagnosticSeverity::Info,
-                        category::PEER_CONNECTION,
-                        "incoming_peer_service_stopped",
-                        None,
-                        "Incoming peer service stopped with joined owners",
-                        &[("terminal_counts", &terminal_counts)],
-                    );
-                }
-                Err(error) => active_join_error = Some(format!("incoming peer service: {error}")),
+        if let Some(session_network) = self.session_network.take() {
+            let terminal = session_network.shutdown(&self.views).await;
+            if let Some(snapshot) = terminal.dht_snapshot
+                && let Err(error) = self
+                    .store_mut()
+                    .and_then(|mut store| store.save_dht_snapshot(snapshot).map_err(Into::into))
+            {
+                shutdown_error = Some(error);
+            }
+            if let Some(error) = terminal.dht_error {
+                shutdown_error = Some(error.into());
+            }
+            if let Some(error) = terminal.join_error {
+                active_join_error = Some(error);
             }
         }
         if let Some((_, active)) = self.take_active_download() {
@@ -1812,53 +1583,6 @@ impl ApplicationService {
             && active_join_error.is_none()
         {
             active_join_error = Some(format!("storage file pool: {error}"));
-        }
-        if let Some(dht) = self.dht.take() {
-            match dht.shutdown().await {
-                Ok(snapshot) => {
-                    if let Err(error) = self
-                        .store_mut()
-                        .and_then(|mut store| store.save_dht_snapshot(snapshot).map_err(Into::into))
-                    {
-                        shutdown_error = Some(error);
-                    }
-                }
-                Err(error) => shutdown_error = Some(error.into()),
-            }
-        }
-        if let Some(udp) = self.session_udp.take() {
-            match udp.shutdown().await {
-                Ok(terminal) => {
-                    let terminal_counts = format!(
-                        "tasks={},queued={},dropped={}",
-                        terminal.tasks, terminal.queued, terminal.datagrams_dropped
-                    );
-                    let _ = self.views.record_diagnostic(
-                        DiagnosticSeverity::Info,
-                        category::DISCOVERY_DHT,
-                        "session_udp_service_stopped",
-                        None,
-                        "Session UDP service stopped with joined ownership",
-                        &[("terminal_counts", &terminal_counts)],
-                    );
-                }
-                Err(error) if active_join_error.is_none() => {
-                    active_join_error = Some(format!("session UDP service: {error}"));
-                }
-                Err(_) => {}
-            }
-        }
-        if let Some(observations) = self.dht_observations.take() {
-            match observations.join().await {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) if active_join_error.is_none() => {
-                    active_join_error = Some(format!("DHT observation forwarder: {error}"));
-                }
-                Err(error) if active_join_error.is_none() => {
-                    active_join_error = Some(format!("DHT observation forwarder: {error}"));
-                }
-                Ok(Err(_)) | Err(_) => {}
-            }
         }
         if let Some(speed_history) = self.speed_history.take()
             && let Err(error) = speed_history.shutdown().await
@@ -2169,7 +1893,7 @@ impl ApplicationService {
                 let storage_pool = self.storage_file_pool.clone();
                 let resource_limits = self.download_resource_limits;
                 let network = self.network;
-                let peer_budget = self.peer_budget.clone();
+                let peer_budget = self.session_network().peer_budget();
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
                         magnet.clone(),
@@ -2263,7 +1987,7 @@ impl ApplicationService {
             let task_control = control.clone();
             let magnet = resume.magnet;
             let network = self.network;
-            let peer_budget = self.peer_budget.clone();
+            let peer_budget = self.session_network().peer_budget();
             let operation = async move {
                 let raw_info = download_magnet_metadata_with_external_discovery(
                     magnet,
@@ -2300,7 +2024,7 @@ impl ApplicationService {
             magnet: resume.magnet,
             storage_root: root_path,
             network: self.network,
-            peer_budget: self.peer_budget.clone(),
+            peer_budget: self.session_network().peer_budget(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -2389,14 +2113,14 @@ impl ApplicationService {
         )?;
         let store = self.store.clone();
         let storage_roots = self.storage_roots.clone();
-        let incoming_seeding = self.incoming_seeding.clone();
+        let incoming_seeding = Some(self.session_network().incoming_seeding());
         let storage_file_pool = self.storage_file_pool.clone();
         let torrent_runtime = self
             .torrent_runtimes
             .get(torrent_id)
             .expect("torrent runtime exists before its operation starts")
             .handle();
-        let discovery_handle = self.discovery_handle.clone();
+        let discovery_handle = self.session_network().discovery_handle();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
@@ -2485,9 +2209,10 @@ impl ApplicationService {
             .torrent_runtimes
             .get(torrent_id)
             .map(TorrentRuntime::handle);
-        if let (Some(incoming), Some(runtime)) = (&self.incoming_seeding, runtime) {
+        if let Some(runtime) = runtime {
+            let incoming = self.session_network().incoming_seeding();
             runtime
-                .unregister_seed(incoming)
+                .unregister_seed(&incoming)
                 .await
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         }
@@ -2504,12 +2229,7 @@ impl ApplicationService {
             .get(torrent_id)
             .expect("torrent runtime exists during seed reconciliation")
             .handle();
-        let Some(incoming) = self.incoming_seeding.clone() else {
-            runtime
-                .publish_inactive()
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            return Ok(());
-        };
+        let incoming = self.session_network().incoming_seeding();
         let prepared = {
             let store = self.store_mut()?;
             seed_reconcile_inputs(&store, &self.storage_roots, torrent_id)?
@@ -2543,9 +2263,6 @@ impl ApplicationService {
     }
 
     async fn reconcile_incoming_catalog(&mut self) -> Result<(), ApplicationError> {
-        if self.incoming_seeding.is_none() {
-            return Ok(());
-        }
         let torrent_ids = self
             .store_mut()?
             .snapshot()?
@@ -2606,7 +2323,8 @@ impl ApplicationService {
             peers: runtime.peers(),
             activity_sink: self.view_activity_sink(torrent_id),
         };
-        self.discovery_handle
+        self.session_network()
+            .discovery_handle()
             .upsert(registration)
             .await
             .map_err(|error| {
@@ -2635,7 +2353,8 @@ impl ApplicationService {
         let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
             ApplicationError::Configuration("invalid torrent identity".to_owned())
         })?;
-        self.discovery_handle
+        self.session_network()
+            .discovery_handle()
             .remove(info_hash, runtime.generation())
             .await
             .map_err(|error| {
@@ -4339,6 +4058,18 @@ impl From<SessionUdpError> for ApplicationError {
     }
 }
 
+impl From<SessionNetworkError> for ApplicationError {
+    fn from(error: SessionNetworkError) -> Self {
+        match error {
+            SessionNetworkError::Configuration(message) => Self::Configuration(message),
+            SessionNetworkError::Dht(error) => Self::Dht(error),
+            SessionNetworkError::Incoming(error) => Self::Incoming(error),
+            SessionNetworkError::SessionSocket(error) => Self::SessionSocket(error),
+            SessionNetworkError::SessionUdp(error) => Self::SessionUdp(error),
+        }
+    }
+}
+
 impl From<IncomingSeedingError> for ApplicationError {
     fn from(error: IncomingSeedingError) -> Self {
         Self::IncomingSeeding(error.to_string())
@@ -5906,15 +5637,13 @@ mod tests {
         drop(tcp);
         assert_eq!(
             application
-                .session_udp
-                .as_ref()
-                .expect("session UDP owner")
-                .snapshot()
+                .session_network()
+                .session_udp_snapshot()
                 .task_high_water,
             1
         );
         application.shutdown().await.expect("joined shutdown");
-        assert!(application.session_udp.is_none());
+        assert!(application.session_network.is_none());
         drop(application);
         fs::remove_dir_all(root).expect("remove test root");
     }
@@ -8652,11 +8381,7 @@ mod tests {
             crate::PortMappingStatus::Ineligible
         );
         assert_eq!(
-            ineligible
-                .reachability
-                .as_ref()
-                .expect("coordinator exists")
-                .owner_counts(),
+            ineligible.session_network().reachability_owner_counts(),
             crate::reachability::ReachabilityOwnerCounts::default()
         );
         ineligible

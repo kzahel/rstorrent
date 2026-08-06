@@ -1,13 +1,15 @@
 # Tactical 097: Live Client Settings And Replaceable Session Generations
 
-Status: In progress on 2026-08-06. Gates 1 and 2 are complete: the public
+Status: In progress on 2026-08-06. Gates 1 through 3 are complete: the public
 runtime contract now exposes configured intent, effective values for four
 independently converging domains, and bounded applying/applied/degraded state;
 the task-free attempt/domain generation model rejects stale results and
 nonzero-generation overflow; and the engine now keeps incoming registrations,
 peer tasks, upload state, UDP routing, and DHT state stable around replaceable
 transport generations. Session composition moves behind the private owner at
-Gate 3. This document does not reorder the existing tactical queue; completed
+Gate 3, including its joined dependency-ordered shutdown. Live reconciliation
+begins at Gate 4. This document does not reorder the existing tactical queue;
+completed
 Tactical
 [`096`](096-metadata-tracker-activation-and-family-observability.md) retained
 priority and closed independently later that day.
@@ -668,6 +670,28 @@ and prove byte-for-byte-compatible runtime views except for the intentional
 new settings contract. This gate must reduce manual coupled lifetime in the
 application root; merely wrapping unchanged replace-all services is
 insufficient.
+
+Completed evidence on 2026-08-06:
+
+- private concrete `SessionNetworkRuntime` now owns the stable peer budget,
+  incoming runtime and optional acceptor, session UDP and DHT, discovery,
+  advertised endpoint, reachability, and DHT observation lifetime. It exposes
+  only cloneable torrent-facing handles and bounded application snapshots;
+- `ApplicationService` retains persistence, storage, torrent catalogs and
+  runtimes, commands, and views. It no longer constructs or manually unwinds
+  sibling network services, and DHT state returns through the owner's terminal
+  report for persistence by the store owner;
+- the application path now uses the split stable incoming runtime even while
+  listening is disabled, so eligible seed registration state has a stable
+  owner before a later listener generation exists; public disabled-listener
+  snapshot behavior remains unchanged;
+- network shutdown joins discovery, reachability, the acceptor and incoming
+  runtime, DHT, UDP, and DHT observation forwarding in dependency order while
+  accumulating the first child error and still attempting every cleanup; and
+- all-target session compilation and Clippy with warnings denied passed, and a
+  clean full session rerun passed 167 executable tests (160 library, two
+  profile, one seed CLI, and four main tests) with one maximum-allocation case
+  ignored.
 
 ### Gate 4: live resource and transport convergence
 

@@ -11,6 +11,11 @@ receive owner and separately reports its actual endpoint. Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) adds
 verified-public explicit-TCP-port self-announcement under the long-lived
 torrent/session scheduler. IPv6 socket operation remains absent.
+In-progress Tactical
+[`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
+has made that UDP transport generation-replaceable while retaining one DHT
+actor, node identity, routing state, command route, and observation owner. The
+application settings reconciler has not yet activated replacement.
 
 ## Why DHT Was Front-Loaded
 

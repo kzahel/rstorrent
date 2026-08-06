@@ -47,13 +47,13 @@ IPv4 endpoint, while every IPv6 tracker request uses port `1`. Returned
 `peers6` can drive outbound IPv6 TCP transfers, but no IPv6 listener,
 reachable endpoint, mapping, or full BEP 7 support is implied.
 
-Planned Tactical
+In-progress Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
-records the accepted next lifetime boundary: all five existing client settings
-will reconcile without restart through stable incoming, DHT, discovery, and
-accounting owners around replaceable TCP/UDP/reachability generations. No live
-settings behavior has landed yet, so the current truth below remains
-restart-applied until that tactical completes.
+has landed its engine and session ownership gates: registrations, peer tasks,
+upload scheduling/accounting, UDP routing, DHT, discovery, and endpoint state
+now have stable owners around replaceable TCP/UDP accept/receive generations.
+The settings reconciler is not wired yet, so the current product truth below
+remains restart-applied until that tactical completes.
 
 ## Purpose And Scope
 
