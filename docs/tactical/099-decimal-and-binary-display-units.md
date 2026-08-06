@@ -1,6 +1,6 @@
 # Decimal And Binary Display Units
 
-Status: Planned (2026-08-06).
+Status: Complete (2026-08-06).
 
 Topics: `web-ui-design`, `desktop-inspection-surface`
 
@@ -310,6 +310,59 @@ one small record on a user preference change.
 | Responsive/accessibility | desktop and phone Settings/application layouts, keyboard operation, visible focus, and no serious or critical automated findings |
 | Frontend | formatting, TypeScript, Vitest, production build/CSP check, and proportional Playwright coverage |
 | Repository | documentation links and focused source searches confirm no generated contract, Rust engine, Android, or technical-literal policy change |
+
+## Implementation Outcome
+
+The shared React presentation now owns one typed `DataUnits` value with
+exactly `decimal` and `binary`. The browser-local appearance record is version
+3; version-1 and version-2 records preserve every independently valid prior
+field and acquire Decimal, while invalid current fields fall back
+independently. All appearance actions persist one complete size, theme, and
+unit snapshot, and denied storage still permits live in-memory changes.
+
+The pure formatter accepts the selected unit system explicitly. Its
+number-backed and arbitrary-precision integer-string-backed paths share the
+same thresholds and suffix tables while retaining their prior rounding and
+truncation behavior. The latter is now named `formatExactBytes`. Decimal uses
+base 1000 through `PB`; Binary uses base 1024 through `PiB`; rates compose the
+same magnitude with `/s`.
+
+Settings exposes an accessible Data units group. The per-application Zustand
+choice is threaded through session rates, Library, Transfers, General,
+Files, Peers, Disk, DHT, and Speed summaries, tables, chart axes, samples, and
+totals. Sorting, table identity, chart geometry, view leases, commands, and
+raw application values remain independent of the formatted text. Literal
+`64 MiB`, `16 KiB`, and diagnostic IEC strings remain technical copy.
+
+The complete browser run also exposed an existing serious light-theme
+contrast failure in the removal dialog. Its warning/error text now uses the
+existing `danger-strong` text token rather than the lighter decorative danger
+token; the isolated failing check and the complete suite then passed.
+
+## Validation Evidence
+
+The following ran from `clients/web` on 2026-08-06:
+
+- Prettier checked every changed frontend source and test file successfully.
+- `npm run typecheck` passed.
+- `npm test` passed 31 Vitest files with 200 tests; 2 files and 2 tests remain
+  intentionally skipped by their existing environment gates.
+- `npm run build` passed the Vite production build and CSP bundle check. The
+  existing large-chunk advisory remained non-fatal; both JavaScript bundles
+  passed the no-eval, no-Function-constructor, and no-CommonJS-require check.
+- `npx playwright test tests/inspection-demo.spec.ts` passed all 20 scenarios
+  in headless Chrome. The new scenario covers Decimal default, Binary live
+  switching, persistence, Library, Transfers, General, Files, Disk, DHT,
+  Speed, stable transfer order and canvas geometry, phone Settings layout,
+  fixed IEC copy, and no serious or critical axe findings.
+- Focused source searches found no obsolete `formatDecimalBytes` caller and
+  left only the intended technical IEC strings plus Binary setting/test copy.
+  No generated contract, Rust engine, Android, persistence database, or
+  application DTO changed.
+
+No public swarm, libtorrent process, visible Tauri window, Android build,
+emulator, physical device, generated-contract refresh, or external network
+access ran, as none is required for this presentation-only slice.
 
 No public swarm, libtorrent process, Rust interoperability run, visible Tauri
 window, Android build, emulator, physical device, generated-contract refresh,

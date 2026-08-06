@@ -447,12 +447,15 @@ live changes. The since-retired direct-DOM UI retained its Dark-only browser
 declaration and did not interpret the React appearance record while both entry
 paths still existed.
 
-Planned Tactical `099` extends that browser-local appearance owner with **Data
-units**. Decimal powers of 1000 with `kB`, `MB`, and `GB` become the fresh and
+Tactical `099` extends that browser-local appearance owner with **Data
+units**. Decimal powers of 1000 with `kB`, `MB`, and `GB` are the fresh and
 migration default; explicit Binary preserves powers of 1024 with `KiB`, `MiB`,
-and `GiB`. The choice affects generic byte and rate formatting only. Raw
-application values, sorting and calculations, and literal IEC text describing
-exact engine or protocol geometry remain unchanged.
+and `GiB`. Version 3 preserves valid size/theme fields from both prior record
+versions and persists all three fields together. The choice now covers every
+generic shared React byte and rate display, including exact integer-string
+counters and Speed chart labels. Raw application values, sorting,
+calculations, chart geometry, and literal IEC text describing exact engine or
+protocol geometry remain unchanged.
 
 Tactical `055` adds a separate versioned navigation preference for the active
 Library, Transfers, or Workbench destination and each destination's local
@@ -575,6 +578,16 @@ attribute already present at first React content. Explicit Light and Dark
 Settings/application scans have no serious or critical axe findings. The new
 dark scan also moved the demo strip and primary action from hard-coded light
 colors to palette-specific semantic tokens after exposing contrast failures.
+
+Tactical `099` adds exact Decimal/Binary threshold and arbitrary-precision
+formatter tests, version-1/version-2 migration and denied-storage coverage,
+and complete-record component persistence. Its 20-scenario headless browser
+run exercises live switching across Library, Transfers, General, Files, Disk,
+DHT, and Speed; retains raw row order and canvas geometry; covers desktop and
+phone Settings; preserves technical IEC copy; and reports no serious or
+critical axe findings. The run also corrected an existing removal-dialog
+light-theme contrast failure by using the established strong danger text
+token.
 
 Tactical `055` adds deterministic navigation, storage-denial, selection
 repair, destination-local filter, view-leasing, command, and component tests.

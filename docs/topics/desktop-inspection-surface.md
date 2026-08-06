@@ -30,6 +30,11 @@ no persistence.
 Tactical `050` extends the shared React Settings surface with browser-local
 Auto, Light, and Dark themes, preserving Interface size and applying persisted
 appearance before React content.
+Tactical `099` adds persistent browser-local Decimal and Binary data units.
+Decimal is the fresh and migrated default, while every generic size and rate
+across the shared inspection surface switches immediately without changing
+raw application data, view leases, sorting, chart geometry, or exact IEC
+technical copy.
 
 Tactical `070` makes torrent failures discoverable from both clean Transfers
 and dense Workbench tables. An error-bearing status exposes its bounded reason

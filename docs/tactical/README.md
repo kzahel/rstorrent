@@ -467,10 +467,10 @@ that scope and its cleanup or compatibility rules explicitly.
   authenticated pinned-libtorrent interoperability plus desktop/AVD runtime
   evidence.
 - [`099-decimal-and-binary-display-units.md`](099-decimal-and-binary-display-units.md):
-  planned; makes Decimal `kB/MB/GB` the fresh browser-presentation default,
-  retains Binary `KiB/MiB/GiB` as an explicit choice, and persists the setting
-  with the existing browser-local appearance record without changing raw
-  application data or exact technical IEC copy.
+  complete; makes Decimal `kB/MB/GB` the fresh and migrated browser default,
+  retains persistent Binary `KiB/MiB/GiB` as an explicit choice, and updates
+  every shared React byte/rate display without changing raw application data,
+  sorting, chart geometry, or exact technical IEC copy.
 - [`100-bep53-select-only-and-duplicate-add-feedback.md`](100-bep53-select-only-and-duplicate-add-feedback.md):
   planned; adds bounded BEP 53 select-only magnets and their monotonic
   duplicate-selection rule, makes ordinary duplicate adds successful no-ops,
