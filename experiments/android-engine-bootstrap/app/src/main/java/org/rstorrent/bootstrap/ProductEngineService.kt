@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,11 +40,17 @@ import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.session.uniffi.Command
+import org.rstorrent.session.uniffi.CatalogPageRequest
+import org.rstorrent.session.uniffi.ClientSettings
+import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.DeliveryPolicy
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticFilter
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
+import org.rstorrent.session.uniffi.ListenerPolicy
+import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.RemovalState
 import org.rstorrent.session.uniffi.ResponseOutcome
@@ -51,6 +58,8 @@ import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.ViewProjection
 import org.rstorrent.session.uniffi.ViewSelector
+import org.rstorrent.session.uniffi.ViewPatch
+import org.rstorrent.session.uniffi.ViewSnapshot
 import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
 
@@ -76,6 +85,8 @@ class ProductEngineService : Service() {
     private var pieceJob: Job? = null
     private var diagnosticSubscription: AndroidViewSubscription? = null
     private var diagnosticJob: Job? = null
+    private var trackerEvidenceSubscription: AndroidViewSubscription? = null
+    private var trackerEvidenceJob: Job? = null
     private var diagnosticTorrentOnly = false
     private var diagnosticProfile = DiagnosticProfile.NORMAL
     private var diagnosticSeverity = DiagnosticSeverity.INFO
@@ -177,6 +188,57 @@ class ProductEngineService : Service() {
             return
         }
         dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, emptyList()))
+    }
+
+    fun addMagnetWithTrackerPolicyForTest(
+        magnet: String,
+        policyName: String,
+        startContent: Boolean,
+    ) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "tracker authentication injection is debug-only"
+        }
+        if (safTreeUri == null) {
+            mutableState.update { it.copy(error = "Select a download folder first") }
+            return
+        }
+        val policy =
+            when (policyName) {
+                "system_trust" -> HttpsServerAuthenticationPolicy.SYSTEM_TRUST
+                "disabled" -> HttpsServerAuthenticationPolicy.DISABLED
+                else -> error("unknown tracker HTTPS authentication policy")
+            }
+        val torrentId =
+            Regex("(?i)urn:btih:([0-9a-f]{40})")
+                .find(magnet)
+                ?.groupValues
+                ?.get(1)
+                ?.lowercase()
+                ?: error("test magnet has no hexadecimal v1 identity")
+        scope.launch {
+            try {
+                clientReady.await()
+                dispatchAwait(
+                    Command.SetClientSettings(
+                        ClientSettings(
+                            listener = ListenerPolicy.Disabled,
+                            preferredListenPort = 6_881U.toUShort(),
+                            portMapping = PortMappingPolicy.DISABLED,
+                            peerConnectionLimit = 200U,
+                            uploadSlots = 8U.toUShort(),
+                            trackerHttpsServerAuthentication = policy,
+                        ),
+                    ),
+                )
+                awaitTrackerPolicy(policy)
+                dispatchAwait(
+                    Command.AddMagnet(magnet.trim(), "downloads", startContent, emptyList()),
+                )
+                subscribeTrackerEvidenceForTest(torrentId)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
     }
 
     fun setSafTree(treeUri: Uri) {
@@ -306,23 +368,128 @@ class ProductEngineService : Service() {
         scope.launch {
             try {
                 clientReady.await()
-                val response =
-                    client.dispatch(
-                        RequestEnvelope(
-                            1U.toUShort(),
-                            "android-$requestPrefix-${requestIds.getAndIncrement()}",
-                            null,
-                            command,
-                        ),
-                    )
-                val outcome = response.outcome
-                if (outcome is ResponseOutcome.Error) {
-                    error(outcome.error.message)
-                }
+                dispatchAwait(command)
             } catch (error: Throwable) {
                 reportError(error)
             }
         }
+    }
+
+    private suspend fun dispatchAwait(command: Command) {
+        val response =
+            client.dispatch(
+                RequestEnvelope(
+                    1U.toUShort(),
+                    "android-$requestPrefix-${requestIds.getAndIncrement()}",
+                    null,
+                    command,
+                ),
+            )
+        val outcome = response.outcome
+        if (outcome is ResponseOutcome.Error) {
+            error(outcome.error.message)
+        }
+    }
+
+    private suspend fun awaitTrackerPolicy(policy: HttpsServerAuthenticationPolicy) {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.TorrentList,
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            withTimeout(10_000) {
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("settings view closed")
+                    val settings =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    if (
+                        settings?.configured?.trackerHttpsServerAuthentication == policy &&
+                        settings.effectiveTrackerHttpsServerAuthentication == policy &&
+                        settings.trackerHttpsAuthenticationApplication is
+                            ClientSettingsApplicationState.Applied
+                    ) {
+                        Log.i(
+                            TAG,
+                            "tracker_https_settings configured=$policy effective=$policy " +
+                                "application=APPLIED",
+                        )
+                        return@withTimeout
+                    }
+                }
+            }
+        } finally {
+            subscription.close()
+        }
+    }
+
+    fun subscribeTrackerEvidenceForTest(torrentId: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "tracker evidence subscription is debug-only"
+        }
+        trackerEvidenceJob?.cancel()
+        trackerEvidenceSubscription?.close()
+        trackerEvidenceJob = null
+        trackerEvidenceSubscription = null
+        trackerEvidenceJob =
+            scope.launch {
+                val subscription =
+                    client.subscribe(
+                        SubscriptionSpec(
+                            ViewSelector.Torrent(torrentId),
+                            ViewProjection.TRACKERS,
+                            DeliveryPolicy(0U, 256U * 1024U),
+                            null,
+                            CatalogPageRequest(0U, 1_024U),
+                        ),
+                    )
+                trackerEvidenceSubscription = subscription
+                try {
+                    while (true) {
+                        val update = subscription.nextUpdate() ?: break
+                        val trackers =
+                            when (val payload = update.payload) {
+                                is ViewUpdatePayload.Snapshot ->
+                                    (payload.snapshot as? ViewSnapshot.Trackers)?.trackers.orEmpty()
+                                is ViewUpdatePayload.Patch ->
+                                    (payload.patch as? ViewPatch.Trackers)?.upsert.orEmpty()
+                                is ViewUpdatePayload.ResetRequired -> {
+                                    subscription.resync()
+                                    emptyList()
+                                }
+                            }
+                        trackers.forEach { tracker ->
+                            Log.i(
+                                TAG,
+                                "tracker_evidence torrent=$torrentId security=${tracker.security} " +
+                                    "status=${tracker.status} attempts=${tracker.totalAttempts} " +
+                                    "failures=${tracker.consecutiveFailures} " +
+                                    "peer_count=${tracker.lastPeerCount ?: -1} " +
+                                    "error=${tracker.lastError != null} " +
+                                    "error_detail=${tracker.lastError ?: "none"}",
+                            )
+                        }
+                    }
+                } catch (error: Throwable) {
+                    if (!stopped.get() && error !is CancellationException) reportError(error)
+                } finally {
+                    subscription.close()
+                }
+            }
     }
 
     private fun consume(
@@ -597,9 +764,11 @@ class ProductEngineService : Service() {
         listJob?.cancel()
         pieceJob?.cancel()
         diagnosticJob?.cancel()
+        trackerEvidenceJob?.cancel()
         listSubscription?.close()
         pieceSubscription?.close()
         diagnosticSubscription?.close()
+        trackerEvidenceSubscription?.close()
         if (::client.isInitialized) {
             try {
                 client.shutdown()

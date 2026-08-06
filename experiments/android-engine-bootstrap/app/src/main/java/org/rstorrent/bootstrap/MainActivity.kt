@@ -22,6 +22,9 @@ class MainActivity : ComponentActivity() {
     private var productBound = false
     private var productMode = false
     private var pendingProductMagnet: String? = null
+    private var pendingProductTrackerPolicy: String? = null
+    private var pendingProductStartContent = true
+    private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingCrashAfterSafRename = false
     private val productConnection =
         object : ServiceConnection {
@@ -38,7 +41,22 @@ class MainActivity : ComponentActivity() {
                 }
                 pendingProductMagnet?.let {
                     pendingProductMagnet = null
-                    service.addMagnet(it)
+                    val policy = pendingProductTrackerPolicy
+                    pendingProductTrackerPolicy = null
+                    if (policy == null) {
+                        service.addMagnet(it)
+                    } else {
+                        service.addMagnetWithTrackerPolicyForTest(
+                            it,
+                            policy,
+                            pendingProductStartContent,
+                        )
+                    }
+                    pendingProductStartContent = true
+                }
+                pendingProductTrackerEvidenceTorrent?.let {
+                    pendingProductTrackerEvidenceTorrent = null
+                    service.subscribeTrackerEvidenceForTest(it)
                 }
             }
 
@@ -143,13 +161,43 @@ class MainActivity : ComponentActivity() {
                 ProductApp(productService.value, ::launchProductTreePicker)
             }
         }
+        if (ProductSafDocuments.isDebuggable(this)) {
+            command
+                .getStringExtra(EXTRA_PRODUCT_TRACKER_HTTPS_POLICY)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_TRACKER_HTTPS_POLICY)
+                    pendingProductTrackerPolicy = it
+                }
+            command
+                .getStringExtra(EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT)
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductTrackerEvidenceTorrent = it
+                    } else {
+                        service.subscribeTrackerEvidenceForTest(it)
+                    }
+                }
+        }
         command.getStringExtra(EXTRA_PRODUCT_MAGNET)?.takeIf(String::isNotBlank)?.let {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
+            val startContent = command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
+            command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
             val service = productService.value
             if (service == null) {
                 pendingProductMagnet = it
+                pendingProductStartContent = startContent
             } else {
-                service.addMagnet(it)
+                val policy = pendingProductTrackerPolicy
+                pendingProductTrackerPolicy = null
+                if (policy == null) {
+                    service.addMagnet(it)
+                } else {
+                    service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
+                }
             }
         }
         requestNotificationPermission()
@@ -294,6 +342,9 @@ class MainActivity : ComponentActivity() {
         private const val TREE_REQUEST = 51
         private const val PRODUCT_TREE_REQUEST = 53
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
+        const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
+        const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
+        const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
         const val EXTRA_PRODUCT_CRASH_AFTER_SAF_RENAME =

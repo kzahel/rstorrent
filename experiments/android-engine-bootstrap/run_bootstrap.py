@@ -42,6 +42,7 @@ PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
     "product-https-tracker",
+    "product-https-platform-trust",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -1299,6 +1300,140 @@ def product_fd_count(target: Any) -> int:
     return len(listing.stdout.split())
 
 
+def product_logs(target: Any) -> str:
+    return target.run(
+        ["logcat", "-d", "-v", "brief", "RSTorrentProduct:I", "*:S"],
+        timeout=15,
+        check=False,
+    ).stdout
+
+
+def start_product_tracker_evidence(target: Any, torrent_id: str) -> None:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_tracker_evidence_torrent",
+            torrent_id,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout:
+        raise BootstrapFailure("could not start tracker evidence subscription")
+
+
+def wait_product_tracker_row(
+    target: Any,
+    torrent_id: str,
+    security: str,
+    status: str,
+    *,
+    error: bool,
+    timeout_seconds: float,
+) -> str:
+    start_product_tracker_evidence(target, torrent_id)
+    marker = (
+        f"tracker_evidence torrent={torrent_id} security={security} "
+        f"status={status}"
+    )
+    error_marker = f"error={'true' if error else 'false'}"
+    deadline = time.monotonic() + timeout_seconds
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if any(
+            marker in line and error_marker in line
+            for line in logs.splitlines()
+        ):
+            return logs
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        "timed out waiting for Android tracker evidence "
+        f"torrent={torrent_id} security={security} status={status} "
+        f"error={error}\n{logs}"
+    )
+
+
+def prepare_product_saf(target: Any, probe: ModuleType, grant_storage: str) -> None:
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            probe.prepare_grant_folder(target, grant_storage)
+            break
+        except probe.ProbeFailure:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+    target.shell(
+        ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
+        check=False,
+    )
+    selected = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--ez",
+            "product_select_saf",
+            "true",
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in selected.stdout or (
+        selected.returncode != 0 and "Starting:" not in selected.stdout
+    ):
+        raise BootstrapFailure("could not launch product SAF picker")
+    probe.automate_tree_grant(target, grant_storage)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if app_text(target, "shared_prefs/product-saf.xml"):
+            break
+        time.sleep(0.2)
+    else:
+        raise BootstrapFailure("product SAF grant was not persisted")
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if "saf_tree_ready" in product_logs(target):
+            return
+        time.sleep(0.2)
+    raise BootstrapFailure("product service did not activate the persisted SAF tree")
+
+
+def launch_product_tracker_magnet(
+    target: Any,
+    magnet: str,
+    policy: str,
+    *,
+    start_content: bool,
+) -> None:
+    command = [
+        "am",
+        "start",
+        "-n",
+        ACTIVITY,
+        "--es",
+        "product_magnet",
+        shlex.quote(magnet),
+        "--es",
+        "product_tracker_https_policy",
+        policy,
+        "--ez",
+        "product_start_content",
+        "true" if start_content else "false",
+    ]
+    result = target.shell(command, timeout=30, check=False)
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure("could not add Android product tracker magnet")
+
+
 def wait_product_publication(
     target: Any,
     torrent_id: str,
@@ -1446,16 +1581,21 @@ def run_product_dynamic_saf_profile(
                 f"magnet:?xt=urn:btih:{fixture.info_hash}"
                 f"&dn={fixture.name}&tr={quote(tracker_url, safe='')}"
             )
+        start_command = [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_magnet",
+            shlex.quote(magnet),
+        ]
+        if controlled_tracker is not None:
+            start_command.extend(
+                ["--es", "product_tracker_https_policy", "disabled"]
+            )
         started = target.shell(
-            [
-                "am",
-                "start",
-                "-n",
-                ACTIVITY,
-                "--es",
-                "product_magnet",
-                shlex.quote(magnet),
-            ],
+            start_command,
             timeout=30,
             check=False,
         )
@@ -1473,6 +1613,50 @@ def run_product_dynamic_saf_profile(
         )
         if controlled_tracker is not None:
             controlled_tracker.wait_for_event("started")
+            evidence = target.shell(
+                [
+                    "am",
+                    "start",
+                    "-n",
+                    ACTIVITY,
+                    "--es",
+                    "product_tracker_evidence_torrent",
+                    fixture.info_hash,
+                ],
+                timeout=30,
+                check=False,
+            )
+            if "Error:" in evidence.stdout:
+                raise BootstrapFailure("could not start tracker evidence subscription")
+            deadline = time.monotonic() + 10
+            logs = ""
+            while time.monotonic() < deadline:
+                logs = target.run(
+                    ["logcat", "-d", "-v", "brief", "RSTorrentProduct:I", "*:S"],
+                    timeout=15,
+                    check=False,
+                ).stdout
+                if (
+                    "security=ENCRYPTED_UNAUTHENTICATED" in logs
+                    and "status=REANNOUNCE_WAIT" in logs
+                ):
+                    break
+                time.sleep(0.2)
+            if (
+                "tracker_https_settings configured=DISABLED "
+                "effective=DISABLED application=APPLIED" not in logs
+            ):
+                raise BootstrapFailure(
+                    "Android product did not apply disabled tracker authentication"
+                )
+            if (
+                "security=ENCRYPTED_UNAUTHENTICATED" not in logs
+                or "status=REANNOUNCE_WAIT" not in logs
+            ):
+                raise BootstrapFailure(
+                    "Android product did not project the completed unauthenticated HTTPS row\n"
+                    + logs
+                )
         if metrics["limit"] != 40:
             raise BootstrapFailure(f"unexpected storage handle limit: {metrics}")
         if metrics["owned_high_water"] > metrics["limit"]:
@@ -1538,6 +1722,165 @@ def run_product_dynamic_saf_profile(
         if peer_transport is not None:
             peer_transport.close()
         fixture.close()
+
+
+def run_product_https_platform_trust_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    tracker_support: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-https-platform-trust requires SAF storage")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    invalid_info_hash = "11" * 20
+    valid_origin_info_hash = "22" * 20
+    ubuntu_info_hash = "62a4d9e139f3315f8716bcccca0cc984a9809da1"
+    certificate_root = Path(
+        tempfile.mkdtemp(prefix="rstorrent-android-platform-trust-")
+    )
+    controlled_tracker: Any | None = None
+    tracker_transport: ReverseTransport | None = None
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+
+        controlled_tracker = tracker_support.ControlledHttpTracker(
+            invalid_info_hash,
+            1,
+            https=True,
+            certificate_root=certificate_root,
+        )
+        controlled_tracker.start()
+        tracker_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            controlled_tracker.port,
+            ordinal,
+            slot=1,
+        )
+        invalid_url = controlled_tracker.url_for_port(tracker_transport.device_port)
+        invalid_magnet = (
+            f"magnet:?xt=urn:btih:{invalid_info_hash}"
+            f"&dn=invalid-platform-trust&tr={quote(invalid_url, safe='')}"
+        )
+        launch_product_tracker_magnet(
+            target,
+            invalid_magnet,
+            "system_trust",
+            start_content=False,
+        )
+        invalid_logs = wait_product_tracker_row(
+            target,
+            invalid_info_hash,
+            "ENCRYPTED_SYSTEM_TRUST",
+            "RETRY_WAIT",
+            error=True,
+            timeout_seconds=30,
+        )
+        if controlled_tracker.requests:
+            raise BootstrapFailure(
+                "invalid Android platform-trust certificate reached HTTP"
+            )
+        if (
+            "tracker_https_settings configured=SYSTEM_TRUST "
+            "effective=SYSTEM_TRUST application=APPLIED" not in invalid_logs
+        ):
+            raise BootstrapFailure("Android system-trust policy was not effective")
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+
+        ubuntu_tracker = "https://torrent.ubuntu.com/announce"
+        ubuntu_magnet = (
+            f"magnet:?xt=urn:btih:{ubuntu_info_hash}"
+            "&dn=ubuntu-platform-trust"
+            f"&tr={quote(ubuntu_tracker, safe='')}"
+        )
+        launch_product_tracker_magnet(
+            target,
+            ubuntu_magnet,
+            "system_trust",
+            start_content=False,
+        )
+        ubuntu_logs = wait_product_tracker_row(
+            target,
+            ubuntu_info_hash,
+            "ENCRYPTED_SYSTEM_TRUST",
+            "RETRY_WAIT",
+            error=True,
+            timeout_seconds=30,
+        )
+        if "error_detail=HTTP tracker request failed: error sending request" not in ubuntu_logs:
+            raise BootstrapFailure("Ubuntu public smoke failed for an unexpected reason")
+
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        valid_origin = "https://example.com/announce"
+        valid_origin_magnet = (
+            f"magnet:?xt=urn:btih:{valid_origin_info_hash}"
+            "&dn=valid-platform-trust"
+            f"&tr={quote(valid_origin, safe='')}"
+        )
+        launch_product_tracker_magnet(
+            target,
+            valid_origin_magnet,
+            "system_trust",
+            start_content=False,
+        )
+        valid_logs = wait_product_tracker_row(
+            target,
+            valid_origin_info_hash,
+            "ENCRYPTED_SYSTEM_TRUST",
+            "RETRY_WAIT",
+            error=True,
+            timeout_seconds=30,
+        )
+        if "error_detail=HTTP tracker returned status 404" not in valid_logs:
+            raise BootstrapFailure(
+                "system-trusted Android origin did not reach its HTTP response"
+            )
+
+        grant_path = probe.grant_path(grant_storage)
+        artifacts = target.shell(
+            ["find", grant_path, "-mindepth", "1", "-maxdepth", "4", "-print"],
+            timeout=15,
+            check=False,
+        ).stdout.strip()
+        if artifacts:
+            raise BootstrapFailure(
+                "metadata-only Android platform-trust smoke created storage artifacts"
+            )
+        return {
+            "target": target_kind,
+            "profile": "product-https-platform-trust",
+            "run": ordinal,
+            "identity": identity,
+            "invalid_chain_name": "rejected_before_http",
+            "invalid_tracker_requests": len(controlled_tracker.requests),
+            "valid_chain_name": "accepted_through_http_404",
+            "valid_origin": "example.com",
+            "public_tracker": "torrent.ubuntu.com",
+            "public_info_hash": ubuntu_info_hash,
+            "public_security": "encrypted_system_trust",
+            "public_result": "request_send_failed",
+            "start_content": False,
+            "storage_artifacts": 0,
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if tracker_transport is not None:
+            tracker_transport.close()
+        if controlled_tracker is not None:
+            controlled_tracker.close()
+        shutil.rmtree(certificate_root, ignore_errors=True)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -1655,6 +1998,16 @@ def main() -> int:
                         ordinal,
                         arguments.storage,
                         tracker_support,
+                    )
+                elif profile == "product-https-platform-trust":
+                    result = run_product_https_platform_trust_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        tracker_support,
+                        ordinal,
+                        arguments.storage,
                     )
                 else:
                     result = run_standard_profile(
