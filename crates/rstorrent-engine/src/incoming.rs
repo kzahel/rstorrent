@@ -2086,7 +2086,19 @@ fn validate_incoming_fast_message(
     );
     if !*initial_availability {
         if !initial {
-            return Err(());
+            let requires_availability = fast_message
+                || matches!(
+                    message,
+                    PeerMessage::Have(_)
+                        | PeerMessage::Request(_)
+                        | PeerMessage::Cancel(_)
+                        | PeerMessage::Piece { .. }
+                );
+            return if requires_availability {
+                Err(())
+            } else {
+                Ok(())
+            };
         }
         if let PeerMessage::Bitfield(bitfield) = message {
             let expected = piece_count.div_ceil(8);
@@ -2546,10 +2558,22 @@ mod tests {
             )
             .is_err()
         );
+        validate_incoming_fast_message(
+            true,
+            &PeerMessage::Extended {
+                id: 0,
+                payload: Vec::new(),
+            },
+            2,
+            &mut initial,
+            &mut suggestions,
+            &mut allowed,
+        )
+        .expect("extension handshake may precede availability");
         assert!(
             validate_incoming_fast_message(
                 true,
-                &PeerMessage::Interested,
+                &PeerMessage::SuggestPiece(0),
                 2,
                 &mut initial,
                 &mut suggestions,

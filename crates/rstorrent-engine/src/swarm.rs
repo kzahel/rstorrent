@@ -1414,9 +1414,21 @@ impl SwarmState {
             PeerMessage::Bitfield(_) | PeerMessage::HaveAll | PeerMessage::HaveNone
         );
         if !connection.initial_availability_received && !initial {
-            return Err(SwarmError::InvalidTransition(
-                "Fast initial availability is missing",
-            ));
+            let requires_availability = fast_message
+                || matches!(
+                    message,
+                    PeerMessage::Have(_)
+                        | PeerMessage::Request(_)
+                        | PeerMessage::Cancel(_)
+                        | PeerMessage::Piece { .. }
+                );
+            return if requires_availability {
+                Err(SwarmError::InvalidTransition(
+                    "Fast initial availability is missing",
+                ))
+            } else {
+                Ok(())
+            };
         }
         if connection.initial_availability_received && initial {
             return Err(SwarmError::InvalidTransition(
@@ -3987,9 +3999,12 @@ mod tests {
         state
             .set_fast_extension(peer, true)
             .expect("enable Fast before messages");
+        state
+            .observe_fast_message(peer, &PeerMessage::KeepAlive)
+            .expect("capability-neutral control may precede availability");
         assert!(
             state
-                .observe_fast_message(peer, &PeerMessage::KeepAlive)
+                .observe_fast_message(peer, &PeerMessage::SuggestPiece(0))
                 .is_err()
         );
         state

@@ -3379,6 +3379,9 @@ async fn acquire_metadata_from_connection(
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
     }
+    if peer.supports_fast_extension() {
+        send_message(peer, &PeerMessage::HaveNone).await?;
+    }
     send_message(
         peer,
         &PeerMessage::Extended {
@@ -4896,6 +4899,19 @@ async fn run_selective_swarm_loop(
                             .state
                             .set_fast_extension(id, capabilities.fast_extension)
                             .map_err(DownloadError::Swarm)?;
+                        if capabilities.fast_extension
+                            && sockets.send(id, PeerMessage::HaveNone).await.is_err()
+                        {
+                            close_content_connection(
+                                peers,
+                                sockets,
+                                &mut download.state,
+                                id,
+                                Some(PeerFailure::RemoteClosed),
+                            )
+                            .await?;
+                            continue;
+                        }
                         if sockets.send(id, PeerMessage::Interested).await.is_err() {
                             close_content_connection(
                                 peers,
