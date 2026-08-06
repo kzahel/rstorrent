@@ -121,6 +121,73 @@
       ],
       "type": "object"
     },
+    "AddTorrentDisposition": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "added",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "already_present",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "newly_wanted_count": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "selection_expanded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AddTorrentResult": {
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/AddTorrentDisposition"
+        },
+        "resulting_revision": {
+          "type": "string"
+        },
+        "torrent_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "disposition",
+        "resulting_revision"
+      ],
+      "type": "object"
+    },
     "AdvertisedPeerEndpointScope": {
       "enum": [
         "loopback",
@@ -1625,6 +1692,26 @@
           },
           "required": [
             "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CommandResult": {
+      "oneOf": [
+        {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/AddTorrentResult"
+            },
+            "type": {
+              "const": "add_torrent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
           ],
           "type": "object"
         }
@@ -3736,6 +3823,16 @@
         "request_id": {
           "type": "string"
         },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommandResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "revision": {
           "type": "string"
         },
@@ -4305,6 +4402,19 @@
               "type": "null"
             }
           ]
+        },
+        "selection_default": {
+          "$ref": "#/$defs/FilePriority",
+          "default": "normal"
+        },
+        "selection_exceptions": {
+          "default": [],
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         "skip_files": {
           "items": {

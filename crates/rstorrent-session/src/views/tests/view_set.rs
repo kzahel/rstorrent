@@ -68,6 +68,8 @@ fn service_snapshot(revision: u64, verified: u32) -> ServiceSnapshot {
             piece_count: 3,
             verified_piece_count: verified,
             skip_files: Vec::new(),
+            selection_default: Default::default(),
+            selection_exceptions: Vec::new(),
             archived: false,
             removal_state: None,
             delete_managed_data_supported: true,

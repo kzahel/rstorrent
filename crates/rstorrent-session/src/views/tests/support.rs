@@ -43,6 +43,8 @@ pub(super) fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
             piece_count,
             verified_piece_count: 0,
             skip_files: Vec::new(),
+            selection_default: Default::default(),
+            selection_exceptions: Vec::new(),
             archived: false,
             removal_state: None,
             delete_managed_data_supported: true,

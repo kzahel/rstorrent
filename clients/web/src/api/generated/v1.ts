@@ -61,13 +61,13 @@ export type RequestEnvelope = { version: number, request_id: string, expected_re
 
 export type ResponseOutcome = { "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, };
 
-export type ResponseEnvelope = { version: number, request_id: string, revision: string, } & ({ "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, });
+export type ResponseEnvelope = { version: number, request_id: string, revision: string, result?: CommandResult | null, } & ({ "status": "success", snapshot: ServiceSnapshot, } | { "status": "error", error: ErrorResponse, });
 
 export type TorrentState = "awaiting_metadata" | "awaiting_storage" | "checking" | "downloading" | "awaiting_publication" | "paused" | "complete" | "needs_repair" | "error";
 
 export type StorageState = "none" | "staging" | "prepared" | "published" | "needs_repair";
 
-export type TorrentSnapshot = { torrent_id: string, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, skip_files: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type TorrentSnapshot = { torrent_id: string, storage_root: string, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, skip_files: Array<number>, selection_default: FilePriority, selection_exceptions: Array<number>, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type StorageRootAvailability = "available" | "unavailable";
 

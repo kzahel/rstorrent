@@ -32,8 +32,9 @@ use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use tokio::task::JoinHandle;
 
 use crate::control::{
-    AddTorrentBytesRequest, Command, ErrorCode, FilePriority, RemovalDataPolicy, RemovalState,
-    RequestEnvelope, ResponseEnvelope, ResponseOutcome, StorageState, TorrentState,
+    AddTorrentBytesRequest, AddTorrentDisposition, Command, CommandResult, ErrorCode, FilePriority,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
+    StorageState, TorrentState,
 };
 use crate::diagnostics::{
     DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, DiagnosticSubject,
@@ -652,6 +653,11 @@ impl ApplicationService {
             {
                 Some(torrent_id.to_ascii_lowercase())
             }
+            Command::AddMagnet { magnet, .. } => rstorrent_protocol::magnet::Magnet::parse(magnet)
+                .ok()
+                .filter(|magnet| magnet.select_only.is_some())
+                .map(|magnet| encode_info_hash(magnet.info_hash))
+                .filter(|torrent_id| self.torrent_runtimes.contains_key(torrent_id)),
             _ => None,
         };
         if let Some(torrent_id) = incoming_fence.as_deref() {
@@ -704,15 +710,31 @@ impl ApplicationService {
                 let torrent_id = rstorrent_protocol::magnet::Magnet::parse(&magnet)
                     .map(|magnet| encode_info_hash(magnet.info_hash))
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-                self.views.record_diagnostic(
-                    DiagnosticSeverity::Info,
-                    category::LIFECYCLE_TORRENT,
-                    "torrent_added",
-                    Some(&torrent_id),
-                    "Torrent added to the session",
-                    &[],
-                )?;
-                self.start_if_possible(&torrent_id).await?;
+                let disposition = response.result.as_ref().and_then(|result| match result {
+                    CommandResult::AddTorrent { result } => Some(&result.disposition),
+                });
+                match disposition {
+                    Some(AddTorrentDisposition::Added) => {
+                        self.views.record_diagnostic(
+                            DiagnosticSeverity::Info,
+                            category::LIFECYCLE_TORRENT,
+                            "torrent_added",
+                            Some(&torrent_id),
+                            "Torrent added to the session",
+                            &[],
+                        )?;
+                        self.start_if_possible(&torrent_id).await?;
+                    }
+                    Some(AddTorrentDisposition::SelectionExpanded { .. }) => {
+                        self.pause(&torrent_id).await?;
+                        self.refresh_views()?;
+                        self.start_if_possible(&torrent_id).await?;
+                    }
+                    Some(AddTorrentDisposition::AlreadyPresent) | None => {
+                        self.reconcile_incoming_torrent(&torrent_id).await?;
+                        self.reconcile_discovery_torrent(&torrent_id).await?;
+                    }
+                }
             }
             Command::Resume { torrent_id } => {
                 let torrent_id = torrent_id.to_ascii_lowercase();

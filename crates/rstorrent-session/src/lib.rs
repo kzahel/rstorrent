@@ -32,10 +32,11 @@ pub use application_connection::{
     ApplicationCallResult,
 };
 pub use control::{
-    AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, ErrorResponse, FileIndexRange,
-    FilePriority, FileSelectionIntent, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot,
-    TorrentState, validate_add_torrent_bytes_request,
+    AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, CONTROL_VERSION, Command,
+    CommandResult, ErrorCode, ErrorResponse, FileIndexRange, FilePriority, FileSelectionIntent,
+    RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope, ResponseOutcome,
+    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState,
+    validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,
