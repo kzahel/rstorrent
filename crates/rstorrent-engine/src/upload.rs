@@ -191,6 +191,28 @@ impl UploadPeerState {
         actions
     }
 
+    pub fn shutdown(&mut self) -> Vec<UploadAction> {
+        let mut actions = Vec::new();
+        while let Some(pending) = self.queued.pop_front() {
+            if self.fast_extension {
+                actions.push(UploadAction::Send(PeerMessage::RejectRequest(
+                    pending.request,
+                )));
+            }
+        }
+        if let Some(mut in_flight) = self.in_flight.take()
+            && self.fast_extension
+            && !in_flight.terminal_sent
+        {
+            in_flight.terminal_sent = true;
+            actions.push(UploadAction::Send(PeerMessage::RejectRequest(
+                in_flight.pending.request,
+            )));
+        }
+        self.pending_bytes = 0;
+        actions
+    }
+
     pub fn on_message(&mut self, message: &PeerMessage) -> Vec<UploadAction> {
         match message {
             PeerMessage::Interested => self.on_interested(),
@@ -823,5 +845,30 @@ mod tests {
                 UploadAction::Close(UploadCloseReason::ReadFailed),
             ]
         );
+    }
+
+    #[test]
+    fn fast_shutdown_rejects_each_unanswered_request_once() {
+        let first = request(0, 0, 4);
+        let second = request(0, 4, 4);
+        let mut state = UploadPeerState::new(vec![8], vec![true]).expect("valid state");
+        state.enable_fast_extension([]).expect("enable Fast upload");
+        interested(&mut state);
+        assert!(matches!(
+            state.on_message(&PeerMessage::Request(first)).as_slice(),
+            [UploadAction::Read(_)]
+        ));
+        assert!(state.on_message(&PeerMessage::Request(second)).is_empty());
+
+        assert_eq!(
+            state.shutdown(),
+            [
+                UploadAction::Send(PeerMessage::RejectRequest(second)),
+                UploadAction::Send(PeerMessage::RejectRequest(first)),
+            ]
+        );
+        assert!(state.shutdown().is_empty());
+        assert_eq!(state.snapshot().queued_requests, 0);
+        assert_eq!(state.snapshot().queued_bytes, 0);
     }
 }

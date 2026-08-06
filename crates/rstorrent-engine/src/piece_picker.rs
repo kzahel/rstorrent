@@ -207,6 +207,17 @@ impl AvailabilityPicker {
         Ok(())
     }
 
+    pub(crate) fn reserve_specific(&mut self, piece: usize) -> bool {
+        let Some(&position) = self.positions.get(piece) else {
+            return false;
+        };
+        if position >= POSITION_DETACHED || self.availability(piece) == Some(0) {
+            return false;
+        }
+        self.remove_at(position as usize, POSITION_RESERVED);
+        true
+    }
+
     pub(crate) fn mark_planned(&mut self, piece: usize) -> Result<(), &'static str> {
         let position = *self
             .positions

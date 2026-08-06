@@ -3,7 +3,7 @@
 mod peer_io;
 mod upload_runtime;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -18,8 +18,8 @@ use rstorrent_protocol::metadata::{
     parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::peer_wire::{
-    BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-    HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake_with_reserved,
+    BlockRequest, HANDSHAKE_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
+    encode_handshake_with_reserved,
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -37,8 +37,11 @@ use crate::peer_budget::{
 };
 use crate::peer_io::{PeerIo, record_bytes};
 use crate::peer_runtime::{PeerConnectionRole, PeerUploadActivity, PeerUploadGrant};
+use crate::peer_socket::advertised_reserved_bits;
 use crate::seed_content::SeedContent;
+use crate::swarm::MAX_FAST_ADVISORY_PIECES;
 use crate::torrent_peer::{IncomingPeerAttachment, TorrentPeerHandle};
+use crate::upload::{MAX_GENERATED_ALLOWED_FAST_PIECES, generate_allowed_fast_set};
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedulerSnapshot};
 
@@ -504,7 +507,7 @@ impl RegistrationRuntime {
         self: &Arc<Self>,
         stream: TcpStream,
         remote: SocketAddr,
-        supports_extensions: bool,
+        capabilities: IncomingPeerCapabilities,
         permit: PeerBudgetPermit,
         shared: Arc<Shared>,
         peer_attachment: IncomingPeerAttachmentGuard,
@@ -551,7 +554,8 @@ impl RegistrationRuntime {
             let (termination, mut peer_attachment) = run_incoming_peer(
                 stream,
                 IncomingPeerStart {
-                    supports_extensions,
+                    capabilities,
+                    remote,
                     registration: data,
                     cancellation,
                     budget_cancellation,
@@ -1417,8 +1421,8 @@ async fn run_handshake(
         .data
         .torrent_peers
         .register_connection_cancellation(attachment.connection_id(), budget_cancellation.clone());
-    let mut reserved = [0; 8];
-    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    let reserved = advertised_reserved_bits(true);
+    let capabilities = NegotiatedPeerCapabilities::negotiate(reserved, &handshake);
     let response = encode_handshake_with_reserved(info_hash, shared.peer_id, reserved);
     let write = tokio::select! {
         biased;
@@ -1467,7 +1471,10 @@ async fn run_handshake(
         .admit(
             stream,
             remote,
-            handshake.supports_extensions(),
+            IncomingPeerCapabilities {
+                extensions: handshake.supports_extensions(),
+                fast: capabilities.fast_extension,
+            },
             budget_permit,
             shared.clone(),
             peer_attachment,
@@ -1517,13 +1524,20 @@ struct IncomingUploadMembership {
 }
 
 struct IncomingPeerStart {
-    supports_extensions: bool,
+    capabilities: IncomingPeerCapabilities,
+    remote: SocketAddr,
     registration: Arc<SeedRegistration>,
     cancellation: CancellationToken,
     budget_cancellation: CancellationToken,
     shared: Arc<Shared>,
     peer_attachment: IncomingPeerAttachmentGuard,
     membership: IncomingUploadMembership,
+}
+
+#[derive(Clone, Copy)]
+struct IncomingPeerCapabilities {
+    extensions: bool,
+    fast: bool,
 }
 
 struct IncomingPeerConnectionRuntime {
@@ -1632,7 +1646,8 @@ async fn run_incoming_peer(
     start: IncomingPeerStart,
 ) -> (PeerTermination, IncomingPeerAttachmentGuard) {
     let IncomingPeerStart {
-        supports_extensions,
+        capabilities,
+        remote,
         registration,
         cancellation,
         budget_cancellation,
@@ -1662,7 +1677,8 @@ async fn run_incoming_peer(
     };
     let termination = run_incoming_peer_loop(
         &mut io,
-        supports_extensions,
+        capabilities,
+        remote,
         registration,
         cancellation,
         budget_cancellation,
@@ -1692,12 +1708,17 @@ async fn run_incoming_peer(
 
 async fn run_incoming_peer_loop(
     io: &mut IncomingPeerIo,
-    supports_extensions: bool,
+    capabilities: IncomingPeerCapabilities,
+    remote: SocketAddr,
     registration: Arc<SeedRegistration>,
     cancellation: CancellationToken,
     budget_cancellation: CancellationToken,
     runtime: &mut IncomingPeerConnectionRuntime,
 ) -> PeerTermination {
+    let IncomingPeerCapabilities {
+        extensions: supports_extensions,
+        fast: supports_fast,
+    } = capabilities;
     let shared = &runtime.shared;
     let peer_attachment = &runtime.attachment;
     let upload_peer = runtime.upload_peer;
@@ -1710,6 +1731,29 @@ async fn run_incoming_peer_loop(
         Ok(upload) => upload,
         Err(_) => return PeerTermination::Storage,
     };
+    let allowed_fast = if supports_fast {
+        match remote.ip() {
+            std::net::IpAddr::V4(address) => match generate_allowed_fast_set(
+                registration.info_hash,
+                address,
+                registration.availability.len(),
+                MAX_GENERATED_ALLOWED_FAST_PIECES,
+            ) {
+                Ok(allowed) => allowed,
+                Err(_) => return PeerTermination::Protocol,
+            },
+            std::net::IpAddr::V6(_) => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+    if supports_fast
+        && upload
+            .enable_fast_extension(allowed_fast.iter().copied())
+            .is_err()
+    {
+        return PeerTermination::Protocol;
+    }
     if !supports_extensions && peer_attachment.set_metadata_extension(false).is_err() {
         return PeerTermination::Protocol;
     }
@@ -1718,11 +1762,20 @@ async fn run_incoming_peer_loop(
         return PeerTermination::Protocol;
     }
     if io
-        .send_message(&PeerMessage::Bitfield(upload.bitfield()))
+        .send_message(&upload.initial_availability_message(supports_fast))
         .await
         .is_err()
     {
         return PeerTermination::Closed;
+    }
+    for piece in allowed_fast {
+        if io
+            .send_message(&PeerMessage::AllowedFast(piece))
+            .await
+            .is_err()
+        {
+            return PeerTermination::Closed;
+        }
     }
     if supports_extensions
         && io
@@ -1740,6 +1793,9 @@ async fn run_incoming_peer_loop(
         Err(_) => return PeerTermination::Storage,
     };
     let mut remote_metadata_id = None;
+    let mut fast_initial_availability = false;
+    let mut fast_suggestions = BTreeSet::new();
+    let mut fast_allowed = BTreeSet::new();
     let mut deferred_metadata = VecDeque::new();
     let mut read: Option<ActiveRead> = None;
     let mut queued_piece_frames = QueuedPieceFrames::default();
@@ -1801,6 +1857,21 @@ async fn run_incoming_peer_loop(
         let actions = match event {
             PeerEvent::Cancelled => {
                 join_read(read.take()).await;
+                let actions = upload.shutdown();
+                if let Some(termination) = apply_upload_actions(
+                    actions,
+                    io,
+                    &mut read,
+                    &mut queued_piece_frames,
+                    &mut queued_choke_frame,
+                    &registration,
+                    shared,
+                )
+                .await
+                {
+                    return termination;
+                }
+                let _ = io.flush().await;
                 return PeerTermination::Cancelled;
             }
             PeerEvent::Maintenance => {
@@ -1845,7 +1916,7 @@ async fn run_incoming_peer_loop(
                 upload.on_read_complete(pending, result)
             }
             PeerEvent::Grant(Ok(grant)) => {
-                if grant == UploadGrant::Choked {
+                if grant == UploadGrant::Choked && !supports_fast {
                     queued_piece_frames.cancel_all();
                 }
                 if grant != UploadGrant::Choked {
@@ -1869,6 +1940,19 @@ async fn run_incoming_peer_loop(
             }
             PeerEvent::Message(Ok(Some(message))) => {
                 last_peer_activity = Instant::now();
+                if validate_incoming_fast_message(
+                    supports_fast,
+                    &message,
+                    registration.availability.len(),
+                    &mut fast_initial_availability,
+                    &mut fast_suggestions,
+                    &mut fast_allowed,
+                )
+                .is_err()
+                {
+                    join_read(read.take()).await;
+                    return PeerTermination::Protocol;
+                }
                 if matches!(
                     message,
                     PeerMessage::Interested
@@ -1883,7 +1967,9 @@ async fn run_incoming_peer_loop(
                 }
                 match message {
                     PeerMessage::NotInterested => queued_piece_frames.cancel_all(),
-                    PeerMessage::Cancel(request) => queued_piece_frames.cancel(request),
+                    PeerMessage::Cancel(request) if !supports_fast => {
+                        queued_piece_frames.cancel(request)
+                    }
                     _ => {}
                 }
                 let previous_metadata_id = remote_metadata_id;
@@ -1973,6 +2059,69 @@ async fn run_incoming_peer_loop(
             return PeerTermination::Protocol;
         }
     }
+}
+
+fn validate_incoming_fast_message(
+    negotiated: bool,
+    message: &PeerMessage,
+    piece_count: usize,
+    initial_availability: &mut bool,
+    suggestions: &mut BTreeSet<u32>,
+    allowed_fast: &mut BTreeSet<u32>,
+) -> Result<(), ()> {
+    let fast_message = matches!(
+        message,
+        PeerMessage::SuggestPiece(_)
+            | PeerMessage::HaveAll
+            | PeerMessage::HaveNone
+            | PeerMessage::RejectRequest(_)
+            | PeerMessage::AllowedFast(_)
+    );
+    if !negotiated {
+        return if fast_message { Err(()) } else { Ok(()) };
+    }
+    let initial = matches!(
+        message,
+        PeerMessage::Bitfield(_) | PeerMessage::HaveAll | PeerMessage::HaveNone
+    );
+    if !*initial_availability {
+        if !initial {
+            return Err(());
+        }
+        if let PeerMessage::Bitfield(bitfield) = message {
+            let expected = piece_count.div_ceil(8);
+            if bitfield.len() != expected {
+                return Err(());
+            }
+            let remainder = piece_count % 8;
+            if remainder != 0
+                && bitfield
+                    .last()
+                    .is_some_and(|byte| byte & ((1 << (8 - remainder)) - 1) != 0)
+            {
+                return Err(());
+            }
+        }
+        *initial_availability = true;
+        return Ok(());
+    }
+    if initial || matches!(message, PeerMessage::RejectRequest(_)) {
+        return Err(());
+    }
+    let target = match message {
+        PeerMessage::SuggestPiece(piece) => Some((*piece, suggestions)),
+        PeerMessage::AllowedFast(piece) => Some((*piece, allowed_fast)),
+        _ => None,
+    };
+    if let Some((piece, retained)) = target {
+        if usize::try_from(piece).map_or(true, |piece| piece >= piece_count) {
+            return Err(());
+        }
+        if retained.len() < MAX_FAST_ADVISORY_PIECES {
+            retained.insert(piece);
+        }
+    }
+    Ok(())
 }
 
 fn publish_incoming_upload(
@@ -2279,7 +2428,7 @@ impl Error for IncomingPeerError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use std::collections::{BTreeSet, VecDeque};
     use std::net::Ipv4Addr;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -2307,6 +2456,7 @@ mod tests {
         IncomingRejectionReason, IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS,
         METADATA_SEND_BUFFER_WATERMARK, QueuedChokeFrame, QueuedPieceFrames, SeedRegistration,
         UploadRateWindow, drain_metadata_requests, handle_metadata_message,
+        validate_incoming_fast_message,
     };
     use crate::peer::PeerFailure;
     use crate::peer_io::PeerIo;
@@ -2378,6 +2528,65 @@ mod tests {
         let latest = frame.replace();
         assert!(first.is_cancelled());
         assert!(!latest.is_cancelled());
+    }
+
+    #[test]
+    fn incoming_fast_validation_requires_negotiation_and_one_initial_state() {
+        let mut initial = false;
+        let mut suggestions = BTreeSet::new();
+        let mut allowed = BTreeSet::new();
+        assert!(
+            validate_incoming_fast_message(
+                false,
+                &PeerMessage::HaveAll,
+                2,
+                &mut initial,
+                &mut suggestions,
+                &mut allowed,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_incoming_fast_message(
+                true,
+                &PeerMessage::Interested,
+                2,
+                &mut initial,
+                &mut suggestions,
+                &mut allowed,
+            )
+            .is_err()
+        );
+        validate_incoming_fast_message(
+            true,
+            &PeerMessage::HaveNone,
+            2,
+            &mut initial,
+            &mut suggestions,
+            &mut allowed,
+        )
+        .expect("initial state");
+        validate_incoming_fast_message(
+            true,
+            &PeerMessage::SuggestPiece(1),
+            2,
+            &mut initial,
+            &mut suggestions,
+            &mut allowed,
+        )
+        .expect("bounded suggestion");
+        assert_eq!(suggestions, BTreeSet::from([1]));
+        assert!(
+            validate_incoming_fast_message(
+                true,
+                &PeerMessage::HaveAll,
+                2,
+                &mut initial,
+                &mut suggestions,
+                &mut allowed,
+            )
+            .is_err()
+        );
     }
 
     #[test]

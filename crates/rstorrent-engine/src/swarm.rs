@@ -1122,11 +1122,32 @@ impl SwarmState {
             return None;
         }
         let connections = &self.connections;
-        self.picker.reserve_best_matching(|piece| {
+        let ordinary = self.picker.reserve_best_matching(|piece| {
             connections
                 .values()
                 .any(|connection| connection.can_request_piece(piece))
-        })
+        })?;
+        let ordinary_availability = self.picker.availability(ordinary as usize)?;
+        let suggested = self.connections.values().find_map(|connection| {
+            connection.suggestions.iter().copied().find(|piece| {
+                usize::try_from(*piece).is_ok_and(|piece| {
+                    connection.can_request_piece(piece)
+                        && self.picker.availability(piece) == Some(ordinary_availability)
+                })
+            })
+        });
+        let Some(suggested) = suggested else {
+            return Some(ordinary);
+        };
+        self.picker
+            .cancel_reserved(ordinary as usize)
+            .expect("fresh picker reservation can be restored");
+        if self.picker.reserve_specific(suggested as usize) {
+            Some(suggested)
+        } else {
+            debug_assert!(self.picker.reserve_specific(ordinary as usize));
+            Some(ordinary)
+        }
     }
 
     pub fn cancel_piece_planning(&mut self, piece: u32) -> Result<(), SwarmError> {
@@ -4584,6 +4605,53 @@ mod tests {
         add_peer(&mut in_order, connection(1), &[0, 1, 2], false);
         add_peer(&mut in_order, connection(2), &[0, 1], false);
         assert_eq!(in_order.reserve_piece_for_planning(256), Some(0));
+    }
+
+    #[test]
+    fn fast_suggestions_precede_only_ordinary_equal_rarity_ties() {
+        let mut tied = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            3,
+            vec![0, 1, 2],
+            Vec::new(),
+            0,
+        )
+        .expect("unplanned swarm");
+        add_peer(&mut tied, connection(1), &[0, 1, 2], false);
+        tied.set_fast_extension(connection(1), true)
+            .expect("enable Fast");
+        let initial = PeerMessage::Bitfield(vec![0b1110_0000]);
+        tied.observe_fast_message(connection(1), &initial)
+            .expect("initial availability");
+        tied.set_compact_bitfield(connection(1), vec![0b1110_0000])
+            .expect("apply availability");
+        tied.observe_fast_message(connection(1), &PeerMessage::SuggestPiece(1))
+            .expect("suggest equal-rarity piece");
+        assert_eq!(tied.reserve_piece_for_planning(256), Some(1));
+
+        let mut rarest = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            3,
+            vec![0, 1, 2],
+            Vec::new(),
+            0,
+        )
+        .expect("unplanned swarm");
+        add_peer(&mut rarest, connection(1), &[0, 1, 2], false);
+        add_peer(&mut rarest, connection(2), &[0], false);
+        rarest
+            .set_fast_extension(connection(1), true)
+            .expect("enable Fast");
+        rarest
+            .observe_fast_message(connection(1), &initial)
+            .expect("initial availability");
+        rarest
+            .set_compact_bitfield(connection(1), vec![0b1110_0000])
+            .expect("apply availability");
+        rarest
+            .observe_fast_message(connection(1), &PeerMessage::SuggestPiece(0))
+            .expect("suggest common piece");
+        assert_ne!(rarest.reserve_piece_for_planning(256), Some(0));
     }
 
     #[test]

@@ -17,7 +17,9 @@ use rstorrent_protocol::metadata::{
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, MAX_METAINFO_PIECES, Metainfo, MetainfoError,
 };
-use rstorrent_protocol::peer_wire::{FrameError, Handshake, HandshakeError, PeerMessage};
+use rstorrent_protocol::peer_wire::{
+    FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage,
+};
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 use rstorrent_protocol::udp_tracker::{
@@ -60,8 +62,8 @@ use crate::selective_storage::{
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
-    PieceHashFailure, PiecePlan, ReceiveDisposition, RequestAssignment, SwarmConfig, SwarmError,
-    SwarmState,
+    PieceHashFailure, PiecePlan, ReceiveDisposition, RejectDisposition, RequestAssignment,
+    SwarmConfig, SwarmError, SwarmState,
 };
 use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
 use crate::tracker::{
@@ -875,21 +877,63 @@ fn preserves_existing_artifact(error: &DownloadError) -> bool {
 
 #[derive(Debug)]
 struct PremetadataPeerState {
+    fast_extension: bool,
+    initial_availability_received: bool,
     choking: bool,
     bitfield: Option<Vec<u8>>,
+    have_all: bool,
+    have_none: bool,
     haves: Vec<u8>,
+    fast_advisories: VecDeque<PeerMessage>,
 }
 
 impl PremetadataPeerState {
-    fn new() -> Self {
+    fn new(fast_extension: bool) -> Self {
         Self {
+            fast_extension,
+            initial_availability_received: false,
             choking: true,
             bitfield: None,
+            have_all: false,
+            have_none: false,
             haves: Vec::new(),
+            fast_advisories: VecDeque::new(),
         }
     }
 
     fn observe(&mut self, message: PeerMessage) -> Result<(), DownloadError> {
+        let fast_message = matches!(
+            message,
+            PeerMessage::SuggestPiece(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone
+                | PeerMessage::RejectRequest(_)
+                | PeerMessage::AllowedFast(_)
+        );
+        if fast_message && !self.fast_extension {
+            return Err(DownloadError::InvalidPremetadataState(
+                "Fast message arrived without negotiated support",
+            ));
+        }
+        if self.fast_extension {
+            let initial = matches!(
+                message,
+                PeerMessage::Bitfield(_) | PeerMessage::HaveAll | PeerMessage::HaveNone
+            );
+            if !self.initial_availability_received && !initial {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "Fast initial availability is missing",
+                ));
+            }
+            if self.initial_availability_received && initial {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "Fast initial availability was repeated",
+                ));
+            }
+            if initial {
+                self.initial_availability_received = true;
+            }
+        }
         match message {
             PeerMessage::KeepAlive | PeerMessage::Interested | PeerMessage::NotInterested => {}
             PeerMessage::Choke => self.choking = true,
@@ -917,6 +961,23 @@ impl PremetadataPeerState {
                 }
                 self.bitfield = Some(bitfield);
             }
+            PeerMessage::HaveAll => self.have_all = true,
+            PeerMessage::HaveNone => self.have_none = true,
+            PeerMessage::SuggestPiece(piece) | PeerMessage::AllowedFast(piece) => {
+                if usize::try_from(piece).map_or(true, |piece| piece >= MAX_ENGINE_PIECES) {
+                    return Err(DownloadError::InvalidPremetadataState(
+                        "Fast advisory index exceeds the supported piece-count bound",
+                    ));
+                }
+                if self.fast_advisories.len() < crate::swarm::MAX_FAST_ADVISORY_PIECES {
+                    self.fast_advisories.push_back(message);
+                }
+            }
+            PeerMessage::RejectRequest(_) => {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "Fast reject arrived before any payload request",
+                ));
+            }
             PeerMessage::Request(_) | PeerMessage::Cancel(_) | PeerMessage::Piece { .. } => {
                 return Err(DownloadError::InvalidPremetadataState(
                     "payload message arrived before verified metadata",
@@ -925,15 +986,6 @@ impl PremetadataPeerState {
             PeerMessage::Extended { .. } => {
                 return Err(DownloadError::InvalidPremetadataState(
                     "extension message was dispatched as core peer state",
-                ));
-            }
-            PeerMessage::SuggestPiece(_)
-            | PeerMessage::HaveAll
-            | PeerMessage::HaveNone
-            | PeerMessage::RejectRequest(_)
-            | PeerMessage::AllowedFast(_) => {
-                return Err(DownloadError::InvalidPremetadataState(
-                    "Fast message arrived without negotiated support",
                 ));
             }
         }
@@ -947,8 +999,19 @@ impl PremetadataPeerState {
         let piece_count = metainfo.piece_count();
         let mut messages = VecDeque::new();
         let expected_length = piece_count.div_ceil(8);
-        let had_availability = self.bitfield.is_some() || !self.haves.is_empty();
-        let mut bitfield = self.bitfield.unwrap_or_else(|| vec![0; expected_length]);
+        let had_availability =
+            self.bitfield.is_some() || self.have_all || self.have_none || !self.haves.is_empty();
+        let mut bitfield = if self.have_all {
+            vec![u8::MAX; expected_length]
+        } else {
+            self.bitfield.unwrap_or_else(|| vec![0; expected_length])
+        };
+        if self.have_all && !piece_count.is_multiple_of(8) {
+            let used = piece_count % 8;
+            if let Some(last) = bitfield.last_mut() {
+                *last &= u8::MAX << (8 - used);
+            }
+        }
         if had_availability {
             if bitfield.len() != expected_length {
                 return Err(DownloadError::InvalidPremetadataState(
@@ -984,6 +1047,18 @@ impl PremetadataPeerState {
                 }
             }
             messages.push_back(PeerMessage::Bitfield(bitfield));
+        }
+        for message in self.fast_advisories {
+            let piece = match message {
+                PeerMessage::SuggestPiece(piece) | PeerMessage::AllowedFast(piece) => piece,
+                _ => unreachable!("only Fast advisories are retained"),
+            };
+            if usize::try_from(piece).map_or(true, |piece| piece >= piece_count) {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "Fast advisory index is outside verified metadata",
+                ));
+            }
+            messages.push_back(message);
         }
         if !self.choking {
             messages.push_back(PeerMessage::Unchoke);
@@ -3313,7 +3388,12 @@ async fn acquire_metadata_from_connection(
     )
     .await?;
 
-    let mut peer_state = PremetadataPeerState::new();
+    let fast_extension = NegotiatedPeerCapabilities::negotiate(
+        peer_socket::advertised_reserved_bits(true),
+        &handshake,
+    )
+    .fast_extension;
+    let mut peer_state = PremetadataPeerState::new(fast_extension);
     let mut remote_metadata_id = None;
     let mut received_extension_handshake = false;
     let metadata_progress_timeout = peer.io_timeout();
@@ -3833,6 +3913,13 @@ impl<'a> ContentSwarmDownload<'a> {
         message: PeerMessage,
         now: Duration,
     ) -> Result<ContentMessageDisposition, DownloadError> {
+        if self
+            .state
+            .observe_fast_message(connection, &message)
+            .is_err()
+        {
+            return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+        }
         match message {
             PeerMessage::Choke => {
                 self.state
@@ -3858,6 +3945,29 @@ impl<'a> ContentSwarmDownload<'a> {
                 self.state
                     .set_compact_bitfield(connection, availability)
                     .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::HaveAll => {
+                self.state
+                    .set_have_all(connection)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::HaveNone => {
+                self.state
+                    .set_have_none(connection)
+                    .map_err(DownloadError::Swarm)?;
+            }
+            PeerMessage::RejectRequest(request) => {
+                let Ok(block) = BlockKey::new(request.index, request.begin, request.length) else {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                };
+                if !matches!(
+                    self.state
+                        .reject_request(connection, block)
+                        .map_err(DownloadError::Swarm)?,
+                    RejectDisposition::Accepted { .. }
+                ) {
+                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                }
             }
             PeerMessage::Piece {
                 index,
@@ -3923,11 +4033,25 @@ impl<'a> ContentSwarmDownload<'a> {
                                 bytes: block,
                             })?;
                     }
-                    ReceiveDisposition::Redundant | ReceiveDisposition::Unsolicited => {
+                    ReceiveDisposition::Redundant => {
                         self.control
                             .record_bytes(ByteMetric::PayloadRedundant, block.len());
                         self.control
                             .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
+                    }
+                    ReceiveDisposition::Unsolicited => {
+                        self.control
+                            .record_bytes(ByteMetric::PayloadRedundant, block.len());
+                        self.control
+                            .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
+                        if self
+                            .state
+                            .fast_peer_snapshot(connection)
+                            .map_err(DownloadError::Swarm)?
+                            .negotiated
+                        {
+                            return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                        }
                     }
                 }
             }
@@ -3937,13 +4061,7 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Request(_)
             | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
-            PeerMessage::SuggestPiece(_)
-            | PeerMessage::HaveAll
-            | PeerMessage::HaveNone
-            | PeerMessage::RejectRequest(_)
-            | PeerMessage::AllowedFast(_) => {
-                return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
-            }
+            PeerMessage::SuggestPiece(_) | PeerMessage::AllowedFast(_) => {}
         }
         Ok(ContentMessageDisposition::Continue)
     }
@@ -4525,6 +4643,7 @@ async fn run_selective_swarm_loop(
     let mut next_maintenance_at = Duration::ZERO;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
+        let fast_extension = connection.supports_fast_extension();
         peers.handoff_to_content(attempt)?;
         let id = sockets
             .add_connection(connection)
@@ -4532,6 +4651,10 @@ async fn run_selective_swarm_loop(
         download
             .state
             .add_connection(id, peers.elapsed())
+            .map_err(DownloadError::Swarm)?;
+        download
+            .state
+            .set_fast_extension(id, fast_extension)
             .map_err(DownloadError::Swarm)?;
         if sockets.send(id, PeerMessage::Interested).await.is_err() {
             close_content_connection(
@@ -4764,6 +4887,14 @@ async fn run_selective_swarm_loop(
                         download
                             .state
                             .add_connection(id, peers.elapsed())
+                            .map_err(DownloadError::Swarm)?;
+                        let capabilities = NegotiatedPeerCapabilities::negotiate(
+                            peer_socket::advertised_reserved_bits(false),
+                            &handshake,
+                        );
+                        download
+                            .state
+                            .set_fast_extension(id, capabilities.fast_extension)
                             .map_err(DownloadError::Swarm)?;
                         if sockets.send(id, PeerMessage::Interested).await.is_err() {
                             close_content_connection(

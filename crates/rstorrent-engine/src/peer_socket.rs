@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_protocol::peer_wire::{
-    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, HANDSHAKE_LENGTH,
-    Handshake, PeerMessage, decode_handshake, encode_handshake, encode_handshake_with_reserved,
+    EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
+    FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH, Handshake,
+    NegotiatedPeerCapabilities, PeerMessage, decode_handshake, encode_handshake_with_reserved,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -26,6 +27,15 @@ use crate::peer_runtime::connection_id;
 use crate::swarm::ConnectionId;
 use crate::{ByteMetric, ByteMetricSink};
 
+pub(crate) fn advertised_reserved_bits(advertise_extensions: bool) -> [u8; 8] {
+    let mut reserved = [0; 8];
+    if advertise_extensions {
+        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    }
+    reserved[FAST_EXTENSION_RESERVED_INDEX] = FAST_EXTENSION_RESERVED_BIT;
+    reserved
+}
+
 pub(crate) const PEER_COMMAND_QUEUE: usize = 16;
 pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 
@@ -33,6 +43,7 @@ pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 pub(crate) struct PeerConnection {
     attempt: DialAttempt,
     io: PeerIo,
+    fast_extension: bool,
     _budget_permit: Option<Box<PeerBudgetPermit>>,
 }
 
@@ -43,6 +54,10 @@ impl PeerConnection {
 
     pub(crate) const fn io_timeout(&self) -> Duration {
         self.io.io_timeout
+    }
+
+    pub(crate) const fn supports_fast_extension(&self) -> bool {
+        self.fast_extension
     }
 
     pub(crate) fn prepend_messages(&mut self, messages: VecDeque<PeerMessage>) {
@@ -60,6 +75,7 @@ impl PeerConnection {
         Self {
             attempt,
             io: PeerIo::new(stream, io_timeout, None),
+            fast_extension: false,
             _budget_permit: None,
         }
     }
@@ -139,13 +155,11 @@ async fn connect_with_progress(
     if let Some(progress) = progress {
         let _ = progress.send(PeerDialProgress { attempt }).await;
     }
-    let handshake = if advertise_extensions {
-        let mut reserved = [0; 8];
-        reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
-        encode_handshake_with_reserved(info_hash, network.peer_id, reserved)
-    } else {
-        encode_handshake(info_hash, network.peer_id)
-    };
+    let handshake = encode_handshake_with_reserved(
+        info_hash,
+        network.peer_id,
+        advertised_reserved_bits(advertise_extensions),
+    );
     timeout(network.peer_io_timeout, stream.write_all(&handshake))
         .await
         .map_err(|_| PeerSocketError::TimedOut {
@@ -189,6 +203,10 @@ async fn connect_with_progress(
         handshake.len(),
     );
     let handshake = decode_handshake(&handshake, info_hash).map_err(PeerSocketError::Handshake)?;
+    let capabilities = NegotiatedPeerCapabilities::negotiate(
+        advertised_reserved_bits(advertise_extensions),
+        &handshake,
+    );
     if let Some(permit) = budget_permit.as_mut() {
         permit.mark_established();
     }
@@ -196,6 +214,7 @@ async fn connect_with_progress(
         PeerConnection {
             attempt,
             io: PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink),
+            fast_extension: capabilities.fast_extension,
             _budget_permit: budget_permit.map(Box::new),
         },
         handshake,
@@ -648,7 +667,7 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_protocol::peer_wire::{
-        HANDSHAKE_LENGTH, PeerMessage, encode_handshake, encode_message,
+        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake, encode_message,
     };
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
@@ -711,6 +730,9 @@ mod tests {
                 .read_exact(&mut request)
                 .await
                 .expect("read handshake");
+            let request = decode_handshake(&request, info_hash).expect("decode handshake");
+            assert!(request.supports_extensions());
+            assert!(request.supports_fast_extension());
             release_rx.await.expect("release handshake");
             stream
                 .write_all(&encode_handshake(info_hash, [8; 20]))

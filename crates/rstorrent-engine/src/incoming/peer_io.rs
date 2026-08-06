@@ -275,6 +275,10 @@ impl IncomingPeerIo {
         self.writer.flush(self.io_timeout).await
     }
 
+    pub async fn flush(&mut self) -> Result<(), PeerIoError> {
+        self.writer.flush(self.io_timeout).await
+    }
+
     pub fn queue_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
         self.writer.queue(message, None)
     }
