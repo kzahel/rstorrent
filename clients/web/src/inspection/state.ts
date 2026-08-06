@@ -4,11 +4,14 @@ import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "../api";
 
 import {
   DEFAULT_COLOR_THEME,
+  DEFAULT_DATA_UNITS,
   DEFAULT_INTERFACE_SIZE,
   loadAppearancePreferences,
   saveAppearancePreferences,
+  type AppearancePreferences,
   type AppearanceStorage,
   type ColorTheme,
+  type DataUnits,
   type InterfaceSize,
 } from "./appearance";
 import type {
@@ -63,6 +66,7 @@ export interface PresentationState {
   readonly layout: "wide" | "compact" | "phone";
   readonly interfaceSize: InterfaceSize;
   readonly colorTheme: ColorTheme;
+  readonly dataUnits: DataUnits;
   readonly logCaptureProfile: "normal" | "detailed" | "trace";
   readonly logCaptureTorrentId: string | null;
   readonly logMinimumSeverity: LogRow["severity"];
@@ -105,6 +109,7 @@ export interface InspectionActions {
   readonly setLayout: (layout: PresentationState["layout"]) => void;
   readonly setInterfaceSize: (interfaceSize: InterfaceSize) => void;
   readonly setColorTheme: (colorTheme: ColorTheme) => void;
+  readonly setDataUnits: (dataUnits: DataUnits) => void;
   readonly setLogCaptureProfile: (
     profile: PresentationState["logCaptureProfile"],
   ) => void;
@@ -190,6 +195,7 @@ const DEFAULT_PRESENTATION: PresentationState = {
   layout: "wide",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   colorTheme: DEFAULT_COLOR_THEME,
+  dataUnits: DEFAULT_DATA_UNITS,
   logCaptureProfile: "normal",
   logCaptureTorrentId: null,
   logMinimumSeverity: "info",
@@ -231,10 +237,7 @@ export function createInspectionStore(
     speedMetrics: speedPreferences.metrics,
     dhtVisualizationMode,
   };
-  const persistAppearance = (preferences: {
-    readonly interfaceSize: InterfaceSize;
-    readonly colorTheme: ColorTheme;
-  }) => {
+  const persistAppearance = (preferences: AppearancePreferences) => {
     if (appearanceStorage === undefined) saveAppearancePreferences(preferences);
     else saveAppearancePreferences(preferences, appearanceStorage);
   };
@@ -298,8 +301,7 @@ export function createInspectionStore(
             ...selection,
             torrentSelectionInitialized: true,
             currentPeerId:
-              selection.currentTorrentId ===
-              state.presentation.currentTorrentId
+              selection.currentTorrentId === state.presentation.currentTorrentId
                 ? state.presentation.currentPeerId
                 : null,
             detailOpen:
@@ -422,7 +424,10 @@ export function createInspectionStore(
     },
     setSpeedRange: (speedRange) => {
       set((state) => {
-        const speed = { range: speedRange, metrics: state.presentation.speedMetrics };
+        const speed = {
+          range: speedRange,
+          metrics: state.presentation.speedMetrics,
+        };
         if (appearanceStorage === undefined) saveSpeedPreferences(speed);
         else saveSpeedPreferences(speed, appearanceStorage);
         return { presentation: { ...state.presentation, speedRange } };
@@ -438,7 +443,10 @@ export function createInspectionStore(
           : selected.length >= 8
             ? selected
             : [...selected, metric];
-        const speed = { range: state.presentation.speedRange, metrics: speedMetrics };
+        const speed = {
+          range: state.presentation.speedRange,
+          metrics: speedMetrics,
+        };
         if (appearanceStorage === undefined) saveSpeedPreferences(speed);
         else saveSpeedPreferences(speed, appearanceStorage);
         return { presentation: { ...state.presentation, speedMetrics } };
@@ -494,6 +502,7 @@ export function createInspectionStore(
         persistAppearance({
           interfaceSize,
           colorTheme: state.presentation.colorTheme,
+          dataUnits: state.presentation.dataUnits,
         });
         return {
           presentation: { ...state.presentation, interfaceSize },
@@ -505,9 +514,22 @@ export function createInspectionStore(
         persistAppearance({
           interfaceSize: state.presentation.interfaceSize,
           colorTheme,
+          dataUnits: state.presentation.dataUnits,
         });
         return {
           presentation: { ...state.presentation, colorTheme },
+        };
+      });
+    },
+    setDataUnits: (dataUnits) => {
+      set((state) => {
+        persistAppearance({
+          interfaceSize: state.presentation.interfaceSize,
+          colorTheme: state.presentation.colorTheme,
+          dataUnits,
+        });
+        return {
+          presentation: { ...state.presentation, dataUnits },
         };
       });
     },
@@ -548,7 +570,9 @@ export function createInspectionStore(
           presentation: {
             ...state.presentation,
             logExpandedIds: expanded
-              ? state.presentation.logExpandedIds.filter((id) => id !== sequence)
+              ? state.presentation.logExpandedIds.filter(
+                  (id) => id !== sequence,
+                )
               : [...state.presentation.logExpandedIds, sequence],
           },
         };
@@ -648,8 +672,7 @@ export function reduceInspectionUpdate(
   if (update.swarm !== undefined) {
     const nextSwarmSets = { ...state.swarmByTorrent };
     for (const patch of update.swarm) {
-      const current =
-        state.swarmByTorrent[patch.torrentId] ?? EMPTY_SWARM_SET;
+      const current = state.swarmByTorrent[patch.torrentId] ?? EMPTY_SWARM_SET;
       const rows = applyRows(
         current.rows,
         patch.upsert,
@@ -848,12 +871,12 @@ function repairTorrentPresentation(
   torrents: Readonly<Record<string, TorrentRow>>,
 ): Pick<
   PresentationState,
-  | "currentTorrentId"
-  | "selectedTorrentIds"
-  | "torrentSelectionInitialized"
+  "currentTorrentId" | "selectedTorrentIds" | "torrentSelectionInitialized"
 > {
   const existing = uniqueExistingTorrentIds(selectedTorrentIds, torrents);
-  const fallback = initialized ? (existing[0] ?? null) : (torrentOrder[0] ?? null);
+  const fallback = initialized
+    ? (existing[0] ?? null)
+    : (torrentOrder[0] ?? null);
   const current =
     currentTorrentId !== null &&
     torrents[currentTorrentId] !== undefined &&
@@ -863,11 +886,7 @@ function repairTorrentPresentation(
   return {
     currentTorrentId: current,
     selectedTorrentIds:
-      current === null
-        ? []
-        : existing.includes(current)
-          ? existing
-          : [current],
+      current === null ? [] : existing.includes(current) ? existing : [current],
     torrentSelectionInitialized: initialized || current !== null,
   };
 }
@@ -879,7 +898,8 @@ function normalizeTorrentSelection(
 ): Pick<PresentationState, "currentTorrentId" | "selectedTorrentIds"> {
   const selectedTorrentIds = uniqueExistingTorrentIds(torrentIds, torrents);
   const currentTorrentId =
-    requestedCurrentId !== null && selectedTorrentIds.includes(requestedCurrentId)
+    requestedCurrentId !== null &&
+    selectedTorrentIds.includes(requestedCurrentId)
       ? requestedCurrentId
       : (selectedTorrentIds[0] ?? null);
   return { currentTorrentId, selectedTorrentIds };

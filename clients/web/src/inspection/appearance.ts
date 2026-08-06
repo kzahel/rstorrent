@@ -1,8 +1,10 @@
 export const INTERFACE_SIZES = ["compact", "standard", "spacious"] as const;
 export const COLOR_THEMES = ["auto", "light", "dark"] as const;
+export const DATA_UNITS = ["decimal", "binary"] as const;
 
 export type InterfaceSize = (typeof INTERFACE_SIZES)[number];
 export type ColorTheme = (typeof COLOR_THEMES)[number];
+export type DataUnits = (typeof DATA_UNITS)[number];
 
 export interface InterfaceMetrics {
   readonly tableHeaderHeight: number;
@@ -12,10 +14,12 @@ export interface InterfaceMetrics {
 export interface AppearancePreferences {
   readonly interfaceSize: InterfaceSize;
   readonly colorTheme: ColorTheme;
+  readonly dataUnits: DataUnits;
 }
 
 export const DEFAULT_INTERFACE_SIZE: InterfaceSize = "standard";
 export const DEFAULT_COLOR_THEME: ColorTheme = "auto";
+export const DEFAULT_DATA_UNITS: DataUnits = "decimal";
 
 export const INTERFACE_METRICS: Readonly<
   Record<InterfaceSize, InterfaceMetrics>
@@ -36,8 +40,9 @@ export const INTERFACE_METRICS: Readonly<
 
 export const APPEARANCE_STORAGE_KEY = "rstorrent.presentation.appearance";
 
-const APPEARANCE_VERSION = 2;
-const LEGACY_APPEARANCE_VERSION = 1;
+const APPEARANCE_VERSION = 3;
+const SIZE_ONLY_APPEARANCE_VERSION = 1;
+const THEMED_APPEARANCE_VERSION = 2;
 
 type ReadableStorage = Pick<Storage, "getItem">;
 type WritableStorage = Pick<Storage, "setItem">;
@@ -53,6 +58,10 @@ export function isColorTheme(value: unknown): value is ColorTheme {
   return COLOR_THEMES.some((candidate) => candidate === value);
 }
 
+export function isDataUnits(value: unknown): value is DataUnits {
+  return DATA_UNITS.some((candidate) => candidate === value);
+}
+
 export function loadAppearancePreferences(
   storage: ReadableStorage | null = browserStorage(),
 ): AppearancePreferences {
@@ -64,13 +73,26 @@ export function loadAppearancePreferences(
       readonly version?: unknown;
       readonly interfaceSize?: unknown;
       readonly colorTheme?: unknown;
+      readonly dataUnits?: unknown;
     };
-    if (value.version === LEGACY_APPEARANCE_VERSION) {
+    if (value.version === SIZE_ONLY_APPEARANCE_VERSION) {
       return {
         interfaceSize: isInterfaceSize(value.interfaceSize)
           ? value.interfaceSize
           : DEFAULT_INTERFACE_SIZE,
         colorTheme: DEFAULT_COLOR_THEME,
+        dataUnits: DEFAULT_DATA_UNITS,
+      };
+    }
+    if (value.version === THEMED_APPEARANCE_VERSION) {
+      return {
+        interfaceSize: isInterfaceSize(value.interfaceSize)
+          ? value.interfaceSize
+          : DEFAULT_INTERFACE_SIZE,
+        colorTheme: isColorTheme(value.colorTheme)
+          ? value.colorTheme
+          : DEFAULT_COLOR_THEME,
+        dataUnits: DEFAULT_DATA_UNITS,
       };
     }
     if (value.version !== APPEARANCE_VERSION) {
@@ -83,6 +105,9 @@ export function loadAppearancePreferences(
       colorTheme: isColorTheme(value.colorTheme)
         ? value.colorTheme
         : DEFAULT_COLOR_THEME,
+      dataUnits: isDataUnits(value.dataUnits)
+        ? value.dataUnits
+        : DEFAULT_DATA_UNITS,
     };
   } catch {
     return defaultAppearancePreferences();
@@ -101,6 +126,7 @@ export function saveAppearancePreferences(
         version: APPEARANCE_VERSION,
         interfaceSize: preferences.interfaceSize,
         colorTheme: preferences.colorTheme,
+        dataUnits: preferences.dataUnits,
       }),
     );
   } catch {
@@ -123,7 +149,7 @@ export function applyInterfaceSize(
 }
 
 export function applyAppearancePreferences(
-  preferences: AppearancePreferences,
+  preferences: Pick<AppearancePreferences, "colorTheme" | "interfaceSize">,
   root: AppearanceRoot | null = browserDocumentRoot(),
 ): void {
   applyColorTheme(preferences.colorTheme, root);
@@ -143,6 +169,7 @@ function defaultAppearancePreferences(): AppearancePreferences {
   return {
     interfaceSize: DEFAULT_INTERFACE_SIZE,
     colorTheme: DEFAULT_COLOR_THEME,
+    dataUnits: DEFAULT_DATA_UNITS,
   };
 }
 

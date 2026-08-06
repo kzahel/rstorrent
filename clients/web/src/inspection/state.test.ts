@@ -30,7 +30,10 @@ describe("inspection store", () => {
     const store = createInspectionStore();
     store.getState().applyUpdate({
       type: "snapshot",
-      snapshot: snapshot([row("first", "downloading"), row("second", "paused")]),
+      snapshot: snapshot([
+        row("first", "downloading"),
+        row("second", "paused"),
+      ]),
     });
     store.getState().openTorrentDetail("second");
     store.getState().applyUpdate({
@@ -127,7 +130,9 @@ describe("inspection store", () => {
     expect(presentation.transfersCategory).toBe("paused");
     expect(presentation.workbenchCategory).toBe("errors");
     expect(presentation.libraryCategory).toBe("available");
-    expect(createInspectionStore(storage).getState().presentation).toMatchObject({
+    expect(
+      createInspectionStore(storage).getState().presentation,
+    ).toMatchObject({
       destination: "library",
       transfersCategory: "paused",
       workbenchCategory: "errors",
@@ -211,21 +216,26 @@ describe("inspection store", () => {
     const store = createInspectionStore(storage);
     expect(store.getState().presentation.interfaceSize).toBe("standard");
     expect(store.getState().presentation.colorTheme).toBe("auto");
+    expect(store.getState().presentation.dataUnits).toBe("decimal");
 
     store.getState().setColorTheme("dark");
+    store.getState().setDataUnits("binary");
     store.getState().setInterfaceSize("spacious");
     expect(store.getState().presentation.interfaceSize).toBe("spacious");
     expect(store.getState().presentation.colorTheme).toBe("dark");
+    expect(store.getState().presentation.dataUnits).toBe("binary");
     expect(
       JSON.parse(values.get("rstorrent.presentation.appearance") ?? "null"),
     ).toEqual({
-      version: 2,
+      version: 3,
       interfaceSize: "spacious",
       colorTheme: "dark",
+      dataUnits: "binary",
     });
     const restored = createInspectionStore(storage).getState().presentation;
     expect(restored.interfaceSize).toBe("spacious");
     expect(restored.colorTheme).toBe("dark");
+    expect(restored.dataUnits).toBe("binary");
   });
 });
 
