@@ -1307,7 +1307,7 @@ async fn serve_metadata_then_piece(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-TEST-00000000000",
+            scripted_peer_id(&listener, *b"-RS-TEST-00000000000"),
             reserved,
         ))
         .await
@@ -1406,7 +1406,7 @@ async fn serve_stalled_metadata_peer(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-STALL-0000000000",
+            scripted_peer_id(&listener, *b"-RS-STALL-0000000000"),
             reserved,
         ))
         .await
@@ -1461,7 +1461,7 @@ async fn serve_partial_metadata_peer(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-PARTIAL-00000000",
+            scripted_peer_id(&listener, *b"-RS-PARTIAL-00000000"),
             reserved,
         ))
         .await
@@ -1547,7 +1547,7 @@ async fn serve_metadata_bytes_after_delay(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-SCRIPT-000000000",
+            scripted_peer_id(&listener, *b"-RS-SCRIPT-000000000"),
             reserved,
         ))
         .await
@@ -1620,7 +1620,7 @@ async fn serve_one_at_a_time_metadata_peer(listener: TcpListener, info: Vec<u8>)
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-ONE-AT-A-TIME000",
+            scripted_peer_id(&listener, *b"-RS-ONE-AT-A-TIME000"),
             reserved,
         ))
         .await
@@ -1726,7 +1726,7 @@ async fn serve_metadata_peer_without_ut_metadata(listener: TcpListener, info_has
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-STALL-0000000000",
+            scripted_peer_id(&listener, *b"-RS-STALL-0000000000"),
             reserved,
         ))
         .await
@@ -1771,7 +1771,7 @@ async fn serve_chattering_peer_without_extension_handshake(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-STALL-0000000000",
+            scripted_peer_id(&listener, *b"-RS-STALL-0000000000"),
             reserved,
         ))
         .await
@@ -1809,7 +1809,7 @@ async fn serve_metadata_rejecting_peer(
     stream
         .write_all(&encode_handshake_with_reserved(
             info_hash,
-            *b"-RS-STALL-0000000000",
+            scripted_peer_id(&listener, *b"-RS-STALL-0000000000"),
             reserved,
         ))
         .await

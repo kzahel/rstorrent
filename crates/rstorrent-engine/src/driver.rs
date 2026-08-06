@@ -45,8 +45,8 @@ use crate::peer::{
 };
 use crate::peer_budget::PeerBudget;
 use crate::peer_runtime::{
-    PeerConnectionRole, PeerContentActivity, PeerRequestWindowPhase, PeerRuntimeError,
-    connection_id,
+    PeerAdmissionOutcome, PeerAdmissionRejection, PeerConnectionRole, PeerContentActivity,
+    PeerRequestWindowPhase, PeerRuntimeError, connection_id,
 };
 use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
@@ -78,6 +78,19 @@ const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
 const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
 const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
 const UDP_TRACKER_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
+
+fn admission_rejection_failure(outcome: PeerAdmissionOutcome) -> Option<PeerFailure> {
+    match outcome {
+        PeerAdmissionOutcome::Admitted { .. } => None,
+        PeerAdmissionOutcome::Rejected(PeerAdmissionRejection::SelfConnection) => {
+            Some(PeerFailure::SelfConnection)
+        }
+        PeerAdmissionOutcome::Rejected(PeerAdmissionRejection::DuplicatePeerId { .. }) => {
+            Some(PeerFailure::DuplicatePeerId)
+        }
+    }
+}
+
 const MAX_UDP_TRACKER_TOKENS: usize = 64;
 const MAX_CONCURRENT_TRACKER_OPERATIONS: usize = 8;
 const TRACKER_RESULT_QUEUE: usize = 4;
@@ -1816,24 +1829,35 @@ impl TorrentPeerCoordinator {
     fn dial_succeeded(
         &mut self,
         attempt: DialAttempt,
+        connection: &PeerConnection,
         handshake: &Handshake,
-    ) -> Result<(), DownloadError> {
+    ) -> Result<PeerAdmissionOutcome, DownloadError> {
+        let connection_id = connection_id(attempt);
+        if let Some(cancellation) = connection.budget_cancellation() {
+            self.peers
+                .register_connection_cancellation(connection_id, cancellation);
+        }
         let now = self.elapsed();
-        self.peers
+        let outcome = self
+            .peers
             .with_state(|state| {
                 state.registry.dial_succeeded(attempt, now)?;
                 state
                     .runtime
-                    .handshake_completed(
-                        connection_id(attempt),
-                        handshake,
-                        self.network.peer_id,
-                        now,
-                    )
+                    .handshake_completed(connection_id, handshake, self.network.peer_id, now)
                     .map_err(TorrentPeerError::Runtime)
             })
-            .map_err(map_torrent_peer_error)?;
-        self.publish_peer_runtime(true)
+            .map_err(map_torrent_peer_error);
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.peers.unregister_connection_cancellation(connection_id);
+                return Err(error);
+            }
+        };
+        self.peers.apply_admission(connection_id, outcome);
+        self.publish_peer_runtime(true)?;
+        Ok(outcome)
     }
 
     fn dial_failed(
@@ -1861,6 +1885,7 @@ impl TorrentPeerCoordinator {
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;
+        self.peers.unregister_connection_cancellation(connection);
         self.publish_peer_runtime(true)
     }
 
@@ -1881,6 +1906,7 @@ impl TorrentPeerCoordinator {
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;
+        self.peers.unregister_connection_cancellation(connection);
         self.publish_peer_runtime(true)
     }
 
@@ -1924,6 +1950,7 @@ impl TorrentPeerCoordinator {
                 Ok::<_, TorrentPeerError>(())
             })
             .map_err(map_torrent_peer_error)?;
+        self.peers.unregister_connection_cancellation(connection);
         self.publish_peer_runtime(true)
     }
 
@@ -2285,7 +2312,11 @@ impl TorrentPeerCoordinator {
             let attempt = self.begin_dial(candidate, PeerConnectionRole::Content)?;
             match connect_peer(attempt, info_hash, advertise_extensions, self.network).await {
                 Ok((connection, handshake)) => {
-                    self.dial_succeeded(attempt, &handshake)?;
+                    let admission = self.dial_succeeded(attempt, &connection, &handshake)?;
+                    if let Some(failure) = admission_rejection_failure(admission) {
+                        self.connection_closed(attempt, Some(failure))?;
+                        continue;
+                    }
                     self.connection = Some(connection);
                     return Ok(handshake);
                 }
@@ -2420,18 +2451,24 @@ impl TorrentPeerCoordinator {
                     result,
                 })) => match *result {
                     Ok((connection, handshake)) => {
-                        self.dial_succeeded(attempt, &handshake)?;
+                        let admission = self.dial_succeeded(attempt, &connection, &handshake)?;
+                        if let Some(failure) = admission_rejection_failure(admission) {
+                            self.connection_closed(attempt, Some(failure))?;
+                            continue;
+                        }
                         self.control
                             .metadata_peer_connected(attempt, handshake.supports_extensions());
                         let cancellation = CancellationToken::new();
                         worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
                         let control = self.control.clone();
                         let metadata = metadata.clone();
+                        let admission_cancellation = connection.budget_cancellation();
                         workers.spawn(async move {
                             run_metadata_peer(
                                 connection,
                                 handshake,
                                 cancellation,
+                                admission_cancellation,
                                 control,
                                 metadata,
                             )
@@ -2611,6 +2648,7 @@ async fn run_metadata_peer(
     mut connection: PeerConnection,
     handshake: Handshake,
     cancellation: CancellationToken,
+    admission_cancellation: Option<CancellationToken>,
     control: DownloadControl,
     metadata: Arc<Mutex<TorrentMetadataDownload>>,
 ) -> MetadataPeerResult {
@@ -2618,6 +2656,11 @@ async fn run_metadata_peer(
     let result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => None,
+        _ = async {
+            if let Some(cancellation) = &admission_cancellation {
+                cancellation.cancelled().await;
+            }
+        }, if admission_cancellation.is_some() => None,
         result = acquire_metadata_from_connection(
             &mut connection,
             handshake,
@@ -4607,6 +4650,25 @@ async fn run_selective_swarm_loop(
                     .map_err(DownloadError::Swarm)?;
                 match *result {
                     Ok((connection, handshake)) => {
+                        let admission = peers.dial_succeeded(attempt, &connection, &handshake)?;
+                        if let Some(failure) = admission_rejection_failure(admission) {
+                            peers.connection_closed(attempt, Some(failure))?;
+                            continue;
+                        }
+                        if let PeerAdmissionOutcome::Admitted {
+                            evicted: Some(evicted),
+                        } = admission
+                            && sockets.contains(evicted)
+                        {
+                            close_content_connection(
+                                peers,
+                                sockets,
+                                &mut download.state,
+                                evicted,
+                                Some(PeerFailure::DuplicatePeerId),
+                            )
+                            .await?;
+                        }
                         if sockets.established_len()
                             >= download.state.config().max_established_connections
                         {
@@ -4621,13 +4683,11 @@ async fn run_selective_swarm_loop(
                                 )
                                 .await?;
                             } else {
-                                peers.dial_succeeded(attempt, &handshake)?;
                                 peers.begin_disconnect(attempt, None)?;
                                 peers.connection_closed(attempt, None)?;
                                 continue;
                             }
                         }
-                        peers.dial_succeeded(attempt, &handshake)?;
                         let id = sockets
                             .add_connection(connection)
                             .map_err(download_peer_set_error)?;

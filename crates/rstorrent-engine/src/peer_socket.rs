@@ -49,7 +49,7 @@ impl PeerConnection {
         self.io.prepend_messages(messages);
     }
 
-    fn budget_cancellation(&self) -> Option<CancellationToken> {
+    pub(crate) fn budget_cancellation(&self) -> Option<CancellationToken> {
         self._budget_permit
             .as_ref()
             .map(|permit| permit.cancellation_token())

@@ -1413,6 +1413,10 @@ async fn run_handshake(
     };
     let mut peer_attachment =
         IncomingPeerAttachmentGuard::new(registration.data.torrent_peers.clone(), attachment);
+    registration
+        .data
+        .torrent_peers
+        .register_connection_cancellation(attachment.connection_id(), budget_cancellation.clone());
     let mut reserved = [0; 8];
     reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
     let response = encode_handshake_with_reserved(info_hash, shared.peer_id, reserved);
@@ -1436,7 +1440,11 @@ async fn run_handshake(
         );
         return;
     }
-    if peer_attachment.handshake_completed(shared.peer_id).is_err() {
+    let admission = peer_attachment.handshake_completed(shared.peer_id);
+    if !matches!(
+        admission,
+        Ok(crate::peer_runtime::PeerAdmissionOutcome::Admitted { .. })
+    ) {
         shared.reject(
             IncomingRejectionReason::PeerState,
             Some(remote),
@@ -2300,6 +2308,7 @@ mod tests {
         METADATA_SEND_BUFFER_WATERMARK, QueuedChokeFrame, QueuedPieceFrames, SeedRegistration,
         UploadRateWindow, drain_metadata_requests, handle_metadata_message,
     };
+    use crate::peer::PeerFailure;
     use crate::peer_io::PeerIo;
     use crate::{
         DEFAULT_PEER_ID, PeerBudget, PeerBudgetConfig, PeerConnectionDirection,
@@ -2928,6 +2937,65 @@ mod tests {
         assert_eq!(terminal.reads, 0);
         assert_eq!(terminal.registrations, 0);
         assert!(!terminal.accepting_registrations);
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn duplicate_incoming_peer_id_keeps_first_and_releases_loser() {
+        let (root, _raw_info, registration, torrent_peers, peer_activity) =
+            registration("duplicate-peer-id").await;
+        let info_hash = registration.info_hash();
+        let service = IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLoopback))
+            .await
+            .expect("bind service")
+            .expect("enabled service");
+        let handle = service.handle();
+        let token = handle.register(registration).await.expect("register seed");
+        let remote_peer_id = *b"-RS-LEECH-0000000000";
+
+        let (mut winner, mut decoder, mut queued) =
+            connect(service.listen_address(), info_hash, remote_peer_id).await;
+        assert!(matches!(
+            next_message(&mut winner, &mut decoder, &mut queued).await,
+            PeerMessage::Bitfield(_)
+        ));
+        assert!(matches!(
+            next_message(&mut winner, &mut decoder, &mut queued).await,
+            PeerMessage::Extended { id: 0, .. }
+        ));
+        let (mut loser, _, _) = connect(service.listen_address(), info_hash, remote_peer_id).await;
+        observe_close(&mut loser).await;
+
+        let live = handle.snapshot();
+        assert_eq!(live.pending, 0);
+        assert_eq!(live.established, 1);
+        assert_eq!(live.peer_uploads.len(), 1);
+        let peers = torrent_peers.connection_snapshot();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].peer_id, Some(remote_peer_id));
+        assert_eq!(peers[0].lifecycle, PeerConnectionLifecycle::Connected);
+        send(&mut winner, &PeerMessage::Interested).await;
+        assert_eq!(
+            next_message(&mut winner, &mut decoder, &mut queued).await,
+            PeerMessage::Unchoke
+        );
+        assert!(
+            peer_activity
+                .connections
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .flatten()
+                .any(|peer| peer.close_reason == Some(PeerFailure::DuplicatePeerId))
+        );
+
+        assert!(handle.unregister(token).await.expect("unregister seed"));
+        observe_close(&mut winner).await;
+        drop(handle);
+        let terminal = service.shutdown().await.expect("shutdown service");
+        assert_eq!(terminal.pending, 0);
+        assert_eq!(terminal.established, 0);
+        assert!(torrent_peers.connection_snapshot().is_empty());
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 

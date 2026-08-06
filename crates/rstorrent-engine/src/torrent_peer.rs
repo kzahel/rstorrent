@@ -1,10 +1,12 @@
-//! Task-free per-torrent peer state shared by outgoing and incoming owners.
+//! Per-torrent peer state and connection cancellation shared by socket owners.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 use crate::peer::{
     DialAttempt, DialCandidate, DialEligibility, PeerFailure, PeerObservation, PeerRecordId,
@@ -280,6 +282,7 @@ impl TorrentPeerState {
 struct TorrentPeerHandleInner {
     started_at: Instant,
     state: Mutex<TorrentPeerState>,
+    connection_cancellations: Mutex<BTreeMap<ConnectionId, CancellationToken>>,
     sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
 }
 
@@ -301,6 +304,7 @@ impl TorrentPeerHandle {
             inner: Arc::new(TorrentPeerHandleInner {
                 started_at: Instant::now(),
                 state: Mutex::new(TorrentPeerState::new(config)?),
+                connection_cancellations: Mutex::new(BTreeMap::new()),
                 sink: Mutex::new(sink),
             }),
         })
@@ -342,6 +346,7 @@ impl TorrentPeerHandle {
         let outcome = self.with_state(|state| {
             state.incoming_handshake_completed(attachment, local_peer_id, now)
         })?;
+        self.apply_admission(attachment.connection_id, outcome);
         self.publish(true, true)?;
         Ok(outcome)
     }
@@ -381,6 +386,7 @@ impl TorrentPeerHandle {
     ) -> Result<(), TorrentPeerError> {
         let now = self.elapsed();
         self.with_state(|state| state.remove_incoming(attachment, failure, now))?;
+        self.unregister_connection_cancellation(attachment.connection_id);
         self.publish(true, true)
     }
 
@@ -423,6 +429,46 @@ impl TorrentPeerHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         operation(&mut state)
+    }
+
+    pub(crate) fn register_connection_cancellation(
+        &self,
+        connection: ConnectionId,
+        cancellation: CancellationToken,
+    ) {
+        let replaced = self
+            .inner
+            .connection_cancellations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(connection, cancellation);
+        debug_assert!(
+            replaced.is_none(),
+            "connection cancellation registered twice"
+        );
+    }
+
+    pub(crate) fn apply_admission(&self, candidate: ConnectionId, outcome: PeerAdmissionOutcome) {
+        let cancellations = self
+            .inner
+            .connection_cancellations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let loser = match outcome {
+            PeerAdmissionOutcome::Admitted { evicted } => evicted,
+            PeerAdmissionOutcome::Rejected(_) => Some(candidate),
+        };
+        if let Some(cancellation) = loser.and_then(|connection| cancellations.get(&connection)) {
+            cancellation.cancel();
+        }
+    }
+
+    pub(crate) fn unregister_connection_cancellation(&self, connection: ConnectionId) {
+        self.inner
+            .connection_cancellations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&connection);
     }
 
     pub(crate) fn set_sink(&self, sink: Arc<dyn TorrentPeerActivitySink>) {
@@ -551,12 +597,13 @@ mod tests {
         PeerEndpoint, PeerObservation, PeerSelectionContext, PeerSelector, PeerSource,
     };
     use crate::peer_runtime::{
-        PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionRole, PeerUploadActivity,
-        PeerUploadGrant,
+        PeerAdmissionOutcome, PeerAdmissionRejection, PeerConnectionDirection,
+        PeerConnectionLifecycle, PeerConnectionRole, PeerUploadActivity, PeerUploadGrant,
     };
     use crate::swarm::ConnectionId;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
 
     #[derive(Debug, Default)]
     struct RecordingSink {
@@ -579,6 +626,34 @@ mod tests {
                 .expect("registries")
                 .push((active, snapshot));
         }
+    }
+
+    #[test]
+    fn admission_cancels_only_the_generation_named_as_loser() {
+        let (handle, _) = handle();
+        let first = ConnectionId::new(1).expect("first");
+        let candidate = ConnectionId::new(2).expect("candidate");
+        let first_cancellation = CancellationToken::new();
+        let candidate_cancellation = CancellationToken::new();
+        handle.register_connection_cancellation(first, first_cancellation.clone());
+        handle.register_connection_cancellation(candidate, candidate_cancellation.clone());
+
+        handle.apply_admission(
+            candidate,
+            PeerAdmissionOutcome::Admitted {
+                evicted: Some(first),
+            },
+        );
+        assert!(first_cancellation.is_cancelled());
+        assert!(!candidate_cancellation.is_cancelled());
+
+        handle.apply_admission(
+            candidate,
+            PeerAdmissionOutcome::Rejected(PeerAdmissionRejection::DuplicatePeerId {
+                winner: first,
+            }),
+        );
+        assert!(candidate_cancellation.is_cancelled());
     }
 
     fn handle() -> (TorrentPeerHandle, Arc<RecordingSink>) {
