@@ -204,14 +204,23 @@ impl PexState {
         }
 
         let mut added = 0;
+        let source_listen_endpoint = self
+            .extensions
+            .get(&source)
+            .and_then(|map| map.listen_port())
+            .map(|port| SocketAddr::new(source_endpoint.ip(), port));
         for contact in message.added {
             let address = socket_endpoint(contact.endpoint);
-            if !pex_address_allowed(address, source_endpoint, network_policy, self_endpoints)
-                || self.sources.get(&source).is_some_and(|state| {
-                    state.contacts.contains_key(&address.ip())
-                        || state.contacts.len() >= MAX_PEX_CONTACTS_PER_SOURCE
-                })
-            {
+            if !pex_address_allowed(
+                address,
+                source_endpoint,
+                source_listen_endpoint,
+                network_policy,
+                self_endpoints,
+            ) || self.sources.get(&source).is_some_and(|state| {
+                state.contacts.contains_key(&address.ip())
+                    || state.contacts.len() >= MAX_PEX_CONTACTS_PER_SOURCE
+            }) {
                 filtered += 1;
                 continue;
             }
@@ -474,11 +483,12 @@ impl PexState {
 fn pex_address_allowed(
     candidate: SocketAddr,
     source: SocketAddr,
+    source_listen_endpoint: Option<SocketAddr>,
     policy: NetworkPolicy,
     self_endpoints: &[SocketAddr],
 ) -> bool {
     if self_endpoints.contains(&candidate)
-        || candidate.ip() == source.ip()
+        || source_listen_endpoint == Some(candidate)
         || !policy.allows(candidate)
     {
         return false;
@@ -661,7 +671,7 @@ mod tests {
                     now: Duration::ZERO,
                     verified_public: true,
                     network_policy: NetworkPolicy::Online,
-                    self_endpoints: &[],
+                    self_endpoints: &[contacts[3]],
                 },
                 &mut registry,
             )
