@@ -1,8 +1,8 @@
 # Tactical 094: Bounded BEP 11 Peer Exchange
 
 Status: Planned. This document records a decision-complete candidate slice;
-it does not authorize implementation or displace the current truthful tracker
-and DHT advertisement work.
+it does not authorize implementation. Its prerequisite sequence is complete,
+but selection remains a separate readiness decision.
 
 Topics: `protocol-support`, `peer-lifecycle`, `download-correctness`,
 `application-control`, `incoming-reachability-and-seeding`,
@@ -18,10 +18,10 @@ Dependencies: completed Tacticals
 attributed peer records, private-metadata transitions, multiple handshaken
 connections, verified metainfo privacy, retained peer ownership, and truthful
 listen-socket facts. Completed Tactical
-[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) and planned
-Tactical [`090`](090-peer-id-duplicate-connection-resolution.md) are hard
-prerequisites. Completed Tactical `091` and planned Tactical `093` precede PEX
-in the recorded completeness sequence but are not wire dependencies.
+[`090`](090-peer-id-duplicate-connection-resolution.md) and
+[`092`](092-truthful-tracker-and-dht-peer-advertisement.md) are hard
+prerequisites. Completed Tacticals `091` and `093` precede PEX in the recorded
+completeness sequence but are not wire dependencies.
 
 ## Decision And Motivation
 

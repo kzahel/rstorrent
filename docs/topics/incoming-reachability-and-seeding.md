@@ -74,9 +74,11 @@ itself authorize or prioritize implementation.
 The topic does not make PEX, local service discovery, uTP, BEP 55 hole
 punching, incoming MSE/PE, a remote daemon, or broad public-swarm seeding part
 of the first slice. Those capabilities may depend on this foundation but keep
-their own protocol, ownership, security, and evidence requirements. Planned
+their own protocol, ownership, security, and evidence requirements. Completed
 Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) records the
-Fast upload request/reject changes against the established upload owner, while
+Fast upload request/reject lifecycle against the established upload owner,
+including terminal cancel/read/shutdown races and controlled pinned-libtorrent
+seeding, while
 planned Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md)
 records PEX only after truthful advertisement and duplicate-connection
 resolution. Neither changes this campaign's current action.
@@ -107,6 +109,10 @@ endpoint:
 - each unchoked peer may retain exactly 2,000 validated request descriptors;
   ten shared reads, the existing 40-handle storage pool, a 528,396-byte writer
   charge, and 64 writer descriptors independently bound work and memory;
+- negotiated Fast peers receive exactly one initial availability state and a
+  canonical IPv4 allowed-fast set of at most ten pieces; every valid request
+  reaches one piece/reject terminal outcome through choke, cancel, read,
+  pressure, pause, and shutdown while ordinary peer behavior remains intact;
 - peer, torrent, and session accounting records only physical piece payload
   successfully written, and bounded snapshots expose exact totals and rates;
 - pure, storage, socket, lifecycle, application-restart, and simultaneous

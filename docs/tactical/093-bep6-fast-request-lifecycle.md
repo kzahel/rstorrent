@@ -1,8 +1,6 @@
 # Tactical 093: BEP 6 Fast Request Lifecycle
 
-Status: Authorized and in progress on 2026-08-06. Gate 1 wire codecs and
-bilateral capability are the current executable action after completed
-Tacticals `090` and `091`.
+Status: Complete on 2026-08-06. All six gates and the stopping condition pass.
 
 Topics: `protocol-support`, `download-correctness`, `peer-lifecycle`,
 `incoming-reachability-and-seeding`, `capability-readiness`
@@ -258,3 +256,51 @@ request ownership.
 The next planned protocol slice is
 [`094`](094-bounded-bep11-peer-exchange.md). Predictive requests,
 super-seeding, full snub behavior, and parole isolation remain separate work.
+
+## Implementation And Evidence
+
+Commits `2b28ae4`, `43058e3`, `d5e0d66`, `54c1a63`, `2de30de`,
+`64a45d4`, and `f0dbcda` completed the slice:
+
+- the protocol crate owns all five exact codecs, the reserved bit, and typed
+  bilateral negotiation;
+- download state retains requests across Fast choke, releases one exact
+  reject immediately, ignores only bounded retained stale outcomes, closes on
+  never-requested rejects, and preserves the ordinary choke path;
+- upload state emits exactly one matching piece or reject through choke,
+  cancel, failed/short read, pressure, pause, and shutdown, with choke ordered
+  before generated rejects;
+- one initial Bitfield, Have All, or Have None is required before
+  availability-dependent traffic. Capability-neutral BEP 10/control traffic
+  may precede it because pinned libtorrent emits its extension handshake
+  first;
+- suggestions and allowed-fast values are unique and capped at 32 per
+  connection. Suggestions precede only ordinary equal-rarity ties, while
+  allowed-fast pieces remain availability-independent and are the only work
+  eligible while choked; and
+- IPv4 allowed-fast generation uses the published algorithm with `k = 10` and
+  passes the BEP 6 vectors. IPv6 emits no invented set.
+
+Deterministic validation covers exact wire lengths/opcodes, bilateral and
+unnegotiated states, initial availability, duplicate/excess advisories,
+choke/reject/piece/refill, stale and never-requested rejects, timeout fallback,
+allowed-fast scheduling, equal-rarity suggestions, queue pressure, cancel and
+late-read races, failure/short read, and shutdown. The focused engine suite
+passes 11 Fast tests; the full engine library suite passes 342 tests with
+seven opt-in tests ignored.
+
+[`tests/interop/fast_extension.py`](../../tests/interop/fast_extension.py)
+passes against Python and native pinned libtorrent `2.0.13.0`. Transparent
+capture proves both handshakes set `reserved[7] & 0x04`; the RSTorrent leecher
+sends Have None while the libtorrent seed sends Have All and retains that
+negotiated state from magnet metadata acquisition into content transfer; the
+inverse seeding direction observes the opposite pair. Both directions verify
+the exact 40,000-byte SHA-1
+`576143b2992ecf25c780ff41c79552f3bb50941b`. The scripted peer sends
+Choke then one exact Reject Request; RSTorrent retries that request once in
+less than one millisecond, receives exactly 40,000 payload bytes across three
+unique blocks, and verifies the same hash without waiting for request expiry.
+The incoming owner reports zero established peers and reads before final
+shutdown and zero mapping tasks after shutdown; the established queue, byte,
+read, writer, slot, descriptor, and task bounds remain the pre-existing
+authoritative limits.

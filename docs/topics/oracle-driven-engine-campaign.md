@@ -658,8 +658,10 @@ typed loser cleanup, two-connection saturation proof, and both controlled
 libtorrent crossed orderings pass with terminal zero ownership. Peer IDs
 remain spoofable live claims and do not merge endpoint history or reputation.
 
-Next executable action: execute Gate 1 of authorized Tactical
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md): finish the pinned BEP 6
-source-and-test dossier and add bounded deterministic negotiation/message
-state before runtime request lifecycle work. No PEX, peer scoring, tit-for-tat,
-or unrelated extension framework is implied.
+Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) is complete.
+Its bounded bilateral BEP 6 lifecycle, exact reject ownership, canonical IPv4
+allowed-fast generation, deterministic race matrix, and both controlled pinned-
+libtorrent directions pass. The next engine selection boundary is planned
+Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md); it is not
+authorized merely by this restart checkpoint. No peer scoring, tit-for-tat, or
+unrelated extension framework is implied.

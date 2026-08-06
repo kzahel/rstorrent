@@ -231,7 +231,27 @@ def prove_rstorrent_leech_from_libtorrent(
         proxy = CapturingProxy(("127.0.0.1", port))
         proxy.start()
         output = run_directory / "downloaded.bin"
-        completed = run_diagnostic(binary, torrent_path, proxy.port, output, config)
+        magnet = (
+            f"magnet:?xt=urn:btih:{torrent_info.info_hashes().v1}"
+            f"&x.pe=127.0.0.1:{proxy.port}"
+        )
+        completed = subprocess.run(
+            [
+                str(binary),
+                "--magnet",
+                magnet,
+                "--output",
+                str(output),
+                "--timeout-seconds",
+                str(config.diagnostic_timeout_seconds),
+                "--max-buffered-payload-bytes",
+                str(config.payload_allowance),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=config.process_timeout_seconds,
+            check=False,
+        )
         if completed.returncode != 0:
             raise ScenarioFailure(
                 "RSTorrent Fast leecher failed\n"

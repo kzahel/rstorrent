@@ -184,16 +184,17 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is authorized and in
-progress.** Implement negotiated BEP 6 as one complete bounded request
-lifecycle, including exact reject-request ownership and ordinary non-Fast
-compatibility. Gate 1 wire codecs and bilateral capability are current.
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is complete.** The
+bilateral BEP 6 request lifecycle, ordinary-peer compatibility, exact reject
+ownership, bounded advisory state, canonical IPv4 allowed-fast generation,
+and controlled bidirectional pinned-libtorrent evidence pass. No new engine
+tactical is authorized by that completion alone.
 
 ### Next
 
-- Execute planned Tactical
-  [`094`](../tactical/094-bounded-bep11-peer-exchange.md) after its hard
-  prerequisite Tactical `090` and the recorded BEP 6 sequence; `090` is now
+- Select and authorize planned Tactical
+  [`094`](../tactical/094-bounded-bep11-peer-exchange.md) when continuing the
+  engine sequence. Its hard prerequisites Tacticals `090` and `093` are now
   complete.
 - Execute planned Tactical
   [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) as
@@ -217,12 +218,12 @@ matrix choose BEP breadth; visible novelty alone does not.
 PCP and NAT-PMP require their own bounded tactical and suitable controlled or
 physical gateway evidence; pinned source inspection is not a support claim.
 
-Availability-ranked activation is complete in Tactical
-[`091`](../tactical/091-availability-ranked-piece-activation.md). The remaining
-two planned engine download-liveness slices retain this default order: the
-complete BEP 6 request lifecycle in Tactical
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md), and bounded BEP 11 PEX
-in Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). Full snub
+Availability-ranked activation and the complete BEP 6 request lifecycle are
+complete in Tacticals
+[`091`](../tactical/091-availability-ranked-piece-activation.md) and
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md). Bounded BEP 11 PEX in
+Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md) is the next
+planned engine download-liveness slice. Full snub
 and parole selection remain evidence-gated rather than preplanned slices.
 
 ## Capability Scoreboard
@@ -262,6 +263,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Pre-content peer failover | Implemented | deterministic, runtime, interop, live | Bounded parallel metadata peers share one block owner; two tracker cohorts, 10/10 fresh-DHT owner runs, and 12/12 cross-catalog pairs pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
+| BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Typed loopback/local-network disabled/automatic/fixed policy, explicit UPnP enablement, preferred port `1024..=65535`, 1--2,000 peers, and 0--50 slots persist atomically and apply live in durable and ephemeral profiles. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tacticals [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md), and [`089`](../tactical/089-coordinated-session-listen-sockets.md) prove retained incoming ownership, exact mapped off-LAN seeding, and coordinated transport. Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) proves tracker-only, DHT-only, and mapped wire-port discovery through that listener with joined terminal cleanup. Completed Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) proves live candidate-first rebind, finite mapping cleanup, deterministic admission, and slot convergence without replacing stable peers, DHT, or discovery. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
