@@ -1,8 +1,8 @@
 # Tactical 093: BEP 6 Fast Request Lifecycle
 
-Status: Planned. This document records a decision-complete candidate slice;
-it does not authorize implementation or displace the current truthful tracker
-and DHT advertisement work.
+Status: Authorized and in progress on 2026-08-06. Gate 1 wire codecs and
+bilateral capability are the current executable action after completed
+Tacticals `090` and `091`.
 
 Topics: `protocol-support`, `download-correctness`, `peer-lifecycle`,
 `incoming-reachability-and-seeding`, `capability-readiness`
@@ -15,7 +15,7 @@ Dependencies: completed Tacticals
 [`086`](086-long-lived-torrent-peer-runtime.md) establish exact request
 attempts, cancel/late-response handling, bounded incoming upload, and shared
 connection observations. Completed Tactical
-[`091`](091-availability-ranked-piece-activation.md) and planned Tactical
+[`091`](091-availability-ranked-piece-activation.md) and completed Tactical
 [`090`](090-peer-id-duplicate-connection-resolution.md) precede this slice in
 the recorded campaign sequence but are not wire-protocol dependencies.
 
@@ -249,8 +249,8 @@ device is required.
 ## Escalation And Next Boundary
 
 Ordinary refactoring of protocol values and request states, additional race
-cases, and tighter advisory bounds are authorized only when this tactical is
-explicitly selected for implementation. Stop for direction if interoperability
+cases, and tighter advisory bounds are authorized by this selection. Stop for
+direction if interoperability
 requires advertising a knowingly partial Fast package, inventing IPv6
 allowed-fast behavior, changing global upload policy, or weakening exact
 request ownership.

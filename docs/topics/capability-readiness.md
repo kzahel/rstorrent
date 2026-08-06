@@ -184,10 +184,10 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is the next executable
-engine slice.** Implement negotiated BEP 6 as one complete bounded request
+[`093`](../tactical/093-bep6-fast-request-lifecycle.md) is authorized and in
+progress.** Implement negotiated BEP 6 as one complete bounded request
 lifecycle, including exact reject-request ownership and ordinary non-Fast
-compatibility.
+compatibility. Gate 1 wire codecs and bilateral capability are current.
 
 ### Next
 
