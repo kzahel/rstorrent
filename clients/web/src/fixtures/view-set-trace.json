@@ -40,6 +40,13 @@
                 "active_peer_connections": 0,
                 "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
+                "required_payload_bytes": "49152",
+                "remaining_payload_bytes": "32768",
+                "eta_payload_download_rate_bytes": "4096",
+                "eta": {
+                  "state": "estimate",
+                  "seconds": "8"
+                },
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -138,6 +145,13 @@
                 "active_peer_connections": 0,
                 "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
+                "required_payload_bytes": "49152",
+                "remaining_payload_bytes": "32768",
+                "eta_payload_download_rate_bytes": "4096",
+                "eta": {
+                  "state": "estimate",
+                  "seconds": "8"
+                },
                 "progress": {
                   "disposition": "active",
                   "phase": "transfer",
@@ -186,6 +200,12 @@
                 "active_peer_connections": 0,
                 "configured_tracker_count": 2,
                 "payload_download_rate_bytes": "0",
+                "required_payload_bytes": "49152",
+                "remaining_payload_bytes": "0",
+                "eta_payload_download_rate_bytes": "0",
+                "eta": {
+                  "state": "unavailable"
+                },
                 "progress": {
                   "disposition": "inactive",
                   "phase": "publication",

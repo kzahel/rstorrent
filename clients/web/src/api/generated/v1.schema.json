@@ -4365,6 +4365,62 @@
       ],
       "type": "object"
     },
+    "TorrentEtaView": {
+      "oneOf": [
+        {
+          "properties": {
+            "seconds": {
+              "type": "string"
+            },
+            "state": {
+              "const": "estimate",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state",
+            "seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "warming_up",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "stalled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "TorrentSnapshot": {
       "properties": {
         "archived": {
@@ -4501,6 +4557,12 @@
             "null"
           ]
         },
+        "eta": {
+          "$ref": "#/$defs/TorrentEtaView"
+        },
+        "eta_payload_download_rate_bytes": {
+          "type": "string"
+        },
         "force_recheck_available": {
           "type": "boolean"
         },
@@ -4521,6 +4583,12 @@
         "received_bytes": {
           "type": "string"
         },
+        "remaining_payload_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "removal_state": {
           "anyOf": [
             {
@@ -4533,6 +4601,12 @@
         },
         "requested_bytes": {
           "type": "string"
+        },
+        "required_payload_bytes": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "state": {
           "$ref": "#/$defs/TorrentState"
@@ -4564,6 +4638,10 @@
         "stored_bytes",
         "active_peer_connections",
         "payload_download_rate_bytes",
+        "required_payload_bytes",
+        "remaining_payload_bytes",
+        "eta_payload_download_rate_bytes",
+        "eta",
         "progress",
         "archived",
         "delete_managed_data_supported",

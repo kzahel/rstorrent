@@ -163,7 +163,9 @@ export type SpeedCurrentRate = { metric: SpeedMetric, bytes: string | null, };
 
 export type SpeedHistoryView = { captured_millis: string, history_epoch: string, range: SpeedRange, bucket_millis: string, start_millis: string, complete_through_millis: string, live: boolean, persistence: SpeedPersistenceState, current: Array<SpeedCurrentRate>, series: Array<SpeedSeriesView>, catalog: Array<SpeedMetricAvailability>, };
 
-export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type TorrentEtaView = { "state": "estimate", seconds: string, } | { "state": "warming_up" } | { "state": "stalled" } | { "state": "unavailable" };
+
+export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, required_payload_bytes: string | null, remaining_payload_bytes: string | null, eta_payload_download_rate_bytes: string, eta: TorrentEtaView, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type CapabilityStatus = "available" | "unavailable" | "unsupported";
 

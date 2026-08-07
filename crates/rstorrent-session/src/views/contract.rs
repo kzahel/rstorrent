@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -32,6 +32,10 @@ pub const VIEW_SET_LEASE_MILLIS: u64 = 5 * 60 * 1_000;
 pub const VIEW_SET_REAPER_INTERVAL_MILLIS: u64 = 5_000;
 pub const MAX_VIEW_DELIVERY_INTERVAL_MILLIS: u32 = 60_000;
 pub const MAX_CATALOG_PAGE_ROWS: u32 = 1_024;
+
+fn required_nullable_string_schema(generator: &mut SchemaGenerator) -> Schema {
+    <Option<String>>::json_schema(generator)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -952,9 +956,9 @@ pub struct TorrentView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configured_tracker_count: Option<u32>,
     pub payload_download_rate_bytes: String,
-    #[schemars(required)]
+    #[schemars(required, schema_with = "required_nullable_string_schema")]
     pub required_payload_bytes: Option<String>,
-    #[schemars(required)]
+    #[schemars(required, schema_with = "required_nullable_string_schema")]
     pub remaining_payload_bytes: Option<String>,
     pub eta_payload_download_rate_bytes: String,
     pub eta: TorrentEtaView,
