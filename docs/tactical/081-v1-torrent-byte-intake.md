@@ -1176,3 +1176,8 @@ Later source/export work may expose exact original magnet copy, exact original
 `.torrent` download, synthesized export when no original exists, explicit
 export directories, and duplicate metadata enrichment. Those operations must
 continue distinguishing source provenance from runtime authority.
+
+Tactical `107` later implements exact original magnet copy plus bounded rich
+magnet synthesis while preserving this provenance/runtime distinction. Exact
+`.torrent` download, explicit export directories, and duplicate enrichment
+remain deferred.

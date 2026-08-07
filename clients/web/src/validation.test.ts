@@ -53,6 +53,40 @@ describe("application connection validation", () => {
   });
 });
 
+describe("magnet export validation", () => {
+  it("accepts a bounded typed result and rejects oversized UTF-8", () => {
+    const response = {
+      version: 1,
+      request_id: "export-1",
+      revision: "4",
+      result: {
+        type: "export_magnet",
+        result: {
+          magnet:
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213",
+          source: "synthesized",
+          omitted_tracker_count: 0,
+        },
+      },
+      status: "success",
+      snapshot: {
+        profile_id: "default",
+        revision: "4",
+        storage: { roots: [], show_add_options: true },
+        torrents: [],
+      },
+    };
+    expect(decodeResponseEnvelope(JSON.stringify(response)).result).toEqual(
+      response.result,
+    );
+
+    response.result.result.magnet = "é".repeat(8_193);
+    expect(() => decodeResponseEnvelope(JSON.stringify(response))).toThrow(
+      /exported magnet exceeds 16384 UTF-8 bytes/,
+    );
+  });
+});
+
 describe("client settings validation", () => {
   it("applies Rust-owned defaults to older service and view snapshots", () => {
     const response = decodeResponseEnvelope(

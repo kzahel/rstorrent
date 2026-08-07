@@ -541,6 +541,7 @@ export type InspectionCommand =
   | { readonly type: "set_show_add_options"; readonly show: boolean }
   | { readonly type: "set_client_settings"; readonly settings: ClientSettings }
   | { readonly type: "remove_download_root"; readonly rootId: string }
+  | { readonly type: "export_magnet"; readonly torrentId: string }
   | { readonly type: "pause"; readonly torrentId: string }
   | { readonly type: "resume"; readonly torrentId: string }
   | { readonly type: "force_recheck"; readonly torrentId: string }
@@ -594,6 +595,7 @@ export interface CommandResult {
   readonly message: string;
   readonly storageRoot?: DownloadRoot | null;
   readonly torrentId?: string;
+  readonly magnetExport?: MagnetExport;
   readonly addDisposition?:
     | { readonly type: "added" }
     | { readonly type: "already_present" }
@@ -601,4 +603,10 @@ export interface CommandResult {
         readonly type: "selection_expanded";
         readonly newlyWantedCount?: number | null;
       };
+}
+
+export interface MagnetExport {
+  readonly magnet: string;
+  readonly source: "verbatim" | "canonicalized" | "synthesized";
+  readonly omittedTrackerCount: number;
 }

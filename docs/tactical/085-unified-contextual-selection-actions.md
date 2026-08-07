@@ -2,6 +2,11 @@
 
 Status: Completed on 2026-08-05.
 
+Successor: Tactical
+[`107`](107-source-aware-magnet-export.md) replaces each hash-only copied value
+with an exact-or-rich semantic export while retaining this multi-target order
+and one-write interaction contract.
+
 Topics: `web-ui-design`, `table-interaction`, `application-control`,
 `client-surfaces`, `code-organization-and-refactoring`
 
@@ -238,6 +243,10 @@ names, trackers, peers, web seeds, submitted-source fidelity, or other hidden
 fields. One clipboard write follows explicit activation. It reports the exact
 count on success and reports actual clipboard failure without claiming a
 partial copy.
+
+Tactical `107` later supersedes only the value-construction rule above. The
+selection scope, stable order, one-write behavior, and focus ownership remain
+current.
 
 ### File actions
 

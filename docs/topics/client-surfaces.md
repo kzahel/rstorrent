@@ -56,8 +56,9 @@ command boundary. Tactical `038`
 adds five curated public test-torrent shortcuts without adding a debug backend
 command or bypassing application policy. Android remains intentionally
 unchanged. Tactical `071` adds a local selection-aware canonical magnet copy
-action through the browser/Tauri clipboard surface without changing the
-application contract or Android. Tactical `049` replaces the React product's
+action. Tactical `107` replaces its presentation-only hash construction with
+a typed read-only application export used by browser and Tauri while keeping
+Android presentation unchanged. Tactical `049` replaces the React product's
 generic Logs table with the structured ordered console through both browser
 polling and Tauri Channel delivery. Shared generated Rust/TypeScript/Kotlin
 semantic artifacts continue to compile, but Android presentation intentionally
@@ -219,10 +220,13 @@ chooses the active transport.
 Typed and curated magnet intake share that path. A deterministic catalog test
 keeps the UI shortcuts identical to `tests/live/torrents.json`; public swarm
 availability remains variable evidence rather than a UI guarantee.
-Torrent More and context menus can also copy one canonical v1 magnet per
-selected torrent, synthesized from projected info hashes and joined by
-newlines in stable application order. This presentation action does not imply
-that original submitted URIs were retained byte-for-byte.
+Torrent More and context menus copy one v1 magnet per selected torrent and
+join them with newlines in stable application order. The application returns
+a verified retained magnet verbatim when available; `.torrent`, missing, or
+integrity-failed sources synthesize `xt`, verified `dn`, and the normalized
+tracker catalog within current magnet bounds. The UI performs one clipboard
+write only after every export succeeds and reports bounded tracker omissions.
+Routine torrent rows and views still contain no source URI or tracker secrets.
 
 ## Reactive Views
 

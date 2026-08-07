@@ -11,7 +11,8 @@ use rstorrent_engine::{
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
 use rstorrent_protocol::magnet::{
-    FileIndexRange as MagnetFileIndexRange, Magnet, TrackerUrlTransport,
+    FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet, TrackerUrl,
+    TrackerUrlTransport,
 };
 use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
@@ -23,10 +24,11 @@ use sha2::{Digest as Sha256Digest, Sha256};
 
 use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, Command, CommandResult,
-    ErrorCode, FilePriority, FileSelectionIntent, MAX_FILE_SELECTION_ENTRIES, RemovalDataPolicy,
-    RemovalState, RequestEnvelope, ResponseEnvelope, ServiceSnapshot, StorageState,
-    TorrentSnapshot, TorrentState, decode_info_hash, encode_info_hash, parse_revision,
-    validate_add_torrent_bytes_request, validate_identifier, validate_request,
+    ErrorCode, FilePriority, FileSelectionIntent, MAX_FILE_SELECTION_ENTRIES, MagnetExportResult,
+    MagnetExportSource, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
+    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
+    encode_info_hash, parse_revision, validate_add_torrent_bytes_request, validate_identifier,
+    validate_request,
 };
 use crate::durable_state::{
     DerivedStateInput, PayloadState, VerificationState, derive_torrent_state,
@@ -734,11 +736,27 @@ impl SessionStore {
             ));
         }
         if !request.command.is_mutation() {
-            return Ok(ResponseEnvelope::success(
+            let mut response = ResponseEnvelope::success(
                 request.request_id.clone(),
                 self.revision()?,
                 self.snapshot()?,
-            ));
+            );
+            if let Command::ExportMagnet { torrent_id } = &request.command {
+                response = match self.export_magnet(torrent_id) {
+                    Ok(result) => response.with_result(CommandResult::ExportMagnet { result }),
+                    Err(StoreError::UnknownTorrent(_)) => ResponseEnvelope::error(
+                        request.request_id.clone(),
+                        self.revision()?,
+                        ErrorCode::UnknownTorrent,
+                        format!(
+                            "torrent {} is not in the profile",
+                            torrent_id.to_ascii_lowercase()
+                        ),
+                    ),
+                    Err(error) => return Err(error),
+                };
+            }
+            return Ok(response);
         }
 
         let request_json = serde_json::to_string(request)?;
@@ -1013,6 +1031,61 @@ impl SessionStore {
             verification,
             quarantine_reason,
         })
+    }
+
+    fn export_magnet(&self, torrent_id: &str) -> Result<MagnetExportResult, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let publication_name = self
+            .connection
+            .query_row(
+                "SELECT publication_name FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_ascii_lowercase()))?;
+
+        let source = self
+            .connection
+            .query_row(
+                "SELECT kind, fidelity, magnet, byte_length, sha256
+                 FROM torrent_source WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if let Some((kind, fidelity, Some(magnet), byte_length, digest)) = source
+            && kind == "magnet"
+            && usize::try_from(byte_length).ok() == Some(magnet.len())
+            && digest == Sha256::digest(magnet.as_bytes()).as_slice()
+            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.info_hash == info_hash)
+            && let Some(source) = match fidelity.as_str() {
+                "verbatim" => Some(MagnetExportSource::Verbatim),
+                "canonicalized" => Some(MagnetExportSource::Canonicalized),
+                _ => None,
+            }
+        {
+            return Ok(MagnetExportResult {
+                magnet,
+                source,
+                omitted_tracker_count: 0,
+            });
+        }
+
+        Ok(synthesize_magnet_export(
+            info_hash,
+            publication_name.as_deref(),
+            &read_trackers(&self.connection, &info_hash)?,
+        ))
     }
 
     pub fn load_removal(&self, torrent_id: &str) -> Result<RemovalRecord, StoreError> {
@@ -3384,7 +3457,7 @@ fn apply_mutation(
         Command::RemoveTorrent { torrent_id, data } => {
             begin_removal(transaction, torrent_id, *data, current_revision)
         }
-        Command::Snapshot | Command::Shutdown => {
+        Command::ExportMagnet { .. } | Command::Snapshot | Command::Shutdown => {
             unreachable!("non-mutations are handled before transaction")
         }
     };
@@ -5122,6 +5195,45 @@ fn canonical_magnet(magnet: &Magnet) -> String {
     output
 }
 
+fn synthesize_magnet_export(
+    info_hash: [u8; 20],
+    publication_name: Option<&str>,
+    trackers: &[StoredTracker],
+) -> MagnetExportResult {
+    let mut magnet = format!("magnet:?xt=urn:btih:{}", encode_info_hash(info_hash));
+    if let Some(publication_name) = publication_name {
+        let mut parameter = String::from("&dn=");
+        percent_encode_query_value(&mut parameter, publication_name.as_bytes());
+        if magnet.len() + parameter.len() <= MAX_MAGNET_LENGTH {
+            magnet.push_str(&parameter);
+        }
+    }
+
+    let mut included_trackers = 0_usize;
+    let mut omitted_trackers = 0_usize;
+    for tracker in trackers {
+        if included_trackers == MAX_TRACKERS || TrackerUrl::from_magnet_url(&tracker.url).is_none()
+        {
+            omitted_trackers += 1;
+            continue;
+        }
+        let mut parameter = String::from("&tr=");
+        percent_encode_query_value(&mut parameter, tracker.url.as_bytes());
+        if magnet.len() + parameter.len() > MAX_MAGNET_LENGTH {
+            omitted_trackers += 1;
+            continue;
+        }
+        magnet.push_str(&parameter);
+        included_trackers += 1;
+    }
+
+    MagnetExportResult {
+        magnet,
+        source: MagnetExportSource::Synthesized,
+        omitted_tracker_count: u32::try_from(omitted_trackers).unwrap_or(u32::MAX),
+    }
+}
+
 fn tracker_transport_name(transport: TrackerUrlTransport) -> &'static str {
     match transport {
         TrackerUrlTransport::Udp => "udp",
@@ -5171,6 +5283,7 @@ mod tests {
     use rstorrent_engine::PreparedFileHash;
     use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtSnapshot};
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
+    use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet};
     use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
@@ -5178,15 +5291,16 @@ mod tests {
 
     use super::{
         ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
-        SessionStore, StoreError, StoredTrackerSource, StoredTrackerTransport,
+        SessionStore, StoreError, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
+        synthesize_magnet_export,
     };
     use crate::ClientSettings;
     use crate::durable_state::PayloadState;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
-        FileSelectionIntent, ListenerPolicy, RemovalDataPolicy, RemovalState, RequestEnvelope,
-        ResponseOutcome, StorageState, TorrentState,
+        FileSelectionIntent, ListenerPolicy, MagnetExportSource, RemovalDataPolicy, RemovalState,
+        RequestEnvelope, ResponseOutcome, StorageState, TorrentState,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -5329,6 +5443,203 @@ mod tests {
         );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn magnet_export_preserves_verified_source_and_falls_back_after_corruption() {
+        let root = test_root("magnet-export-source");
+        let configured = configured_root(&root);
+        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let source = "magnet:?dn=Original%20Name&ws=https%3A%2F%2Fseed.example%2Ffile\
+             &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce\
+             &xt=urn:btih:000102030405060708090A0B0C0D0E0F10111213";
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let added = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-export-source".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: source.to_owned(),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add exact source");
+        assert_eq!(added.revision, "1");
+
+        let export = store
+            .handle_durable(&export_request("export-verbatim", torrent_id))
+            .expect("export exact source");
+        assert_eq!(export.revision, "1");
+        let result = match export.result.expect("export result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.magnet, source);
+        assert_eq!(result.source, MagnetExportSource::Verbatim);
+        assert_eq!(result.omitted_tracker_count, 0);
+
+        store
+            .connection
+            .execute(
+                "UPDATE torrent_source SET fidelity = 'canonicalized' WHERE info_hash = ?1",
+                [crate::control::decode_info_hash(torrent_id)
+                    .expect("hash")
+                    .as_slice()],
+            )
+            .expect("mark source as migrated canonical text");
+        let canonicalized = store
+            .handle_durable(&export_request("export-canonicalized", torrent_id))
+            .expect("export canonicalized source");
+        let result = match canonicalized.result.expect("canonicalized result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.magnet, source);
+        assert_eq!(result.source, MagnetExportSource::Canonicalized);
+
+        store
+            .connection
+            .execute(
+                "UPDATE torrent_source SET sha256 = zeroblob(32) WHERE info_hash = ?1",
+                [crate::control::decode_info_hash(torrent_id)
+                    .expect("hash")
+                    .as_slice()],
+            )
+            .expect("corrupt retained source digest");
+        let fallback = store
+            .handle_durable(&export_request("export-fallback", torrent_id))
+            .expect("fall back from corrupt source");
+        assert_eq!(fallback.revision, "1");
+        let result = match fallback.result.expect("fallback result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.source, MagnetExportSource::Synthesized);
+        assert_eq!(
+            result.magnet,
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
+             &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce"
+        );
+        assert_eq!(result.omitted_tracker_count, 0);
+
+        let missing = store
+            .handle_durable(&export_request(
+                "export-missing",
+                "ffffffffffffffffffffffffffffffffffffffff",
+            ))
+            .expect("return typed missing result");
+        assert!(matches!(
+            missing.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::UnknownTorrent,
+                    ..
+                }
+            }
+        ));
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn metainfo_export_synthesizes_verified_name_and_ordered_trackers() {
+        let root = test_root("metainfo-magnet-export");
+        let configured = configured_root(&root);
+        let source = rich_torrent_source();
+        let projection =
+            Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                .expect("project rich metainfo");
+        let torrent_id = crate::control::encode_info_hash(projection.metainfo.info_hash);
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let added = store
+            .handle_torrent_bytes(&torrent_bytes_request("add-rich-metainfo", &source), source)
+            .expect("add rich metainfo");
+        let export = store
+            .handle_durable(&export_request("export-rich-metainfo", &torrent_id))
+            .expect("export synthesized magnet");
+        assert_eq!(export.revision, added.revision);
+        let result = match export.result.expect("export result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.source, MagnetExportSource::Synthesized);
+        assert_eq!(result.omitted_tracker_count, 0);
+        assert_eq!(
+            result.magnet,
+            format!(
+                "magnet:?xt=urn:btih:{torrent_id}\
+                 &dn=Test%20%26%20Stuff\
+                 &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce\
+                 &tr=https%3A%2F%2Fbackup.example%2Fannounce%3Fkey%3Dabc"
+            )
+        );
+        assert_eq!(
+            Magnet::parse(&result.magnet)
+                .expect("parse synthesized magnet")
+                .trackers
+                .len(),
+            2
+        );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn synthesized_magnet_reports_count_and_length_omissions() {
+        let tracker = |position: u32, url: String| StoredTracker {
+            tier: 0,
+            position,
+            url,
+            transport: StoredTrackerTransport::Udp,
+            source: StoredTrackerSource::Metainfo,
+        };
+        let count_trackers = (0..MAX_TRACKERS + 2)
+            .map(|index| {
+                tracker(
+                    index as u32,
+                    format!("udp://tracker-{index}.example:80/announce"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let count_bounded = synthesize_magnet_export([7; 20], None, &count_trackers);
+        assert_eq!(count_bounded.omitted_tracker_count, 2);
+        assert_eq!(
+            Magnet::parse(&count_bounded.magnet)
+                .expect("parse count-bounded magnet")
+                .trackers
+                .len(),
+            MAX_TRACKERS
+        );
+
+        let large_token = "%".repeat(1_900);
+        let mut length_trackers = (0..3)
+            .map(|index| {
+                tracker(
+                    index,
+                    format!("https://large-{index}.example/announce?token={large_token}"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let short = "udp://short.example:80/announce";
+        length_trackers.push(tracker(3, short.to_owned()));
+        let length_bounded = synthesize_magnet_export([8; 20], Some("Bounded"), &length_trackers);
+        assert!(length_bounded.magnet.len() <= MAX_MAGNET_LENGTH);
+        assert_eq!(length_bounded.omitted_tracker_count, 1);
+        assert!(
+            length_bounded
+                .magnet
+                .ends_with("&tr=udp%3A%2F%2Fshort.example%3A80%2Fannounce")
+        );
+        assert_eq!(
+            Magnet::parse(&length_bounded.magnet)
+                .expect("parse length-bounded magnet")
+                .trackers
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -5576,6 +5887,33 @@ mod tests {
         source.extend_from_slice(info);
         source.push(b'e');
         source
+    }
+
+    fn rich_torrent_source() -> Vec<u8> {
+        let primary = "udp://tracker.example:6969/announce";
+        let backup = "https://backup.example/announce?key=abc";
+        let name = "Test & Stuff";
+        let info = format!(
+            "d6:lengthi4e4:name{}:{name}12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae",
+            name.len()
+        );
+        format!(
+            "d13:announce-listll{}:{primary}el{}:{backup}ee4:info{info}e",
+            primary.len(),
+            backup.len()
+        )
+        .into_bytes()
+    }
+
+    fn export_request(request_id: &str, torrent_id: &str) -> RequestEnvelope {
+        RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            command: Command::ExportMagnet {
+                torrent_id: torrent_id.to_owned(),
+            },
+        }
     }
 
     fn torrent_bytes_request(request_id: &str, source: &[u8]) -> AddTorrentBytesRequest {

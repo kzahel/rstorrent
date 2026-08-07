@@ -86,7 +86,20 @@ class FakeLiveClient implements ApplicationViewClient {
               },
             },
           }
-        : {}),
+        : request.command.type === "export_magnet"
+          ? {
+              result: {
+                type: "export_magnet" as const,
+                result: {
+                  magnet:
+                    `magnet:?xt=urn:btih:${TORRENT_ID}` +
+                    "&dn=Exact%20source&tr=udp%3A%2F%2Ftracker.example%3A80",
+                  source: "verbatim" as const,
+                  omitted_tracker_count: 0,
+                },
+              },
+            }
+          : {}),
       status: "success",
       snapshot: {
         profile_id: "live",
@@ -266,6 +279,34 @@ describe("LiveApplication", () => {
       storage_root: "root_a",
       start_content: false,
       skip_files: [],
+    });
+    await application.close();
+  });
+
+  it("maps source-aware magnet export without projecting source text", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({
+        type: "export_magnet",
+        torrentId: TORRENT_ID,
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Magnet link ready",
+      magnetExport: {
+        magnet:
+          `magnet:?xt=urn:btih:${TORRENT_ID}` +
+          "&dn=Exact%20source&tr=udp%3A%2F%2Ftracker.example%3A80",
+        source: "verbatim",
+        omittedTrackerCount: 0,
+      },
+    });
+    expect(client.requests).toHaveLength(1);
+    expect(client.requests[0]?.command).toEqual({
+      type: "export_magnet",
+      torrent_id: TORRENT_ID,
     });
     await application.close();
   });

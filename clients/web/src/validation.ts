@@ -23,6 +23,7 @@ import { assertApiSchema, SchemaError } from "./api/schema";
 const MAX_FRAME_BYTES = 512 * 1024;
 const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_APPLICATION_FRAME_BYTES = MAX_HTTP_RESPONSE_BYTES + 4 * 1024;
+const MAX_MAGNET_BYTES = 16 * 1024;
 const MAX_COLLECTION = 100_000;
 const MAX_ACTIVE_PEERS = 256;
 const MAX_SWARM_PEERS = 1_000;
@@ -368,6 +369,24 @@ function validateResponse(value: unknown): void {
   const status = string(response.status, "response status");
   if (status === "success") {
     validateServiceSnapshot(response.snapshot);
+    if (response.result !== undefined) {
+      const result = asRecord(response.result, "command result");
+      if (result.type === "export_magnet") {
+        const magnet = asRecord(result.result, "magnet export result");
+        boundedUtf8String(magnet.magnet, "exported magnet", MAX_MAGNET_BYTES);
+        oneOf(magnet.source, "magnet export source", [
+          "verbatim",
+          "canonicalized",
+          "synthesized",
+        ]);
+        boundedInteger(
+          magnet.omitted_tracker_count,
+          "omitted tracker count",
+          0,
+          MAX_U32,
+        );
+      }
+    }
   } else if (status === "error") {
     const error = asRecord(response.error, "control error");
     boundedString(error.code, "control error code", 64);
@@ -375,6 +394,14 @@ function validateResponse(value: unknown): void {
   } else {
     throw new ContractError("unknown response status");
   }
+}
+
+function boundedUtf8String(value: unknown, label: string, maximum: number): string {
+  const parsed = string(value, label);
+  if (new TextEncoder().encode(parsed).byteLength > maximum) {
+    throw new ContractError(`${label} exceeds ${maximum} UTF-8 bytes`);
+  }
+  return parsed;
 }
 
 function validateServiceSnapshot(value: unknown): void {

@@ -268,6 +268,18 @@ context-specific hostile-input bounds, not trust in a local filename or
 authenticated caller. Original-source bytes and tracker credentials remain
 sensitive and are excluded from routine snapshots and logs.
 
+Tactical
+[`107`](../tactical/107-source-aware-magnet-export.md) activates the narrow
+magnet half of that deferred export boundary. A magnet source is returned only
+after its recorded byte length and SHA-256 match, current bounded parsing
+succeeds, and its v1 identity matches the requested torrent. Valid text is not
+rewritten, so verbatim additions preserve ordering, encoding, and unsupported
+fields while migrated sources remain labeled canonicalized. Missing,
+metainfo, or integrity-failed source records instead synthesize from durable
+identity, verified publication name, and normalized trackers. The output
+remains within 16 KiB and 32 trackers and reports omissions; no schema or
+startup authority changes.
+
 ### Verified-piece state is essential resume state
 
 Persist the verified-piece bitfield as a bounded, explicitly versioned BLOB.

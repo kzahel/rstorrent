@@ -102,6 +102,18 @@ describe("DemoApplication", () => {
     expect(controller.store.getState().torrents[torrentId]?.status).toBe("paused");
     await controller.dispatch({ type: "archive", torrentId });
     expect(controller.store.getState().torrents[torrentId]?.archived).toBe(true);
+    await expect(
+      controller.execute({ type: "export_magnet", torrentId }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      magnetExport: {
+        magnet:
+          "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4" +
+          "&dn=Big%20Buck%20Bunny%201080p%20surround",
+        source: "synthesized",
+        omittedTrackerCount: 0,
+      },
+    });
     await controller.dispatch({ type: "add_demo_torrent" });
     expect(controller.store.getState().torrentOrder).toHaveLength(4);
     await expect(

@@ -92,6 +92,9 @@ pub enum Command {
     RemoveStorageRoot {
         storage_root: String,
     },
+    ExportMagnet {
+        torrent_id: String,
+    },
     Snapshot,
     Pause {
         torrent_id: String,
@@ -261,6 +264,24 @@ impl ResponseEnvelope {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CommandResult {
     AddTorrent { result: AddTorrentResult },
+    ExportMagnet { result: MagnetExportResult },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum MagnetExportSource {
+    Verbatim,
+    Canonicalized,
+    Synthesized,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct MagnetExportResult {
+    pub magnet: String,
+    pub source: MagnetExportSource,
+    pub omitted_tracker_count: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -495,7 +516,8 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         | Command::ForceRecheck { torrent_id }
         | Command::Archive { torrent_id }
         | Command::RestoreArchive { torrent_id }
-        | Command::RemoveTorrent { torrent_id, .. } => {
+        | Command::RemoveTorrent { torrent_id, .. }
+        | Command::ExportMagnet { torrent_id } => {
             validate_torrent_id(torrent_id)?;
         }
         Command::SetDefaultStorageRoot { storage_root }

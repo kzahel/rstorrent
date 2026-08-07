@@ -222,6 +222,7 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "set_show_add_options" &&
       command.type !== "set_client_settings" &&
       command.type !== "remove_download_root" &&
+      command.type !== "export_magnet" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
       command.type !== "force_recheck" &&
@@ -267,6 +268,11 @@ export class LiveApplication implements InspectionApplication {
                     type: "remove_storage_root",
                     storage_root: command.rootId,
                   }
+                : command.type === "export_magnet"
+                  ? {
+                      type: "export_magnet",
+                      torrent_id: command.torrentId,
+                    }
                 : command.type === "remove"
                   ? {
                       type: "remove_torrent",
@@ -287,6 +293,9 @@ export class LiveApplication implements InspectionApplication {
     }
     if (response.status === "error") {
       return { accepted: false, message: response.error.message };
+    }
+    if (command.type === "export_magnet") {
+      return magnetCommandResult(response);
     }
     if (command.type === "set_client_settings") {
       this.controller?.requestImmediatePoll();
@@ -638,6 +647,25 @@ function addCommandResult(response: ResponseEnvelope): CommandResult {
     message: "Added",
     torrentId: result.result.torrent_id,
     addDisposition: { type: "added" },
+  };
+}
+
+function magnetCommandResult(response: ResponseEnvelope): CommandResult {
+  const result = response.result;
+  if (result?.type !== "export_magnet") {
+    return {
+      accepted: false,
+      message: "Magnet export response did not contain a magnet link",
+    };
+  }
+  return {
+    accepted: true,
+    message: "Magnet link ready",
+    magnetExport: {
+      magnet: result.result.magnet,
+      source: result.result.source,
+      omittedTrackerCount: result.result.omitted_tracker_count,
+    },
   };
 }
 

@@ -31,6 +31,7 @@ import type {
   DesiredInspectionViews,
   InspectionCommand,
   InspectionUpdate,
+  MagnetExport,
 } from "../model";
 import { WEBTORRENT_TEST_TORRENTS } from "../testTorrents";
 import { App } from "./App";
@@ -1868,7 +1869,7 @@ describe("inspection application", () => {
     expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
   });
 
-  it("copies selected torrents' canonical magnets with truthful feedback", async () => {
+  it("copies selected torrents' source-aware magnets with truthful feedback", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn<(value: string) => Promise<void>>();
     writeText.mockResolvedValue(undefined);
@@ -1885,6 +1886,14 @@ describe("inspection application", () => {
       type: "snapshot",
       snapshot,
     });
+    const exactMagnet =
+      `magnet:?dn=Original%20Name&xt=urn:btih:${current.infoHash}` +
+      "&tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce";
+    application.magnetExports.set(current.id, {
+      magnet: exactMagnet,
+      source: "verbatim",
+      omittedTrackerCount: 0,
+    });
     renderApplication(application);
 
     const more = screen.getByRole("button", { name: "More" });
@@ -1894,9 +1903,7 @@ describe("inspection application", () => {
     await user.click(copy);
 
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(
-        `magnet:?xt=urn:btih:${current.infoHash}`,
-      ),
+      expect(writeText).toHaveBeenCalledWith(exactMagnet),
     );
     expect(
       screen.getByText("Magnet link copied", { exact: true }),
@@ -1904,6 +1911,19 @@ describe("inspection application", () => {
     expect(
       screen.queryByRole("menu", { name: "More" }),
     ).not.toBeInTheDocument();
+    await waitFor(() => expect(more).toHaveFocus());
+
+    application.rejectNextTorrentId = current.id;
+    await user.click(more);
+    await user.click(
+      screen.getByRole("menuitem", { name: "Copy magnet link" }),
+    );
+    expect(
+      await screen.findByText("Could not copy magnet links: rejected for test", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(writeText).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(more).toHaveFocus());
 
     writeText.mockRejectedValueOnce(new Error("permission denied"));
@@ -1922,25 +1942,33 @@ describe("inspection application", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Select Sintel 4K open movie" }),
     );
+    const sintel = snapshot.torrentOrder
+      .map((id) => snapshot.torrents[id]!)
+      .find((torrent) => torrent.name === "Sintel 4K open movie")!;
+    const synthesizedSintel =
+      `magnet:?xt=urn:btih:${sintel.infoHash}` +
+      "&dn=Sintel%204K%20open%20movie" +
+      "&tr=https%3A%2F%2Fbackup.example%2Fannounce";
+    application.magnetExports.set(sintel.id, {
+      magnet: synthesizedSintel,
+      source: "synthesized",
+      omittedTrackerCount: 1,
+    });
     await user.click(more);
     const copyMultiple = screen.getByRole("menuitem", {
       name: "Copy magnet links",
     });
     expect(copyMultiple).not.toHaveAttribute("aria-disabled");
     await user.click(copyMultiple);
-    const selectedMagnets = snapshot.torrentOrder
-      .map((id) => snapshot.torrents[id]!)
-      .filter(
-        (torrent) =>
-          torrent.id === current.id || torrent.name === "Sintel 4K open movie",
-      )
-      .map((torrent) => `magnet:?xt=urn:btih:${torrent.infoHash}`)
-      .join("\n");
+    const selectedMagnets = [exactMagnet, synthesizedSintel].join("\n");
     await waitFor(() =>
       expect(writeText).toHaveBeenLastCalledWith(selectedMagnets),
     );
     expect(
-      screen.getByText("2 magnet links copied", { exact: true }),
+      screen.getByText(
+        "2 magnet links copied; 1 tracker omitted to keep them usable",
+        { exact: true },
+      ),
     ).toBeVisible();
 
     fireEvent.click(screen.getByRole("grid", { name: "Transfer queue" }));
@@ -2080,6 +2108,7 @@ class RecordingLiveApplication implements InspectionApplication {
   readonly scenarios = [];
   readonly commands: InspectionCommand[] = [];
   readonly views: DesiredInspectionViews[] = [];
+  readonly magnetExports = new Map<string, MagnetExport>();
   rejectNextClientSettings = false;
   rejectNextTorrentId: string | undefined;
   private listener: ((update: InspectionUpdate) => void) | null = null;
@@ -2155,6 +2184,31 @@ class RecordingLiveApplication implements InspectionApplication {
         accepted: true,
         message: "Download folder ready",
         storageRoot: root,
+      };
+    }
+    if (command.type === "export_magnet") {
+      const configured = this.magnetExports.get(command.torrentId);
+      if (configured !== undefined) {
+        return {
+          accepted: true,
+          message: "Magnet link ready",
+          magnetExport: configured,
+        };
+      }
+      const torrent = this.initialSnapshot?.snapshot.torrents[command.torrentId];
+      if (torrent === undefined) {
+        return { accepted: false, message: "Torrent is not present" };
+      }
+      return {
+        accepted: true,
+        message: "Magnet link ready",
+        magnetExport: {
+          magnet:
+            `magnet:?xt=urn:btih:${torrent.infoHash}` +
+            `&dn=${encodeURIComponent(torrent.name)}`,
+          source: "synthesized",
+          omittedTrackerCount: 0,
+        },
       };
     }
     if (command.type === "set_default_download_root") {

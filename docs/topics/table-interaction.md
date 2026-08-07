@@ -227,7 +227,10 @@ action-scope rule to canonical magnet copy. Tactical
 [`085`](../tactical/085-unified-contextual-selection-actions.md) supersedes its
 singleton presentation limit: one or many selected torrents now produce one
 newline-delimited clipboard write in stable full-selection order. It still
-never chooses a current or visible subset implicitly.
+never chooses a current or visible subset implicitly. Tactical
+[`107`](../tactical/107-source-aware-magnet-export.md) changes only how each
+target's value is obtained: all explicit targets must export successfully
+before the single clipboard write, so failure cannot create a partial copy.
 
 Tactical `085` also proves selected/unselected pointer targeting, Shift+F10,
 hidden-selection preservation, stale context closure, focus return, grouped

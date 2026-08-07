@@ -90,6 +90,14 @@ Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and
 does not claim byte-for-byte preservation of the submitted source URI.
+Completed Tactical
+[`107`](../tactical/107-source-aware-magnet-export.md) supersedes that lossy
+construction without putting source text in torrent rows. More and row-context
+copy now request an explicit read-only application export for every stable
+selection target, preserve a verified retained magnet byte-for-byte, and
+otherwise receive a bounded `xt`/verified `dn`/ordered `tr` synthesis. The
+shared action still performs one newline-delimited clipboard write and now
+reports any tracker omissions required to keep the result usable.
 Tactical `077` replaces the four component-local popup implementations with a
 shared portalled overlay layer. File actions, torrent More and its submenu,
 table Columns, and column help now share collision-aware positioning,

@@ -747,6 +747,9 @@ impl ApplicationService {
             }
             return Ok(response);
         }
+        if matches!(&command, Command::ExportMagnet { .. }) {
+            return Ok(response);
+        }
         let durable_mutation_applied = response.revision.parse::<u64>().map_err(|_| {
             ApplicationError::Configuration(
                 "durable response contains an invalid revision".to_owned(),
@@ -763,6 +766,9 @@ impl ApplicationService {
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
                 let disposition = response.result.as_ref().map(|result| match result {
                     CommandResult::AddTorrent { result } => &result.disposition,
+                    CommandResult::ExportMagnet { .. } => {
+                        unreachable!("add-magnet response returned a magnet export")
+                    }
                 });
                 match disposition {
                     Some(AddTorrentDisposition::Added) => {
@@ -906,7 +912,7 @@ impl ApplicationService {
             Command::Shutdown => {
                 self.shutdown().await?;
             }
-            Command::Snapshot => {}
+            Command::ExportMagnet { .. } | Command::Snapshot => {}
         }
         if !shutting_down {
             self.reconcile_discovery_catalog().await?;

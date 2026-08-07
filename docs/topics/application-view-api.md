@@ -653,6 +653,14 @@ state. Presentation may immediately reveal the result identity, but neither
 an adapter nor the React controller may derive duplicate semantics by diffing
 that view.
 
+Tactical
+[`107`](../tactical/107-source-aware-magnet-export.md) deliberately keeps
+magnet source outside the view system. The explicit read-only
+`export_magnet` command returns one bounded command result only after user
+activation; torrent-list and selected-torrent projections remain compact and
+credential-free. This is the result boundary, not a new subscription or a
+reason to copy command payloads into client state.
+
 ## Initial View Breadth
 
 The first useful contract progression is:

@@ -81,7 +81,7 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await capture(page, "rstorrent-destinations-wide.png");
 });
 
-test("More copies selected torrents' canonical magnets", async ({
+test("More copies selected torrents' source-aware magnets", async ({
   context,
   page,
 }) => {
@@ -115,8 +115,8 @@ test("More copies selected torrents' canonical magnets", async ({
   await expect(more).toBeFocused();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     [
-      "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
-      "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10",
+      "magnet:?xt=urn:btih:a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4&dn=Big%20Buck%20Bunny%201080p%20surround",
+      "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel%204K%20open%20movie",
     ].join("\n"),
   );
 });

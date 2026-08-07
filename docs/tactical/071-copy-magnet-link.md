@@ -2,6 +2,10 @@
 
 Status: Complete.
 
+Successor: Tactical
+[`107`](107-source-aware-magnet-export.md) supersedes the hash-only
+construction while retaining this action and interaction contract.
+
 Topics: `web-ui-design`, `client-surfaces`, `table-interaction`
 
 ## Motivation And Outcome

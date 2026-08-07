@@ -158,6 +158,21 @@ export class DemoApplication implements InspectionApplication {
         return rejected("Live magnet add is unavailable in demo scenarios");
       case "add_torrent_bytes":
         return rejected("Torrent file upload is unavailable in demo scenarios");
+      case "export_magnet": {
+        const torrent = this.snapshot.torrents[command.torrentId];
+        if (torrent === undefined) return rejected("Torrent is not present");
+        return {
+          accepted: true,
+          message: "Magnet link ready",
+          magnetExport: {
+            magnet:
+              `magnet:?xt=urn:btih:${torrent.infoHash}` +
+              `&dn=${encodeMagnetValue(torrent.name)}`,
+            source: "synthesized",
+            omittedTrackerCount: 0,
+          },
+        };
+      }
       case "set_file_priority":
         return rejected("File priority changes are unavailable in demo scenarios");
       case "force_recheck":
@@ -929,6 +944,12 @@ function accepted(message: string): CommandResult {
 
 function rejected(message: string): CommandResult {
   return { accepted: false, message };
+}
+
+function encodeMagnetValue(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

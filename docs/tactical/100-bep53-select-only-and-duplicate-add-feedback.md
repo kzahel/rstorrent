@@ -235,6 +235,10 @@ by Tactical `071`. It does not silently serialize current file selection.
 An explicit future **Copy magnet for selected files** action may use BEP 53,
 but is not implied here.
 
+Tactical `107` later enriches ordinary copy with exact retained source or
+verified name and trackers. It preserves this non-goal: current file selection
+is still not synthesized into the ordinary copied magnet.
+
 ## Selection State And Persistence
 
 ### Semantic state

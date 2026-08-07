@@ -1573,6 +1573,22 @@
         },
         {
           "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "export_magnet",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "type": {
               "const": "snapshot",
               "type": "string"
@@ -1706,6 +1722,22 @@
             },
             "type": {
               "const": "add_torrent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/MagnetExportResult"
+            },
+            "type": {
+              "const": "export_magnet",
               "type": "string"
             }
           },
@@ -2999,6 +3031,35 @@
           "type": "object"
         }
       ]
+    },
+    "MagnetExportResult": {
+      "properties": {
+        "magnet": {
+          "type": "string"
+        },
+        "omitted_tracker_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/MagnetExportSource"
+        }
+      },
+      "required": [
+        "magnet",
+        "source",
+        "omitted_tracker_count"
+      ],
+      "type": "object"
+    },
+    "MagnetExportSource": {
+      "enum": [
+        "verbatim",
+        "canonicalized",
+        "synthesized"
+      ],
+      "type": "string"
     },
     "OpenViewSetOptions": {
       "properties": {

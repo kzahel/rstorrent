@@ -9,7 +9,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { useInspectionDispatch, useInspectionStore } from "../context";
+import {
+  useInspectionCommand,
+  useInspectionDispatch,
+  useInspectionStore,
+} from "../context";
 import type { InspectionCommand, TorrentRow } from "../model";
 import {
   TORRENT_ACTIONS,
@@ -65,6 +69,7 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
     (state) => state.presentation.selectedTorrentIds,
   );
   const dispatch = useInspectionDispatch();
+  const execute = useInspectionCommand();
   const [status, setStatusState] = useState("");
   const [pendingAction, setPendingAction] = useState<TorrentActionId | null>(
     null,
@@ -152,34 +157,71 @@ export function TorrentActionProvider({ children }: { readonly children: ReactNo
     [dispatch],
   );
 
-  const copyMagnets = useCallback(async (targets: readonly TorrentRow[]) => {
-    setPendingAction("copy_magnet");
-    setStatusState("");
-    try {
-      const clipboard = navigator.clipboard;
-      if (clipboard === undefined) {
-        throw new Error("Clipboard access is unavailable");
+  const copyMagnets = useCallback(
+    async (targets: readonly TorrentRow[]) => {
+      setPendingAction("copy_magnet");
+      setStatusState("");
+      try {
+        const clipboard = navigator.clipboard;
+        if (clipboard === undefined) {
+          throw new Error("Clipboard access is unavailable");
+        }
+        const exported = (async () => {
+          const magnets: string[] = [];
+          let omittedTrackerCount = 0;
+          for (const target of targets) {
+            const result = await execute({
+              type: "export_magnet",
+              torrentId: target.id,
+            });
+            if (result.magnetExport === undefined) {
+              throw new Error("Magnet export did not return a link");
+            }
+            magnets.push(result.magnetExport.magnet);
+            omittedTrackerCount += result.magnetExport.omittedTrackerCount;
+          }
+          return { text: magnets.join("\n"), omittedTrackerCount };
+        })();
+        let exportResult: Awaited<typeof exported>;
+        if (
+          typeof clipboard.write === "function" &&
+          typeof ClipboardItem !== "undefined"
+        ) {
+          await clipboard.write([
+            new ClipboardItem({
+              "text/plain": exported.then(
+                ({ text }) => new Blob([text], { type: "text/plain" }),
+              ),
+            }),
+          ]);
+          exportResult = await exported;
+        } else {
+          exportResult = await exported;
+          await clipboard.writeText(exportResult.text);
+        }
+        if (mountedRef.current) {
+          const copied =
+            targets.length === 1
+              ? "Magnet link copied"
+              : `${targets.length.toLocaleString()} magnet links copied`;
+          const omitted =
+            exportResult.omittedTrackerCount === 0
+              ? ""
+              : `; ${exportResult.omittedTrackerCount.toLocaleString()} ${
+                  exportResult.omittedTrackerCount === 1 ? "tracker" : "trackers"
+                } omitted to keep ${targets.length === 1 ? "it" : "them"} usable`;
+          setStatusState(`${copied}${omitted}`);
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          setStatusState(`Could not copy magnet links: ${errorText(error)}`);
+        }
+      } finally {
+        if (mountedRef.current) setPendingAction(null);
       }
-      await clipboard.writeText(
-        targets
-          .map((target) => `magnet:?xt=urn:btih:${target.infoHash}`)
-          .join("\n"),
-      );
-      if (mountedRef.current) {
-        setStatusState(
-          targets.length === 1
-            ? "Magnet link copied"
-            : `${targets.length.toLocaleString()} magnet links copied`,
-        );
-      }
-    } catch (error) {
-      if (mountedRef.current) {
-        setStatusState(`Could not copy magnet links: ${errorText(error)}`);
-      }
-    } finally {
-      if (mountedRef.current) setPendingAction(null);
-    }
-  }, []);
+    },
+    [execute],
+  );
 
   const runAction = useCallback(
     async (

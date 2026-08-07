@@ -247,6 +247,14 @@ only an explicit `so` selection may promote skipped files. Exact request replay
 returns the stored result without reapplying the transition, and adapters do
 not infer duplicate state from messages or snapshot differences.
 
+Tactical
+[`107`](../tactical/107-source-aware-magnet-export.md) adds the first explicit
+source export as a semantic non-mutation. `export_magnet` validates one torrent
+identity and returns a typed magnet, exact/canonicalized/synthesized provenance,
+and an omitted-tracker count at the current revision. It creates no receipt,
+revision, task, or diagnostic and does not expose source text through routine
+snapshots. Unknown identity uses the existing `unknown_torrent` error.
+
 ## Invariants
 
 - Every mutation has one application-service instance and one session
