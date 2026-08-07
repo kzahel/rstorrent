@@ -56,6 +56,20 @@ authentication policy. Fresh and every migrated profile default to
 ordinary hidden-field saves; malformed durable values fail closed. Effective
 policy and TLS outcomes remain runtime facts.
 
+An observed schema-13 profile now narrows the Tactical `073` persistence
+claim. A published torrent that rechecked and downloaded newly selected pieces
+was rewritten by the generic piece-checkpoint path to
+`storage_state = staging` while retaining
+`managed_artifacts = published`; the healthy SQLite database then failed the
+next whole-application open. Accepted Tactical
+[`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
+replaces that overlapping durable state with one payload fact and verification
+request/completion authority, makes force recheck exclusive and restartable,
+and quarantines torrent-local recovery failures without aborting the profile.
+Until its schema migration and restart gates pass, published partial repair
+and force-recheck persistence are a known regression rather than a complete
+readiness claim.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database

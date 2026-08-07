@@ -482,6 +482,17 @@ durability barrier. A later clean-shutdown fast-resume design may skip some
 hashing only after it defines stronger file identity, directory durability and
 storage-generation evidence.
 
+An observed schema-13 restart regression narrows the checkpoint contract:
+`SessionStore::record_pieces` also rewrites `storage_state` to `staging`, so a
+durable piece added to final published content can contradict the separately
+stored published artifact owner and abort the next profile open. Accepted
+Tactical
+[`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
+makes piece checkpoints have-only mutations, gives publication sole authority
+over one payload fact, and derives checking/downloading/completion from durable
+facts plus current runtime owners. Until that tactical passes, batching and
+crash-order evidence does not establish safe published-partial restart.
+
 ## Session And Storage-Root Scheduling
 
 The current per-torrent owner is sufficient for one active download but should
