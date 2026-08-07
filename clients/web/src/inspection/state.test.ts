@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "../api";
-import type { InspectionSnapshot, TorrentRow } from "./model";
+import type {
+  InspectionSnapshot,
+  PeerRow,
+  PeerSet,
+  TorrentRow,
+} from "./model";
 import { createInspectionStore, emptyDiskSet } from "./state";
 
 describe("inspection store", () => {
@@ -50,6 +55,56 @@ describe("inspection store", () => {
     });
     expect(store.getState().torrents.second).toBe(retained);
     expect(store.getState().torrents.first?.progress).toBe(0.7);
+  });
+
+  it("keeps the current peer through live snapshots while its connection remains", () => {
+    const store = createInspectionStore();
+    const first = peer("7", "first");
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("first", "downloading")], [first]),
+    });
+    store.getState().setCurrentPeer(first.connectionId);
+
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot(
+        [row("first", "downloading")],
+        [{ ...first, downloadRate: 2 }],
+      ),
+    });
+    expect(store.getState().presentation.currentPeerId).toBe(first.connectionId);
+
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("first", "downloading")]),
+    });
+    expect(store.getState().presentation.currentPeerId).toBeNull();
+  });
+
+  it("clears the current peer when a keyed patch removes its connection", () => {
+    const store = createInspectionStore();
+    const first = peer("7", "first");
+    store.getState().applyUpdate({
+      type: "snapshot",
+      snapshot: snapshot([row("first", "downloading")], [first]),
+    });
+    store.getState().setCurrentPeer(first.connectionId);
+
+    store.getState().applyUpdate({
+      type: "patch",
+      revision: 2,
+      peers: [
+        {
+          torrentId: "first",
+          upsert: [],
+          removed: [first.connectionId],
+          order: [],
+        },
+      ],
+    });
+
+    expect(store.getState().presentation.currentPeerId).toBeNull();
   });
 
   it("clears a removed singleton selection without inventing a fallback", () => {
@@ -307,7 +362,40 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
   };
 }
 
-function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
+function peer(connectionId: string, torrentId: string): PeerRow {
+  return {
+    connectionId,
+    torrentId,
+    state: "connected",
+    endpoint: "127.0.0.1:51413",
+    client: "test peer",
+    source: "manual",
+    progress: null,
+    downloadRate: 1,
+    uploadRate: 0,
+    downloadedBytes: 1,
+    uploadedBytes: 0,
+    requestsPending: 1,
+    oldestRequestMs: 1,
+    connectedAgeMs: 1,
+    lastPayloadAgeMs: 1,
+    flags: [],
+    useful: true,
+  };
+}
+
+function snapshot(
+  rows: readonly TorrentRow[],
+  peers: readonly PeerRow[] = [],
+): InspectionSnapshot {
+  const peersByTorrent: Record<string, PeerSet> = {};
+  for (const item of peers) {
+    const current = peersByTorrent[item.torrentId] ?? { order: [], rows: {} };
+    peersByTorrent[item.torrentId] = {
+      order: [...current.order, item.connectionId],
+      rows: { ...current.rows, [item.connectionId]: item },
+    };
+  }
   return {
     revision: 1,
     session: {
@@ -322,7 +410,7 @@ function snapshot(rows: readonly TorrentRow[]): InspectionSnapshot {
     clientSettings: structuredClone(DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW),
     torrentOrder: rows.map((item) => item.id),
     torrents: Object.fromEntries(rows.map((item) => [item.id, item])),
-    peersByTorrent: {},
+    peersByTorrent,
     swarmByTorrent: {},
     filesByTorrent: {},
     trackersByTorrent: {},

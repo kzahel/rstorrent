@@ -629,11 +629,18 @@ export function reduceInspectionUpdate(
             update.snapshot.torrents[state.presentation.pendingRevealTorrentId],
           )
         : { ...state.presentation, ...torrentPresentation };
+    const currentPeerId = repairCurrentPeerId(
+      presentation.currentTorrentId === previousCurrent
+        ? state.presentation.currentPeerId
+        : null,
+      presentation.currentTorrentId,
+      update.snapshot.peersByTorrent,
+    );
     return {
       ...update.snapshot,
       presentation: {
         ...presentation,
-        currentPeerId: null,
+        currentPeerId,
         detailOpen:
           didReveal || torrentPresentation.currentTorrentId === previousCurrent
             ? state.presentation.detailOpen
@@ -800,6 +807,16 @@ export function reduceInspectionUpdate(
           torrents[state.presentation.pendingRevealTorrentId],
         )
       : { ...state.presentation, ...torrentPresentation };
+  const currentPeerId = repairCurrentPeerId(
+    revealedPresentation.pendingRevealTorrentId === null &&
+      revealedPresentation.currentTorrentId !== currentId
+      ? null
+      : torrentPresentation.currentTorrentId === currentId
+        ? state.presentation.currentPeerId
+        : null,
+    revealedPresentation.currentTorrentId,
+    peersByTorrent,
+  );
 
   return {
     revision: update.revision,
@@ -820,13 +837,7 @@ export function reduceInspectionUpdate(
     logLoss,
     presentation: {
       ...revealedPresentation,
-      currentPeerId:
-        revealedPresentation.pendingRevealTorrentId === null &&
-        revealedPresentation.currentTorrentId !== currentId
-          ? null
-          : torrentPresentation.currentTorrentId === currentId
-          ? state.presentation.currentPeerId
-          : null,
+      currentPeerId,
       detailOpen:
         revealedPresentation.pendingRevealTorrentId === null &&
         revealedPresentation.currentTorrentId !== torrentPresentation.currentTorrentId
@@ -999,6 +1010,17 @@ function uniqueExistingTorrentIds(
     existing.push(torrentId);
   }
   return existing;
+}
+
+function repairCurrentPeerId(
+  currentPeerId: string | null,
+  currentTorrentId: string | null,
+  peersByTorrent: Readonly<Record<string, PeerSet>>,
+): string | null {
+  if (currentPeerId === null || currentTorrentId === null) return null;
+  return peersByTorrent[currentTorrentId]?.rows[currentPeerId] === undefined
+    ? null
+    : currentPeerId;
 }
 
 function applyRows<T>(

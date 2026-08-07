@@ -237,3 +237,10 @@ hidden-selection preservation, stale context closure, focus return, grouped
 toolbar/context action parity, and the 4,096-file virtualization bound. Its
 complete deterministic browser gate passed 29 cases with seven live opt-in
 cases skipped and no serious or critical Axe findings.
+
+The Peers table uses only the singular current-row portion of this model,
+keyed by the active connection generation. It has no checkbox column or
+multi-selection. A live-adapter regression that cleared the current peer on
+every refreshed snapshot is corrected by retaining it while the same
+`torrent_id` and `connection_id` row remains, and clearing it on keyed removal
+or replacement. Reducer tests cover both snapshot retention and removal.
