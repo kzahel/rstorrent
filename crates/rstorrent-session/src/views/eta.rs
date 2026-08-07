@@ -174,6 +174,9 @@ impl TorrentEtaModel {
             .checked_add(u64::from(length))
             .ok_or(TorrentEtaError::ArithmeticOverflow)?;
         self.last_accepted = Some(now);
+        if *remaining == 0 {
+            self.refresh_eta(now);
+        }
         Ok(true)
     }
 
@@ -181,6 +184,7 @@ impl TorrentEtaModel {
         &mut self,
         generation: u64,
         failed_bytes: usize,
+        now: Instant,
     ) -> Result<bool, TorrentEtaError> {
         if self.active_generation != Some(generation) || !self.transfer_applicable {
             return Ok(false);
@@ -200,6 +204,7 @@ impl TorrentEtaModel {
             return Err(TorrentEtaError::FailedBytesExceedRequired);
         }
         *remaining = restored;
+        self.refresh_eta(now);
         Ok(true)
     }
 
@@ -436,7 +441,7 @@ mod tests {
             .expect("receive block");
         assert_eq!(model.remaining_payload_bytes(), Some(7_000));
         model
-            .piece_hash_failed(generation, 1_000)
+            .piece_hash_failed(generation, 1_000, now)
             .expect("restore failed bytes");
         assert_eq!(model.remaining_payload_bytes(), Some(8_000));
 

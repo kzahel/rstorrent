@@ -580,7 +580,7 @@ impl ViewHub {
                 model.eta.block_received(generation, *length, now)
             }
             (Some(generation), TorrentActivity::PieceHashFailed { failed_bytes, .. }) => {
-                model.eta.piece_hash_failed(generation, *failed_bytes)
+                model.eta.piece_hash_failed(generation, *failed_bytes, now)
             }
             _ => Ok(false),
         };

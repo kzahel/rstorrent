@@ -149,6 +149,104 @@ fn torrent_eta_projects_exact_work_and_generation_accounting() {
 }
 
 #[test]
+fn controlled_eta_activity_runs_warm_stall_recovery_failure_and_completion() {
+    let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+    hub.replace_durable(&snapshot(1, 1), &eta_durable(None, 10_000, 0))
+        .expect("install geometry");
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            task_active: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("mark task active");
+
+    let now = Instant::now();
+    let generation = hub
+        .reserve_eta_generation(TORRENT_ID)
+        .expect("reserve generation");
+    hub.activate_eta_generation(TORRENT_ID, generation, now)
+        .expect("activate generation");
+    assert_eq!(current_torrent(&hub).eta, TorrentEtaView::WarmingUp);
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_millis(500),
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 1_000,
+        },
+    )
+    .expect("paced first block");
+    hub.record_eta_tick(now + Duration::from_secs(1))
+        .expect("first rate tick");
+    assert_eq!(
+        current_torrent(&hub).eta,
+        TorrentEtaView::Estimate {
+            seconds: "9".to_owned(),
+        }
+    );
+
+    hub.record_eta_tick(now + Duration::from_millis(10_500))
+        .expect("stall tick");
+    let stalled = current_torrent(&hub);
+    assert_eq!(stalled.eta_payload_download_rate_bytes, "0");
+    assert_eq!(stalled.eta, TorrentEtaView::Stalled);
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_secs(11),
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 1_000,
+            length: 1_000,
+        },
+    )
+    .expect("recovery block");
+    hub.record_eta_tick(now + Duration::from_millis(11_500))
+        .expect("recovery tick");
+    assert!(matches!(
+        current_torrent(&hub).eta,
+        TorrentEtaView::Estimate { .. }
+    ));
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_millis(11_600),
+        TorrentActivity::PieceHashFailed {
+            piece_index: 0,
+            failed_bytes: 2_000,
+        },
+    )
+    .expect("restore failed payload");
+    assert_eq!(
+        current_torrent(&hub).remaining_payload_bytes.as_deref(),
+        Some("10000")
+    );
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_secs(12),
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 10_000,
+        },
+    )
+    .expect("clean retry completes network work");
+    let complete = current_torrent(&hub);
+    assert_eq!(complete.remaining_payload_bytes.as_deref(), Some("0"));
+    assert_eq!(complete.eta_payload_download_rate_bytes, "0");
+    assert_eq!(complete.eta, TorrentEtaView::Unavailable);
+}
+
+#[test]
 fn same_size_selection_replacement_fences_late_eta_activity() {
     let metainfo = one_piece_boundary_fixture();
     let wanted = FileProgressModel::new(&metainfo, &[], &[], None).expect("wanted files");
