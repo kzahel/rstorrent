@@ -156,6 +156,31 @@ describe("client settings validation", () => {
       /disabled listener reports a listening status/,
     );
 
+    const wildcardUdp = torrentBatch("Wildcard UDP");
+    wildcardUdp.updates[0]!.snapshot.client_settings = {
+      ...clientSettingsRuntimeFixture(),
+      effective_listener: {
+        listener: { type: "automatic_local_network" },
+        preferred_listen_port: 6_881,
+      },
+      configured: {
+        ...clientSettingsRuntimeFixture().configured,
+        listener: { type: "automatic_local_network" },
+      },
+      listener_status: {
+        type: "listening",
+        address: "192.168.1.104",
+        port: 6_881,
+      },
+      session_udp_status: {
+        type: "bound",
+        address: "0.0.0.0",
+        port: 6_881,
+        coordinated_with_tcp: true,
+      },
+    };
+    expect(decodeUpdateBatch(JSON.stringify(wildcardUdp)).updates).toHaveLength(1);
+
     const mismatchedUdp = torrentBatch("Mismatched UDP");
     mismatchedUdp.updates[0]!.snapshot.client_settings = {
       ...clientSettingsRuntimeFixture(),
@@ -180,7 +205,7 @@ describe("client settings validation", () => {
       },
     };
     expect(() => decodeUpdateBatch(JSON.stringify(mismatchedUdp))).toThrow(
-      /coordinated session UDP endpoint differs/,
+      /coordinated session UDP port differs/,
     );
 
     const uncertainCleanup = torrentBatch("Uncertain cleanup");

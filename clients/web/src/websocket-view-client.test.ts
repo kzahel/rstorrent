@@ -37,6 +37,7 @@ class FakeWebSocket implements ApplicationWebSocket {
   public onclose: ((event: CloseEvent) => void) | null = null;
   public readonly sent: ApplicationClientFrame[] = [];
   public readonly binarySent: ArrayBuffer[] = [];
+  public readonly closeEvents: Array<{ code: number; reason: string }> = [];
 
   public constructor(
     public readonly url: string,
@@ -76,6 +77,7 @@ class FakeWebSocket implements ApplicationWebSocket {
 
   public close(code = 1000, reason = ""): void {
     if (this.readyState === 3) return;
+    this.closeEvents.push({ code, reason });
     this.readyState = 3;
     this.onclose?.({ code, reason } as CloseEvent);
   }
@@ -224,7 +226,44 @@ describe("multiplexed application WebSocket adapter", () => {
 
     await expect(next).rejects.toThrow();
     expect(sockets[0]?.sent.some((frame) => frame.type === "ack")).toBe(false);
+    expect(sockets[0]?.closeEvents).toEqual([
+      { code: 4_002, reason: "invalid application frame" },
+    ]);
     await stream.close();
+    await client.close();
+  });
+
+  it("uses a browser-sendable private code for handshake rejection", async () => {
+    const socket = new FakeWebSocket(
+      "ws://gateway.test/api/v1/connect",
+      (frame, active) => {
+        if (frame.type === "connect") {
+          active.server({
+            type: "connection_error",
+            error: {
+              code: "authentication_failed",
+              message: "application connection authentication failed",
+            },
+          });
+        }
+      },
+    );
+    const client = new WebSocketApplicationViewClient(
+      "http://gateway.test",
+      null,
+      () => socket,
+      clientInstanceId,
+    );
+
+    const hello = client.hello();
+    socket.open();
+
+    await expect(hello).rejects.toMatchObject({
+      code: "authentication_failed",
+    });
+    expect(socket.closeEvents).toEqual([
+      { code: 4_008, reason: "application connection rejected" },
+    ]);
     await client.close();
   });
 

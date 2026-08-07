@@ -1168,7 +1168,7 @@ function validateClientSettingsRuntime(value: unknown): void {
     "bound",
   ]);
   if (udpStatusType === "bound") {
-    const udpAddress = boundedString(
+    boundedString(
       udpStatus.address,
       "session UDP address",
       64,
@@ -1186,11 +1186,10 @@ function validateClientSettingsRuntime(value: unknown): void {
     if (
       coordinated &&
       (statusType !== "listening" ||
-        status.address !== udpAddress ||
         status.port !== udpPort)
     ) {
       throw new ContractError(
-        "coordinated session UDP endpoint differs from the active listener",
+        "coordinated session UDP port differs from the active listener",
       );
     }
   }

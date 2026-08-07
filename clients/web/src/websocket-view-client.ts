@@ -30,6 +30,8 @@ const INITIAL_RECONNECT_MILLIS = 250;
 const MAXIMUM_RECONNECT_MILLIS = 2_000;
 const NORMAL_CLOSE_MILLIS = 1_000;
 const SOCKET_OPEN = 1;
+const INVALID_APPLICATION_FRAME_CLOSE_CODE = 4_002;
+const APPLICATION_CONNECTION_REJECTED_CLOSE_CODE = 4_008;
 
 export interface ApplicationWebSocket {
   readonly readyState: number;
@@ -450,7 +452,10 @@ export class WebSocketApplicationViewClient
           if (frame.type === "connection_error") {
             const failure = connectionError(frame.error);
             failHandshake(failure);
-            socket.close(1008, "application connection rejected");
+            socket.close(
+              APPLICATION_CONNECTION_REJECTED_CLOSE_CODE,
+              "application connection rejected",
+            );
             return;
           }
           if (frame.type !== "connected") {
@@ -593,7 +598,10 @@ export class WebSocketApplicationViewClient
   private protocolFailure(error: Error): void {
     this.rejectPending(error);
     for (const stream of this.streams.values()) stream.fail(error);
-    this.socket?.close(1002, "invalid application frame");
+    this.socket?.close(
+      INVALID_APPLICATION_FRAME_CLOSE_CODE,
+      "invalid application frame",
+    );
   }
 
   private send(frame: ApplicationClientFrame): void {
