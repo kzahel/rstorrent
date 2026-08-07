@@ -3,11 +3,16 @@
 //! Bounded HTTP and WebSocket adapter for the application contract.
 
 mod application_websocket;
+mod web_auth;
 
 pub use application_websocket::{
     ApplicationClientFrame, ApplicationConnectionError, ApplicationConnectionErrorCode,
     ApplicationConnectionLimits, ApplicationConnectionMetrics,
     ApplicationConnectionMetricsSnapshot, ApplicationFrameMetrics, ApplicationServerFrame,
+};
+pub use web_auth::{
+    AuthorizedWebSession, INITIAL_WINDOW_SECONDS, IssuedWebSession, PairingTicket, WebAccessPolicy,
+    WebAuthError, WebAuthStore,
 };
 
 use std::error::Error;
