@@ -50,7 +50,7 @@ Tactical `103` adds the already-contracted Up, Uploaded, Connected, and Last
 payload facts to the sortable responsive Peers table. Existing persisted
 column preferences accept the new identifiers without a version migration;
 directionally unsupported values remain em dashes.
-Accepted Tactical
+Completed Tactical
 [`104`](../tactical/104-selection-aware-torrent-eta.md) replaces the live
 Workbench ETA placeholder and adds the same value to Transfers. Rust supplies
 exact decimal strings and a tagged warming/estimate/stalled/unavailable
@@ -608,6 +608,15 @@ phone Settings; preserves technical IEC copy; and reports no serious or
 critical axe findings. The run also corrected an existing removal-dialog
 light-theme contrast failure by using the established strong danger text
 token.
+
+Tactical `104` adds the same default-visible 84-pixel ETA to Transfers after
+Rate and retains Workbench's existing ETA column. The live adapter preserves
+exact decimal strings, the formatter uses `BigInt`, only estimates participate
+in decimal sorting, and typed unavailable/warming/stalled states remain
+distinct accessible `—`/`∞` values. The production-preview browser case
+covers all four states, Compact mode, the phone-width visibility rule, titles,
+accessible names, and no serious or critical axe findings. Vitest passes 214
+tests with the two existing opt-in skips.
 
 Tactical `055` adds deterministic navigation, storage-denial, selection
 repair, destination-local filter, view-leasing, command, and component tests.

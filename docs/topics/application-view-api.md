@@ -112,8 +112,8 @@ reports configured intent, optional effective policy, and
 applying/applied/degraded state. A tracker row retains the policy captured by
 its current or last operation rather than inferring security from the current
 global setting or an HTTP outcome.
-Accepted Tactical
-[`104`](../tactical/104-selection-aware-torrent-eta.md) defines the next
+Completed Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) implements the
 torrent-list contract addition: nullable exact required/remaining payload
 bytes before metadata, a separate exact smoothed ETA payload rate, and a
 tagged warming/estimate/stalled/unavailable ETA. A single joined
@@ -1012,6 +1012,14 @@ worst individual specialization was trace Diagnostics at 98.4 MiB/s and
 view together fell to 74.0 MiB/s and serialized 1.742 GB while incurring up to
 1,737 resets. A deliberately one-second consumer completed at 122.3 MiB/s
 with nine reset snapshots and a 16.78 MB queue high water.
+
+Tactical `104` adds required/remaining payload decimal strings, the distinct
+smoothed ETA payload rate, and the closed tagged ETA to every torrent row.
+Generated schema/TypeScript/validator drift, Rust serialization, UniFFI/Kotlin
+compilation, view-hub generation fencing, real HTTP/HTTPS completion, and
+production-browser consumption pass. The cadence retains one 184-byte scalar
+model per torrent, publishes at most once per changed tick, and uses targeted
+torrent-row changes rather than cloning file, peer, swarm, or piece state.
 
 These are now reproducible regression observations, not accepted efficiency
 targets. Library's zero-reset behavior proves the common Summary/reset path is

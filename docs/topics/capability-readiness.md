@@ -183,21 +183,15 @@ that observation does not become a public-tracker reliability claim.
 
 ### Now
 
-**Tactical
-[`104`](../tactical/104-selection-aware-torrent-eta.md) is accepted for
-implementation.** It adds one torrent-level ETA owned by the Rust application
-view: exact selection-aware non-padding peer work, current-generation accepted
-blocks, constant-space integer smoothing, typed warming/estimate/stalled/
-unavailable states, and presentation-only Transfers/Workbench formatting. Its
-cost contract permits one bounded reconstruction scan but no piece/file/block
-scan on accepted events or periodic ticks, no retained per-piece ETA state,
-and no per-torrent task. File ETA, richer priority, streaming, and live
-Size/Progress repair remain outside the slice.
+**Select the next bounded tactical from recorded evidence.** Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) is complete: the Rust
+application view now owns exact selection-aware non-padding network work, a
+constant-space integer estimator, and typed torrent ETA consumed by Transfers
+and Workbench. No successor implementation is pre-authorized.
 
 ### Next
 
-- Select the next bounded slice from recorded evidence; no successor is
-  pre-authorized.
+- No successor is queued or pre-authorized.
 
 ### Later
 
@@ -303,7 +297,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
-| Derived progress and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Structured hierarchical records, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete; scheduler and per-peer facts must grow with their corresponding owners. | [`application-control`](application-control.md) |
+| Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
 | Comparative live performance harness | Implemented | deterministic, interop, web, live | Named hardware profiles retain row-specific 1/10 GiB engine gates, per-view/adversarial application ratios, environment applicability and artifact-producing CI. The opt-in paired browser adapter smoke additionally records HTTP/WebSocket traffic and exact 1 GiB completion without defining a hard floor. The hosted-runner profile is deliberately broad and uncalibrated; public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |

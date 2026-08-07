@@ -1,6 +1,6 @@
 # Selection-Aware Torrent ETA
 
-Status: Accepted for implementation (2026-08-07).
+Status: Complete (2026-08-07).
 
 Topics: `application-view-api`, `capability-readiness`,
 `desktop-inspection-surface`, `download-correctness`, `web-ui-design`
@@ -612,4 +612,106 @@ physical devices, or public-network evidence.
 
 ## Completion Evidence
 
-Pending implementation.
+Completed on 2026-08-07 in bounded tactical, geometry, runtime, contract,
+presentation, proof, and closure commits. The implementation lives at these
+ownership seams:
+
+- `TorrentLayout::required_payload_geometry` in
+  `rstorrent-protocol::storage_layout` performs the
+  pure selection-aware geometry pass and retains only two `u64` totals;
+- `rstorrent-session::views::eta` owns the generation-fenced scalar state
+  machine and the one joined application-wide cadence;
+- `views::{hub,model}` and `application` carry exact accepted/failure events,
+  reconstruct outside the hub lock, and publish targeted torrent-row changes;
+- `views::contract` plus the generated TypeScript/schema and UniFFI/Kotlin
+  surfaces carry the four exact fields and closed tagged state; and
+- the shared React live adapter, validators, formatter, demos, Transfers, and
+  Workbench consume that state without deriving network work or rate.
+
+The optimized geometry agrees with a deliberately simple `request_ranges`
+oracle for every selection of the fixed boundary/padding fixture and every
+selection across 96 deterministic generated layouts. The ignored release
+maximum case uses 2,097,152 pieces, 4,096 files, alternating have state,
+padding every eighth file, and fragmented selection. A cached
+`/usr/bin/time -l cargo test --release` run completed the whole test process in
+0.11 seconds with 96,092,160 bytes maximum RSS and a 71,582,320-byte peak
+memory footprint. The ETA-specific temporary coalesced-range upper bound was
+49,152 bytes and retained `RequiredPayloadGeometry` is 16 bytes. The complete
+per-torrent `TorrentEtaModel`, including Rust `Instant` representation and
+generation state, is 184 bytes and has no collection.
+
+Pure-clock and view-hub tests cover warming, first estimate, irregular and
+zero-duration ticks, EMA decay, the exact ten-second stall, recovery, exact
+hash-failure restoration, retry to zero work, pause/deactivation, all skipped,
+completion, selection reconstruction, stale generation fencing, and `u64`
+overflow boundaries. The controlled activity lifecycle traverses
+warming -> estimate -> stalled -> recovered estimate -> hash failure -> clean
+network completion without sleeping. A real loopback HTTP and HTTPS
+tracker/peer application transfer additionally hash-verifies and publishes
+content, then exposes exact required bytes, zero remaining work, zero ETA rate,
+and `unavailable` through the ordinary subscribed summary.
+
+The pinned libtorrent checkout remained clean at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`; its Python binding and native
+library both reported `2.0.13.0`. One controlled seven-file selective run
+requested exactly 97,232 peer bytes in seven blocks across four of five
+pieces, omitted the fully skipped piece, excluded 3,304 padding bytes, wrote
+73,000 selected logical bytes plus 24,232 required boundary bytes, independently
+hash-verified every selected file, and cleaned its fixture. This corroborates
+the geometry semantics without making libtorrent an ETA owner.
+
+Contract and product evidence is exact:
+
+- `npm run generate` regenerated the TypeScript, JSON Schema, validators, and
+  fixtures with no drift; Rust JSON round trips cover every ETA tag and the
+  schema/validator tests cover required nullable pre-metadata work and malformed
+  estimates;
+- Vitest passed 214 tests in 34 files with two files/two tests deliberately
+  skipped, including exact `BigInt` seconds/minutes/hours/days formatting,
+  semantic sorting, all four demo states, both tables, and live mapping;
+- the production Vite build and CSP scan passed. A production-preview headless
+  Chrome case covered estimate, warming, unavailable, stalled, Compact mode,
+  the phone-width visibility rule, titles/accessibility names, and zero serious
+  or critical axe findings;
+- regenerated UniFFI Kotlin compiled in the Android bootstrap and all 12 debug
+  unit tests passed. No Android Compose ETA presentation was added; and
+- the Rust workspace passed formatting, clippy with warnings denied, and 690
+  tests with 11 deliberate opt-in/maximum cases ignored.
+
+The exact retained validation commands were:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+/usr/bin/time -l cargo test --release -p rstorrent-protocol \
+  storage_layout::tests::maximum_required_payload_geometry_stays_structurally_bounded \
+  -- --ignored --exact --nocapture
+tests/interop/.venv/bin/python tests/interop/first_verified_piece.py \
+  --selective-files --runs 1
+
+cd clients/web
+npm run generate
+npm test
+npm run typecheck
+npm run build
+npx vite preview --host 127.0.0.1 --port 4178 --strictPort
+RSTORRENT_PLAYWRIGHT_BASE_URL=http://127.0.0.1:4178 \
+  npx playwright test tests/inspection-demo.spec.ts \
+  --grep "typed torrent ETA"
+
+cd ../../experiments/android-engine-bootstrap
+./gradlew -p . assembleDebug testDebugUnitTest
+```
+
+Before the Gradle gate, the host `rstorrent-android` library was rebuilt and
+`rstorrent-uniffi-bindgen generate --crate rstorrent_session` regenerated the
+Kotlin source from that library with
+`crates/rstorrent-session/uniffi.toml`. The generated source remains an ignored
+build artifact; the tracked Android reducer fixture is the compile-time
+consumer updated by this tactical.
+
+No public swarm, visible desktop launch, or physical-device run was used.
+Per-file/queue ETA, richer priority, live Size/Progress repair, estimator
+persistence, and streaming policy remain the deliberate non-goals above.

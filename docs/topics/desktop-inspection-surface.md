@@ -59,7 +59,7 @@ uploaded bytes, connected age, and last-received-payload age from the existing
 application contract, with directionally unavailable facts remaining explicit
 em dashes.
 
-Accepted Tactical
+Completed Tactical
 [`104`](../tactical/104-selection-aware-torrent-eta.md) defines one
 selection-aware torrent ETA for Transfers and Workbench. Exact non-padding
 network work and constant-space smoothing stay in the Rust application view;
@@ -266,3 +266,10 @@ without launching a visible client. The session-scoped Speed view is
 implemented by Tactical `066`, the DHT observatory is implemented by Tactical
 `065`, and the existing oracle campaign remains the source for the next
 engine-correctness slice.
+
+Tactical `104` additionally makes torrent ETA truthful on this same shared
+surface. A production-preview headless Chrome run traverses estimated,
+warming, unavailable, and stalled rows at wide and Compact presentation sizes,
+then verifies the phone-width ETA column rule and empty serious/critical axe
+results. The proof launches neither a visible Tauri window nor a second ETA
+owner; the same generated state drives browser and embedded desktop hosts.
