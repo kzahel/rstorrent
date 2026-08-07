@@ -112,6 +112,14 @@ reports configured intent, optional effective policy, and
 applying/applied/degraded state. A tracker row retains the policy captured by
 its current or last operation rather than inferring security from the current
 global setting or an HTTP outcome.
+Accepted Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) defines the next
+torrent-list contract addition: nullable exact required/remaining payload
+bytes before metadata, a separate exact smoothed ETA payload rate, and a
+tagged warming/estimate/stalled/unavailable ETA. A single joined
+application-wide cadence advances constant-space per-torrent scalar state;
+generation changes reconstruct from verified have state, and neither the
+engine nor clients own the calculation.
 
 ## Purpose And Scope
 

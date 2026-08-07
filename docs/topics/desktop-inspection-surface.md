@@ -59,6 +59,13 @@ uploaded bytes, connected age, and last-received-payload age from the existing
 application contract, with directionally unavailable facts remaining explicit
 em dashes.
 
+Accepted Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) defines one
+selection-aware torrent ETA for Transfers and Workbench. Exact non-padding
+network work and constant-space smoothing stay in the Rust application view;
+the shared React surface only formats and explains typed warming, estimated,
+stalled, and unavailable states. No per-file ETA enters the inspection model.
+
 ## Purpose
 
 RSTorrent now has a roughly functional downloader, structured diagnostics,

@@ -50,6 +50,13 @@ Tactical `103` adds the already-contracted Up, Uploaded, Connected, and Last
 payload facts to the sortable responsive Peers table. Existing persisted
 column preferences accept the new identifiers without a version migration;
 directionally unsupported values remain em dashes.
+Accepted Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) replaces the live
+Workbench ETA placeholder and adds the same value to Transfers. Rust supplies
+exact decimal strings and a tagged warming/estimate/stalled/unavailable
+state; React performs only arbitrary-precision formatting, stable semantic
+sorting, and accessible `—`/`∞` presentation. File ETA and richer priority
+controls remain deliberately absent.
 Tactical `055` implements the accepted product information architecture:
 responsive Library, Transfers, and Workbench destinations; contextual
 sidebars; shared bounded multi-selection; a clean transfer queue; a truthful

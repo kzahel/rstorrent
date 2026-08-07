@@ -59,6 +59,14 @@ eager whole-torrent block plan. One maximum piece may enter a window alone but
 cannot admit the following piece over budget. Payload writes remain bounded to
 ordinary blocks and storage hashing is incremental rather than retaining a
 piece-sized payload.
+Accepted Tactical
+[`104`](../tactical/104-selection-aware-torrent-eta.md) adds an
+application-view estimate without changing these integrity rules. Its
+required network work includes every real byte requested for a wanted piece,
+including skipped-file boundary bytes, but excludes BEP 47 padding synthesized
+locally. Current-generation accepted blocks reduce the estimate before
+verification; an exact hash-failure event restores them, while only verified
+pieces remain durable across generation replacement.
 
 ## Scope
 

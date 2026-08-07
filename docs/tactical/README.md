@@ -489,6 +489,10 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; exposes already-owned peer upload rate, physical upload total,
   connected age, and last-received-payload age through sortable responsive
   columns without changing the generated application contract.
+- [`104-selection-aware-torrent-eta.md`](104-selection-aware-torrent-eta.md):
+  accepted; adds exact non-padding network-work geometry, constant-space
+  torrent rate smoothing, and a typed selection-aware ETA owned by the Rust
+  application view rather than the engine or React.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

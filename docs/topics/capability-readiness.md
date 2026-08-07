@@ -184,11 +184,15 @@ that observation does not become a public-tracker reliability claim.
 ### Now
 
 **Tactical
-[`101`](../tactical/101-first-run-web-authentication.md) is complete.** Fresh
-headless loopback profiles now choose local-open or remembered-browser access;
-bounded cookie sessions, four-digit second-browser approval, explicit restart
-recovery, revocation, adaptive Web access management, and retained existing
-auth modes pass deterministic, runtime, and production-hosted browser gates.
+[`104`](../tactical/104-selection-aware-torrent-eta.md) is accepted for
+implementation.** It adds one torrent-level ETA owned by the Rust application
+view: exact selection-aware non-padding peer work, current-generation accepted
+blocks, constant-space integer smoothing, typed warming/estimate/stalled/
+unavailable states, and presentation-only Transfers/Workbench formatting. Its
+cost contract permits one bounded reconstruction scan but no piece/file/block
+scan on accepted events or periodic ticks, no retained per-piece ETA state,
+and no per-torrent task. File ETA, richer priority, streaming, and live
+Size/Progress repair remain outside the slice.
 
 ### Next
 
