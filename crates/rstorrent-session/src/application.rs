@@ -5075,7 +5075,9 @@ mod tests {
             loop {
                 let (stream, _) = tracker.accept().await.expect("accept tracker announce");
                 let served = if let Some(acceptor) = tls_acceptor.as_ref() {
-                    let stream = acceptor.accept(stream).await.expect("TLS handshake");
+                    let Ok(stream) = acceptor.accept(stream).await else {
+                        continue;
+                    };
                     serve_tracker_stream(stream, peer_address).await
                 } else {
                     serve_tracker_stream(stream, peer_address).await
