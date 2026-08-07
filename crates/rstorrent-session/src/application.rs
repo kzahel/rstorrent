@@ -147,6 +147,8 @@ pub struct ApplicationConfig {
     #[doc(hidden)]
     pub storage_write_delay_for_testing: Duration,
     #[doc(hidden)]
+    pub storage_hash_delay_for_testing: Duration,
+    #[doc(hidden)]
     pub storage_write_concurrency_for_testing: usize,
     #[doc(hidden)]
     pub storage_hash_concurrency_for_testing: usize,
@@ -241,6 +243,7 @@ impl ApplicationConfig {
             view_set_reaper_interval: Duration::from_millis(VIEW_SET_REAPER_INTERVAL_MILLIS),
             peer_budget_max_open_files_for_testing: None,
             storage_write_delay_for_testing: Duration::ZERO,
+            storage_hash_delay_for_testing: Duration::ZERO,
             storage_write_concurrency_for_testing: 4,
             storage_hash_concurrency_for_testing: 4,
             checkpoint_sync_delay_for_testing: Duration::ZERO,
@@ -284,6 +287,7 @@ pub struct ApplicationService {
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
     storage_write_delay_for_testing: Duration,
+    storage_hash_delay_for_testing: Duration,
     storage_write_concurrency_for_testing: usize,
     storage_hash_concurrency_for_testing: usize,
     checkpoint_sync_delay_for_testing: Duration,
@@ -331,6 +335,7 @@ impl ApplicationService {
             ));
         }
         if config.storage_write_delay_for_testing > Duration::from_secs(10)
+            || config.storage_hash_delay_for_testing > Duration::from_secs(10)
             || config.checkpoint_sync_delay_for_testing > Duration::from_secs(60)
             || config.checkpoint_commit_delay_for_testing > Duration::from_secs(60)
             || config.publication_delay_for_testing > Duration::from_secs(60)
@@ -449,6 +454,7 @@ impl ApplicationService {
             network,
             download_resource_limits: config.download_resource_limits,
             storage_write_delay_for_testing: config.storage_write_delay_for_testing,
+            storage_hash_delay_for_testing: config.storage_hash_delay_for_testing,
             storage_write_concurrency_for_testing: config.storage_write_concurrency_for_testing,
             storage_hash_concurrency_for_testing: config.storage_hash_concurrency_for_testing,
             checkpoint_sync_delay_for_testing: config.checkpoint_sync_delay_for_testing,
@@ -1974,8 +1980,9 @@ impl ApplicationService {
     ) -> Result<(), ApplicationError> {
         self.reap_finished().await?;
         self.unregister_incoming(torrent_id).await?;
-        if let Some((active_torrent, _)) = self.active_download() {
+        if let Some((active_torrent, active)) = self.active_download() {
             if active_torrent == torrent_id {
+                active.control.resume_checking();
                 return Ok(());
             }
             return Err(ApplicationError::Busy(active_torrent.to_owned()));
@@ -2264,6 +2271,7 @@ impl ApplicationService {
         let control = DownloadControl::new();
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
+        control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
         control
             .set_storage_execution_limits_for_testing(
                 self.storage_write_concurrency_for_testing,
@@ -2366,7 +2374,16 @@ impl ApplicationService {
 
     async fn pause(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
         self.unregister_incoming(torrent_id).await?;
-        let result = self.join_active_content(torrent_id).await;
+        let checker_retained = self
+            .active_download()
+            .is_some_and(|(active_torrent, active)| {
+                active_torrent == torrent_id && active.control.pause_checking()
+            });
+        let result = if checker_retained {
+            Ok(())
+        } else {
+            self.join_active_content(torrent_id).await
+        };
         let incoming = self.reconcile_incoming_torrent(torrent_id).await;
         result.and(incoming)
     }
@@ -4389,8 +4406,8 @@ mod tests {
 
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
-        ByteMetric, ByteMetricSink, DEFAULT_PEER_ID, DownloadError, NetworkConfig, NetworkPolicy,
-        PeerBudgetDirection, PublicationShape, torrent_storage_paths,
+        ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
+        NetworkPolicy, PeerBudgetDirection, PublicationShape, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -6969,6 +6986,158 @@ mod tests {
             resume.have.expect("replacement have").pieces(),
             &[true, true]
         );
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn pause_and_resume_retain_the_active_checker_generation_and_cursor() {
+        let root = test_root("pause-running-checker");
+        let mut configuration = config(&root);
+        configuration.storage_hash_delay_for_testing = Duration::from_millis(150);
+        configuration.storage_hash_concurrency_for_testing = 1;
+        let piece_length = 16_384;
+        let payload = (0..(8 * piece_length))
+            .map(|offset| ((offset * 31 + offset / 13) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("pause-checker.bin", &payload, piece_length);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-pause-checker", &torrent_id))
+            .expect("add torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        store
+            .record_pieces(&torrent_id, &(0..8).collect::<Vec<_>>())
+            .expect("record old have");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published ownership");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        store.begin_recheck(&torrent_id).expect("begin recheck");
+        drop(store);
+        let output = root.join("payload/pause-checker.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        fs::write(&output, &payload).expect("write published payload");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open checking application");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let active = service
+                    .active_download()
+                    .expect("checker remains active while waiting");
+                if active
+                    .1
+                    .control
+                    .checker_snapshot()
+                    .is_some_and(|progress| progress.active_hash_jobs == 1)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("checker hash did not start");
+        let control = service
+            .active_download()
+            .expect("active checker")
+            .1
+            .control
+            .clone();
+        let generation = control
+            .checker_snapshot()
+            .expect("checker progress")
+            .generation;
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-running-checker".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause checker");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while control
+                .checker_snapshot()
+                .is_none_or(|progress| progress.phase != CheckerPhase::Paused)
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("checker did not drain into paused phase");
+        let paused = control.checker_snapshot().expect("paused checker");
+        assert_eq!(paused.generation, generation);
+        assert_eq!(paused.pieces_processed, 1);
+        assert_eq!(paused.active_hash_jobs, 0);
+        assert!(service.active_download().is_some());
+        assert!(
+            !service
+                .active_download()
+                .expect("retained task")
+                .1
+                .task
+                .is_finished()
+        );
+        assert!(
+            !service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("paused resume")
+                .desired_running
+        );
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "resume-running-checker".to_owned(),
+                expected_revision: None,
+                command: Command::Resume {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("resume checker");
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                service.reap_finished().await.expect("reap checker");
+                if service.active_download().is_none() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("resumed checker did not finish");
+        assert!(control.checker_snapshot().is_none());
+        assert_eq!(control.snapshot().storage_hash_operations_started, 8);
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("completed resume");
+        assert!(resume.desired_running);
+        assert_eq!(resume.have.expect("replacement have").pieces(), &[true; 8]);
 
         service.shutdown().await.expect("shutdown");
         drop(service);

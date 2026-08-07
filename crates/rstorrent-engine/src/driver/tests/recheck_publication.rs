@@ -438,6 +438,32 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
     .await
     .expect("slow hash did not publish a live heartbeat");
 
+    assert!(control.pause_checking());
+    timeout(Duration::from_secs(2), async {
+        while control
+            .checker_snapshot()
+            .is_none_or(|progress| progress.phase != CheckerPhase::Paused)
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("checker did not drain into its paused phase");
+    let paused = control.checker_snapshot().expect("paused checker snapshot");
+    assert_eq!(paused.generation, 11);
+    assert_eq!(paused.pieces_processed, 1);
+    assert_eq!(paused.active_hash_jobs, 0);
+    assert!(!task.is_finished());
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        control
+            .checker_snapshot()
+            .expect("retained paused checker")
+            .pieces_processed,
+        paused.pieces_processed
+    );
+    control.resume_checking();
+
     let (checked, final_selection) = timeout(Duration::from_secs(3), task)
         .await
         .expect("selection-aware checker did not finish")
@@ -462,6 +488,11 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
         progress
             .iter()
             .any(|progress| progress.phase == CheckerPhase::ReconcilingStorage)
+    );
+    assert!(
+        progress
+            .iter()
+            .any(|progress| progress.phase == CheckerPhase::Paused)
     );
     assert!(
         progress

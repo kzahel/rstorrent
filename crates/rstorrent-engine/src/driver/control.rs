@@ -408,6 +408,7 @@ struct DownloadControlInner {
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
+    checking_paused: watch::Sender<bool>,
     selection_applied_revision: AtomicU64,
     safe_cancel_state: AtomicUsize,
 }
@@ -715,6 +716,7 @@ struct CheckpointProgressSnapshot {
 impl DownloadControl {
     pub fn new() -> Self {
         let (selection_updates, _) = watch::channel(None);
+        let (checking_paused, _) = watch::channel(false);
         Self {
             inner: Arc::new(DownloadControlInner {
                 started_at: Instant::now(),
@@ -758,6 +760,7 @@ impl DownloadControl {
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
                 selection_updates,
+                checking_paused,
                 selection_applied_revision: AtomicU64::new(0),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
@@ -943,6 +946,32 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
             .map(|state| checker_progress_snapshot(state, now))
+    }
+
+    /// Requests an in-progress checker to drain admitted hashes and retain its
+    /// storage owner, generation, and cursor until resumed.
+    ///
+    /// Returning `false` means no checker was active while the request was
+    /// serialized, so callers must use ordinary task cancellation instead.
+    pub fn pause_checking(&self) -> bool {
+        let checker = self
+            .inner
+            .checker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if checker.is_none() {
+            return false;
+        }
+        self.inner.checking_paused.send_replace(true);
+        true
+    }
+
+    pub fn resume_checking(&self) {
+        self.inner.checking_paused.send_replace(false);
+    }
+
+    pub(super) fn checking_pause_updates(&self) -> watch::Receiver<bool> {
+        self.inner.checking_paused.subscribe()
     }
 
     pub(super) fn checker_started(&self, generation: u64, pieces_total: usize) {
@@ -1304,7 +1333,7 @@ impl DownloadControl {
             .store(millis, Ordering::Release);
     }
 
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn set_storage_hash_delay(&self, delay: Duration) {
         let millis = delay.as_millis().try_into().unwrap_or(u64::MAX);
         self.inner

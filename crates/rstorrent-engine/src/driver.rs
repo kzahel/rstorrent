@@ -5378,6 +5378,27 @@ struct FullRecheckResult {
     recovered: Vec<u32>,
 }
 
+async fn wait_for_checking_resume(
+    control: &DownloadControl,
+    paused: &mut watch::Receiver<bool>,
+) -> Result<(), DownloadError> {
+    loop {
+        let pause_requested = *paused.borrow_and_update();
+        if !pause_requested {
+            return Ok(());
+        }
+        control.checker_set_phase(CheckerPhase::Paused);
+        tokio::select! {
+            _ = control.cancelled() => return Err(DownloadError::Cancelled),
+            changed = paused.changed() => {
+                if changed.is_err() {
+                    return Err(DownloadError::Cancelled);
+                }
+            }
+        }
+    }
+}
+
 async fn full_recheck_managed_storage(
     storage: &mut SelectiveStorage,
     metainfo: &Metainfo,
@@ -5399,6 +5420,7 @@ async fn full_recheck_managed_storage(
     let mut cancelled = false;
     let mut first_error = None;
     let mut next_piece_index = 0_usize;
+    let mut pause_updates = control.checking_pause_updates();
     let mut heartbeat = tokio::time::interval_at(
         TokioInstant::now() + Duration::from_secs(1),
         Duration::from_secs(1),
@@ -5408,6 +5430,7 @@ async fn full_recheck_managed_storage(
 
     loop {
         cancelled |= control.is_cancelled();
+        let pause_requested = *pause_updates.borrow_and_update();
         let pending_selection = control
             .latest_file_selection()
             .filter(|update| update.revision > selection.revision);
@@ -5429,9 +5452,15 @@ async fn full_recheck_managed_storage(
             control.checker_set_phase(CheckerPhase::Hashing);
             continue;
         }
+        if running.is_empty() && pause_requested {
+            wait_for_checking_resume(control, &mut pause_updates).await?;
+            control.checker_set_phase(CheckerPhase::Hashing);
+            continue;
+        }
         while !cancelled
             && first_error.is_none()
             && pending_selection.is_none()
+            && !pause_requested
             && running.len() < hash_concurrency
         {
             if next_piece_index == layout.piece_count() {
@@ -5792,8 +5821,11 @@ async fn run_selective_download(
         control.checker_started(generation, layout.piece_count());
         let previous = verified_pieces.clone();
         let checked = if resumed == ResumedStorage::Created {
+            let mut pause_updates = control.checking_pause_updates();
             control.checker_set_phase(CheckerPhase::Hashing);
             for piece_index in 0..layout.piece_count() {
+                wait_for_checking_resume(&control, &mut pause_updates).await?;
+                control.checker_set_phase(CheckerPhase::Hashing);
                 if control.is_cancelled() {
                     control.checker_set_phase(CheckerPhase::Paused);
                     return Err(DownloadError::Cancelled);
@@ -5826,6 +5858,8 @@ async fn run_selective_download(
                 }
             }
         };
+        let mut pause_updates = control.checking_pause_updates();
+        wait_for_checking_resume(&control, &mut pause_updates).await?;
         control.checker_set_phase(CheckerPhase::ReconcilingStorage);
         verified_pieces = checked.verified;
         if let Err(error) = storage.reconcile_after_recheck().await {
@@ -5838,12 +5872,14 @@ async fn run_selective_download(
             control.checker_finished(generation);
             return Err(DownloadError::SelectiveStorage(error));
         }
+        wait_for_checking_resume(&control, &mut pause_updates).await?;
         control.checker_set_phase(CheckerPhase::Finalizing);
         if let Err(error) = resume.checkpoints.have_rechecked(&verified_pieces) {
             control.checker_finished(generation);
             return Err(DownloadError::Checkpoint(error));
         }
         control.checker_finished(generation);
+        wait_for_checking_resume(&control, &mut pause_updates).await?;
     }
 
     let AppliedFileSelection {
