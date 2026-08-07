@@ -1555,12 +1555,15 @@ async function expectVisibleUnits(page: Page, dataUnits: "decimal" | "binary") {
 }
 
 async function tabGeometry(page: Page) {
-  return page.getByRole("tab").evaluateAll((elements) =>
-    elements.map((element) => ({
-      left: (element as HTMLElement).offsetLeft,
-      width: (element as HTMLElement).offsetWidth,
-    })),
-  );
+  return page
+    .getByRole("tablist", { name: "Torrent detail views" })
+    .getByRole("tab")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        left: (element as HTMLElement).offsetLeft,
+        width: (element as HTMLElement).offsetWidth,
+      })),
+    );
 }
 
 async function detailTabWidths(page: Page) {
