@@ -24,6 +24,7 @@ import { TorrentActionProvider } from "./TorrentActionContext";
 import { TorrentTable } from "./TorrentTable";
 import { TransfersView } from "./TransfersView";
 import styles from "./App.module.css";
+import type { WebAuthClient } from "../../web-auth-client";
 
 const DESTINATIONS: readonly {
   readonly id: ApplicationDestination;
@@ -35,15 +36,19 @@ const DESTINATIONS: readonly {
   { id: "workbench", label: "Workbench", icon: "workbench" },
 ];
 
-export function App() {
+export interface AppProps {
+  readonly webAuth?: WebAuthClient | undefined;
+}
+
+export function App({ webAuth }: AppProps) {
   return (
     <TorrentActionProvider>
-      <AppContent />
+      <AppContent webAuth={webAuth} />
     </TorrentActionProvider>
   );
 }
 
-function AppContent() {
+function AppContent({ webAuth }: AppProps) {
   const session = useInspectionStore((state) => state.session);
   const demo = useInspectionStore((state) => state.demo);
   const storage = useInspectionStore((state) => state.storage);
@@ -307,6 +312,7 @@ function AppContent() {
           clientSettings={clientSettings}
           downloadsManageable={demo === null}
           clientSettingsManageable={demo === null}
+          webAuth={webAuth}
           returnFocus={settingsButtonRef}
           onColorThemeChange={setColorTheme}
           onInterfaceSizeChange={setInterfaceSize}
@@ -330,6 +336,7 @@ function AppContent() {
           onClientSettingsSave={async (settings) => {
             await execute({ type: "set_client_settings", settings });
           }}
+          onWebAuthSignedOut={() => window.location.reload()}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

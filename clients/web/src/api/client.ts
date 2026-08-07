@@ -282,6 +282,7 @@ export class HttpApplicationClient implements ApplicationViewClient {
     const encoded = body === undefined ? undefined : this.codec.encodeRequest(body);
     return this.fetchImplementation(new URL(path, this.baseUrl), {
       method,
+      credentials: "include",
       headers: {
         Accept: "application/json",
         Origin: this.origin,
@@ -305,6 +306,7 @@ export class HttpApplicationClient implements ApplicationViewClient {
     if (this.closed) return Promise.reject(new Error("gateway client is closed"));
     return this.fetchImplementation(new URL(path, this.baseUrl), {
       method,
+      credentials: "include",
       headers: {
         Accept: "application/json",
         Origin: this.origin,

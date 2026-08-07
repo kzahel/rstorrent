@@ -1487,6 +1487,7 @@ describe("inspection application", () => {
     renderApplication(application);
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(within(dialog).getByRole("tab", { name: "Downloads" }));
     expect(within(dialog).getByText("Default download folder")).toBeVisible();
     expect(
       within(dialog).getByRole("checkbox", {
@@ -1539,9 +1540,13 @@ describe("inspection application", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = screen.getByRole("dialog", { name: "Settings" });
 
-    expect(within(dialog).getByText("Appearance")).toBeVisible();
-    expect(within(dialog).getByText("Downloads")).toBeVisible();
-    expect(within(dialog).getByText("Connection & seeding")).toBeVisible();
+    expect(within(dialog).getByRole("tab", { name: "Appearance" })).toBeVisible();
+    expect(within(dialog).getByRole("tab", { name: "Downloads" })).toBeVisible();
+    const connectionTab = within(dialog).getByRole("tab", {
+      name: "Connection & seeding",
+    });
+    expect(connectionTab).toBeVisible();
+    await user.click(connectionTab);
     expect(
       within(dialog).getByText(/compatible gateway for public incoming/i),
     ).toBeVisible();
@@ -1712,6 +1717,9 @@ describe("inspection application", () => {
     renderApplication(application);
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(
+      within(dialog).getByRole("tab", { name: "Connection & seeding" }),
+    );
 
     expect(within(dialog).getByText(/port already in use/i)).toHaveTextContent(
       "loopback port 51413 is already in use",
@@ -1781,6 +1789,9 @@ describe("inspection application", () => {
     renderApplication(application);
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(
+      within(dialog).getByRole("tab", { name: "Connection & seeding" }),
+    );
 
     expect(
       within(dialog).getByRole("checkbox", {

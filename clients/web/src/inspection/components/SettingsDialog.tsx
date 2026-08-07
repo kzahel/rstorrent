@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
@@ -13,7 +14,11 @@ import { AppearanceSettingsSection } from "./AppearanceSettingsSection";
 import { ConnectionSeedingSettingsSection } from "./ConnectionSeedingSettingsSection";
 import { DownloadSettingsSection } from "./DownloadSettingsSection";
 import { Icon } from "./Icon";
+import { WebAccessSettingsSection } from "./WebAccessSettingsSection";
 import styles from "./SettingsDialog.module.css";
+import type { WebAuthClient } from "../../web-auth-client";
+
+type SettingsCategory = "appearance" | "downloads" | "connection" | "web-access";
 
 export interface SettingsDialogProps {
   readonly colorTheme: ColorTheme;
@@ -23,6 +28,7 @@ export interface SettingsDialogProps {
   readonly clientSettings: ClientSettingsRuntimeView;
   readonly downloadsManageable: boolean;
   readonly clientSettingsManageable: boolean;
+  readonly webAuth?: WebAuthClient | undefined;
   readonly returnFocus: RefObject<HTMLButtonElement | null>;
   readonly onColorThemeChange: (colorTheme: ColorTheme) => void;
   readonly onInterfaceSizeChange: (interfaceSize: InterfaceSize) => void;
@@ -34,6 +40,7 @@ export interface SettingsDialogProps {
   readonly onShowAddOptionsChange: (show: boolean) => Promise<void>;
   readonly onRemoveRoot: (rootId: string) => Promise<void>;
   readonly onClientSettingsSave: (settings: ClientSettings) => Promise<void>;
+  readonly onWebAuthSignedOut: () => void;
   readonly onClose: () => void;
 }
 
@@ -45,6 +52,7 @@ export function SettingsDialog({
   clientSettings,
   downloadsManageable,
   clientSettingsManageable,
+  webAuth,
   returnFocus,
   onColorThemeChange,
   onInterfaceSizeChange,
@@ -54,10 +62,20 @@ export function SettingsDialog({
   onShowAddOptionsChange,
   onRemoveRoot,
   onClientSettingsSave,
+  onWebAuthSignedOut,
   onClose,
 }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [category, setCategory] = useState<SettingsCategory>("appearance");
+  const categories: readonly { readonly id: SettingsCategory; readonly label: string }[] = [
+    { id: "appearance", label: "Appearance" },
+    { id: "downloads", label: "Downloads" },
+    { id: "connection", label: "Connection & seeding" },
+    ...(webAuth === undefined
+      ? []
+      : [{ id: "web-access" as const, label: "Web access" }]),
+  ];
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -90,6 +108,28 @@ export function SettingsDialog({
     if (event.target === event.currentTarget) onClose();
   };
 
+  const moveCategory = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    active: SettingsCategory,
+  ) => {
+    const current = categories.findIndex((candidate) => candidate.id === active);
+    let next = current;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") next = current + 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = current - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = categories.length - 1;
+    else return;
+    event.preventDefault();
+    const selected = categories[(next + categories.length) % categories.length];
+    if (selected === undefined) return;
+    setCategory(selected.id);
+    requestAnimationFrame(() =>
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>(`#settings-tab-${selected.id}`)
+        ?.focus(),
+    );
+  };
+
   return (
     <div className={styles.backdrop} onMouseDown={closeFromBackdrop}>
       <section
@@ -115,28 +155,86 @@ export function SettingsDialog({
             <Icon name="close" />
           </button>
         </header>
-        <div className={styles.content}>
-          <AppearanceSettingsSection
-            colorTheme={colorTheme}
-            interfaceSize={interfaceSize}
-            dataUnits={dataUnits}
-            onColorThemeChange={onColorThemeChange}
-            onInterfaceSizeChange={onInterfaceSizeChange}
-            onDataUnitsChange={onDataUnitsChange}
-          />
-          <DownloadSettingsSection
-            storage={storage}
-            manageable={downloadsManageable}
-            onChooseFolder={onChooseFolder}
-            onDefaultRootChange={onDefaultRootChange}
-            onShowAddOptionsChange={onShowAddOptionsChange}
-            onRemoveRoot={onRemoveRoot}
-          />
-          <ConnectionSeedingSettingsSection
-            settings={clientSettings}
-            manageable={clientSettingsManageable}
-            onSave={onClientSettingsSave}
-          />
+        <div className={styles.workspace}>
+          <div
+            className={styles.categories}
+            role="tablist"
+            aria-label="Settings categories"
+            aria-orientation="vertical"
+          >
+            {categories.map((item) => (
+              <button
+                id={`settings-tab-${item.id}`}
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={category === item.id}
+                aria-controls={`settings-panel-${item.id}`}
+                tabIndex={category === item.id ? 0 : -1}
+                onClick={() => setCategory(item.id)}
+                onKeyDown={(event) => moveCategory(event, item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.content}>
+            <div
+              id="settings-panel-appearance"
+              role="tabpanel"
+              aria-labelledby="settings-tab-appearance"
+              hidden={category !== "appearance"}
+            >
+              <AppearanceSettingsSection
+                colorTheme={colorTheme}
+                interfaceSize={interfaceSize}
+                dataUnits={dataUnits}
+                onColorThemeChange={onColorThemeChange}
+                onInterfaceSizeChange={onInterfaceSizeChange}
+                onDataUnitsChange={onDataUnitsChange}
+              />
+            </div>
+            <div
+              id="settings-panel-downloads"
+              role="tabpanel"
+              aria-labelledby="settings-tab-downloads"
+              hidden={category !== "downloads"}
+            >
+              <DownloadSettingsSection
+                storage={storage}
+                manageable={downloadsManageable}
+                onChooseFolder={onChooseFolder}
+                onDefaultRootChange={onDefaultRootChange}
+                onShowAddOptionsChange={onShowAddOptionsChange}
+                onRemoveRoot={onRemoveRoot}
+              />
+            </div>
+            <div
+              id="settings-panel-connection"
+              role="tabpanel"
+              aria-labelledby="settings-tab-connection"
+              hidden={category !== "connection"}
+            >
+              <ConnectionSeedingSettingsSection
+                settings={clientSettings}
+                manageable={clientSettingsManageable}
+                onSave={onClientSettingsSave}
+              />
+            </div>
+            {webAuth === undefined ? null : (
+              <div
+                id="settings-panel-web-access"
+                role="tabpanel"
+                aria-labelledby="settings-tab-web-access"
+                hidden={category !== "web-access"}
+              >
+                <WebAccessSettingsSection
+                  client={webAuth}
+                  onSignedOut={onWebAuthSignedOut}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>

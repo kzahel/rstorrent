@@ -1,0 +1,153 @@
+.panel {
+  display: grid;
+  gap: var(--ui-space-lg);
+}
+
+.statusCard,
+.section {
+  border: 1px solid var(--border-soft);
+  border-radius: 0.7rem;
+  padding: var(--ui-space-md);
+}
+
+.statusCard > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.statusCard span,
+.note,
+.sectionHeading p,
+.sessions small {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.statusCard p {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+  line-height: 1.45;
+}
+
+.statusCard button,
+.section button {
+  min-height: var(--ui-control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.48rem;
+  padding: 0 var(--ui-space-sm);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  font: inherit;
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.statusCard button:disabled,
+.section button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.section h3,
+.section p {
+  margin: 0;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+}
+
+.sectionHeading > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ticket {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-md);
+  margin-top: var(--ui-space-md);
+  border-radius: 0.6rem;
+  padding: var(--ui-space-md);
+  background: var(--selection);
+}
+
+.ticket strong {
+  font-size: 1.8rem;
+  letter-spacing: 0.3em;
+}
+
+.ticket span {
+  color: var(--text-secondary);
+  font-size: var(--ui-font-small);
+}
+
+.sessions {
+  display: grid;
+  gap: var(--ui-space-xs);
+  margin: var(--ui-space-md) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sessions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-md);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--ui-space-sm);
+}
+
+.sessions li > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-xs);
+}
+
+.sessions small {
+  flex-basis: 100%;
+}
+
+.current {
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  color: var(--accent-strong);
+  background: var(--selection);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+}
+
+.section .danger {
+  margin-top: var(--ui-space-md);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  color: var(--danger);
+}
+
+.success {
+  margin: 0;
+  color: var(--success);
+  font-size: var(--ui-font-small);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--ui-font-small);
+}
+
+@media (max-width: 620px) {
+  .sectionHeading,
+  .ticket,
+  .sessions li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

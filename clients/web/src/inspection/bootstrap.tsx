@@ -1,6 +1,7 @@
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 
 import { App } from "./components/App";
+import { WebAuthGate } from "./components/WebAuthGate";
 import { InspectionProvider } from "./context";
 import { InspectionController } from "./controller";
 import { DemoApplication } from "./demo/DemoApplication";
@@ -10,6 +11,7 @@ import type { DemoScenarioId } from "./model";
 import { HttpApplicationClient } from "../api/client";
 import { TauriApplicationViewClient } from "../tauri-view-client";
 import { WebSocketApplicationViewClient } from "../websocket-view-client";
+import { WebAuthClient } from "../web-auth-client";
 import "./global.css";
 
 export function startDemoInspection(parameters: URLSearchParams): void {
@@ -47,6 +49,37 @@ export async function startLiveInspection(
     transport === "http"
       ? parsePollMillis(parameters.get("poll_ms"))
       : undefined;
+  const webAuth = token === null ? new WebAuthClient(baseUrl.href) : undefined;
+  const authStatus = await webAuth?.status();
+  const root = createRoot(applicationRoot());
+  if (
+    webAuth !== undefined &&
+    authStatus?.available === true &&
+    authStatus.state !== "local_open" &&
+    authStatus.state !== "session_valid"
+  ) {
+    root.render(
+      <WebAuthGate
+        client={webAuth}
+        initialStatus={authStatus}
+        onAuthorized={() =>
+          openLiveInspection(root, baseUrl, token, transport, waitMillis, webAuth)
+        }
+      />,
+    );
+    return;
+  }
+  await openLiveInspection(root, baseUrl, token, transport, waitMillis, webAuth);
+}
+
+async function openLiveInspection(
+  root: Root,
+  baseUrl: URL,
+  token: string | null,
+  transport: string | null,
+  waitMillis: number | undefined,
+  webAuth: WebAuthClient | undefined,
+): Promise<void> {
   const client =
     transport === "http"
       ? new HttpApplicationClient(
@@ -59,7 +92,7 @@ export async function startLiveInspection(
     ...(waitMillis === undefined ? {} : { waitMillis }),
   });
   application.installBrowserWakeHints(window, document);
-  renderInspection(new InspectionController(application));
+  renderInspection(new InspectionController(application), root, webAuth);
 }
 
 export async function startTauriInspection(): Promise<void> {
@@ -70,11 +103,15 @@ export async function startTauriInspection(): Promise<void> {
   renderInspection(new InspectionController(application));
 }
 
-function renderInspection(controller: InspectionController): void {
+function renderInspection(
+  controller: InspectionController,
+  root: Root = createRoot(applicationRoot()),
+  webAuth?: WebAuthClient,
+): void {
   controller.start();
-  createRoot(applicationRoot()).render(
+  root.render(
     <InspectionProvider controller={controller}>
-      <App />
+      <App webAuth={webAuth} />
     </InspectionProvider>,
   );
 }

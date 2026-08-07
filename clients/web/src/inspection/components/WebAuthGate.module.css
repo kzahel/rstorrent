@@ -1,0 +1,140 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--ui-space-lg);
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 32rem),
+    var(--surface-secondary);
+}
+
+.card {
+  width: min(34rem, 100%);
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 1rem;
+  padding: clamp(1.4rem, 5vw, 2.4rem);
+  background: var(--surface-primary);
+  box-shadow: 0 1.25rem 4rem rgb(8 20 34 / 24%);
+}
+
+.brand {
+  display: grid;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  place-items: center;
+  border-radius: 0.65rem;
+  color: white;
+  background: var(--accent);
+  font-weight: 800;
+}
+
+.eyebrow {
+  margin: var(--ui-space-lg) 0 0;
+  color: var(--text-muted);
+  font-size: var(--ui-font-caption);
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  margin: var(--ui-space-xs) 0 var(--ui-space-sm);
+  font-size: clamp(1.55rem, 5vw, 2rem);
+}
+
+.card p {
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.choices {
+  display: grid;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-lg);
+}
+
+.choices button {
+  display: grid;
+  gap: var(--ui-space-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.7rem;
+  padding: var(--ui-space-md);
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.choices button:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.choices span,
+.help {
+  color: var(--text-muted);
+  font-size: var(--ui-font-small);
+}
+
+.codeForm {
+  display: grid;
+  gap: var(--ui-space-sm);
+  margin-top: var(--ui-space-lg);
+}
+
+.codeForm label {
+  font-size: var(--ui-font-small);
+  font-weight: 700;
+}
+
+.codeForm input {
+  min-height: 3.2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.6rem;
+  color: var(--text-primary);
+  background: var(--surface-primary);
+  font: inherit;
+  font-size: 1.6rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+}
+
+.primary {
+  min-height: var(--ui-control-height);
+  border: 0;
+  border-radius: 0.55rem;
+  padding: 0 var(--ui-space-md);
+  color: white;
+  background: var(--accent);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.primary:disabled,
+.choices button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  color: var(--danger) !important;
+  font-size: var(--ui-font-small);
+}
+
+@media (max-width: 520px) {
+  .page {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .card {
+    width: 100%;
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
