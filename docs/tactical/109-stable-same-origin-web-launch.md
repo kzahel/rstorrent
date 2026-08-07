@@ -1,6 +1,6 @@
 # Tactical 109: Stable Same-Origin Web Launch
 
-Status: Accepted
+Status: Complete
 
 Topics: `client-surfaces`, `application-connection-architecture`,
 `remote-access-authentication`
@@ -181,4 +181,47 @@ external deployment are not required for this launcher and contract slice.
 
 ## Completion Evidence
 
-Pending implementation.
+Completed on 2026-08-07 in these implementation slices:
+
+- `2787823` recorded this accepted contract before implementation.
+- `66ae727` corrected coordinated endpoint validation and replaced the
+  browser-reserved WebSocket close codes with private application codes.
+- `493b619` removed caller-selected browser destinations and added the fixed
+  local hosted gateway composition and tests.
+- `ea959cd` collapsed `scripts/webui` to one hosted gateway and made the
+  controlled browser harness same-origin through a test-only reverse proxy.
+- `159ef30` updated launcher guidance, living architecture topics, and
+  historical tactical references to the stable same-origin contract.
+
+The production launcher was exercised twice on isolated port `44177` with a
+temporary profile while the active port `4177` process remained untouched.
+The gateway served the root document and exact `local-webui` health identity;
+an owner-bearing application hello succeeded. Headless Chrome navigated only
+to `http://127.0.0.1:44177/`, rendered the transfer grid, and opened
+`ws://127.0.0.1:44177/api/v1/connect`. With that same tab held open, the first
+launcher was stopped and a second launcher took the same port. The unchanged
+page opened a second same-origin WebSocket and reported successful reconnect
+without reload or navigation. Both launcher generations joined on `Ctrl+C`,
+and the temporary profile was removed.
+
+Validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- all web unit/component tests: 34 files passed, 2 skipped; 222 tests passed,
+  2 skipped;
+- `npm run typecheck` from `clients/web`;
+- the same-origin production build and CSP check;
+- focused bootstrap, coordinated-listener, private-close-code, fixed
+  development-bind, and local-hosted gateway tests;
+- `bash -n scripts/webui` and `git diff --check`; and
+- a repository-wide fixed-string search with no remaining destination query
+  syntax.
+
+The libtorrent-backed controlled browser scenario was not runnable because
+the host Python environment lacks the `libtorrent` module; it failed at import
+before starting any process or modifying scenario state. Its browser URLs and
+transport observations were migrated to the same-origin contract, while the
+real hosted Chrome lifecycle above supplies the required end-to-end launcher
+and reconnect evidence. Public-swarm transfer evidence was not run.
