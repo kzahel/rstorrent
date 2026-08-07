@@ -702,6 +702,13 @@ impl ApplicationService {
             self.stop_discovery_torrent(torrent_id).await?;
             self.unregister_incoming(torrent_id).await?;
         }
+        let force_recheck_fence = match &command {
+            Command::ForceRecheck { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
+            _ => None,
+        };
+        if let Some(torrent_id) = force_recheck_fence.as_deref() {
+            self.join_active_content(torrent_id).await?;
+        }
         let revision_before = self.store_mut()?.revision()?;
         let durable_result = {
             let mut store = self.store_mut()?;
@@ -724,6 +731,9 @@ impl ApplicationService {
                     self.reconcile_incoming_torrent(torrent_id).await?;
                     self.reconcile_discovery_torrent(torrent_id).await?;
                 }
+                if let Some(torrent_id) = force_recheck_fence.as_deref() {
+                    self.start_if_possible(torrent_id).await?;
+                }
                 return Err(error.into());
             }
         };
@@ -731,6 +741,9 @@ impl ApplicationService {
             if let Some(torrent_id) = incoming_fence.as_deref() {
                 self.reconcile_incoming_torrent(torrent_id).await?;
                 self.reconcile_discovery_torrent(torrent_id).await?;
+            }
+            if let Some(torrent_id) = force_recheck_fence.as_deref() {
+                self.start_if_possible(torrent_id).await?;
             }
             return Ok(response);
         }
@@ -800,14 +813,21 @@ impl ApplicationService {
             }
             Command::ForceRecheck { torrent_id } => {
                 if !durable_mutation_applied {
-                    self.reconcile_incoming_torrent(&torrent_id.to_ascii_lowercase())
-                        .await?;
-                    self.reconcile_discovery_torrent(&torrent_id.to_ascii_lowercase())
-                        .await?;
+                    let torrent_id = torrent_id.to_ascii_lowercase();
+                    let pending = self
+                        .load_resume_conservative(&torrent_id)?
+                        .verification
+                        .is_pending();
+                    if pending {
+                        self.start_recheck_if_possible(&torrent_id).await?;
+                    } else {
+                        self.start_if_possible(&torrent_id).await?;
+                        self.reconcile_incoming_torrent(&torrent_id).await?;
+                        self.reconcile_discovery_torrent(&torrent_id).await?;
+                    }
                     return Ok(response);
                 }
                 let torrent_id = torrent_id.to_ascii_lowercase();
-                self.pause(&torrent_id).await?;
                 self.refresh_views()?;
                 self.views.record_diagnostic(
                     DiagnosticSeverity::Info,
@@ -2309,8 +2329,14 @@ impl ApplicationService {
 
     async fn pause(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
         self.unregister_incoming(torrent_id).await?;
+        let result = self.join_active_content(torrent_id).await;
+        let incoming = self.reconcile_incoming_torrent(torrent_id).await;
+        result.and(incoming)
+    }
+
+    async fn join_active_content(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
         if self.active_torrent.as_deref() != Some(torrent_id) {
-            return self.reconcile_incoming_torrent(torrent_id).await;
+            return Ok(());
         }
         let (_, active) = self
             .take_active_download()
@@ -2327,7 +2353,6 @@ impl ApplicationService {
             .views
             .deactivate_eta_generation(torrent_id, eta_generation)
             .map_err(ApplicationError::from);
-        self.reconcile_incoming_torrent(torrent_id).await?;
         result.and(eta_result)
     }
 
