@@ -894,18 +894,15 @@ mod tests {
             .map(|piece| piece % 2 == 0)
             .collect::<Vec<_>>();
 
-        let started = std::time::Instant::now();
         let geometry = layout
             .required_payload_geometry(&selection, &have)
             .expect("maximum geometry");
-        let elapsed = started.elapsed();
 
         assert!(geometry.required_payload_bytes > 0);
         assert!(geometry.verified_required_payload_bytes <= geometry.required_payload_bytes);
         assert_eq!(std::mem::size_of::<RequiredPayloadGeometry>(), 16);
         eprintln!(
-            "maximum ETA geometry: pieces={MAX_METAINFO_PIECES} files={MAX_FILES} elapsed_micros={} temporary_range_upper_bound_bytes={} retained_geometry_bytes={}",
-            elapsed.as_micros(),
+            "maximum ETA geometry: pieces={MAX_METAINFO_PIECES} files={MAX_FILES} temporary_range_upper_bound_bytes={} retained_geometry_bytes={}",
             MAX_FILES * std::mem::size_of::<std::ops::RangeInclusive<u32>>(),
             std::mem::size_of::<RequiredPayloadGeometry>(),
         );
