@@ -242,6 +242,7 @@ pub trait DownloadCheckpointSink: Send + Sync {
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
     fn recheck_started(&self) -> Result<u64, String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
+    fn pieces_invalidated(&self, piece_indices: &[usize]) -> Result<(), String>;
     fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String>;
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
         self.pieces_durable(&[piece_index])
@@ -4413,9 +4414,20 @@ impl<'a> ContentSwarmDownload<'a> {
             FileSelection::new(self.layout, &update.skip_files).map_err(DownloadError::Layout)?;
         self.stop_storage(false).await?;
         let mut storage = self.take_storage()?;
-        if let Err(error) = storage.0.reconcile_selection(next_selection.clone()).await {
-            self.restart_storage(storage).await?;
-            return Err(DownloadError::SelectiveStorage(error));
+        let reconcile = match storage.0.reconcile_selection(next_selection.clone()).await {
+            Ok(reconcile) => reconcile,
+            Err(error) => {
+                self.restart_storage(storage).await?;
+                return Err(DownloadError::SelectiveStorage(error));
+            }
+        };
+        if !reconcile.invalidated_pieces.is_empty()
+            && let Some(resume) = self.resume
+        {
+            resume
+                .checkpoints
+                .pieces_invalidated(&reconcile.invalidated_pieces)
+                .map_err(DownloadError::Checkpoint)?;
         }
         let mut wanted = Vec::new();
         for piece_index in 0..self.layout.piece_count() {
@@ -5442,10 +5454,16 @@ async fn full_recheck_managed_storage(
         {
             let next_selection =
                 FileSelection::new(layout, &update.skip_files).map_err(DownloadError::Layout)?;
-            storage
+            let reconcile = storage
                 .reconcile_selection(next_selection.clone())
                 .await
                 .map_err(DownloadError::SelectiveStorage)?;
+            for piece_index in reconcile.invalidated_pieces {
+                verified[piece_index] = false;
+                let piece_index = u32::try_from(piece_index)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                recovered.retain(|recovered| *recovered != piece_index);
+            }
             selection.selection = next_selection;
             selection.revision = update.revision;
             control.file_selection_applied(update.revision);
@@ -5893,10 +5911,21 @@ async fn run_selective_download(
     {
         let next_selection =
             FileSelection::new(&layout, &update.skip_files).map_err(DownloadError::Layout)?;
-        storage
+        let reconcile = storage
             .reconcile_selection(next_selection.clone())
             .await
             .map_err(DownloadError::SelectiveStorage)?;
+        if !reconcile.invalidated_pieces.is_empty() {
+            if let Some(resume) = &resume {
+                resume
+                    .checkpoints
+                    .pieces_invalidated(&reconcile.invalidated_pieces)
+                    .map_err(DownloadError::Checkpoint)?;
+            }
+            for piece_index in reconcile.invalidated_pieces {
+                verified_pieces[piece_index] = false;
+            }
+        }
         selection = next_selection;
         selection_revision = update.revision;
         control.file_selection_applied(update.revision);

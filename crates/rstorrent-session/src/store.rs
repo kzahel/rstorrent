@@ -1395,6 +1395,37 @@ impl SessionStore {
         Ok(revision)
     }
 
+    pub fn invalidate_pieces(
+        &mut self,
+        torrent_id: &str,
+        piece_indices: &[usize],
+    ) -> Result<u64, StoreError> {
+        if piece_indices.is_empty() {
+            return Err(StoreError::DurableState(
+                "invalidated piece batch must be nonempty".to_owned(),
+            ));
+        }
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let transaction = self.connection.transaction()?;
+        let (piece_count, bytes) = read_have_columns(&transaction, &info_hash)?;
+        let mut have = HaveState::decode(&bytes, info_hash, piece_count)?;
+        for &piece_index in piece_indices {
+            have.set(piece_index, false)?;
+        }
+        let revision = increment_revision(&transaction)?;
+        let revision_sql = sql_revision(revision)?;
+        transaction.execute(
+            "UPDATE torrents
+             SET have_state = ?2,
+                 updated_revision = ?3
+             WHERE info_hash = ?1",
+            params![info_hash.as_slice(), have.encode(), revision_sql],
+        )?;
+        transaction.commit()?;
+        Ok(revision)
+    }
+
     pub fn replace_have(&mut self, torrent_id: &str, have: &HaveState) -> Result<u64, StoreError> {
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
@@ -7455,6 +7486,30 @@ mod tests {
                 .pieces(),
             &[true, true, true]
         );
+        assert_eq!(
+            store
+                .invalidate_pieces(&torrent_id, &[1, 1])
+                .expect("invalidate uncertain piece"),
+            5
+        );
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load invalidated batch")
+                .have
+                .expect("have state")
+                .pieces(),
+            &[true, false, true]
+        );
+        assert!(matches!(
+            store.invalidate_pieces(&torrent_id, &[3]),
+            Err(StoreError::Have(_))
+        ));
+        assert!(matches!(
+            store.invalidate_pieces(&torrent_id, &[]),
+            Err(StoreError::DurableState(_))
+        ));
+        assert_eq!(store.revision().expect("revision after invalidation"), 5);
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

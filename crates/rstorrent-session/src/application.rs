@@ -3359,6 +3359,33 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())
     }
 
+    fn pieces_invalidated(&self, piece_indices: &[usize]) -> Result<(), String> {
+        if piece_indices.is_empty() {
+            return Err("invalidated piece batch must be nonempty".to_owned());
+        }
+        let mut invalidated = piece_indices.to_vec();
+        invalidated.sort_unstable();
+        invalidated.dedup();
+        self.store().and_then(|mut store| {
+            store
+                .invalidate_pieces(&self.torrent_id, &invalidated)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        self.refresh()?;
+        let piece_count = invalidated.len().to_string();
+        self.views
+            .record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::INTEGRITY_HASH,
+                "pieces_invalidated_by_selection_route",
+                Some(&self.torrent_id),
+                "File selection route invalidated uncertain piece evidence",
+                &[("piece_count", &piece_count)],
+            )
+            .map_err(|error| error.to_string())
+    }
+
     fn descriptor_prepared(&self, files: &[PreparedFileHash]) -> Result<(), String> {
         self.store().and_then(|mut store| {
             store

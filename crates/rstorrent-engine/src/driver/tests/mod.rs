@@ -148,6 +148,10 @@ impl super::DownloadCheckpointSink for RecordingCheckpointSink {
         Ok(())
     }
 
+    fn pieces_invalidated(&self, _piece_indices: &[usize]) -> Result<(), String> {
+        Ok(())
+    }
+
     fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String> {
         self.batches
             .lock()
@@ -202,6 +206,10 @@ impl super::DownloadCheckpointSink for PublicationFailureSink {
             .rechecked
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = verified_pieces.to_vec();
+        Ok(())
+    }
+
+    fn pieces_invalidated(&self, _piece_indices: &[usize]) -> Result<(), String> {
         Ok(())
     }
 
