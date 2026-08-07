@@ -8393,6 +8393,10 @@ mod tests {
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
+        let healthy_id = "ffffffffffffffffffffffffffffffffffffffff";
+        store
+            .handle_durable(&add_request("add-healthy-neighbor", healthy_id))
+            .expect("add healthy neighboring torrent");
         let database = store
             .database_path()
             .expect("durable database path")
@@ -8423,7 +8427,25 @@ mod tests {
         let ResponseOutcome::Success { snapshot } = response.outcome else {
             panic!("snapshot should succeed");
         };
-        assert_eq!(snapshot.torrents[0].state, TorrentState::NeedsRepair);
+        assert_eq!(snapshot.torrents.len(), 2);
+        assert_eq!(
+            snapshot
+                .torrents
+                .iter()
+                .find(|torrent| torrent.torrent_id == torrent_id)
+                .expect("quarantined torrent")
+                .state,
+            TorrentState::NeedsRepair
+        );
+        assert_eq!(
+            snapshot
+                .torrents
+                .iter()
+                .find(|torrent| torrent.torrent_id == healthy_id)
+                .expect("healthy torrent")
+                .state,
+            TorrentState::AwaitingMetadata
+        );
         assert_eq!(
             fs::read_dir(root.join("payload"))
                 .expect("read empty payload root")
