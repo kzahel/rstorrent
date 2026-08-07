@@ -97,10 +97,12 @@ component does not reuse old durable download completion as current check
 progress or reconstruct activity with a React timer. Deterministic component
 coverage and a Chrome/Axe lifecycle scenario exercise Transfers, Library,
 Workbench, and the selected summary.
-Accepted Tactical [`110`](../tactical/110-atomic-download-now.md) adds one
+Completed Tactical [`110`](../tactical/110-atomic-download-now.md) adds one
 `Download now` action to both existing Files menus when at least one target is
 skipped. It submits one semantic wanted-plus-running command and waits for
-authoritative file and torrent views; it is not a high or streaming priority.
+authoritative file and torrent views rather than mutating rows optimistically.
+Mixed selections submit one sorted target set; the action is not a high or
+streaming priority.
 Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and

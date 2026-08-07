@@ -1,6 +1,6 @@
 # Tactical 110: Atomic Download Now
 
-Status: Accepted on 2026-08-07; implementation not started.
+Status: Complete on 2026-08-07.
 
 Topics: `application-control`, `web-ui-design`
 
@@ -171,8 +171,8 @@ than repeating it.
   row cases have exact availability and status behavior;
 - one click emits one `download_files` command for sorted target indices;
 - the UI performs no local selection or torrent-state mutation; and
-- a headless Chrome scenario proves the skipped action is accessible and
-  converges from the authoritative update.
+- a component scenario proves convergence from an authoritative update, and
+  headless Chrome proves the skipped action remains accessible in both menus.
 
 Run `cargo fmt --all -- --check`, warning-denying workspace Clippy, complete
 workspace tests, generated-contract clean rerun, web tests, typecheck,
@@ -198,3 +198,59 @@ production/CSP build, the focused browser case, and `git diff --check`.
    headless-browser evidence.
 4. Run layered validation, graduate the tactical and owning topics, and commit
    the completion record.
+
+## Completion Record
+
+Implementation landed in four feature slices:
+
+- `1872619` accepted this tactical and made it the bounded current queue item;
+- `09713fd` added `download_files` to the transport-neutral command, generated
+  contract, SQLite transaction, and serialized application reconciliation;
+- `dea0a9e` added the shared Files action, live and demo adapters, component
+  coverage, and deterministic/opt-in browser cases; and
+- `8c8e154` directly proved that a different active torrent returns `busy`
+  without changing the profile revision, skipped selection, or paused run
+  intent.
+
+The store now performs target validation, wanted-selection replacement,
+running intent, recoverable-error clearing, revision allocation, and receipt
+recording in one existing SQLite transaction. Exact replay returns the stored
+result, but application reconciliation reloads current durable intent, so a
+newer Pause cannot be undone by replaying an older `download_files` request.
+The transaction leaves verification generations unchanged and does not add a
+schema or contract-version migration.
+
+The application classifies `download_files` alongside live selection and
+single-slot admission commands. Same-torrent work updates the existing
+selection fence and retained checker owner; idle work uses ordinary
+`start_if_possible`. It does not branch on checker phase or create a new task,
+queue, timer, or engine priority.
+
+The React Files toolbar and row-context menu share one action inventory.
+`Download now` is present when at least one target is skipped, including a
+mixed selection, and sends one sorted `download_files` intent. Rows remain
+unchanged after dispatch until the application publishes an authoritative
+snapshot. `Normal` and `Skip` remain separate priority actions.
+
+Validation completed:
+
+- `cargo fmt --all -- --check` passed;
+- `cargo clippy --workspace --all-targets -- -D warnings` passed after the
+  behavior-preserving checker-test iterator cleanup in `ced811a`;
+- `cargo test --workspace` passed, including 195 session tests with 2 ignored,
+  356 engine tests with 7 ignored, and every other workspace target and doc
+  test; the final busy-target regression also passed in isolation after it
+  was added;
+- `npm run generate` reproduced the checked-in contract with no diff;
+- `npm test` passed 234 tests with 2 skipped, `npm run typecheck` passed, and
+  `npm run build` passed the production and CSP checks;
+- the focused headless-Chrome file-menu/Axe case passed, and the complete
+  deterministic inspection suite passed 22/22 after `b0c9801` scoped a stale
+  geometry helper to the labelled torrent-detail tablist it measures; and
+- `git diff --check` passed throughout.
+
+The opt-in controlled live browser case now uses `Download now` for the final
+materialization step, but was not run because its gateway, torrent, and
+storage fixture inputs were not present. Trusting fast resume, playback
+priority, multi-torrent scheduling, and Android presentation remain the
+explicit non-goals above.

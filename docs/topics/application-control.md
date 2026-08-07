@@ -39,15 +39,14 @@ durable run, selection, and verification intent; one bounded
 storage fence owns priority routing; and selection changes during a
 selection-independent check coalesce without replacing the complete content
 generation. Pause drains and retains an active checker generation and cursor,
-while resume releases the same owner. The later
-`Download now` operation is deliberately outside Tactical `108` and should
-now reduce to atomic wanted-plus-running intent.
-Accepted Tactical
+while resume releases the same owner. Completed Tactical
 [`110`](../tactical/110-atomic-download-now.md) adds exactly that semantic
 command: bounded file indices become wanted and durable run intent becomes
 running in one transaction and profile revision. The existing controller
-reconciles current durable intent after commit or replay; clients do not
-compose priority and Resume commands or inspect checker phase.
+reconciles current durable intent after commit or replay, retains a healthy
+peer or checker generation where possible, and rejects a different busy
+torrent before durable mutation. Clients do not compose priority and Resume
+commands or inspect checker phase.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in

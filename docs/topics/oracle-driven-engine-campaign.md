@@ -3,15 +3,11 @@
 Topic: `oracle-driven-engine-campaign`
 
 Status: Tactical
-[`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
-completed the next oracle-driven engine/application boundary on 2026-08-07.
-It used pinned libtorrent checking, file-priority, disk-fence, resume, and
-tests to replace whole-generation selection restart with serialized torrent
-reconciliation, selection-independent checking, and observable bounded
-progress. Accepted Tactical
-[`110`](../tactical/110-atomic-download-now.md) is the current bounded
-application/product slice. The completed maximum-throughput storage campaign
-remains recorded in
+[`110`](../tactical/110-atomic-download-now.md) completed the bounded atomic
+`Download now` application/product slice on 2026-08-07. It builds on Tactical
+`108`'s pinned-libtorrent checker dossier and serialized torrent controller
+without reopening the engine or storage architecture. The completed
+maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
 gate.
@@ -320,14 +316,14 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `108` complete**.
+Campaign state: **Tactical `110` complete**.
 
 Latest completed tactical:
-[`108-serialized-torrent-control-and-observable-checking.md`](../tactical/108-serialized-torrent-control-and-observable-checking.md).
+[`110-atomic-download-now.md`](../tactical/110-atomic-download-now.md).
 
-Current milestone: implement Tactical `110` without reopening the completed
-checker or storage architecture. Keep the separate trusting fast-resume
-option deferred so conservative checking remains the default.
+Current milestone: no successor implementation tactical is accepted. A
+separate trusting fast-resume option remains a candidate, with conservative
+checking still the default and Force recheck still the full validation pass.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,
@@ -337,6 +333,13 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `09713fd`, `dea0a9e`, and `8c8e154` implement and directly exercise
+  one atomic wanted-plus-running file intent through the durable store,
+  serialized controller, generated clients, and shared Files UI;
+- exact replay reconciles current durable intent and cannot undo a newer
+  Pause, while a different active torrent returns `busy` before mutation;
+- the complete Rust workspace, 234-test web suite, production/CSP build, and
+  22-case deterministic headless-Chrome inspection suite pass; and
 - commit `948ea96` closed Tactical `018`'s inspectable metadata acquisition,
   lifecycle fixes, and provisional tracker-port implementation;
 - commit `e199b1f` established this runbook and retained the initial paired

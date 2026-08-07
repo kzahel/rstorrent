@@ -517,8 +517,9 @@ that scope and its cleanup or compatibility rules explicitly.
   gateway, removes caller-selected live destinations, and proves reconnect
   through a process restart without changing the visible URL.
 - [`110-atomic-download-now.md`](110-atomic-download-now.md):
-  accepted; adds one atomic wanted-plus-running application command and exposes
-  it for skipped targets in the shared Files action menus.
+  complete; adds one atomic wanted-plus-running application command, reconciles
+  only current durable intent through the serialized torrent controller, and
+  exposes it for skipped targets in the shared Files action menus.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
