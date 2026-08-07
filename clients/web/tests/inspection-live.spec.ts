@@ -590,14 +590,14 @@ test("live metadata-only add and file selection", async ({ page }) => {
   await page.getByRole("button", { name: "More file actions" }).click();
   await page
     .getByRole("menu", { name: "More file actions" })
-    .getByRole("menuitem", { name: "Normal", exact: true })
+    .getByRole("menuitem", { name: "Download now", exact: true })
     .click();
   await expect(prefixRow.getByText("Normal", { exact: true })).toBeVisible();
   await expect.poll(() => pathExists(prefix), { timeout: 20_000 }).toBe(true);
   await expect.poll(() => pathExists(part), { timeout: 20_000 }).toBe(false);
   await expect(torrentRow).toContainText("complete", { timeout: 20_000 });
   console.log(
-    "file_selection_live_milestones metadata_only=no_artifacts skip=published_part normal=materialized_part_removed",
+    "file_selection_live_milestones metadata_only=no_artifacts skip=published_part download_now=materialized_part_removed",
   );
 });
 

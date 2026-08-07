@@ -220,6 +220,7 @@ export class LiveApplication implements InspectionApplication {
     if (
       command.type !== "add_magnet" &&
       command.type !== "set_file_priority" &&
+      command.type !== "download_files" &&
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
       command.type !== "set_client_settings" &&
@@ -253,14 +254,24 @@ export class LiveApplication implements InspectionApplication {
             ? {
                 type: "set_file_priority",
                 torrent_id: command.torrentId,
-                file_indices: [...command.fileIndices].sort((left, right) => left - right),
+                file_indices: [...command.fileIndices].sort(
+                  (left, right) => left - right,
+                ),
                 priority: command.priority,
               }
-          : command.type === "set_default_download_root"
-            ? {
-                type: "set_default_storage_root",
-                storage_root: command.rootId,
-              }
+            : command.type === "download_files"
+              ? {
+                  type: "download_files",
+                  torrent_id: command.torrentId,
+                  file_indices: [...command.fileIndices].sort(
+                    (left, right) => left - right,
+                  ),
+                }
+              : command.type === "set_default_download_root"
+                ? {
+                    type: "set_default_storage_root",
+                    storage_root: command.rootId,
+                  }
             : command.type === "set_show_add_options"
               ? { type: "set_show_add_options", show: command.show }
               : command.type === "set_client_settings"
@@ -314,9 +325,13 @@ export class LiveApplication implements InspectionApplication {
       accepted: true,
       message:
         command.type === "set_file_priority"
-            ? command.priority === "skip"
-              ? "Selected files skipped"
-              : "Selected files set to normal"
+          ? command.priority === "skip"
+            ? "Selected files skipped"
+            : "Selected files set to normal"
+          : command.type === "download_files"
+            ? command.fileIndices.length === 1
+              ? "File requested for download"
+              : "Selected files requested for download"
           : command.type === "set_default_download_root"
             ? "Default download folder changed"
             : command.type === "set_show_add_options"

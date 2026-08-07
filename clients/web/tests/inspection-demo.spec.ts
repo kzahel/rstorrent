@@ -257,6 +257,9 @@ test("torrent and file rows expose exact accessible context actions", async ({
   await fileRow.click({ button: "right" });
   const fileMenu = page.getByRole("menu", { name: "File actions" });
   await expect(
+    fileMenu.getByRole("menuitem", { name: "Download now" }),
+  ).toBeDisabled();
+  await expect(
     fileMenu.getByRole("menuitem", { name: "Normal" }),
   ).toBeDisabled();
   await expect(fileMenu.getByRole("menuitem", { name: "Skip" })).toBeDisabled();
@@ -1386,10 +1389,13 @@ test("full file catalog stays virtualized across wide compact and phone layouts"
     fileActions.getByRole("menuitem", { name: "Normal", exact: true }),
   ).toBeDisabled();
   await expect(
+    fileActions.getByRole("menuitem", { name: "Download now", exact: true }),
+  ).toBeDisabled();
+  await expect(
     fileActions.getByRole("menuitem", { name: "Skip", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByText("File priority changes are unavailable in demo scenarios."),
+    page.getByText("File actions are unavailable in demo scenarios."),
   ).toBeVisible();
   await capture(page, "rstorrent-file-actions-wide.png");
   await page.keyboard.press("Escape");

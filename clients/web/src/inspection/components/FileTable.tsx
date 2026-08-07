@@ -160,8 +160,8 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const [selectedFileIds, setSelectedFileIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
-  const [priorityPending, setPriorityPending] = useState(false);
-  const [priorityStatus, setPriorityStatus] = useState("");
+  const [fileActionPending, setFileActionPending] = useState(false);
+  const [fileActionStatus, setFileActionStatus] = useState("");
   const execute = useInspectionCommand();
   const demo = useInspectionStore((state) => state.demo);
   const fileSet = useInspectionStore(
@@ -192,8 +192,8 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   useEffect(() => {
     setCurrentFileId(null);
     setSelectedFileIds(new Set());
-    setPriorityPending(false);
-    setPriorityStatus("");
+    setFileActionPending(false);
+    setFileActionStatus("");
   }, [torrentId]);
 
   useEffect(() => {
@@ -227,14 +227,18 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const unavailableReason =
     demo === null
       ? undefined
-      : "File priority changes are unavailable in demo scenarios.";
+      : "File actions are unavailable in demo scenarios.";
+  const selectedSkippedCount = rows.filter(
+    (row) => selectedFileIds.has(row.id) && row.selection === "skipped",
+  ).length;
   const toolbarActions = resolveFileActions(
     selectedFileIds.size,
-    priorityPending,
+    selectedSkippedCount,
+    fileActionPending,
     unavailableReason,
   );
 
-  const setPriority = async (
+  const runFileAction = async (
     actionId: FileActionId,
     requestedIds: readonly string[] = [...selectedFileIds],
   ) => {
@@ -243,34 +247,46 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
       .filter((row) => requested.has(row.id))
       .sort((left, right) => left.index - right.index);
     if (targetRows.length !== requested.size) {
-      setPriorityStatus("A selected file is no longer available.");
+      setFileActionStatus("A selected file is no longer available.");
       return;
     }
     const action = resolveFileActions(
       targetRows.length,
-      priorityPending,
+      targetRows.filter((row) => row.selection === "skipped").length,
+      fileActionPending,
       unavailableReason,
     ).find((candidate) => candidate.id === actionId);
     if (action === undefined || action.disabled) {
       if (action?.disabledReason !== undefined) {
-        setPriorityStatus(action.disabledReason);
+        setFileActionStatus(action.disabledReason);
       }
       return;
     }
-    setPriorityPending(true);
-    setPriorityStatus("");
+    setFileActionPending(true);
+    setFileActionStatus("");
     try {
-      const result = await execute({
-        type: "set_file_priority",
-        torrentId,
-        fileIndices: targetRows.map((row) => row.index),
-        priority: action.priority,
-      });
-      setPriorityStatus(result.message);
+      const fileIndices = targetRows.map((row) => row.index);
+      const result = await execute(
+        action.id === "download_now"
+          ? {
+              type: "download_files",
+              torrentId,
+              fileIndices,
+            }
+          : {
+              type: "set_file_priority",
+              torrentId,
+              fileIndices,
+              priority: action.priority,
+            },
+      );
+      setFileActionStatus(result.message);
     } catch (error) {
-      setPriorityStatus(error instanceof Error ? error.message : String(error));
+      setFileActionStatus(
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
-      setPriorityPending(false);
+      setFileActionPending(false);
     }
   };
 
@@ -288,12 +304,12 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
           {fileSet?.filesystemContentBase ?? "Platform-managed storage"}
         </span>
         <output className={styles.commandStatus} aria-live="polite">
-          {priorityStatus}
+          {fileActionStatus}
         </output>
         <FileActionsMenu
-          pending={priorityPending}
+          pending={fileActionPending}
           actions={toolbarActions}
-          onAction={(actionId) => void setPriority(actionId)}
+          onAction={(actionId) => void runFileAction(actionId)}
         />
       </div>
       <VirtualTable
@@ -312,16 +328,23 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
         contextMenu={{
           label: "File actions",
           render: (_row, targetIds) => {
+            const targetIdSet = new Set(targetIds);
             const actions = resolveFileActions(
               targetIds.length,
-              priorityPending,
+              rows.filter(
+                (row) =>
+                  targetIdSet.has(row.id) && row.selection === "skipped",
+              ).length,
+              fileActionPending,
               unavailableReason,
             );
             return (
               <ActionMenuPopover label="File actions">
                 <FileActionMenuItems
                   actions={actions}
-                  onAction={(actionId) => void setPriority(actionId, targetIds)}
+                  onAction={(actionId) =>
+                    void runFileAction(actionId, targetIds)
+                  }
                 />
               </ActionMenuPopover>
             );

@@ -174,7 +174,8 @@ export class DemoApplication implements InspectionApplication {
         };
       }
       case "set_file_priority":
-        return rejected("File priority changes are unavailable in demo scenarios");
+      case "download_files":
+        return rejected("File actions are unavailable in demo scenarios");
       case "force_recheck":
         return rejected("Force recheck is unavailable in demo scenarios");
       case "choose_download_root":

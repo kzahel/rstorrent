@@ -561,6 +561,11 @@ export type InspectionCommand =
       readonly fileIndices: readonly number[];
       readonly priority: "normal" | "skip";
     }
+  | {
+      readonly type: "download_files";
+      readonly torrentId: string;
+      readonly fileIndices: readonly number[];
+    }
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }
   | { readonly type: "set_show_add_options"; readonly show: boolean }

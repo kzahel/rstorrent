@@ -535,7 +535,7 @@ describe("inspection application", () => {
     ).toHaveAttribute("aria-disabled", "true");
     expect(
       screen.getByText(
-        "File priority changes are unavailable in demo scenarios.",
+        "File actions are unavailable in demo scenarios.",
       ),
     ).toBeVisible();
     await user.keyboard("{Escape}");
@@ -614,6 +614,69 @@ describe("inspection application", () => {
         fileIndices: [firstFile.index],
         priority: "normal",
       }),
+    );
+  });
+
+  it("sends one Download now command for a skipped file", async () => {
+    const user = userEvent.setup();
+    const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot: { ...snapshot, demo: null },
+    });
+    const fileSet = snapshot.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;
+    const skippedFile = fileSet.order
+      .map((id) => fileSet.rows[id])
+      .find((row) => row?.padding === false && row.selection === "skipped")!;
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    const files = screen.getByRole("grid", { name: "Torrent files" });
+    await user.click(within(files).getByText(skippedFile.name));
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    expect(
+      screen.getByRole("group", { name: "Download" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("menuitem", { name: "Download now" }));
+
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "download_files",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndices: [skippedFile.index],
+      }),
+    );
+
+    const selectedRow = () =>
+      within(files)
+        .getByText(skippedFile.name)
+        .closest<HTMLElement>('[role="row"]')!;
+    expect(
+      within(selectedRow()).getByText("Skip", { exact: true }),
+    ).toBeVisible();
+
+    application.emitUpdate({
+      type: "snapshot",
+      snapshot: {
+        ...snapshot,
+        demo: null,
+        filesByTorrent: {
+          ...snapshot.filesByTorrent,
+          [DEMO_PRIMARY_TORRENT_ID]: {
+            ...fileSet,
+            rows: {
+              ...fileSet.rows,
+              [skippedFile.id]: { ...skippedFile, selection: "wanted" },
+            },
+          },
+        },
+      },
+    });
+    await waitFor(() =>
+      expect(
+        within(selectedRow()).getByText("Normal", { exact: true }),
+      ).toBeVisible(),
     );
   });
 
@@ -2202,6 +2265,10 @@ class RecordingLiveApplication implements InspectionApplication {
       revision: 2,
       clientSettings: settings,
     });
+  }
+
+  emitUpdate(update: InspectionUpdate): void {
+    this.listener?.(update);
   }
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {

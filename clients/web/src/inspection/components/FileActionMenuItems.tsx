@@ -8,18 +8,36 @@ export function FileActionMenuItems({
   readonly actions: readonly ResolvedFileAction[];
   readonly onAction: (actionId: FileActionId) => void;
 }) {
+  const download = actions.filter((action) => action.group === "download");
+  const priority = actions.filter((action) => action.group === "priority");
   return (
-    <ActionMenuSection label="Priority">
-      {actions.map((action) => (
-        <ActionMenuItem
-          key={action.id}
-          isDisabled={action.disabled}
-          aria-description={action.disabledReason}
-          onAction={() => onAction(action.id)}
-        >
-          {action.label}
-        </ActionMenuItem>
-      ))}
-    </ActionMenuSection>
+    <>
+      {download.length > 0 ? (
+        <ActionMenuSection label="Download">
+          {download.map((action) => (
+            <ActionMenuItem
+              key={action.id}
+              isDisabled={action.disabled}
+              aria-description={action.disabledReason}
+              onAction={() => onAction(action.id)}
+            >
+              {action.label}
+            </ActionMenuItem>
+          ))}
+        </ActionMenuSection>
+      ) : null}
+      <ActionMenuSection label="Priority">
+        {priority.map((action) => (
+          <ActionMenuItem
+            key={action.id}
+            isDisabled={action.disabled}
+            aria-description={action.disabledReason}
+            onAction={() => onAction(action.id)}
+          >
+            {action.label}
+          </ActionMenuItem>
+        ))}
+      </ActionMenuSection>
+    </>
   );
 }

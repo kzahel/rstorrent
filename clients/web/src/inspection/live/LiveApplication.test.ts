@@ -413,6 +413,28 @@ describe("LiveApplication", () => {
     await application.close();
   });
 
+  it("maps one sorted Download now intent to the atomic application command", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({
+        type: "download_files",
+        torrentId: TORRENT_ID,
+        fileIndices: [9, 2, 4],
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Selected files requested for download",
+    });
+    expect(client.requests[0]?.command).toEqual({
+      type: "download_files",
+      torrent_id: TORRENT_ID,
+      file_indices: [2, 4, 9],
+    });
+    await application.close();
+  });
+
   it("maps force recheck to the durable application command", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);
