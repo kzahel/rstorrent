@@ -508,7 +508,7 @@ that scope and its cleanup or compatibility rules explicitly.
   bounded magnets from verified identity, name, and ordered tracker evidence
   through one explicit read-only application operation.
 - [`108-serialized-torrent-control-and-observable-checking.md`](108-serialized-torrent-control-and-observable-checking.md):
-  accepted; replaces whole-generation file-selection restart with serialized
+  complete; replaces whole-generation file-selection restart with serialized
   torrent reconciliation and a bounded storage fence, makes checking
   selection-independent, and exposes exact checker progress while retaining
   conservative validation and reserving a later trusting fast-resume option.

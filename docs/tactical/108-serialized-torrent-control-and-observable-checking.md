@@ -1,6 +1,6 @@
 # Tactical 108: Serialized Torrent Control And Observable Checking
 
-Status: Accepted on 2026-08-07; implementation not started.
+Status: Complete on 2026-08-07.
 
 Topics: `application-control`, `application-view-api`, `client-persistence`,
 `download-correctness`, `storage-throughput-architecture`, `web-ui-design`
@@ -655,6 +655,112 @@ alternatives.
 | Controlled oracle | Pinned libtorrent changes priority during checking without interruption; rapid latest-value settling; exact final payload and selection; no public networking. |
 | Platform | All-target Rust/Android generated-contract builds; dynamic descriptor mutation remains fail-closed; capability loss and stale completion are contained. Physical device work only if newly required by changed adapter behavior. |
 | Repository | Formatting, clippy with warnings denied, complete Rust tests, generated-contract clean rerun, web typecheck/tests/build/CSP, `git diff --check`, and documentation/readiness updates. |
+
+## Implementation Record
+
+The existing `ApplicationService` is the serialized semantic controller; this
+slice did not add an actor framework or a task for every stored torrent.
+`DownloadControl` supplies task-free latest-value watches for selection and
+checker pause intent, while the active application owner orders durable
+receipts, incoming/discovery exclusion, checker admission, storage
+reconciliation, peer admission, terminal task results, and removal/shutdown.
+
+The engine now has these concrete boundaries:
+
+- full checking walks the complete logical piece cursor independently of
+  selection and reduces matched, absent, mismatched, and hard storage outcomes
+  without emitting transfer hash failure for inventory results;
+- one bit-packed candidate bitmap and one bounded `JoinSet` use the existing
+  hash concurrency; phase transitions and at-most-one-hertz heartbeats publish
+  exact generation-scoped checker progress;
+- the selection watch retains only its latest durable revision. Checking
+  stops admission between bounded batches, drains hashes, reconciles the route,
+  and continues the same verification generation;
+- the content storage pipeline itself is the fence: it stops admitting work,
+  joins its bounded queue, returns the sole `SelectiveStorage` owner, and
+  restarts only after an exact route transition publishes its next epoch;
+- promotion synchronizes exact verified part spans. If an expected span is
+  unavailable, the route reports and durably clears only the affected pieces
+  before the picker admits repair. A hard transition error restores the prior
+  in-memory route and bitmap;
+- live picker replacement preserves peer connections and availability while
+  cancelling requests which became unwanted. Selection does not advance the
+  durable full-verification generation;
+- Pause while checking raises a drain-and-hold request. Admitted hashes join,
+  the same task retains storage, generation, candidate bitmap, and cursor, and
+  Resume releases it. Shutdown/removal still use cancellation and joined
+  teardown; and
+- the view contract and shared React model carry checker generation, phase,
+  exact counters, and liveness. Transfers, Workbench, Library, and General use
+  the same authoritative determinate/indeterminate presentation and no client
+  timer.
+
+No database migration, dependency, view-contract version change, trusting
+resume heuristic, or `Download now` command was introduced. Fixed descriptor
+manifests retain their prior fail-closed dynamic-selection behavior. A future
+trusting resume preference can choose whether to admit the full checker before
+this unchanged controller/checker boundary; Force recheck remains full.
+
+Implementation commits are `22adbf1`, `d249371`, `23e0af4`, `3b74a3d`,
+`4bcc7e1`, and `e4991a2`. The accepted tactical itself was recorded by
+`04bd50d`.
+
+## Scenario And Resource Evidence
+
+The stable scenarios are covered as follows:
+
+| Scenarios | Evidence |
+| --- | --- |
+| T108-C01 through C04 | `selection_fence_and_slow_hash_heartbeat_share_one_check_generation`, `rapid_file_selection_updates_retain_only_the_latest_revision`, application partial-priority peer-generation coverage, and the pinned libtorrent checking/priority cases prove one generation and latest-value settling across 1,000 updates. |
+| T108-C05 and C06 | Application all-skipped idle/restart coverage plus `live_selection_reconcile_promotes_and_demotes_without_losing_verification` and `promotion_clears_only_piece_evidence_with_a_missing_part_span` prove exact boundary export, retained demotion, epoch publication, and affected-only invalidation. |
+| T108-C07 and C08 | The checker reducer, skipped-readable full check, corrupt/absent recheck cases, transfer corruption suites, and existing force-recheck containment tests keep inventory, peer failure, storage failure, and exclusivity distinct. |
+| T108-C09 and C10 | `pause_and_resume_retain_the_active_checker_generation_and_cursor`, the slow checker fence test, and application/store request-replay coverage prove drain-and-hold pause plus one pending force-recheck generation. |
+| T108-C11 and C12 | Existing joined shutdown, exact managed removal, publication collision, fixed-descriptor rejection, storage-generation, and route rollback suites remain green with the new fence. |
+| T108-C13 through C15 | Checker reducer/view projection tests enforce exact arithmetic and stale completion; the 1.1-second delayed hash publishes live job age; component and Chrome tests cover hashing and every non-hashing presentation class. The cursor loop cannot retain a hashing state with no admitted or remaining work. |
+| T108-C16 through C18 | Schema-14 crash-generation and publication suites, generation-matched view/store tests, selection-independent skipped-piece recovery, Android host tests, the 40-handle pool bound, and fixed-descriptor fail-closed coverage remain green. |
+
+Recorded structural high-water marks and limits:
+
+- active checker hashes: `1` in the slow deterministic scenario and at most
+  the configured production hash concurrency of `4`;
+- eagerly allocated checker queue: `0`; `queued_hash_jobs` is arithmetic over
+  the cursor, not one object per piece;
+- selection backlog: one latest watch value after 1,000 replacements;
+- extra fence/controller backlog: `0`; the fence drains the existing bounded
+  storage pipeline and `ApplicationService` receives terminal results directly;
+- candidate bitmap: at most 2,097,152 bits, or 262,144 bytes, under the
+  metainfo piece limit; recovered staging indices remain bounded by the same
+  geometry;
+- progress delivery: forced phase/terminal changes plus at most one ordinary
+  progress or heartbeat emission per second;
+- open storage handles: no new pool; path and platform work retain the shared
+  40-handle application bound; and
+- join behavior: two 200-millisecond cancellation hashes joined inside the
+  two-second gate, while one deliberately 1.1-second admitted hash drained to
+  paused inside two seconds and resumed without duplicate admission.
+
+## Validation Evidence
+
+Validation completed on 2026-08-07:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`: engine `356` passed/`7` ignored, session `194`
+  passed/`2` ignored, and every other workspace/unit/doc-test target passed;
+- deterministic contract regeneration produced an unchanged generated patch;
+- `npm test`: `231` passed/`2` skipped across `36` files;
+- `npm run typecheck`;
+- `npm run build`, including the CSP bundle check;
+- headless Chrome passed
+  `checker progress stays truthful across every shared surface`, including
+  determinate and indeterminate progressbar semantics and zero serious or
+  critical Axe findings;
+- pinned libtorrent `2.0.13` at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d` was built out of tree and passed
+  `test_checking.cpp::{discrete_checking,preserve_file_priorities}` and
+  `test_priority.cpp::{file_priority_multiple_calls,
+  file_priority_stress_test}`; and
+- `git diff --check` passed and the pinned reference checkout remained clean.
 
 ## Non-Goals
 

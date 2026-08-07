@@ -120,15 +120,17 @@ tagged warming/estimate/stalled/unavailable ETA. A single joined
 application-wide cadence advances constant-space per-torrent scalar state;
 generation changes reconstruct from verified have state, and neither the
 engine nor clients own the calculation.
-Accepted Tactical
+Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
-will add one optional generation-scoped checker summary to the existing
+adds one optional generation-scoped checker summary to the existing
 torrent view rather than overload durable verified progress. It distinguishes
 queued, preparing, hashing, storage reconciliation, paused, and finalizing;
 publishes monotonic processed/matched/absent/mismatched counters; and provides
 bounded active-job liveness at no more than one hertz. Runtime owners remain
-authoritative, heartbeat state is not persisted, and this contract is not yet
-implemented.
+authoritative and heartbeat state is not persisted. ViewHub generation-fences
+completion, preserves queued/paused reconstruction, and carries the optional
+summary through the generated Rust, JSON Schema, validator, and TypeScript
+contract without changing the established v2 view-contract version.
 
 ## Purpose And Scope
 

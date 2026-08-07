@@ -31,16 +31,17 @@ Tactical `073` adds `force_recheck` as a semantic durable command with the
 same expected-revision and request-receipt rules. It joins an active matching
 generation, preserves durable run intent, and starts the common managed-
 storage check without exposing paths, handles, or engine tasks.
-Accepted Tactical
+Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
 supersedes the coarse runtime boundary chosen by Tactical `063` without
-rewriting its completed record. One serialized torrent controller will
-reconcile durable run, selection, and verification intent; one bounded
-storage fence will own priority routing; and selection changes during a
-selection-independent check will coalesce without replacing the complete
-content generation. This direction is not implemented yet. The later
+rewriting its completed record. One serialized torrent controller reconciles
+durable run, selection, and verification intent; one bounded
+storage fence owns priority routing; and selection changes during a
+selection-independent check coalesce without replacing the complete content
+generation. Pause drains and retains an active checker generation and cursor,
+while resume releases the same owner. The later
 `Download now` operation is deliberately outside Tactical `108` and should
-reduce to atomic wanted-plus-running intent after this boundary lands.
+now reduce to atomic wanted-plus-running intent.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in
@@ -337,14 +338,16 @@ namespace followed by a monotonic sequence. This preserves durable retry and
 correlation semantics without reusing `web-1` for an unrelated command after a
 reload or in another tab.
 
-Tactical `063` implements live path-backed file selection as a deliberately
-coarse control fence. The store validates all targeted non-padding files and
-commits the sparse selection atomically. A matching active owner is then
-cancelled and joined before a replacement generation rechecks and starts under
-the new immutable plan. All-skipped content becomes idle without losing
-running intent, while promotion from a complete selection returns to checking.
-Dynamic platform-capability selection fails closed until descriptor reacquire
-and provider lifecycle have their own design.
+Tactical `063` historically implemented live path-backed file selection as a
+deliberately coarse control fence. Tactical `108` retains its atomic durable
+validation but replaces matching active-generation cancellation with one
+latest-value selection revision, a drained storage-route epoch transition,
+and in-place picker replacement. Existing peer connections and verified
+evidence survive when the route preserves bytes; an unavailable promoted part
+span clears only its affected pieces before repair admission. All-skipped
+content becomes idle without losing running intent, and a later promotion is
+runnable without a selection-triggered full-check request. Dynamic fixed-
+descriptor selection remains deliberately fail-closed.
 
 Tactical `085` deliberately keeps multi-target orchestration above this
 boundary. The React owner snapshots materialized torrent order and sends one

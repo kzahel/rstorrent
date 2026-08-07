@@ -86,15 +86,17 @@ contract now lives in [`table-interaction.md`](table-interaction.md): it names
 the singular detail-owning row as active, names checked command targets as the
 batch selection, makes row focus follow active navigation, and adds
 Shift+Arrow plus platform select-all as pending implementation work.
-Accepted Tactical
+Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
 adds a distinct checker-progress model before the Files surface gains
 `Download now`. While a torrent checks, Library and the transfer progress cell
-will show determinate checked progress when hashing and truthful queued,
+show determinate checked progress when hashing and truthful queued,
 preparing, storage-reconciling, paused, or finalizing text otherwise. The
-selected summary will expose exact counters and bounded liveness. It will not
-reuse old durable download completion as current check progress or reconstruct
-activity with a React timer. This presentation is not implemented yet.
+selected summary exposes exact counters and bounded liveness. The shared
+component does not reuse old durable download completion as current check
+progress or reconstruct activity with a React timer. Deterministic component
+coverage and a Chrome/Axe lifecycle scenario exercise Transfers, Library,
+Workbench, and the selected summary.
 Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and

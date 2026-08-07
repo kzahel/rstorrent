@@ -49,19 +49,20 @@ part-to-file materialization.
 Tactical `073` removes the remaining single-file storage fork. BEP 3
 `length`, one-entry `files`, and ordinary multi-file torrents now share one
 positional storage, checkpoint, full-recheck, repair, and publication
-pipeline. Restart and force recheck hash every physically readable wanted
-piece, including persisted false bits, before current have state becomes
-authoritative.
-Accepted Tactical
+pipeline. Its original restart and force-recheck path hashed every physically
+readable wanted piece, including persisted false bits, before current have
+state became authoritative.
+Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
-will change the full-check inventory from wanted pieces to every physically
+changes the full-check inventory from wanted pieces to every physically
 readable logical piece, leaving selection to request/completion policy. It
 also separates verified, absent, mismatched, unreadable, and peer-transfer
 hash-failure meanings and replaces selection-triggered full-generation
 rechecks with a bounded storage-route fence plus affected-piece validation
-when provenance is uncertain. Until that tactical lands, the Tactical `063`/
-`073` conservative wanted-piece generation replacement remains current
-behavior.
+when provenance is uncertain. Selection changes now preserve healthy peers,
+the active checker generation, and independent have evidence; unavailable
+promoted spans clear only their boundary pieces and enter ordinary repair
+without a transfer hash-failure event.
 Tactical `081` adopts libtorrent's 2,097,152-piece and 536,854,528-byte
 piece-length limits. Peer availability remains a compact 262,144-byte bitfield,
 and content planning retains bounded active byte/piece windows rather than an

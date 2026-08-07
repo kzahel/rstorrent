@@ -69,11 +69,11 @@ observations recover the known `staging + published`, final-only defect as
 Ambiguous or malformed torrent-local state is quarantined while healthy
 torrents, settings, and the application service continue opening.
 
-Accepted Tactical
+Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
 retains schema-14's fact-based authority and conservative default while
 decoupling selection from full-verification admission. Full-check evidence
-will cover every readable logical piece independently of wanted policy;
+covers every readable logical piece independently of wanted policy;
 checker phase, counters, cursor, heartbeat, and storage queues remain runtime
 facts. The tactical deliberately adds no trusting resume field or heuristic,
 but establishes a pure admission-policy seam for a later explicit faster,
@@ -318,8 +318,9 @@ restart path is deliberately conservative:
 4. reconcile durable file/tree staging, publishing, or published ownership
    with the physical artifact side and fail closed on ambiguous types;
 5. enter `checking`, remove the old bitmap from runtime authority, and hash
-   every physically readable wanted piece through the ordinary fixed-buffer
-   logical mapping, including persisted false bits; and
+   every physically readable logical piece through the ordinary fixed-buffer
+   mapping independently of current file selection, including persisted false
+   bits; and
 6. synchronize newly recovered staging targets as required, then atomically
    replace the exact bitmap and leave checking only after every hash job joins.
 
