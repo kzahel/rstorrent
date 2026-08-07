@@ -545,6 +545,9 @@ fn validate_application_config(
             Duration::from_secs(config.peer_io_timeout_seconds),
         ),
     );
+    if network_policy == NetworkPolicy::Online {
+        application = application.with_fresh_profile_defaults();
+    }
     application.download_resource_limits = DownloadResourceLimits::ANDROID;
     Ok(application)
 }
@@ -1611,6 +1614,10 @@ mod tests {
         .expect("valid Android application config");
 
         assert_eq!(config.network.policy, NetworkPolicy::Online);
+        assert_eq!(
+            config.initial_client_settings,
+            rstorrent_session::ClientSettings::fresh_profile_default()
+        );
         assert_eq!(config.network.peer_connect_timeout, Duration::from_secs(15));
         assert_eq!(config.network.peer_io_timeout, Duration::from_secs(60));
         assert_eq!(

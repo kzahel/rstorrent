@@ -34,9 +34,11 @@ to schema version `9` with one constrained typed client-settings singleton and
 atomic durable full-group mutation for restart-applied listener, connection,
 and upload-slot intent. Tactical `088` advances that singleton to schema
 version `10` with automatic/fixed local-network listener variants and explicit
-disabled-or-UPnP mapping intent. New and migrated profiles remain mapping
-disabled; concrete local and external endpoints and mapping leases remain
-runtime facts rather than durable state.
+disabled-or-UPnP mapping intent. Fresh product profiles now default to an
+automatic local-network listener with UPnP mapping enabled; existing stored
+settings and historical migrations remain unchanged. Concrete local and
+external endpoints and mapping leases remain runtime facts rather than durable
+state.
 Tactical `089` advances the singleton to schema version `11` with a validated
 preferred listen port. Fresh and version-10 profiles default to `6881`;
 actual TCP, UDP, and mapped external ports remain runtime facts. Completed

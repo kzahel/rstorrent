@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "./api";
 import {
   ContractError,
   decodeApplicationServerFrame,
@@ -71,9 +72,9 @@ describe("client settings validation", () => {
     expect(response.status).toBe("success");
     if (response.status === "success") {
       expect(response.snapshot.client_settings).toEqual({
-        listener: { type: "disabled" },
+        listener: { type: "automatic_local_network" },
         preferred_listen_port: 6_881,
-        port_mapping: "disabled",
+        port_mapping: "upnp",
         peer_connection_limit: 200,
         upload_slots: 8,
         tracker_https_server_authentication: "system_trust",
@@ -91,7 +92,7 @@ describe("client settings validation", () => {
     expect(update.type).toBe("snapshot");
     if (update.type === "snapshot" && update.snapshot.type === "torrent_list") {
       expect(update.snapshot.client_settings).toEqual(
-        clientSettingsRuntimeFixture(),
+        DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
       );
     }
   });

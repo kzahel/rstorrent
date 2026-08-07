@@ -92,15 +92,17 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<AdvertisedPeerEndpointStatus>(&mut declarations)?;
     append::<SessionUdpStatus>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
-    append_default::<ClientSettings>(
+    append_value(
         &mut declarations,
         "DEFAULT_CLIENT_SETTINGS",
         "ClientSettings",
+        &ClientSettings::fresh_profile_default(),
     )?;
-    append_default::<ClientSettingsRuntimeView>(
+    append_value(
         &mut declarations,
         "DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW",
         "ClientSettingsRuntimeView",
+        &ClientSettingsRuntimeView::fresh_profile_default(),
     )?;
     append::<FilePriority>(&mut declarations)?;
     append::<RemovalDataPolicy>(&mut declarations)?;
@@ -228,12 +230,13 @@ fn append<T: TS>(output: &mut String) -> Result<(), std::fmt::Error> {
     writeln!(output, "export {}\n", T::decl(&Config::default()))
 }
 
-fn append_default<T: Default + Serialize>(
+fn append_value<T: Serialize>(
     output: &mut String,
     constant: &str,
     type_name: &str,
+    value: &T,
 ) -> Result<(), Box<dyn Error>> {
-    let value = serde_json::to_string(&T::default())?;
+    let value = serde_json::to_string(value)?;
     writeln!(output, "export const {constant}: {type_name} = {value};\n")?;
     Ok(())
 }

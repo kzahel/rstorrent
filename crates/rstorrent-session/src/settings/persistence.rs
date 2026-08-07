@@ -128,9 +128,9 @@ impl From<rusqlite::Error> for SettingsPersistenceError {
 
 pub(crate) fn create_client_settings(
     transaction: &Transaction<'_>,
+    settings: &ClientSettings,
 ) -> Result<(), SettingsPersistenceError> {
     transaction.execute_batch(CLIENT_SETTINGS_TABLE_SQL)?;
-    let settings = ClientSettings::default();
     let (mode, port) = listener_columns(settings.listener);
     let mapping_mode = mapping_column(settings.port_mapping);
     let tracker_https_authentication =

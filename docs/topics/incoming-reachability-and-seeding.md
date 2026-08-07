@@ -123,9 +123,10 @@ endpoint:
 - one schema-version-11 atomic settings group persists listener intent,
   explicit disabled-or-UPnP mapping policy, 1--2,000 ordinary peer
   connections, 0--50 upload slots, and a preferred automatic listen port in
-  `1024..=65535`; new and migrated profiles default that preference to `6881`
-  and keep mapping disabled, while active/effective/bound/mapped state stays
-  distinct from configured intent and applies on restart;
+  `1024..=65535`; fresh product profiles default to an automatic local-network
+  listener on preferred port `6881` with UPnP mapping enabled, while existing
+  stored settings and historical migrations remain unchanged and
+  active/effective/bound/mapped state stays distinct from configured intent;
 - the generated application contract and shared browser/Tauri Settings
   surface expose that group, the actual loopback port, descriptor-derived
   effective limit, restart requirement, and typed recoverable bind failure;
@@ -416,7 +417,9 @@ Tactical
 implements one typed, atomic settings group for loopback listener policy, the
 ordinary session-wide peer ceiling, and piece-payload upload slots. It adopts
 the pinned libtorrent defaults where existing owners have equivalent
-semantics while preserving listener-disabled as RSTorrent's default.
+semantics. The listener-disabled implementation posture recorded by that
+tactical has since been replaced for fresh product profiles by automatic
+local-network listening with UPnP mapping.
 
 The slice originally owned validation, typed SQLite persistence,
 configured-versus-active restart semantics, startup enforcement, generated

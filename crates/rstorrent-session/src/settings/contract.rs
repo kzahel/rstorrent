@@ -98,6 +98,14 @@ impl Default for ClientSettings {
 }
 
 impl ClientSettings {
+    pub fn fresh_profile_default() -> Self {
+        Self {
+            listener: ListenerPolicy::AutomaticLocalNetwork,
+            port_mapping: PortMappingPolicy::Upnp,
+            ..Self::default()
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ClientSettingsError> {
         if self.preferred_listen_port < MIN_PREFERRED_LISTEN_PORT {
             return Err(ClientSettingsError::PreferredListenerPort {
@@ -398,6 +406,34 @@ impl Default for ClientSettingsRuntimeView {
             configured: settings.clone(),
             transport_application: ClientSettingsApplicationState::Applied,
             port_mapping_application: ClientSettingsApplicationState::Applied,
+            peer_connections_application: ClientSettingsApplicationState::Applied,
+            upload_slots_application: ClientSettingsApplicationState::Applied,
+            tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
+            listener_status: ListenerStatus::Disabled,
+            session_udp_status: SessionUdpStatus::Unavailable,
+            port_mapping_status: PortMappingStatus::Disabled,
+            advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
+        }
+    }
+}
+
+impl ClientSettingsRuntimeView {
+    pub fn fresh_profile_default() -> Self {
+        let settings = ClientSettings::fresh_profile_default();
+        Self {
+            effective_listener: Some(EffectiveListenerSettings {
+                listener: ListenerPolicy::Disabled,
+                preferred_listen_port: settings.preferred_listen_port,
+            }),
+            effective_port_mapping: PortMappingPolicy::Disabled,
+            effective_peer_connection_limit: settings.peer_connection_limit,
+            effective_upload_slots: settings.upload_slots,
+            effective_tracker_https_server_authentication: Some(
+                settings.tracker_https_server_authentication,
+            ),
+            configured: settings,
+            transport_application: ClientSettingsApplicationState::Applying,
+            port_mapping_application: ClientSettingsApplicationState::Applying,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,

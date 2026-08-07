@@ -518,11 +518,14 @@ fn desktop_application_config(app_data: &std::path::Path) -> ApplicationConfig {
         Vec::new(),
         NetworkConfig::new(NetworkPolicy::Online, PEER_CONNECT_TIMEOUT, PEER_IO_TIMEOUT),
     )
+    .with_fresh_profile_defaults()
 }
 
 #[cfg(test)]
 mod tests {
-    use rstorrent_session::DownloadResourceLimits;
+    use rstorrent_session::{
+        ClientSettings, DownloadResourceLimits, ListenerPolicy, PortMappingPolicy,
+    };
     use tauri::ipc::InvokeBody;
 
     use super::{
@@ -534,6 +537,18 @@ mod tests {
     fn desktop_product_explicitly_uses_online_networking() {
         let config = desktop_application_config(std::path::Path::new("/tmp/rstorrent-desktop"));
         assert_eq!(config.network.policy, NetworkPolicy::Online);
+        assert_eq!(
+            config.initial_client_settings,
+            ClientSettings::fresh_profile_default()
+        );
+        assert_eq!(
+            config.initial_client_settings.listener,
+            ListenerPolicy::AutomaticLocalNetwork
+        );
+        assert_eq!(
+            config.initial_client_settings.port_mapping,
+            PortMappingPolicy::Upnp
+        );
         assert!(config.storage_roots.is_empty());
         assert_eq!(
             config.download_resource_limits,

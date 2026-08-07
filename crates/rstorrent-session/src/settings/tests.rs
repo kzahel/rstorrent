@@ -15,11 +15,11 @@ use super::{
 };
 
 #[test]
-fn defaults_follow_engine_policy_without_enabling_the_listener() {
-    let settings = ClientSettings::default();
-    assert_eq!(settings.listener, ListenerPolicy::Disabled);
+fn fresh_profile_defaults_enable_incoming_reachability() {
+    let settings = ClientSettings::fresh_profile_default();
+    assert_eq!(settings.listener, ListenerPolicy::AutomaticLocalNetwork);
     assert_eq!(settings.preferred_listen_port, 6_881);
-    assert_eq!(settings.port_mapping, PortMappingPolicy::Disabled);
+    assert_eq!(settings.port_mapping, PortMappingPolicy::Upnp);
     assert_eq!(
         settings.peer_connection_limit,
         u32::try_from(DEFAULT_CONNECTION_LIMIT).unwrap()
@@ -43,6 +43,24 @@ fn defaults_follow_engine_policy_without_enabling_the_listener() {
     assert_eq!(
         settings.upload_scheduler_config().slots,
         DEFAULT_UNCHOKE_SLOTS
+    );
+
+    let runtime = ClientSettingsRuntimeView::fresh_profile_default();
+    assert_eq!(runtime.configured, settings);
+    assert_eq!(
+        runtime.effective_listener,
+        Some(EffectiveListenerSettings {
+            listener: ListenerPolicy::Disabled,
+            preferred_listen_port: 6_881,
+        })
+    );
+    assert_eq!(
+        runtime.transport_application,
+        ClientSettingsApplicationState::Applying
+    );
+    assert_eq!(
+        runtime.port_mapping_application,
+        ClientSettingsApplicationState::Applying
     );
 }
 
@@ -266,7 +284,7 @@ fn listener_bind_failures_are_closed_classified_and_byte_bounded() {
 fn typed_persistence_round_trips_one_atomic_group() {
     let mut connection = Connection::open_in_memory().unwrap();
     let transaction = connection.transaction().unwrap();
-    create_client_settings(&transaction).unwrap();
+    create_client_settings(&transaction, &ClientSettings::default()).unwrap();
     assert_eq!(
         read_client_settings(&transaction).unwrap(),
         ClientSettings::default()
@@ -388,7 +406,7 @@ fn version_eleven_settings_migrate_to_system_trust() {
 fn sqlite_constraints_and_decoder_reject_invalid_durable_shapes() {
     let mut connection = Connection::open_in_memory().unwrap();
     let transaction = connection.transaction().unwrap();
-    create_client_settings(&transaction).unwrap();
+    create_client_settings(&transaction, &ClientSettings::default()).unwrap();
     transaction.commit().unwrap();
 
     assert!(

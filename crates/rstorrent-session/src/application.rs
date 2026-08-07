@@ -131,6 +131,7 @@ pub struct ApplicationConfig {
     pub profile_id: String,
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub network: NetworkConfig,
+    pub initial_client_settings: crate::ClientSettings,
     pub download_resource_limits: DownloadResourceLimits,
     pub dht: DhtConfig,
     pub upload_read_jobs: usize,
@@ -227,6 +228,7 @@ impl ApplicationConfig {
             profile_id,
             storage_roots,
             network,
+            initial_client_settings: crate::ClientSettings::default(),
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             dht,
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
@@ -253,6 +255,11 @@ impl ApplicationConfig {
 
     pub fn durable_profile_root(&self) -> Option<&Path> {
         self.persistence.durable_profile_root()
+    }
+
+    pub fn with_fresh_profile_defaults(mut self) -> Self {
+        self.initial_client_settings = crate::ClientSettings::fresh_profile_default();
+        self
     }
 }
 
@@ -358,10 +365,19 @@ impl ApplicationService {
         }
         let store = match &config.persistence {
             ApplicationPersistence::Durable { profile_root } => {
-                SessionStore::open(profile_root, &config.profile_id, &config.storage_roots)?
+                SessionStore::open_with_initial_client_settings(
+                    profile_root,
+                    &config.profile_id,
+                    &config.storage_roots,
+                    &config.initial_client_settings,
+                )?
             }
             ApplicationPersistence::Ephemeral => {
-                SessionStore::open_ephemeral(&config.profile_id, &config.storage_roots)?
+                SessionStore::open_ephemeral_with_initial_client_settings(
+                    &config.profile_id,
+                    &config.storage_roots,
+                    &config.initial_client_settings,
+                )?
             }
         };
         let snapshot = store.snapshot()?;

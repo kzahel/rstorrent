@@ -365,6 +365,20 @@ impl SessionStore {
         profile_id: &str,
         storage_roots: &[ConfiguredStorageRoot],
     ) -> Result<Self, StoreError> {
+        Self::open_with_initial_client_settings(
+            profile_root,
+            profile_id,
+            storage_roots,
+            &ClientSettings::default(),
+        )
+    }
+
+    pub(crate) fn open_with_initial_client_settings(
+        profile_root: &Path,
+        profile_id: &str,
+        storage_roots: &[ConfiguredStorageRoot],
+        initial_client_settings: &ClientSettings,
+    ) -> Result<Self, StoreError> {
         std::fs::create_dir_all(profile_root).map_err(|source| StoreError::Io {
             operation: "create profile directory",
             source,
@@ -377,6 +391,7 @@ impl SessionStore {
             storage_roots,
             Some(database_path),
             None,
+            initial_client_settings,
         )
     }
 
@@ -391,6 +406,21 @@ impl SessionStore {
         )
     }
 
+    pub(crate) fn open_ephemeral_with_initial_client_settings(
+        profile_id: &str,
+        storage_roots: &[ConfiguredStorageRoot],
+        initial_client_settings: &ClientSettings,
+    ) -> Result<Self, StoreError> {
+        Self::initialize(
+            Connection::open_in_memory()?,
+            profile_id,
+            storage_roots,
+            None,
+            Some(EPHEMERAL_SESSION_MAX_BYTES),
+            initial_client_settings,
+        )
+    }
+
     fn open_ephemeral_with_maximum_bytes(
         profile_id: &str,
         storage_roots: &[ConfiguredStorageRoot],
@@ -402,6 +432,7 @@ impl SessionStore {
             storage_roots,
             None,
             Some(maximum_bytes),
+            &ClientSettings::default(),
         )
     }
 
@@ -411,6 +442,7 @@ impl SessionStore {
         storage_roots: &[ConfiguredStorageRoot],
         database_path: Option<PathBuf>,
         ephemeral_maximum_bytes: Option<u64>,
+        initial_client_settings: &ClientSettings,
     ) -> Result<Self, StoreError> {
         validate_identifier(
             profile_id,
@@ -446,7 +478,7 @@ impl SessionStore {
                 return Err(StoreError::RequiredPragma("synchronous=FULL"));
             }
         }
-        migrate(&mut connection, profile_id)?;
+        migrate(&mut connection, profile_id, initial_client_settings)?;
         register_storage_roots(&mut connection, storage_roots)?;
 
         let store = Self {
@@ -2029,7 +2061,11 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreError> {
+fn migrate(
+    connection: &mut Connection,
+    profile_id: &str,
+    initial_client_settings: &ClientSettings,
+) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version > SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
@@ -2155,7 +2191,7 @@ fn migrate(connection: &mut Connection, profile_id: &str) -> Result<(), StoreErr
              VALUES (1, NULL, 1)",
             [],
         )?;
-        create_client_settings(&transaction)?;
+        create_client_settings(&transaction, initial_client_settings)?;
         transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.execute_batch(SOURCE_TABLES_SQL)?;
@@ -2641,7 +2677,7 @@ fn migrate_sources_and_intake_bounds_to_v8(connection: &mut Connection) -> Resul
 
 fn migrate_client_settings_to_v9(connection: &mut Connection) -> Result<(), StoreError> {
     let transaction = connection.transaction()?;
-    create_client_settings(&transaction)?;
+    create_client_settings(&transaction, &ClientSettings::default())?;
     transaction.pragma_update(None, "user_version", 9)?;
     transaction.commit()?;
     Ok(())
@@ -7005,6 +7041,32 @@ mod tests {
         assert_eq!(complete.state, TorrentState::Complete);
         assert_eq!(complete.storage_state, StorageState::Published);
         assert_eq!(complete.managed_artifacts, ManagedArtifactState::Published);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn fresh_profile_uses_product_defaults_without_rewriting_reopen() {
+        let root = test_root("fresh-client-settings");
+        let configured = configured_root(&root);
+        let store = SessionStore::open_with_initial_client_settings(
+            &root,
+            "default",
+            std::slice::from_ref(&configured),
+            &ClientSettings::fresh_profile_default(),
+        )
+        .expect("open fresh product profile");
+        assert_eq!(
+            store.client_settings().expect("read fresh settings"),
+            ClientSettings::fresh_profile_default()
+        );
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen profile");
+        assert_eq!(
+            reopened.client_settings().expect("read retained settings"),
+            ClientSettings::fresh_profile_default()
+        );
         drop(reopened);
         fs::remove_dir_all(root).expect("remove profile");
     }

@@ -182,7 +182,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Duration::from_secs(15),
             Duration::from_secs(60),
         ),
-    );
+    )
+    .with_fresh_profile_defaults();
     if let Some(lease_millis) = test_view_set_lease {
         application_config.view_set_lease = Duration::from_millis(lease_millis);
         application_config.view_set_reaper_interval =
