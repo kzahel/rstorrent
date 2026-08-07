@@ -193,11 +193,6 @@ impl GatewayConfig {
                     "gateway token must be 1..={MAX_TOKEN_BYTES} bytes"
                 )));
             }
-            GatewayAuthentication::UnauthenticatedLoopbackDevelopment if self.bind.port() != 0 => {
-                return Err(GatewayError::Configuration(
-                    "unauthenticated development mode requires an OS-assigned port".to_owned(),
-                ));
-            }
             _ => {}
         }
         if self.allowed_origin.is_empty() || self.allowed_origin.len() > MAX_ORIGIN_BYTES {
@@ -384,6 +379,28 @@ pub async fn bind_hosted(
         config,
         service,
         Arc::new(UnavailableDownloadDirectoryPicker),
+        Some(assets),
+    )
+    .await
+}
+
+pub async fn bind_local_hosted(
+    config: GatewayConfig,
+    service: Arc<Mutex<ApplicationService>>,
+    assets: HostedAssets,
+) -> Result<GatewayServer, GatewayError> {
+    if !matches!(
+        config.authentication,
+        GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+    ) {
+        return Err(GatewayError::Configuration(
+            "local hosted web assets require unauthenticated loopback development mode".to_owned(),
+        ));
+    }
+    bind_with_picker_and_assets(
+        config,
+        service,
+        Arc::new(NativeDownloadDirectoryPicker),
         Some(assets),
     )
     .await
@@ -1187,8 +1204,8 @@ mod tests {
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
         ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets,
-        MAX_TORRENT_SOURCE_BYTES, WebAuthenticationConfig, bind, bind_hosted, bind_with_picker,
-        constant_time_equal,
+        MAX_TORRENT_SOURCE_BYTES, WebAuthenticationConfig, bind, bind_hosted, bind_local_hosted,
+        bind_with_picker, constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -2823,10 +2840,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthenticated_development_mode_is_ephemeral_and_origin_bounded() {
+    async fn unauthenticated_development_mode_is_loopback_and_origin_bounded() {
         let root = test_root("http-development");
         let service = test_service(&root).await;
         let origin = "http://127.0.0.1:4177";
+        let mut fixed = GatewayConfig::unauthenticated_loopback_development(origin.to_owned());
+        fixed.bind = "127.0.0.1:4177".parse().expect("fixed address");
+        fixed.validate().expect("fixed development loopback");
         let server = bind(
             GatewayConfig::unauthenticated_loopback_development(origin.to_owned()),
             service.clone(),
@@ -2856,6 +2876,54 @@ mod tests {
             .await
             .0,
             403
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn local_hosted_development_serves_one_same_origin_application() {
+        let root = test_root("local-hosted-development");
+        let web_root = root.join("web");
+        std::fs::create_dir_all(web_root.join("assets")).expect("create web root");
+        std::fs::write(web_root.join("index.html"), b"local-hosted-index").expect("write index");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:4177";
+        let mut config = GatewayConfig::unauthenticated_loopback_development(origin.to_owned());
+        config.bind = "127.0.0.1:0".parse().expect("address");
+        let server = bind_local_hosted(
+            config,
+            service.clone(),
+            HostedAssets::new(web_root, "local-build".to_owned()).expect("hosted assets"),
+        )
+        .await
+        .expect("bind local hosted gateway");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        let (status, _, body) =
+            raw_http_request(address, "GET", "/", None, None, None, None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(body, b"local-hosted-index");
+        let (status, _, body) =
+            raw_http_request(address, "GET", "/healthz", None, None, None, None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).expect("health JSON"),
+            serde_json::json!({"status": "ok", "build_id": "local-build"})
+        );
+        assert_eq!(
+            http_request(address, "GET", "/api/v1/hello", None, Some(origin), None)
+                .await
+                .0,
+            200
         );
 
         shutdown.cancel();

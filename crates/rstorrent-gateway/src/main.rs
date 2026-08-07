@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use rstorrent_gateway::{
     GatewayAuthentication, GatewayConfig, HostedAssets, MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy,
-    WebAuthenticationConfig, bind, bind_hosted,
+    WebAuthenticationConfig, bind, bind_hosted, bind_local_hosted,
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
@@ -58,18 +58,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
             },
         ),
-        "development-none" | "unauthenticated_loopback_development" => {
-            if configured_bind.is_some() {
-                return Err(
-                    "RSTORRENT_GATEWAY_BIND is not accepted in unauthenticated development mode"
-                        .into(),
-                );
-            }
-            (
-                SocketAddr::from(([127, 0, 0, 1], 0)),
-                GatewayAuthentication::UnauthenticatedLoopbackDevelopment,
-            )
-        }
+        "development-none" | "unauthenticated_loopback_development" => (
+            configured_bind
+                .unwrap_or_else(|| "127.0.0.1:0".to_owned())
+                .parse::<SocketAddr>()?,
+            GatewayAuthentication::UnauthenticatedLoopbackDevelopment,
+        ),
         "basic" => (
             configured_bind
                 .ok_or("--listen or RSTORRENT_GATEWAY_BIND is required for Basic auth")?
@@ -172,6 +166,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .into());
         }
     };
+    let web_root = cli
+        .web_root
+        .clone()
+        .map(Some)
+        .unwrap_or(optional_path("RSTORRENT_WEB_ROOT")?);
+    let build_id = cli
+        .build_id
+        .clone()
+        .or_else(|| env::var("RSTORRENT_BUILD_ID").ok());
+    let hosted_assets = match (web_root, build_id) {
+        (Some(web_root), Some(build_id)) => Some(HostedAssets::new(web_root, build_id)?),
+        (None, None) => None,
+        _ => {
+            return Err(
+                "RSTORRENT_WEB_ROOT and RSTORRENT_BUILD_ID must be configured together".into(),
+            );
+        }
+    };
+    if cli.open_browser && hosted_assets.is_none() {
+        return Err("--open requires --web-root and --build-id".into());
+    }
 
     let mut application_config = ApplicationConfig::new(
         profile_root,
@@ -207,34 +222,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         allowed_origin: origin,
         max_connections: rstorrent_gateway::MAX_CONNECTIONS,
     };
-    let web_root = cli
-        .web_root
-        .clone()
-        .map(Some)
-        .unwrap_or(optional_path("RSTORRENT_WEB_ROOT")?);
-    let build_id = cli
-        .build_id
-        .clone()
-        .or_else(|| env::var("RSTORRENT_BUILD_ID").ok());
-    let server = match (web_root, build_id) {
-        (Some(web_root), Some(build_id)) => {
-            bind_hosted(
-                config,
-                application.clone(),
-                HostedAssets::new(web_root, build_id)?,
-            )
-            .await?
+    let local_hosted = matches!(
+        config.authentication,
+        GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+    );
+    let hosts_web = hosted_assets.is_some();
+    let server = match hosted_assets {
+        Some(assets) if local_hosted => {
+            bind_local_hosted(config, application.clone(), assets).await?
         }
-        (None, None) => bind(config, application.clone()).await?,
-        _ => {
-            return Err(
-                "RSTORRENT_WEB_ROOT and RSTORRENT_BUILD_ID must be configured together".into(),
-            );
-        }
+        Some(assets) => bind_hosted(config, application.clone(), assets).await?,
+        None => bind(config, application.clone()).await?,
     };
     let browser_url = browser_application_url(server.local_addr());
     eprintln!("gateway listening on {}", server.local_addr());
-    eprintln!("web UI: {browser_url}");
+    if hosts_web {
+        eprintln!("web UI: {browser_url}");
+    }
     if cli.pairing_window {
         eprintln!(
             "browser pairing window open for 10 minutes; the first explicit approval consumes it"
@@ -412,26 +416,7 @@ fn open_browser(url: &str) -> Result<(), Box<dyn Error>> {
 }
 
 fn browser_application_url(address: SocketAddr) -> String {
-    let gateway = format!("http://{address}");
-    format!(
-        "{gateway}/?live={}",
-        encode_query_component(gateway.as_bytes())
-    )
-}
-
-fn encode_query_component(value: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut encoded = String::with_capacity(value.len());
-    for byte in value {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(char::from(*byte));
-        } else {
-            encoded.push('%');
-            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-        }
-    }
-    encoded
+    format!("http://{address}/")
 }
 
 async fn wait_for_shutdown_signal() {
@@ -551,7 +536,7 @@ mod tests {
     fn browser_url_selects_the_same_origin_live_application() {
         assert_eq!(
             browser_application_url(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3030)),
-            "http://127.0.0.1:3030/?live=http%3A%2F%2F127.0.0.1%3A3030"
+            "http://127.0.0.1:3030/"
         );
     }
 }

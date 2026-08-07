@@ -21,7 +21,6 @@ async function startInspection(): Promise<void> {
     parameters,
     "__TAURI_INTERNALS__" in window,
     import.meta.env.VITE_RSTORRENT_DEFAULT_LIVE,
-    window.location.origin,
   );
   switch (target.type) {
     case "demo":
