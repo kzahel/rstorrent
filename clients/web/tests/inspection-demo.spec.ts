@@ -6,6 +6,48 @@ import { expect, test, type Page } from "@playwright/test";
 
 const screenshotDirectory = process.env.RSTORRENT_SCREENSHOT_DIR;
 
+test("checker progress stays truthful across every shared surface", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/?demo=checking-progress&at=18000&autoplay=0");
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  const checkingBar = page.getByRole("progressbar", {
+    name: /Big Buck Bunny 1080p surround checking progress: Checked 40.0%/,
+  });
+  await expect(checkingBar).toHaveAttribute("aria-valuenow", "40");
+
+  await primary.getByRole("button", { name: "Library" }).click();
+  await expect(page.getByText("Checked 40.0%", { exact: true })).toBeVisible();
+  await expect(checkingBar).toHaveAttribute("aria-valuenow", "40");
+  await page
+    .getByRole("button", {
+      name: "Activate Big Buck Bunny 1080p surround in Library",
+    })
+    .click();
+  await page.getByRole("button", { name: "Open in Workbench" }).click();
+  await page.getByRole("tab", { name: "General" }).click();
+  const details = page.getByLabel("Torrent details", { exact: true });
+  await expect(details.getByText("Current check")).toBeVisible();
+  await expect(details.getByText("400 / 1,000")).toBeVisible();
+  await expect(details.getByText("397", { exact: true })).toBeVisible();
+  await expect(details.getByText("2", { exact: true })).toBeVisible();
+  await expect(details.getByText("1", { exact: true })).toBeVisible();
+
+  await page.goto("/?demo=checking-progress&at=36000&autoplay=0");
+  const fencedBar = page.getByRole("progressbar", {
+    name: /checking progress: Updating file selection/,
+  });
+  await expect(page.getByText("Updating file selection", { exact: true })).toBeVisible();
+  await expect(fencedBar).not.toHaveAttribute("aria-valuenow");
+  await expect(fencedBar).toHaveAttribute("data-indeterminate", "true");
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+});
+
 test("primary destinations preserve shared source state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?demo=healthy-download&at=42000&autoplay=0");

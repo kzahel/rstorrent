@@ -585,6 +585,7 @@ export type InspectionCommand =
 
 export type DemoScenarioId =
   | "healthy-download"
+  | "checking-progress"
   | "stalled-metadata"
   | "tracker-recovery"
   | "endgame"

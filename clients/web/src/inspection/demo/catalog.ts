@@ -12,6 +12,7 @@ import type {
   SwarmSet,
   PieceMapSet,
   TorrentEta,
+  TorrentCheckingProgress,
   TorrentRow,
   TrackerRow,
   TrackerSet,
@@ -34,6 +35,13 @@ export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
     title: "Healthy download",
     description: "Metadata, useful peers, sustained transfer, and completion.",
     durationMs: 110_000,
+    autoplay: true,
+  },
+  {
+    id: "checking-progress",
+    title: "Checking progress",
+    description: "Queued, hashing, fencing, paused, and finalizing checker phases.",
+    durationMs: 60_000,
     autoplay: true,
   },
   {
@@ -527,6 +535,8 @@ function buildScenarioContent(
     switch (scenarioId) {
     case "healthy-download":
       return healthyDownload(elapsedMs);
+    case "checking-progress":
+      return checkingProgress(elapsedMs);
     case "stalled-metadata":
       return stalledMetadata(elapsedMs);
     case "tracker-recovery":
@@ -565,6 +575,76 @@ function buildScenarioContent(
   return {
     ...content,
     pieces: buildPieceMaps(scenarioId, elapsedMs, content.torrents),
+  };
+}
+
+function checkingProgress(elapsedMs: number): ScenarioContent {
+  const total = 1_000;
+  const phase: TorrentCheckingProgress["phase"] =
+    elapsedMs < 4_000
+      ? "queued"
+      : elapsedMs < 8_000
+        ? "preparing"
+        : elapsedMs < 33_000
+          ? "hashing"
+          : elapsedMs < 40_000
+            ? "reconciling_storage"
+            : elapsedMs < 46_000
+              ? "paused"
+              : elapsedMs < 56_000
+                ? "hashing"
+                : "finalizing";
+  const firstHashProgress = clamp((elapsedMs - 8_000) / 25_000, 0, 1);
+  const resumedHashProgress = clamp((elapsedMs - 46_000) / 10_000, 0, 1);
+  const processed =
+    elapsedMs < 46_000
+      ? Math.round(total * firstHashProgress)
+      : Math.round(total * (0.8 + resumedHashProgress * 0.2));
+  const absent = Math.min(processed, 2);
+  const mismatched = processed > 2 ? 1 : 0;
+  const matched = processed - absent - mismatched;
+  const active = phase === "hashing" ? 4 : 0;
+  const checking: TorrentCheckingProgress = {
+    generation: "7",
+    phase,
+    piecesTotal: total,
+    piecesProcessed: processed,
+    piecesMatched: matched,
+    piecesAbsent: absent,
+    piecesMismatched: mismatched,
+    bytesHashed: String(matched * 262_144),
+    activeHashJobs: active,
+    queuedHashJobs: Math.max(0, total - processed - active),
+    elapsedMs,
+    lastAdvanceAgeMs: phase === "hashing" ? 180 : Math.max(0, elapsedMs - 33_000),
+    oldestActiveJobAgeMs: active === 0 ? null : 740,
+  };
+  return {
+    torrents: [
+      torrent({
+        id: BUNNY_ID,
+        name: "Big Buck Bunny 1080p surround",
+        status: "checking",
+        sizeBytes: 276_445_467,
+        progress: 0.64,
+        checking,
+        progressReason: "Conservative full verification is active",
+      }),
+    ],
+    peers: {},
+    files: { [BUNNY_ID]: demoFileSet(BUNNY_ID, 0.64, 36) },
+    logs: timelineLogs(
+      BUNNY_ID,
+      [
+        [0, "info", "integrity", "Full verification queued"],
+        [8, "info", "integrity", "Bounded piece hashing started"],
+        [33, "info", "storage", "Latest file selection entered its storage fence"],
+        [40, "info", "lifecycle", "Checker paused after admitted hashes drained"],
+        [46, "info", "lifecycle", "Checker resumed with its cursor retained"],
+        [56, "info", "integrity", "Candidate bitmap is finalizing"],
+      ],
+      elapsedMs,
+    ),
   };
 }
 
