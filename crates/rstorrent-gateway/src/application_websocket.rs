@@ -827,6 +827,12 @@ async fn serve_application_connection(
                 if web_session_id.as_deref().is_some_and(|session_id| {
                     !super::web_auth_http::session_is_active(&state, session_id)
                 }) {
+                    fatal_connection(
+                        &control,
+                        ApplicationConnectionErrorCode::AuthenticationFailed,
+                        "browser session was revoked or expired",
+                        1008,
+                    ).await;
                     break;
                 }
                 if pending_upload.as_ref().is_some_and(|upload| {

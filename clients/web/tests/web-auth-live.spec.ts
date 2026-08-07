@@ -3,6 +3,51 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 const gateway = process.env.RSTORRENT_WEB_AUTH_E2E_URL;
 const phase = process.env.RSTORRENT_WEB_AUTH_E2E_PHASE;
 
+test("local-open setup admits another browser without a session cookie", async ({
+  browser,
+}) => {
+  test.setTimeout(60_000);
+  test.skip(
+    gateway === undefined || phase !== "local-open",
+    "controlled browser-auth local-open setup is opt-in",
+  );
+
+  const owner = await browser.newContext();
+  const guest = await browser.newContext();
+  try {
+    const ownerPage = await owner.newPage();
+    await ownerPage.goto(liveUrl());
+    await expect(
+      ownerPage.getByRole("heading", { name: "Choose web access" }),
+    ).toBeVisible();
+    await ownerPage
+      .getByRole("button", { name: /Keep localhost open/ })
+      .click();
+    await expectApplication(ownerPage);
+    await expectNoSessionCookie(owner);
+
+    const guestPage = await guest.newPage();
+    await guestPage.goto(liveUrl());
+    await expectApplication(guestPage);
+    await expectNoSessionCookie(guest);
+  } finally {
+    await owner.close();
+    await guest.close();
+  }
+});
+
+test("local-open policy survives restart", async ({ context, page }) => {
+  test.setTimeout(60_000);
+  test.skip(
+    gateway === undefined || phase !== "local-open-restart",
+    "controlled browser-auth local-open restart is opt-in",
+  );
+
+  await page.goto(liveUrl());
+  await expectApplication(page);
+  await expectNoSessionCookie(context);
+});
+
 test("fresh profile pairs a second browser and revokes it", async ({
   browser,
 }) => {
@@ -119,6 +164,13 @@ async function expectSessionCookie(context: BrowserContext): Promise<void> {
     sameSite: "Strict",
     path: "/",
   });
+}
+
+async function expectNoSessionCookie(context: BrowserContext): Promise<void> {
+  const cookies = await context.cookies(gateway);
+  expect(
+    cookies.some((cookie) => cookie.name === "rstorrent_web_session"),
+  ).toBe(false);
 }
 
 function liveUrl(): string {

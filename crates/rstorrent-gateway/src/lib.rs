@@ -3022,10 +3022,23 @@ mod tests {
             .0,
             204
         );
+        let mut typed_authentication_failure = false;
         let close = tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 match socket.next().await {
                     Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Text(text))) => {
+                        let frame = serde_json::from_str::<ApplicationServerFrame>(&text)
+                            .expect("application frame");
+                        if matches!(
+                            frame,
+                            ApplicationServerFrame::ConnectionError { error }
+                                if error.code
+                                    == ApplicationConnectionErrorCode::AuthenticationFailed
+                        ) {
+                            typed_authentication_failure = true;
+                        }
+                    }
                     Some(Ok(_)) => {}
                     Some(Err(_)) => break,
                 }
@@ -3033,6 +3046,10 @@ mod tests {
         })
         .await;
         assert!(close.is_ok(), "revoked WebSocket stayed open");
+        assert!(
+            typed_authentication_failure,
+            "revoked WebSocket omitted its typed authentication failure"
+        );
         assert_eq!(
             web_auth_request(
                 address,
