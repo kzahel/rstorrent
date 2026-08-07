@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW } from "./api";
+import {
+  DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW,
+  type TorrentView,
+} from "./api";
 import {
   ContractError,
   decodeApplicationServerFrame,
@@ -342,6 +345,34 @@ describe("torrent tracker-count validation", () => {
     batch.updates[0]!.snapshot.torrents[0]!.configured_tracker_count = 999_995;
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /configured tracker count must be an integer in range/,
+    );
+  });
+});
+
+describe("checker progress validation", () => {
+  it("accepts exact work accounting and rejects inconsistent outcomes", () => {
+    const batch = torrentBatch("Checking torrent");
+    const torrent = batch.updates[0]!.snapshot.torrents[0]! as TorrentView;
+    torrent.checking = {
+      generation: "4",
+      phase: "hashing",
+      pieces_total: 8,
+      pieces_processed: 2,
+      pieces_matched: 1,
+      pieces_absent: 1,
+      pieces_mismatched: 0,
+      bytes_hashed: "16384",
+      active_hash_jobs: 1,
+      queued_hash_jobs: 5,
+      elapsed_millis: "1200",
+      last_advance_age_millis: "300",
+      oldest_active_job_age_millis: "900",
+    };
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+
+    torrent.checking.pieces_mismatched = 1;
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /outcome counters do not equal processed pieces/,
     );
   });
 });

@@ -584,6 +584,7 @@ function applyOverlays(
       status: "downloading",
       sizeBytes: 734_003_200 + index * 104_857_600,
       progress: 0.08 + index * 0.03,
+      checking: null,
       downloadRate: 1_200_000 + index * 240_000,
       uploadRate: 0,
       downloadedBytes: 58_720_256 + index * 3_145_728,

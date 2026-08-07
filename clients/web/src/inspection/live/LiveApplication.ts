@@ -3,6 +3,7 @@ import {
   type AddTorrentBytesRequest,
   type ApiHello,
   type ClientSettingsRuntimeView,
+  type CheckingProgressView,
   type DiagnosticEvent,
   type FileView,
   type PeerSourceView,
@@ -43,6 +44,7 @@ import type {
   SwarmRow,
   SwarmSet,
   PieceMapSet,
+  TorrentCheckingProgress,
   TorrentRow,
   TrackerRow,
   TrackerSet,
@@ -995,6 +997,10 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     sizeBytes: null,
     progress:
       pieceCount === 0 ? null : torrent.verified_piece_count / pieceCount,
+    checking:
+      torrent.checking === undefined || torrent.checking === null
+        ? null
+        : mapCheckingProgress(torrent.checking),
     downloadRate: safeNumber(torrent.payload_download_rate_bytes),
     uploadRate: null,
     downloadedBytes: safeNumber(torrent.received_bytes),
@@ -1014,6 +1020,28 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     infoHash: torrent.torrent_id,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
+  };
+}
+
+function mapCheckingProgress(
+  checking: CheckingProgressView,
+): TorrentCheckingProgress {
+  return {
+    generation: checking.generation,
+    phase: checking.phase,
+    piecesTotal: checking.pieces_total,
+    piecesProcessed: checking.pieces_processed,
+    piecesMatched: checking.pieces_matched,
+    piecesAbsent: checking.pieces_absent,
+    piecesMismatched: checking.pieces_mismatched,
+    bytesHashed: checking.bytes_hashed,
+    activeHashJobs: checking.active_hash_jobs,
+    queuedHashJobs: checking.queued_hash_jobs,
+    elapsedMs: safeNumber(checking.elapsed_millis),
+    lastAdvanceAgeMs: safeNumber(checking.last_advance_age_millis),
+    oldestActiveJobAgeMs: safeNullableNumber(
+      checking.oldest_active_job_age_millis ?? null,
+    ),
   };
 }
 

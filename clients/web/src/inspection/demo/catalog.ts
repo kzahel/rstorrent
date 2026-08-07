@@ -1487,6 +1487,7 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     status: input.status,
     sizeBytes: size,
     progress,
+    checking: input.checking ?? null,
     downloadRate: input.downloadRate ?? 0,
     uploadRate: input.uploadRate ?? 0,
     downloadedBytes: input.downloadedBytes ?? (size === null || progress === null ? 0 : Math.floor(size * progress)),

@@ -115,6 +115,58 @@ describe("inspection application", () => {
     );
   });
 
+  it("shows determinate checker progress across transfers library and details", async () => {
+    const user = userEvent.setup();
+    const snapshot = checkingSnapshot("hashing");
+    renderApplication(
+      new RecordingLiveApplication({ type: "snapshot", snapshot }),
+    );
+
+    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    expect(within(transfers).getByText("Checked 25.0%")).toBeVisible();
+    expect(
+      within(transfers).getByRole("progressbar", {
+        name: /checking progress: Checked 25.0%/,
+      }),
+    ).toHaveAttribute("aria-valuenow", "25");
+
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    expect(screen.getByText("Checked 25.0%")).toBeVisible();
+    expect(
+      screen.getByRole("progressbar", {
+        name: /checking progress: Checked 25.0%/,
+      }),
+    ).toHaveAttribute("aria-valuenow", "25");
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+    expect(within(detail).getByText("Current check")).toBeVisible();
+    expect(within(detail).getByText("2 / 8")).toBeVisible();
+    expect(within(detail).getByText("Matched").parentElement).toHaveTextContent(
+      "Matched1",
+    );
+    expect(within(detail).getByText("Absent").parentElement).toHaveTextContent(
+      "Absent1",
+    );
+    expect(within(detail).getByText("1 active · oldest 1.2 s")).toBeVisible();
+  });
+
+  it("shows checker fence phases as indeterminate instead of zero percent", () => {
+    const snapshot = checkingSnapshot("reconciling_storage");
+    renderApplication(
+      new RecordingLiveApplication({ type: "snapshot", snapshot }),
+    );
+
+    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    expect(within(transfers).getByText("Updating file selection")).toBeVisible();
+    const progress = within(transfers).getByRole("progressbar", {
+      name: /checking progress: Updating file selection/,
+    });
+    expect(progress).not.toHaveAttribute("aria-valuenow");
+    expect(progress).toHaveAttribute("data-indeterminate", "true");
+  });
+
   it("renders the responsive hierarchy and changes detail tabs", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
@@ -2286,5 +2338,38 @@ function liveSnapshot(storage: DownloadStorageSettings) {
     ...buildScenarioSnapshot("empty-library", 0, false, 1),
     demo: null,
     storage,
+  };
+}
+
+function checkingSnapshot(
+  phase: "hashing" | "reconciling_storage",
+) {
+  const snapshot = buildScenarioSnapshot("healthy-download", 42_000, false, 1);
+  const torrent = snapshot.torrents[DEMO_PRIMARY_TORRENT_ID]!;
+  return {
+    ...snapshot,
+    demo: null,
+    torrents: {
+      ...snapshot.torrents,
+      [DEMO_PRIMARY_TORRENT_ID]: {
+        ...torrent,
+        status: "checking" as const,
+        checking: {
+          generation: "7",
+          phase,
+          piecesTotal: 8,
+          piecesProcessed: 2,
+          piecesMatched: 1,
+          piecesAbsent: 1,
+          piecesMismatched: 0,
+          bytesHashed: "16384",
+          activeHashJobs: phase === "hashing" ? 1 : 0,
+          queuedHashJobs: phase === "hashing" ? 5 : 6,
+          elapsedMs: 4_200,
+          lastAdvanceAgeMs: 900,
+          oldestActiveJobAgeMs: phase === "hashing" ? 1_200 : null,
+        },
+      },
+    },
   };
 }

@@ -1199,6 +1199,92 @@
       ],
       "type": "object"
     },
+    "CheckingPhaseView": {
+      "enum": [
+        "queued",
+        "preparing",
+        "hashing",
+        "reconciling_storage",
+        "paused",
+        "finalizing"
+      ],
+      "type": "string"
+    },
+    "CheckingProgressView": {
+      "properties": {
+        "active_hash_jobs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "bytes_hashed": {
+          "type": "string"
+        },
+        "elapsed_millis": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string"
+        },
+        "last_advance_age_millis": {
+          "type": "string"
+        },
+        "oldest_active_job_age_millis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "$ref": "#/$defs/CheckingPhaseView"
+        },
+        "pieces_absent": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pieces_matched": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pieces_mismatched": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pieces_processed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pieces_total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queued_hash_jobs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "generation",
+        "phase",
+        "pieces_total",
+        "pieces_processed",
+        "pieces_matched",
+        "pieces_absent",
+        "pieces_mismatched",
+        "bytes_hashed",
+        "active_hash_jobs",
+        "queued_hash_jobs",
+        "elapsed_millis",
+        "last_advance_age_millis"
+      ],
+      "type": "object"
+    },
     "ChooseDownloadRootRequest": {
       "properties": {
         "repair_root": {
@@ -4594,6 +4680,16 @@
         },
         "archived": {
           "type": "boolean"
+        },
+        "checking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CheckingProgressView"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "configured_tracker_count": {
           "format": "uint32",

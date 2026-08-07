@@ -1,7 +1,14 @@
 import { useEffect, useRef } from "react";
 
 import { useInspectionStore } from "../context";
-import { formatBytes, formatProgress, formatRate } from "../format";
+import {
+  checkingStatusLabel,
+  formatBytes,
+  formatDuration,
+  formatProgress,
+  formatRate,
+  torrentVisibleProgress,
+} from "../format";
 import type { DetailTab } from "../model";
 import { DETAIL_TABS } from "../tabs";
 import { PeerTable } from "./PeerTable";
@@ -181,23 +188,64 @@ function GeneralDetail({
     clearDetailTarget();
   }, [clearDetailTarget, detailTarget, torrent.id]);
 
+  const checking = torrent.status === "checking" ? torrent.checking : null;
+  const visibleProgress = torrentVisibleProgress(torrent);
+  const progressLabel =
+    torrent.status === "checking"
+      ? checkingStatusLabel(torrent)
+      : formatProgress(torrent.progress);
+
   return (
     <div className={styles.general}>
       <section className={styles.summaryCard}>
         <div>
-          <p className={styles.eyebrow}>Current transfer</p>
+          <p className={styles.eyebrow}>
+            {torrent.status === "checking" ? "Current check" : "Current transfer"}
+          </p>
           <h2>{torrent.name}</h2>
-          <p>{torrent.progressReason}</p>
+          <p>
+            {torrent.status === "checking"
+              ? checkingStatusLabel(torrent)
+              : torrent.progressReason}
+          </p>
         </div>
         <div className={styles.largeProgress}>
-          <strong>{formatProgress(torrent.progress)}</strong>
-          <span aria-hidden="true">
-            <span
-              style={{ width: `${Math.round((torrent.progress ?? 0) * 100)}%` }}
-            />
+          <strong>{progressLabel}</strong>
+          <span
+            data-indeterminate={
+              (torrent.status === "checking" && visibleProgress === null) || undefined
+            }
+            role="progressbar"
+            aria-label={`${torrent.name} ${torrent.status === "checking" ? "checking" : "download"} progress: ${progressLabel}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={
+              visibleProgress === null
+                ? undefined
+                : Math.round(visibleProgress * 100)
+            }
+          >
+            {visibleProgress === null ? null : (
+              <span style={{ width: `${Math.round(visibleProgress * 100)}%` }} />
+            )}
           </span>
         </div>
       </section>
+      {checking === null ? null : (
+        <dl className={`${styles.metrics} ${styles.checkingMetrics}`}>
+          <Metric
+            label="Pieces checked"
+            value={`${checking.piecesProcessed.toLocaleString()} / ${checking.piecesTotal.toLocaleString()}`}
+          />
+          <Metric label="Matched" value={checking.piecesMatched.toLocaleString()} />
+          <Metric label="Absent" value={checking.piecesAbsent.toLocaleString()} />
+          <Metric
+            label="Mismatched"
+            value={checking.piecesMismatched.toLocaleString()}
+          />
+          <Metric label="Checker activity" value={checkerActivity(checking)} />
+        </dl>
+      )}
       <dl className={styles.metrics}>
         <Metric label="Status" value={torrent.status} />
         <Metric
@@ -241,6 +289,19 @@ function GeneralDetail({
       )}
     </div>
   );
+}
+
+function checkerActivity(
+  checking: NonNullable<ReturnType<typeof useCurrentTorrent>>["checking"],
+): string {
+  if (checking === null) return "Waiting";
+  if (checking.oldestActiveJobAgeMs !== null) {
+    return `${checking.activeHashJobs.toLocaleString()} active · oldest ${formatDuration(checking.oldestActiveJobAgeMs)}`;
+  }
+  if (checking.queuedHashJobs > 0) {
+    return `${checking.queuedHashJobs.toLocaleString()} queued · last advance ${formatDuration(checking.lastAdvanceAgeMs)} ago`;
+  }
+  return `Last advance ${formatDuration(checking.lastAdvanceAgeMs)} ago`;
 }
 
 function useCurrentTorrent() {

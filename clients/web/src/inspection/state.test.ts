@@ -284,6 +284,7 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
     status,
     sizeBytes: 100,
     progress: 0.5,
+    checking: null,
     downloadRate: 1,
     uploadRate: 0,
     downloadedBytes: 50,

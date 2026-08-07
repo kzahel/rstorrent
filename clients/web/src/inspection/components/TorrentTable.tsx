@@ -7,13 +7,16 @@ import {
   etaSortValue,
   formatBytes,
   formatEta,
-  formatProgress,
   formatRate,
 } from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { TorrentStatus } from "./TorrentStatus";
 import { TorrentContextMenu } from "./TorrentContextMenu";
+import {
+  TorrentProgress,
+  torrentProgressSortValue,
+} from "./TorrentProgress";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
 import styles from "./TorrentTable.module.css";
 
@@ -50,22 +53,11 @@ const columns = (
   {
     id: "progress",
     label: "Done",
-    width: 122,
+    width: 190,
     align: "right",
     sortable: true,
-    sortValue: (row) => row.progress,
-    render: (row) => (
-      <span className={styles.progressCell}>
-        <span className={styles.progressLabel}>
-          {formatProgress(row.progress)}
-        </span>
-        <span className={styles.progressTrack} aria-hidden="true">
-          <span
-            style={{ width: `${Math.round((row.progress ?? 0) * 100)}%` }}
-          />
-        </span>
-      </span>
-    ),
+    sortValue: torrentProgressSortValue,
+    render: (row) => <TorrentProgress row={row} />,
   },
   {
     id: "status",

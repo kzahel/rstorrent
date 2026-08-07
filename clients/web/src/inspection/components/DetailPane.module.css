@@ -136,6 +136,14 @@
   background: var(--accent);
 }
 
+.largeProgress > span[data-indeterminate="true"] {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 55%, var(--progress-track)) 0 0.5rem,
+    var(--progress-track) 0.5rem 1rem
+  );
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(8rem, 1fr));
@@ -173,6 +181,18 @@
   font-weight: 680;
   font-variant-numeric: tabular-nums;
   text-transform: capitalize;
+}
+
+.checkingMetrics {
+  grid-template-columns: repeat(5, minmax(8rem, 1fr));
+}
+
+.checkingMetrics > div {
+  border-bottom: 0;
+}
+
+.checkingMetrics > div:nth-child(5n) {
+  border-right: 0;
 }
 
 .identity {

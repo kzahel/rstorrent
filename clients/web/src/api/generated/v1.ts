@@ -169,7 +169,11 @@ export type SpeedHistoryView = { captured_millis: string, history_epoch: string,
 
 export type TorrentEtaView = { "state": "estimate", seconds: string, } | { "state": "warming_up" } | { "state": "stalled" } | { "state": "unavailable" };
 
-export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, required_payload_bytes: string | null, remaining_payload_bytes: string | null, eta_payload_download_rate_bytes: string, eta: TorrentEtaView, progress: ProgressAssessment, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
+export type CheckingPhaseView = "queued" | "preparing" | "hashing" | "reconciling_storage" | "paused" | "finalizing";
+
+export type CheckingProgressView = { generation: string, phase: CheckingPhaseView, pieces_total: number, pieces_processed: number, pieces_matched: number, pieces_absent: number, pieces_mismatched: number, bytes_hashed: string, active_hash_jobs: number, queued_hash_jobs: number, elapsed_millis: string, last_advance_age_millis: string, oldest_active_job_age_millis?: string | null, };
+
+export type TorrentView = { torrent_id: string, display_name?: string | null, state: TorrentState, storage_state: StorageState, metadata_available: boolean, piece_count: number, verified_piece_count: number, requested_bytes: string, received_bytes: string, stored_bytes: string, active_peer_connections: number, configured_tracker_count?: number | null, payload_download_rate_bytes: string, required_payload_bytes: string | null, remaining_payload_bytes: string | null, eta_payload_download_rate_bytes: string, eta: TorrentEtaView, progress: ProgressAssessment, checking?: CheckingProgressView | null, archived: boolean, removal_state?: RemovalState | null, delete_managed_data_supported: boolean, force_recheck_available: boolean, error?: string | null, };
 
 export type CapabilityStatus = "available" | "unavailable" | "unsupported";
 

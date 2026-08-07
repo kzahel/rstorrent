@@ -1422,6 +1422,80 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   array(progress.actions, "progress actions").forEach((action) =>
     boundedString(action, "progress action", 64),
   );
+  if (torrent.checking !== undefined && torrent.checking !== null) {
+    const checking = asRecord(torrent.checking, "checking progress");
+    decimal(checking.generation, "checking generation");
+    oneOf(checking.phase, "checking phase", [
+      "queued",
+      "preparing",
+      "hashing",
+      "reconciling_storage",
+      "paused",
+      "finalizing",
+    ]);
+    const piecesTotal = boundedInteger(
+      checking.pieces_total,
+      "checking piece total",
+      0,
+      MAX_U32,
+    );
+    const piecesProcessed = boundedInteger(
+      checking.pieces_processed,
+      "checked pieces",
+      0,
+      piecesTotal,
+    );
+    const piecesMatched = boundedInteger(
+      checking.pieces_matched,
+      "matched pieces",
+      0,
+      piecesTotal,
+    );
+    const piecesAbsent = boundedInteger(
+      checking.pieces_absent,
+      "absent pieces",
+      0,
+      piecesTotal,
+    );
+    const piecesMismatched = boundedInteger(
+      checking.pieces_mismatched,
+      "mismatched pieces",
+      0,
+      piecesTotal,
+    );
+    const activeJobs = boundedInteger(
+      checking.active_hash_jobs,
+      "active checking jobs",
+      0,
+      piecesTotal,
+    );
+    const queuedJobs = boundedInteger(
+      checking.queued_hash_jobs,
+      "queued checking jobs",
+      0,
+      piecesTotal,
+    );
+    if (piecesProcessed !== piecesMatched + piecesAbsent + piecesMismatched) {
+      throw new ContractError("checking outcome counters do not equal processed pieces");
+    }
+    if (piecesProcessed + activeJobs + queuedJobs !== piecesTotal) {
+      throw new ContractError("checking work counters do not equal the piece total");
+    }
+    decimal(checking.bytes_hashed, "checking hashed bytes");
+    decimal(checking.elapsed_millis, "checking elapsed time");
+    decimal(checking.last_advance_age_millis, "checking last advance age");
+    const oldestActive =
+      checking.oldest_active_job_age_millis === undefined ||
+      checking.oldest_active_job_age_millis === null
+        ? null
+        : decimal(
+            checking.oldest_active_job_age_millis,
+            "oldest active checking job age",
+          );
+    if ((activeJobs === 0) !== (oldestActive === null)) {
+      throw new ContractError("checking active job age is inconsistent");
+    }
+  }
   optionalString(torrent.error, "torrent error", 1_024);
 }
 

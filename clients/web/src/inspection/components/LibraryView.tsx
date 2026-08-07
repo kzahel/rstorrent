@@ -9,7 +9,12 @@ import {
 
 import type { DataUnits, InterfaceSize } from "../appearance";
 import { useInspectionStore } from "../context";
-import { formatBytes, formatProgress } from "../format";
+import {
+  checkingStatusLabel,
+  formatBytes,
+  formatProgress,
+  torrentVisibleProgress,
+} from "../format";
 import type {
   LibraryCategory,
   TorrentRow,
@@ -213,6 +218,9 @@ function VirtualLibraryGrid({
                 .slice(firstItem, firstItem + columnCount)
                 .map((row, column) => {
                   const position = firstItem + column;
+                  const visibleProgress = torrentVisibleProgress(row);
+                  const checkingIndeterminate =
+                    row.status === "checking" && visibleProgress === null;
                   return (
                     <article
                       key={row.id}
@@ -240,20 +248,31 @@ function VirtualLibraryGrid({
                           <span>{availabilityLabel(row)}</span>
                           <span>{formatBytes(row.sizeBytes, dataUnits)}</span>
                         </span>
-                        {row.progress === null ? null : (
+                        {row.progress === null && row.status !== "checking" ? null : (
                           <span
                             className={styles.progress}
+                            data-indeterminate={checkingIndeterminate || undefined}
                             role="progressbar"
-                            aria-label={`${row.name} download progress`}
+                            aria-label={
+                              row.status === "checking"
+                                ? `${row.name} checking progress: ${checkingStatusLabel(row)}`
+                                : `${row.name} download progress`
+                            }
                             aria-valuemin={0}
                             aria-valuemax={100}
-                            aria-valuenow={Math.round(row.progress * 100)}
+                            aria-valuenow={
+                              visibleProgress === null
+                                ? undefined
+                                : Math.round(visibleProgress * 100)
+                            }
                           >
-                            <span
-                              style={{
-                                width: `${Math.round(row.progress * 100)}%`,
-                              }}
-                            />
+                            {visibleProgress === null ? null : (
+                              <span
+                                style={{
+                                  width: `${Math.round(visibleProgress * 100)}%`,
+                                }}
+                              />
+                            )}
                           </span>
                         )}
                       </button>
@@ -307,7 +326,7 @@ function availabilityLabel(row: TorrentRow): string {
     case "paused":
       return `${formatProgress(row.progress)} downloaded · Paused`;
     case "checking":
-      return "Checking downloaded content";
+      return checkingStatusLabel(row);
     case "error":
       return "Content needs attention";
   }

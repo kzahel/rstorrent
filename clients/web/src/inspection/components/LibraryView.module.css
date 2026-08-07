@@ -198,6 +198,14 @@
   background: var(--accent);
 }
 
+.progress[data-indeterminate="true"] {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 55%, var(--progress-track)) 0 0.4rem,
+    var(--progress-track) 0.4rem 0.8rem
+  );
+}
+
 .empty {
   display: grid;
   min-height: 14rem;

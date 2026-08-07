@@ -144,12 +144,37 @@ export type TorrentEta =
   | { readonly state: "stalled" }
   | { readonly state: "unavailable" };
 
+export type TorrentCheckingPhase =
+  | "queued"
+  | "preparing"
+  | "hashing"
+  | "reconciling_storage"
+  | "paused"
+  | "finalizing";
+
+export interface TorrentCheckingProgress {
+  readonly generation: string;
+  readonly phase: TorrentCheckingPhase;
+  readonly piecesTotal: number;
+  readonly piecesProcessed: number;
+  readonly piecesMatched: number;
+  readonly piecesAbsent: number;
+  readonly piecesMismatched: number;
+  readonly bytesHashed: string;
+  readonly activeHashJobs: number;
+  readonly queuedHashJobs: number;
+  readonly elapsedMs: number;
+  readonly lastAdvanceAgeMs: number;
+  readonly oldestActiveJobAgeMs: number | null;
+}
+
 export interface TorrentRow {
   readonly id: string;
   readonly name: string;
   readonly status: TorrentStatus;
   readonly sizeBytes: number | null;
   readonly progress: number | null;
+  readonly checking: TorrentCheckingProgress | null;
   readonly downloadRate: number;
   readonly uploadRate: number | null;
   readonly downloadedBytes: number;

@@ -1,5 +1,9 @@
 import type { DataUnits } from "./appearance";
-import type { TorrentEta } from "./model";
+import type {
+  TorrentCheckingProgress,
+  TorrentEta,
+  TorrentRow,
+} from "./model";
 
 const UNIT_SYSTEMS = {
   decimal: { base: 1000, suffixes: ["B", "kB", "MB", "GB", "TB", "PB"] },
@@ -75,6 +79,56 @@ export function formatRate(value: number | null, dataUnits: DataUnits): string {
 export function formatProgress(value: number | null): string {
   if (value === null) return "Metadata";
   return `${(value * 100).toFixed(value >= 0.9995 ? 0 : 1)}%`;
+}
+
+export function checkingProgressRatio(
+  checking: TorrentCheckingProgress | null,
+): number | null {
+  if (checking === null || checking.piecesTotal === 0) return null;
+  return Math.min(1, checking.piecesProcessed / checking.piecesTotal);
+}
+
+export function torrentProgressSortValue(row: TorrentRow): number | null {
+  return row.status === "checking"
+    ? checkingProgressRatio(row.checking)
+    : row.progress;
+}
+
+export function torrentVisibleProgress(row: TorrentRow): number | null {
+  return row.status === "checking" && row.checking?.phase !== "hashing"
+    ? null
+    : torrentProgressSortValue(row);
+}
+
+export function checkingStatusLabel(row: TorrentRow): string {
+  if (row.status !== "checking") return formatProgress(row.progress);
+  const checking = row.checking;
+  if (checking === null) return "Queued for checking";
+  if (checking.phase === "hashing") {
+    const ratio = checkingProgressRatio(checking);
+    return ratio === null ? "Checking content" : `Checked ${formatProgress(ratio)}`;
+  }
+  switch (checking.phase) {
+    case "queued":
+      return "Queued for checking";
+    case "preparing":
+      return "Preparing check";
+    case "reconciling_storage":
+      return "Updating file selection";
+    case "paused":
+      return "Checking paused";
+    case "finalizing":
+      return "Finalizing check";
+  }
+}
+
+export function formatDuration(milliseconds: number): string {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "0 ms";
+  if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`;
+  if (milliseconds < 60_000) {
+    return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
+  }
+  return `${Math.floor(milliseconds / 60_000)}m ${Math.floor((milliseconds % 60_000) / 1_000)}s`;
 }
 
 export function formatEta(eta: TorrentEta): string {
