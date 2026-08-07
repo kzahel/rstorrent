@@ -579,7 +579,7 @@ mod tests {
         FileSelection, LayoutError, PieceClass, RequestRange, RequiredPayloadGeometry,
         SegmentTarget, TorrentLayout,
     };
-    use crate::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
+    use crate::metainfo::{MAX_METAINFO_PIECES, Metainfo, MetainfoFile, MetainfoMode};
 
     fn fixture() -> (TorrentLayout, FileSelection) {
         let lengths = [20_000, 50_000, 7_000, 18_000, 0, 3_304, 35_000];
@@ -776,6 +776,171 @@ mod tests {
                 "skipped mask {skipped_mask:#08b}"
             );
         }
+    }
+
+    #[test]
+    fn required_payload_matches_request_plan_across_generated_layouts() {
+        let mut random = 0x4d59_5df4_d0f3_3173_u64;
+        for case in 0..96_u32 {
+            let piece_length = 1 + u32::try_from(next_random(&mut random) % 32).expect("piece");
+            let file_count = 1 + usize::try_from(next_random(&mut random) % 7).expect("files");
+            let mut lengths = (0..file_count)
+                .map(|_| next_random(&mut random) % 49)
+                .collect::<Vec<_>>();
+            if lengths.iter().all(|length| *length == 0) {
+                lengths[file_count - 1] = 1;
+            }
+            let mut offset = 0_u64;
+            let files = lengths
+                .into_iter()
+                .enumerate()
+                .map(|(index, length)| {
+                    let padding = length > 0 && next_random(&mut random).is_multiple_of(5);
+                    let file = MetainfoFile {
+                        path: vec![format!("file-{index}")],
+                        length,
+                        offset,
+                        padding,
+                    };
+                    offset += length;
+                    file
+                })
+                .collect::<Vec<_>>();
+            let piece_count = offset.div_ceil(u64::from(piece_length));
+            let metainfo = Metainfo {
+                info_hash: [1; 20],
+                piece_hashes: vec![[2; 20]; usize::try_from(piece_count).expect("piece count")],
+                piece_length,
+                total_length: offset,
+                name: format!("generated-{case}"),
+                private: false,
+                mode: MetainfoMode::MultiFile,
+                files,
+            };
+            let layout = TorrentLayout::from_metainfo(&metainfo);
+            let have = (0..layout.piece_count())
+                .map(|_| next_random(&mut random).is_multiple_of(2))
+                .collect::<Vec<_>>();
+            let selectable = layout
+                .files()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, file)| (!file.padding).then_some(index))
+                .collect::<Vec<_>>();
+            for skipped_mask in 0_u32..(1 << selectable.len()) {
+                let skipped = selectable
+                    .iter()
+                    .enumerate()
+                    .filter(|(bit, _)| skipped_mask & (1 << bit) != 0)
+                    .map(|(_, index)| *index)
+                    .collect::<Vec<_>>();
+                let selection = FileSelection::new(&layout, &skipped).expect("selection");
+                let expected = request_plan_geometry(&layout, &selection, &have);
+                assert_eq!(
+                    layout.required_payload_geometry(&selection, &have),
+                    Ok(expected),
+                    "generated case {case}, skipped mask {skipped_mask:#09b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "release-mode maximum geometry calibration"]
+    fn maximum_required_payload_geometry_stays_structurally_bounded() {
+        const MAX_FILES: usize = 4_096;
+        const PIECE_LENGTH: u32 = 16 * 1_024;
+
+        let total_length =
+            u64::try_from(MAX_METAINFO_PIECES).expect("piece count") * u64::from(PIECE_LENGTH);
+        let ordinary_file_length = total_length / u64::try_from(MAX_FILES).expect("file count") + 1;
+        let mut offset = 0_u64;
+        let files = (0..MAX_FILES)
+            .map(|index| {
+                let length = if index + 1 == MAX_FILES {
+                    total_length - offset
+                } else {
+                    ordinary_file_length
+                };
+                let file = MetainfoFile {
+                    path: vec![format!("file-{index:04}")],
+                    length,
+                    offset,
+                    padding: index % 8 == 3,
+                };
+                offset += length;
+                file
+            })
+            .collect::<Vec<_>>();
+        let metainfo = Metainfo {
+            info_hash: [1; 20],
+            piece_hashes: vec![[2; 20]; MAX_METAINFO_PIECES],
+            piece_length: PIECE_LENGTH,
+            total_length,
+            name: "maximum-geometry".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files,
+        };
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let skipped = layout
+            .files()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, file)| (!file.padding && index % 2 == 1).then_some(index))
+            .collect::<Vec<_>>();
+        let selection = FileSelection::new(&layout, &skipped).expect("fragmented selection");
+        let have = (0..MAX_METAINFO_PIECES)
+            .map(|piece| piece % 2 == 0)
+            .collect::<Vec<_>>();
+
+        let started = std::time::Instant::now();
+        let geometry = layout
+            .required_payload_geometry(&selection, &have)
+            .expect("maximum geometry");
+        let elapsed = started.elapsed();
+
+        assert!(geometry.required_payload_bytes > 0);
+        assert!(geometry.verified_required_payload_bytes <= geometry.required_payload_bytes);
+        assert_eq!(std::mem::size_of::<RequiredPayloadGeometry>(), 16);
+        eprintln!(
+            "maximum ETA geometry: pieces={MAX_METAINFO_PIECES} files={MAX_FILES} elapsed_micros={} temporary_range_upper_bound_bytes={} retained_geometry_bytes={}",
+            elapsed.as_micros(),
+            MAX_FILES * std::mem::size_of::<std::ops::RangeInclusive<u32>>(),
+            std::mem::size_of::<RequiredPayloadGeometry>(),
+        );
+    }
+
+    fn request_plan_geometry(
+        layout: &TorrentLayout,
+        selection: &FileSelection,
+        have: &[bool],
+    ) -> RequiredPayloadGeometry {
+        let mut required_payload_bytes = 0_u64;
+        let mut verified_required_payload_bytes = 0_u64;
+        for (piece_index, verified) in have.iter().copied().enumerate() {
+            let piece_payload = layout
+                .request_ranges(u32::try_from(piece_index).expect("piece index"), selection)
+                .expect("request ranges")
+                .into_iter()
+                .map(|range| u64::from(range.length))
+                .sum::<u64>();
+            required_payload_bytes += piece_payload;
+            if verified {
+                verified_required_payload_bytes += piece_payload;
+            }
+        }
+        RequiredPayloadGeometry {
+            required_payload_bytes,
+            verified_required_payload_bytes,
+        }
+    }
+
+    fn next_random(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
     }
 
     #[test]

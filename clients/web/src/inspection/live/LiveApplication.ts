@@ -945,7 +945,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     requiredPayloadBytes: torrent.required_payload_bytes,
     remainingPayloadBytes: torrent.remaining_payload_bytes,
     etaDownloadRateBytes: torrent.eta_payload_download_rate_bytes,
-    eta: torrent.eta,
+    eta: mapTorrentEta(torrent.eta),
     addedAtMs: null,
     archived: torrent.archived,
     removalState: torrent.removal_state ?? null,
@@ -955,6 +955,14 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
   };
+}
+
+function mapTorrentEta(eta: TorrentView["eta"]): TorrentRow["eta"] {
+  if (eta.state !== "estimate") return eta;
+  if (!/^[1-9][0-9]{0,19}$/.test(eta.seconds)) {
+    return { state: "unavailable" };
+  }
+  return eta;
 }
 
 function mapStorage(settings: StorageSettingsSnapshot): DownloadStorageSettings {

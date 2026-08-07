@@ -81,8 +81,10 @@ describe("ETA formatting", () => {
 
   it("retains exact large durations for display and decimal sorting", () => {
     const eta = { state: "estimate", seconds: "9007199254740993" } as const;
-    expect(formatEta(eta)).toBe("2501999792983h 36m");
+    expect(formatEta({ state: "estimate", seconds: "90061" })).toBe("1d 1h");
+    expect(formatEta(eta)).toBe("104249991374d 7h");
     expect(etaSortValue(eta)).toBe("9007199254740993");
     expect(etaSortValue({ state: "stalled" })).toBeNull();
+    expect(formatEta({ state: "estimate", seconds: "invalid" })).toBe("—");
   });
 });

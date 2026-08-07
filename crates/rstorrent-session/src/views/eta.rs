@@ -479,4 +479,98 @@ mod tests {
         assert_eq!(model.remaining_payload_bytes(), Some(0));
         assert_eq!(model.eta, TorrentEtaView::Unavailable);
     }
+
+    #[test]
+    fn no_payload_stays_warming_for_nine_seconds_then_stalls() {
+        let now = Instant::now();
+        let (mut model, _) = active_model(now);
+        model
+            .tick(now + Duration::from_secs(9))
+            .expect("nine-second tick");
+        assert_eq!(model.eta, TorrentEtaView::WarmingUp);
+        model
+            .tick(now + Duration::from_secs(10))
+            .expect("ten-second tick");
+        assert_eq!(model.eta, TorrentEtaView::Stalled);
+        assert_eq!(model.public_rate, 0);
+    }
+
+    #[test]
+    fn irregular_ticks_use_elapsed_time_and_zero_elapsed_keeps_the_bucket() {
+        let now = Instant::now();
+        let (mut model, generation) = active_model(now);
+        model
+            .block_received(generation, 3_000, now + Duration::from_secs(2))
+            .expect("late accepted bytes");
+        model.tick(now + Duration::from_secs(3)).expect("late tick");
+        assert_eq!(model.smoothed_rate, 1_000);
+
+        model
+            .block_received(generation, 1_000, now + Duration::from_secs(3))
+            .expect("same-instant accepted bytes");
+        assert!(
+            !model
+                .tick(now + Duration::from_secs(3))
+                .expect("zero elapsed tick")
+        );
+        model
+            .block_received(generation, 1_000, now + Duration::from_secs(4))
+            .expect("next accepted bytes");
+        model
+            .tick(now + Duration::from_secs(5))
+            .expect("two-second tick");
+        assert_eq!(model.smoothed_rate, 1_000);
+    }
+
+    #[test]
+    fn maximum_scalars_keep_ceiling_eta_exact_without_overflow() {
+        let now = Instant::now();
+        let mut model = TorrentEtaModel::default();
+        model.reconcile_geometry(Some(geometry(u64::MAX, 0)), true, true, now);
+        let generation = model.reserve_generation().expect("reserve generation");
+        assert!(model.activate_generation(generation, now));
+        model
+            .block_received(generation, u32::MAX, now)
+            .expect("maximum block scalar");
+        model
+            .tick(now + Duration::from_millis(1))
+            .expect("maximum sample tick");
+
+        let rate = u64::from(u32::MAX) * 1_000;
+        let remaining = u64::MAX - u64::from(u32::MAX);
+        let seconds = remaining / rate + u64::from(remaining % rate != 0);
+        assert_eq!(model.public_rate, rate);
+        assert_eq!(
+            model.eta,
+            TorrentEtaView::Estimate {
+                seconds: seconds.to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn retained_eta_model_has_constant_scalar_size() {
+        let retained = std::mem::size_of::<TorrentEtaModel>();
+        eprintln!("retained torrent ETA model bytes={retained}");
+        assert!(retained <= 256);
+        assert_eq!(std::mem::size_of::<RequiredPayloadGeometry>(), 16);
+    }
+
+    #[test]
+    fn tagged_eta_contract_round_trips_every_state() {
+        let states = [
+            TorrentEtaView::Estimate {
+                seconds: "252".to_owned(),
+            },
+            TorrentEtaView::WarmingUp,
+            TorrentEtaView::Stalled,
+            TorrentEtaView::Unavailable,
+        ];
+        for state in states {
+            let encoded = serde_json::to_string(&state).expect("serialize ETA state");
+            let decoded: TorrentEtaView =
+                serde_json::from_str(&encoded).expect("deserialize ETA state");
+            assert_eq!(decoded, state);
+        }
+    }
 }

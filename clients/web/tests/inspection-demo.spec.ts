@@ -344,6 +344,74 @@ test("wide inspection surface is accessible and drivable", async ({ page }) => {
   await expect(torrentRows.nth(1)).toHaveAttribute("aria-current", "true");
 });
 
+test("typed torrent ETA stays explicit across responsive surfaces", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
+
+  let transfers = page.getByRole("grid", { name: "Transfer queue" });
+  let primary = transfers.getByRole("row").filter({
+    hasText: "Big Buck Bunny 1080p surround",
+  });
+  const estimate = primary.getByLabel(/Estimated time remaining:/);
+  await expect(estimate).toHaveText("55s");
+  await expect(estimate).toHaveAttribute(
+    "title",
+    "Estimated time remaining: 55s",
+  );
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("radio", { name: /Compact/ }).check();
+  await page.keyboard.press("Escape");
+  await expect(primary.getByLabel(/Estimated time remaining:/)).toHaveText(
+    "55s",
+  );
+
+  await page.goto("/?demo=healthy-download&at=7500&autoplay=0");
+  transfers = page.getByRole("grid", { name: "Transfer queue" });
+  primary = transfers.getByRole("row").filter({
+    hasText: "Big Buck Bunny 1080p surround",
+  });
+  await expect(primary.getByLabel("Calculating ETA")).toHaveText("—");
+
+  await page.goto("/?demo=healthy-download&at=0&autoplay=0");
+  transfers = page.getByRole("grid", { name: "Transfer queue" });
+  primary = transfers.getByRole("row").filter({
+    hasText: "Big Buck Bunny 1080p surround",
+  });
+  await expect(primary.getByLabel("ETA unavailable")).toHaveText("—");
+
+  await page.goto("/?demo=swarm-lifecycle&at=11000&autoplay=0");
+  transfers = page.getByRole("grid", { name: "Transfer queue" });
+  primary = transfers.getByRole("row").filter({
+    hasText: "Big Buck Bunny — swarm registry inspection",
+  });
+  const stalled = primary.getByLabel("Transfer stalled");
+  await expect(stalled).toHaveText("∞");
+  await expect(stalled).toHaveAttribute("title", "Transfer stalled");
+
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(transfers.getByRole("columnheader", { name: "ETA" })).toHaveCount(
+    0,
+  );
+  await expect(transfers.getByRole("columnheader", { name: "Name" })).toBeVisible();
+  expect(
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (violation) =>
+        violation.impact === "serious" || violation.impact === "critical",
+    ),
+  ).toEqual([]);
+});
+
 test("detail tabs keep equal stable footprints with narrow scrolling", async ({
   page,
 }) => {

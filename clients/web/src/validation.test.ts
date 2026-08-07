@@ -203,6 +203,14 @@ describe("torrent ETA validation", () => {
     expect(() => decodeUpdateBatch(JSON.stringify(stalledRate))).toThrow(
       /non-estimated torrent ETA must expose a zero rate/,
     );
+
+    const missingSeconds = torrentBatch("Missing ETA seconds");
+    const missingSecondsTorrent = missingSeconds.updates[0]!.snapshot
+      .torrents[0]! as Record<string, unknown>;
+    missingSecondsTorrent.eta = { state: "estimate" };
+    expect(() => decodeUpdateBatch(JSON.stringify(missingSeconds))).toThrow(
+      /seconds/,
+    );
   });
 });
 

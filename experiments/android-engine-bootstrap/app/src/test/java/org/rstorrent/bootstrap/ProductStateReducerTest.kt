@@ -35,6 +35,7 @@ import org.rstorrent.session.uniffi.SessionUdpStatus
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
+import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
@@ -377,6 +378,10 @@ class ProductStateReducerTest {
             activePeerConnections = 0U,
             configuredTrackerCount = 2U,
             payloadDownloadRateBytes = "0",
+            requiredPayloadBytes = "1638400000",
+            remainingPayloadBytes = "565248000",
+            etaPayloadDownloadRateBytes = "0",
+            eta = TorrentEtaView.Unavailable,
             progress = ProgressAssessment(
                 ProgressDisposition.ACTIVE,
                 ProgressPhase.TRANSFER,

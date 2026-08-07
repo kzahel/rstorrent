@@ -41,6 +41,25 @@ describe("Rust view-set fixture", () => {
     expect(decodeUpdateBatch(encoded).updates[0]?.type).toBe("patch");
   });
 
+  it("accepts required nullable ETA work before metadata", () => {
+    const pending = JSON.parse(JSON.stringify(fixture.open)) as {
+      initial: {
+        updates: Array<{
+          snapshot?: { torrents?: Array<Record<string, unknown>> };
+        }>;
+      };
+    };
+    const torrent = pending.initial.updates[0]?.snapshot?.torrents?.[0];
+    if (torrent === undefined) throw new Error("fixture torrent is missing");
+    torrent.required_payload_bytes = null;
+    torrent.remaining_payload_bytes = null;
+    torrent.eta_payload_download_rate_bytes = "0";
+    torrent.eta = { state: "unavailable" };
+    expect(
+      decodeOpenViewSetResponse(JSON.stringify(pending)).initial.updates,
+    ).toHaveLength(1);
+  });
+
   it("rejects unknown generated enum and tagged variants", () => {
     const unknownStorage = JSON.stringify(fixture.updates[0]).replace(
       '"storage_state":"staging"',

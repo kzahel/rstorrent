@@ -5194,6 +5194,30 @@ mod tests {
             }
         };
         assert_eq!(snapshot.torrents[0].verified_piece_count, 1);
+        let summary = service
+            .subscribe(SubscriptionSpec {
+                selector: crate::ViewSelector::Torrent {
+                    torrent_id: torrent_id.clone(),
+                },
+                projection: crate::ViewProjection::Summary,
+                delivery: crate::DeliveryPolicy::default(),
+                diagnostics: None,
+                catalog_page: None,
+            })
+            .expect("subscribe completed ETA summary");
+        let completed_view = summary.next_update().await.expect("completed ETA summary");
+        let payload_bytes = payload.len().to_string();
+        assert!(matches!(
+            completed_view.payload,
+            crate::ViewUpdatePayload::Snapshot {
+                snapshot: crate::ViewSnapshot::Torrent {
+                    torrent: Some(ref torrent),
+                },
+            } if torrent.required_payload_bytes.as_deref() == Some(payload_bytes.as_str())
+                && torrent.remaining_payload_bytes.as_deref() == Some("0")
+                && torrent.eta_payload_download_rate_bytes == "0"
+                && torrent.eta == crate::TorrentEtaView::Unavailable
+        ));
         assert_eq!(
             fs::read(root.join("payload/tracker-ipv6.bin")).expect("published payload"),
             payload

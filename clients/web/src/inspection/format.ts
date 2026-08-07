@@ -85,7 +85,10 @@ export function formatEta(eta: TorrentEta): string {
   if (seconds < 3_600n) {
     return `${(seconds / 60n).toString()}m ${(seconds % 60n).toString()}s`;
   }
-  return `${(seconds / 3_600n).toString()}h ${((seconds % 3_600n) / 60n).toString()}m`;
+  if (seconds < 86_400n) {
+    return `${(seconds / 3_600n).toString()}h ${((seconds % 3_600n) / 60n).toString()}m`;
+  }
+  return `${(seconds / 86_400n).toString()}d ${((seconds % 86_400n) / 3_600n).toString()}h`;
 }
 
 export function etaAccessibleLabel(eta: TorrentEta): string {
