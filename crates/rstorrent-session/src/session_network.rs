@@ -271,7 +271,7 @@ impl SessionNetworkRuntime {
             }
             Err(error) => return Err(error.into()),
         };
-        let tcp_address = socket_set.tcp_address();
+        let tcp_peer_address = socket_set.tcp_peer_address();
         let udp_address = socket_set.udp_address();
         let coordinated_with_tcp = socket_set.ports_match();
         let (tcp_listener, udp_socket) = socket_set.into_parts();
@@ -294,11 +294,11 @@ impl SessionNetworkRuntime {
                 Ok(acceptor) => (
                     Some(acceptor),
                     ListenerStatus::Listening {
-                        address: tcp_address
+                        address: tcp_peer_address
                             .expect("bound TCP listener has an observed address")
                             .ip()
                             .to_string(),
-                        port: tcp_address
+                        port: tcp_peer_address
                             .expect("bound TCP listener has an observed address")
                             .port(),
                     },
@@ -927,7 +927,7 @@ impl SessionNetworkOwner {
             return false;
         }
 
-        let tcp_address = candidate.tcp_address();
+        let tcp_peer_address = candidate.tcp_peer_address();
         let udp_address = candidate.udp_address();
         let coordinated_with_tcp = candidate.ports_match();
         let (tcp_listener, udp_socket) = candidate.into_parts();
@@ -1001,7 +1001,7 @@ impl SessionNetworkOwner {
             .expect("session UDP exists during handover")
             .replace_socket(udp_socket)
             .await;
-        let listener_status = tcp_address.map_or(ListenerStatus::Disabled, |address| {
+        let listener_status = tcp_peer_address.map_or(ListenerStatus::Disabled, |address| {
             ListenerStatus::Listening {
                 address: address.ip().to_string(),
                 port: address.port(),

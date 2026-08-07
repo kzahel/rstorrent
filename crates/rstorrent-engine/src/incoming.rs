@@ -94,7 +94,6 @@ pub struct IncomingPeerServiceConfig {
     pub peer_budget: PeerBudget,
     pub upload_scheduler: UploadSchedulerConfig,
     pub upload_read_jobs: usize,
-    local_network_address_override: Option<Ipv4Addr>,
 }
 
 impl IncomingPeerServiceConfig {
@@ -111,7 +110,6 @@ impl IncomingPeerServiceConfig {
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
-            local_network_address_override: None,
         }
     }
 
@@ -983,17 +981,11 @@ impl IncomingPeerService {
                 return Err(IncomingPeerError::InvalidFixedPort);
             }
             IncomingTcpBootstrap::FixedLoopback(port) => (Ipv4Addr::LOCALHOST, port),
-            IncomingTcpBootstrap::AutomaticLocalNetwork => (
-                select_local_network_ipv4(config.local_network_address_override).await?,
-                0,
-            ),
+            IncomingTcpBootstrap::AutomaticLocalNetwork => (Ipv4Addr::UNSPECIFIED, 0),
             IncomingTcpBootstrap::FixedLocalNetwork(0) => {
                 return Err(IncomingPeerError::InvalidFixedPort);
             }
-            IncomingTcpBootstrap::FixedLocalNetwork(port) => (
-                select_local_network_ipv4(config.local_network_address_override).await?,
-                port,
-            ),
+            IncomingTcpBootstrap::FixedLocalNetwork(port) => (Ipv4Addr::UNSPECIFIED, port),
         };
         let socket =
             TcpSocket::new_v4().map_err(|source| IncomingPeerError::Bind { port, source })?;
@@ -1083,9 +1075,9 @@ fn validate_supplied_listener(
         IncomingTcpBootstrap::FixedLoopback(port) => {
             address.ip().is_loopback() && address.port() == port
         }
-        IncomingTcpBootstrap::AutomaticLocalNetwork => eligible_local_network_ipv4(*address.ip()),
+        IncomingTcpBootstrap::AutomaticLocalNetwork => address.ip().is_unspecified(),
         IncomingTcpBootstrap::FixedLocalNetwork(port) => {
-            eligible_local_network_ipv4(*address.ip()) && address.port() == port
+            address.ip().is_unspecified() && address.port() == port
         }
     };
     if valid {
@@ -2834,7 +2826,6 @@ mod tests {
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: super::DEFAULT_UPLOAD_READ_JOBS,
-            local_network_address_override: None,
         }
     }
 
@@ -3020,6 +3011,17 @@ mod tests {
             IncomingPeerService::bind(config(IncomingTcpBootstrap::FixedLoopback(port))).await,
             Err(IncomingPeerError::Bind { port: failed, .. }) if failed == port
         ));
+
+        let ordinary =
+            IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLocalNetwork))
+                .await
+                .expect("bind ordinary listener")
+                .expect("ordinary listener enabled");
+        assert!(ordinary.listen_address().ip().is_unspecified());
+        ordinary
+            .shutdown()
+            .await
+            .expect("shutdown ordinary listener");
 
         let supplied = TcpListener::bind("127.0.0.1:0")
             .await

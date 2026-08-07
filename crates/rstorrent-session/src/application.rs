@@ -6282,7 +6282,7 @@ mod tests {
             panic!("local-network session UDP endpoint must be active");
         };
         assert_eq!(address, local_address.to_string());
-        assert_eq!(udp_address, address);
+        assert_eq!(udp_address, Ipv4Addr::UNSPECIFIED.to_string());
         assert_eq!(port, preferred_port);
         assert_eq!(udp_port, port);
         assert!(coordinated_with_tcp);

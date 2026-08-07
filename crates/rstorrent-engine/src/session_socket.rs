@@ -150,6 +150,7 @@ pub struct SessionSocketSet {
     tcp_listener: Option<TcpListener>,
     udp_socket: UdpSocket,
     tcp_address: Option<SocketAddr>,
+    tcp_peer_address: Option<SocketAddr>,
     udp_address: SocketAddr,
 }
 
@@ -163,6 +164,7 @@ impl SessionSocketSet {
                 tcp_listener: None,
                 udp_socket,
                 tcp_address: None,
+                tcp_peer_address: None,
                 udp_address,
             });
         };
@@ -173,17 +175,38 @@ impl SessionSocketSet {
             bind_automatic(address, config.preferred_port).await?
         };
         let tcp_address = local_address(&tcp_listener, SessionSocketTransport::Tcp)?;
+        let tcp_peer_address = if matches!(
+            config.tcp,
+            IncomingTcpBootstrap::AutomaticLocalNetwork
+                | IncomingTcpBootstrap::FixedLocalNetwork(_)
+        ) {
+            select_local_network_ipv4(config.local_network_address_override)
+                .await
+                .ok()
+                .map(|address| SocketAddr::from((address, tcp_address.port())))
+                .or(Some(tcp_address))
+        } else {
+            Some(tcp_address)
+        };
         let udp_address = local_address(&udp_socket, SessionSocketTransport::Udp)?;
         Ok(Self {
             tcp_listener: Some(tcp_listener),
             udp_socket,
             tcp_address: Some(tcp_address),
+            tcp_peer_address,
             udp_address,
         })
     }
 
     pub fn tcp_address(&self) -> Option<SocketAddr> {
         self.tcp_address
+    }
+
+    /// A concrete local endpoint when routing can identify one, otherwise the
+    /// observed bind endpoint. This is bookkeeping for advertisement and port
+    /// mapping; the listener may be bound more broadly.
+    pub fn tcp_peer_address(&self) -> Option<SocketAddr> {
+        self.tcp_peer_address
     }
 
     pub fn udp_address(&self) -> SocketAddr {
@@ -207,18 +230,10 @@ async fn tcp_bind_intent(
         IncomingTcpBootstrap::Disabled => Ok(None),
         IncomingTcpBootstrap::AutomaticLoopback => Ok(Some((Ipv4Addr::LOCALHOST, None))),
         IncomingTcpBootstrap::FixedLoopback(port) => Ok(Some((Ipv4Addr::LOCALHOST, Some(port)))),
-        IncomingTcpBootstrap::AutomaticLocalNetwork => Ok(Some((
-            select_local_network_ipv4(config.local_network_address_override)
-                .await
-                .map_err(SessionSocketError::LocalNetworkAddress)?,
-            None,
-        ))),
-        IncomingTcpBootstrap::FixedLocalNetwork(port) => Ok(Some((
-            select_local_network_ipv4(config.local_network_address_override)
-                .await
-                .map_err(SessionSocketError::LocalNetworkAddress)?,
-            Some(port),
-        ))),
+        IncomingTcpBootstrap::AutomaticLocalNetwork => Ok(Some((Ipv4Addr::UNSPECIFIED, None))),
+        IncomingTcpBootstrap::FixedLocalNetwork(port) => {
+            Ok(Some((Ipv4Addr::UNSPECIFIED, Some(port))))
+        }
     }
 }
 
@@ -456,6 +471,23 @@ mod tests {
         assert_eq!(sockets.tcp_address().unwrap().port(), port);
         assert_eq!(sockets.udp_address().port(), port);
         assert!(sockets.ports_match());
+    }
+
+    #[tokio::test]
+    async fn ordinary_listener_binds_all_ipv4_interfaces() {
+        let port = available_port().await;
+        let sockets = SessionSocketSet::bind(
+            config(IncomingTcpBootstrap::AutomaticLocalNetwork, port)
+                .with_local_network_address_for_testing(Ipv4Addr::new(192, 0, 2, 10)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(sockets.tcp_address().unwrap().ip(), Ipv4Addr::UNSPECIFIED);
+        assert_eq!(sockets.udp_address().ip(), Ipv4Addr::UNSPECIFIED);
+        assert_eq!(
+            sockets.tcp_peer_address(),
+            Some(SocketAddr::from((Ipv4Addr::new(192, 0, 2, 10), port)))
+        );
     }
 
     #[tokio::test]

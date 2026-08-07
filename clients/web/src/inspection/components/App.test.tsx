@@ -1548,8 +1548,18 @@ describe("inspection application", () => {
     expect(connectionTab).toBeVisible();
     await user.click(connectionTab);
     expect(
-      within(dialog).getByText(/compatible gateway for public incoming/i),
+      within(dialog).getByText(/all IPv4 network interfaces/i),
     ).toBeVisible();
+    expect(
+      within(dialog).getByRole("radio", { name: /^Automatic port/ }),
+    ).toBeChecked();
+    expect(within(dialog).queryByRole("radio", { name: /Off/ })).toBeNull();
+    expect(within(dialog).queryByText(/device-only/i)).toBeNull();
+    expect(
+      within(dialog).queryByRole("spinbutton", {
+        name: "Preferred automatic port",
+      }),
+    ).toBeNull();
     expect(
       within(dialog).getByText(
         /safely limited to 120 by available file descriptors/i,
@@ -1557,7 +1567,7 @@ describe("inspection application", () => {
     ).toBeVisible();
 
     await user.click(
-      within(dialog).getByRole("radio", { name: /Fixed local-network port/ }),
+      within(dialog).getByRole("radio", { name: /^Fixed port/ }),
     );
     const port = within(dialog).getByRole("spinbutton", {
       name: "Fixed listener port",
@@ -1573,12 +1583,6 @@ describe("inspection application", () => {
     expect(save).toBeDisabled();
     await user.clear(port);
     await user.type(port, "1024");
-    const preferredPort = within(dialog).getByRole("spinbutton", {
-      name: "Preferred automatic port",
-    });
-    expect(preferredPort).toHaveValue(6881);
-    await user.clear(preferredPort);
-    await user.type(preferredPort, "6882");
     const peers = within(dialog).getByRole("spinbutton", {
       name: "Peer connection limit",
     });
@@ -1605,7 +1609,7 @@ describe("inspection application", () => {
         type: "set_client_settings",
         settings: {
           listener: { type: "fixed_local_network", port: 1024 },
-          preferred_listen_port: 6882,
+          preferred_listen_port: 6881,
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
@@ -1626,7 +1630,7 @@ describe("inspection application", () => {
       configured: {
         ...clientSettingsRuntimeFixture().configured,
         listener: { type: "fixed_local_network", port: 1024 },
-        preferred_listen_port: 6882,
+        preferred_listen_port: 6881,
         port_mapping: "upnp",
         peer_connection_limit: 2000,
         upload_slots: 0,
@@ -1678,7 +1682,7 @@ describe("inspection application", () => {
         clientSettings: {
           configured: {
             ...active,
-            listener: { type: "automatic_loopback" },
+            listener: { type: "automatic_local_network" },
           },
           effective_listener: null,
           effective_port_mapping: "disabled",
@@ -1688,7 +1692,7 @@ describe("inspection application", () => {
           transport_application: {
             type: "degraded",
             reason: "transport_bind_failed",
-            detail: "loopback port 51413 is already in use.",
+            detail: "port 51413 is already in use.",
           },
           port_mapping_application: { type: "applied" },
           peer_connections_application: { type: "applied" },
@@ -1697,7 +1701,7 @@ describe("inspection application", () => {
           listener_status: {
             type: "bind_failed",
             reason: "address_in_use",
-            detail: "loopback port 51413 is already in use.",
+            detail: "port 51413 is already in use.",
           },
           session_udp_status: {
             type: "bound",
@@ -1722,12 +1726,12 @@ describe("inspection application", () => {
     );
 
     expect(within(dialog).getByText(/port already in use/i)).toHaveTextContent(
-      "loopback port 51413 is already in use",
+      "port 51413 is already in use",
     );
     expect(within(dialog).getByText(/Transport: degraded/i)).toBeVisible();
     expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("radio", { name: /Automatic device-only port/ }),
+      within(dialog).getByRole("radio", { name: /^Automatic port/ }),
     ).toBeChecked();
     expect(
       within(dialog).getByRole("button", { name: "Save settings" }),

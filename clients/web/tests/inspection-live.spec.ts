@@ -55,7 +55,7 @@ test("client settings apply live, persist, and recover bind failure", async ({
 
   if (clientSettingsPhase === "configure") {
     await dialog
-      .getByRole("radio", { name: /Automatic device-only port/ })
+      .getByRole("radio", { name: /^Automatic port/ })
       .check();
     await dialog
       .getByRole("spinbutton", { name: "Peer connection limit" })
@@ -67,13 +67,13 @@ test("client settings apply live, persist, and recover bind failure", async ({
     await expect(
       dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
-    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
     await expect(runtime).toContainText("Effective peer connection limit: 37.");
     await expect(runtime).toContainText("Effective payload upload slots: 1.");
     await expect(runtime).not.toContainText("Transport: applying");
   } else if (clientSettingsPhase === "observe") {
     await expect(
-      dialog.getByRole("radio", { name: /Automatic device-only port/ }),
+      dialog.getByRole("radio", { name: /^Automatic port/ }),
     ).toBeChecked();
     await expect(
       dialog.getByRole("spinbutton", { name: "Peer connection limit" }),
@@ -81,23 +81,23 @@ test("client settings apply live, persist, and recover bind failure", async ({
     await expect(
       dialog.getByRole("spinbutton", { name: "Payload upload slots" }),
     ).toHaveValue("1");
-    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
     await expect(runtime).toContainText("Effective peer connection limit: 37.");
     await expect(runtime).toContainText("Effective payload upload slots: 1.");
   } else if (clientSettingsPhase === "recover") {
     await expect(
-      dialog.getByRole("radio", { name: /Fixed device-only port/ }),
+      dialog.getByRole("radio", { name: /^Fixed port/ }),
     ).toBeChecked();
     await expect(runtime).toContainText(/port already in use/i);
     await expect(runtime).toContainText(/Transport: degraded/i);
     await dialog
-      .getByRole("radio", { name: /Automatic device-only port/ })
+      .getByRole("radio", { name: /^Automatic port/ })
       .check();
     await dialog.getByRole("button", { name: "Save settings" }).click();
     await expect(
       dialog.getByText("Settings accepted and applying."),
     ).toBeVisible();
-    await expect(runtime).toContainText(/Listening on 127\.0\.0\.1:\d+/);
+    await expect(runtime).toContainText(/all IPv4 interfaces at port \d+/);
     await expect(runtime).not.toContainText(/Transport: degraded/i);
     await expect(runtime).not.toContainText("Transport: applying");
   } else {

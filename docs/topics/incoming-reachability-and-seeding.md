@@ -56,6 +56,14 @@ durable and ephemeral profiles. Candidate failure retains the prior effective
 transport, mapping cleanup remains finite and non-advertised, and peer and
 slot changes preserve stable peer identity and exact counters.
 
+Completed Tactical
+[`102`](../tactical/102-ordinary-incoming-listener-settings.md) corrects the
+product boundary: ordinary automatic and fixed modes bind TCP and coordinated
+UDP on all IPv4 interfaces. The shared product UI exposes only Automatic or
+Fixed port selection. Disabled, loopback, and preferred-candidate controls
+remain internal facilities for tests and headless tooling, not normal client
+settings.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
@@ -90,9 +98,10 @@ RSTorrent can download real v1 torrents through outgoing TCP and can seed
 controlled incoming peers locally or through one proven UPnP-mapped public TCP
 endpoint:
 
-- immutable bootstrap includes disabled, automatic/fixed loopback, and
-  automatic/fixed local-network IPv4 listener policy; successful bind exposes
-  the exact address and port and fixed bind failure is typed;
+- immutable bootstrap includes internal disabled and automatic/fixed loopback
+  policies for controlled use plus ordinary automatic/fixed IPv4 policies;
+  ordinary modes bind `0.0.0.0`, retain a best-effort concrete routed address
+  for reachability bookkeeping, and report fixed bind failure as typed state;
 - one joined session listener uses a five-entry backlog, bounds eight
   pre-handshake tasks, routes exact v1 info hashes through up to 1,024
   generation-fenced registrations, and admits peers under one session budget
@@ -127,9 +136,10 @@ endpoint:
   listener on preferred port `6881` with UPnP mapping enabled, while existing
   stored settings and historical migrations remain unchanged and
   active/effective/bound/mapped state stays distinct from configured intent;
-- the generated application contract and shared browser/Tauri Settings
-  surface expose that group, the actual loopback port, descriptor-derived
-  effective limit, restart requirement, and typed recoverable bind failure;
+- the generated application contract retains the closed internal policies;
+  the shared browser/Tauri Settings surface exposes only automatic or fixed
+  ordinary port selection, descriptor-derived effective limits, live
+  convergence, and typed recoverable bind failure;
 - incoming peer tasks now attach routed generations to the retained ordinary
   torrent peer owner and publish complete connection/upload observations;
 - existing Peers/Swarm mapping projects the connected incoming generation,
