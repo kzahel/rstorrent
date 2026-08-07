@@ -503,6 +503,15 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; keeps the shared browser/Tauri tab title current with exact
   session download and upload rates at a bounded one-second cadence while
   retaining the plain application title when idle or disconnected.
+- [`107-source-aware-magnet-export.md`](107-source-aware-magnet-export.md):
+  complete; preserves exact verified magnet sources and otherwise synthesizes
+  bounded magnets from verified identity, name, and ordered tracker evidence
+  through one explicit read-only application operation.
+- [`108-serialized-torrent-control-and-observable-checking.md`](108-serialized-torrent-control-and-observable-checking.md):
+  accepted; replaces whole-generation file-selection restart with serialized
+  torrent reconciliation and a bounded storage fence, makes checking
+  selection-independent, and exposes exact checker progress while retaining
+  conservative validation and reserving a later trusting fast-resume option.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

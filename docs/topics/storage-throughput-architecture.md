@@ -493,6 +493,17 @@ durable facts plus current runtime owners. A store regression proves a piece
 checkpoint on final-owned published content preserves `final_owned` across
 restart.
 
+Accepted Tactical
+[`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
+now owns the previously deferred per-torrent priority fence. The fence will
+drain admitted shared I/O, perform one exclusive route/materialization
+transition, publish an immutable storage epoch or retain the previous one,
+and release bounded later jobs. Full checking will continue across priority
+changes rather than replace the torrent generation, while conservative
+startup and force recheck retain the current hash admission limits. This
+accepted direction is not implemented yet and does not replace the later
+session/root fairness scheduler below.
+
 ## Session And Storage-Root Scheduling
 
 The current per-torrent owner is sufficient for one active download but should

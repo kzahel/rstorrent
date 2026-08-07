@@ -183,14 +183,21 @@ that observation does not become a public-tracker reliability claim.
 
 ### Now
 
-- No tactical is currently queued. Tactical
-  [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
-  completed the fact-based persistence recovery slice; select the next bounded
-  campaign action before further implementation.
+- Tactical
+  [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
+  is accepted as the next bounded engine/application boundary. It replaces
+  whole-generation file-selection restart with serialized torrent
+  reconciliation and a per-torrent storage fence, makes full checking
+  selection-independent, separates integrity outcomes, and exposes bounded
+  checker progress to the shared UI. The current request created the tactical
+  only; implementation has not started.
 
 ### Next
 
-- No successor is queued.
+- After Tactical `108`, add the atomic skipped-file `Download now` action.
+- A separate later tactical may add an explicit faster, more trusting resume
+  option while keeping conservative behavior as the default and Force recheck
+  as a full validation pass.
 
 ### Later
 

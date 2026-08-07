@@ -31,6 +31,16 @@ Tactical `073` adds `force_recheck` as a semantic durable command with the
 same expected-revision and request-receipt rules. It joins an active matching
 generation, preserves durable run intent, and starts the common managed-
 storage check without exposing paths, handles, or engine tasks.
+Accepted Tactical
+[`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
+supersedes the coarse runtime boundary chosen by Tactical `063` without
+rewriting its completed record. One serialized torrent controller will
+reconcile durable run, selection, and verification intent; one bounded
+storage fence will own priority routing; and selection changes during a
+selection-independent check will coalesce without replacing the complete
+content generation. This direction is not implemented yet. The later
+`Download now` operation is deliberately outside Tactical `108` and should
+reduce to atomic wanted-plus-running intent after this boundary lands.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in

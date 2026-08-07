@@ -2,25 +2,18 @@
 
 Topic: `oracle-driven-engine-campaign`
 
-Status: Resumed for the accepted maximum-throughput storage campaign by
-maintainer direction on 2026-08-02. The
-paired headless comparator and bounded utility timeline drive metadata,
-first-piece, sustained-transfer, endgame, and full publication parity from
-pinned libtorrent source and tests. The former serialized storage owner has
-been replaced by bounded independent execution, and its accepted
-multi-tactical architecture is recorded in
-[`storage-throughput-architecture.md`](storage-throughput-architecture.md).
-Tactical [`052`](../tactical/052-batched-durability-checkpoints.md) has
-completed its checkpoint split and retained performance gate; Tactical
-[`053`](../tactical/053-immutable-positional-storage-plans.md) has completed
-the immutable positional-storage slice. Bounded independent write/hash
-execution, raw ceilings and the repeated large-transfer matrix now pass in
-Tactical [`054`](../tactical/054-bounded-independent-storage-execution.md);
-its SQLite-backed application, closing interoperability, restart/crash,
-platform and public evidence also pass, so that tactical is complete. The
-intervening desktop inspection and view-set foundations are complete enough to
-expose the new checkpoint stages as the engine evolves.
-High-impact BEP breadth still follows the core common-denominator parity gate.
+Status: Tactical
+[`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
+is the accepted next oracle-driven engine/application boundary as of
+2026-08-07; the current request created its decision-complete plan but did not
+start implementation. It uses pinned libtorrent checking, file-priority,
+disk-fence, resume, and tests to replace whole-generation selection restart
+with serialized torrent reconciliation, selection-independent checking, and
+observable bounded progress. The completed maximum-throughput storage
+campaign remains recorded in
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md),
+and high-impact BEP breadth still follows the core common-denominator parity
+gate.
 
 ## Purpose And Scope
 
@@ -326,18 +319,16 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **active by maintainer direction**.
+Campaign state: **Tactical `108` accepted; implementation not started**.
 
-Active tactical:
-[`054-bounded-independent-storage-execution.md`](../tactical/054-bounded-independent-storage-execution.md).
-Most recently completed tactical is
-[`053-immutable-positional-storage-plans.md`](../tactical/053-immutable-positional-storage-plans.md).
-Tacticals `025` through
-[`032-bounded-coalesced-write-batches.md`](../tactical/032-bounded-coalesced-write-batches.md)
-are complete.
+Accepted next tactical:
+[`108-serialized-torrent-control-and-observable-checking.md`](../tactical/108-serialized-torrent-control-and-observable-checking.md).
+The latest completed persistence/checking containment checkpoint is Tactical
+[`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md).
 
-Current milestone: execute bounded independent write/hash jobs and an explicit
-piece-generation join over the completed positional-plan boundary.
+Current milestone: when implementation is requested, begin Tactical `108` at
+its observed-behavior regression gate. Do not begin the later `Download now`
+or trusting fast-resume slices first.
 
 Last completed evidence:
 
@@ -666,6 +657,6 @@ and controlled pinned-libtorrent complementary transfer pass. No peer
 scoring, tit-for-tat, underpopulated recent-peer policy, BEP 40, or unrelated
 extension framework was added. Independent product Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md) is
-also complete with bounded BEP 53 intake and duplicate-add feedback. No new
-engine or product tactical is authorized; the readiness queue records a
-selection checkpoint.
+also complete with bounded BEP 53 intake and duplicate-add feedback. Tactical
+`108` now supersedes the former no-selection checkpoint; the readiness queue
+records it as accepted but not started.

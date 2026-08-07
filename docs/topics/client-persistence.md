@@ -69,6 +69,16 @@ observations recover the known `staging + published`, final-only defect as
 Ambiguous or malformed torrent-local state is quarantined while healthy
 torrents, settings, and the application service continue opening.
 
+Accepted Tactical
+[`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
+retains schema-14's fact-based authority and conservative default while
+decoupling selection from full-verification admission. Full-check evidence
+will cover every readable logical piece independently of wanted policy;
+checker phase, counters, cursor, heartbeat, and storage queues remain runtime
+facts. The tactical deliberately adds no trusting resume field or heuristic,
+but establishes a pure admission-policy seam for a later explicit faster,
+more trusting option. Force recheck remains full under either future policy.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database
