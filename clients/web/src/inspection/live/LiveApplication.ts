@@ -1332,6 +1332,8 @@ function mapPeer(peer: PeerView): PeerRow {
     uploadedBytes: safeNullableNumber(peer.payload_uploaded_bytes),
     requestsPending: peer.pending_requests,
     oldestRequestMs: safeNullableNumber(peer.oldest_request_age_millis),
+    connectedAgeMs: safeNullableNumber(peer.connected_age_millis),
+    lastPayloadAgeMs: safeNullableNumber(peer.last_payload_age_millis),
     flags: mapPeerFlags(peer),
     useful:
       safeNullableNumber(peer.payload_downloaded_bytes) !== null &&

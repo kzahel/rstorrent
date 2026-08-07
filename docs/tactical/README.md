@@ -481,6 +481,14 @@ that scope and its cleanup or compatibility rules explicitly.
   browser profiles, persistent bounded cookie sessions, explicit restart
   recovery, adaptive Web access session management, and retention of Basic,
   bearer, development, and in-process modes.
+- [`102-ordinary-incoming-listener-settings.md`](102-ordinary-incoming-listener-settings.md):
+  complete; makes ordinary automatic and fixed incoming modes bind all IPv4
+  interfaces while retaining disabled, loopback, and preferred-candidate
+  policies for controlled internal use.
+- [`103-peer-transfer-and-recency-columns.md`](103-peer-transfer-and-recency-columns.md):
+  complete; exposes already-owned peer upload rate, physical upload total,
+  connected age, and last-received-payload age through sortable responsive
+  columns without changing the generated application contract.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

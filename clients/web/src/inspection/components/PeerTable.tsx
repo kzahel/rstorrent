@@ -87,6 +87,16 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
     render: (row) => formatRate(row.downloadRate, dataUnits),
   },
   {
+    id: "up",
+    label: "Up",
+    width: 96,
+    align: "right",
+    sortable: true,
+    sortValue: (row) => row.uploadRate,
+    sortKind: "number",
+    render: (row) => formatRate(row.uploadRate, dataUnits),
+  },
+  {
     id: "downloaded",
     label: "Downloaded",
     width: 104,
@@ -96,6 +106,17 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
     sortValue: (row) => row.downloadedBytes,
     sortKind: "number",
     render: (row) => formatBytes(row.downloadedBytes, dataUnits),
+  },
+  {
+    id: "uploaded",
+    label: "Uploaded",
+    width: 104,
+    minimumViewport: 1060,
+    align: "right",
+    sortable: true,
+    sortValue: (row) => row.uploadedBytes,
+    sortKind: "number",
+    render: (row) => formatBytes(row.uploadedBytes, dataUnits),
   },
   {
     id: "requests",
@@ -124,6 +145,28 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
           : `${row.oldestRequestMs}ms`,
   },
   {
+    id: "connected",
+    label: "Connected",
+    width: 88,
+    minimumViewport: 790,
+    align: "right",
+    sortable: true,
+    sortValue: (row) => row.connectedAgeMs,
+    sortKind: "number",
+    render: (row) => formatDuration(row.connectedAgeMs),
+  },
+  {
+    id: "lastPayload",
+    label: "Last payload",
+    width: 104,
+    minimumViewport: 920,
+    align: "right",
+    sortable: true,
+    sortValue: (row) => row.lastPayloadAgeMs,
+    sortKind: "number",
+    render: (row) => formatAge(row.lastPayloadAgeMs),
+  },
+  {
     id: "flags",
     label: "Flags",
     width: 96,
@@ -148,6 +191,19 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
     },
   },
 ];
+
+function formatDuration(milliseconds: number | null): string {
+  if (milliseconds === null) return "—";
+  if (milliseconds < 1_000) return `${milliseconds}ms`;
+  if (milliseconds < 60_000) return `${(milliseconds / 1_000).toFixed(1)}s`;
+  if (milliseconds < 3_600_000)
+    return `${Math.round(milliseconds / 60_000)}m`;
+  return `${(milliseconds / 3_600_000).toFixed(1)}h`;
+}
+
+function formatAge(milliseconds: number | null): string {
+  return milliseconds === null ? "—" : `${formatDuration(milliseconds)} ago`;
+}
 
 const PEER_FLAG_GROUPS: readonly PeerFlagGroup[] = [
   "Connection",

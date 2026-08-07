@@ -1505,6 +1505,10 @@ function buildPeers(
       uploadedBytes: connected ? (index * 65_537) % 80_000_000 : 0,
       requestsPending: useful ? 1 + (index % 12) : 0,
       oldestRequestMs: useful ? 45 + ((index * 83) % 2_900) : null,
+      connectedAgeMs: connected
+        ? Math.max(0, Math.floor(seconds * 1_000) - index * 137)
+        : null,
+      lastPayloadAgeMs: useful ? 80 + ((index * 193) % 12_000) : null,
       flags: demoPeerFlags(index, connected, choked, useful),
       useful,
     });

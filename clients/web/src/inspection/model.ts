@@ -183,6 +183,8 @@ export interface PeerRow {
   readonly uploadedBytes: number | null;
   readonly requestsPending: number | null;
   readonly oldestRequestMs: number | null;
+  readonly connectedAgeMs: number | null;
+  readonly lastPayloadAgeMs: number | null;
   readonly flags: readonly PeerFlag[];
   readonly useful: boolean;
 }

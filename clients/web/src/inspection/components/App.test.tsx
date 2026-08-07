@@ -105,9 +105,27 @@ describe("inspection application", () => {
     expect(
       screen.getByRole("grid", { name: "Torrent library" }),
     ).toHaveAttribute("aria-rowcount", "4");
+    const peerGrid = screen.getByRole("grid", {
+      name: "Active peer connections",
+    });
+    expect(peerGrid).toBeVisible();
     expect(
-      screen.getByRole("grid", { name: "Active peer connections" }),
+      within(peerGrid).getByRole("columnheader", { name: "Up" }),
     ).toBeVisible();
+    expect(
+      within(peerGrid).getByRole("columnheader", { name: "Connected" }),
+    ).toBeVisible();
+    expect(
+      within(peerGrid).getByRole("columnheader", { name: "Last payload" }),
+    ).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Columns" }).at(-1)!);
+    const peerColumns = screen.getByRole("dialog", {
+      name: "Table column settings",
+    });
+    for (const name of ["Up", "Uploaded", "Connected", "Last payload"]) {
+      expect(within(peerColumns).getByRole("checkbox", { name })).toBeChecked();
+    }
+    await user.keyboard("{Escape}");
     const peersTab = screen.getByRole("tab", { name: "Peers" });
     expect(peersTab).toHaveTextContent(/^Peers$/);
     expect(screen.getByRole("tab", { name: "Trackers" })).toHaveTextContent(

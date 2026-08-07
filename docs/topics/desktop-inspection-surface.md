@@ -53,6 +53,12 @@ Tactical `042` makes a magnet's verified metainfo name appear in both the live
 library row and General heading as soon as metadata arrives. The hash-prefix
 label remains only as the truthful pre-metadata fallback.
 
+Tactical `103` completes the immediately available Peers transfer and recency
+columns. The shared React table now displays sortable upload rate, physical
+uploaded bytes, connected age, and last-received-payload age from the existing
+application contract, with directionally unavailable facts remaining explicit
+em dashes.
+
 ## Purpose
 
 RSTorrent now has a roughly functional downloader, structured diagnostics,

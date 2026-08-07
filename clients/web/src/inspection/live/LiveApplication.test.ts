@@ -599,6 +599,8 @@ describe("LiveApplication", () => {
       uploadRate: 2048,
       uploadedBytes: 8192,
       requestsPending: 2,
+      connectedAgeMs: 2000,
+      lastPayloadAgeMs: 250,
     });
     await application.close();
   });
@@ -1004,7 +1006,7 @@ function peer(generation: number): PeerView {
     request_phase: null,
     connected_age_millis: uploading ? "2000" : null,
     last_useful_age_millis: null,
-    last_payload_age_millis: null,
+    last_payload_age_millis: uploading ? "250" : null,
     disconnect_reason: null,
     capabilities: {
       local_endpoint: uploading ? "available" : "unavailable",

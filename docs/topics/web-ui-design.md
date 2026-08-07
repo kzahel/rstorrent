@@ -46,6 +46,10 @@ Tactical `056` completes the existing Peers Client column: the Rust
 application projection supplies a bounded client/version label derived from
 the handshake peer ID, while React retains only nullable display, title, and
 sorting behavior and shows an em dash for unknown evidence.
+Tactical `103` adds the already-contracted Up, Uploaded, Connected, and Last
+payload facts to the sortable responsive Peers table. Existing persisted
+column preferences accept the new identifiers without a version migration;
+directionally unsupported values remain em dashes.
 Tactical `055` implements the accepted product information architecture:
 responsive Library, Transfers, and Workbench destinations; contextual
 sidebars; shared bounded multi-selection; a clean transfer queue; a truthful
