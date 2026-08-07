@@ -16,11 +16,13 @@ use rstorrent_engine::{
     PeerUploadGrant,
 };
 use rstorrent_protocol::peer_id::identify_client;
+use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
 
 use crate::control::{TorrentSnapshot, TorrentState};
 use crate::file_views::{FileProgressModel, FileView};
 use crate::tracker_views::TrackerViewModel;
 
+use super::eta::TorrentEtaModel;
 use super::ranges::{insert_range, range_cardinality, remove_range};
 use super::{
     ActivePiece, ActivePieceStageView, CapabilityStatus, DhtBucketView, DhtInspectionView,
@@ -29,7 +31,7 @@ use super::{
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, SubscriptionError,
-    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentView,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -534,6 +536,7 @@ pub(super) fn swarm_model(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct TorrentModel {
     pub(super) view: TorrentView,
+    pub(super) eta: TorrentEtaModel,
     pub(super) snapshot: TorrentSnapshot,
     pub(super) progress_inputs: ProgressInputs,
     pub(super) verified: Vec<IndexRange>,
@@ -590,6 +593,7 @@ pub(crate) struct DurableTorrentViewState {
     pub(crate) display_name: Option<String>,
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
+    pub(crate) eta_geometry: Option<RequiredPayloadGeometry>,
     pub(crate) trackers: TrackerViewModel,
 }
 
@@ -611,6 +615,10 @@ impl TorrentModel {
                 active_peer_connections: 0,
                 configured_tracker_count: None,
                 payload_download_rate_bytes: "0".to_owned(),
+                required_payload_bytes: None,
+                remaining_payload_bytes: None,
+                eta_payload_download_rate_bytes: "0".to_owned(),
+                eta: TorrentEtaView::Unavailable,
                 progress: assess_progress(snapshot, progress_inputs),
                 archived: snapshot.archived,
                 removal_state: snapshot.removal_state,
@@ -618,6 +626,7 @@ impl TorrentModel {
                 force_recheck_available: snapshot.force_recheck_available,
                 error: snapshot.error.clone(),
             },
+            eta: TorrentEtaModel::default(),
             snapshot: snapshot.clone(),
             progress_inputs,
             verified: Vec::new(),
@@ -707,7 +716,7 @@ impl TorrentModel {
                     file_upsert = files.piece_verified(piece_index)?;
                 }
             }
-            TorrentActivity::PieceHashFailed { piece_index } => {
+            TorrentActivity::PieceHashFailed { piece_index, .. } => {
                 if let Some(active) = self.active.get_mut(&piece_index) {
                     active.requested.clear();
                     active.received.clear();
@@ -1180,6 +1189,7 @@ pub(crate) enum TorrentActivity {
     },
     PieceHashFailed {
         piece_index: u32,
+        failed_bytes: usize,
     },
     PieceHashing {
         piece_index: u32,

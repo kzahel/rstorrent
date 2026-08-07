@@ -306,6 +306,34 @@ pub(super) fn targeted_peer_patch(
     }
 }
 
+pub(super) fn targeted_torrent_view_patch(
+    spec: &SubscriptionSpec,
+    torrent_id: &str,
+    previous: &TorrentView,
+    current: &TorrentView,
+) -> Option<ViewPatch> {
+    if previous == current {
+        return None;
+    }
+    match (&spec.selector, spec.projection) {
+        (ViewSelector::TorrentList, ViewProjection::Summary) => Some(ViewPatch::TorrentList {
+            upsert: vec![current.clone()],
+            removed: Vec::new(),
+            storage: None,
+            client_settings: None,
+        }),
+        (
+            ViewSelector::Torrent {
+                torrent_id: selected,
+            },
+            ViewProjection::Summary,
+        ) if selected == torrent_id => Some(ViewPatch::Torrent {
+            torrent: Some(current.clone()),
+        }),
+        _ => None,
+    }
+}
+
 pub(super) fn targeted_swarm_patch(
     spec: &SubscriptionSpec,
     torrent_id: &str,

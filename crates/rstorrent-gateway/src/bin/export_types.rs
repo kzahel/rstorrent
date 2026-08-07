@@ -30,8 +30,8 @@ use rstorrent_session::{
     SessionUdpStatus, SpeedCurrentRate, SpeedHistoryView, SpeedMetric, SpeedMetricAvailability,
     SpeedPersistenceState, SpeedRange, SpeedSeriesView, StorageRootAvailability,
     StorageRootSnapshot, StorageSettingsSnapshot, StorageState, SubscriptionSpec,
-    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentSnapshot,
-    TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
+    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView,
+    TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView, TrackerCatalogState,
     TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView, TrackerSourceView,
     TrackerStatusView, TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest,
     ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
@@ -165,6 +165,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<SpeedMetricAvailability>(&mut declarations)?;
     append::<SpeedCurrentRate>(&mut declarations)?;
     append::<SpeedHistoryView>(&mut declarations)?;
+    append::<TorrentEtaView>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;
@@ -483,6 +484,16 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         active_peer_connections: 0,
         configured_tracker_count: Some(2),
         payload_download_rate_bytes: "0".to_owned(),
+        required_payload_bytes: Some("49152".to_owned()),
+        remaining_payload_bytes: Some(if verified == 3 { "0" } else { "32768" }.to_owned()),
+        eta_payload_download_rate_bytes: if verified == 3 { "0" } else { "4096" }.to_owned(),
+        eta: if verified == 3 {
+            TorrentEtaView::Unavailable
+        } else {
+            TorrentEtaView::Estimate {
+                seconds: "8".to_owned(),
+            }
+        },
         progress: ProgressAssessment {
             disposition: if verified == 3 {
                 ProgressDisposition::Inactive

@@ -84,6 +84,7 @@ impl TorrentPeerActivitySink for TorrentPeerViewSink {
 pub(crate) struct ActiveDownload {
     pub(crate) control: DownloadControl,
     pub(crate) task: JoinHandle<Result<(), String>>,
+    pub(crate) eta_generation: u64,
 }
 
 #[derive(Debug, Default)]

@@ -6,6 +6,7 @@
 
 mod contract;
 mod diff;
+mod eta;
 mod hub;
 mod model;
 mod ranges;
@@ -22,11 +23,12 @@ pub use contract::{
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
     SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState, SwarmCountsView,
-    SwarmPeerState, SwarmPeerView, TorrentView, UpdateBatch, UpdateViewSetRequest,
+    SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView, UpdateBatch, UpdateViewSetRequest,
     VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
     ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
     ViewUpdatePayload,
 };
+pub(crate) use eta::TorrentEtaRuntime;
 pub(crate) use hub::ViewSetLeaseReaper;
 pub use hub::{ViewHub, ViewSet, ViewSubscription};
 

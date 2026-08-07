@@ -32,6 +32,10 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
         active_peer_connections: 0,
         configured_tracker_count: Some(2),
         payload_download_rate_bytes: "0".to_owned(),
+        required_payload_bytes: None,
+        remaining_payload_bytes: None,
+        eta_payload_download_rate_bytes: "0".to_owned(),
+        eta: TorrentEtaView::Unavailable,
         progress: ProgressAssessment {
             disposition: ProgressDisposition::Active,
             phase: ProgressPhase::Transfer,

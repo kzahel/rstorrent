@@ -38,7 +38,7 @@ use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
 use super::contract::{MAX_VIEW_SET_WAIT_MILLIS, MAX_VIEW_SETS, MAX_VIEW_SETS_PER_OWNER};
 use super::diff::{
     disk_patch, patch_for, projection_requires_snapshot, targeted_activity_patch,
-    targeted_peer_patch, targeted_swarm_patch, targeted_tracker_patch,
+    targeted_peer_patch, targeted_swarm_patch, targeted_torrent_view_patch, targeted_tracker_patch,
 };
 use super::model::swarm_model;
 use super::ranges::{insert_range, range_cardinality};
@@ -358,8 +358,10 @@ impl ViewHub {
         let previous_client_settings = hub.client_settings.clone();
         let previous_disk = hub.disk.view(&hub.torrents);
         let mut next = BTreeMap::new();
+        let now = Instant::now();
         for torrent in &snapshot.torrents {
             let mut model = TorrentModel::from_snapshot(torrent);
+            let durable_state = durable.get(&torrent.torrent_id);
             if let Some(state) = durable.get(&torrent.torrent_id) {
                 model.view.display_name = state.display_name.clone();
                 model.verified = state.verified.clone();
@@ -372,6 +374,12 @@ impl ViewHub {
                 model.trackers = old.trackers.clone();
             }
             if let Some(old) = previous.get(&torrent.torrent_id) {
+                let eta_selection_unchanged = match (&old.files, &model.files) {
+                    (None, _) => true,
+                    (Some(old), Some(current)) => old.eta_selection_matches(current),
+                    (Some(_), None) => false,
+                };
+                model.eta = old.eta.clone();
                 model.view.requested_bytes = old.view.requested_bytes.clone();
                 model.view.received_bytes = old.view.received_bytes.clone();
                 model.view.stored_bytes = old.view.stored_bytes.clone();
@@ -395,7 +403,21 @@ impl ViewHub {
                 if old.trackers.catalog_matches(&model.trackers) {
                     model.trackers = old.trackers.clone();
                 }
+                if let Some(state) = durable_state {
+                    model.eta.reconcile_geometry(
+                        state.eta_geometry,
+                        eta_selection_unchanged,
+                        torrent.state == TorrentState::Downloading
+                            && model.progress_inputs.task_active,
+                        now,
+                    );
+                }
+            } else if let Some(state) = durable_state {
+                model
+                    .eta
+                    .reconcile_geometry(state.eta_geometry, true, false, now);
             }
+            model.eta.apply_to_view(&mut model.view);
             model.view.configured_tracker_count = Some(model.trackers.count());
             next.insert(torrent.torrent_id.clone(), model);
         }
@@ -527,9 +549,20 @@ impl ViewHub {
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
     }
 
+    #[cfg(test)]
     pub(crate) fn record_activity(
         &self,
         torrent_id: &str,
+        activity: TorrentActivity,
+    ) -> Result<(), SubscriptionError> {
+        self.record_generation_activity(torrent_id, None, Instant::now(), activity)
+    }
+
+    pub(crate) fn record_generation_activity(
+        &self,
+        torrent_id: &str,
+        eta_generation: Option<u64>,
+        now: Instant,
         activity: TorrentActivity,
     ) -> Result<(), SubscriptionError> {
         let mut hub = self
@@ -542,13 +575,26 @@ impl ViewHub {
         let previous_view = model.view.clone();
         let previous_verified = model.verified.clone();
         let previous_active = model.active.clone();
+        let eta_result = match (eta_generation, &activity) {
+            (Some(generation), TorrentActivity::BlockReceived { length, .. }) => {
+                model.eta.block_received(generation, *length, now)
+            }
+            (Some(generation), TorrentActivity::PieceHashFailed { failed_bytes, .. }) => {
+                model.eta.piece_hash_failed(generation, *failed_bytes)
+            }
+            _ => Ok(false),
+        };
+        if eta_result.is_err() {
+            model.eta.fail_closed();
+        }
         let file_upsert = model
             .apply_activity(activity)
             .map_err(|error| SubscriptionError::Internal(error.to_string()))?;
+        model.eta.apply_to_view(&mut model.view);
         let next_view = model.view.clone();
         let next_verified = model.verified.clone();
         let next_active = model.active.clone();
-        hub.publish_activity_changes(
+        let publish_result = hub.publish_activity_changes(
             torrent_id,
             &previous_view,
             &next_view,
@@ -557,7 +603,98 @@ impl ViewHub {
             &previous_active,
             &next_active,
             &file_upsert,
-        )
+        );
+        publish_result?;
+        eta_result
+            .map(|_| ())
+            .map_err(|error| SubscriptionError::Internal(error.to_string()))
+    }
+
+    pub(crate) fn reserve_eta_generation(
+        &self,
+        torrent_id: &str,
+    ) -> Result<u64, SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let model = hub.torrents.get_mut(torrent_id).ok_or_else(|| {
+            SubscriptionError::Internal(format!("torrent {torrent_id} has no view model"))
+        })?;
+        model
+            .eta
+            .reserve_generation()
+            .map_err(|error| SubscriptionError::Internal(error.to_string()))
+    }
+
+    pub(crate) fn activate_eta_generation(
+        &self,
+        torrent_id: &str,
+        generation: u64,
+        now: Instant,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.view.clone();
+        if !model.eta.activate_generation(generation, now) {
+            return Err(SubscriptionError::Internal(format!(
+                "torrent {torrent_id} ETA generation {generation} is stale"
+            )));
+        }
+        model.eta.apply_to_view(&mut model.view);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
+    }
+
+    pub(crate) fn deactivate_eta_generation(
+        &self,
+        torrent_id: &str,
+        generation: u64,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.view.clone();
+        if !model.eta.deactivate_generation(generation) {
+            return Ok(());
+        }
+        model.eta.apply_to_view(&mut model.view);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
+    }
+
+    pub(crate) fn record_eta_tick(&self, now: Instant) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let mut changes = Vec::new();
+        let mut first_error = None;
+        for (torrent_id, model) in &mut hub.torrents {
+            let previous = model.view.clone();
+            if let Err(error) = model.eta.tick(now) {
+                model.eta.fail_closed();
+                first_error.get_or_insert_with(|| error.to_string());
+            }
+            model.eta.apply_to_view(&mut model.view);
+            if previous != model.view {
+                changes.push((torrent_id.clone(), previous, model.view.clone()));
+            }
+        }
+        hub.publish_torrent_view_changes(&changes)?;
+        if let Some(error) = first_error {
+            return Err(SubscriptionError::Internal(error));
+        }
+        Ok(())
     }
 
     pub(crate) fn record_disk_runtime(
@@ -702,13 +839,19 @@ impl ViewHub {
             .inner
             .lock()
             .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
-        let previous = hub.torrents.clone();
         let Some(model) = hub.torrents.get_mut(torrent_id) else {
             return Ok(());
         };
+        let previous = model.view.clone();
         model.progress_inputs = inputs;
         model.view.progress = assess_progress(&model.snapshot, inputs);
-        hub.publish_changes(&previous, None, None)
+        model.eta.set_transfer_applicable(
+            model.snapshot.state == TorrentState::Downloading && inputs.task_active,
+            Instant::now(),
+        );
+        model.eta.apply_to_view(&mut model.view);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
     }
 
     pub(crate) fn set_discovery_activity(
@@ -1188,6 +1331,46 @@ impl HubState {
             for spec in view_set.view_specs()? {
                 if matches!(spec, crate::ViewSpec::SessionDisk { .. }) {
                     view_set.enqueue_patch(spec.view_id(), patch.clone(), revision)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn publish_torrent_view_changes(
+        &mut self,
+        changes: &[(String, TorrentView, TorrentView)],
+    ) -> Result<(), SubscriptionError> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let revision = self.revision;
+        self.subscribers.retain(|_, weak| weak.strong_count() != 0);
+        let subscribers = self
+            .subscribers
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        for subscriber in subscribers {
+            for (torrent_id, previous, current) in changes {
+                if let Some(patch) =
+                    targeted_torrent_view_patch(&subscriber.spec, torrent_id, previous, current)
+                {
+                    subscriber.enqueue_patch(revision, patch)?;
+                }
+            }
+        }
+        self.retain_live_view_sets();
+        let view_sets = self.view_sets.values().cloned().collect::<Vec<_>>();
+        for view_set in view_sets {
+            for spec in view_set.view_specs()? {
+                let subscription = spec.subscription_spec(DEFAULT_VIEW_SET_QUEUE_BYTES);
+                for (torrent_id, previous, current) in changes {
+                    if let Some(patch) =
+                        targeted_torrent_view_patch(&subscription, torrent_id, previous, current)
+                    {
+                        view_set.enqueue_patch(spec.view_id(), patch, revision)?;
+                    }
                 }
             }
         }

@@ -4,7 +4,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError};
 use rstorrent_engine::{
@@ -117,8 +117,8 @@ fn allocate_application_peer_id() -> Result<[u8; 20], ApplicationError> {
 }
 use crate::views::{
     DurableTorrentViewState, ProgressInputs, SubscriptionError, SubscriptionSpec, TorrentActivity,
-    VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub, ViewSetLeaseReaper, ViewSubscription,
-    ranges_from_pieces,
+    TorrentEtaRuntime, VIEW_SET_REAPER_INTERVAL_MILLIS, ViewHub, ViewSetLeaseReaper,
+    ViewSubscription, ranges_from_pieces,
 };
 use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
@@ -299,6 +299,7 @@ pub struct ApplicationService {
     next_torrent_generation: u64,
     speed_recorder: Arc<SessionSpeedRecorder>,
     speed_history: Option<SpeedHistoryRuntime>,
+    eta_runtime: Option<TorrentEtaRuntime>,
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
 }
@@ -421,6 +422,7 @@ impl ApplicationService {
             session_network.initial_settings_view(),
         )?;
         session_network.attach_views(views.clone());
+        let eta_runtime = TorrentEtaRuntime::start(views.clone());
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
@@ -462,6 +464,7 @@ impl ApplicationService {
             next_torrent_generation,
             speed_recorder,
             speed_history: Some(speed_history),
+            eta_runtime: Some(eta_runtime),
             views,
             view_set_reaper: Some(view_set_reaper),
         };
@@ -1311,7 +1314,7 @@ impl ApplicationService {
             torrent_id: torrent_id.clone(),
             views: self.views.clone(),
         });
-        let control = self.download_control(&torrent_id);
+        let (control, eta_generation) = self.download_control(&torrent_id)?;
         let task_control = control.clone();
         let operation = async move {
             resume_magnet_to_descriptors_with_control(
@@ -1324,8 +1327,15 @@ impl ApplicationService {
             .await
             .map(|_| ApplicationTaskReport::Download)
         };
-        let task = self.spawn_supervised_task(&torrent_id, operation)?;
-        self.install_active_download(&torrent_id, ActiveDownload { control, task })?;
+        let task = self.spawn_supervised_task(&torrent_id, eta_generation, operation)?;
+        self.install_active_download(
+            &torrent_id,
+            ActiveDownload {
+                control,
+                task,
+                eta_generation,
+            },
+        )?;
         Ok(())
     }
 
@@ -1619,7 +1629,8 @@ impl ApplicationService {
         if let Some((_, active)) = self.active_download() {
             active.control.cancel();
         }
-        if let Some((_, active)) = self.take_active_download() {
+        if let Some((torrent_id, active)) = self.take_active_download() {
+            let eta_generation = active.eta_generation;
             match active.task.await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) if active_join_error.is_none() => active_join_error = Some(error),
@@ -1628,6 +1639,13 @@ impl ApplicationService {
                     active_join_error = Some(error.to_string());
                 }
                 Ok(Err(_)) | Err(_) => {}
+            }
+            if let Err(error) = self
+                .views
+                .deactivate_eta_generation(&torrent_id, eta_generation)
+                && active_join_error.is_none()
+            {
+                active_join_error = Some(format!("torrent ETA deactivation: {error}"));
             }
         }
         if let Some(session_network) = self.session_network.take() {
@@ -1666,6 +1684,12 @@ impl ApplicationService {
             && active_join_error.is_none()
         {
             active_join_error = Some(format!("storage file pool: {error}"));
+        }
+        if let Some(mut eta_runtime) = self.eta_runtime.take()
+            && let Err(error) = eta_runtime.shutdown().await
+            && active_join_error.is_none()
+        {
+            active_join_error = Some(format!("torrent ETA runtime: {error}"));
         }
         if let Some(speed_history) = self.speed_history.take()
             && let Err(error) = speed_history.shutdown().await
@@ -1962,7 +1986,7 @@ impl ApplicationService {
                     torrent_id: torrent_id.to_owned(),
                     views: self.views.clone(),
                 });
-                let control = self.download_control(torrent_id);
+                let (control, eta_generation) = self.download_control(torrent_id)?;
                 let task_control = control.clone();
                 let magnet = resume.magnet.clone();
                 let continue_downloading = resume.desired_running;
@@ -2026,8 +2050,15 @@ impl ApplicationService {
                     .await
                     .map(|_| ApplicationTaskReport::Download)
                 };
-                let task = self.spawn_supervised_task(torrent_id, operation)?;
-                self.install_active_download(torrent_id, ActiveDownload { control, task })?;
+                let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
+                self.install_active_download(
+                    torrent_id,
+                    ActiveDownload {
+                        control,
+                        task,
+                        eta_generation,
+                    },
+                )?;
                 return Ok(());
             }
         }
@@ -2066,7 +2097,7 @@ impl ApplicationService {
                 torrent_id: torrent_id.to_owned(),
                 views: self.views.clone(),
             });
-            let control = self.download_control(torrent_id);
+            let (control, eta_generation) = self.download_control(torrent_id)?;
             let task_control = control.clone();
             let magnet = resume.magnet;
             let network = self.network;
@@ -2085,8 +2116,15 @@ impl ApplicationService {
                     .map_err(DownloadError::Checkpoint)?;
                 Ok(ApplicationTaskReport::Metadata)
             };
-            let task = self.spawn_supervised_task(torrent_id, operation)?;
-            self.install_active_download(torrent_id, ActiveDownload { control, task })?;
+            let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
+            self.install_active_download(
+                torrent_id,
+                ActiveDownload {
+                    control,
+                    task,
+                    eta_generation,
+                },
+            )?;
             return Ok(());
         }
         let skip_files = resume
@@ -2124,7 +2162,7 @@ impl ApplicationService {
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
         });
-        let control = self.download_control(torrent_id);
+        let (control, eta_generation) = self.download_control(torrent_id)?;
         if platform_root {
             let raw_info = config
                 .verified_info
@@ -2149,12 +2187,23 @@ impl ApplicationService {
                 .await
                 .map(|_| ApplicationTaskReport::Download)
         };
-        let task = self.spawn_supervised_task(torrent_id, operation)?;
-        self.install_active_download(torrent_id, ActiveDownload { control, task })?;
+        let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
+        self.install_active_download(
+            torrent_id,
+            ActiveDownload {
+                control,
+                task,
+                eta_generation,
+            },
+        )?;
         Ok(())
     }
 
-    fn download_control(&self, torrent_id: &str) -> DownloadControl {
+    fn download_control(
+        &self,
+        torrent_id: &str,
+    ) -> Result<(DownloadControl, u64), ApplicationError> {
+        let eta_generation = self.views.reserve_eta_generation(torrent_id)?;
         let control = DownloadControl::new();
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
@@ -2166,14 +2215,15 @@ impl ApplicationService {
             .expect("application configuration validated diagnostic storage limits");
         control.set_checkpoint_sync_delay_for_testing(self.checkpoint_sync_delay_for_testing);
         control.set_checkpoint_commit_delay_for_testing(self.checkpoint_commit_delay_for_testing);
-        control.set_activity_sink(self.view_activity_sink(torrent_id));
+        control.set_activity_sink(self.view_activity_sink(torrent_id, Some(eta_generation)));
         control.set_byte_metric_sink(self.speed_recorder.clone());
-        control
+        Ok((control, eta_generation))
     }
 
     fn spawn_supervised_task<F>(
         &self,
         torrent_id: &str,
+        eta_generation: u64,
         operation: F,
     ) -> Result<JoinHandle<Result<(), String>>, ApplicationError>
     where
@@ -2194,6 +2244,15 @@ impl ApplicationService {
             "Engine task started",
             &[],
         )?;
+        if let Err(error) =
+            self.views
+                .activate_eta_generation(torrent_id, eta_generation, Instant::now())
+        {
+            let _ = self
+                .views
+                .set_progress_inputs(torrent_id, ProgressInputs::default());
+            return Err(error.into());
+        }
         let store = self.store.clone();
         let storage_roots = self.storage_roots.clone();
         let incoming_seeding = Some(self.session_network().incoming_seeding());
@@ -2256,6 +2315,7 @@ impl ApplicationService {
         let (_, active) = self
             .take_active_download()
             .expect("matching active task exists");
+        let eta_generation = active.eta_generation;
         active.control.cancel_when_safe();
         let result = match active.task.await {
             Ok(Ok(())) => Ok(()),
@@ -2263,8 +2323,12 @@ impl ApplicationService {
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
         };
+        let eta_result = self
+            .views
+            .deactivate_eta_generation(torrent_id, eta_generation)
+            .map_err(ApplicationError::from);
         self.reconcile_incoming_torrent(torrent_id).await?;
-        result
+        result.and(eta_result)
     }
 
     async fn reap_finished(&mut self) -> Result<(), ApplicationError> {
@@ -2277,14 +2341,19 @@ impl ApplicationService {
         let (torrent_id, active) = self
             .take_active_download()
             .expect("finished active task exists");
+        let eta_generation = active.eta_generation;
         let result = match active.task.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(ApplicationError::Join(error)),
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
         };
+        let eta_result = self
+            .views
+            .deactivate_eta_generation(&torrent_id, eta_generation)
+            .map_err(ApplicationError::from);
         self.reconcile_incoming_torrent(&torrent_id).await?;
-        result
+        result.and(eta_result)
     }
 
     async fn unregister_incoming(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
@@ -2404,7 +2473,7 @@ impl ApplicationService {
             privacy,
             counters,
             peers: runtime.peers(),
-            activity_sink: self.view_activity_sink(torrent_id),
+            activity_sink: self.view_activity_sink(torrent_id, None),
         };
         self.session_network()
             .discovery_handle()
@@ -2454,9 +2523,14 @@ impl ApplicationService {
         Ok(())
     }
 
-    fn view_activity_sink(&self, torrent_id: &str) -> Arc<dyn DownloadActivitySink> {
+    fn view_activity_sink(
+        &self,
+        torrent_id: &str,
+        eta_generation: Option<u64>,
+    ) -> Arc<dyn DownloadActivitySink> {
         Arc::new(ViewActivitySink {
             torrent_id: torrent_id.to_owned(),
+            eta_generation,
             views: self.views.clone(),
             trace_checkpoint_stages: self.checkpoint_stage_trace_for_testing,
             trace_publication_stages: self.publication_stage_trace_for_testing,
@@ -2778,6 +2852,7 @@ async fn reconcile_completed_advertisement(
 fn tracker_activity_sink(torrent_id: &str, views: &ViewHub) -> Arc<dyn DownloadActivitySink> {
     Arc::new(ViewActivitySink {
         torrent_id: torrent_id.to_owned(),
+        eta_generation: None,
         views: views.clone(),
         trace_checkpoint_stages: false,
         trace_publication_stages: false,
@@ -3254,6 +3329,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
 #[derive(Debug)]
 struct ViewActivitySink {
     torrent_id: String,
+    eta_generation: Option<u64>,
     views: ViewHub,
     trace_checkpoint_stages: bool,
     trace_publication_stages: bool,
@@ -3416,17 +3492,25 @@ impl DownloadActivitySink for ViewActivitySink {
                     piece_index: *piece_index,
                 }
             }
-            DownloadActivityEvent::PieceHashFailed { piece_index, .. } => {
-                TorrentActivity::PieceHashFailed {
-                    piece_index: *piece_index,
-                }
-            }
+            DownloadActivityEvent::PieceHashFailed {
+                piece_index,
+                failed_bytes,
+                ..
+            } => TorrentActivity::PieceHashFailed {
+                piece_index: *piece_index,
+                failed_bytes: *failed_bytes,
+            },
             DownloadActivityEvent::PieceHashing { piece_index } => TorrentActivity::PieceHashing {
                 piece_index: *piece_index,
             },
             _ => return self.record_discovery_event(event),
         };
-        let _ = self.views.record_activity(&self.torrent_id, piece_activity);
+        let _ = self.views.record_generation_activity(
+            &self.torrent_id,
+            self.eta_generation,
+            Instant::now(),
+            piece_activity,
+        );
         if matches!(event, DownloadActivityEvent::PieceHashFailed { .. }) {
             return self.record_discovery_event(event);
         }
@@ -3938,6 +4022,7 @@ fn durable_view_state(
                     display_name: None,
                     verified: Vec::new(),
                     files: None,
+                    eta_geometry: None,
                     trackers: TrackerViewModel::default(),
                 },
             );
@@ -3974,12 +4059,19 @@ fn durable_view_state(
         };
         let trackers =
             TrackerViewModel::from_trackers(&resume.trackers, tracker_https_authentication);
+        let eta_geometry = files
+            .as_ref()
+            .zip(resume.have.as_ref())
+            .map(|(files, have)| files.required_payload_geometry(have.pieces()))
+            .transpose()
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         durable.insert(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
                 display_name,
                 verified: ranges_from_pieces(verified_pieces),
                 files,
+                eta_geometry,
                 trackers,
             },
         );

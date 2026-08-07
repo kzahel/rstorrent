@@ -81,7 +81,7 @@ pub use views::{
     PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
     ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, ResetReason,
     SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState, SwarmCountsView,
-    SwarmPeerState, SwarmPeerView, TorrentView, UpdateBatch, UpdateViewSetRequest,
+    SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView, UpdateBatch, UpdateViewSetRequest,
     VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewHub, ViewPatch, ViewProjection, ViewSelector,
     ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec,
     ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,

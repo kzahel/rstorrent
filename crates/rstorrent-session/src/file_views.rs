@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use rstorrent_protocol::metainfo::Metainfo;
-use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
+use rstorrent_protocol::storage_layout::{
+    FileSelection, LayoutError, RequiredPayloadGeometry, TorrentLayout,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -143,6 +145,21 @@ impl FileProgressModel {
 
     pub(crate) fn catalog_matches(&self, other: &Self) -> bool {
         self.catalog == other.catalog
+    }
+
+    pub(crate) fn eta_selection_matches(&self, other: &Self) -> bool {
+        self.catalog.layout == other.catalog.layout
+            && self.catalog.selection == other.catalog.selection
+    }
+
+    pub(crate) fn required_payload_geometry(
+        &self,
+        have: &[bool],
+    ) -> Result<RequiredPayloadGeometry, FileProgressError> {
+        Ok(self
+            .catalog
+            .layout
+            .required_payload_geometry(&self.catalog.selection, have)?)
     }
 
     pub(crate) fn verified_piece_indices(&self) -> Vec<u32> {

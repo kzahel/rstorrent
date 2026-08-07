@@ -1,9 +1,224 @@
 //! Projection mapping and typed-patch behavior.
 
 use super::support::*;
+use std::time::Instant;
+
+use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
+use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
+
+use crate::TorrentEtaView;
+use crate::file_views::FileProgressModel;
 use crate::settings::{
     ClientSettings, PortMappingStatus, SettingsConvergenceModel, SettingsDomain,
 };
+
+const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
+
+fn current_torrent(hub: &ViewHub) -> crate::TorrentView {
+    hub.inner
+        .lock()
+        .expect("hub state")
+        .torrents
+        .get(TORRENT_ID)
+        .expect("torrent view")
+        .view
+        .clone()
+}
+
+fn eta_durable(
+    files: Option<FileProgressModel>,
+    required_payload_bytes: u64,
+    verified_required_payload_bytes: u64,
+) -> BTreeMap<String, DurableTorrentViewState> {
+    BTreeMap::from([(
+        TORRENT_ID.to_owned(),
+        DurableTorrentViewState {
+            display_name: Some("ETA fixture".to_owned()),
+            verified: Vec::new(),
+            files,
+            eta_geometry: Some(RequiredPayloadGeometry {
+                required_payload_bytes,
+                verified_required_payload_bytes,
+            }),
+            trackers: TrackerViewModel::default(),
+        },
+    )])
+}
+
+fn one_piece_boundary_fixture() -> Metainfo {
+    Metainfo {
+        info_hash: [1; 20],
+        piece_hashes: vec![[2; 20]],
+        piece_length: 16,
+        total_length: 16,
+        name: "boundary".to_owned(),
+        private: false,
+        mode: MetainfoMode::MultiFile,
+        files: vec![
+            MetainfoFile {
+                path: vec!["first.bin".to_owned()],
+                length: 8,
+                offset: 0,
+                padding: false,
+            },
+            MetainfoFile {
+                path: vec!["second.bin".to_owned()],
+                length: 8,
+                offset: 8,
+                padding: false,
+            },
+        ],
+    }
+}
+
+#[test]
+fn torrent_eta_projects_exact_work_and_generation_accounting() {
+    let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+    hub.replace_durable(&snapshot(1, 4), &eta_durable(None, 16_384, 4_096))
+        .expect("install geometry");
+    let durable = current_torrent(&hub);
+    assert_eq!(durable.required_payload_bytes.as_deref(), Some("16384"));
+    assert_eq!(durable.remaining_payload_bytes.as_deref(), Some("12288"));
+    assert_eq!(durable.eta_payload_download_rate_bytes, "0");
+    assert_eq!(durable.eta, TorrentEtaView::Unavailable);
+
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            task_active: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("mark task active");
+    let now = Instant::now();
+    let generation = hub
+        .reserve_eta_generation(TORRENT_ID)
+        .expect("reserve generation");
+    hub.activate_eta_generation(TORRENT_ID, generation, now)
+        .expect("activate generation");
+    assert_eq!(current_torrent(&hub).eta, TorrentEtaView::WarmingUp);
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_millis(500),
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 4_096,
+        },
+    )
+    .expect("receive block");
+    assert_eq!(
+        current_torrent(&hub).remaining_payload_bytes.as_deref(),
+        Some("8192")
+    );
+
+    hub.record_eta_tick(now + Duration::from_secs(1))
+        .expect("rate tick");
+    let estimated = current_torrent(&hub);
+    assert_eq!(estimated.eta_payload_download_rate_bytes, "4096");
+    assert_eq!(
+        estimated.eta,
+        TorrentEtaView::Estimate {
+            seconds: "2".to_owned()
+        }
+    );
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(generation),
+        now + Duration::from_millis(1_100),
+        TorrentActivity::PieceHashFailed {
+            piece_index: 0,
+            failed_bytes: 4_096,
+        },
+    )
+    .expect("restore failed work");
+    assert_eq!(
+        current_torrent(&hub).remaining_payload_bytes.as_deref(),
+        Some("12288")
+    );
+
+    hub.deactivate_eta_generation(TORRENT_ID, generation)
+        .expect("deactivate generation");
+    let inactive = current_torrent(&hub);
+    assert_eq!(inactive.remaining_payload_bytes.as_deref(), Some("12288"));
+    assert_eq!(inactive.eta_payload_download_rate_bytes, "0");
+    assert_eq!(inactive.eta, TorrentEtaView::Unavailable);
+}
+
+#[test]
+fn same_size_selection_replacement_fences_late_eta_activity() {
+    let metainfo = one_piece_boundary_fixture();
+    let wanted = FileProgressModel::new(&metainfo, &[], &[], None).expect("wanted files");
+    let skipped_boundary =
+        FileProgressModel::new(&metainfo, &[0], &[], None).expect("skipped boundary file");
+    assert!(!wanted.eta_selection_matches(&skipped_boundary));
+    assert_eq!(
+        wanted.required_payload_geometry(&[false]),
+        skipped_boundary.required_payload_geometry(&[false])
+    );
+
+    let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
+    hub.replace_durable(&snapshot(1, 1), &eta_durable(Some(wanted), 16, 0))
+        .expect("install first selection");
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            task_active: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("mark task active");
+    let now = Instant::now();
+    let old_generation = hub
+        .reserve_eta_generation(TORRENT_ID)
+        .expect("reserve old generation");
+    hub.activate_eta_generation(TORRENT_ID, old_generation, now)
+        .expect("activate old generation");
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(old_generation),
+        now,
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 4,
+        },
+    )
+    .expect("old selection block");
+    assert_eq!(
+        current_torrent(&hub).remaining_payload_bytes.as_deref(),
+        Some("12")
+    );
+
+    hub.replace_durable(&snapshot(2, 1), &eta_durable(Some(skipped_boundary), 16, 0))
+        .expect("replace selection");
+    let replaced = current_torrent(&hub);
+    assert_eq!(replaced.remaining_payload_bytes.as_deref(), Some("16"));
+    assert_eq!(replaced.eta, TorrentEtaView::Unavailable);
+
+    hub.record_generation_activity(
+        TORRENT_ID,
+        Some(old_generation),
+        now + Duration::from_secs(1),
+        TorrentActivity::BlockReceived {
+            piece_index: 0,
+            begin: 4,
+            length: 4,
+        },
+    )
+    .expect("ignore late old-generation ETA activity");
+    assert_eq!(
+        current_torrent(&hub).remaining_payload_bytes.as_deref(),
+        Some("16")
+    );
+    let new_generation = hub
+        .reserve_eta_generation(TORRENT_ID)
+        .expect("reserve replacement generation");
+    assert!(new_generation > old_generation);
+}
 
 #[tokio::test]
 async fn dht_view_replaces_and_coalesces_one_complete_observation() {
@@ -409,7 +624,10 @@ async fn piece_hash_failure_clears_unverified_active_ranges() {
     subscription.next_update().await.expect("stored patch");
     hub.record_activity(
         torrent_id,
-        TorrentActivity::PieceHashFailed { piece_index: 0 },
+        TorrentActivity::PieceHashFailed {
+            piece_index: 0,
+            failed_bytes: 32,
+        },
     )
     .expect("failed piece");
     let update = subscription.next_update().await.expect("reset patch");
@@ -502,6 +720,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
                     end_exclusive: 3,
                 }],
                 files: None,
+                eta_geometry: None,
                 trackers: TrackerViewModel::default(),
             },
         )]),
@@ -550,6 +769,7 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
                 display_name: Some("Verified fixture".to_owned()),
                 verified: Vec::new(),
                 files: None,
+                eta_geometry: None,
                 trackers: TrackerViewModel::default(),
             },
         )]),

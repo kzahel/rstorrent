@@ -952,6 +952,12 @@ pub struct TorrentView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configured_tracker_count: Option<u32>,
     pub payload_download_rate_bytes: String,
+    #[schemars(required)]
+    pub required_payload_bytes: Option<String>,
+    #[schemars(required)]
+    pub remaining_payload_bytes: Option<String>,
+    pub eta_payload_download_rate_bytes: String,
+    pub eta: TorrentEtaView,
     pub progress: ProgressAssessment,
     pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -960,6 +966,19 @@ pub struct TorrentView {
     pub force_recheck_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum TorrentEtaView {
+    Estimate {
+        seconds: String,
+    },
+    WarmingUp,
+    Stalled,
+    #[default]
+    Unavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
