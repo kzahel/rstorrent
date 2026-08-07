@@ -2,7 +2,14 @@ import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
 import type { DataUnits } from "../appearance";
-import { formatBytes, formatEta, formatProgress, formatRate } from "../format";
+import {
+  etaAccessibleLabel,
+  etaSortValue,
+  formatBytes,
+  formatEta,
+  formatProgress,
+  formatRate,
+} from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { TorrentStatus } from "./TorrentStatus";
@@ -109,8 +116,16 @@ const columns = (
     minimumViewport: 700,
     align: "right",
     sortable: true,
-    sortValue: (row) => row.etaSeconds,
-    render: (row) => formatEta(row.etaSeconds),
+    sortKind: "decimal",
+    sortValue: (row) => etaSortValue(row.eta),
+    render: (row) => {
+      const label = etaAccessibleLabel(row.eta);
+      return (
+        <span aria-label={label} title={label}>
+          {formatEta(row.eta)}
+        </span>
+      );
+    },
   },
 ];
 

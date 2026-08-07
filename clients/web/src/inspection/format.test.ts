@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBytes, formatExactBytes, formatRate } from "./format";
+import {
+  etaAccessibleLabel,
+  etaSortValue,
+  formatBytes,
+  formatEta,
+  formatExactBytes,
+  formatRate,
+} from "./format";
 
 describe("byte formatting", () => {
   it.each([
@@ -49,5 +56,33 @@ describe("byte formatting", () => {
     expect(formatExactBytes("999999999999999999999999", "binary")).toBe(
       "888178419 PiB",
     );
+  });
+});
+
+describe("ETA formatting", () => {
+  it("formats every typed state with accessible meaning", () => {
+    expect(formatEta({ state: "estimate", seconds: "252" })).toBe("4m 12s");
+    expect(
+      etaAccessibleLabel({ state: "estimate", seconds: "252" }),
+    ).toBe("Estimated time remaining: 4m 12s");
+    expect(formatEta({ state: "warming_up" })).toBe("—");
+    expect(etaAccessibleLabel({ state: "warming_up" })).toBe(
+      "Calculating ETA",
+    );
+    expect(formatEta({ state: "stalled" })).toBe("∞");
+    expect(etaAccessibleLabel({ state: "stalled" })).toBe(
+      "Transfer stalled",
+    );
+    expect(formatEta({ state: "unavailable" })).toBe("—");
+    expect(etaAccessibleLabel({ state: "unavailable" })).toBe(
+      "ETA unavailable",
+    );
+  });
+
+  it("retains exact large durations for display and decimal sorting", () => {
+    const eta = { state: "estimate", seconds: "9007199254740993" } as const;
+    expect(formatEta(eta)).toBe("2501999792983h 36m");
+    expect(etaSortValue(eta)).toBe("9007199254740993");
+    expect(etaSortValue({ state: "stalled" })).toBeNull();
   });
 });

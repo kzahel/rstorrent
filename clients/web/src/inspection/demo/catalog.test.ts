@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import type { FileSet } from "../model";
 import { buildScenarioSnapshot } from "./catalog";
 
+describe("torrent ETA demos", () => {
+  it("provides every typed state explicitly", () => {
+    expect(primaryEta("healthy-download", 0)).toEqual({ state: "unavailable" });
+    expect(primaryEta("healthy-download", 7_500)).toEqual({
+      state: "warming_up",
+    });
+    expect(primaryEta("healthy-download", 42_000)).toMatchObject({
+      state: "estimate",
+    });
+    expect(primaryEta("swarm-lifecycle", 11_000)).toEqual({ state: "stalled" });
+  });
+});
+
 describe("file progress demo", () => {
   it("regresses only unverified Done bytes after a hash failure and recovers", () => {
     const before = fileSetAt(34_000);
@@ -127,4 +140,12 @@ function pieceMapAt(
 
 function dhtAt(elapsedMs: number) {
   return buildScenarioSnapshot("dht-observatory", elapsedMs, false, 1);
+}
+
+function primaryEta(
+  scenario: "healthy-download" | "swarm-lifecycle",
+  elapsedMs: number,
+) {
+  const snapshot = buildScenarioSnapshot(scenario, elapsedMs, false, 1);
+  return snapshot.torrents[snapshot.torrentOrder[0]!]?.eta;
 }

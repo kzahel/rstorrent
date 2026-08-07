@@ -554,7 +554,8 @@ function applyOverlays(
       archived: archived.has(id),
       downloadRate: paused.has(id) ? 0 : row.downloadRate,
       uploadRate: paused.has(id) ? 0 : row.uploadRate,
-      etaSeconds: paused.has(id) ? null : row.etaSeconds,
+      etaDownloadRateBytes: paused.has(id) ? "0" : row.etaDownloadRateBytes,
+      eta: paused.has(id) ? { state: "unavailable" } : row.eta,
       progressReason: paused.has(id) ? "Paused in demo mode" : row.progressReason,
     };
   }
@@ -575,7 +576,10 @@ function applyOverlays(
       peersConnected: 4 + index,
       peersKnown: 18 + index * 3,
       configuredTrackerCount: 0,
-      etaSeconds: 540 - index * 22,
+      requiredPayloadBytes: String(734_003_200 + index * 104_857_600),
+      remainingPayloadBytes: String(540 - index * 22),
+      etaDownloadRateBytes: "1",
+      eta: { state: "estimate", seconds: String(540 - index * 22) },
       addedAtMs: DEMO_BASE_TIME_MS + source.demo!.elapsedMs,
       archived: false,
       removalState: null,

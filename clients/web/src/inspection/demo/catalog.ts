@@ -11,6 +11,7 @@ import type {
   SwarmRow,
   SwarmSet,
   PieceMapSet,
+  TorrentEta,
   TorrentRow,
   TrackerRow,
   TrackerSet,
@@ -584,7 +585,12 @@ function healthyDownload(elapsedMs: number): ScenarioContent {
     uploadRate: complete ? 310_000 : 82_000,
     peersConnected: peers.length,
     peersKnown: 143,
-    etaSeconds: progress === null || complete ? null : Math.ceil((276_445_467 * (1 - progress)) / Math.max(1, rate)),
+    eta:
+      metadata || complete
+        ? { state: "unavailable" }
+        : seconds < 8
+          ? { state: "warming_up" }
+          : estimateEta(Math.max(1, Math.ceil(97 - seconds))),
     progressReason: complete ? "All pieces verified" : metadata ? "Requesting metadata from 8 peers" : "Receiving useful blocks from multiple peers",
   });
   const completed = torrent({
@@ -719,7 +725,7 @@ function fileProgress(elapsedMs: number): ScenarioContent {
         uploadRate: 84_000,
         peersConnected: 22,
         peersKnown: 138,
-        etaSeconds: Math.ceil((total * (1 - progress)) / rate),
+        eta: estimateEta(Math.max(1, Math.ceil(84 - elapsedMs / 1_000))),
         progressReason: "Stored blocks lead verified pieces in the active file",
       }),
     ],
@@ -933,7 +939,10 @@ function trackerRecovery(elapsedMs: number): ScenarioContent {
         peersConnected: peers.length,
         peersKnown: recovered ? 42 : 0,
         configuredTrackerCount: 2,
-        etaSeconds: progress === null || progress === 1 ? null : Math.ceil((276_445_467 * (1 - progress)) / Math.max(1, rate)),
+        eta:
+          progress === null || progress === 1
+            ? { state: "unavailable" }
+            : estimateEta(Math.max(1, Math.ceil(100 - seconds))),
         progressReason: recovered ? (metadata ? "Tracker recovered; negotiating metadata" : "Downloading from recovered tracker cohort") : "UDP tracker retry scheduled in 22 seconds",
       }),
     ],
@@ -977,7 +986,9 @@ function endgame(elapsedMs: number): ScenarioContent {
         downloadRate: complete ? 0 : 3_600_000 + wave(seconds, 900_000),
         peersConnected: 24,
         peersKnown: 186,
-        etaSeconds: complete ? null : Math.max(1, Math.ceil(31 - seconds)),
+        eta: complete
+          ? { state: "unavailable" }
+          : estimateEta(Math.max(1, Math.ceil(31 - seconds))),
         progressReason: complete ? "All duplicate attempts canceled and pieces verified" : "Strict endgame: 18 blocks have bounded duplicate owners",
       }),
     ],
@@ -1009,7 +1020,7 @@ function pieceRetry(elapsedMs: number): ScenarioContent {
         downloadRate: seconds >= 9 && seconds < 12 ? 0 : 4_800_000,
         peersConnected: 18,
         peersKnown: 121,
-        etaSeconds: 36,
+        eta: estimateEta(retrying && !recovered ? 42 : 36),
         progressReason: recovered
           ? "Piece 450 verified on its clean retry"
           : retrying
@@ -1044,7 +1055,10 @@ function largeSwarm(): ScenarioContent {
         downloadRate: index % 19 === 0 ? 0 : 80_000 + ((index * 7919) % 18_000_000),
         peersConnected: index % 31,
         peersKnown: 30 + (index % 260),
-        etaSeconds: 60 + (index * 17) % 86_400,
+        eta:
+          index % 19 === 0 || index % 23 === 0
+            ? { state: "unavailable" }
+            : estimateEta(60 + (index * 17) % 86_400),
         progressReason: "Synthetic scale row",
         addedAtMs: BASE_TIME_MS - index * 60_000,
       }),
@@ -1082,7 +1096,12 @@ function swarmLifecycle(elapsedMs: number): ScenarioContent {
         downloadRate: seconds < 12 ? 0 : 5_400_000,
         peersConnected: seconds < 12 ? 0 : 2,
         peersKnown: 8,
-        etaSeconds: 92,
+        eta:
+          seconds < 10
+            ? { state: "warming_up" }
+            : seconds < 12
+              ? { state: "stalled" }
+              : estimateEta(92),
         progressReason: "Inspecting peer discovery and dial eligibility",
       }),
     ],
@@ -1263,7 +1282,7 @@ function diskError(elapsedMs: number): ScenarioContent {
         downloadRate: failed ? 0 : 6_200_000,
         peersConnected: failed ? 0 : 12,
         peersKnown: 88,
-        etaSeconds: failed ? null : 29,
+        eta: failed ? { state: "unavailable" } : estimateEta(29),
         error: failed ? "Write failed: destination has no free space" : null,
         progressReason: failed ? "Storage requires user action before transfer can resume" : "Downloading normally before the injected failure",
       }),
@@ -1450,6 +1469,18 @@ function demoDiskSet(input: {
 function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "status">): TorrentRow {
   const progress = input.progress ?? null;
   const size = input.sizeBytes ?? null;
+  const eta = input.eta ?? { state: "unavailable" };
+  const requiredPayloadBytes =
+    input.requiredPayloadBytes ?? (size === null ? null : String(size));
+  const remainingPayloadBytes =
+    input.remainingPayloadBytes ??
+    (requiredPayloadBytes === null
+      ? null
+      : eta.state === "estimate"
+        ? eta.seconds
+        : input.status === "complete"
+          ? "0"
+          : requiredPayloadBytes);
   return {
     id: input.id,
     name: input.name,
@@ -1463,7 +1494,11 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     peersConnected: input.peersConnected ?? 0,
     peersKnown: input.peersKnown ?? 0,
     configuredTrackerCount: input.configuredTrackerCount ?? 0,
-    etaSeconds: input.etaSeconds ?? null,
+    requiredPayloadBytes,
+    remainingPayloadBytes,
+    etaDownloadRateBytes:
+      input.etaDownloadRateBytes ?? (eta.state === "estimate" ? "1" : "0"),
+    eta,
     addedAtMs: input.addedAtMs ?? BASE_TIME_MS - 3_600_000,
     archived: input.archived ?? false,
     removalState: input.removalState ?? null,
@@ -1472,6 +1507,13 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     infoHash: input.infoHash ?? input.id,
     error: input.error ?? null,
     progressReason: input.progressReason ?? "Waiting for activity",
+  };
+}
+
+function estimateEta(seconds: number): TorrentEta {
+  return {
+    state: "estimate",
+    seconds: String(Math.max(1, Math.floor(seconds))),
   };
 }
 

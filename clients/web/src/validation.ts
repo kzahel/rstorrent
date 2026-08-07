@@ -1330,6 +1330,53 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
     "configured tracker count",
     MAX_TRACKER_CATALOG,
   );
+  const requiredPayload = nullableDecimal(
+    torrent.required_payload_bytes,
+    "required payload bytes",
+  );
+  const remainingPayload = nullableDecimal(
+    torrent.remaining_payload_bytes,
+    "remaining payload bytes",
+  );
+  if ((requiredPayload === null) !== (remainingPayload === null)) {
+    throw new ContractError("torrent ETA payload geometry is incomplete");
+  }
+  if (
+    requiredPayload !== null &&
+    remainingPayload !== null &&
+    BigInt(remainingPayload) > BigInt(requiredPayload)
+  ) {
+    throw new ContractError("remaining payload exceeds required payload");
+  }
+  const etaRate = decimal(
+    torrent.eta_payload_download_rate_bytes,
+    "ETA payload download rate",
+  );
+  const eta = asRecord(torrent.eta, "torrent ETA");
+  const etaState = oneOf(eta.state, "torrent ETA state", [
+    "estimate",
+    "warming_up",
+    "stalled",
+    "unavailable",
+  ]);
+  if (etaState === "estimate") {
+    const seconds = decimal(eta.seconds, "torrent ETA seconds");
+    if (
+      seconds === "0" ||
+      etaRate === "0" ||
+      remainingPayload === null ||
+      remainingPayload === "0"
+    ) {
+      throw new ContractError("estimated torrent ETA has inconsistent work or rate");
+    }
+  } else if (etaRate !== "0") {
+    throw new ContractError("non-estimated torrent ETA must expose a zero rate");
+  } else if (
+    (etaState === "warming_up" || etaState === "stalled") &&
+    (remainingPayload === null || remainingPayload === "0")
+  ) {
+    throw new ContractError("active torrent ETA has no remaining work");
+  }
   const progress = asRecord(torrent.progress, "progress assessment");
   oneOf(progress.disposition, "progress disposition", [
     "active",
@@ -2049,6 +2096,10 @@ function optionalString(
 
 function optionalDecimal(value: unknown, label: string): void {
   if (value !== undefined && value !== null) decimal(value, label);
+}
+
+function nullableDecimal(value: unknown, label: string): string | null {
+  return value === null ? null : decimal(value, label);
 }
 
 function optionalBoolean(value: unknown, label: string): void {

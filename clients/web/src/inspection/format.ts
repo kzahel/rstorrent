@@ -1,4 +1,5 @@
 import type { DataUnits } from "./appearance";
+import type { TorrentEta } from "./model";
 
 const UNIT_SYSTEMS = {
   decimal: { base: 1000, suffixes: ["B", "kB", "MB", "GB", "TB", "PB"] },
@@ -76,12 +77,46 @@ export function formatProgress(value: number | null): string {
   return `${(value * 100).toFixed(value >= 0.9995 ? 0 : 1)}%`;
 }
 
-export function formatEta(seconds: number | null): string {
+export function formatEta(eta: TorrentEta): string {
+  if (eta.state === "stalled") return "∞";
+  const seconds = estimateSeconds(eta);
   if (seconds === null) return "—";
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  const hours = Math.floor(seconds / 3600);
-  return `${hours}h ${Math.floor((seconds % 3600) / 60)}m`;
+  if (seconds < 60n) return `${seconds.toString()}s`;
+  if (seconds < 3_600n) {
+    return `${(seconds / 60n).toString()}m ${(seconds % 60n).toString()}s`;
+  }
+  return `${(seconds / 3_600n).toString()}h ${((seconds % 3_600n) / 60n).toString()}m`;
+}
+
+export function etaAccessibleLabel(eta: TorrentEta): string {
+  switch (eta.state) {
+    case "estimate":
+      return estimateSeconds(eta) === null
+        ? "ETA unavailable"
+        : `Estimated time remaining: ${formatEta(eta)}`;
+    case "warming_up":
+      return "Calculating ETA";
+    case "stalled":
+      return "Transfer stalled";
+    case "unavailable":
+      return "ETA unavailable";
+  }
+}
+
+export function etaSortValue(eta: TorrentEta): string | null {
+  return estimateSeconds(eta) === null || eta.state !== "estimate"
+    ? null
+    : eta.seconds;
+}
+
+function estimateSeconds(eta: TorrentEta): bigint | null {
+  if (eta.state !== "estimate") return null;
+  try {
+    const seconds = BigInt(eta.seconds);
+    return seconds > 0n ? seconds : null;
+  } catch {
+    return null;
+  }
 }
 
 export function formatClock(milliseconds: number): string {

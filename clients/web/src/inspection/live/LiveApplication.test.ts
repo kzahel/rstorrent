@@ -182,6 +182,22 @@ class FakeLiveClient implements ApplicationViewClient {
 }
 
 describe("LiveApplication", () => {
+  it("maps exact payload work and typed ETA without numeric conversion", async () => {
+    const application = await LiveApplication.open(new FakeLiveClient());
+    const snapshots: InspectionSnapshot[] = [];
+    application.subscribe((update) => {
+      if (update.type === "snapshot") snapshots.push(update.snapshot);
+    });
+
+    expect(snapshots.at(-1)?.torrents[TORRENT_ID]).toMatchObject({
+      requiredPayloadBytes: "131072",
+      remainingPayloadBytes: "98304",
+      etaDownloadRateBytes: "4096",
+      eta: { state: "estimate", seconds: "24" },
+    });
+    await application.close();
+  });
+
   it("materializes the session DHT view without a selected torrent", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client, {
@@ -945,6 +961,10 @@ function torrent(): TorrentView {
     active_peer_connections: 1,
     configured_tracker_count: 2,
     payload_download_rate_bytes: "4096",
+    required_payload_bytes: "131072",
+    remaining_payload_bytes: "98304",
+    eta_payload_download_rate_bytes: "4096",
+    eta: { state: "estimate", seconds: "24" },
     progress: {
       disposition: "active",
       phase: "transfer",

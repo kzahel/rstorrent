@@ -23,6 +23,13 @@ function torrent(verified: number): TorrentView {
     stored_bytes: "16384",
     active_peer_connections: 0,
     payload_download_rate_bytes: "0",
+    required_payload_bytes: "49152",
+    remaining_payload_bytes: verified === 3 ? "0" : "32768",
+    eta_payload_download_rate_bytes: verified === 3 ? "0" : "4096",
+    eta:
+      verified === 3
+        ? { state: "unavailable" }
+        : { state: "estimate", seconds: "8" },
     progress: {
       disposition: verified === 3 ? "inactive" : "active",
       phase: verified === 3 ? "publication" : "transfer",

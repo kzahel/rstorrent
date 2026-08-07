@@ -176,6 +176,36 @@ describe("client settings validation", () => {
   });
 });
 
+describe("torrent ETA validation", () => {
+  it("accepts exact typed state and rejects missing or inconsistent work", () => {
+    expect(decodeUpdateBatch(JSON.stringify(torrentBatch("Valid ETA"))).updates).toHaveLength(1);
+
+    const missing = torrentBatch("Missing ETA work");
+    const missingTorrent = missing.updates[0]!.snapshot.torrents[0]! as Record<
+      string,
+      unknown
+    >;
+    delete missingTorrent.required_payload_bytes;
+    expect(() => decodeUpdateBatch(JSON.stringify(missing))).toThrow(
+      /required_payload_bytes/,
+    );
+
+    const overrun = torrentBatch("Overrun ETA work");
+    overrun.updates[0]!.snapshot.torrents[0]!.remaining_payload_bytes = "65537";
+    expect(() => decodeUpdateBatch(JSON.stringify(overrun))).toThrow(
+      /remaining payload exceeds required payload/,
+    );
+
+    const stalledRate = torrentBatch("Invalid stalled rate");
+    const stalledTorrent = stalledRate.updates[0]!.snapshot
+      .torrents[0]! as Record<string, unknown>;
+    stalledTorrent.eta = { state: "stalled" };
+    expect(() => decodeUpdateBatch(JSON.stringify(stalledRate))).toThrow(
+      /non-estimated torrent ETA must expose a zero rate/,
+    );
+  });
+});
+
 describe("peer view validation", () => {
   it("accepts bounded active peers and rejects cross-torrent rows", () => {
     const batch = peerBatch("0".repeat(40));
@@ -628,6 +658,10 @@ function torrentBatch(displayName: string) {
               active_peer_connections: 0,
               configured_tracker_count: 2,
               payload_download_rate_bytes: "0",
+              required_payload_bytes: "65536",
+              remaining_payload_bytes: "65536",
+              eta_payload_download_rate_bytes: "4096",
+              eta: { state: "estimate" as const, seconds: "16" },
               progress: {
                 disposition: "active",
                 phase: "transfer",

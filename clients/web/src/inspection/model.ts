@@ -138,6 +138,12 @@ export interface DemoState {
   readonly durationMs: number;
 }
 
+export type TorrentEta =
+  | { readonly state: "estimate"; readonly seconds: string }
+  | { readonly state: "warming_up" }
+  | { readonly state: "stalled" }
+  | { readonly state: "unavailable" };
+
 export interface TorrentRow {
   readonly id: string;
   readonly name: string;
@@ -151,7 +157,10 @@ export interface TorrentRow {
   readonly peersConnected: number;
   readonly peersKnown: number | null;
   readonly configuredTrackerCount: number | null;
-  readonly etaSeconds: number | null;
+  readonly requiredPayloadBytes: string | null;
+  readonly remainingPayloadBytes: string | null;
+  readonly etaDownloadRateBytes: string;
+  readonly eta: TorrentEta;
   readonly addedAtMs: number | null;
   readonly archived: boolean | null;
   readonly removalState: "pending" | "awaiting_platform" | "failed" | null;

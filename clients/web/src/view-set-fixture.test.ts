@@ -20,7 +20,16 @@ describe("Rust view-set fixture", () => {
     expect(state.cursor).toBe("3");
     expect(state.views.library).toMatchObject({
       type: "torrent_list",
-      torrents: [{ verified_piece_count: 3, state: "complete" }],
+      torrents: [
+        {
+          verified_piece_count: 3,
+          state: "complete",
+          required_payload_bytes: "49152",
+          remaining_payload_bytes: "0",
+          eta_payload_download_rate_bytes: "0",
+          eta: { state: "unavailable" },
+        },
+      ],
     });
   });
 

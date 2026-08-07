@@ -2,7 +2,14 @@ import { useMemo } from "react";
 
 import { useInspectionStore } from "../context";
 import type { DataUnits } from "../appearance";
-import { formatBytes, formatProgress, formatRate } from "../format";
+import {
+  etaAccessibleLabel,
+  etaSortValue,
+  formatBytes,
+  formatEta,
+  formatProgress,
+  formatRate,
+} from "../format";
 import type { TorrentRow, ViewMaterialization } from "../model";
 import { torrentMatchesCategory } from "../state";
 import { VirtualTable, type VirtualColumn } from "./VirtualTable";
@@ -68,6 +75,24 @@ const columns = (
     sortable: true,
     sortValue: (row) => Math.max(row.downloadRate, row.uploadRate ?? 0),
     render: (row) => transferRate(row, dataUnits),
+  },
+  {
+    id: "eta",
+    label: "ETA",
+    width: 84,
+    minimumViewport: 640,
+    align: "right",
+    sortable: true,
+    sortKind: "decimal",
+    sortValue: (row) => etaSortValue(row.eta),
+    render: (row) => {
+      const label = etaAccessibleLabel(row.eta);
+      return (
+        <span aria-label={label} title={label}>
+          {formatEta(row.eta)}
+        </span>
+      );
+    },
   },
   {
     id: "size",

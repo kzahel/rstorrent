@@ -76,6 +76,31 @@ afterEach(async () => {
 });
 
 describe("inspection application", () => {
+  it("renders the typed torrent ETA in Transfers and Workbench", async () => {
+    const user = userEvent.setup();
+    renderScenario("healthy-download", 42_000);
+
+    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    const transferEta = within(transfers).getByLabelText(
+      /Estimated time remaining:/,
+    );
+    expect(transferEta).toHaveTextContent("55s");
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    const workbench = screen.getByRole("grid", { name: "Torrent library" });
+    expect(
+      within(workbench).getByLabelText(/Estimated time remaining:/),
+    ).toHaveTextContent("55s");
+  });
+
+  it("gives a stalled ETA an infinite glyph and accessible explanation", () => {
+    renderScenario("swarm-lifecycle", 11_000);
+    const transfers = screen.getByRole("grid", { name: "Transfer queue" });
+    expect(within(transfers).getByLabelText("Transfer stalled")).toHaveTextContent(
+      "∞",
+    );
+  });
+
   it("renders the responsive hierarchy and changes detail tabs", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
