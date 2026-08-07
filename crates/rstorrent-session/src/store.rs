@@ -1352,6 +1352,14 @@ impl SessionStore {
     }
 
     pub fn begin_recheck(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
+        self.begin_recheck_with_generation(torrent_id)
+            .map(|(revision, _)| revision)
+    }
+
+    pub(crate) fn begin_recheck_with_generation(
+        &mut self,
+        torrent_id: &str,
+    ) -> Result<(u64, u64), StoreError> {
         let info_hash = decode_info_hash(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
@@ -1376,8 +1384,12 @@ impl SessionStore {
                 )
             })?;
         if requested != completed {
-            return u64::try_from(updated_revision)
-                .map_err(|_| StoreError::DurableState("torrent revision is invalid".to_owned()));
+            let revision = u64::try_from(updated_revision)
+                .map_err(|_| StoreError::DurableState("torrent revision is invalid".to_owned()))?;
+            let generation = u64::try_from(requested).map_err(|_| {
+                StoreError::DurableState("verification generation is invalid".to_owned())
+            })?;
+            return Ok((revision, generation));
         }
         let next_requested = requested.checked_add(1).ok_or_else(|| {
             StoreError::DurableState("verification generation overflow".to_owned())
@@ -1398,12 +1410,38 @@ impl SessionStore {
             ));
         }
         transaction.commit()?;
-        Ok(revision)
+        let generation = u64::try_from(next_requested).map_err(|_| {
+            StoreError::DurableState("verification generation is invalid".to_owned())
+        })?;
+        Ok((revision, generation))
     }
 
     pub fn complete_recheck(
         &mut self,
         torrent_id: &str,
+        have: &HaveState,
+    ) -> Result<u64, StoreError> {
+        let info_hash = decode_info_hash(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        let requested = self
+            .connection
+            .query_row(
+                "SELECT verification_requested FROM torrents WHERE info_hash = ?1",
+                [info_hash.as_slice()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        let generation = u64::try_from(requested).map_err(|_| {
+            StoreError::DurableState("verification generation is invalid".to_owned())
+        })?;
+        self.complete_recheck_generation(torrent_id, generation, have)
+    }
+
+    pub(crate) fn complete_recheck_generation(
+        &mut self,
+        torrent_id: &str,
+        generation: u64,
         have: &HaveState,
     ) -> Result<u64, StoreError> {
         let info_hash = decode_info_hash(torrent_id)
@@ -1414,10 +1452,40 @@ impl SessionStore {
             ));
         }
         let transaction = self.connection.transaction()?;
-        let (piece_count, _) = read_have_columns(&transaction, &info_hash)?;
+        let (piece_count, current_bytes) = read_have_columns(&transaction, &info_hash)?;
         if have.pieces().len() != piece_count {
             return Err(StoreError::DurableState(
                 "replacement have state has the wrong piece count".to_owned(),
+            ));
+        }
+        let (requested, completed, updated_revision) = transaction.query_row(
+            "SELECT verification_requested, verification_completed, updated_revision
+             FROM torrents WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        let generation_sql = i64::try_from(generation)
+            .map_err(|_| StoreError::DurableState("verification generation overflow".to_owned()))?;
+        if requested != generation_sql {
+            return Err(StoreError::DurableState(
+                "stale recheck completion generation".to_owned(),
+            ));
+        }
+        if completed == requested {
+            let current = HaveState::decode(&current_bytes, info_hash, piece_count)?;
+            if &current == have {
+                return u64::try_from(updated_revision).map_err(|_| {
+                    StoreError::DurableState("torrent revision is invalid".to_owned())
+                });
+            }
+            return Err(StoreError::DurableState(
+                "completed verification generation has different evidence".to_owned(),
             ));
         }
         let revision = increment_revision(&transaction)?;
@@ -7146,6 +7214,8 @@ mod tests {
         };
         let response = store.handle_durable(&request).expect("request recheck");
         let checking = store.load_resume(&torrent_id).expect("load checking state");
+        let first_generation = checking.verification.requested();
+        assert!(checking.verification.is_pending());
         assert_eq!(checking.state, TorrentState::Checking);
         assert_eq!(
             checking.have.expect("old have remains input").pieces(),
@@ -7162,6 +7232,21 @@ mod tests {
             response
         );
         assert_eq!(store.revision().expect("revision after replay"), revision);
+        store
+            .handle_durable(&RequestEnvelope {
+                request_id: "equivalent-pending-recheck".to_owned(),
+                ..request.clone()
+            })
+            .expect("deduplicate equivalent pending request");
+        assert_eq!(store.revision().expect("pending revision"), revision);
+        assert_eq!(
+            store
+                .load_resume(&torrent_id)
+                .expect("pending generation")
+                .verification
+                .requested(),
+            first_generation
+        );
 
         let replacement =
             HaveState::from_pieces(info_hash, vec![false, true, true]).expect("replacement have");
@@ -7185,11 +7270,23 @@ mod tests {
                 },
             })
             .expect("pause torrent");
-        store
-            .begin_recheck(&torrent_id)
+        let (_, second_generation) = store
+            .begin_recheck_with_generation(&torrent_id)
             .expect("begin paused recheck");
+        assert!(second_generation > first_generation);
+        assert!(matches!(
+            store.complete_recheck_generation(&torrent_id, first_generation, &replacement),
+            Err(StoreError::DurableState(_))
+        ));
+        assert!(
+            store
+                .load_resume(&torrent_id)
+                .expect("new generation remains pending")
+                .verification
+                .is_pending()
+        );
         store
-            .complete_recheck(&torrent_id, &replacement)
+            .complete_recheck_generation(&torrent_id, second_generation, &replacement)
             .expect("complete paused recheck");
         assert_eq!(
             store.load_resume(&torrent_id).expect("paused result").state,

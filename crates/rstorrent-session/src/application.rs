@@ -1333,6 +1333,7 @@ impl ApplicationService {
             storage_roots: self.storage_roots.clone(),
             torrent_id: torrent_id.clone(),
             views: self.views.clone(),
+            recheck_generation: Mutex::new(None),
         });
         let (control, eta_generation) = self.download_control(&torrent_id)?;
         let task_control = control.clone();
@@ -2005,6 +2006,7 @@ impl ApplicationService {
                     storage_roots: self.storage_roots.clone(),
                     torrent_id: torrent_id.to_owned(),
                     views: self.views.clone(),
+                    recheck_generation: Mutex::new(None),
                 });
                 let (control, eta_generation) = self.download_control(torrent_id)?;
                 let task_control = control.clone();
@@ -2116,6 +2118,7 @@ impl ApplicationService {
                 storage_roots: self.storage_roots.clone(),
                 torrent_id: torrent_id.to_owned(),
                 views: self.views.clone(),
+                recheck_generation: Mutex::new(None),
             });
             let (control, eta_generation) = self.download_control(torrent_id)?;
             let task_control = control.clone();
@@ -2181,6 +2184,7 @@ impl ApplicationService {
             storage_roots: self.storage_roots.clone(),
             torrent_id: torrent_id.to_owned(),
             views: self.views.clone(),
+            recheck_generation: Mutex::new(None),
         });
         let (control, eta_generation) = self.download_control(torrent_id)?;
         if platform_root {
@@ -3139,6 +3143,7 @@ struct StoreCheckpointSink {
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     torrent_id: String,
     views: ViewHub,
+    recheck_generation: Mutex<Option<u64>>,
 }
 
 impl StoreCheckpointSink {
@@ -3205,12 +3210,16 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
     }
 
     fn recheck_started(&self) -> Result<(), String> {
-        self.store().and_then(|mut store| {
+        let generation = self.store().and_then(|mut store| {
             store
-                .begin_recheck(&self.torrent_id)
-                .map(|_| ())
+                .begin_recheck_with_generation(&self.torrent_id)
+                .map(|(_, generation)| generation)
                 .map_err(|error| error.to_string())
         })?;
+        *self
+            .recheck_generation
+            .lock()
+            .map_err(|_| "recheck generation lock is poisoned".to_owned())? = Some(generation);
         self.refresh()?;
         self.views
             .record_diagnostic(
@@ -3225,6 +3234,11 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
+        let generation = self
+            .recheck_generation
+            .lock()
+            .map_err(|_| "recheck generation lock is poisoned".to_owned())?
+            .ok_or_else(|| "recheck completion has no admitted generation".to_owned())?;
         let resume = self.store().and_then(|store| {
             store
                 .load_resume(&self.torrent_id)
@@ -3237,10 +3251,14 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())?;
         self.store().and_then(|mut store| {
             store
-                .complete_recheck(&self.torrent_id, &replacement)
+                .complete_recheck_generation(&self.torrent_id, generation, &replacement)
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })?;
+        *self
+            .recheck_generation
+            .lock()
+            .map_err(|_| "recheck generation lock is poisoned".to_owned())? = None;
         self.refresh()?;
         self.views
             .record_diagnostic(
