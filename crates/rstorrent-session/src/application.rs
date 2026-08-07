@@ -611,6 +611,18 @@ impl ApplicationService {
                 })
                 .unwrap_or(true),
             Command::SetFilePriorityRanges { .. } => true,
+            Command::DownloadFiles {
+                torrent_id,
+                file_indices,
+            } => self
+                .store_mut()?
+                .load_resume(&torrent_id.to_ascii_lowercase())
+                .map(|resume| {
+                    file_indices
+                        .iter()
+                        .any(|file_index| resume.skip_files.binary_search(file_index).is_ok())
+                })
+                .unwrap_or(true),
             _ => false,
         };
         let add_magnet_duplicate = match &command {
@@ -672,7 +684,8 @@ impl ApplicationService {
                 Command::Resume { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
                 Command::ForceRecheck { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
                 Command::SetFilePriority { torrent_id, .. }
-                | Command::SetFilePriorityRanges { torrent_id, .. } => {
+                | Command::SetFilePriorityRanges { torrent_id, .. }
+                | Command::DownloadFiles { torrent_id, .. } => {
                     Some(torrent_id.to_ascii_lowercase())
                 }
                 _ => None,
@@ -893,6 +906,55 @@ impl ApplicationService {
                     } else {
                         self.start_if_possible(&torrent_id).await?;
                     }
+                }
+            }
+            Command::DownloadFiles { torrent_id, .. } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.views.record_diagnostic(
+                    DiagnosticSeverity::Info,
+                    category::LIFECYCLE_TORRENT,
+                    "file_download_requested",
+                    Some(&torrent_id),
+                    "Torrent files requested for download",
+                    &[],
+                )?;
+                let (resume, revision, eligible) = {
+                    let store = self.store_mut()?;
+                    let resume = store.load_resume(&torrent_id)?;
+                    let revision = store.revision()?;
+                    let eligible = store.snapshot()?.torrents.iter().any(|torrent| {
+                        torrent.torrent_id == torrent_id
+                            && !torrent.archived
+                            && torrent.removal_state.is_none()
+                    });
+                    (resume, revision, eligible)
+                };
+                if eligible && resume.desired_running {
+                    if file_priority_changed {
+                        let active_control = self
+                            .active_download()
+                            .filter(|(active_torrent, _)| *active_torrent == torrent_id)
+                            .map(|(_, active)| active.control.clone());
+                        if let Some(control) = active_control {
+                            let skip_files = resume
+                                .skip_files
+                                .iter()
+                                .copied()
+                                .map(|index| {
+                                    usize::try_from(index).map_err(|_| {
+                                        ApplicationError::Configuration(
+                                            "file selection index overflow".to_owned(),
+                                        )
+                                    })
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            control.update_file_selection(FileSelectionUpdate {
+                                revision,
+                                skip_files,
+                            });
+                        }
+                    }
+                    self.start_if_possible(&torrent_id).await?;
                 }
             }
             Command::Archive { torrent_id } => {
@@ -7134,15 +7196,17 @@ mod tests {
                 .desired_running
         );
 
-        service
-            .dispatch(RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "resume-running-checker".to_owned(),
-                expected_revision: None,
-                command: Command::Resume {
-                    torrent_id: torrent_id.clone(),
-                },
-            })
+        let download_request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "download-file-resume-running-checker".to_owned(),
+            expected_revision: None,
+            command: Command::DownloadFiles {
+                torrent_id: torrent_id.clone(),
+                file_indices: vec![0],
+            },
+        };
+        let download_response = service
+            .dispatch(download_request.clone())
             .await
             .expect("resume checker");
         tokio::time::timeout(Duration::from_secs(3), async {
@@ -7165,6 +7229,34 @@ mod tests {
             .expect("completed resume");
         assert!(resume.desired_running);
         assert_eq!(resume.have.expect("replacement have").pieces(), &[true; 8]);
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-after-download-file".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause after completed checker");
+        assert_eq!(
+            service
+                .dispatch(download_request)
+                .await
+                .expect("replay download request"),
+            download_response
+        );
+        assert!(service.active_download().is_none());
+        assert!(
+            !service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("resume after replay")
+                .desired_running
+        );
 
         service.shutdown().await.expect("shutdown");
         drop(service);
@@ -7522,8 +7614,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_priority_idles_all_skipped_then_restarts_when_wanted() {
-        let root = test_root("file-priority-generation");
+    async fn download_files_restarts_all_skipped_running_intent() {
+        let root = test_root("download-files-generation");
         let configuration = config(&root);
         let raw_info = multi_file_info();
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
@@ -7643,12 +7735,11 @@ mod tests {
         service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
-                request_id: "restore-normal-file".to_owned(),
+                request_id: "download-skipped-file".to_owned(),
                 expected_revision: None,
-                command: Command::SetFilePriority {
+                command: Command::DownloadFiles {
                     torrent_id: torrent_id.clone(),
                     file_indices: vec![1],
-                    priority: FilePriority::Normal,
                 },
             })
             .await
@@ -7790,12 +7881,11 @@ mod tests {
         let restored = service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
-                request_id: "restore-one-live-file".to_owned(),
+                request_id: "download-one-live-file".to_owned(),
                 expected_revision: None,
-                command: Command::SetFilePriority {
+                command: Command::DownloadFiles {
                     torrent_id: torrent_id.clone(),
                     file_indices: vec![1],
-                    priority: FilePriority::Normal,
                 },
             })
             .await

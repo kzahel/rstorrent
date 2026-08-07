@@ -80,6 +80,10 @@ pub enum Command {
         ranges: Vec<FileIndexRange>,
         priority: FilePriority,
     },
+    DownloadFiles {
+        torrent_id: String,
+        file_indices: Vec<u32>,
+    },
     SetDefaultStorageRoot {
         storage_root: String,
     },
@@ -132,6 +136,7 @@ impl Command {
                 | Self::ForceRecheck { .. }
                 | Self::SetFilePriority { .. }
                 | Self::SetFilePriorityRanges { .. }
+                | Self::DownloadFiles { .. }
                 | Self::Archive { .. }
                 | Self::RestoreArchive { .. }
                 | Self::RemoveTorrent { .. }
@@ -476,6 +481,10 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
             torrent_id,
             file_indices,
             priority: _,
+        }
+        | Command::DownloadFiles {
+            torrent_id,
+            file_indices,
         } => {
             validate_torrent_id(torrent_id)?;
             if file_indices.is_empty() || file_indices.len() > MAX_FILE_SELECTION_ENTRIES {
@@ -753,6 +762,16 @@ mod tests {
         assert!(validate_request(&request).is_err());
         if let Command::SetFilePriority { file_indices, .. } = &mut request.command {
             file_indices.clear();
+        }
+        assert!(validate_request(&request).is_err());
+
+        request.command = Command::DownloadFiles {
+            torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+            file_indices: vec![1, 3],
+        };
+        assert_eq!(validate_request(&request), Ok(()));
+        if let Command::DownloadFiles { file_indices, .. } = &mut request.command {
+            *file_indices = vec![3, 3];
         }
         assert!(validate_request(&request).is_err());
     }

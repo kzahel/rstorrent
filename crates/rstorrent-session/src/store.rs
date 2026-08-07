@@ -3458,8 +3458,13 @@ fn apply_mutation(
                 .iter()
                 .flat_map(|range| range.start..range.end_exclusive),
             *priority,
+            false,
             current_revision,
         ),
+        Command::DownloadFiles {
+            torrent_id,
+            file_indices,
+        } => download_files(transaction, torrent_id, file_indices, current_revision),
         Command::SetDefaultStorageRoot { storage_root } => {
             set_default_storage_root(transaction, storage_root, current_revision)
         }
@@ -4248,6 +4253,23 @@ fn set_file_priority(
         torrent_id,
         file_indices.iter().copied(),
         priority,
+        false,
+        current_revision,
+    )
+}
+
+fn download_files(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    file_indices: &[u32],
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    set_file_priority_indices(
+        transaction,
+        torrent_id,
+        file_indices.iter().copied(),
+        FilePriority::Normal,
+        true,
         current_revision,
     )
 }
@@ -4257,6 +4279,7 @@ fn set_file_priority_indices<I>(
     torrent_id: &str,
     file_indices: I,
     priority: FilePriority,
+    set_running: bool,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)>
 where
@@ -4272,7 +4295,7 @@ where
         .query_row(
             "SELECT t.raw_info, t.payload_state, t.quarantine_reason,
                     r.info_hash IS NOT NULL,
-                    t.selection_default
+                    t.selection_default, t.desired_state, t.archived
              FROM torrents t
              LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
              WHERE t.info_hash = ?1",
@@ -4284,6 +4307,8 @@ where
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, bool>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, bool>(6)?,
                 ))
             },
         )
@@ -4342,9 +4367,6 @@ where
             exceptions.insert(position, file_index);
         }
     }
-    if exceptions == initial_exceptions {
-        return Ok(current_revision);
-    }
     if !matches!(row.4.as_str(), "wanted" | "skipped") {
         return Err(internal_message(
             "database contains an invalid selection default",
@@ -4352,40 +4374,66 @@ where
     }
     let payload_state = PayloadState::parse(&row.1)
         .ok_or_else(|| internal_message("database contains an invalid payload state"))?;
-    if row.2.is_some() || payload_state == PayloadState::PublicationPending {
+    if !matches!(row.5.as_str(), "running" | "paused") {
+        return Err(internal_message(
+            "database contains an invalid desired torrent state",
+        ));
+    }
+    if set_running && row.6 {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "archived torrent must be restored before downloading files".to_owned(),
+        ));
+    }
+    let selection_changed = exceptions != initial_exceptions;
+    let running_changed = set_running && row.5 != "running";
+    if (selection_changed || set_running)
+        && (row.2.is_some() || payload_state == PayloadState::PublicationPending)
+    {
         return Err((
             ErrorCode::InvalidTorrentState,
             "file selection cannot change during repair or publication".to_owned(),
         ));
     }
+    if !selection_changed && !running_changed {
+        return Ok(current_revision);
+    }
     let revision = next_revision(transaction, current_revision)?;
-    transaction
-        .execute(
-            "DELETE FROM file_selection WHERE info_hash = ?1",
-            [info_hash.as_slice()],
-        )
-        .map_err(internal_error)?;
-    let exception_wanted = selection_default == FilePriority::Skip;
-    for file_index in exceptions {
+    if selection_changed {
         transaction
             .execute(
-                "INSERT INTO file_selection(info_hash, file_index, wanted)
-                 VALUES (?1, ?2, ?3)",
-                params![
-                    info_hash.as_slice(),
-                    i64::from(file_index),
-                    exception_wanted
-                ],
+                "DELETE FROM file_selection WHERE info_hash = ?1",
+                [info_hash.as_slice()],
             )
             .map_err(internal_error)?;
+        let exception_wanted = selection_default == FilePriority::Skip;
+        for file_index in exceptions {
+            transaction
+                .execute(
+                    "INSERT INTO file_selection(info_hash, file_index, wanted)
+                     VALUES (?1, ?2, ?3)",
+                    params![
+                        info_hash.as_slice(),
+                        i64::from(file_index),
+                        exception_wanted
+                    ],
+                )
+                .map_err(internal_error)?;
+        }
     }
+    let desired_state = if set_running {
+        "running"
+    } else {
+        row.5.as_str()
+    };
     transaction
         .execute(
             "UPDATE torrents
-             SET error = NULL, updated_revision = ?2
+             SET desired_state = ?2, error = NULL, updated_revision = ?3
              WHERE info_hash = ?1",
             params![
                 info_hash.as_slice(),
+                desired_state,
                 i64::try_from(revision)
                     .map_err(|_| internal_message("profile revision overflow"))?
             ],
@@ -6519,6 +6567,202 @@ mod tests {
         assert!(!resumed.verification.is_pending());
         drop(store);
         fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
+    fn download_files_commits_one_replay_safe_wanted_and_running_revision() {
+        let root = test_root("download-files-atomic");
+        let configured = configured_root(&root);
+        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
+            .expect("open store");
+        let raw_info = multi_file_info();
+        let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-files-add".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: vec![0, 1],
+                },
+            })
+            .expect("add paused all-skipped torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record metadata");
+        let before = store.load_resume(&torrent_id).expect("load paused intent");
+        let revision_before = store.revision().expect("load revision");
+        let verification_before = before.verification;
+        assert!(!before.desired_running);
+        assert_eq!(before.skip_files, [0, 1]);
+
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "download-files".to_owned(),
+            expected_revision: Some(revision_before.to_string()),
+            command: Command::DownloadFiles {
+                torrent_id: torrent_id.clone(),
+                file_indices: vec![1],
+            },
+        };
+        let first = store
+            .handle_durable(&request)
+            .expect("download skipped file");
+        assert!(matches!(first.outcome, ResponseOutcome::Success { .. }));
+        assert_eq!(
+            first.revision.parse::<u64>().expect("response revision"),
+            revision_before + 1
+        );
+        let running = store.load_resume(&torrent_id).expect("load running intent");
+        assert!(running.desired_running);
+        assert_eq!(running.skip_files, [0]);
+        assert_eq!(running.verification, verification_before);
+
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-after-download".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .expect("pause after download request");
+        let revision_after_pause = store.revision().expect("paused revision");
+        assert_eq!(store.handle_durable(&request).expect("exact replay"), first);
+        let replayed = store.load_resume(&torrent_id).expect("load after replay");
+        assert!(!replayed.desired_running);
+        assert_eq!(replayed.skip_files, [0]);
+        assert_eq!(
+            store.revision().expect("replay revision"),
+            revision_after_pause
+        );
+
+        let stale = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-files-stale".to_owned(),
+                expected_revision: Some(revision_before.to_string()),
+                command: Command::DownloadFiles {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![0],
+                },
+            })
+            .expect("reject stale download");
+        assert!(matches!(
+            stale.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StaleRevision,
+                    ..
+                }
+            }
+        ));
+        let after_stale = store.load_resume(&torrent_id).expect("load after stale");
+        assert!(!after_stale.desired_running);
+        assert_eq!(after_stale.skip_files, [0]);
+
+        let wanted_paused_revision = store.revision().expect("wanted paused revision");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-wanted-paused".to_owned(),
+                expected_revision: None,
+                command: Command::DownloadFiles {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                },
+            })
+            .expect("start already wanted file");
+        assert_eq!(
+            store.revision().expect("wanted running revision"),
+            wanted_paused_revision + 1
+        );
+        let no_op_revision = store.revision().expect("no-op baseline");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-wanted-running".to_owned(),
+                expected_revision: None,
+                command: Command::DownloadFiles {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                },
+            })
+            .expect("accept wanted running no-op");
+        assert_eq!(store.revision().expect("unchanged no-op"), no_op_revision);
+
+        for (request_id, command) in [
+            (
+                "pause-before-archive",
+                Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            ),
+            (
+                "archive-before-download",
+                Command::Archive {
+                    torrent_id: torrent_id.clone(),
+                },
+            ),
+        ] {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command,
+                })
+                .expect("prepare archived torrent");
+        }
+        let archived_revision = store.revision().expect("archived revision");
+        let archived = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-archived".to_owned(),
+                expected_revision: None,
+                command: Command::DownloadFiles {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![0],
+                },
+            })
+            .expect("reject archived download");
+        assert!(matches!(
+            archived.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::InvalidTorrentState,
+                    ..
+                }
+            }
+        ));
+        let after_archived = store
+            .load_resume(&torrent_id)
+            .expect("load rejected archived intent");
+        assert!(!after_archived.desired_running);
+        assert_eq!(after_archived.skip_files, [0]);
+        assert_eq!(after_archived.verification, verification_before);
+        assert_eq!(
+            store.revision().expect("unchanged archived"),
+            archived_revision
+        );
+
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen store");
+        let reopened_resume = reopened
+            .load_resume(&torrent_id)
+            .expect("load reopened intent");
+        assert!(!reopened_resume.desired_running);
+        assert_eq!(reopened_resume.skip_files, [0]);
+        assert_eq!(
+            reopened.revision().expect("reopened revision"),
+            archived_revision
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
     }
 
     #[test]

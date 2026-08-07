@@ -1595,6 +1595,31 @@
         },
         {
           "properties": {
+            "file_indices": {
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "download_files",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "file_indices"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
             "storage_root": {
               "type": "string"
             },
