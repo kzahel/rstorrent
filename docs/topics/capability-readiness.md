@@ -183,14 +183,10 @@ that observation does not become a public-tracker reliability claim.
 
 ### Now
 
-**Execute Tactical
-[`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md).**
-An observed schema-13 profile proves that a generic durable-piece checkpoint
-can contradict separately persisted storage/publication ownership and make
-one torrent abort whole-profile startup. Replace overlapping durable runtime
-state with fact-based payload and verification authority, make force recheck
-exclusive and restartable, migrate the observed row without payload mutation,
-and quarantine torrent-local recovery failures while healthy state opens.
+- No tactical is currently queued. Tactical
+  [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
+  completed the fact-based persistence recovery slice; select the next bounded
+  campaign action before further implementation.
 
 ### Next
 
@@ -286,7 +282,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent bounds and explicit generation joins. Raw-stage sweeps, final defaults, Android concurrency evidence and multi-torrent/root fairness remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
 | Android SAF storage and publication | Implemented | deterministic, runtime, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool; the current API 34 rename-death run re-enters published full recheck at 40 owned handles and one pending request. General root management, cloud/removable policy, migration, and a current physical dynamic-provider rerun remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
-| Durable have state and conservative recheck | Partial (regression) | deterministic, runtime, interop, AVD, physical | Existing full-check evidence remains valid, but a published partial repair can let a generic piece checkpoint persist contradictory staging/published state and abort the next profile open. Tactical [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md) owns fact-based schema migration, exclusive restartable recheck, and per-torrent failure containment before this returns to Implemented. | [`client-persistence`](client-persistence.md) |
+| Durable have state and conservative recheck | Implemented | deterministic, persistence, runtime, interop, web, AVD, physical | Schema 14 stores one payload fact and generation-fenced verification evidence. Piece checkpoints are have-only, Force recheck joins active work before requesting validation, stale completions are rejected, the exact schema-13 incident migrates without payload mutation, and malformed torrent-local state cannot abort profile open. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |
 
 ### Application And Product Surfaces

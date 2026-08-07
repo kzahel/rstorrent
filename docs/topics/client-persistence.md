@@ -56,19 +56,18 @@ authentication policy. Fresh and every migrated profile default to
 ordinary hidden-field saves; malformed durable values fail closed. Effective
 policy and TLS outcomes remain runtime facts.
 
-An observed schema-13 profile now narrows the Tactical `073` persistence
-claim. A published torrent that rechecked and downloaded newly selected pieces
-was rewritten by the generic piece-checkpoint path to
-`storage_state = staging` while retaining
-`managed_artifacts = published`; the healthy SQLite database then failed the
-next whole-application open. Accepted Tactical
+Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
-replaces that overlapping durable state with one payload fact and verification
-request/completion authority, makes force recheck exclusive and restartable,
-and quarantines torrent-local recovery failures without aborting the profile.
-Until its schema migration and restart gates pass, published partial repair
-and force-recheck persistence are a known regression rather than a complete
-readiness claim.
+advances the store to schema version `14` after an observed schema-13 profile
+proved that generic piece checkpoints could contradict separately persisted
+storage and publication lifecycle. The torrent row now retains one closed
+`payload_state`, requested/completed verification generations, and an optional
+bounded quarantine reason. Runtime torrent/storage presentation is derived;
+piece checkpoints mutate have evidence only. Exact read-only migration
+observations recover the known `staging + published`, final-only defect as
+`final_owned` and request validation without moving or rewriting payload.
+Ambiguous or malformed torrent-local state is quarantined while healthy
+torrents, settings, and the application service continue opening.
 
 ## Scope
 

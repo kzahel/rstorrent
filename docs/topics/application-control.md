@@ -192,15 +192,16 @@ durable state. During checking, presentation exposes no old verified total as
 current authority. Valid paused content may return to complete; invalid paused
 content retains its exact replacement bitmap without admitting peer repair,
 while running intent downloads only the missing or corrupt wanted pieces.
-An observed restart failure shows that the Tactical `073` implementation
-still lets piece checkpoints mutate persisted storage lifecycle and lets one
-torrent-local contradiction escape application open. Accepted Tactical
+Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
-corrects the semantic boundary: Force recheck first fences and joins every
-network/content/publication owner, persists only a restartable verification
-request, derives checking as runtime state, atomically replaces evidence, and
-resumes from separately retained user intent. A malformed torrent is
-quarantined rather than preventing the profile from opening.
+corrects an observed Tactical `073` restart defect at this semantic boundary.
+Force recheck first fences discovery and incoming activity and joins the
+active content generation, then persists one restartable verification
+generation. Its checkpoint sink admits only that generation, completion
+atomically replaces evidence only for the matching request, and a stale
+completion cannot satisfy newer work. Checking remains runtime-derived and
+the separately retained user intent decides paused or running re-entry. A
+malformed torrent is quarantined rather than preventing profile open.
 Android application request IDs now include a process-random namespace before
 their monotonic suffix, matching the browser contract and preventing a
 restarted process from reusing `android-1` for different durable intent.

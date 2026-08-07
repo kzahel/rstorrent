@@ -1,6 +1,6 @@
 # Tactical 105: Fact-Based Persistence And Recheck Containment
 
-Status: Accepted (2026-08-07); implementation not started.
+Status: Complete (2026-08-07).
 
 Topics: `application-control`, `capability-readiness`, `client-persistence`,
 `download-correctness`, `storage-throughput-architecture`
@@ -502,4 +502,74 @@ When the stopping condition passes:
 
 ## Completion Record
 
-Implementation, validation, and maintainer-profile repair have not started.
+Completed on 2026-08-07 in these commits:
+
+- `0351058` makes piece checkpoints ownership-neutral and adds the pure
+  payload/verification reducer;
+- `ea27aaf` advances the store to schema 14, removes persisted runtime and
+  duplicate ownership columns, derives presentation state from facts, and
+  migrates exact filesystem observations without payload writes;
+- `67249cb` fences and joins active content/discovery/incoming owners before a
+  Force recheck request becomes durable;
+- `92c65e5` disables only `ts-rs`'s unsupported-Serde warning emission while
+  retaining Serde's runtime `deny_unknown_fields` behavior;
+- `1a48ae2` admits and completes full checks against one exact durable
+  verification generation, rejecting stale completions and reusing an
+  equivalent pending generation;
+- `5e33b83` proves a malformed torrent enters bounded repair while a healthy
+  neighboring torrent and the application service continue opening; and
+- `707604e` makes the controlled HTTPS tracker fixture tolerate a TCP client
+  that closes before completing TLS, removing an unrelated suite flake.
+
+Schema 14 stores `payload_state` as the sole payload ownership/publication
+fact, `verification_requested` and `verification_completed` as restartable
+integrity evidence, and an optional bounded `quarantine_reason`. The old
+`state`, `storage_state`, and `managed_artifacts` columns are removed by the
+one-way migration. Runtime state and the compatibility presentation fields are
+derived. `record_pieces` updates only the current have bitmap; payload changes
+remain behind storage/publication/removal methods.
+
+The exact incident shape was reproduced from an independently constructed
+schema-13 fixture. With only the final owned payload present, migration maps
+`staging + published` to `final_owned`, leaves the verification request
+pending, removes the three overlapping columns, opens the application, and
+does not change payload bytes. Store tests also cover idempotent pending
+requests, stale/duplicate completion, generation replacement, publication
+transitions, have-only checkpoints, and malformed-row containment. Runtime
+tests cover active and paused Force recheck, conservative startup, content
+generation fencing, cleanup, and healthy-neighbor startup.
+
+An SQLite `.backup` of the closed maintainer schema-13 database and copies of
+its metrics files were placed under an isolated temporary data root. The
+incident torrent's exact final tree and part-file aggregate SHA-256 values
+were recorded before launch. `./scripts/webui --no-open` then migrated the copy
+to schema 14 under offline network policy, brought both gateway and production
+web preview to ready, and shut down cleanly. `PRAGMA quick_check` returned
+`ok`; the incident row became `final_owned` with requested/completed
+verification generations `1/0`, no quarantine, and no old lifecycle columns.
+Both aggregate payload hashes were identical afterward. The temporary copy was
+removed. The actual `.local/webui/profile/session.db` remains schema 13 and no
+actual payload byte was changed; touching that profile remains explicitly
+approval-gated.
+
+Final validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace` (including 188 passing session-library tests and
+  two declared ignored session cases);
+- five consecutive runs of the formerly flaky controlled HTTPS tracker test;
+- `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-android --lib`;
+- `npm run generate` with no generated-contract drift;
+- `npm run typecheck`;
+- `npm test` (214 passed, two skipped);
+- `npm run build`, including the CSP bundle check; and
+- `git diff --check`.
+
+No queue, payload buffer, hash concurrency, descriptor, or platform-handle
+ceiling changed. The existing bounded content/check owners are reused, and
+verification adds two scalar integers plus at most one 1,024-byte quarantine
+reason per torrent. Public-swarm, visible-browser, emulator, and physical-
+device reruns remain deliberately outside this recovery slice. A future
+clean-shutdown fast-resume policy remains deferred; schema 14 continues to
+prefer a conservative full managed recheck.

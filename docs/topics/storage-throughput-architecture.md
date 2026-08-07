@@ -482,16 +482,16 @@ durability barrier. A later clean-shutdown fast-resume design may skip some
 hashing only after it defines stronger file identity, directory durability and
 storage-generation evidence.
 
-An observed schema-13 restart regression narrows the checkpoint contract:
-`SessionStore::record_pieces` also rewrites `storage_state` to `staging`, so a
-durable piece added to final published content can contradict the separately
-stored published artifact owner and abort the next profile open. Accepted
-Tactical
+Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
-makes piece checkpoints have-only mutations, gives publication sole authority
-over one payload fact, and derives checking/downloading/completion from durable
-facts plus current runtime owners. Until that tactical passes, batching and
-crash-order evidence does not establish safe published-partial restart.
+closes an observed schema-13 checkpoint-authority regression.
+`SessionStore::record_pieces` now decodes, merges, and commits only have
+evidence; it cannot relabel payload storage. Storage/publication/removal own
+the single payload fact, full-check completion owns exact generation-matched
+bitmap replacement, and checking/downloading/completion are derived from
+durable facts plus current runtime owners. A store regression proves a piece
+checkpoint on final-owned published content preserves `final_owned` across
+restart.
 
 ## Session And Storage-Root Scheduling
 

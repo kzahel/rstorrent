@@ -494,7 +494,7 @@ that scope and its cleanup or compatibility rules explicitly.
   torrent rate smoothing, and a typed selection-aware ETA owned by the Rust
   application view rather than the engine or React.
 - [`105-fact-based-persistence-and-recheck-containment.md`](105-fact-based-persistence-and-recheck-containment.md):
-  accepted; replaces overlapping durable runtime/storage state with fact-based
+  complete; replaces overlapping durable runtime/storage state with fact-based
   payload and verification authority, makes force recheck exclusive and
   restartable, migrates the observed published-content contradiction without
   payload mutation, and contains torrent-local recovery failures during
