@@ -619,13 +619,26 @@ pub(crate) async fn upgrade_application_connection(
         state.connection_metrics.rejected_origin();
         return StatusCode::FORBIDDEN.into_response();
     }
+    let web_session_id = if matches!(state.authentication.as_ref(), GatewayAuthentication::Web(_)) {
+        match super::web_auth_http::authenticate_application_request(&state, &headers) {
+            Ok(session_id) => session_id,
+            Err(_) => {
+                state.connection_metrics.rejected_authentication();
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
+        }
+    } else {
+        None
+    };
     let Ok(permit) = state.connections.clone().try_acquire_owned() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     websocket
         .max_message_size(MAX_TORRENT_SOURCE_BYTES)
         .max_frame_size(MAX_TORRENT_SOURCE_BYTES)
-        .on_upgrade(move |socket| serve_application_connection(socket, state, permit))
+        .on_upgrade(move |socket| {
+            serve_application_connection(socket, state, permit, web_session_id)
+        })
         .into_response()
 }
 
@@ -663,6 +676,7 @@ async fn serve_application_connection(
     socket: WebSocket,
     state: GatewayState,
     _permit: OwnedSemaphorePermit,
+    web_session_id: Option<String>,
 ) {
     let handshake_started = Instant::now();
     let (websocket_writer, mut websocket_reader) = socket.split();
@@ -810,6 +824,11 @@ async fn serve_application_connection(
             }
             () = connection_cancel.cancelled() => break,
             _ = heartbeat.tick() => {
+                if web_session_id.as_deref().is_some_and(|session_id| {
+                    !super::web_auth_http::session_is_active(&state, session_id)
+                }) {
+                    break;
+                }
                 if pending_upload.as_ref().is_some_and(|upload| {
                     upload.admitted_at.elapsed()
                         >= Duration::from_millis(TORRENT_UPLOAD_TIMEOUT_MILLIS)
@@ -1755,6 +1774,7 @@ fn connection_token_matches(
                 && constant_time_equal(candidate.as_bytes(), token.as_bytes())
         }),
         GatewayAuthentication::Basic(_)
+        | GatewayAuthentication::Web(_)
         | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => candidate.is_none(),
     }
 }

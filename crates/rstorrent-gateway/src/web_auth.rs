@@ -374,6 +374,18 @@ impl WebAuthStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn session_is_active(&self, session_id: &str, now: i64) -> Result<bool, WebAuthError> {
+        self.connection
+            .query_row(
+                "SELECT expires_at > ?2 FROM web_auth_sessions WHERE session_id = ?1",
+                params![session_id, now],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|active| active.unwrap_or(false))
+            .map_err(Into::into)
+    }
+
     pub fn revoke_session(&mut self, session_id: &str) -> Result<bool, WebAuthError> {
         Ok(self.connection.execute(
             "DELETE FROM web_auth_sessions WHERE session_id = ?1",

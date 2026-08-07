@@ -4,6 +4,7 @@
 
 mod application_websocket;
 mod web_auth;
+mod web_auth_http;
 
 pub use application_websocket::{
     ApplicationClientFrame, ApplicationConnectionError, ApplicationConnectionErrorCode,
@@ -74,7 +75,15 @@ pub struct GatewayConfig {
 pub enum GatewayAuthentication {
     Bearer { token: String },
     Basic(BasicCredentials),
+    Web(WebAuthenticationConfig),
     UnauthenticatedLoopbackDevelopment,
+}
+
+#[derive(Clone, Debug)]
+pub struct WebAuthenticationConfig {
+    pub database: PathBuf,
+    pub pairing_window: bool,
+    pub policy_override: Option<WebAccessPolicy>,
 }
 
 #[derive(Clone)]
@@ -113,6 +122,7 @@ impl fmt::Debug for GatewayAuthentication {
         match self {
             Self::Bearer { .. } => formatter.write_str("Bearer { token: [redacted] }"),
             Self::Basic(_) => formatter.write_str("Basic { credential: [redacted] }"),
+            Self::Web(config) => formatter.debug_tuple("Web").field(config).finish(),
             Self::UnauthenticatedLoopbackDevelopment => {
                 formatter.write_str("UnauthenticatedLoopbackDevelopment")
             }
@@ -152,8 +162,10 @@ impl GatewayConfig {
     }
 
     pub fn validate(&self) -> Result<(), GatewayError> {
-        if !matches!(self.authentication, GatewayAuthentication::Basic(_))
-            && !self.bind.ip().is_loopback()
+        if !matches!(
+            self.authentication,
+            GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+        ) && !self.bind.ip().is_loopback()
         {
             return Err(GatewayError::Configuration(
                 "the proof gateway only binds a loopback address".to_owned(),
@@ -164,6 +176,13 @@ impl GatewayConfig {
         {
             return Err(GatewayError::Configuration(
                 "the authenticated host requires one explicit unicast bind address".to_owned(),
+            ));
+        }
+        if matches!(self.authentication, GatewayAuthentication::Web(_))
+            && !self.bind.ip().is_loopback()
+        {
+            return Err(GatewayError::Configuration(
+                "browser-session authentication is loopback-only".to_owned(),
             ));
         }
         match &self.authentication {
@@ -194,12 +213,13 @@ impl GatewayConfig {
         if matches!(
             self.authentication,
             GatewayAuthentication::UnauthenticatedLoopbackDevelopment
+                | GatewayAuthentication::Web(_)
         ) && !is_loopback_http_origin(&self.allowed_origin)
         {
             return Err(GatewayError::Configuration(
-                "unauthenticated development mode requires an exact HTTP loopback origin with a port"
+                "local browser authentication requires an exact HTTP loopback origin with a port"
                     .to_owned(),
-                ));
+            ));
         }
         if matches!(self.authentication, GatewayAuthentication::Basic(_))
             && !is_https_origin(&self.allowed_origin)
@@ -307,6 +327,7 @@ impl Error for GatewayError {
 struct GatewayState {
     authentication: Arc<GatewayAuthentication>,
     allowed_origin: Arc<str>,
+    allowed_host: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
     torrent_uploads: Arc<Semaphore>,
@@ -316,6 +337,7 @@ struct GatewayState {
     gateway_shutdown: CancellationToken,
     download_directory_picker: Arc<dyn DownloadDirectoryPicker>,
     hosted_assets: Option<Arc<HostedAssets>>,
+    web_auth: Option<Arc<std::sync::Mutex<web_auth_http::WebAuthRuntime>>>,
 }
 
 impl fmt::Debug for GatewayState {
@@ -350,9 +372,12 @@ pub async fn bind_hosted(
     service: Arc<Mutex<ApplicationService>>,
     assets: HostedAssets,
 ) -> Result<GatewayServer, GatewayError> {
-    if !matches!(config.authentication, GatewayAuthentication::Basic(_)) {
+    if !matches!(
+        config.authentication,
+        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_)
+    ) {
         return Err(GatewayError::Configuration(
-            "hosted web assets require basic authentication".to_owned(),
+            "hosted web assets require basic or browser-session authentication".to_owned(),
         ));
     }
     bind_with_picker_and_assets(
@@ -395,9 +420,16 @@ async fn bind_with_picker_and_assets(
         .await
         .map_err(GatewayError::Bind)?;
     let local_addr = listener.local_addr().map_err(GatewayError::Bind)?;
+    let web_auth = match &config.authentication {
+        GatewayAuthentication::Web(config) => Some(Arc::new(std::sync::Mutex::new(
+            web_auth_http::WebAuthRuntime::open(config)?,
+        ))),
+        _ => None,
+    };
     let state = GatewayState {
         authentication: Arc::new(config.authentication),
         allowed_origin: Arc::from(config.allowed_origin),
+        allowed_host: Arc::from(local_addr.to_string()),
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
         torrent_uploads: Arc::new(Semaphore::new(1)),
@@ -407,6 +439,7 @@ async fn bind_with_picker_and_assets(
         gateway_shutdown: CancellationToken::new(),
         download_directory_picker,
         hosted_assets: hosted_assets.map(Arc::new),
+        web_auth,
     };
     Ok(GatewayServer {
         listener,
@@ -446,6 +479,7 @@ impl GatewayServer {
             HeaderValue::from_str(&self.state.allowed_origin).expect("validated allowed origin");
         let cors = CorsLayer::new()
             .allow_origin(allowed_origin)
+            .allow_credentials(true)
             .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
             .allow_headers([
                 header::ACCEPT,
@@ -481,6 +515,30 @@ impl GatewayServer {
                 axum::routing::delete(close_view_set),
             )
             .route("/healthz", get(healthz))
+            .route("/api/v1/web-auth/status", get(web_auth_http::status))
+            .route("/api/v1/web-auth/policy", post(web_auth_http::set_policy))
+            .route(
+                "/api/v1/web-auth/recovery",
+                post(web_auth_http::claim_recovery_window),
+            )
+            .route(
+                "/api/v1/web-auth/pairing-ticket",
+                post(web_auth_http::create_pairing_ticket),
+            )
+            .route(
+                "/api/v1/web-auth/pairing-ticket/redeem",
+                post(web_auth_http::redeem_pairing_ticket),
+            )
+            .route("/api/v1/web-auth/sessions", get(web_auth_http::sessions))
+            .route(
+                "/api/v1/web-auth/sessions/others",
+                axum::routing::delete(web_auth_http::revoke_other_sessions),
+            )
+            .route(
+                "/api/v1/web-auth/sessions/{id}",
+                axum::routing::delete(web_auth_http::revoke_session),
+            )
+            .route("/api/v1/web-auth/logout", post(web_auth_http::logout))
             .layer(axum::extract::DefaultBodyLimit::max(
                 MAX_INCOMING_MESSAGE_BYTES,
             ))
@@ -512,6 +570,11 @@ async fn require_basic_auth(
     request: Request,
     next: Next,
 ) -> Response {
+    if matches!(state.authentication.as_ref(), GatewayAuthentication::Web(_))
+        && !web_auth_http::host_matches_origin(&state, request.headers())
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let GatewayAuthentication::Basic(credentials) = state.authentication.as_ref() else {
         return next.run(request).await;
     };
@@ -990,6 +1053,9 @@ fn authenticate_http(
             return Err(HttpAuthError::Credential);
         }
     }
+    if matches!(state.authentication.as_ref(), GatewayAuthentication::Web(_)) {
+        web_auth_http::authenticate_application_request(state, headers)?;
+    }
     let owner = headers
         .get("x-rstorrent-owner")
         .and_then(|value| value.to_str().ok())
@@ -1121,7 +1187,8 @@ mod tests {
     use super::{
         ApplicationClientFrame, ApplicationConnectionErrorCode, ApplicationServerFrame,
         ChooseDownloadRootResponse, GatewayAuthentication, GatewayConfig, HostedAssets,
-        MAX_TORRENT_SOURCE_BYTES, bind, bind_hosted, bind_with_picker, constant_time_equal,
+        MAX_TORRENT_SOURCE_BYTES, WebAuthenticationConfig, bind, bind_hosted, bind_with_picker,
+        constant_time_equal,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -1241,12 +1308,14 @@ mod tests {
             authorization.as_deref(),
             origin,
             owner,
+            None,
             body,
         )
         .await;
         (status, body)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn raw_http_request(
         address: SocketAddr,
         method: &str,
@@ -1254,6 +1323,7 @@ mod tests {
         authorization: Option<&str>,
         origin: Option<&str>,
         owner: Option<&str>,
+        cookie: Option<&str>,
         body: Option<String>,
     ) -> (u16, String, Vec<u8>) {
         let method = method.to_owned();
@@ -1261,6 +1331,7 @@ mod tests {
         let authorization = authorization.map(str::to_owned);
         let origin = origin.map(str::to_owned);
         let owner = owner.map(str::to_owned);
+        let cookie = cookie.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
             let body = body.unwrap_or_default();
             let mut request = format!(
@@ -1275,6 +1346,9 @@ mod tests {
             }
             if let Some(owner) = owner {
                 request.push_str(&format!("X-RSTorrent-Owner: {owner}\r\n"));
+            }
+            if let Some(cookie) = cookie {
+                request.push_str(&format!("Cookie: {cookie}\r\n"));
             }
             if !body.is_empty() {
                 request.push_str("Content-Type: application/json\r\n");
@@ -1307,6 +1381,44 @@ mod tests {
         })
         .await
         .expect("HTTP request task")
+    }
+
+    async fn web_auth_request(
+        address: SocketAddr,
+        method: &str,
+        path: &str,
+        origin: Option<&str>,
+        cookie: Option<&str>,
+        body: Option<String>,
+    ) -> (u16, String, Vec<u8>) {
+        raw_http_request(
+            address,
+            method,
+            path,
+            None,
+            origin,
+            Some("00000000000000000000000000000001"),
+            cookie,
+            body,
+        )
+        .await
+    }
+
+    fn response_cookie(headers: &str) -> String {
+        headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("set-cookie").then(|| {
+                    value
+                        .trim()
+                        .split(';')
+                        .next()
+                        .expect("cookie pair")
+                        .to_owned()
+                })
+            })
+            .expect("response session cookie")
     }
 
     async fn raw_torrent_request(
@@ -1629,17 +1741,35 @@ mod tests {
         let task = tokio::spawn(server.serve(shutdown.clone()));
 
         let (status, headers, _) =
-            raw_http_request(address, "GET", "/", None, None, None, None).await;
+            raw_http_request(address, "GET", "/", None, None, None, None, None).await;
         assert_eq!(status, 401);
         assert!(headers.contains("www-authenticate: Basic realm=\"RSTorrent\""));
         assert_eq!(
-            raw_http_request(address, "GET", "/", Some("Basic wrong"), None, None, None,)
-                .await
-                .0,
+            raw_http_request(
+                address,
+                "GET",
+                "/",
+                Some("Basic wrong"),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .0,
             401
         );
-        let (status, _, body) =
-            raw_http_request(address, "GET", "/", Some(&authorization), None, None, None).await;
+        let (status, _, body) = raw_http_request(
+            address,
+            "GET",
+            "/",
+            Some(&authorization),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
         assert_eq!(status, 200);
         assert_eq!(body, b"private-preview-index");
         let (status, _, body) = raw_http_request(
@@ -1647,6 +1777,7 @@ mod tests {
             "GET",
             "/healthz",
             Some(&authorization),
+            None,
             None,
             None,
             None,
@@ -1663,6 +1794,7 @@ mod tests {
                 "GET",
                 "/assets/missing.js",
                 Some(&authorization),
+                None,
                 None,
                 None,
                 None,
@@ -2724,6 +2856,244 @@ mod tests {
             .await
             .0,
             403
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn browser_sessions_pair_revoke_and_recover_end_to_end() {
+        let root = test_root("browser-auth");
+        let service = test_service(&root).await;
+        let origin = "http://127.0.0.1:4177";
+        let database = root.join("profile/web-auth.sqlite3");
+        let config = |pairing_window| GatewayConfig {
+            bind: "127.0.0.1:0".parse().expect("address"),
+            authentication: GatewayAuthentication::Web(WebAuthenticationConfig {
+                database: database.clone(),
+                pairing_window,
+                policy_override: None,
+            }),
+            allowed_origin: origin.to_owned(),
+            max_connections: 2,
+        };
+        let server = bind(config(false), service.clone())
+            .await
+            .expect("bind browser-auth gateway");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        let (status, _, body) =
+            web_auth_request(address, "GET", "/api/v1/web-auth/status", None, None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).expect("status JSON")["state"],
+            "initial_window_open"
+        );
+        assert_eq!(
+            web_auth_request(address, "GET", "/api/v1/hello", Some(origin), None, None,)
+                .await
+                .0,
+            200
+        );
+
+        let (status, headers, _) = web_auth_request(
+            address,
+            "POST",
+            "/api/v1/web-auth/policy",
+            Some(origin),
+            None,
+            Some(r#"{"policy":"paired","label":"First browser"}"#.to_owned()),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let first_cookie = response_cookie(&headers);
+        assert_eq!(
+            web_auth_request(address, "GET", "/api/v1/hello", Some(origin), None, None,)
+                .await
+                .0,
+            401
+        );
+        assert_eq!(
+            web_auth_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some(origin),
+                Some(&first_cookie),
+                None,
+            )
+            .await
+            .0,
+            200
+        );
+
+        let (status, _, body) = web_auth_request(
+            address,
+            "POST",
+            "/api/v1/web-auth/pairing-ticket",
+            Some(origin),
+            Some(&first_cookie),
+            None,
+        )
+        .await;
+        assert_eq!(status, 201);
+        let code = serde_json::from_slice::<serde_json::Value>(&body).expect("ticket JSON")["code"]
+            .as_str()
+            .expect("pairing code")
+            .to_owned();
+        assert_eq!(code.len(), 4);
+        let (status, headers, _) = web_auth_request(
+            address,
+            "POST",
+            "/api/v1/web-auth/pairing-ticket/redeem",
+            Some(origin),
+            None,
+            Some(format!(
+                "{{\"code\":\"{code}\",\"label\":\"Second browser\"}}"
+            )),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let second_cookie = response_cookie(&headers);
+
+        let (status, _, body) = web_auth_request(
+            address,
+            "GET",
+            "/api/v1/web-auth/sessions",
+            None,
+            Some(&first_cookie),
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        let sessions = serde_json::from_slice::<serde_json::Value>(&body).expect("sessions JSON");
+        let sessions = sessions["sessions"].as_array().expect("session array");
+        assert_eq!(sessions.len(), 2);
+        let second_id = sessions
+            .iter()
+            .find(|session| session["label"] == "Second browser")
+            .and_then(|session| session["id"].as_str())
+            .expect("second session")
+            .to_owned();
+
+        let mut request = format!("ws://{address}/api/v1/connect")
+            .into_client_request()
+            .expect("request");
+        request
+            .headers_mut()
+            .insert("Origin", origin.parse().expect("origin"));
+        request
+            .headers_mut()
+            .insert("Cookie", second_cookie.parse().expect("cookie"));
+        let (mut socket, _) = connect_async(request).await.expect("connect");
+        send_application_message(
+            &mut socket,
+            &ApplicationClientFrame::Connect {
+                api_version: rstorrent_session::API_VERSION,
+                encoding: rstorrent_session::ApiEncoding::Json,
+                client_instance_id: "00000000000000000000000000000009".to_owned(),
+                token: None,
+            },
+        )
+        .await;
+        assert!(matches!(
+            read_application_message(&mut socket).await,
+            ApplicationServerFrame::Connected { .. }
+        ));
+
+        assert_eq!(
+            web_auth_request(
+                address,
+                "DELETE",
+                &format!("/api/v1/web-auth/sessions/{second_id}"),
+                Some(origin),
+                Some(&first_cookie),
+                None,
+            )
+            .await
+            .0,
+            204
+        );
+        let close = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                match socket.next().await {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+        })
+        .await;
+        assert!(close.is_ok(), "revoked WebSocket stayed open");
+        assert_eq!(
+            web_auth_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some(origin),
+                Some(&second_cookie),
+                None,
+            )
+            .await
+            .0,
+            401
+        );
+
+        shutdown.cancel();
+        task.await
+            .expect("server join")
+            .expect("server termination");
+
+        let server = bind(config(true), service.clone())
+            .await
+            .expect("bind recovery gateway");
+        let address = server.local_addr();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let (status, headers, _) = web_auth_request(
+            address,
+            "POST",
+            "/api/v1/web-auth/recovery",
+            Some(origin),
+            None,
+            Some(r#"{"label":"Recovered browser"}"#.to_owned()),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let recovered_cookie = response_cookie(&headers);
+        assert_eq!(
+            web_auth_request(
+                address,
+                "POST",
+                "/api/v1/web-auth/recovery",
+                Some(origin),
+                None,
+                Some(r#"{"label":"Racing browser"}"#.to_owned()),
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            web_auth_request(
+                address,
+                "GET",
+                "/api/v1/hello",
+                Some(origin),
+                Some(&recovered_cookie),
+                None,
+            )
+            .await
+            .0,
+            200
         );
 
         shutdown.cancel();

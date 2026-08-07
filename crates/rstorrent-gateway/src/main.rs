@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_gateway::{
-    GatewayAuthentication, GatewayConfig, HostedAssets, MAX_BASIC_PASSWORD_BYTES, bind, bind_hosted,
+    GatewayAuthentication, GatewayConfig, HostedAssets, MAX_BASIC_PASSWORD_BYTES, WebAccessPolicy,
+    WebAuthenticationConfig, bind, bind_hosted,
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
@@ -17,24 +18,48 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let profile_root = required_path("RSTORRENT_PROFILE_ROOT")?;
+    let cli = CliOptions::parse(env::args().skip(1))?;
+    if cli.help {
+        print_help();
+        return Ok(());
+    }
+    let profile_root = cli
+        .profile_root
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(|| required_path("RSTORRENT_PROFILE_ROOT"))?;
     let storage_roots = optional_path("RSTORRENT_STORAGE_ROOT")?
         .map(|path| vec![ConfiguredStorageRoot::path("downloads", path)])
         .unwrap_or_default();
-    let origin =
-        env::var("RSTORRENT_GATEWAY_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".to_owned());
-    let authentication = env::var("RSTORRENT_GATEWAY_AUTH").unwrap_or_else(|_| "bearer".to_owned());
-    let (bind_addr, authentication) = match authentication.as_str() {
+    let authentication_name = cli.auth.clone().unwrap_or_else(|| {
+        env::var("RSTORRENT_GATEWAY_AUTH").unwrap_or_else(|_| {
+            if cli.product_cli {
+                "auto".to_owned()
+            } else {
+                "bearer".to_owned()
+            }
+        })
+    });
+    let configured_bind = cli
+        .listen
+        .clone()
+        .or_else(|| env::var("RSTORRENT_GATEWAY_BIND").ok());
+    let (bind_addr, authentication) = match authentication_name.as_str() {
         "bearer" => (
-            env::var("RSTORRENT_GATEWAY_BIND")
-                .unwrap_or_else(|_| "127.0.0.1:3030".to_owned())
+            configured_bind
+                .unwrap_or_else(|| "127.0.0.1:3030".to_owned())
                 .parse::<SocketAddr>()?,
             GatewayAuthentication::Bearer {
-                token: required_string("RSTORRENT_GATEWAY_TOKEN")?,
+                token: match cli.bearer_token_file.as_ref() {
+                    Some(path) => {
+                        read_secret_file(path, rstorrent_gateway::MAX_TOKEN_BYTES, "bearer token")?
+                    }
+                    None => required_string("RSTORRENT_GATEWAY_TOKEN")?,
+                },
             },
         ),
-        "unauthenticated_loopback_development" => {
-            if env::var_os("RSTORRENT_GATEWAY_BIND").is_some() {
+        "development-none" | "unauthenticated_loopback_development" => {
+            if configured_bind.is_some() {
                 return Err(
                     "RSTORRENT_GATEWAY_BIND is not accepted in unauthenticated development mode"
                         .into(),
@@ -46,19 +71,57 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
         }
         "basic" => (
-            required_string("RSTORRENT_GATEWAY_BIND")?.parse::<SocketAddr>()?,
+            configured_bind
+                .ok_or("--listen or RSTORRENT_GATEWAY_BIND is required for Basic auth")?
+                .parse::<SocketAddr>()?,
             GatewayAuthentication::basic(
-                &required_string("RSTORRENT_GATEWAY_BASIC_USERNAME")?,
-                &required_password_file("RSTORRENT_GATEWAY_BASIC_PASSWORD_FILE")?,
+                &cli.basic_username
+                    .clone()
+                    .map(Ok)
+                    .unwrap_or_else(|| required_string("RSTORRENT_GATEWAY_BASIC_USERNAME"))?,
+                &match cli.basic_password_file.as_ref() {
+                    Some(path) => read_password_file(path, "basic password file")?,
+                    None => required_password_file("RSTORRENT_GATEWAY_BASIC_PASSWORD_FILE")?,
+                },
             )?,
         ),
+        "auto" | "local-open" | "paired" => {
+            let bind = configured_bind
+                .unwrap_or_else(|| "127.0.0.1:3030".to_owned())
+                .parse::<SocketAddr>()?;
+            let policy_override = match authentication_name.as_str() {
+                "local-open" => Some(WebAccessPolicy::LocalOpen),
+                "paired" => Some(WebAccessPolicy::Paired),
+                _ => None,
+            };
+            (
+                bind,
+                GatewayAuthentication::Web(WebAuthenticationConfig {
+                    database: profile_root.join("web-auth.sqlite3"),
+                    pairing_window: cli.pairing_window,
+                    policy_override,
+                }),
+            )
+        }
         value => {
             return Err(format!(
-                "RSTORRENT_GATEWAY_AUTH must be bearer, basic, or unauthenticated_loopback_development; got {value}"
+                "gateway auth must be auto, local-open, paired, basic, bearer, or development-none; got {value}"
             )
             .into());
         }
     };
+    if cli.pairing_window && !matches!(authentication, GatewayAuthentication::Web(_)) {
+        return Err("--pairing-window is accepted only with browser-session authentication".into());
+    }
+    let origin = cli.origin.clone().unwrap_or_else(|| {
+        env::var("RSTORRENT_GATEWAY_ORIGIN").unwrap_or_else(|_| {
+            if matches!(authentication, GatewayAuthentication::Web(_)) {
+                format!("http://{bind_addr}")
+            } else {
+                "http://127.0.0.1:5173".to_owned()
+            }
+        })
+    });
     let test_view_set_lease = env::var("RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS")
         .ok()
         .map(|value| value.parse::<u64>())
@@ -143,8 +206,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         allowed_origin: origin,
         max_connections: rstorrent_gateway::MAX_CONNECTIONS,
     };
-    let web_root = optional_path("RSTORRENT_WEB_ROOT")?;
-    let build_id = env::var("RSTORRENT_BUILD_ID").ok();
+    let web_root = cli
+        .web_root
+        .clone()
+        .map(Some)
+        .unwrap_or(optional_path("RSTORRENT_WEB_ROOT")?);
+    let build_id = cli
+        .build_id
+        .clone()
+        .or_else(|| env::var("RSTORRENT_BUILD_ID").ok());
     let server = match (web_root, build_id) {
         (Some(web_root), Some(build_id)) => {
             bind_hosted(
@@ -162,6 +232,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     eprintln!("gateway listening on {}", server.local_addr());
+    if cli.pairing_window {
+        eprintln!(
+            "browser pairing window open for 10 minutes; the first explicit approval consumes it"
+        );
+    }
+    if cli.open_browser {
+        open_browser(&format!("http://{}/", server.local_addr()))?;
+    }
     let connection_metrics = server.connection_metrics();
     let shutdown = CancellationToken::new();
     let signal_shutdown = shutdown.clone();
@@ -233,6 +311,103 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[derive(Default)]
+struct CliOptions {
+    product_cli: bool,
+    help: bool,
+    profile_root: Option<PathBuf>,
+    listen: Option<String>,
+    origin: Option<String>,
+    auth: Option<String>,
+    basic_username: Option<String>,
+    basic_password_file: Option<PathBuf>,
+    bearer_token_file: Option<PathBuf>,
+    web_root: Option<PathBuf>,
+    build_id: Option<String>,
+    pairing_window: bool,
+    open_browser: bool,
+}
+
+impl CliOptions {
+    fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self, Box<dyn Error>> {
+        let mut arguments = arguments.into_iter().peekable();
+        let mut options = Self::default();
+        if arguments.peek().is_some_and(|argument| argument == "serve") {
+            options.product_cli = true;
+            arguments.next();
+        } else if arguments.peek().is_some() {
+            options.product_cli = true;
+        }
+        while let Some(argument) = arguments.next() {
+            let value = |arguments: &mut std::iter::Peekable<_>| {
+                arguments
+                    .next()
+                    .filter(|value: &String| !value.is_empty())
+                    .ok_or_else(|| format!("{argument} requires a value"))
+            };
+            match argument.as_str() {
+                "-h" | "--help" => options.help = true,
+                "--profile-root" => {
+                    options.profile_root = Some(PathBuf::from(value(&mut arguments)?))
+                }
+                "--listen" => options.listen = Some(value(&mut arguments)?),
+                "--origin" => options.origin = Some(value(&mut arguments)?),
+                "--auth" => options.auth = Some(value(&mut arguments)?),
+                "--basic-username" => options.basic_username = Some(value(&mut arguments)?),
+                "--basic-password-file" => {
+                    options.basic_password_file = Some(PathBuf::from(value(&mut arguments)?))
+                }
+                "--bearer-token-file" => {
+                    options.bearer_token_file = Some(PathBuf::from(value(&mut arguments)?))
+                }
+                "--web-root" => options.web_root = Some(PathBuf::from(value(&mut arguments)?)),
+                "--build-id" => options.build_id = Some(value(&mut arguments)?),
+                "--pairing-window" => options.pairing_window = true,
+                "--open" => options.open_browser = true,
+                "--no-open" => options.open_browser = false,
+                value => return Err(format!("unknown gateway argument {value:?}").into()),
+            }
+        }
+        Ok(options)
+    }
+}
+
+fn print_help() {
+    println!(
+        "RSTorrent headless web gateway\n\n\
+         Usage: rstorrent-gateway serve [OPTIONS]\n\n\
+         Options:\n\
+           --profile-root PATH         Profile and web-auth state root\n\
+           --listen ADDRESS            Listener address (default 127.0.0.1:3030)\n\
+           --origin URL                Exact browser Origin\n\
+           --auth MODE                 auto, local-open, paired, basic, bearer, or development-none\n\
+           --pairing-window            Recover one browser during a 10-minute restart window\n\
+           --basic-username NAME       Basic deployment username\n\
+           --basic-password-file PATH  Basic deployment password file\n\
+           --bearer-token-file PATH    Bearer automation token file\n\
+           --web-root PATH             Production web bundle directory\n\
+           --build-id ID               Hosted build identity\n\
+           --open | --no-open          Open or do not open the browser\n\
+           -h, --help                  Show this help\n\n\
+         Secret values are accepted from files, not literal command arguments."
+    );
+}
+
+fn open_browser(url: &str) -> Result<(), Box<dyn Error>> {
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(url).status()?;
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .status()?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = std::process::Command::new("xdg-open").arg(url).status()?;
+    if !status.success() {
+        return Err(format!("browser opener exited with {status}").into());
+    }
+    Ok(())
+}
+
 async fn wait_for_shutdown_signal() {
     #[cfg(unix)]
     {
@@ -272,23 +447,75 @@ fn optional_path(name: &str) -> Result<Option<PathBuf>, Box<dyn Error>> {
 
 fn required_password_file(name: &str) -> Result<String, Box<dyn Error>> {
     let path = required_path(name)?;
-    let bytes = std::fs::read(&path)?;
-    if bytes.len() > MAX_BASIC_PASSWORD_BYTES + 2 {
-        return Err(format!("{name} exceeds its configured password bound").into());
+    read_password_file(&path, name)
+}
+
+fn read_password_file(path: &std::path::Path, label: &str) -> Result<String, Box<dyn Error>> {
+    read_secret_file(path, MAX_BASIC_PASSWORD_BYTES, label)
+}
+
+fn read_secret_file(
+    path: &std::path::Path,
+    maximum_bytes: usize,
+    label: &str,
+) -> Result<String, Box<dyn Error>> {
+    let bytes = std::fs::read(path)?;
+    if bytes.len() > maximum_bytes + 2 {
+        return Err(format!("{label} exceeds its configured bound").into());
     }
-    let mut password = String::from_utf8(bytes)?;
-    if password.ends_with("\r\n") {
-        password.truncate(password.len() - 2);
-    } else if password.ends_with('\n') {
-        password.pop();
+    let mut secret = String::from_utf8(bytes)?;
+    if secret.ends_with("\r\n") {
+        secret.truncate(secret.len() - 2);
+    } else if secret.ends_with('\n') {
+        secret.pop();
     }
-    if password.contains(['\r', '\n']) {
-        return Err(format!("{name} must contain one password line").into());
+    if secret.contains(['\r', '\n']) {
+        return Err(format!("{label} must contain one secret line").into());
     }
-    if password.is_empty() || password.len() > MAX_BASIC_PASSWORD_BYTES {
-        return Err(
-            format!("{name} must contain 1..={MAX_BASIC_PASSWORD_BYTES} password bytes").into(),
-        );
+    if secret.is_empty() || secret.len() > maximum_bytes {
+        return Err(format!("{label} must contain 1..={maximum_bytes} bytes").into());
     }
-    Ok(password)
+    Ok(secret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CliOptions;
+
+    #[test]
+    fn product_cli_parses_listener_auth_and_recovery() {
+        let options = CliOptions::parse(
+            [
+                "serve",
+                "--profile-root",
+                "/tmp/profile",
+                "--listen",
+                "127.0.0.1:4040",
+                "--auth",
+                "paired",
+                "--pairing-window",
+                "--no-open",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .expect("parse");
+        assert!(options.product_cli);
+        assert_eq!(options.listen.as_deref(), Some("127.0.0.1:4040"));
+        assert_eq!(options.auth.as_deref(), Some("paired"));
+        assert!(options.pairing_window);
+        assert!(!options.open_browser);
+    }
+
+    #[test]
+    fn product_cli_rejects_literal_or_unknown_secret_flags() {
+        let error = CliOptions::parse(
+            ["serve", "--password", "secret"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .err()
+        .expect("reject literal password");
+        assert!(error.to_string().contains("unknown gateway argument"));
+    }
 }
