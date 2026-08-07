@@ -33,8 +33,12 @@ focused frontend tests and production validation pass.
 - Show live rates only while the session is connected or the deterministic
   demo adapter is active. Restore the base title on idle, reconnecting,
   offline, and component unmount paths.
+- Throttle rate-driven `document.title` assignments to at most once per
+  second. Apply the first change immediately and coalesce intervening state
+  into one trailing update containing the latest rates. Component disposal
+  may restore the base title immediately as lifecycle cleanup.
 - Add no engine counter, generated contract, persistence field, dependency,
-  public-network run, browser timer, or visible-client launch.
+  public-network run, repeating browser interval, or visible-client launch.
 
 ## Reference And Ownership
 
@@ -48,14 +52,19 @@ mutable engine objects and refreshes at the requested one-second cadence.
 
 The Rust speed owner remains authoritative for both current rates. The live
 adapter owns the always-interested two-metric view. Zustand retains the mapped
-session summary, and one React effect owns `document.title` for the mounted
-application lifetime. Existing controller/view-set cancellation and join
-paths own the added lease; no new task or timer is introduced.
+session summary, and one React-owned leading/trailing throttle owns
+`document.title` for the mounted application lifetime. It has at most one
+pending one-shot timeout, cancels it on unmount, and restores the base title.
+Existing controller/view-set cancellation and join paths own the added lease;
+no repeating task or interval is introduced.
 
 ## Validation
 
 - Pure title formatting covers active download, upload-only, unavailable
   direction, Decimal/Binary units, idle, and disconnected states.
+- Deterministic fake-clock coverage proves an immediate leading update, no
+  second assignment inside one second, latest-value trailing coalescing, and
+  pending-timeout cancellation during disposal.
 - React coverage proves the mounted demo title and unmount reset.
 - Live-adapter coverage proves the independent two-metric, one-second view,
   maps both current rates, and retains it across responsive detail changes.
@@ -73,11 +82,13 @@ paths own the added lease; no new task or timer is introduced.
 
 ## Implemented Result
 
-The shared React application now derives its document title from the mapped
-session summary. Connected live and deterministic demo sessions show both
-directions while either one is active, use the current Decimal/Binary
+The shared React application now derives its desired document title from the
+mapped session summary. Connected live and deterministic demo sessions show
+both directions while either one is active, use the current Decimal/Binary
 preference, preserve unavailable directionality, and return to `RSTorrent`
-when idle, disconnected, or unmounted.
+when idle, disconnected, or unmounted. A leading/trailing throttle applies the
+first change immediately, retains only the latest desired title, and performs
+no second rate-driven assignment until at least one second has elapsed.
 
 The live adapter leases a separate `session-rates` projection with exactly
 `payload_received` and `payload_uploaded`, the ten-minute live tier's
@@ -93,7 +104,8 @@ The following ran from `clients/web` on 2026-08-07:
 - `npm run typecheck`: pass.
 - Focused Vitest for the title formatter, React application, and live adapter:
   59 tests passed.
-- `npm test`: 35 files and 219 tests passed; the two existing opt-in files and
+- Focused fake-clock throttle and React coverage: 47 tests passed.
+- `npm test`: 35 files and 221 tests passed; the two existing opt-in files and
   tests remained skipped.
 - `npm run build`: pass, including the production CSP scan of both JavaScript
   bundles. The existing large-chunk advisory remained non-fatal.

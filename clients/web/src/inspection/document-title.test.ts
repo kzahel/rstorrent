@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SessionSummary } from "./model";
-import { documentTitleForSession } from "./document-title";
+import {
+  DocumentTitleThrottle,
+  documentTitleForSession,
+} from "./document-title";
 
 const CONNECTED: SessionSummary = {
   connection: "connected",
@@ -10,6 +13,45 @@ const CONNECTED: SessionSummary = {
   dhtNodes: null,
   knownPeers: null,
 };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("DocumentTitleThrottle", () => {
+  it("applies at most once per second and keeps the latest pending title", () => {
+    vi.useFakeTimers();
+    const apply = vi.fn();
+    const throttle = new DocumentTitleThrottle(apply);
+
+    throttle.update("first");
+    vi.advanceTimersByTime(250);
+    throttle.update("second");
+    vi.advanceTimersByTime(250);
+    throttle.update("latest");
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenLastCalledWith("first");
+    vi.advanceTimersByTime(499);
+    expect(apply).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenLastCalledWith("latest");
+  });
+
+  it("cancels a pending update and restores the base title on dispose", () => {
+    vi.useFakeTimers();
+    const apply = vi.fn();
+    const throttle = new DocumentTitleThrottle(apply);
+
+    throttle.update("active");
+    throttle.update("pending");
+    throttle.dispose();
+    vi.advanceTimersByTime(1_000);
+
+    expect(apply.mock.calls).toEqual([["active"], ["RSTorrent"]]);
+  });
+});
 
 describe("documentTitleForSession", () => {
   it("keeps the application title while idle or disconnected", () => {

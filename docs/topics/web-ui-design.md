@@ -62,7 +62,10 @@ Completed Tactical
 session transfer rates to the browser/Tauri document title. A separate
 two-metric session-speed projection updates at one-second cadence regardless
 of destination or selected Speed series; idle and disconnected sessions
-retain plain `RSTorrent`, and the active Decimal/Binary preference applies.
+retain plain `RSTorrent`, and the active Decimal/Binary preference applies. A
+leading/trailing throttle separately guarantees that React applies rate-driven
+title changes at most once per second while retaining the latest pending
+rates.
 Tactical `055` implements the accepted product information architecture:
 responsive Library, Transfers, and Workbench destinations; contextual
 sidebars; shared bounded multi-selection; a clean transfer queue; a truthful
@@ -628,8 +631,9 @@ Tactical `106` adds pure Decimal/Binary, idle, disconnect, active-download,
 upload-only, and unavailable-direction title coverage. React proves mounted
 demo state and unmount restoration; the live adapter proves the independent
 two-metric one-second view and both mapped rates. TypeScript, all 219 Vitest
-tests, the production build/CSP scan, and the focused headless destination
-case pass.
+tests initially passed. The explicit leading/trailing throttle adds fake-clock
+coverage at 999 and 1,000 milliseconds; all 221 Vitest tests, the production
+build/CSP scan, and the focused headless destination case pass.
 
 Tactical `055` adds deterministic navigation, storage-denial, selection
 repair, destination-local filter, view-leasing, command, and component tests.

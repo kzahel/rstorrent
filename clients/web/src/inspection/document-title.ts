@@ -3,6 +3,89 @@ import { formatBytes } from "./format";
 import type { SessionSummary } from "./model";
 
 export const APPLICATION_TITLE = "RSTorrent";
+export const TITLE_UPDATE_INTERVAL_MILLIS = 1_000;
+
+export class DocumentTitleThrottle {
+  private appliedTitle: string;
+  private lastAppliedAt: number | null = null;
+  private pendingTitle: string | null = null;
+  private timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  constructor(
+    private readonly apply: (title: string) => void,
+    initialTitle = APPLICATION_TITLE,
+  ) {
+    this.appliedTitle = initialTitle;
+  }
+
+  update(title: string): void {
+    if (title === this.appliedTitle) {
+      this.clearPending();
+      return;
+    }
+    if (title === this.pendingTitle) return;
+
+    const now = performance.now();
+    const elapsed =
+      this.lastAppliedAt === null
+        ? TITLE_UPDATE_INTERVAL_MILLIS
+        : now - this.lastAppliedAt;
+    if (elapsed >= TITLE_UPDATE_INTERVAL_MILLIS) {
+      this.applyNow(title, now);
+      return;
+    }
+
+    this.pendingTitle = title;
+    if (this.timer === null) {
+      this.timer = globalThis.setTimeout(
+        () => this.flush(),
+        TITLE_UPDATE_INTERVAL_MILLIS - elapsed,
+      );
+    }
+  }
+
+  dispose(resetTitle = APPLICATION_TITLE): void {
+    this.clearPending();
+    if (this.appliedTitle !== resetTitle) {
+      this.apply(resetTitle);
+      this.appliedTitle = resetTitle;
+    }
+  }
+
+  private flush(): void {
+    this.timer = null;
+    if (this.pendingTitle === null) return;
+
+    const now = performance.now();
+    const elapsed = now - (this.lastAppliedAt ?? now);
+    if (elapsed < TITLE_UPDATE_INTERVAL_MILLIS) {
+      this.timer = globalThis.setTimeout(
+        () => this.flush(),
+        TITLE_UPDATE_INTERVAL_MILLIS - elapsed,
+      );
+      return;
+    }
+
+    const title = this.pendingTitle;
+    this.pendingTitle = null;
+    this.applyNow(title, now);
+  }
+
+  private applyNow(title: string, now: number): void {
+    this.clearPending();
+    this.apply(title);
+    this.appliedTitle = title;
+    this.lastAppliedAt = now;
+  }
+
+  private clearPending(): void {
+    this.pendingTitle = null;
+    if (this.timer !== null) {
+      globalThis.clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+}
 
 export function documentTitleForSession(
   session: SessionSummary,

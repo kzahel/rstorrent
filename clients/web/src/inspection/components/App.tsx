@@ -12,6 +12,7 @@ import { applyAppearancePreferences } from "../appearance";
 import { useInspectionCommand, useInspectionStore } from "../context";
 import {
   APPLICATION_TITLE,
+  DocumentTitleThrottle,
   documentTitleForSession,
 } from "../document-title";
 import { formatRate } from "../format";
@@ -97,18 +98,31 @@ function AppContent({ webAuth }: AppProps) {
   const mainRef = useRef<HTMLElement>(null);
   const splitterRef = useRef<HTMLDivElement>(null);
   const activeSplitterPointer = useRef<number | null>(null);
+  const titleThrottleRef = useRef<DocumentTitleThrottle | null>(null);
 
   useLayoutEffect(() => {
     applyAppearancePreferences({ colorTheme, interfaceSize });
   }, [colorTheme, interfaceSize]);
 
+  const desiredDocumentTitle = documentTitleForSession(session, dataUnits);
+
   useEffect(() => {
-    document.title = documentTitleForSession(session, dataUnits);
-  }, [dataUnits, session]);
+    const throttle =
+      titleThrottleRef.current ??
+      new DocumentTitleThrottle(
+        (title) => {
+          document.title = title;
+        },
+        document.title,
+      );
+    titleThrottleRef.current = throttle;
+    throttle.update(desiredDocumentTitle);
+  }, [desiredDocumentTitle]);
 
   useEffect(() => {
     return () => {
-      document.title = APPLICATION_TITLE;
+      titleThrottleRef.current?.dispose(APPLICATION_TITLE);
+      titleThrottleRef.current = null;
     };
   }, []);
 
