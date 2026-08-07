@@ -174,5 +174,5 @@ async function expectNoSessionCookie(context: BrowserContext): Promise<void> {
 }
 
 function liveUrl(): string {
-  return `${gateway}/?live=${encodeURIComponent(gateway!)}`;
+  return `${gateway}/`;
 }

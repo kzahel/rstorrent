@@ -74,6 +74,7 @@ def start_development_gateway(
     disk_pressure: bool,
     bearer: bool,
     lease_millis: int = 500,
+    bind: str | None = None,
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir()
     storage.mkdir()
@@ -90,7 +91,7 @@ def start_development_gateway(
         environment.update(
             {
                 "RSTORRENT_GATEWAY_AUTH": "bearer",
-                "RSTORRENT_GATEWAY_BIND": "127.0.0.1:0",
+                "RSTORRENT_GATEWAY_BIND": bind or "127.0.0.1:0",
                 "RSTORRENT_GATEWAY_TOKEN": TOKEN,
             }
         )
@@ -102,7 +103,10 @@ def start_development_gateway(
                 "RSTORRENT_TEST_VIEW_SET_LEASE_MILLIS": str(lease_millis),
             }
         )
-        environment.pop("RSTORRENT_GATEWAY_BIND", None)
+        if bind is None:
+            environment.pop("RSTORRENT_GATEWAY_BIND", None)
+        else:
+            environment["RSTORRENT_GATEWAY_BIND"] = bind
         environment.pop("RSTORRENT_GATEWAY_TOKEN", None)
     if disk_pressure:
         environment["RSTORRENT_TEST_STORAGE_WRITE_DELAY_MILLIS"] = "150"
@@ -263,10 +267,14 @@ def build_and_start_production_web(
     repository: Path,
     origin: str,
     port: int,
+    gateway_address: str,
 ) -> subprocess.Popen[str]:
+    build_environment = os.environ.copy()
+    build_environment["VITE_RSTORRENT_DEFAULT_LIVE"] = "same-origin"
     built = subprocess.run(
         ["npm", "run", "build", "--prefix", "clients/web"],
         cwd=repository,
+        env=build_environment,
         capture_output=True,
         text=True,
         timeout=30,
@@ -277,6 +285,10 @@ def build_and_start_production_web(
             "production web build failed\n"
             f"stdout:\n{built.stdout}\nstderr:\n{built.stderr}"
         )
+    preview_environment = os.environ.copy()
+    preview_environment["RSTORRENT_WEBUI_PROXY_TARGET"] = (
+        f"http://{gateway_address}"
+    )
     process = subprocess.Popen(
         [
             str(repository / "clients/web/node_modules/.bin/vite"),
@@ -288,6 +300,7 @@ def build_and_start_production_web(
             "--strictPort",
         ],
         cwd=repository / "clients/web",
+        env=preview_environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -366,7 +379,9 @@ def run(
             disk_pressure=disk_pressure,
             bearer=file_selection,
         )
-        vite = build_and_start_production_web(repository, origin, vite_port)
+        vite = build_and_start_production_web(
+            repository, origin, vite_port, address
+        )
         result = run_playwright(
             repository,
             origin,

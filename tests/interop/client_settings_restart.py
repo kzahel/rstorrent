@@ -506,9 +506,14 @@ def run() -> None:
         binary = build_gateway(repository)
         vite_port = reserve_loopback_port()
         origin = f"http://127.0.0.1:{vite_port}"
-        vite = build_and_start_production_web(repository, origin, vite_port)
+        gateway_bind = f"127.0.0.1:{reserve_loopback_port()}"
+        gateway, address = start_gateway(
+            binary, profile, storage, origin, bind=gateway_bind
+        )
+        vite = build_and_start_production_web(
+            repository, origin, vite_port, address
+        )
 
-        gateway, address = start_gateway(binary, profile, storage, origin)
         configured = run_playwright(
             repository, origin, address, "configure", fixture, seed_port
         )
@@ -524,7 +529,9 @@ def run() -> None:
         seed_session = None
         seed_handle = None
 
-        gateway, address = start_gateway(binary, profile, storage, origin)
+        gateway, address = start_gateway(
+            binary, profile, storage, origin, bind=gateway_bind
+        )
         active = run_playwright(
             repository, origin, address, "observe", fixture, seed_port
         )
@@ -555,7 +562,9 @@ def run() -> None:
         conflict_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         conflict_listener.bind(("127.0.0.1", conflict_port))
         conflict_listener.listen()
-        gateway, address = start_gateway(binary, profile, storage, origin)
+        gateway, address = start_gateway(
+            binary, profile, storage, origin, bind=gateway_bind
+        )
         recovered = run_playwright(
             repository, origin, address, "recover", fixture, seed_port
         )
@@ -569,7 +578,9 @@ def run() -> None:
         conflict_listener.close()
         conflict_listener = None
 
-        gateway, address = start_gateway(binary, profile, storage, origin)
+        gateway, address = start_gateway(
+            binary, profile, storage, origin, bind=gateway_bind
+        )
         repaired = run_playwright(
             repository, origin, address, "observe", fixture, seed_port
         )

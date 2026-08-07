@@ -17,7 +17,7 @@ usage() {
         "No download folder is assumed; choose one when adding a torrent." \
         "" \
         "Options:" \
-        "  --no-open  Start the servers without opening a browser tab." \
+        "  --no-open  Start the server without opening a browser tab." \
         "  --help     Show this help."
 }
 
@@ -60,7 +60,6 @@ for required_command in cargo npm curl mktemp; do
 done
 
 gateway_pid=""
-web_pid=""
 launcher_started=0
 runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/rstorrent-webui.XXXXXX")"
 gateway_log="$runtime_root/gateway.log"
@@ -97,7 +96,6 @@ stop_process() {
 cleanup() {
     local status=$?
     trap - EXIT INT TERM
-    stop_process "$web_pid" TERM "web preview"
     stop_process "$gateway_pid" INT "application gateway"
     rm -f -- "$gateway_log"
     rmdir -- "$runtime_root" 2>/dev/null || true
@@ -126,7 +124,7 @@ fi
 printf 'Building production web UI...\n' >&2
 (
     cd "$web_root"
-    npm run build
+    VITE_RSTORRENT_DEFAULT_LIVE=same-origin npm run build
 )
 
 printf 'Building application gateway...\n' >&2
@@ -149,9 +147,12 @@ origin="http://127.0.0.1:$web_port"
 (
     export RSTORRENT_PROFILE_ROOT="$data_root/profile"
     export RSTORRENT_GATEWAY_AUTH="unauthenticated_loopback_development"
+    export RSTORRENT_GATEWAY_BIND="127.0.0.1:$web_port"
     export RSTORRENT_GATEWAY_ORIGIN="$origin"
+    export RSTORRENT_WEB_ROOT="$web_root/dist"
+    export RSTORRENT_BUILD_ID="local-webui"
     export RSTORRENT_NETWORK_POLICY="${RSTORRENT_NETWORK_POLICY:-online}"
-    unset RSTORRENT_GATEWAY_BIND RSTORRENT_GATEWAY_TOKEN
+    unset RSTORRENT_GATEWAY_TOKEN
     exec "$gateway_binary"
 ) >"$gateway_log" 2>&1 &
 gateway_pid=$!
@@ -172,49 +173,49 @@ if [[ -z "$gateway_address" ]]; then
     sed -n '1,120p' "$gateway_log" >&2
     exit 1
 fi
+if [[ "$gateway_address" != "127.0.0.1:$web_port" ]]; then
+    printf 'Application gateway bound an unexpected address: %s.\n' \
+        "$gateway_address" >&2
+    exit 1
+fi
 
-(
-    cd "$web_root"
-    exec "$web_root/node_modules/.bin/vite" preview \
-        --host 127.0.0.1 \
-        --port "$web_port" \
-        --strictPort
-) &
-web_pid=$!
-
-web_ready=0
+application_ready=0
 for ((attempt = 0; attempt < 200; attempt++)); do
-    if ! kill -0 "$web_pid" 2>/dev/null; then
-        printf 'Production web preview exited during startup.\n' >&2
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+        printf 'Application gateway exited during startup.\n' >&2
+        sed -n '1,120p' "$gateway_log" >&2
         exit 1
     fi
-    if curl --silent --show-error --fail --max-time 0.25 "$origin/" >/dev/null 2>&1; then
-        web_ready=1
+    if curl --silent --show-error --fail --max-time 0.25 "$origin/" \
+        >/dev/null 2>&1 && \
+        curl --silent --show-error --fail --max-time 0.25 "$origin/healthz" \
+        >/dev/null 2>&1; then
+        application_ready=1
         break
     fi
     sleep 0.05
 done
-if ((web_ready == 0)); then
-    printf 'Timed out waiting for the production web preview.\n' >&2
+if ((application_ready == 0)); then
+    printf 'Timed out waiting for the hosted web application.\n' >&2
+    sed -n '1,120p' "$gateway_log" >&2
     exit 1
 fi
 
-encoded_gateway="http%3A%2F%2F${gateway_address/:/%3A}"
-live_url="$origin/?live=$encoded_gateway"
+web_url="$origin/"
 launcher_started=1
 
 printf '\nRSTorrent live web UI is ready.\n'
-printf 'URL: %s\n' "$live_url"
+printf 'URL: %s\n' "$web_url"
 printf 'Data: %s\n' "$data_root"
-printf 'Press Ctrl+C to stop the web UI and application gateway.\n\n'
+printf 'Press Ctrl+C to stop the hosted application.\n\n'
 
 if ((open_browser == 1)); then
     if [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
-        if ! open "$live_url"; then
+        if ! open "$web_url"; then
             printf 'Could not open the browser; open the URL above manually.\n' >&2
         fi
     elif command -v xdg-open >/dev/null 2>&1; then
-        if ! xdg-open "$live_url" >/dev/null 2>&1; then
+        if ! xdg-open "$web_url" >/dev/null 2>&1; then
             printf 'Could not open the browser; open the URL above manually.\n' >&2
         fi
     else
@@ -228,12 +229,6 @@ while true; do
         printf 'Application gateway exited unexpectedly with status %s.\n' \
             "${gateway_status:-0}" >&2
         sed -n '1,120p' "$gateway_log" >&2
-        exit 1
-    fi
-    if ! kill -0 "$web_pid" 2>/dev/null; then
-        wait "$web_pid" || web_status=$?
-        printf 'Production web preview exited unexpectedly with status %s.\n' \
-            "${web_status:-0}" >&2
         exit 1
     fi
     sleep 1

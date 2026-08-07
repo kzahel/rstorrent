@@ -5,6 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const gateway = process.env.RSTORRENT_LIVE_GATEWAY_URL;
+const applicationOrigin = process.env.RSTORRENT_PLAYWRIGHT_BASE_URL;
 const magnet = process.env.RSTORRENT_LIVE_MAGNET;
 const torrentId = process.env.RSTORRENT_LIVE_TORRENT_ID;
 const torrentName = process.env.RSTORRENT_LIVE_TORRENT_NAME;
@@ -125,6 +126,7 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   test.skip(
     !expectTorrentFilePicker ||
       gateway === undefined ||
+      applicationOrigin === undefined ||
       gatewayToken === undefined ||
       torrentFile === undefined ||
       torrentId === undefined ||
@@ -134,7 +136,7 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   let applicationUpgrades = 0;
   let binaryFrames = 0;
   const semanticHttpRequests: string[] = [];
-  const expectedSocket = `${gateway!.replace(/^http/, "ws")}/api/v1/connect`;
+  const expectedSocket = `${applicationOrigin!.replace(/^http/, "ws")}/api/v1/connect`;
   page.on("websocket", (socket) => {
     if (socket.url() !== expectedSocket) return;
     applicationUpgrades += 1;
@@ -143,7 +145,7 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
     });
   });
   page.on("request", (request) => {
-    if (!request.url().startsWith(gateway!)) return;
+    if (!request.url().startsWith(applicationOrigin!)) return;
     const url = new URL(request.url());
     if (url.pathname !== "/api/v1/connect") {
       semanticHttpRequests.push(`${request.method()} ${url.pathname}`);
@@ -197,6 +199,7 @@ test("paired application transport throughput", async ({ page }) => {
   test.skip(
     !transportBenchmark ||
       gateway === undefined ||
+      applicationOrigin === undefined ||
       magnet === undefined ||
       torrentId === undefined ||
       (benchmarkTransport !== "http" && benchmarkTransport !== "websocket"),
@@ -204,12 +207,12 @@ test("paired application transport throughput", async ({ page }) => {
   );
   let applicationUpgrades = 0;
   let semanticHttpRequests = 0;
-  const expectedSocket = `${gateway!.replace(/^http/, "ws")}/api/v1/connect`;
+  const expectedSocket = `${applicationOrigin!.replace(/^http/, "ws")}/api/v1/connect`;
   page.on("websocket", (socket) => {
     if (socket.url() === expectedSocket) applicationUpgrades += 1;
   });
   page.on("request", (request) => {
-    if (!request.url().startsWith(gateway!)) return;
+    if (!request.url().startsWith(applicationOrigin!)) return;
     const pathname = new URL(request.url()).pathname;
     if (
       pathname === "/api/v1/hello" ||
@@ -221,8 +224,8 @@ test("paired application transport throughput", async ({ page }) => {
   });
   const query =
     benchmarkTransport === "http"
-      ? `/?live=${encodeURIComponent(gateway!)}&transport=http&poll_ms=100`
-      : `/?live=${encodeURIComponent(gateway!)}`;
+      ? "/?transport=http&poll_ms=100"
+      : "/";
   await page.goto(withGatewayToken(query));
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
   await expect(transfers).toBeVisible();
@@ -347,6 +350,7 @@ test("live peer inspection follows a controlled verified transfer", async ({
   test.setTimeout(60_000);
   test.skip(
     gateway === undefined ||
+      applicationOrigin === undefined ||
       magnet === undefined ||
       torrentId === undefined ||
       torrentName === undefined ||
@@ -362,14 +366,17 @@ test("live peer inspection follows a controlled verified transfer", async ({
     "/api/v1/view-sets",
   ];
   page.on("websocket", (socket) => {
-    if (socket.url() === `${gateway!.replace(/^http/, "ws")}/api/v1/connect`) {
+    if (
+      socket.url() ===
+      `${applicationOrigin!.replace(/^http/, "ws")}/api/v1/connect`
+    ) {
       applicationUpgrades += 1;
     }
   });
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (
-      request.url().startsWith(gateway!) &&
+      request.url().startsWith(applicationOrigin!) &&
       semanticPaths.some(
         (path) => url.pathname === path || url.pathname.startsWith(`${path}/`),
       )
@@ -645,7 +652,7 @@ async function capture(page: Page, filename: string) {
 }
 
 function liveUrl(): string {
-  return withGatewayToken(`/?live=${encodeURIComponent(gateway!)}`);
+  return withGatewayToken("/");
 }
 
 function withGatewayToken(url: string): string {

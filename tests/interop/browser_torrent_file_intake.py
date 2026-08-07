@@ -143,7 +143,9 @@ def run() -> None:
             origin,
             "offline",
         )
-        vite = build_and_start_production_web(repository, origin, vite_port)
+        vite = build_and_start_production_web(
+            repository, origin, vite_port, address
+        )
         milestone = run_playwright(
             repository,
             origin,

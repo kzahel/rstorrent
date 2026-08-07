@@ -184,7 +184,10 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
             handle = add_seed(session, info, fixture.seed_directory, diagnostics)
             vite_port = reserve_loopback_port()
             origin = f"http://127.0.0.1:{vite_port}"
-            vite = build_and_start_production_web(repository, origin, vite_port)
+            gateway_bind = f"127.0.0.1:{reserve_loopback_port()}"
+            vite = build_and_start_production_web(
+                repository, origin, vite_port, gateway_bind
+            )
             for order, transport in enumerate(arguments.order, start=1):
                 case_root = owned_root / f"case-{order}-{transport}"
                 case_root.mkdir()
@@ -196,6 +199,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                     origin,
                     disk_pressure=False,
                     lease_millis=60_000,
+                    bind=gateway_bind,
                 )
                 case = run_browser_case(
                     repository,

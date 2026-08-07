@@ -3191,11 +3191,7 @@ mod tests {
     }
 
     #[test]
-    fn unauthenticated_development_configuration_rejects_fixed_or_remote_scope() {
-        let mut fixed =
-            GatewayConfig::unauthenticated_loopback_development("http://127.0.0.1:4177".to_owned());
-        fixed.bind.set_port(3030);
-        assert!(fixed.validate().is_err());
+    fn unauthenticated_development_configuration_rejects_remote_scope() {
         let remote_origin = GatewayConfig::unauthenticated_loopback_development(
             "https://example.invalid".to_owned(),
         );

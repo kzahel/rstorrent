@@ -46,6 +46,7 @@ def start_gateway(
     storage: Path,
     origin: str = ORIGIN,
     network_policy: str = "loopback_only",
+    bind: str = "127.0.0.1:0",
 ) -> tuple[subprocess.Popen[str], str]:
     profile.mkdir(parents=True, exist_ok=True)
     storage.mkdir(parents=True, exist_ok=True)
@@ -56,7 +57,7 @@ def start_gateway(
             "RSTORRENT_STORAGE_ROOT": str(storage),
             "RSTORRENT_GATEWAY_TOKEN": TOKEN,
             "RSTORRENT_GATEWAY_ORIGIN": origin,
-            "RSTORRENT_GATEWAY_BIND": "127.0.0.1:0",
+            "RSTORRENT_GATEWAY_BIND": bind,
             "RSTORRENT_NETWORK_POLICY": network_policy,
         }
     )
