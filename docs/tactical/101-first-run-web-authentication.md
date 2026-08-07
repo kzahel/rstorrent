@@ -1,6 +1,6 @@
 # Tactical 101: First-Run Web Authentication
 
-Status: planned
+Status: complete
 
 ## Motivation And Desired Outcome
 
@@ -80,13 +80,32 @@ passwords in command arguments, a six-character password floor, an unbounded
 session collection, silent binding changes, or YepAnywhere's SRP/session wire
 shape.
 
+Browser mechanics were checked on 2026-08-07 against
+`draft-ietf-httpbis-rfc6265bis-22`, the WHATWG Fetch Living Standard, and the
+WHATWG WebSockets Living Standard updated 2026-03-15. The cookie draft defines
+the selected host-only, `HttpOnly`, `SameSite=Strict`, `Path=/`, and conditional
+`Secure` behavior. Fetch requires explicit credential inclusion and exact
+credentialed CORS responses; WebSockets constructs its Fetch-integrated
+handshake with credentials mode `include` and an `Origin`. The implementation
+therefore validates the exact configured Origin on every cookie-authenticated
+mutation and WebSocket upgrade rather than treating cookie delivery alone as
+request authority.
+
+The exact locked framework behavior was inspected in Axum `0.8.9` /
+axum-core `0.5.6` `extract/default_body_limit.rs` and tower-http `0.6.11`
+`cors/mod.rs` plus `services/fs/serve_dir/mod.rs`. RSTorrent applies its own
+64-KiB default semantic/auth body limit, the pre-existing separately admitted
+64-MiB torrent-source override, explicit credentialed CORS origin, and outer
+Host/Basic middleware. No source, fixtures, or specification prose were
+imported.
+
 ## Product States
 
 One profile has exactly one persisted local web-access policy:
 
 | State | Meaning | Unauthenticated loopback behavior |
 | --- | --- | --- |
-| `unconfigured` | No first-run choice has been committed. | Full UI and application access for the first ten minutes after gateway start; afterward only the authentication/onboarding shell and bounded public auth endpoints. |
+| `unconfigured` | No first-run choice has been committed. | The backend admits loopback application access for the first ten minutes, while the first-party UI asks the user to complete the one-choice setup wizard before entering the application. Afterward only the authentication/onboarding shell and bounded public auth endpoints remain. |
 | `local_open` | The owner chose convenience for localhost. | Full access remains available only through an exact loopback listener and allowed Origin. |
 | `paired` | Browser sessions are required. | Static application/auth assets and bounded auth endpoints remain reachable; semantic HTTP and WebSocket access require a valid session. |
 
@@ -95,18 +114,19 @@ Restarting an `unconfigured` profile starts a new ten-minute window. Once
 unconfigured window. An explicit maintainer development mode remains separate
 and does not persist a product policy.
 
-The initial window is not a hidden race. The UI displays a persistent banner
-and countdown such as:
+The initial window is not a hidden race. The first-party UI displays the
+wizard and countdown such as:
 
 > Initial setup is open on this computer for 9:42. Complete setup to choose
 > whether future browsers need approval.
 
 Merely fetching an HTML document, preloading assets, or opening a WebSocket
-does not claim the profile. A browser claims it only by explicitly continuing
-and completing the wizard. During the window, loopback browsers may use the
-ordinary product; the first completed wizard atomically commits the policy.
-Other concurrent attempts reload the committed result rather than overwriting
-it.
+does not claim the profile. A browser claims it only by explicitly completing
+the wizard. The server-side window remains open to loopback semantic access so
+automation and a concurrent setup page cannot be stranded, but the product UI
+does not enter the application until the choice is committed. The first
+completed wizard atomically commits the policy. Other concurrent attempts
+reload the committed result rather than overwriting it.
 
 ## First-Run Wizard
 
@@ -251,9 +271,9 @@ metadata, not identity or authority.
 - Pairing requests and failures use bounded request bodies and a shared
   per-profile admission limit in addition to the five-attempt ticket ceiling.
   At most four redemption requests may execute concurrently.
-- An expired-unconfigured profile redeemed by a valid ticket receives a
-  provisional session able to finish the first-run wizard. It does not choose
-  `paired` implicitly until the user completes the wizard.
+- Pairing tickets exist only after `paired` is committed and an authorized
+  browser requests one. An expired unconfigured profile instead uses the
+  stated plain restart path; there is no provisional-session state.
 
 Five guesses against 10,000 possibilities deliberately provide only a small
 online barrier. That is accepted for this local, short-lived bootstrap flow;
@@ -434,7 +454,7 @@ The common implementation must include:
   browsers racing to consume an explicit recovery pairing window;
 - code replacement, expiry, five failures, simultaneous correct redemption,
   and a correct code racing its final failed attempt;
-- pairing an expired-unconfigured profile versus an already paired profile;
+- rejection of pairing-ticket creation before a paired browser exists;
 - a full 32-session store;
 - cookie missing, malformed, unknown, expired, revoked, and from a different
   profile/origin;
@@ -544,3 +564,60 @@ paths retain their stated contracts.
 The next slice may add password login and TLS-backed non-loopback cookie
 access, or begin the separately gated remote PAKE feasibility work. Neither is
 implied by completing local browser pairing.
+
+## Execution Record
+
+Completed on 2026-08-07 in these implementation slices:
+
+- `eadffb6` added the gateway-owned SQLite policy, pairing-ticket, and bounded
+  opaque-session store with expiry, coalesced use updates, persistence,
+  attempt, revocation, and 32-session limit tests.
+- `885b44e` added cookie/Host/Origin admission, public authentication routes,
+  semantic HTTP and WebSocket enforcement, prompt live-session revocation,
+  restart recovery, hosted assets, and the product `serve` CLI while
+  preserving Basic, bearer, and explicit development modes.
+- `dc24948` added the first-run and recovery gates, four-digit redemption,
+  capability-gated Web access management, and the adaptive category-based
+  Settings workspace with retained panel drafts and keyboard navigation.
+- `eb6f731` fixed the real-browser Fetch binding found by controlled evidence,
+  made the gateway print/open the explicit same-origin live application URL,
+  and added reusable production-hosted Playwright lifecycle coverage.
+- `2be95b0` added local-open/restart browser evidence and made a revoked live
+  application socket emit typed `authentication_failed` before closure.
+- `19627ab` added multi-connection initial-policy and correct-redemption race,
+  active-ticket replacement, and corrupt persisted-policy fail-closed tests.
+
+The runtime-independent store tests cover atomic initial choice, four-digit
+single-use tickets, five-attempt exhaustion, ticket/session expiry, rolling
+touch, store reopen, revocation, label bounds, and the full 32-session ceiling.
+The gateway integration test covers public/semantic route separation,
+HttpOnly cookie admission, paired second-browser redemption, session listing,
+Origin enforcement inherited by every state-changing route, live WebSocket
+revocation, restart persistence, explicit recovery, and one-shot recovery
+consumption. Existing gateway tests retain Basic whole-site authentication,
+bearer automation, hostile Origin rejection, and explicit ephemeral
+development behavior.
+
+Controlled headless Chrome served the actual production bundle from the Rust
+gateway. Isolated contexts proved paired first-run setup, cookie attributes,
+Settings-code handoff, second-browser application entry, two-session listing,
+revocation and rejection after reload. A same-profile restart with
+`--pairing-window` proved cookie-loss recovery and rejection of a later clean
+context. A separate fresh profile proved local-open entry from two cookieless
+contexts and persistence across restart. The expired-window copy and recovery
+instruction are deterministic component evidence rather than a retained
+ten-minute wall-clock browser run; request-time monotonic expiry remains the
+authoritative runtime boundary.
+
+Final validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- `npm run typecheck` in `clients/web`;
+- `npm test` in `clients/web` (`206` passed, `2` skipped); and
+- `npm run build` in `clients/web`, including the CSP bundle check.
+
+No visible desktop client, Android target, physical device, external host, or
+public network was used. Temporary browser profiles, SQLite profiles, and
+Playwright runtime artifacts were not retained.

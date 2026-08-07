@@ -207,6 +207,36 @@ so `Ctrl+C` stops it.
 
 ## Launching The Live Web UI
 
+For the ordinary headless product path with persistent first-run browser
+authentication, build the bundle and gateway, provision a local profile, and
+run `serve`:
+
+```bash
+npm run build --prefix clients/web
+cargo build -p rstorrent-gateway --bin rstorrent-gateway
+mkdir -p .local/headless-web/downloads
+RSTORRENT_STORAGE_ROOT="$PWD/.local/headless-web/downloads" \
+  target/debug/rstorrent-gateway serve \
+  --profile-root .local/headless-web/profile \
+  --listen 127.0.0.1:3030 \
+  --origin http://127.0.0.1:3030 \
+  --auth auto \
+  --web-root "$PWD/clients/web/dist" \
+  --build-id local \
+  --open
+```
+
+A fresh profile shows the ten-minute setup choice. If paired access was
+selected and every authorized browser cookie is later lost, stop the gateway
+and repeat the same command with `--pairing-window`; the first browser that
+explicitly approves itself during that ten-minute window is remembered.
+`rstorrent-gateway serve --help` documents Basic, bearer, fixed-policy, secret
+file, listener, and no-open options. Secret values are never CLI arguments.
+
+The maintainer launcher below deliberately remains a friction-free,
+ephemeral, unauthenticated loopback development mode; it does not exercise or
+change the persistent product policy.
+
 The shared React product UI can run against a real online application service
 in the normal browser without launching Tauri:
 

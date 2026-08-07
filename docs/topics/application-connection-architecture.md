@@ -24,7 +24,12 @@ Tactical `083` keeps that admission/framing sequence but removes the caller
 digest: the declaration carries exact length and semantic options, while
 common Rust preparation derives SHA-256 from the received bytes. The shared
 React picker uses the existing active adapter and does not open an HTTP side
-lane for ordinary browser intake.
+lane for ordinary browser intake. Tactical `101` adds the ordinary headless
+product trust boundary: a fresh loopback profile chooses local-open or bounded
+remembered-browser sessions, exact Host/Origin checks protect cookie mode, and
+revocation closes an admitted WebSocket with a typed authentication failure.
+Its four-digit local handoff and restart recovery are not remote owner
+authentication or a new semantic application protocol.
 
 ## Purpose And Scope
 

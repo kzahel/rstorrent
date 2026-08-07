@@ -94,7 +94,7 @@ Copy magnet links, Archive, Restore, and coordinated Remove; Files exposes the
 same Normal/Skip policy from More and its row context menu. One application-
 lifetime torrent owner keeps sequential progress and multi-remove state alive
 across destination changes.
-Planned Tactical
+Completed Tactical
 [`101`](../tactical/101-first-run-web-authentication.md) graduates the narrow
 single-column Settings sheet into one adaptive modal workspace with Appearance,
 Downloads, Connection & seeding, and capability-gated Web access categories.

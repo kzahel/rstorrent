@@ -43,6 +43,14 @@ HTTP Basic authentication. Its credential is intentionally not owner E2E
 remote authentication, device identity, relay authentication or evidence that
 this topic has been implemented.
 
+Tactical
+[`101-first-run-web-authentication.md`](../tactical/101-first-run-web-authentication.md)
+is the separate ordinary loopback product boundary. Its HttpOnly browser
+sessions, four-digit approval ticket, and explicit restart recovery make a
+headless local UI understandable and revocable; they are intentionally too
+weak and too host-local to become a password, remembered remote device, relay
+credential, or E2E authentication claim.
+
 [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
 owns local verified-file capability URLs and future incomplete-file streaming.
 Its loopback capability is not sufficient for nonlocal access; any remote

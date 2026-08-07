@@ -230,6 +230,17 @@ imported by the design documentation. Binary WebSocket frames and Tauri raw
 responses or Channels remain codec and delivery capabilities, not a reason to
 make a second semantic API.
 
+Tactical
+[`101`](tactical/101-first-run-web-authentication.md) also uses the official
+[IETF cookie draft 6265bis-22](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis/),
+[WHATWG Fetch Living Standard](https://fetch.spec.whatwg.org/), and
+[WHATWG WebSockets Living Standard](https://websockets.spec.whatwg.org/) for
+host-only/HttpOnly/SameSite/Secure cookie behavior, credentialed CORS, Origin,
+and browser WebSocket cookie mechanics. It inspected the exact locally locked
+Axum `0.8.9`, axum-core `0.5.6`, and tower-http `0.6.11` body-limit, CORS, and
+static-service sources. These constrain mechanics but do not supply product
+policy, source, fixtures, or wire compatibility.
+
 The accepted multiplexed connection and future relay direction in
 [`application-connection-architecture.md`](topics/application-connection-architecture.md)
 also uses the maintainer's local `~/code/yepanywhere` sibling as an
