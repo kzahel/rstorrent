@@ -797,4 +797,109 @@ mod tests {
             Err(WebAuthError::TicketExpired)
         ));
     }
+
+    #[test]
+    fn active_ticket_replacement_invalidates_the_previous_code() {
+        let mut store = WebAuthStore::in_memory().expect("store");
+        let replaced = store.create_pairing_ticket(100).expect("first ticket");
+        let current = store
+            .create_pairing_ticket(101)
+            .expect("replacement ticket");
+        assert!(matches!(
+            store.redeem_pairing_ticket(&replaced.code, "Old code", 102),
+            Err(WebAuthError::InvalidCode)
+        ));
+        assert!(
+            store
+                .redeem_pairing_ticket(&current.code, "Current code", 102)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn initial_policy_and_ticket_redemption_races_commit_once() {
+        use std::sync::{Arc, Barrier};
+
+        let directory = TestDirectory::new();
+        let policy_path = directory.0.join("policy-race.sqlite3");
+        WebAuthStore::open(&policy_path).expect("initialize policy store");
+        let barrier = Arc::new(Barrier::new(2));
+        let policy_results = [false, true].map(|paired| {
+            let path = policy_path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let mut store = WebAuthStore::open(&path).expect("open policy contender");
+                barrier.wait();
+                if paired {
+                    store.commit_initial_paired("Paired winner", 100).map(drop)
+                } else {
+                    store.commit_initial_local_open()
+                }
+            })
+        });
+        let policy_results = policy_results.map(|handle| handle.join().expect("policy contender"));
+        assert_eq!(
+            policy_results
+                .iter()
+                .filter(|result| result.is_ok())
+                .count(),
+            1
+        );
+        assert_eq!(
+            policy_results
+                .iter()
+                .filter(|result| matches!(result, Err(WebAuthError::PolicyAlreadyConfigured)))
+                .count(),
+            1
+        );
+
+        let ticket_path = directory.0.join("ticket-race.sqlite3");
+        let ticket = WebAuthStore::open(&ticket_path)
+            .expect("initialize ticket store")
+            .create_pairing_ticket(200)
+            .expect("ticket");
+        let barrier = Arc::new(Barrier::new(2));
+        let ticket_results = ["First contender", "Second contender"].map(|label| {
+            let path = ticket_path.clone();
+            let barrier = barrier.clone();
+            let code = ticket.code.clone();
+            std::thread::spawn(move || {
+                let mut store = WebAuthStore::open(&path).expect("open ticket contender");
+                barrier.wait();
+                store.redeem_pairing_ticket(&code, label, 201)
+            })
+        });
+        let ticket_results = ticket_results.map(|handle| handle.join().expect("ticket contender"));
+        assert_eq!(
+            ticket_results
+                .iter()
+                .filter(|result| result.is_ok())
+                .count(),
+            1
+        );
+        assert_eq!(
+            ticket_results
+                .iter()
+                .filter(|result| matches!(result, Err(WebAuthError::NoPairingTicket)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn corrupt_persisted_policy_fails_closed() {
+        let mut store = WebAuthStore::in_memory().expect("store");
+        store
+            .connection
+            .execute(
+                "UPDATE web_auth_state SET policy = 'invented' WHERE singleton = 1",
+                [],
+            )
+            .expect("corrupt policy");
+        assert!(matches!(store.policy(), Err(WebAuthError::Corrupt(_))));
+        assert!(matches!(
+            store.commit_initial_local_open(),
+            Err(WebAuthError::Corrupt(_))
+        ));
+    }
 }
