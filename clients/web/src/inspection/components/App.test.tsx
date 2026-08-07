@@ -76,6 +76,19 @@ afterEach(async () => {
 });
 
 describe("inspection application", () => {
+  it("updates the tab title with live session rates and restores it on unmount", async () => {
+    const rendered = renderScenario("healthy-download", 42_000);
+
+    await waitFor(() => {
+      expect(document.title).toMatch(
+        /^RSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
+      );
+    });
+
+    rendered.unmount();
+    expect(document.title).toBe("RSTorrent");
+  });
+
   it("renders the typed torrent ETA in Transfers and Workbench", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);

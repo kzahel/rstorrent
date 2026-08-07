@@ -10,6 +10,9 @@ test("primary destinations preserve shared source state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?demo=healthy-download&at=42000&autoplay=0");
   await expect(page.getByText("RSTorrent", { exact: true })).toBeVisible();
+  await expect(page).toHaveTitle(
+    /^RSTorrent - ↓[\d.]+ [kMGT]?B\/s ↑[\d.]+ [kMGT]?B\/s$/,
+  );
 
   const primary = page.getByRole("navigation", { name: "Primary" });
   const transfers = primary.getByRole("button", { name: "Transfers" });

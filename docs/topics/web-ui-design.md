@@ -57,6 +57,12 @@ exact decimal strings and a tagged warming/estimate/stalled/unavailable
 state; React performs only arbitrary-precision formatting, stable semantic
 sorting, and accessible `—`/`∞` presentation. File ETA and richer priority
 controls remain deliberately absent.
+Completed Tactical
+[`106`](../tactical/106-live-transfer-rate-tab-title.md) adds the familiar
+session transfer rates to the browser/Tauri document title. A separate
+two-metric session-speed projection updates at one-second cadence regardless
+of destination or selected Speed series; idle and disconnected sessions
+retain plain `RSTorrent`, and the active Decimal/Binary preference applies.
 Tactical `055` implements the accepted product information architecture:
 responsive Library, Transfers, and Workbench destinations; contextual
 sidebars; shared bounded multi-selection; a clean transfer queue; a truthful
@@ -617,6 +623,13 @@ distinct accessible `—`/`∞` values. The production-preview browser case
 covers all four states, Compact mode, the phone-width visibility rule, titles,
 accessible names, and no serious or critical axe findings. Vitest passes 214
 tests with the two existing opt-in skips.
+
+Tactical `106` adds pure Decimal/Binary, idle, disconnect, active-download,
+upload-only, and unavailable-direction title coverage. React proves mounted
+demo state and unmount restoration; the live adapter proves the independent
+two-metric one-second view and both mapped rates. TypeScript, all 219 Vitest
+tests, the production build/CSP scan, and the focused headless destination
+case pass.
 
 Tactical `055` adds deterministic navigation, storage-denial, selection
 repair, destination-local filter, view-leasing, command, and component tests.

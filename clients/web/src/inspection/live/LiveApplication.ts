@@ -9,6 +9,8 @@ import {
   type PeerView,
   type RequestEnvelope,
   type ResponseEnvelope,
+  type SpeedHistoryView,
+  type SpeedMetric,
   type StorageRootSnapshot,
   type StorageSettingsSnapshot,
   type SwarmPeerView,
@@ -59,6 +61,7 @@ const PIECES_VIEW_ID = "torrent-pieces";
 const DISK_VIEW_ID = "session-disk";
 const DHT_VIEW_ID = "session-dht";
 const SPEED_VIEW_ID = "session-speed";
+const SESSION_RATES_VIEW_ID = "session-rates";
 const LOGS_VIEW_ID = "logs";
 
 export interface LiveApplicationOptions extends ViewControllerOptions {
@@ -571,6 +574,15 @@ export class LiveApplication implements InspectionApplication {
         delivery: { min_interval_millis: 100 },
       });
     }
+    if (capabilities.has("session_speed")) {
+      specs.push({
+        type: "session_speed",
+        view_id: SESSION_RATES_VIEW_ID,
+        range: "minutes10",
+        metrics: ["payload_received", "payload_uploaded"],
+        delivery: { min_interval_millis: 1_000 },
+      });
+    }
     // Rust view sets intentionally require at least one view. A detail-only
     // unsupported state keeps the selected summary as navigation context.
     if (specs.length === 0 && capabilities.has("torrent_list")) {
@@ -649,6 +661,11 @@ function mapViewState(
   const disk = projection(state, DISK_VIEW_ID, "session_disk");
   const dht = projection(state, DHT_VIEW_ID, "session_dht");
   const speed = projection(state, SPEED_VIEW_ID, "session_speed");
+  const sessionRates = projection(
+    state,
+    SESSION_RATES_VIEW_ID,
+    "session_speed",
+  );
   const diagnostics = projection(state, LOGS_VIEW_ID, "diagnostics");
   const torrentRows = new Map<string, TorrentRow>();
   if (library !== null) {
@@ -695,17 +712,22 @@ function mapViewState(
       ? {}
       : { [desired.torrentId]: pieceSet };
   const rows = [...torrentRows.values()];
-  const speedDownloadRate = speed?.history.series.find(
-    (series) => series.metric === "payload_received",
-  )?.current_rate_bytes;
+  const speedDownloadRate = currentSpeedRate(
+    sessionRates?.history,
+    "payload_received",
+  );
+  const speedUploadRate = currentSpeedRate(
+    sessionRates?.history,
+    "payload_uploaded",
+  );
   return {
     revision: safeNumber(state.durableRevision),
     session: {
       connection,
-      downloadRate: speedDownloadRate === null || speedDownloadRate === undefined
+      downloadRate: speedDownloadRate === null
         ? rows.reduce((total, row) => total + row.downloadRate, 0)
-        : safeNumber(speedDownloadRate),
-      uploadRate: null,
+        : speedDownloadRate,
+      uploadRate: speedUploadRate,
       dhtNodes: dht?.inspection.routing_nodes_v4 ?? null,
       knownPeers: null,
     },
@@ -804,6 +826,16 @@ function mapViewState(
       ),
     },
   };
+}
+
+function currentSpeedRate(
+  history: SpeedHistoryView | undefined,
+  metric: SpeedMetric,
+): number | null {
+  const value = history?.series.find(
+    (series) => series.metric === metric,
+  )?.current_rate_bytes;
+  return value === null || value === undefined ? null : safeNumber(value);
 }
 
 function projection<T extends ViewSnapshot["type"]>(

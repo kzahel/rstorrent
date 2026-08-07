@@ -9,6 +9,8 @@ import type {
   PeerView,
   RequestEnvelope,
   ResponseEnvelope,
+  SpeedHistoryView,
+  SpeedMetric,
   TorrentView,
   UpdateBatch,
   UpdateViewSetRequest,
@@ -50,6 +52,7 @@ class FakeLiveClient implements ApplicationViewClient {
         "torrent_files",
         "torrent_trackers",
         "session_dht",
+        "session_speed",
         "diagnostics",
       ],
       limits: {
@@ -183,7 +186,8 @@ class FakeLiveClient implements ApplicationViewClient {
 
 describe("LiveApplication", () => {
   it("maps exact payload work and typed ETA without numeric conversion", async () => {
-    const application = await LiveApplication.open(new FakeLiveClient());
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
     const snapshots: InspectionSnapshot[] = [];
     application.subscribe((update) => {
       if (update.type === "snapshot") snapshots.push(update.snapshot);
@@ -194,6 +198,17 @@ describe("LiveApplication", () => {
       remainingPayloadBytes: "98304",
       etaDownloadRateBytes: "4096",
       eta: { state: "estimate", seconds: "24" },
+    });
+    expect(snapshots.at(-1)?.session).toMatchObject({
+      downloadRate: 4096,
+      uploadRate: 2048,
+    });
+    expect(client.opens[0]?.views).toContainEqual({
+      type: "session_speed",
+      view_id: "session-rates",
+      range: "minutes10",
+      metrics: ["payload_received", "payload_uploaded"],
+      delivery: { min_interval_millis: 1_000 },
     });
     await application.close();
   });
@@ -440,6 +455,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_summary",
       "torrent_swarm",
+      "session_speed",
     ]);
     expect(snapshots.at(-1)?.viewStatus.swarm.status).toBe("loading");
 
@@ -452,8 +468,11 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_summary",
       "diagnostics",
+      "session_speed",
     ]);
-    expect(client.updates.at(-1)?.views.at(-1)).toMatchObject({
+    expect(
+      client.updates.at(-1)?.views.find((view) => view.type === "diagnostics"),
+    ).toMatchObject({
       type: "diagnostics",
       torrent_id: null,
       filter: { profile: "normal", minimum_severity: "info" },
@@ -464,7 +483,9 @@ describe("LiveApplication", () => {
       detail: "logs",
       logCapture: { profile: "trace", torrentId: TORRENT_ID },
     });
-    expect(client.updates.at(-1)?.views.at(-1)).toMatchObject({
+    expect(
+      client.updates.at(-1)?.views.find((view) => view.type === "diagnostics"),
+    ).toMatchObject({
       type: "diagnostics",
       torrent_id: TORRENT_ID,
       filter: { profile: "trace", minimum_severity: "trace" },
@@ -512,6 +533,7 @@ describe("LiveApplication", () => {
     expect(client.updates.at(-1)?.views.map((view) => view.type)).toEqual([
       "torrent_list",
       "torrent_summary",
+      "session_speed",
     ]);
     expect(snapshots.at(-1)?.filesByTorrent).toEqual({});
     await application.close();
@@ -838,7 +860,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
         view_id: view.view_id,
         snapshot: {
           type: "session_speed",
-          history: speedHistory(),
+          history: speedHistory(view),
         },
       };
     case "diagnostics":
@@ -891,33 +913,37 @@ function dhtInspection(): DhtInspectionView {
   };
 }
 
-function speedHistory() {
+function speedHistory(
+  view: Extract<ViewSpec, { type: "session_speed" }>,
+): SpeedHistoryView {
+  const rates: Partial<Record<SpeedMetric, string>> = {
+    payload_received: "4096",
+    payload_uploaded: "2048",
+  };
+  const bucketMillis = view.range === "seconds30" ? "100" : "2000";
   return {
     captured_millis: "1300",
     history_epoch: "test-speed-1",
-    range: "seconds30" as const,
-    bucket_millis: "100",
+    range: view.range,
+    bucket_millis: bucketMillis,
     start_millis: "1000",
     complete_through_millis: "1299",
     live: true,
     persistence: "healthy" as const,
-    current: [
-      { metric: "payload_received" as const, bytes: "4096" },
-    ],
-    series: [
-      {
-        metric: "payload_received" as const,
-        current_rate_bytes: "4096",
-        values: ["1024", "2048", "1024"],
-      },
-    ],
-    catalog: [
-      {
-        metric: "payload_received" as const,
-        available: true,
-        reason: null,
-      },
-    ],
+    current: view.metrics.map((metric) => ({
+      metric,
+      bytes: rates[metric] ?? "0",
+    })),
+    series: view.metrics.map((metric) => ({
+      metric,
+      current_rate_bytes: rates[metric] ?? "0",
+      values: ["1024", "2048", "1024"],
+    })),
+    catalog: view.metrics.map((metric) => ({
+      metric,
+      available: true,
+      reason: null,
+    })),
   };
 }
 

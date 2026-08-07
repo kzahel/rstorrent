@@ -499,6 +499,10 @@ that scope and its cleanup or compatibility rules explicitly.
   restartable, migrates the observed published-content contradiction without
   payload mutation, and contains torrent-local recovery failures during
   profile open.
+- [`106-live-transfer-rate-tab-title.md`](106-live-transfer-rate-tab-title.md):
+  complete; keeps the shared browser/Tauri tab title current with exact
+  session download and upload rates at a bounded one-second cadence while
+  retaining the plain application title when idle or disconnected.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

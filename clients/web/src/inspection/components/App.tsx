@@ -10,6 +10,10 @@ import {
 
 import { applyAppearancePreferences } from "../appearance";
 import { useInspectionCommand, useInspectionStore } from "../context";
+import {
+  APPLICATION_TITLE,
+  documentTitleForSession,
+} from "../document-title";
 import { formatRate } from "../format";
 import type { ApplicationDestination } from "../model";
 import { MAX_DETAIL_PANE_PERCENT, MIN_DETAIL_PANE_PERCENT } from "../state";
@@ -97,6 +101,16 @@ function AppContent({ webAuth }: AppProps) {
   useLayoutEffect(() => {
     applyAppearancePreferences({ colorTheme, interfaceSize });
   }, [colorTheme, interfaceSize]);
+
+  useEffect(() => {
+    document.title = documentTitleForSession(session, dataUnits);
+  }, [dataUnits, session]);
+
+  useEffect(() => {
+    return () => {
+      document.title = APPLICATION_TITLE;
+    };
+  }, []);
 
   useEffect(() => {
     const update = () => {
