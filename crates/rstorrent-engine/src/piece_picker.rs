@@ -80,6 +80,10 @@ impl AvailabilityPicker {
         self.policy
     }
 
+    pub(crate) const fn tie_seed(&self) -> u64 {
+        self.tie_seed
+    }
+
     pub(crate) const fn seed_count(&self) -> u16 {
         self.seed_count
     }

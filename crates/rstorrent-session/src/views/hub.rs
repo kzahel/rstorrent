@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
-    DiskPieceRuntimeSnapshot, DiskRuntimeSnapshot, PeerConnectionObservation,
+    CheckerProgress, DiskPieceRuntimeSnapshot, DiskRuntimeSnapshot, PeerConnectionObservation,
     TrackerRuntimeSnapshot,
 };
 
@@ -386,6 +386,7 @@ impl ViewHub {
                 model.view.active_peer_connections = old.view.active_peer_connections;
                 model.view.payload_download_rate_bytes =
                     old.view.payload_download_rate_bytes.clone();
+                model.view.checking = old.view.checking.clone();
                 model.progress_inputs = old.progress_inputs;
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
                 model.active = old.active.clone();
@@ -416,6 +417,16 @@ impl ViewHub {
                 model
                     .eta
                     .reconcile_geometry(state.eta_geometry, true, false, now);
+            }
+            if torrent.state == TorrentState::Checking
+                && let Some(generation) = durable_state.and_then(|state| state.checking_generation)
+                && model
+                    .view
+                    .checking
+                    .as_ref()
+                    .is_none_or(|checking| checking.generation != generation.to_string())
+            {
+                model.queue_checker(generation);
             }
             model.eta.apply_to_view(&mut model.view);
             model.view.configured_tracker_count = Some(model.trackers.count());
@@ -828,6 +839,51 @@ impl ViewHub {
             &next_active,
             &file_upsert.into_values().collect::<Vec<_>>(),
         )
+    }
+
+    pub(crate) fn record_checker_progress(
+        &self,
+        torrent_id: &str,
+        progress: &CheckerProgress,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.view.clone();
+        if model
+            .view
+            .checking
+            .as_ref()
+            .and_then(|checking| checking.generation.parse::<u64>().ok())
+            .is_some_and(|generation| generation > progress.generation)
+        {
+            return Ok(());
+        }
+        model.apply_checker_progress(progress);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
+    }
+
+    pub(crate) fn finish_checker(
+        &self,
+        torrent_id: &str,
+        generation: u64,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.view.clone();
+        model.finish_checker(generation);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
     }
 
     pub(crate) fn set_progress_inputs(

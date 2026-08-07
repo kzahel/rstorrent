@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use rstorrent_protocol::metadata::TorrentMetadataDownload;
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use super::DownloadError;
@@ -37,6 +38,7 @@ const SAFE_CANCEL_REQUESTED: usize = 1 << (usize::BITS - 1);
 const SAFE_CANCEL_CRITICAL_MASK: usize = SAFE_CANCEL_REQUESTED - 1;
 const CONTENT_PEER_DIAGNOSTIC_INTERVAL: Duration = Duration::from_secs(1);
 const STORAGE_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
+const CHECKER_OBSERVATION_INTERVAL: Duration = Duration::from_secs(1);
 pub(super) const MAX_RECENT_METADATA_ATTEMPTS: usize = 64;
 pub(super) const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
 
@@ -82,6 +84,10 @@ pub enum DownloadActivityEvent {
         piece_index: u32,
         contributor_count: usize,
         failed_bytes: usize,
+    },
+    CheckerProgress(Box<CheckerProgress>),
+    CheckerFinished {
+        generation: u64,
     },
     PathPublicationStage(PathPublicationStage),
     StorageState(Box<DiskRuntimeSnapshot>),
@@ -321,6 +327,39 @@ pub struct DownloadDiagnosticSnapshot {
     pub metadata: MetadataAcquisitionSnapshot,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckerPhase {
+    Queued,
+    Preparing,
+    Hashing,
+    ReconcilingStorage,
+    Paused,
+    Finalizing,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckerProgress {
+    pub generation: u64,
+    pub phase: CheckerPhase,
+    pub pieces_total: usize,
+    pub pieces_processed: usize,
+    pub pieces_matched: usize,
+    pub pieces_absent: usize,
+    pub pieces_mismatched: usize,
+    pub bytes_hashed: u64,
+    pub active_hash_jobs: usize,
+    pub queued_hash_jobs: usize,
+    pub elapsed_millis: u64,
+    pub last_advance_age_millis: u64,
+    pub oldest_active_job_age_millis: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileSelectionUpdate {
+    pub revision: u64,
+    pub skip_files: Vec<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadControl {
     inner: Arc<DownloadControlInner>,
@@ -358,6 +397,7 @@ struct DownloadControlInner {
     storage_active: Mutex<StorageActiveOperations>,
     disk_runtime: Mutex<DiskRuntimeState>,
     last_storage_emitted_at: Mutex<Option<Instant>>,
+    checker: Mutex<Option<CheckerProgressState>>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
     byte_metric_sink: Mutex<Option<SharedByteMetricSink>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
@@ -367,6 +407,8 @@ struct DownloadControlInner {
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
+    selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
+    selection_applied_revision: AtomicU64,
     safe_cancel_state: AtomicUsize,
 }
 
@@ -402,6 +444,29 @@ struct StorageCommandTiming {
 struct StorageActiveOperations {
     writes: Vec<Instant>,
     hashes: Vec<Instant>,
+}
+
+#[derive(Debug)]
+struct CheckerProgressState {
+    generation: u64,
+    phase: CheckerPhase,
+    pieces_total: usize,
+    pieces_processed: usize,
+    pieces_matched: usize,
+    pieces_absent: usize,
+    pieces_mismatched: usize,
+    bytes_hashed: u64,
+    active_hash_jobs: BTreeMap<u32, Instant>,
+    started_at: Instant,
+    last_advance_at: Instant,
+    last_emitted_at: Option<Instant>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CheckerPieceOutcome {
+    Matched,
+    Absent,
+    Mismatched,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -649,6 +714,7 @@ struct CheckpointProgressSnapshot {
 
 impl DownloadControl {
     pub fn new() -> Self {
+        let (selection_updates, _) = watch::channel(None);
         Self {
             inner: Arc::new(DownloadControlInner {
                 started_at: Instant::now(),
@@ -681,6 +747,7 @@ impl DownloadControl {
                 storage_active: Mutex::new(StorageActiveOperations::default()),
                 disk_runtime: Mutex::new(DiskRuntimeState::default()),
                 last_storage_emitted_at: Mutex::new(None),
+                checker: Mutex::new(None),
                 activity_sink: Mutex::new(None),
                 byte_metric_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
@@ -690,6 +757,8 @@ impl DownloadControl {
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
+                selection_updates,
+                selection_applied_revision: AtomicU64::new(0),
                 safe_cancel_state: AtomicUsize::new(0),
             }),
         }
@@ -751,6 +820,30 @@ impl DownloadControl {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    pub fn update_file_selection(&self, update: FileSelectionUpdate) {
+        self.inner.selection_updates.send_replace(Some(update));
+    }
+
+    pub(super) fn selection_updates(&self) -> watch::Receiver<Option<FileSelectionUpdate>> {
+        self.inner.selection_updates.subscribe()
+    }
+
+    pub(super) fn latest_file_selection(&self) -> Option<FileSelectionUpdate> {
+        self.inner.selection_updates.borrow().clone()
+    }
+
+    pub fn applied_file_selection_revision(&self) -> u64 {
+        self.inner
+            .selection_applied_revision
+            .load(Ordering::Acquire)
+    }
+
+    pub(super) fn file_selection_applied(&self, revision: u64) {
+        self.inner
+            .selection_applied_revision
+            .fetch_max(revision, Ordering::AcqRel);
     }
 
     pub fn snapshot(&self) -> DownloadProgress {
@@ -840,6 +933,185 @@ impl DownloadControl {
             checkpoint_commit_service_max_micros: checkpoint.commit_service_max_micros,
             checkpoint_active_micros: checkpoint.active_micros,
         }
+    }
+
+    pub fn checker_snapshot(&self) -> Option<CheckerProgress> {
+        let now = Instant::now();
+        self.inner
+            .checker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .map(|state| checker_progress_snapshot(state, now))
+    }
+
+    pub(super) fn checker_started(&self, generation: u64, pieces_total: usize) {
+        let now = Instant::now();
+        *self
+            .inner
+            .checker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(CheckerProgressState {
+            generation,
+            phase: CheckerPhase::Preparing,
+            pieces_total,
+            pieces_processed: 0,
+            pieces_matched: 0,
+            pieces_absent: 0,
+            pieces_mismatched: 0,
+            bytes_hashed: 0,
+            active_hash_jobs: BTreeMap::new(),
+            started_at: now,
+            last_advance_at: now,
+            last_emitted_at: None,
+        });
+        self.emit_checker_progress(true);
+    }
+
+    pub(super) fn checker_set_phase(&self, phase: CheckerPhase) {
+        let changed = {
+            let mut checker = self
+                .inner
+                .checker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            checker.as_mut().is_some_and(|state| {
+                if state.phase == phase {
+                    false
+                } else {
+                    state.phase = phase;
+                    true
+                }
+            })
+        };
+        if changed {
+            self.emit_checker_progress(true);
+        }
+    }
+
+    pub(super) fn checker_hash_started(&self, piece_index: u32) {
+        let now = Instant::now();
+        let changed_phase = {
+            let mut checker = self
+                .inner
+                .checker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(state) = checker.as_mut() else {
+                return;
+            };
+            let changed_phase = state.phase != CheckerPhase::Hashing;
+            state.phase = CheckerPhase::Hashing;
+            state.active_hash_jobs.insert(piece_index, now);
+            changed_phase
+        };
+        self.emit_checker_progress(changed_phase);
+    }
+
+    pub(super) fn checker_piece_processed(
+        &self,
+        piece_index: u32,
+        bytes_hashed: u64,
+        outcome: CheckerPieceOutcome,
+    ) {
+        {
+            let mut checker = self
+                .inner
+                .checker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(state) = checker.as_mut() else {
+                return;
+            };
+            state.active_hash_jobs.remove(&piece_index);
+            state.pieces_processed = state.pieces_processed.saturating_add(1);
+            match outcome {
+                CheckerPieceOutcome::Matched => {
+                    state.pieces_matched = state.pieces_matched.saturating_add(1);
+                    state.bytes_hashed = state.bytes_hashed.saturating_add(bytes_hashed);
+                }
+                CheckerPieceOutcome::Absent => {
+                    state.pieces_absent = state.pieces_absent.saturating_add(1);
+                }
+                CheckerPieceOutcome::Mismatched => {
+                    state.pieces_mismatched = state.pieces_mismatched.saturating_add(1);
+                    state.bytes_hashed = state.bytes_hashed.saturating_add(bytes_hashed);
+                }
+            }
+            state.last_advance_at = Instant::now();
+            debug_assert_eq!(
+                state.pieces_processed,
+                state
+                    .pieces_matched
+                    .saturating_add(state.pieces_absent)
+                    .saturating_add(state.pieces_mismatched)
+            );
+            debug_assert!(state.pieces_processed <= state.pieces_total);
+        }
+        self.emit_checker_progress(false);
+    }
+
+    pub(super) fn checker_hash_stopped(&self, piece_index: u32) {
+        let removed = self
+            .inner
+            .checker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_mut()
+            .is_some_and(|state| state.active_hash_jobs.remove(&piece_index).is_some());
+        if removed {
+            self.emit_checker_progress(true);
+        }
+    }
+
+    pub(super) fn checker_heartbeat(&self) {
+        self.emit_checker_progress(false);
+    }
+
+    pub(super) fn checker_finished(&self, generation: u64) {
+        let removed = {
+            let mut checker = self
+                .inner
+                .checker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if checker
+                .as_ref()
+                .is_some_and(|state| state.generation == generation)
+            {
+                checker.take();
+                true
+            } else {
+                false
+            }
+        };
+        if removed {
+            self.emit(DownloadActivityEvent::CheckerFinished { generation });
+        }
+    }
+
+    fn emit_checker_progress(&self, force: bool) {
+        let now = Instant::now();
+        let snapshot = {
+            let mut checker = self
+                .inner
+                .checker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(state) = checker.as_mut() else {
+                return;
+            };
+            if !force
+                && state.last_emitted_at.is_some_and(|last| {
+                    now.saturating_duration_since(last) < CHECKER_OBSERVATION_INTERVAL
+                })
+            {
+                return;
+            }
+            state.last_emitted_at = Some(now);
+            checker_progress_snapshot(state, now)
+        };
+        self.emit(DownloadActivityEvent::CheckerProgress(Box::new(snapshot)));
     }
 
     fn checkpoint_progress_snapshot(&self, now: Instant) -> CheckpointProgressSnapshot {
@@ -1811,6 +2083,20 @@ impl DownloadControl {
         self.emit_storage_state();
     }
 
+    pub(super) fn disk_piece_check_unverified(&self, piece_index: u32, piece_length: u32) {
+        let mut state = self
+            .inner
+            .disk_runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.hashing_bytes = state.hashing_bytes.saturating_sub(piece_length as usize);
+        state.pieces.remove(&piece_index);
+        let resident = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
+        drop(state);
+        self.update_disk_pressure(resident);
+        self.emit_storage_state();
+    }
+
     pub(super) fn disk_checkpoint_sync_started(&self, batch: &CheckpointBatch) {
         let now = Instant::now();
         let mut state = self
@@ -2439,6 +2725,34 @@ fn metadata_block_count_for_diagnostics(download: &TorrentMetadataDownload) -> O
 
 fn duration_millis(duration: Duration) -> u64 {
     duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+fn checker_progress_snapshot(state: &CheckerProgressState, now: Instant) -> CheckerProgress {
+    let active_hash_jobs = state.active_hash_jobs.len();
+    CheckerProgress {
+        generation: state.generation,
+        phase: state.phase,
+        pieces_total: state.pieces_total,
+        pieces_processed: state.pieces_processed,
+        pieces_matched: state.pieces_matched,
+        pieces_absent: state.pieces_absent,
+        pieces_mismatched: state.pieces_mismatched,
+        bytes_hashed: state.bytes_hashed,
+        active_hash_jobs,
+        queued_hash_jobs: state
+            .pieces_total
+            .saturating_sub(state.pieces_processed)
+            .saturating_sub(active_hash_jobs),
+        elapsed_millis: duration_millis(now.saturating_duration_since(state.started_at)),
+        last_advance_age_millis: duration_millis(
+            now.saturating_duration_since(state.last_advance_at),
+        ),
+        oldest_active_job_age_millis: state
+            .active_hash_jobs
+            .values()
+            .map(|started| duration_millis(now.saturating_duration_since(*started)))
+            .max(),
+    }
 }
 
 fn set_disk_piece_stage(piece: &mut DiskPieceRuntimeState, stage: DiskPieceStage, now: Instant) {

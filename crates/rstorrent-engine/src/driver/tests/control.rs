@@ -1,4 +1,5 @@
 use super::*;
+use crate::FileSelectionUpdate;
 
 #[test]
 fn storage_duration_counter_saturates() {
@@ -332,4 +333,88 @@ fn storage_state_emission_coalesces_hot_updates_and_force_flushes_latest() {
     assert_eq!(latest.pieces.len(), 1);
     assert_eq!(latest.pieces[0].requested_bytes, 16);
     assert_eq!(latest.pieces[0].stage, DiskPieceStage::Stored);
+}
+
+#[test]
+fn checker_progress_reduces_typed_outcomes_monotonically() {
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+
+    control.checker_started(7, 3);
+    assert_eq!(
+        control.checker_snapshot(),
+        Some(CheckerProgress {
+            generation: 7,
+            phase: CheckerPhase::Preparing,
+            pieces_total: 3,
+            pieces_processed: 0,
+            pieces_matched: 0,
+            pieces_absent: 0,
+            pieces_mismatched: 0,
+            bytes_hashed: 0,
+            active_hash_jobs: 0,
+            queued_hash_jobs: 3,
+            elapsed_millis: 0,
+            last_advance_age_millis: 0,
+            oldest_active_job_age_millis: None,
+        })
+    );
+
+    control.checker_hash_started(0);
+    control.checker_piece_processed(0, 16, CheckerPieceOutcome::Matched);
+    control.checker_piece_processed(1, 16, CheckerPieceOutcome::Absent);
+    control.checker_hash_started(2);
+    control.checker_piece_processed(2, 8, CheckerPieceOutcome::Mismatched);
+    control.checker_set_phase(CheckerPhase::Finalizing);
+
+    let progress = control.checker_snapshot().expect("active checker progress");
+    assert_eq!(progress.generation, 7);
+    assert_eq!(progress.phase, CheckerPhase::Finalizing);
+    assert_eq!(progress.pieces_total, 3);
+    assert_eq!(progress.pieces_processed, 3);
+    assert_eq!(progress.pieces_matched, 1);
+    assert_eq!(progress.pieces_absent, 1);
+    assert_eq!(progress.pieces_mismatched, 1);
+    assert_eq!(progress.bytes_hashed, 24);
+    assert_eq!(progress.active_hash_jobs, 0);
+    assert_eq!(progress.queued_hash_jobs, 0);
+
+    control.checker_finished(6);
+    assert!(control.checker_snapshot().is_some());
+    control.checker_finished(7);
+    assert!(control.checker_snapshot().is_none());
+    assert!(
+        activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .any(|event| matches!(
+                event,
+                DownloadActivityEvent::CheckerFinished { generation: 7 }
+            ))
+    );
+}
+
+#[test]
+fn rapid_file_selection_updates_retain_only_the_latest_revision() {
+    let control = DownloadControl::new();
+    let mut updates = control.selection_updates();
+    for revision in 1..=1_000 {
+        control.update_file_selection(FileSelectionUpdate {
+            revision,
+            skip_files: vec![revision as usize % 3],
+        });
+    }
+
+    assert!(updates.has_changed().expect("selection controller open"));
+    assert_eq!(
+        updates.borrow_and_update().clone(),
+        Some(FileSelectionUpdate {
+            revision: 1_000,
+            skip_files: vec![1],
+        })
+    );
+    assert!(!updates.has_changed().expect("selection controller open"));
 }

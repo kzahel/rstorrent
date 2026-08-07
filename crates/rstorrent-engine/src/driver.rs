@@ -36,7 +36,7 @@ use rstorrent_protocol::udp_tracker::{
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::net::{UdpSocket, lookup_host};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
@@ -240,7 +240,7 @@ pub struct ResumableMagnetDownloadConfig {
 pub trait DownloadCheckpointSink: Send + Sync {
     fn metadata_verified(&self, raw_info: &[u8]) -> Result<(), String>;
     fn storage_prepared(&self, storage: ResumedStorage) -> Result<(), String>;
-    fn recheck_started(&self) -> Result<(), String>;
+    fn recheck_started(&self) -> Result<u64, String>;
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String>;
     fn pieces_durable(&self, piece_indices: &[usize]) -> Result<(), String>;
     fn piece_durable(&self, piece_index: usize) -> Result<(), String> {
@@ -260,7 +260,6 @@ struct ContentDownloadConfig {
     materialize_files: Vec<usize>,
 }
 
-use control::StorageCommandKind;
 #[cfg(test)]
 use control::{
     CONTENT_STORAGE_HASH_CONCURRENCY, CONTENT_STORAGE_WRITE_CONCURRENCY,
@@ -268,12 +267,14 @@ use control::{
     atomic_saturating_increment,
 };
 pub use control::{
-    ContentPeerActivitySnapshot, ContentRequestWindowPhase, DiskCheckpointStage,
-    DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure, DiskRuntimeSnapshot,
-    DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadDiagnosticSnapshot,
-    DownloadProgress, MetadataAcquisitionPhase, MetadataAcquisitionSnapshot, MetadataPeerSnapshot,
-    MetadataPeerStage, PathPublicationStage, SwarmActivitySnapshot,
+    CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
+    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
+    DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink, DownloadControl,
+    DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate, MetadataAcquisitionPhase,
+    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
+    SwarmActivitySnapshot,
 };
+use control::{CheckerPieceOutcome, StorageCommandKind};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DownloadReport {
@@ -3845,6 +3846,13 @@ struct ContentSwarmDownload<'a> {
     contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
     selection: FileSelection,
     maximum_planned_bytes: usize,
+    max_buffered_payload_bytes: usize,
+    selection_revision: u64,
+}
+
+struct AppliedFileSelection {
+    selection: FileSelection,
+    revision: u64,
 }
 
 struct ContentDownloadContext<'a> {
@@ -3922,7 +3930,7 @@ impl<'a> ContentSwarmDownload<'a> {
         max_buffered_payload_bytes: usize,
         wanted_pieces: Vec<u32>,
         picker_seed: u64,
-        selection: FileSelection,
+        selection: AppliedFileSelection,
         storage: ContentStorage,
         context: ContentDownloadContext<'a>,
     ) -> Result<Self, DownloadError> {
@@ -3964,8 +3972,10 @@ impl<'a> ContentSwarmDownload<'a> {
             part_written_bytes: 0,
             last_piece: None,
             contributor_attempts: BTreeMap::new(),
-            selection,
+            selection: selection.selection,
             maximum_planned_bytes,
+            max_buffered_payload_bytes,
+            selection_revision: selection.revision,
         })
     }
 
@@ -4376,6 +4386,80 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(())
     }
 
+    async fn restart_storage(&mut self, storage: ContentStorage) -> Result<(), DownloadError> {
+        let checkpoints = self.resume.map(|resume| resume.checkpoints.clone());
+        self.storage_pipeline = Some(
+            ContentStoragePipeline::start(
+                storage,
+                self.control,
+                self.max_buffered_payload_bytes,
+                checkpoints,
+            )
+            .await?,
+        );
+        self.completed_storage = None;
+        Ok(())
+    }
+
+    async fn reconcile_file_selection(
+        &mut self,
+        sockets: &PeerSocketSet,
+        update: FileSelectionUpdate,
+    ) -> Result<(), DownloadError> {
+        if update.revision <= self.selection_revision {
+            return Ok(());
+        }
+        let next_selection =
+            FileSelection::new(self.layout, &update.skip_files).map_err(DownloadError::Layout)?;
+        self.stop_storage(false).await?;
+        let mut storage = self.take_storage()?;
+        if let Err(error) = storage.0.reconcile_selection(next_selection.clone()).await {
+            self.restart_storage(storage).await?;
+            return Err(DownloadError::SelectiveStorage(error));
+        }
+        let mut wanted = Vec::new();
+        for piece_index in 0..self.layout.piece_count() {
+            let piece_index_u32 = match u32::try_from(piece_index) {
+                Ok(piece_index) => piece_index,
+                Err(_) => {
+                    self.restart_storage(storage).await?;
+                    return Err(DownloadError::Layout(LayoutError::ArithmeticOverflow));
+                }
+            };
+            let ranges = match self.layout.request_ranges(piece_index_u32, &next_selection) {
+                Ok(ranges) => ranges,
+                Err(error) => {
+                    self.restart_storage(storage).await?;
+                    return Err(DownloadError::Layout(error));
+                }
+            };
+            if !ranges.is_empty() && !storage.0.verified_pieces()[piece_index] {
+                wanted.push(piece_index_u32);
+            }
+        }
+        let cancellations = match self.state.replace_wanted_pieces(wanted) {
+            Ok(cancellations) => cancellations,
+            Err(error) => {
+                self.restart_storage(storage).await?;
+                return Err(DownloadError::Swarm(error));
+            }
+        };
+        for cancellation in cancellations {
+            let _ = sockets
+                .send(
+                    cancellation.connection,
+                    PeerMessage::Cancel(cancellation.block.request()),
+                )
+                .await;
+        }
+        self.control.clear_outstanding_requests();
+        self.contributor_attempts.clear();
+        self.selection = next_selection;
+        self.selection_revision = update.revision;
+        self.control.file_selection_applied(update.revision);
+        self.restart_storage(storage).await
+    }
+
     fn take_storage(&mut self) -> Result<ContentStorage, DownloadError> {
         self.completed_storage.take().ok_or_else(|| {
             DownloadError::StorageTask("content storage owner did not return storage".to_owned())
@@ -4677,7 +4761,16 @@ enum ContentSupervisorEvent {
     Peer(PeerSetEvent),
     Discovery(Option<ContentDiscoveryEvent>),
     Storage(ContentStorageCompletion),
+    Selection(FileSelectionUpdate),
     Deadline,
+}
+
+struct ContentSupervisorWait<'a> {
+    storage_backpressured: bool,
+    until_expiry: Option<Duration>,
+    cancellation: &'a CancellationToken,
+    selection_updates: &'a mut watch::Receiver<Option<FileSelectionUpdate>>,
+    priority: ContentSupervisorOwner,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4703,7 +4796,7 @@ impl ContentSupervisorEvent {
             Self::Peer(_) => Some(ContentSupervisorOwner::Peer),
             Self::Discovery(_) => Some(ContentSupervisorOwner::Discovery),
             Self::Storage(_) => Some(ContentSupervisorOwner::Storage),
-            Self::Deadline => None,
+            Self::Selection(_) | Self::Deadline => None,
         }
     }
 }
@@ -4712,11 +4805,26 @@ async fn next_content_supervisor_event(
     sockets: &mut PeerSocketSet,
     discovery: &mut ContentDiscovery,
     storage: &mut ContentStoragePipeline,
-    storage_backpressured: bool,
-    until_expiry: Option<Duration>,
-    cancellation: &CancellationToken,
-    priority: ContentSupervisorOwner,
+    wait: ContentSupervisorWait<'_>,
 ) -> Result<ContentSupervisorEvent, DownloadError> {
+    let ContentSupervisorWait {
+        storage_backpressured,
+        until_expiry,
+        cancellation,
+        selection_updates,
+        priority,
+    } = wait;
+    if selection_updates.has_changed().map_err(|_| {
+        DownloadError::StorageTask("file-selection controller stopped unexpectedly".to_owned())
+    })? {
+        let update = selection_updates
+            .borrow_and_update()
+            .clone()
+            .ok_or_else(|| {
+                DownloadError::StorageTask("file-selection update is missing".to_owned())
+            })?;
+        return Ok(ContentSupervisorEvent::Selection(update));
+    }
     if until_expiry.is_some_and(|wait| wait.is_zero()) {
         return Ok(ContentSupervisorEvent::Deadline);
     }
@@ -4804,6 +4912,7 @@ async fn run_selective_swarm_loop(
     download: &mut ContentSwarmDownload<'_>,
 ) -> Result<(), DownloadError> {
     let mut next_owner = ContentSupervisorOwner::Storage;
+    let mut selection_updates = download.control.selection_updates();
     let mut storage_pressure_started = None;
     let mut next_maintenance_at = Duration::ZERO;
     if let Some(connection) = peers.connection.take() {
@@ -4982,10 +5091,13 @@ async fn run_selective_swarm_loop(
                 sockets,
                 discovery,
                 storage,
-                storage_backpressured,
-                until_expiry,
-                &cancellation,
-                next_owner,
+                ContentSupervisorWait {
+                    storage_backpressured,
+                    until_expiry,
+                    cancellation: &cancellation,
+                    selection_updates: &mut selection_updates,
+                    priority: next_owner,
+                },
             )
             .await?
         };
@@ -4995,6 +5107,17 @@ async fn run_selective_swarm_loop(
 
         match event {
             ContentSupervisorEvent::Deadline => continue,
+            ContentSupervisorEvent::Selection(update) => {
+                while download.control.snapshot().storage_jobs_pending != 0 {
+                    download.flush_pending_storage()?;
+                    let completion = download.storage_pipeline_mut()?.next_completion().await?;
+                    let disposition = download
+                        .handle_storage_completion(completion, peers.elapsed())
+                        .await?;
+                    apply_content_disposition(peers, sockets, download, None, disposition).await?;
+                }
+                download.reconcile_file_selection(sockets, update).await?;
+            }
             ContentSupervisorEvent::Storage(completion) => {
                 let disposition = download
                     .handle_storage_completion(completion, peers.elapsed())
@@ -5255,35 +5378,12 @@ struct FullRecheckResult {
     recovered: Vec<u32>,
 }
 
-async fn inventory_recheck_sources(
-    storage: &mut SelectiveStorage,
-    layout: &TorrentLayout,
-    piece_indices: &[u32],
-    control: &DownloadControl,
-) -> Result<Vec<(u32, u32, bool)>, DownloadError> {
-    let mut inventory = Vec::with_capacity(piece_indices.len());
-    for &piece_index in piece_indices {
-        if control.is_cancelled() {
-            return Err(DownloadError::Cancelled);
-        }
-        let piece_length = layout
-            .piece_length_at(piece_index)
-            .map_err(DownloadError::Layout)?;
-        let available = storage
-            .has_piece_sources(piece_index)
-            .await
-            .map_err(DownloadError::SelectiveStorage)?;
-        inventory.push((piece_index, piece_length, available));
-    }
-    Ok(inventory)
-}
-
 async fn full_recheck_managed_storage(
     storage: &mut SelectiveStorage,
     metainfo: &Metainfo,
     layout: &TorrentLayout,
-    inventory: &[(u32, u32, bool)],
     previous: &[bool],
+    selection: &mut AppliedFileSelection,
     control: &DownloadControl,
 ) -> Result<FullRecheckResult, DownloadError> {
     let mut verified = vec![false; layout.piece_count()];
@@ -5293,46 +5393,93 @@ async fn full_recheck_managed_storage(
             .map_err(DownloadError::SelectiveStorage)?;
     }
 
-    let mut candidates = VecDeque::new();
-    for &(piece_index, piece_length, available) in inventory {
-        if available {
-            candidates.push_back((piece_index, piece_length));
-        } else {
-            control.disk_piece_hashing(piece_index, piece_length);
-            control.disk_piece_failed(
-                piece_index,
-                piece_length,
-                "recheck source is missing or short",
-            );
-        }
-    }
-
     let hash_concurrency = control.storage_execution_limits().1;
     let mut running = JoinSet::new();
     let mut recovered = Vec::new();
     let mut cancelled = false;
     let mut first_error = None;
+    let mut next_piece_index = 0_usize;
+    let mut heartbeat = tokio::time::interval_at(
+        TokioInstant::now() + Duration::from_secs(1),
+        Duration::from_secs(1),
+    );
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    control.checker_set_phase(CheckerPhase::Hashing);
 
     loop {
         cancelled |= control.is_cancelled();
-        while !cancelled && first_error.is_none() && running.len() < hash_concurrency {
-            let Some((piece_index, piece_length)) = candidates.pop_front() else {
+        let pending_selection = control
+            .latest_file_selection()
+            .filter(|update| update.revision > selection.revision);
+        if pending_selection.is_some() {
+            control.checker_set_phase(CheckerPhase::ReconcilingStorage);
+        }
+        if running.is_empty()
+            && let Some(update) = pending_selection.as_ref()
+        {
+            let next_selection =
+                FileSelection::new(layout, &update.skip_files).map_err(DownloadError::Layout)?;
+            storage
+                .reconcile_selection(next_selection.clone())
+                .await
+                .map_err(DownloadError::SelectiveStorage)?;
+            selection.selection = next_selection;
+            selection.revision = update.revision;
+            control.file_selection_applied(update.revision);
+            control.checker_set_phase(CheckerPhase::Hashing);
+            continue;
+        }
+        while !cancelled
+            && first_error.is_none()
+            && pending_selection.is_none()
+            && running.len() < hash_concurrency
+        {
+            if next_piece_index == layout.piece_count() {
                 break;
-            };
-            control.disk_piece_hashing(piece_index, piece_length);
-            control.emit(DownloadActivityEvent::PieceHashing { piece_index });
-            let operation = match storage.prepare_hash(piece_index) {
-                Ok(operation) => operation,
-                Err(error) if error.is_missing_or_short_source() => {
-                    control.disk_piece_failed(piece_index, piece_length, &error.to_string());
-                    continue;
-                }
+            }
+            let piece_index = u32::try_from(next_piece_index)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            next_piece_index += 1;
+            let piece_length = layout
+                .piece_length_at(piece_index)
+                .map_err(DownloadError::Layout)?;
+            let bytes_hashed = layout
+                .file_segments(piece_index, 0, piece_length)
+                .map_err(DownloadError::Layout)?
+                .into_iter()
+                .filter(|segment| !segment.padding)
+                .try_fold(0_u64, |total, segment| {
+                    total
+                        .checked_add(segment.length as u64)
+                        .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))
+                })?;
+            let available = match storage.has_piece_sources(piece_index).await {
+                Ok(available) => available,
                 Err(error) => {
-                    control.disk_piece_failed(piece_index, piece_length, &error.to_string());
+                    control.disk_storage_error(&error.to_string());
                     first_error = Some(DownloadError::SelectiveStorage(error));
                     break;
                 }
             };
+            if !available {
+                control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
+                continue;
+            }
+            let operation = match storage.prepare_hash(piece_index) {
+                Ok(operation) => operation,
+                Err(error) if error.is_missing_or_short_source() => {
+                    control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
+                    continue;
+                }
+                Err(error) => {
+                    control.disk_storage_error(&error.to_string());
+                    first_error = Some(DownloadError::SelectiveStorage(error));
+                    break;
+                }
+            };
+            control.disk_piece_hashing(piece_index, piece_length);
+            control.checker_hash_started(piece_index);
+            control.emit(DownloadActivityEvent::PieceHashing { piece_index });
             let started_at = Instant::now();
             control.storage_command_started(StorageCommandKind::Hash, started_at, started_at);
             let job_control = control.clone();
@@ -5341,17 +5488,28 @@ async fn full_recheck_managed_storage(
                 (
                     piece_index,
                     piece_length,
+                    bytes_hashed,
                     started_at,
                     operation.execute().await,
                 )
             });
         }
 
-        let Some(result) = running.join_next().await else {
+        if running.is_empty() {
+            break;
+        }
+        let result = tokio::select! {
+            result = running.join_next() => result,
+            _ = heartbeat.tick() => {
+                control.checker_heartbeat();
+                continue;
+            }
+        };
+        let Some(result) = result else {
             break;
         };
         match result {
-            Ok((piece_index, piece_length, started_at, result)) => {
+            Ok((piece_index, piece_length, bytes_hashed, started_at, result)) => {
                 control.storage_command_completed(
                     StorageCommandKind::Hash,
                     started_at,
@@ -5365,17 +5523,22 @@ async fn full_recheck_managed_storage(
                         continue;
                     }
                 };
-                let matches = match result {
-                    Ok(actual) => actual == metainfo.piece_hashes[piece_index_usize],
-                    Err(error) if error.is_missing_or_short_source() => false,
+                let outcome = match result {
+                    Ok(actual) if actual == metainfo.piece_hashes[piece_index_usize] => {
+                        CheckerPieceOutcome::Matched
+                    }
+                    Ok(_) => CheckerPieceOutcome::Mismatched,
+                    Err(error) if error.is_missing_or_short_source() => CheckerPieceOutcome::Absent,
                     Err(error) => {
                         control.disk_piece_failed(piece_index, piece_length, &error.to_string());
+                        control.checker_hash_stopped(piece_index);
                         first_error.get_or_insert(DownloadError::SelectiveStorage(error));
                         continue;
                     }
                 };
-                if !matches {
-                    control.disk_piece_failed(piece_index, piece_length, "recheck hash mismatch");
+                control.checker_piece_processed(piece_index, bytes_hashed, outcome);
+                if outcome != CheckerPieceOutcome::Matched {
+                    control.disk_piece_check_unverified(piece_index, piece_length);
                     continue;
                 }
                 verified[piece_index_usize] = true;
@@ -5398,6 +5561,7 @@ async fn full_recheck_managed_storage(
         return Err(error);
     }
     if cancelled {
+        control.checker_set_phase(CheckerPhase::Paused);
         return Err(DownloadError::Cancelled);
     }
     Ok(FullRecheckResult {
@@ -5445,20 +5609,13 @@ async fn run_selective_download(
             wanted_pieces.push(piece_index_u32);
         }
     }
-    if wanted_pieces.is_empty() {
-        return Err(DownloadError::Metainfo(MetainfoError::Unsupported(
-            "selection with no wanted pieces",
-        )));
-    }
-    let last_wanted_piece = usize::try_from(
-        *wanted_pieces
-            .last()
-            .expect("at least one wanted piece was planned"),
-    )
-    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+    let mut last_wanted_piece = wanted_pieces
+        .last()
+        .copied()
+        .map_or(Ok(0), usize::try_from)
+        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
 
     let descriptor_backed = descriptors.is_some();
-    let plan_selection = selection.clone();
     let platform_storage = control.platform_storage();
     let platform_backed = platform_storage.is_some();
     if descriptor_backed && platform_backed {
@@ -5486,7 +5643,7 @@ async fn run_selective_download(
             platform,
             &metainfo,
             layout.clone(),
-            selection,
+            selection.clone(),
             verified_pieces.clone(),
         )
         .await
@@ -5504,7 +5661,7 @@ async fn run_selective_download(
                 SelectiveStorage::create_with_descriptors(
                     &metainfo,
                     layout.clone(),
-                    selection,
+                    selection.clone(),
                     &config.materialize_files,
                     descriptors,
                 )
@@ -5525,7 +5682,7 @@ async fn run_selective_download(
                             paths,
                             &metainfo,
                             layout.clone(),
-                            selection,
+                            selection.clone(),
                             verified_pieces.clone(),
                             pool,
                             Some(resume.artifact_state),
@@ -5537,7 +5694,7 @@ async fn run_selective_download(
                             paths,
                             &metainfo,
                             layout.clone(),
-                            selection,
+                            selection.clone(),
                             verified_pieces.clone(),
                             resume.artifact_state,
                         )
@@ -5558,7 +5715,7 @@ async fn run_selective_download(
                             config.output_path.clone(),
                             &metainfo,
                             layout.clone(),
-                            selection,
+                            selection.clone(),
                             pool,
                         )
                         .await
@@ -5568,7 +5725,7 @@ async fn run_selective_download(
                             config.output_path.clone(),
                             &metainfo,
                             layout.clone(),
-                            selection,
+                            selection.clone(),
                         )
                         .await
                     }
@@ -5591,7 +5748,7 @@ async fn run_selective_download(
                     SelectiveStorage::create_with_descriptors(
                         &metainfo,
                         layout.clone(),
-                        selection,
+                        selection.clone(),
                         &[],
                         descriptors,
                     )
@@ -5601,7 +5758,7 @@ async fn run_selective_download(
                     SelectiveStorage::resume_with_descriptors(
                         &metainfo,
                         layout.clone(),
-                        selection,
+                        selection.clone(),
                         descriptors,
                         verified_pieces.clone(),
                     )
@@ -5623,48 +5780,110 @@ async fn run_selective_download(
     };
     drop(storage_creation);
 
+    let mut applied_selection = AppliedFileSelection {
+        selection,
+        revision: 0,
+    };
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
-        let inventory = if resumed == ResumedStorage::Created {
-            Vec::new()
-        } else {
-            inventory_recheck_sources(&mut storage, &layout, &wanted_pieces, &control).await?
-        };
-        resume
+        let generation = resume
             .checkpoints
             .recheck_started()
             .map_err(DownloadError::Checkpoint)?;
+        control.checker_started(generation, layout.piece_count());
         let previous = verified_pieces.clone();
         let checked = if resumed == ResumedStorage::Created {
+            control.checker_set_phase(CheckerPhase::Hashing);
+            for piece_index in 0..layout.piece_count() {
+                if control.is_cancelled() {
+                    control.checker_set_phase(CheckerPhase::Paused);
+                    return Err(DownloadError::Cancelled);
+                }
+                let piece_index = u32::try_from(piece_index)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
+            }
             FullRecheckResult {
                 verified: vec![false; layout.piece_count()],
                 recovered: Vec::new(),
             }
         } else {
-            full_recheck_managed_storage(
+            match full_recheck_managed_storage(
                 &mut storage,
                 &metainfo,
                 &layout,
-                &inventory,
                 &previous,
+                &mut applied_selection,
                 &control,
             )
-            .await?
+            .await
+            {
+                Ok(checked) => checked,
+                Err(error) => {
+                    if !matches!(error, DownloadError::Cancelled) {
+                        control.checker_finished(generation);
+                    }
+                    return Err(error);
+                }
+            }
         };
+        control.checker_set_phase(CheckerPhase::ReconcilingStorage);
         verified_pieces = checked.verified;
+        if let Err(error) = storage.reconcile_after_recheck().await {
+            control.checker_finished(generation);
+            return Err(DownloadError::SelectiveStorage(error));
+        }
+        if resumed == ResumedStorage::Staging
+            && let Err(error) = storage.sync_pieces(&checked.recovered).await
+        {
+            control.checker_finished(generation);
+            return Err(DownloadError::SelectiveStorage(error));
+        }
+        control.checker_set_phase(CheckerPhase::Finalizing);
+        if let Err(error) = resume.checkpoints.have_rechecked(&verified_pieces) {
+            control.checker_finished(generation);
+            return Err(DownloadError::Checkpoint(error));
+        }
+        control.checker_finished(generation);
+    }
+
+    let AppliedFileSelection {
+        mut selection,
+        revision: mut selection_revision,
+    } = applied_selection;
+
+    if let Some(update) = control
+        .latest_file_selection()
+        .filter(|update| update.revision > selection_revision)
+    {
+        let next_selection =
+            FileSelection::new(&layout, &update.skip_files).map_err(DownloadError::Layout)?;
         storage
-            .reconcile_after_recheck()
+            .reconcile_selection(next_selection.clone())
             .await
             .map_err(DownloadError::SelectiveStorage)?;
-        if resumed == ResumedStorage::Staging {
-            storage
-                .sync_pieces(&checked.recovered)
-                .await
-                .map_err(DownloadError::SelectiveStorage)?;
+        selection = next_selection;
+        selection_revision = update.revision;
+        control.file_selection_applied(update.revision);
+        wanted_pieces.clear();
+        skipped_piece_count = 0;
+        for piece_index in 0..layout.piece_count() {
+            let piece_index_u32 = u32::try_from(piece_index)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            if layout
+                .request_ranges(piece_index_u32, &selection)
+                .map_err(DownloadError::Layout)?
+                .is_empty()
+            {
+                skipped_piece_count += 1;
+            } else {
+                wanted_pieces.push(piece_index_u32);
+            }
         }
-        resume
-            .checkpoints
-            .have_rechecked(&verified_pieces)
-            .map_err(DownloadError::Checkpoint)?;
+        last_wanted_piece = wanted_pieces
+            .last()
+            .copied()
+            .map_or(Ok(0), usize::try_from)
+            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
     }
 
     wanted_pieces.retain(|piece_index| {
@@ -5677,6 +5896,7 @@ async fn run_selective_download(
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
     let part_path = storage.part_path().map(Path::to_path_buf);
+    let plan_selection = selection.clone();
     if resume
         .as_ref()
         .is_some_and(|resume| !resume.download_missing)
@@ -5723,7 +5943,10 @@ async fn run_selective_download(
             config.max_buffered_payload_bytes,
             wanted_pieces,
             picker_seed(metainfo.info_hash, peers.network.peer_id),
-            plan_selection,
+            AppliedFileSelection {
+                selection: plan_selection,
+                revision: selection_revision,
+            },
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
                 metainfo: &metainfo,
@@ -5734,6 +5957,7 @@ async fn run_selective_download(
         )
         .await?;
         let mut completed = download_content_swarm(peers, download).await?;
+        selection = completed.selection.clone();
         let result = (
             completed.total_blocks,
             completed.total_bytes,
@@ -5749,6 +5973,55 @@ async fn run_selective_download(
         storage = *returned_storage.0;
         result
     };
+
+    skipped_piece_count = 0;
+    last_wanted_piece = 0;
+    for piece_index in 0..layout.piece_count() {
+        let piece_index_u32 = u32::try_from(piece_index)
+            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        if layout
+            .request_ranges(piece_index_u32, &selection)
+            .map_err(DownloadError::Layout)?
+            .is_empty()
+        {
+            skipped_piece_count += 1;
+        } else {
+            last_wanted_piece = piece_index;
+        }
+    }
+    let selected_file_bytes = storage.selected_bytes();
+    let skipped_file_bytes = storage.skipped_bytes();
+    let padding_bytes = storage.padding_bytes();
+    let part_path = storage.part_path().map(Path::to_path_buf);
+    if selected_file_bytes == 0 {
+        let part_slots = storage.part_slots();
+        return Ok(DownloadReport {
+            info_hash: metainfo.info_hash,
+            piece_hash: metainfo.piece_hashes[last_wanted_piece],
+            bytes_written: total_bytes,
+            block_count: total_blocks,
+            payload_limit: config.max_buffered_payload_bytes,
+            payload_high_water: control.snapshot().payload_high_water,
+            outstanding_request_limit: config.swarm_config.max_outstanding_request_bytes,
+            outstanding_request_high_water,
+            active_piece_limit: config.swarm_config.max_active_piece_bytes,
+            verification_buffer: VERIFICATION_CHUNK_LENGTH,
+            piece_count: layout.piece_count(),
+            verified_piece_count: 0,
+            skipped_piece_count,
+            selected_file_bytes,
+            skipped_file_bytes,
+            padding_bytes,
+            selected_written_bytes,
+            part_written_bytes,
+            materialized_bytes: 0,
+            part_slots_before_materialization: part_slots,
+            part_slots_after_materialization: part_slots,
+            part_reopened: storage.has_part_file(),
+            part_path,
+            prepared_files: Vec::new(),
+        });
+    }
 
     let completed_existing_publication = storage.is_published();
     if descriptor_backed {

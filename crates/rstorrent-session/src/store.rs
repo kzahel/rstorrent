@@ -3946,13 +3946,7 @@ fn add_magnet(
         transaction
             .execute(
                 "UPDATE torrents SET updated_revision = ?2,
-                    error = CASE WHEN ?3 THEN NULL ELSE error END,
-                    verification_requested = CASE
-                        WHEN ?3
-                         AND verification_requested = verification_completed
-                        THEN verification_requested + 1
-                        ELSE verification_requested
-                    END
+                    error = CASE WHEN ?3 THEN NULL ELSE error END
                  WHERE info_hash = ?1",
                 params![
                     magnet.info_hash.as_slice(),
@@ -4357,13 +4351,7 @@ where
     transaction
         .execute(
             "UPDATE torrents
-             SET error = NULL, updated_revision = ?2,
-                 verification_requested = CASE
-                    WHEN desired_state = 'running'
-                     AND verification_requested = verification_completed
-                    THEN verification_requested + 1
-                    ELSE verification_requested
-                 END
+             SET error = NULL, updated_revision = ?2
              WHERE info_hash = ?1",
             params![
                 info_hash.as_slice(),
@@ -6437,7 +6425,7 @@ mod tests {
     }
 
     #[test]
-    fn all_skipped_idles_running_intent_and_normal_restarts_checking() {
+    fn all_skipped_idles_running_intent_and_normal_resumes_without_recheck() {
         let root = test_root("all-skipped");
         let configured = configured_root(&root);
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
@@ -6477,6 +6465,8 @@ mod tests {
         assert!(idle.desired_running);
         assert_eq!(idle.state, TorrentState::Paused);
         assert_eq!(idle.skip_files, vec![0, 1]);
+        assert!(!idle.verification.is_pending());
+        let verification_generation = idle.verification.requested();
 
         store
             .handle_durable(&RequestEnvelope {
@@ -6490,10 +6480,12 @@ mod tests {
                 },
             })
             .expect("restore normal priority");
-        let checking = store.load_resume(&torrent_id).expect("load checking state");
-        assert!(checking.desired_running);
-        assert_eq!(checking.state, TorrentState::Checking);
-        assert_eq!(checking.skip_files, vec![0]);
+        let resumed = store.load_resume(&torrent_id).expect("load resumed state");
+        assert!(resumed.desired_running);
+        assert_eq!(resumed.state, TorrentState::Downloading);
+        assert_eq!(resumed.skip_files, vec![0]);
+        assert_eq!(resumed.verification.requested(), verification_generation);
+        assert!(!resumed.verification.is_pending());
         drop(store);
         fs::remove_dir_all(root).expect("remove profile");
     }

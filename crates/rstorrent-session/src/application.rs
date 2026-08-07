@@ -14,7 +14,7 @@ use rstorrent_engine::{
     DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, IncomingPeerError,
+    DownloadControl, DownloadError, DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError,
     IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, SessionSocketError,
@@ -685,12 +685,6 @@ impl ApplicationService {
             | Command::ForceRecheck { torrent_id }
             | Command::Archive { torrent_id }
             | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
-            Command::SetFilePriority { torrent_id, .. }
-            | Command::SetFilePriorityRanges { torrent_id, .. }
-                if file_priority_changed =>
-            {
-                Some(torrent_id.to_ascii_lowercase())
-            }
             Command::AddMagnet { magnet, .. } => rstorrent_protocol::magnet::Magnet::parse(magnet)
                 .ok()
                 .filter(|magnet| magnet.select_only.is_some())
@@ -703,7 +697,14 @@ impl ApplicationService {
             self.unregister_incoming(torrent_id).await?;
         }
         let force_recheck_fence = match &command {
-            Command::ForceRecheck { torrent_id } => Some(torrent_id.to_ascii_lowercase()),
+            Command::ForceRecheck { torrent_id } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                (!self
+                    .load_resume_conservative(&torrent_id)?
+                    .verification
+                    .is_pending())
+                .then_some(torrent_id)
+            }
             _ => None,
         };
         if let Some(torrent_id) = force_recheck_fence.as_deref() {
@@ -857,9 +858,35 @@ impl ApplicationService {
                     &[],
                 )?;
                 if file_priority_changed {
-                    self.pause(&torrent_id).await?;
-                    self.refresh_views()?;
-                    self.start_if_possible(&torrent_id).await?;
+                    let active_control = self
+                        .active_download()
+                        .filter(|(active_torrent, _)| *active_torrent == torrent_id)
+                        .map(|(_, active)| active.control.clone());
+                    if let Some(control) = active_control {
+                        let resume = self.load_resume_conservative(&torrent_id)?;
+                        let skip_files = resume
+                            .skip_files
+                            .into_iter()
+                            .map(|index| {
+                                usize::try_from(index).map_err(|_| {
+                                    ApplicationError::Configuration(
+                                        "file selection index overflow".to_owned(),
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let revision = response.revision.parse::<u64>().map_err(|_| {
+                            ApplicationError::Configuration(
+                                "durable response contains an invalid revision".to_owned(),
+                            )
+                        })?;
+                        control.update_file_selection(FileSelectionUpdate {
+                            revision,
+                            skip_files,
+                        });
+                    } else {
+                        self.start_if_possible(&torrent_id).await?;
+                    }
                 }
             }
             Command::Archive { torrent_id } => {
@@ -3215,7 +3242,7 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
             .map_err(|error| error.to_string())
     }
 
-    fn recheck_started(&self) -> Result<(), String> {
+    fn recheck_started(&self) -> Result<u64, String> {
         let generation = self.store().and_then(|mut store| {
             store
                 .begin_recheck_with_generation(&self.torrent_id)
@@ -3236,7 +3263,8 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
                 "Managed content recheck started",
                 &[],
             )
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        Ok(generation)
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
@@ -3494,6 +3522,16 @@ impl DownloadActivitySink for ViewActivitySink {
             let _ = self
                 .views
                 .record_piece_runtime(&self.torrent_id, &snapshot.pieces);
+            return;
+        }
+        if let DownloadActivityEvent::CheckerProgress(progress) = &event {
+            let _ = self
+                .views
+                .record_checker_progress(&self.torrent_id, progress);
+            return;
+        }
+        if let DownloadActivityEvent::CheckerFinished { generation } = &event {
+            let _ = self.views.finish_checker(&self.torrent_id, *generation);
             return;
         }
         let piece_activity = match &event {
@@ -4004,6 +4042,10 @@ impl ViewActivitySink {
             DownloadActivityEvent::PathPublicationStage(_) => {
                 unreachable!("publication stages are handled before diagnostic events")
             }
+            DownloadActivityEvent::CheckerProgress(_)
+            | DownloadActivityEvent::CheckerFinished { .. } => {
+                unreachable!("checker projections are handled before diagnostic events")
+            }
         }
     }
 }
@@ -4069,6 +4111,7 @@ fn durable_view_state(
                 torrent.torrent_id.clone(),
                 DurableTorrentViewState {
                     display_name: None,
+                    checking_generation: None,
                     verified: Vec::new(),
                     files: None,
                     eta_geometry: None,
@@ -4118,6 +4161,10 @@ fn durable_view_state(
             torrent.torrent_id.clone(),
             DurableTorrentViewState {
                 display_name,
+                checking_generation: resume
+                    .verification
+                    .is_pending()
+                    .then_some(resume.verification.requested()),
                 verified: ranges_from_pieces(verified_pieces),
                 files,
                 eta_geometry,
@@ -7279,7 +7326,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_priority_joins_generation_idles_all_skip_and_restarts_normal() {
+    async fn file_priority_idles_all_skipped_then_restarts_when_wanted() {
         let root = test_root("file-priority-generation");
         let configuration = config(&root);
         let raw_info = multi_file_info();
@@ -7290,6 +7337,7 @@ mod tests {
             .expect("bind content peer");
         let address = listener.local_addr().expect("content peer address");
         let (accepted_sender, mut accepted_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (closed_sender, mut closed_receiver) = tokio::sync::mpsc::unbounded_channel();
         let peer_task = tokio::spawn(async move {
             for generation in 0..2 {
                 let (mut stream, _) = listener.accept().await.expect("accept content peer");
@@ -7329,6 +7377,9 @@ mod tests {
                         Err(error) => panic!("wait for joined generation: {error}"),
                     }
                 }
+                closed_sender
+                    .send(generation)
+                    .expect("report closed generation");
             }
         });
 
@@ -7380,13 +7431,18 @@ mod tests {
             })
             .await
             .expect("skip all files");
-        assert!(service.active_download().is_none());
         let idle = service
             .load_resume_conservative(&torrent_id)
             .expect("load all-skipped state");
         assert!(idle.desired_running);
         assert_eq!(idle.state, TorrentState::Paused);
         assert_eq!(idle.skip_files, vec![0, 1]);
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), closed_receiver.recv())
+                .await
+                .expect("all-skipped generation did not become idle"),
+            Some(0)
+        );
 
         service
             .dispatch(RequestEnvelope {
@@ -7414,6 +7470,165 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
             .await
             .expect("peer generations did not join")
+            .expect("peer task");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn partial_file_priority_reconciles_without_replacing_the_peer_generation() {
+        let root = test_root("file-priority-live-reconcile");
+        let configuration = config(&root);
+        let raw_info = multi_file_info();
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind content peer");
+        let address = listener.local_addr().expect("content peer address");
+        let (accepted_sender, mut accepted_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (closed_sender, mut closed_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept content peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read content handshake");
+            decode_handshake(&handshake, info_hash).expect("content handshake identity");
+            stream
+                .write_all(&encode_handshake(info_hash, *b"-RS-FILE-LIVE-000000"))
+                .await
+                .expect("send content handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).expect("bitfield"))
+                .await
+                .expect("send content bitfield");
+            accepted_sender.send(()).expect("report accepted peer");
+            let mut buffer = [0; 128];
+            loop {
+                match stream.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::BrokenPipe
+                        ) =>
+                    {
+                        break;
+                    }
+                    Err(error) => panic!("wait for retained generation: {error}"),
+                }
+            }
+            closed_sender.send(()).expect("report peer closure");
+        });
+
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-live-file-priority".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add content torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record content metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open content service");
+        tokio::time::timeout(std::time::Duration::from_secs(1), accepted_receiver.recv())
+            .await
+            .expect("content generation did not connect")
+            .expect("accepted peer signal");
+        let verification_before = service
+            .load_resume_conservative(&torrent_id)
+            .expect("load initial verification")
+            .verification;
+        let control = service
+            .active_download()
+            .expect("active content generation")
+            .1
+            .control
+            .clone();
+
+        let skipped = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "skip-one-live-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .await
+            .expect("skip one file");
+        let skipped_revision = skipped.revision.parse::<u64>().expect("skip revision");
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while control.applied_file_selection_revision() < skipped_revision {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("skipped selection did not reconcile");
+        assert!(closed_receiver.try_recv().is_err());
+
+        let restored = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "restore-one-live-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: torrent_id.clone(),
+                    file_indices: vec![1],
+                    priority: FilePriority::Normal,
+                },
+            })
+            .await
+            .expect("restore one file");
+        let restored_revision = restored.revision.parse::<u64>().expect("restore revision");
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while control.applied_file_selection_revision() < restored_revision {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("restored selection did not reconcile");
+        assert!(closed_receiver.try_recv().is_err());
+        assert_eq!(
+            service
+                .load_resume_conservative(&torrent_id)
+                .expect("load reconciled verification")
+                .verification,
+            verification_before
+        );
+
+        service.shutdown().await.expect("shutdown");
+        tokio::time::timeout(std::time::Duration::from_secs(1), closed_receiver.recv())
+            .await
+            .expect("retained peer did not close on shutdown")
+            .expect("peer closure signal");
+        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
+            .await
+            .expect("peer task did not join")
             .expect("peer task");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");

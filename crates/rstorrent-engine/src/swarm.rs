@@ -1109,6 +1109,80 @@ impl SwarmState {
         Ok(())
     }
 
+    pub fn replace_wanted_pieces(
+        &mut self,
+        wanted: Vec<u32>,
+    ) -> Result<Vec<RequestCancellation>, SwarmError> {
+        if self.writing_blocks != 0 {
+            return Err(SwarmError::InvalidTransition(
+                "wanted pieces cannot change while storage writes are active",
+            ));
+        }
+        let mut picker = AvailabilityPicker::new(
+            self.piece_count,
+            wanted,
+            self.picker.policy(),
+            self.picker.tie_seed(),
+        )
+        .map_err(SwarmError::Invariant)?;
+        for connection in self.connections.values_mut() {
+            connection.wanted_piece_count = connection
+                .availability
+                .set_pieces()
+                .filter(|piece| picker.is_wanted(*piece))
+                .count();
+            connection.active_request_count = 0;
+            if connection.availability.is_full() {
+                picker
+                    .increment_seed_without_rebuild()
+                    .map_err(SwarmError::Invariant)?;
+            } else {
+                for piece in connection.availability.set_pieces() {
+                    picker
+                        .increment_piece_without_repair(piece)
+                        .map_err(SwarmError::Invariant)?;
+                }
+            }
+        }
+        picker.rebuild_after_bulk_update();
+        let cancellations = self
+            .active_attempts
+            .values()
+            .filter(|attempt| attempt.disposition.is_active())
+            .map(|attempt| RequestCancellation {
+                attempt: attempt.id,
+                connection: attempt.connection,
+                block: attempt.block,
+            })
+            .collect::<Vec<_>>();
+        self.cancelled_request_attempts = self
+            .cancelled_request_attempts
+            .saturating_add(cancellations.len());
+        self.picker = picker;
+        self.pieces.clear();
+        self.blocks.clear();
+        self.incomplete_pieces.clear();
+        self.inactive_ranked_pieces.clear();
+        self.inactive_rank_dirty = true;
+        self.active_pieces.clear();
+        self.requestable_active_pieces.clear();
+        self.requestable_active_block_keys.clear();
+        self.requestable_active_blocks = 0;
+        self.active_piece_bytes = 0;
+        self.active_attempts.clear();
+        self.unverified_contributor_blocks.clear();
+        self.missing_blocks = 0;
+        self.requested_blocks = 0;
+        self.writing_blocks = 0;
+        self.received_blocks = 0;
+        self.verified_blocks = 0;
+        self.outstanding_request_bytes = 0;
+        self.last_scheduled_connection = None;
+        self.last_activated_piece = None;
+        self.last_activated_availability = None;
+        Ok(cancellations)
+    }
+
     pub const fn config(&self) -> SwarmConfig {
         self.config
     }
@@ -4537,6 +4611,41 @@ mod tests {
                 .iter()
                 .all(|assignment| assignment.block.piece == 0)
         );
+    }
+
+    #[test]
+    fn replacing_wanted_pieces_keeps_peers_and_cancels_old_requests() {
+        let mut state = state(2, vec![plan(0, 1), plan(1, 1)], 2);
+        add_peer(&mut state, connection(1), &[0, 1], false);
+        let assigned = state.schedule(Duration::ZERO).expect("initial schedule");
+        assert_eq!(assigned.len(), 2);
+
+        let cancellations = state
+            .replace_wanted_pieces(vec![1])
+            .expect("replace wanted pieces");
+        assert_eq!(cancellations.len(), assigned.len());
+        assert!(
+            cancellations
+                .iter()
+                .all(|cancel| cancel.connection == connection(1))
+        );
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.connected_peers, 1);
+        assert_eq!(snapshot.active_request_attempts, 0);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
+        assert_eq!(state.piece_availability(0), Ok(1));
+        assert_eq!(state.piece_availability(1), Ok(1));
+
+        assert_eq!(state.reserve_piece_for_planning(2), Some(1));
+        state
+            .append_piece_plans(vec![plan(1, 1)])
+            .expect("plan replacement piece");
+        let replacement = state
+            .schedule(Duration::from_millis(1))
+            .expect("replacement schedule");
+        assert_eq!(replacement.len(), 1);
+        assert_eq!(replacement[0].connection, connection(1));
+        assert_eq!(replacement[0].block.piece, 1);
     }
 
     #[test]

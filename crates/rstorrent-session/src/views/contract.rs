@@ -688,6 +688,37 @@ pub struct ProgressAssessment {
     pub actions: Vec<ProgressAction>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum CheckingPhaseView {
+    Queued,
+    Preparing,
+    Hashing,
+    ReconcilingStorage,
+    Paused,
+    Finalizing,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct CheckingProgressView {
+    pub generation: String,
+    pub phase: CheckingPhaseView,
+    pub pieces_total: u32,
+    pub pieces_processed: u32,
+    pub pieces_matched: u32,
+    pub pieces_absent: u32,
+    pub pieces_mismatched: u32,
+    pub bytes_hashed: String,
+    pub active_hash_jobs: u32,
+    pub queued_hash_jobs: u32,
+    pub elapsed_millis: String,
+    pub last_advance_age_millis: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_active_job_age_millis: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProgressInputs {
     pub task_active: bool,
@@ -963,6 +994,8 @@ pub struct TorrentView {
     pub eta_payload_download_rate_bytes: String,
     pub eta: TorrentEtaView,
     pub progress: ProgressAssessment,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checking: Option<CheckingProgressView>,
     pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal_state: Option<RemovalState>,

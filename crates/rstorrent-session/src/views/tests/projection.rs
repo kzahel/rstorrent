@@ -25,6 +25,49 @@ fn current_torrent(hub: &ViewHub) -> crate::TorrentView {
         .clone()
 }
 
+#[test]
+fn checker_progress_projects_exactly_and_rejects_stale_completion() {
+    let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
+    hub.record_checker_progress(
+        TORRENT_ID,
+        &CheckerProgress {
+            generation: 2,
+            phase: CheckerPhase::Hashing,
+            pieces_total: 4,
+            pieces_processed: 2,
+            pieces_matched: 1,
+            pieces_absent: 1,
+            pieces_mismatched: 0,
+            bytes_hashed: 16_384,
+            active_hash_jobs: 1,
+            queued_hash_jobs: 1,
+            elapsed_millis: 1_500,
+            last_advance_age_millis: 300,
+            oldest_active_job_age_millis: Some(700),
+        },
+    )
+    .expect("record checker progress");
+
+    let checking = current_torrent(&hub).checking.expect("checking projection");
+    assert_eq!(checking.generation, "2");
+    assert_eq!(checking.phase, CheckingPhaseView::Hashing);
+    assert_eq!(checking.pieces_processed, 2);
+    assert_eq!(checking.pieces_matched, 1);
+    assert_eq!(checking.pieces_absent, 1);
+    assert_eq!(checking.bytes_hashed, "16384");
+    assert_eq!(
+        checking.oldest_active_job_age_millis.as_deref(),
+        Some("700")
+    );
+
+    hub.finish_checker(TORRENT_ID, 1)
+        .expect("ignore stale checker completion");
+    assert!(current_torrent(&hub).checking.is_some());
+    hub.finish_checker(TORRENT_ID, 2)
+        .expect("finish current checker");
+    assert!(current_torrent(&hub).checking.is_none());
+}
+
 fn eta_durable(
     files: Option<FileProgressModel>,
     required_payload_bytes: u64,
@@ -34,6 +77,7 @@ fn eta_durable(
         TORRENT_ID.to_owned(),
         DurableTorrentViewState {
             display_name: Some("ETA fixture".to_owned()),
+            checking_generation: None,
             verified: Vec::new(),
             files,
             eta_geometry: Some(RequiredPayloadGeometry {
@@ -813,6 +857,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
             "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
             DurableTorrentViewState {
                 display_name: Some("Verified fixture".to_owned()),
+                checking_generation: None,
                 verified: vec![IndexRange {
                     start: 1,
                     end_exclusive: 3,
@@ -865,6 +910,7 @@ async fn verified_metadata_name_patches_list_and_selected_summary() {
             torrent_id.to_owned(),
             DurableTorrentViewState {
                 display_name: Some("Verified fixture".to_owned()),
+                checking_generation: None,
                 verified: Vec::new(),
                 files: None,
                 eta_geometry: None,

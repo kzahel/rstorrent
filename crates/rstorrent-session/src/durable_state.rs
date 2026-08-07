@@ -59,7 +59,6 @@ impl VerificationState {
         })
     }
 
-    #[cfg(test)]
     pub(crate) const fn requested(self) -> u64 {
         self.requested
     }

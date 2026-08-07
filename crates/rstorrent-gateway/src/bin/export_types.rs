@@ -12,12 +12,12 @@ use rstorrent_session::{
     AddTorrentResult, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
     ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest, CatalogPageView,
-    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
-    ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode, DeliveryPolicy, DhtBucketView,
-    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
-    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
-    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    CheckingPhaseView, CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
+    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
     FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, ListenerBindFailureReason, ListenerPolicy,
@@ -168,6 +168,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<SpeedCurrentRate>(&mut declarations)?;
     append::<SpeedHistoryView>(&mut declarations)?;
     append::<TorrentEtaView>(&mut declarations)?;
+    append::<CheckingPhaseView>(&mut declarations)?;
+    append::<CheckingProgressView>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;
@@ -514,6 +516,7 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
             },
             actions: Vec::new(),
         },
+        checking: None,
         archived: false,
         removal_state: None,
         delete_managed_data_supported: true,

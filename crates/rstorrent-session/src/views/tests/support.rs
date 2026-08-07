@@ -6,17 +6,17 @@ pub(super) use rstorrent_engine::peer::{
     PeerSource,
 };
 pub(super) use rstorrent_engine::{
-    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
-    DiskRuntimeSnapshot, TrackerNextAction, TrackerRuntimeRecordSnapshot, TrackerRuntimeSnapshot,
-    TrackerRuntimeStatus, TrackerSource, TrackerTransport,
+    CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage,
+    DiskPressure, DiskRuntimeSnapshot, TrackerNextAction, TrackerRuntimeRecordSnapshot,
+    TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
 
 pub(super) use super::super::{
-    ActivePieceStageView, DeliveryPolicy, DhtInspectionView, DiskCheckpointStageView,
-    DiskPressureView, DurableTorrentViewState, IndexRange, ProgressAction, ProgressDisposition,
-    ProgressInputs, ProgressReason, ResetReason, SubscriptionSpec, SwarmCatalogState,
-    TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewUpdatePayload, assess_progress, coalesce_patch, ranges_from_pieces,
+    ActivePieceStageView, CheckingPhaseView, DeliveryPolicy, DhtInspectionView,
+    DiskCheckpointStageView, DiskPressureView, DurableTorrentViewState, IndexRange, ProgressAction,
+    ProgressDisposition, ProgressInputs, ProgressReason, ResetReason, SubscriptionSpec,
+    SwarmCatalogState, TorrentActivity, ViewHub, ViewPatch, ViewProjection, ViewSelector,
+    ViewSnapshot, ViewUpdatePayload, assess_progress, coalesce_patch, ranges_from_pieces,
 };
 pub(super) use crate::diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticProfile, DiagnosticRetention, DiagnosticValue,

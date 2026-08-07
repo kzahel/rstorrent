@@ -42,6 +42,7 @@ fn torrent_view(id: &str, verified: u32) -> TorrentView {
             reason: ProgressReason::TransferringPieces,
             actions: Vec::<ProgressAction>::new(),
         },
+        checking: None,
         archived: false,
         removal_state: None,
         delete_managed_data_supported: true,

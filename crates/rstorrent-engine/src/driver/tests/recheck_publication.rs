@@ -1,5 +1,6 @@
 use super::*;
-use crate::PeerBudget;
+use crate::driver::AppliedFileSelection;
+use crate::{FileSelectionUpdate, PeerBudget};
 
 #[tokio::test]
 async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
@@ -236,6 +237,241 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
     tokio::fs::remove_dir_all(root)
         .await
         .expect("remove recheck fixture");
+}
+
+#[tokio::test]
+async fn full_recheck_verifies_readable_skipped_pieces() {
+    let first = vec![0x31; MIN_PAYLOAD_ALLOWANCE];
+    let second = vec![0x72; MIN_PAYLOAD_ALLOWANCE];
+    let torrent_bytes = two_piece_metainfo(&first, &second);
+    let raw_info = Metainfo::info_bytes_with_limits(&torrent_bytes, BEP9_METAINFO_LIMITS)
+        .expect("two-file raw info")
+        .to_vec();
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("two-file recheck metainfo");
+    let root = test_path("full-recheck-skipped-readable");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create storage root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("managed paths");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let all_wanted = FileSelection::new(&layout, &[]).expect("all files wanted");
+    let mut storage =
+        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout.clone(), all_wanted)
+            .await
+            .expect("create staging storage");
+    for (piece_index, payload) in [first.as_slice(), second.as_slice()]
+        .into_iter()
+        .enumerate()
+    {
+        let piece_index = u32::try_from(piece_index).expect("piece index");
+        storage
+            .write_block(piece_index, 0, payload.to_vec())
+            .await
+            .expect("write staged piece");
+        storage.sync_piece(piece_index).await.expect("sync piece");
+    }
+    drop(storage);
+
+    let skipped = FileSelection::new(&layout, &[1]).expect("second file skipped");
+    let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
+        paths,
+        &metainfo,
+        layout.clone(),
+        skipped.clone(),
+        vec![false; layout.piece_count()],
+    )
+    .await
+    .expect("resume with skipped retained destination");
+    assert_eq!(resumed, ResumedStorage::Staging);
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    control.checker_started(1, layout.piece_count());
+    let mut selection = AppliedFileSelection {
+        selection: skipped,
+        revision: 0,
+    };
+    let checked = full_recheck_managed_storage(
+        &mut storage,
+        &metainfo,
+        &layout,
+        &vec![false; layout.piece_count()],
+        &mut selection,
+        &control,
+    )
+    .await
+    .expect("recheck skipped readable piece");
+    control.checker_set_phase(CheckerPhase::Finalizing);
+
+    assert_eq!(checked.verified, vec![true, true]);
+    let finalizing = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter_map(|event| match event {
+            DownloadActivityEvent::CheckerProgress(progress)
+                if progress.phase == CheckerPhase::Finalizing =>
+            {
+                Some(progress.as_ref())
+            }
+            _ => None,
+        })
+        .last()
+        .expect("final checker progress")
+        .clone();
+    assert_eq!(finalizing.pieces_total, 2);
+    assert_eq!(finalizing.pieces_processed, 2);
+    assert_eq!(finalizing.pieces_matched, 2);
+    assert_eq!(finalizing.bytes_hashed, (2 * MIN_PAYLOAD_ALLOWANCE) as u64);
+    assert!(
+        activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .all(|event| !matches!(event, DownloadActivityEvent::PieceHashFailed { .. }))
+    );
+    control.checker_finished(1);
+    assert!(control.checker_snapshot().is_none());
+
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove skipped recheck fixture");
+}
+
+#[tokio::test]
+async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
+    let first = vec![0x19; MIN_PAYLOAD_ALLOWANCE];
+    let second = vec![0x83; MIN_PAYLOAD_ALLOWANCE];
+    let torrent_bytes = two_piece_metainfo(&first, &second);
+    let raw_info = Metainfo::info_bytes_with_limits(&torrent_bytes, BEP9_METAINFO_LIMITS)
+        .expect("two-file raw info")
+        .to_vec();
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("two-file recheck metainfo");
+    let root = test_path("selection-during-slow-recheck");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create storage root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("managed paths");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
+    let mut storage =
+        SelectiveStorage::create_with_paths(paths, &metainfo, layout.clone(), selection.clone())
+            .await
+            .expect("create staged storage");
+    for (piece_index, payload) in [first, second].into_iter().enumerate() {
+        let piece_index = u32::try_from(piece_index).expect("piece index");
+        storage
+            .write_block(piece_index, 0, payload)
+            .await
+            .expect("write staged piece");
+        storage.sync_piece(piece_index).await.expect("sync piece");
+    }
+
+    let control = DownloadControl::new();
+    control
+        .set_storage_execution_limits_for_testing(1, 1)
+        .expect("single checker job");
+    control.set_storage_hash_delay(Duration::from_millis(1_100));
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    control.checker_started(11, layout.piece_count());
+    let task_control = control.clone();
+    let task_metainfo = metainfo.clone();
+    let task_layout = layout.clone();
+    let task = tokio::spawn(async move {
+        let mut selection = AppliedFileSelection {
+            selection,
+            revision: 0,
+        };
+        let result = full_recheck_managed_storage(
+            &mut storage,
+            &task_metainfo,
+            &task_layout,
+            &vec![false; task_layout.piece_count()],
+            &mut selection,
+            &task_control,
+        )
+        .await;
+        (result, selection)
+    });
+    timeout(Duration::from_secs(1), async {
+        while control
+            .checker_snapshot()
+            .is_none_or(|progress| progress.active_hash_jobs != 1)
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("first checker job did not start");
+    control.update_file_selection(FileSelectionUpdate {
+        revision: 7,
+        skip_files: vec![1],
+    });
+    timeout(Duration::from_millis(1_050), async {
+        loop {
+            let heartbeat = activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter_map(|event| match event {
+                    DownloadActivityEvent::CheckerProgress(progress)
+                        if progress.phase == CheckerPhase::ReconcilingStorage
+                            || progress
+                                .oldest_active_job_age_millis
+                                .is_some_and(|age| age >= 900) =>
+                    {
+                        Some(progress.as_ref().clone())
+                    }
+                    _ => None,
+                })
+                .next();
+            if heartbeat.is_some_and(|progress| progress.active_hash_jobs == 1) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("slow hash did not publish a live heartbeat");
+
+    let (checked, final_selection) = timeout(Duration::from_secs(3), task)
+        .await
+        .expect("selection-aware checker did not finish")
+        .expect("checker task joined");
+    assert_eq!(checked.expect("checker result").verified, vec![true, true]);
+    assert_eq!(final_selection.revision, 7);
+    assert!(!final_selection.selection.is_wanted(1));
+    assert_eq!(control.applied_file_selection_revision(), 7);
+    let progress = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter_map(|event| match event {
+            DownloadActivityEvent::CheckerProgress(progress) => Some(progress.as_ref()),
+            _ => None,
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(progress.iter().all(|progress| progress.generation == 11));
+    assert!(
+        progress
+            .iter()
+            .any(|progress| progress.phase == CheckerPhase::ReconcilingStorage)
+    );
+    assert!(
+        progress
+            .iter()
+            .all(|progress| progress.active_hash_jobs <= 1)
+    );
+
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove selection recheck fixture");
 }
 
 #[tokio::test]

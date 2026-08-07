@@ -44,14 +44,15 @@ use super::{
     MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
     MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
     PreparedContentWrite, QueuedContentStorageCommand, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, SwarmConfig, TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce,
-    UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker_address,
-    atomic_saturating_add, atomic_saturating_increment, build_content_plan_window,
-    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
-    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
-    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
-    download_verified_piece_with_control, execute_content_storage_verification,
-    execute_content_storage_writes, next_peer_message, resume_magnet, resume_magnet_with_control,
+    ResumeArtifactState, ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager,
+    UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
+    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
+    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
+    content_dial_slot_available, content_storage_job_limit, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
+    execute_content_storage_verification, execute_content_storage_writes,
+    full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
     retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
 };
 
@@ -87,7 +88,11 @@ use crate::swarm::{
     BlockKey, DEFAULT_INITIAL_REQUESTS_PER_CONNECTION, DEFAULT_MAX_ESTABLISHED_CONNECTIONS,
     DEFAULT_MAX_PENDING_DIALS, PieceGeneration,
 };
-use crate::{ByteMetric, ByteMetricSink, DiskCheckpointStage, DiskPieceStage};
+use crate::{
+    ByteMetric, ByteMetricSink, CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceStage,
+};
+
+use super::control::CheckerPieceOutcome;
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -131,8 +136,8 @@ impl super::DownloadCheckpointSink for RecordingCheckpointSink {
         Ok(())
     }
 
-    fn recheck_started(&self) -> Result<(), String> {
-        Ok(())
+    fn recheck_started(&self) -> Result<u64, String> {
+        Ok(1)
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {
@@ -188,8 +193,8 @@ impl super::DownloadCheckpointSink for PublicationFailureSink {
         Ok(())
     }
 
-    fn recheck_started(&self) -> Result<(), String> {
-        Ok(())
+    fn recheck_started(&self) -> Result<u64, String> {
+        Ok(1)
     }
 
     fn have_rechecked(&self, verified_pieces: &[bool]) -> Result<(), String> {

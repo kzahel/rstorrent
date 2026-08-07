@@ -10,8 +10,8 @@ use rstorrent_engine::peer::{
     DialEligibility, PeerFailure, PeerRegistrySnapshot, PeerSource, PeerSources,
 };
 use rstorrent_engine::{
-    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
-    DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
+    CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage,
+    DiskPressure, DiskRuntimeSnapshot, PeerConnectionDirection, PeerConnectionLifecycle,
     PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
     PeerUploadGrant,
 };
@@ -25,13 +25,14 @@ use crate::tracker_views::TrackerViewModel;
 use super::eta::TorrentEtaModel;
 use super::ranges::{insert_range, range_cardinality, remove_range};
 use super::{
-    ActivePiece, ActivePieceStageView, CapabilityStatus, DhtBucketView, DhtInspectionView,
-    DhtLifecycleView, DhtNetworkPolicyView, DiskCheckpointStageView, DiskPieceStageView,
-    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
-    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerRequestPhase,
-    PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason, SubscriptionError,
-    SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView,
+    ActivePiece, ActivePieceStageView, CapabilityStatus, CheckingPhaseView, CheckingProgressView,
+    DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtNetworkPolicyView,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    IndexRange, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
+    PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
+    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase,
+    ProgressReason, SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
+    SwarmPeerView, TorrentEtaView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -591,6 +592,7 @@ pub(super) struct DiskSessionView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DurableTorrentViewState {
     pub(crate) display_name: Option<String>,
+    pub(crate) checking_generation: Option<u64>,
     pub(crate) verified: Vec<IndexRange>,
     pub(crate) files: Option<FileProgressModel>,
     pub(crate) eta_geometry: Option<RequiredPayloadGeometry>,
@@ -620,6 +622,7 @@ impl TorrentModel {
                 eta_payload_download_rate_bytes: "0".to_owned(),
                 eta: TorrentEtaView::Unavailable,
                 progress: assess_progress(snapshot, progress_inputs),
+                checking: None,
                 archived: snapshot.archived,
                 removal_state: snapshot.removal_state,
                 delete_managed_data_supported: snapshot.delete_managed_data_supported,
@@ -635,6 +638,62 @@ impl TorrentModel {
             swarm: SwarmModel::default(),
             files: None,
             trackers: TrackerViewModel::default(),
+        }
+    }
+
+    pub(super) fn apply_checker_progress(&mut self, progress: &CheckerProgress) {
+        self.view.checking = Some(CheckingProgressView {
+            generation: progress.generation.to_string(),
+            phase: match progress.phase {
+                CheckerPhase::Queued => CheckingPhaseView::Queued,
+                CheckerPhase::Preparing => CheckingPhaseView::Preparing,
+                CheckerPhase::Hashing => CheckingPhaseView::Hashing,
+                CheckerPhase::ReconcilingStorage => CheckingPhaseView::ReconcilingStorage,
+                CheckerPhase::Paused => CheckingPhaseView::Paused,
+                CheckerPhase::Finalizing => CheckingPhaseView::Finalizing,
+            },
+            pieces_total: bounded_u32(progress.pieces_total),
+            pieces_processed: bounded_u32(progress.pieces_processed),
+            pieces_matched: bounded_u32(progress.pieces_matched),
+            pieces_absent: bounded_u32(progress.pieces_absent),
+            pieces_mismatched: bounded_u32(progress.pieces_mismatched),
+            bytes_hashed: progress.bytes_hashed.to_string(),
+            active_hash_jobs: bounded_u32(progress.active_hash_jobs),
+            queued_hash_jobs: bounded_u32(progress.queued_hash_jobs),
+            elapsed_millis: progress.elapsed_millis.to_string(),
+            last_advance_age_millis: progress.last_advance_age_millis.to_string(),
+            oldest_active_job_age_millis: progress
+                .oldest_active_job_age_millis
+                .map(|age| age.to_string()),
+        });
+    }
+
+    pub(super) fn queue_checker(&mut self, generation: u64) {
+        self.view.checking = Some(CheckingProgressView {
+            generation: generation.to_string(),
+            phase: CheckingPhaseView::Queued,
+            pieces_total: self.view.piece_count,
+            pieces_processed: 0,
+            pieces_matched: 0,
+            pieces_absent: 0,
+            pieces_mismatched: 0,
+            bytes_hashed: "0".to_owned(),
+            active_hash_jobs: 0,
+            queued_hash_jobs: self.view.piece_count,
+            elapsed_millis: "0".to_owned(),
+            last_advance_age_millis: "0".to_owned(),
+            oldest_active_job_age_millis: None,
+        });
+    }
+
+    pub(super) fn finish_checker(&mut self, generation: u64) {
+        if self
+            .view
+            .checking
+            .as_ref()
+            .is_some_and(|checking| checking.generation == generation.to_string())
+        {
+            self.view.checking = None;
         }
     }
 

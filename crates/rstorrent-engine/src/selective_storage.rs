@@ -42,6 +42,13 @@ pub struct MaterializationReport {
     pub slots_after: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectionReconcileReport {
+    pub route_epoch: u64,
+    pub promoted_files: Vec<usize>,
+    pub demoted_files: Vec<usize>,
+}
+
 #[derive(Debug)]
 pub struct DescriptorFile {
     pub file_index: usize,
@@ -405,6 +412,7 @@ pub struct SelectiveStorage {
     part_file: Option<PartFile>,
     part_checkpoint_handle: Option<Arc<OnceLock<CheckpointFileReference>>>,
     pending_promotions: Vec<usize>,
+    route_epoch: u64,
     verified: Vec<bool>,
     published: bool,
 }
@@ -434,7 +442,7 @@ impl CheckpointFileReference {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct RetainedFile {
     source: RetainedFileSource,
     routing_generation: u64,
@@ -1111,6 +1119,7 @@ impl SelectiveStorage {
             part_file: None,
             part_checkpoint_handle: None,
             pending_promotions: Vec::new(),
+            route_epoch: 0,
             verified: vec![false; piece_count],
             published: false,
         })
@@ -1206,6 +1215,7 @@ impl SelectiveStorage {
                 part_file: None,
                 part_checkpoint_handle: None,
                 pending_promotions: Vec::new(),
+                route_epoch: 0,
                 verified: if resumed == ResumedStorage::Created {
                     vec![false; piece_count]
                 } else {
@@ -1354,6 +1364,7 @@ impl SelectiveStorage {
             part_file: Some(part_file),
             part_checkpoint_handle: None,
             pending_promotions: Vec::new(),
+            route_epoch: 0,
             verified: vec![false; piece_count],
             published: false,
         })
@@ -1445,6 +1456,7 @@ impl SelectiveStorage {
             part_file: Some(part_file),
             part_checkpoint_handle: None,
             pending_promotions: Vec::new(),
+            route_epoch: 0,
             verified,
             published: false,
         })
@@ -1732,6 +1744,7 @@ impl SelectiveStorage {
             part_file,
             part_checkpoint_handle: None,
             pending_promotions,
+            route_epoch: 0,
             verified,
             published,
         };
@@ -1786,6 +1799,14 @@ impl SelectiveStorage {
 
     pub fn is_published(&self) -> bool {
         self.published
+    }
+
+    pub fn verified_pieces(&self) -> &[bool] {
+        &self.verified
+    }
+
+    pub const fn route_epoch(&self) -> u64 {
+        self.route_epoch
     }
 
     pub async fn write_block(
@@ -2620,6 +2641,136 @@ impl SelectiveStorage {
         self.release_unused_part_slots().await
     }
 
+    pub async fn reconcile_selection(
+        &mut self,
+        selection: FileSelection,
+    ) -> Result<SelectionReconcileReport, SelectiveStorageError> {
+        if selection.file_count() != self.layout.files().len() {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "file selection geometry",
+            ));
+        }
+        let next_epoch = self.route_epoch.checked_add(1).ok_or(
+            SelectiveStorageError::InvalidStorageOperation("storage route epoch overflow"),
+        )?;
+        let promoted_files = self
+            .layout
+            .files()
+            .iter()
+            .enumerate()
+            .filter(|(index, file)| {
+                !file.padding && !self.selection.is_wanted(*index) && selection.is_wanted(*index)
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let demoted_files = self
+            .layout
+            .files()
+            .iter()
+            .enumerate()
+            .filter(|(index, file)| {
+                !file.padding && self.selection.is_wanted(*index) && !selection.is_wanted(*index)
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if promoted_files.is_empty() && demoted_files.is_empty() {
+            return Ok(SelectionReconcileReport {
+                route_epoch: self.route_epoch,
+                promoted_files,
+                demoted_files,
+            });
+        }
+
+        let previous_files = self.files.clone();
+        let previous_skipped_sources = self.skipped_sources.clone();
+        let previous_selection = self.selection.clone();
+        for &file_index in &demoted_files {
+            if let Some(file) = self.files[file_index].take() {
+                self.skipped_sources[file_index] = Some(file.source);
+            }
+        }
+        for &file_index in &promoted_files {
+            let metainfo_file = &self.layout.files()[file_index];
+            let source = match self.skipped_sources[file_index].take() {
+                Some(source) => source,
+                None => match &mut self.backing {
+                    StorageBacking::Paths {
+                        output_root,
+                        staging_root,
+                        part_reference,
+                        storage_id,
+                        ..
+                    } => {
+                        let root = if self.published {
+                            output_root
+                        } else {
+                            staging_root
+                        };
+                        let path = payload_path(
+                            self.publication_shape,
+                            root,
+                            &metainfo_file.path,
+                            file_index,
+                            self.layout.files().len(),
+                        )?;
+                        RetainedFileSource::Dynamic {
+                            reference: path_storage_reference(
+                                part_reference.pool(),
+                                storage_id,
+                                u64::from(self.published),
+                                StorageFileRole::Payload(file_index),
+                                path,
+                            ),
+                            file_index,
+                            expected_length: metainfo_file.length,
+                        }
+                    }
+                    StorageBacking::Platform { spec, .. } => RetainedFileSource::Dynamic {
+                        reference: platform_storage_reference(
+                            spec,
+                            StorageFileRole::Payload(file_index),
+                            metainfo_file.path.clone(),
+                        ),
+                        file_index,
+                        expected_length: metainfo_file.length,
+                    },
+                    StorageBacking::Descriptors { .. } => {
+                        self.files = previous_files;
+                        self.skipped_sources = previous_skipped_sources;
+                        return Err(SelectiveStorageError::InvalidStorageOperation(
+                            "dynamic descriptor file selection",
+                        ));
+                    }
+                },
+            };
+            self.files[file_index] = Some(RetainedFile {
+                source,
+                routing_generation: next_epoch,
+            });
+        }
+
+        let reconcile_result = async {
+            for &file_index in &promoted_files {
+                self.restore_promoted_file(file_index).await?;
+            }
+            self.selection = selection;
+            self.release_unused_part_slots().await
+        }
+        .await;
+        if let Err(error) = reconcile_result {
+            self.files = previous_files;
+            self.skipped_sources = previous_skipped_sources;
+            self.selection = previous_selection;
+            return Err(error);
+        }
+        self.route_epoch = next_epoch;
+        Ok(SelectionReconcileReport {
+            route_epoch: next_epoch,
+            promoted_files,
+            demoted_files,
+        })
+    }
+
     pub async fn materialize_file(
         &mut self,
         file_index: usize,
@@ -2952,6 +3103,13 @@ impl SelectiveStorage {
             .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
             .acquire(StorageFileAccess::ReadWriteCreate)
             .await?;
+        destination
+            .file()
+            .set_len(metainfo_file.length)
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "size promoted selected file",
+                source,
+            })?;
         let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
         let mut file_offset = 0_u64;
         while file_offset < metainfo_file.length {
@@ -4979,6 +5137,74 @@ mod tests {
             }
         );
         assert!(!paths.part.exists());
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn live_selection_reconcile_promotes_and_demotes_without_losing_verification() {
+        let root = test_path("live-selection-reconcile");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = fixture();
+        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            .expect("plan storage paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let skipped = FileSelection::new(&layout, &[1]).expect("initial selection");
+        let bytes = torrent_bytes(&metainfo);
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            skipped.clone(),
+        )
+        .await
+        .expect("create selective storage");
+        for request in layout.request_ranges(0, &skipped).expect("piece requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write boundary piece");
+        }
+        storage.record_verified(0).expect("record verified piece");
+        storage.sync_piece(0).await.expect("sync verified piece");
+        assert!(paths.part.exists());
+
+        let all_wanted = FileSelection::new(&layout, &[]).expect("promoted selection");
+        let promoted = storage
+            .reconcile_selection(all_wanted)
+            .await
+            .expect("promote skipped file");
+        assert_eq!(promoted.route_epoch, 1);
+        assert_eq!(promoted.promoted_files, vec![1]);
+        assert!(promoted.demoted_files.is_empty());
+        assert!(storage.verified_pieces()[0]);
+        assert_eq!(
+            tokio::fs::read(paths.staging.join("skip/large.bin"))
+                .await
+                .expect("read promoted file")[..12_768],
+            bytes[20_000..32_768]
+        );
+        assert!(!paths.part.exists());
+
+        let skipped_again = FileSelection::new(&layout, &[1]).expect("demoted selection");
+        let demoted = storage
+            .reconcile_selection(skipped_again)
+            .await
+            .expect("demote promoted file");
+        assert_eq!(demoted.route_epoch, 2);
+        assert!(demoted.promoted_files.is_empty());
+        assert_eq!(demoted.demoted_files, vec![1]);
+        assert!(storage.verified_pieces()[0]);
+        assert_eq!(
+            storage.hash_piece(0).await.expect("hash retained route"),
+            <[u8; 20]>::from(Sha1::digest(&bytes[..metainfo.piece_length as usize]))
+        );
+        assert_eq!(storage.route_epoch(), 2);
+
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 
