@@ -1,0 +1,359 @@
+# HTTP File Serving And Future Streaming
+
+Topic: `http-file-serving-and-streaming`
+
+Status: Product and architecture direction accepted on 2026-08-07. RSTorrent
+should first expose bounded HTTP reads of verified torrent files, then extend
+the same surface with explicitly owned demand for incomplete-file streaming.
+No implementation tactical, listener, command, schema, or public compatibility
+claim is authorized by this topic alone.
+
+## Purpose And Scope
+
+RSTorrent should let an authorized client hand a browser, media element, media
+player, or ordinary HTTP client a URL for one torrent file. The first slice
+serves only content already known to be hash verified and readable. A later
+slice may wait for absent ranges while the torrent engine prioritizes and
+verifies the pieces needed at the current playhead.
+
+This topic owns:
+
+- the relationship between logical torrent-file reads, HTTP byte ranges, and
+  torrent scheduling;
+- listener and port selection for browser-hosted and in-process clients;
+- per-file capability authorization and its relationship to existing host
+  authentication;
+- verified-only response, storage, lifecycle, cancellation, and resource
+  invariants;
+- the seam that permits future incomplete-file streaming without changing the
+  HTTP identity model; and
+- the required separation between local media serving and future remote owner
+  access.
+
+[`application-connection-architecture.md`](application-connection-architecture.md)
+continues to own typed application calls, WebSocket and Tauri adapters, and
+authenticated client context. [`application-control.md`](application-control.md)
+owns the semantic operation that may create or revoke a file URL.
+[`storage-throughput-architecture.md`](storage-throughput-architecture.md) and
+[`android-saf-storage.md`](android-saf-storage.md) own the path/SAF storage and
+bounded file-acquisition mechanisms beneath logical reads.
+[`remote-access-authentication.md`](remote-access-authentication.md) owns any
+future nonlocal principal, encryption, relay, or device-authentication design.
+
+HTTP file serving is not an application-control side channel. The listener
+does not accept torrent commands, expose views, browse storage roots, or make
+filesystem paths authoritative. It serves bytes only after an authenticated
+application client has created a narrowly scoped capability.
+
+## Reference Findings
+
+Rasterbar libtorrent supplies torrent-side streaming primitives rather than an
+HTTP file server. Its `torrent_handle::read_piece()` asynchronously reads a
+completed piece, `have_piece()` reports completion, and
+`set_piece_deadline()` drives time-critical piece acquisition. Its streaming
+design explains why deadline-driven requests across suitable peers are more
+appropriate than merely enabling sequential download:
+
+- pinned `reference/libtorrent/include/libtorrent/torrent_handle.hpp`,
+  `read_piece`, `have_piece`, `set_piece_deadline`,
+  `reset_piece_deadline`, and `clear_piece_deadlines`; and
+- pinned `reference/libtorrent/docs/streaming.rst`, especially streaming
+  versus sequential download, time-critical piece picking, queue-time
+  estimation, and adaptive request duplication.
+
+Libtorrent's web-seed support is the inverse role: libtorrent acts as an HTTP
+client fetching torrent content. It does not expose downloaded files to media
+players. An embedding product must map file byte ranges to pieces, wait for
+verification, read storage, and implement HTTP itself.
+
+The local JSTorrent reference implements that product layer explicitly:
+
+- `desktop/io-daemon/src/media.rs` registers opaque stream tokens, serves
+  `GET`/`HEAD`, implements HTTP ranges, and emits bounded response chunks;
+- `packages/engine/src/node-io-daemon/engine-http-stream-bridge.ts` binds a
+  stream session to one torrent/file and waits for requested verified ranges;
+- `packages/engine/src/streaming/streaming-playback-session.ts` owns playhead
+  demand and cancellation; and
+- `packages/engine/src/core/file-priority-manager.ts` overlays temporary
+  streaming piece and file priority without rewriting durable user selection.
+
+Adopt the separation among HTTP response ownership, stream-session demand,
+and torrent scheduling. Do not inherit JSTorrent's companion-daemon topology:
+RSTorrent's first-party clients normally run the Rust engine in-process.
+
+RSTorrent already has conservative verified published-content reads in
+`crates/rstorrent-engine/src/seed_content.rs` for peer upload and internal
+piece-range reads in selective storage. Neither is presently a logical-file
+application API or an HTTP surface. The serving tactical should extract the
+smallest reusable verified logical-range boundary rather than route arbitrary
+paths around storage ownership.
+
+No source, fixture, or test data is imported from either reference.
+
+## Accepted Architecture
+
+### One logical service, two hosting modes
+
+The same bounded media router has two deployment modes:
+
+1. **Existing HTTP gateway.** When the product already hosts an HTTP gateway,
+   mount `/media/v1/<capability>` on that listener. Browser-hosted and private
+   deployments therefore retain one address, port, origin, TLS termination,
+   process lifetime, and graceful-shutdown owner.
+2. **In-process client without an HTTP gateway.** A client such as Tauri may
+   start one media-only listener on `127.0.0.1:0`. Port `0` asks the operating
+   system for an available ephemeral port. This is a narrow byte-serving
+   exception to Tauri's ordinary no-application-socket posture, not a reason
+   to expose the application API over loopback.
+
+The service must not multiplex HTTP onto the BitTorrent peer listener. It must
+not introduce a native host, IO daemon, companion process, or filesystem
+proxy. Android and other platform lifecycle integration require their own
+bounded evidence before support is claimed.
+
+### Port policy
+
+- There is no permanent or reserved default RSTorrent media port.
+- Reuse the configured gateway port when a gateway exists.
+- Otherwise bind exact IPv4 loopback with an OS-assigned port.
+- Do not probe, scan, increment, or fall back across candidate ports.
+- Do not persist an ephemeral port. A new process generation may receive a
+  new value and invalidates every prior URL.
+- Return the complete URL from the authorized semantic operation; clients do
+  not derive or discover it from a conventional port.
+- A later explicit fixed-loopback-port option for controlled automation may be
+  considered separately. An unavailable explicit port fails rather than
+  silently choosing another value.
+- LAN, wildcard, multicast, public, UPnP-mapped, or relay exposure is not
+  implied by local serving.
+
+### Authority chain
+
+```text
+authenticated application client
+  -> create capability for profile generation + torrent + file
+  -> bounded in-memory capability registry
+  -> GET/HEAD /media/v1/<capability>
+  -> verified logical-file range reader
+  -> path or SAF storage owner
+```
+
+The HTTP request contains no storage-root locator or relative filesystem path.
+Torrent identity and file index remain registry state rather than URL fields.
+The storage boundary maps logical file offsets to its currently authoritative
+published or managed representation.
+
+## Authentication And Authorization
+
+### Every URL is a file-scoped capability
+
+An already authenticated application client explicitly requests a URL for one
+torrent file. The returned path contains an opaque bearer capability with at
+least 128 bits of cryptographically random entropy.
+
+Each registry entry is:
+
+- bound to one application/profile generation, torrent identity, and file
+  index;
+- retained only in memory and never included in durable state or request
+  receipts;
+- reusable for the multiple `HEAD` and `GET` requests, reconnects, probes, and
+  seeks a normal media player performs;
+- subject to finite idle and absolute lifetimes;
+- bounded in count globally/per profile and in simultaneous requests per
+  capability;
+- revocable explicitly and automatically on torrent removal, profile close,
+  service replacement, or application shutdown; and
+- compared and handled without placing its value in diagnostics, access logs,
+  generated assets, telemetry, crash context, or normal application state.
+
+A capability is not a durable share link. Restart changes the port and server
+generation and invalidates it. Missing, malformed, expired, revoked, or
+mismatched capabilities all return the same `404` response without revealing
+whether a torrent, file, or profile exists.
+
+The capability is required even on loopback. A media element or external
+player cannot reliably attach the application connection's bearer header, and
+an unauthenticated localhost URL would permit drive-by requests from unrelated
+web pages or local callers.
+
+### Relationship to host authentication
+
+- An exact-loopback media-only listener may treat the unguessable file
+  capability as its request credential. It accepts no capability-creation
+  operation and exposes no route that can enumerate content.
+- A loopback application gateway may exempt only the capability media route
+  from an application bearer header when direct media clients cannot supply
+  it. The route remains exact-loopback, capability-required, method-limited,
+  non-CORS, and outside the semantic application API.
+- A hosted/private gateway requires both its existing HTTPS/Basic boundary and
+  the file capability. Basic credentials must not be copied into a URL.
+- Any future remote or relay mode additionally requires the principal,
+  authenticated encryption, host identity, and authorization selected by the
+  remote-access topic. A capability alone must never authorize a nonloopback
+  listener.
+
+Origin checking is useful for application connections but is not sufficient
+for media bytes: nonbrowser players may send no `Origin`, and browsers can
+initiate cross-origin media requests. Host validation, exact binding, and the
+unguessable capability are the local media authority.
+
+## Initial Verified-File Contract
+
+The first implementation tactical should expose only verified readable
+content. A successful response must never contain bytes merely received,
+written, cached, sparse, or present on disk without the engine's integrity
+authority.
+
+The first HTTP contract is deliberately narrow:
+
+- `HEAD` and `GET` only;
+- a complete representation or one RFC-compatible byte range;
+- `200`, `206`, exact `Content-Length`, `Content-Range`, and
+  `Accept-Ranges: bytes` behavior;
+- deterministic rejection of malformed, multiple, or unsatisfiable ranges;
+- bounded response chunks, bounded concurrent reads, transport backpressure,
+  and cancellation when the consumer disconnects;
+- `Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`;
+- no directory listing, path resolution, write method, upload, archive, or
+  content mutation;
+- no permissive CORS; and
+- a truthful bounded MIME type derived from the logical filename, falling back
+  to `application/octet-stream` without content probing.
+
+Creating or reading a URL does not start, resume, restore, relocate, unskip,
+repair, recheck, or otherwise mutate a torrent. The first tactical may require
+a completely verified published file/torrent so it can prove the HTTP and
+storage boundary without also introducing range-wait scheduling. The exact
+eligibility rule must be typed and visible to the caller rather than inferred
+from an HTTP failure.
+
+Path-backed and SAF-backed content must share logical semantics. The server
+cannot assume a stable path or lend a path to the client. Symlink, replacement,
+length, generation, grant-loss, and dynamic-handle behavior stay behind the
+existing storage authorities.
+
+## Future Incomplete-File Streaming
+
+Incomplete streaming extends the verified reader; it does not weaken it. An
+HTTP request for an absent range registers bounded transient demand, waits
+until all intersecting pieces are hash verified, and only then reads and emits
+the bytes.
+
+The stream-session owner must:
+
+- map logical file byte ranges to exact piece and boundary-file geometry;
+- represent current and bounded look-ahead demand independently from durable
+  file selection and ordinary picker policy;
+- prioritize time-critical pieces using measured peer capacity and deadlines,
+  not only a global sequential-download switch;
+- support initial probes near both the start and end of a media file;
+- replace obsolete demand after a seek and cancel waits after disconnect;
+- arbitrate several request generations and concurrent streams within explicit
+  torrent/session bounds;
+- retain ordinary integrity, retry, corruption attribution, storage pressure,
+  and peer resource limits;
+- reject skipped, paused, archived, removing, errored, unavailable-root, or
+  otherwise ineligible content through typed policy rather than implicitly
+  rewriting user intent; and
+- join every wait and remove every temporary scheduling overlay when the HTTP
+  body, capability, torrent, profile, or application terminates.
+
+Players commonly open more than one range, seek, probe container metadata at
+the tail, and abandon responses. A future tactical therefore needs scripted
+HTTP clients and real player-shaped traces; completing pieces in monotonically
+increasing order is not sufficient evidence.
+
+## Ownership And Cancellation
+
+```text
+application/profile owner
+  -> optional media server
+       -> listener accept owner
+       -> bounded capability registry
+       -> bounded HTTP request owners
+            -> verified logical-range read
+            -> future: stream-demand lease + verified-range wait
+  -> profile/torrent/storage generation authorities
+  -> shutdown
+       -> stop accepts
+       -> revoke capabilities
+       -> cancel requests and demand leases
+       -> join reads/waits
+       -> join listener
+```
+
+An HTTP response must capture and revalidate the relevant profile, torrent,
+file, storage, and stream generations. Late completion from a replaced owner
+cannot emit bytes for a newer capability or storage generation.
+
+## Security And Privacy Invariants
+
+- Treat method, headers, range syntax, host, and capability text as hostile and
+  bound them before parsing or allocation.
+- Never serve unverified bytes or infer verification from file existence.
+- Never reveal arbitrary filesystem paths, root locators, SAF document IDs,
+  tracker credentials, private source parameters, or neighboring torrent
+  content.
+- Prevent traversal by design: URLs name an opaque registry entry, not a path.
+- Do not log capability values, authorization headers, or query strings.
+- A response is scoped to one logical file even when storage pieces cross file
+  boundaries.
+- Exact loopback HTTP is acceptable for the ephemeral local capability. Every
+  nonloopback deployment requires authenticated HTTPS plus the independently
+  reviewed remote authorization boundary.
+- Port mapping and peer reachability never publish the media listener.
+- Shutdown and revocation are observable and terminal; an abandoned body
+  cannot retain storage handles or scheduling priority indefinitely.
+
+## Evidence Required Before Claims
+
+The verified-serving tactical should include:
+
+- pure range parsing for complete, open-ended, suffix, malformed, overflow,
+  multiple, empty, and unsatisfiable inputs;
+- exact `HEAD`, full `GET`, and partial `GET` response evidence;
+- invalid/expired/revoked/cross-file capability indistinguishability;
+- token redaction and host/bind/authentication tests;
+- path and platform-storage logical reads, replacement races, root loss,
+  disconnect cancellation, torrent removal, profile replacement, and shutdown;
+- bounded slow-reader, abandoned-body, concurrent-session, large-file, and
+  descriptor/read high-water evidence;
+- browser media-element and ordinary external HTTP client interoperability;
+  and
+- unchanged workspace, adapters, hosted gateway, Tauri, and proportional
+  Android build evidence.
+
+Incomplete streaming later adds deterministic seek/probe/look-ahead traces,
+piece-boundary and padding fixtures, corruption and retry, stalled peers,
+storage pressure, several concurrent streams, exact hash verification, and
+controlled libtorrent scheduling comparison. Public swarms are optional and
+cannot substitute for deterministic ownership evidence.
+
+## Deliberate Non-Goals
+
+- An arbitrary filesystem server, directory browser, WebDAV endpoint, static
+  payload-root mount, or path-bearing application API.
+- A separate daemon, native host, companion server, REST control plane, or
+  socket proxy.
+- Public/LAN exposure, UPnP media mapping, stable share links, friend sharing,
+  relay delivery, accounts, or multi-user authorization.
+- Transcoding, remuxing, thumbnails, codecs, playback UI, media metadata
+  enrichment, subtitles policy, or container probing.
+- Serving unverified sparse bytes, implicit torrent lifecycle changes, or
+  persistent streaming priority.
+- Multipart ranges, uploads, writes, or general HTTP compatibility beyond the
+  bounded media contract unless later evidence requires them.
+
+## Recommended Next Work
+
+Create one bounded **verified HTTP file serving** tactical before changing
+code. It should finalize exact capability/session/read bounds, define the
+logical verified-file reader and platform subset, inspect pinned libtorrent
+read/storage tests and the exact JSTorrent serving tests, implement one router
+in both hosting modes, and close deterministic resource, adapter, and client
+interoperability gates.
+
+Only after that contract is stable should a separate **incomplete-file
+streaming** tactical add stream-demand ownership, verified-range waits, and
+time-critical scheduling. Neither tactical is authorized merely by this topic.

@@ -43,6 +43,12 @@ HTTP Basic authentication. Its credential is intentionally not owner E2E
 remote authentication, device identity, relay authentication or evidence that
 this topic has been implemented.
 
+[`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
+owns local verified-file capability URLs and future incomplete-file streaming.
+Its loopback capability is not sufficient for nonlocal access; any remote
+media route additionally requires the principal, authenticated encryption,
+host identity, and authorization selected here.
+
 ## Product Outcome
 
 The desired ordinary owner experience is:
@@ -524,7 +530,9 @@ owner-remote-authentication research tactical that:
    production exposure.
 
 Friend sharing, fragment-held capability links, offline encrypted snapshots,
-media byte-range serving, UPnP/NAT traversal, wake-up delivery, public accounts
-and multi-user authorization remain separate future topics or tacticals. Owner
-authentication should establish the reusable principal and encrypted
+UPnP/NAT traversal, wake-up delivery, public accounts and multi-user
+authorization remain separate future topics or tacticals. Local media
+byte-range serving and its separate future remote boundary now live in
+[`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md).
+Owner authentication should establish the reusable principal and encrypted
 connection foundation without pre-solving those products.

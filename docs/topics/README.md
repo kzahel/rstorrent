@@ -87,6 +87,10 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`application-connection-architecture.md`](application-connection-architecture.md):
   one typed application API over HTTP, multiplexed WebSocket and Tauri IPC,
   resumable view attachments, and future opaque encrypted relay layering.
+- [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md):
+  capability-authorized HTTP reads of verified torrent files, ephemeral
+  loopback and existing-gateway port policy, and the separate future
+  incomplete-file streaming scheduler boundary.
 - [`remote-access-authentication.md`](remote-access-authentication.md):
   owner username/passphrase E2E access, SRP and OPAQUE background, host and
   device identity, hardware-backed degradation, clone and active-proxy threat

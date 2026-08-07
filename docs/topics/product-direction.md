@@ -103,6 +103,14 @@ remote-control feature must not force the product itself into a daemon
 architecture. A future extension control channel carries commands, snapshots,
 and events rather than proxying peer sockets, filesystems, or piece payloads.
 
+The accepted
+[`http-file-serving-and-streaming`](http-file-serving-and-streaming.md)
+direction permits one narrowly scoped in-process HTTP byte-serving exception:
+reuse an existing gateway or bind an ephemeral loopback-only media listener
+that serves one capability-authorized logical torrent file. It is not a
+daemon, application-control socket, arbitrary filesystem server, or authority
+to expose payload on a peer, LAN, mapped, or public listener.
+
 ### Initial platforms
 
 Android/ChromeOS and desktop are the initial product surfaces. Desktop is the

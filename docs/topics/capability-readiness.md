@@ -201,7 +201,8 @@ Complete IPv6 DHT operation, finite bandwidth and seeding goals,
 multi-interface and IPv6 binding,
 local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic
-VPN and metered-network controls, and production remote access remain
+VPN and metered-network controls, verified HTTP file serving, incomplete-file
+streaming, and production remote access remain
 important. Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

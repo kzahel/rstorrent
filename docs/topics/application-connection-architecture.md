@@ -54,6 +54,9 @@ views the client requests and how frequently semantic changes may be emitted.
 [`remote-access-authentication.md`](remote-access-authentication.md) owns the
 future owner password, host identity, device identity, resume and
 hardware-key threat model around a relay circuit.
+[`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
+owns the separate capability-authorized media-byte listener and its rule that
+HTTP file reads never become another application-control API.
 
 This topic records a future remote-compatibility requirement. It does not by
 itself authorize a production listener, relay service, pairing flow, account
