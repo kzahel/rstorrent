@@ -33,7 +33,8 @@ const MAX_AUTH_RESPONSE_BYTES = 64 * 1024;
 export class WebAuthClient {
   public constructor(
     private readonly baseUrl: string,
-    private readonly fetchImplementation: typeof fetch = globalThis.fetch,
+    private readonly fetchImplementation: typeof fetch = (...arguments_) =>
+      globalThis.fetch(...arguments_),
   ) {}
 
   public status(): Promise<WebAuthStatus> {
@@ -123,7 +124,8 @@ export class WebAuthClient {
     body: unknown,
     validate: (value: unknown, noContent: boolean) => value is T,
   ): Promise<T> {
-    const response = await this.fetchImplementation(new URL(path, this.baseUrl), {
+    const fetchImplementation = this.fetchImplementation;
+    const response = await fetchImplementation(new URL(path, this.baseUrl), {
       method,
       credentials: "include",
       headers: {

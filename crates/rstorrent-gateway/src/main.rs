@@ -231,14 +231,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
         }
     };
+    let browser_url = browser_application_url(server.local_addr());
     eprintln!("gateway listening on {}", server.local_addr());
+    eprintln!("web UI: {browser_url}");
     if cli.pairing_window {
         eprintln!(
             "browser pairing window open for 10 minutes; the first explicit approval consumes it"
         );
     }
     if cli.open_browser {
-        open_browser(&format!("http://{}/", server.local_addr()))?;
+        open_browser(&browser_url)?;
     }
     let connection_metrics = server.connection_metrics();
     let shutdown = CancellationToken::new();
@@ -408,6 +410,29 @@ fn open_browser(url: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn browser_application_url(address: SocketAddr) -> String {
+    let gateway = format!("http://{address}");
+    format!(
+        "{gateway}/?live={}",
+        encode_query_component(gateway.as_bytes())
+    )
+}
+
+fn encode_query_component(value: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(*byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    encoded
+}
+
 async fn wait_for_shutdown_signal() {
     #[cfg(unix)]
     {
@@ -480,7 +505,9 @@ fn read_secret_file(
 
 #[cfg(test)]
 mod tests {
-    use super::CliOptions;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    use super::{CliOptions, browser_application_url};
 
     #[test]
     fn product_cli_parses_listener_auth_and_recovery() {
@@ -517,5 +544,13 @@ mod tests {
         .err()
         .expect("reject literal password");
         assert!(error.to_string().contains("unknown gateway argument"));
+    }
+
+    #[test]
+    fn browser_url_selects_the_same_origin_live_application() {
+        assert_eq!(
+            browser_application_url(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3030)),
+            "http://127.0.0.1:3030/?live=http%3A%2F%2F127.0.0.1%3A3030"
+        );
     }
 }
