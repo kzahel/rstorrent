@@ -43,6 +43,12 @@ pub struct RequestRange {
     pub length: u32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RequiredPayloadGeometry {
+    pub required_payload_bytes: u64,
+    pub verified_required_payload_bytes: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileSelection {
     wanted: Vec<bool>,
@@ -59,6 +65,10 @@ pub enum LayoutError {
     },
     InvalidPieceIndex {
         index: u32,
+        piece_count: usize,
+    },
+    InvalidHaveLength {
+        length: usize,
         piece_count: usize,
     },
     EmptyInterval,
@@ -86,6 +96,13 @@ impl fmt::Display for LayoutError {
             Self::InvalidPieceIndex { index, piece_count } => {
                 write!(formatter, "piece index {index} is outside 0..{piece_count}")
             }
+            Self::InvalidHaveLength {
+                length,
+                piece_count,
+            } => write!(
+                formatter,
+                "have state contains {length} pieces but layout contains {piece_count}"
+            ),
             Self::EmptyInterval => write!(formatter, "storage interval is empty"),
             Self::IntervalOutOfRange {
                 piece,
@@ -286,6 +303,107 @@ impl TorrentLayout {
         Ok(requests)
     }
 
+    pub fn required_payload_geometry(
+        &self,
+        selection: &FileSelection,
+        have: &[bool],
+    ) -> Result<RequiredPayloadGeometry, LayoutError> {
+        if selection.file_count() != self.files.len() {
+            return Err(LayoutError::InvalidFileIndex {
+                index: selection.file_count(),
+                file_count: self.files.len(),
+            });
+        }
+        if have.len() != self.piece_count {
+            return Err(LayoutError::InvalidHaveLength {
+                length: have.len(),
+                piece_count: self.piece_count,
+            });
+        }
+
+        let mut required_ranges = Vec::<RangeInclusive<u32>>::new();
+        for (file_index, file) in self.files.iter().enumerate() {
+            if file.padding || file.length == 0 || !selection.is_wanted(file_index) {
+                continue;
+            }
+            let range = self
+                .file_piece_range(file_index)?
+                .expect("non-empty file has a piece range");
+            let first = *range.start();
+            let last = *range.end();
+            if let Some(previous) = required_ranges.last_mut()
+                && first <= previous.end().saturating_add(1)
+            {
+                let merged_last = last.max(*previous.end());
+                let merged_first = *previous.start();
+                *previous = merged_first..=merged_last;
+            } else {
+                required_ranges.push(range);
+            }
+        }
+
+        let mut required_payload_bytes = 0_u64;
+        let mut verified_required_payload_bytes = 0_u64;
+        let mut file_index = 0_usize;
+        for piece_index in required_ranges.into_iter().flatten() {
+            let piece_start = u64::from(piece_index)
+                .checked_mul(u64::from(self.piece_length))
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            let piece_end = piece_start
+                .checked_add(u64::from(self.piece_length_at(piece_index)?))
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            let mut cursor = piece_start;
+            let mut piece_payload_bytes = 0_u64;
+            while cursor < piece_end {
+                let file = self.files.get(file_index).ok_or(LayoutError::LayoutGap {
+                    torrent_offset: cursor,
+                })?;
+                let file_end = file
+                    .offset
+                    .checked_add(file.length)
+                    .ok_or(LayoutError::ArithmeticOverflow)?;
+                if file.length == 0 || file_end <= cursor {
+                    file_index += 1;
+                    continue;
+                }
+                if cursor < file.offset {
+                    return Err(LayoutError::LayoutGap {
+                        torrent_offset: cursor,
+                    });
+                }
+                let segment_end = piece_end.min(file_end);
+                if !file.padding {
+                    piece_payload_bytes = piece_payload_bytes
+                        .checked_add(segment_end - cursor)
+                        .ok_or(LayoutError::ArithmeticOverflow)?;
+                }
+                cursor = segment_end;
+                if cursor == file_end {
+                    file_index += 1;
+                }
+            }
+            required_payload_bytes = required_payload_bytes
+                .checked_add(piece_payload_bytes)
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            if have
+                .get(usize::try_from(piece_index).map_err(|_| LayoutError::ArithmeticOverflow)?)
+                .copied()
+                .ok_or(LayoutError::InvalidPieceIndex {
+                    index: piece_index,
+                    piece_count: self.piece_count,
+                })?
+            {
+                verified_required_payload_bytes = verified_required_payload_bytes
+                    .checked_add(piece_payload_bytes)
+                    .ok_or(LayoutError::ArithmeticOverflow)?;
+            }
+        }
+        Ok(RequiredPayloadGeometry {
+            required_payload_bytes,
+            verified_required_payload_bytes,
+        })
+    }
+
     pub fn segments(
         &self,
         piece: u32,
@@ -458,7 +576,8 @@ impl TorrentLayout {
 #[cfg(test)]
 mod tests {
     use super::{
-        FileSelection, LayoutError, PieceClass, RequestRange, SegmentTarget, TorrentLayout,
+        FileSelection, LayoutError, PieceClass, RequestRange, RequiredPayloadGeometry,
+        SegmentTarget, TorrentLayout,
     };
     use crate::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
 
@@ -605,6 +724,74 @@ mod tests {
                 begin: 0,
                 length: 2_232,
             }]
+        );
+    }
+
+    #[test]
+    fn derives_selection_aware_required_and_verified_payload() {
+        let (layout, selection) = fixture();
+        assert_eq!(
+            layout.required_payload_geometry(&selection, &[true, true, true, false, true],),
+            Ok(RequiredPayloadGeometry {
+                required_payload_bytes: 97_232,
+                verified_required_payload_bytes: 64_464,
+            })
+        );
+    }
+
+    #[test]
+    fn required_payload_matches_request_plan_for_every_fixture_selection() {
+        let (layout, _) = fixture();
+        let selectable = [0_usize, 1, 2, 3, 4, 6];
+        let have = [true, false, true, false, true];
+        for skipped_mask in 0_u32..(1 << selectable.len()) {
+            let skipped = selectable
+                .iter()
+                .enumerate()
+                .filter(|(bit, _)| skipped_mask & (1 << bit) != 0)
+                .map(|(_, index)| *index)
+                .collect::<Vec<_>>();
+            let selection = FileSelection::new(&layout, &skipped).expect("selection");
+            let mut required = 0_u64;
+            let mut verified = 0_u64;
+            for piece_index in 0..layout.piece_count() {
+                let piece_index = u32::try_from(piece_index).expect("piece index");
+                let piece_bytes = layout
+                    .request_ranges(piece_index, &selection)
+                    .expect("request ranges")
+                    .into_iter()
+                    .map(|range| u64::from(range.length))
+                    .sum::<u64>();
+                required += piece_bytes;
+                if have[usize::try_from(piece_index).expect("piece index")] {
+                    verified += piece_bytes;
+                }
+            }
+            assert_eq!(
+                layout.required_payload_geometry(&selection, &have),
+                Ok(RequiredPayloadGeometry {
+                    required_payload_bytes: required,
+                    verified_required_payload_bytes: verified,
+                }),
+                "skipped mask {skipped_mask:#08b}"
+            );
+        }
+    }
+
+    #[test]
+    fn required_payload_handles_all_skipped_and_rejects_wrong_have_length() {
+        let (layout, _) = fixture();
+        let selection = FileSelection::new(&layout, &[0, 1, 2, 3, 4, 6]).expect("all skipped");
+        assert_eq!(
+            layout.required_payload_geometry(&selection, &[false; 5]),
+            Ok(RequiredPayloadGeometry::default())
+        );
+        assert_eq!(
+            layout.required_payload_geometry(&selection, &[false; 4]),
+            Err(LayoutError::InvalidHaveLength {
+                length: 4,
+                piece_count: 5,
+            })
         );
     }
 
