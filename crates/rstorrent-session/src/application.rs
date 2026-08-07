@@ -4522,15 +4522,15 @@ mod tests {
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, CatalogPageRequest, ClientSettings, Command,
         ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, FilePriority, HttpsServerAuthenticationPolicy,
-        ListenerBindFailureReason, ListenerPolicy, ListenerStatus, OpenViewSetOptions,
-        OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView,
-        PeerTransportKind, PeerView, ProgressDisposition, ProgressReason, RemovalDataPolicy,
-        RemovalState, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
-        SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView, TorrentState,
-        TrackerConnectionFamilyView, TrackerSecurityView, TrackerView, ViewDeliveryPolicy,
-        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
-        ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        DiagnosticProfile, DiagnosticSeverity, ErrorCode, FilePriority,
+        HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+        OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
+        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
+        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
+        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
+        TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
+        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
+        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -7695,6 +7695,37 @@ mod tests {
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record content metadata");
+        let blocked_raw_info = single_file_info("blocked.bin", b"blocked", 7);
+        let blocked_info_hash: [u8; 20] = Sha1::digest(&blocked_raw_info).into();
+        let blocked_torrent_id = super::encode_info_hash(blocked_info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-blocked-download-file".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{blocked_torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add blocked content torrent");
+        store
+            .record_metadata(&blocked_torrent_id, &blocked_raw_info)
+            .expect("record blocked content metadata");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "skip-blocked-download-file".to_owned(),
+                expected_revision: None,
+                command: Command::SetFilePriority {
+                    torrent_id: blocked_torrent_id.clone(),
+                    file_indices: vec![0],
+                    priority: FilePriority::Skip,
+                },
+            })
+            .expect("skip blocked content file");
         drop(store);
 
         let mut service = ApplicationService::open(configuration)
@@ -7706,6 +7737,54 @@ mod tests {
                 .expect("first generation did not connect"),
             Some(0)
         );
+        let revision_before_busy = service
+            .store_mut()
+            .expect("access store before busy command")
+            .revision()
+            .expect("load revision before busy command");
+        let blocked_before = service
+            .load_resume_conservative(&blocked_torrent_id)
+            .expect("load blocked torrent before command");
+        let busy = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "download-file-while-other-active".to_owned(),
+                expected_revision: None,
+                command: Command::DownloadFiles {
+                    torrent_id: blocked_torrent_id.clone(),
+                    file_indices: vec![0],
+                },
+            })
+            .await
+            .expect("reject blocked download command");
+        assert!(matches!(
+            busy.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::Busy,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(busy.revision, revision_before_busy.to_string());
+        assert_eq!(
+            service
+                .store_mut()
+                .expect("access store after busy command")
+                .revision()
+                .expect("load revision after busy command"),
+            revision_before_busy
+        );
+        let blocked_after = service
+            .load_resume_conservative(&blocked_torrent_id)
+            .expect("load blocked torrent after command");
+        assert!(!blocked_before.desired_running);
+        assert_eq!(blocked_before.skip_files, vec![0]);
+        assert_eq!(
+            blocked_after.desired_running,
+            blocked_before.desired_running
+        );
+        assert_eq!(blocked_after.skip_files, blocked_before.skip_files);
         service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
