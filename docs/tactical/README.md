@@ -475,6 +475,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds bounded BEP 53 select-only magnets and their monotonic
   duplicate-selection rule, makes ordinary duplicate adds successful no-ops,
   and consistently reveals the typed add target with accessible feedback.
+- [`101-first-run-web-authentication.md`](101-first-run-web-authentication.md):
+  planned; adds a communicated ten-minute loopback onboarding window,
+  local-open or remembered-browser policy, four-digit authorization for new
+  browser profiles, persistent bounded cookie sessions, explicit restart
+  recovery, and retention of Basic, bearer, development, and in-process modes.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

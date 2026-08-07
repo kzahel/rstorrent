@@ -94,6 +94,15 @@ Copy magnet links, Archive, Restore, and coordinated Remove; Files exposes the
 same Normal/Skip policy from More and its row context menu. One application-
 lifetime torrent owner keeps sequential progress and multi-remove state alive
 across destination changes.
+Planned Tactical
+[`101`](../tactical/101-first-run-web-authentication.md) graduates the narrow
+single-column Settings sheet into one adaptive modal workspace with Appearance,
+Downloads, Connection & seeding, and capability-gated Web access categories.
+Desktop/tablet uses a category rail and phone layouts use a compact horizontal
+category control. Existing panels retain their own commit semantics while Web
+access owns immediate browser approval, session listing and revocation,
+sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
+surfaces do not show an inert cookie-session category.
 
 ## Purpose
 
