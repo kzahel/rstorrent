@@ -317,7 +317,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
             }
             _ => None,
         })
-        .last()
+        .next_back()
         .expect("final checker progress")
         .clone();
     assert_eq!(finalizing.pieces_total, 2);
