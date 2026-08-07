@@ -4127,19 +4127,14 @@ fn require_publication_name(
 }
 
 fn resume_artifact_state(resume: &ResumeRecord) -> Result<ResumeArtifactState, ApplicationError> {
-    match (resume.storage_state, resume.managed_artifacts) {
-        (StorageState::None, ManagedArtifactState::None) => Ok(ResumeArtifactState::None),
-        (StorageState::Staging, ManagedArtifactState::Staging) => Ok(ResumeArtifactState::Staging),
-        (
-            StorageState::Prepared,
-            ManagedArtifactState::Staging | ManagedArtifactState::Published,
-        ) => Ok(ResumeArtifactState::Publishing),
-        (StorageState::Published, ManagedArtifactState::Published) => {
-            Ok(ResumeArtifactState::Published)
+    match resume.payload_state {
+        crate::durable_state::PayloadState::Absent => Ok(ResumeArtifactState::None),
+        crate::durable_state::PayloadState::LegacyOwned
+        | crate::durable_state::PayloadState::FinalOwned => Ok(ResumeArtifactState::Published),
+        crate::durable_state::PayloadState::WorkOwned => Ok(ResumeArtifactState::Staging),
+        crate::durable_state::PayloadState::PublicationPending => {
+            Ok(ResumeArtifactState::Publishing)
         }
-        _ => Err(ApplicationError::Configuration(
-            "stored payload ownership and storage state are inconsistent".to_owned(),
-        )),
     }
 }
 
@@ -6862,7 +6857,7 @@ mod tests {
         wait_for_torrent_state(
             &mut service,
             &torrent_id,
-            TorrentState::Complete,
+            TorrentState::Paused,
             "paused-interrupted-check",
         )
         .await;
@@ -7679,7 +7674,7 @@ mod tests {
         connection
             .execute(
                 "UPDATE torrents
-                 SET publication_name = NULL, managed_artifacts = 'legacy'
+                 SET publication_name = NULL, payload_state = 'legacy_owned'
                  WHERE info_hash = ?1",
                 [info_hash.as_slice()],
             )

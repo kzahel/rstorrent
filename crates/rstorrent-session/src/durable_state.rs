@@ -59,10 +59,12 @@ impl VerificationState {
         })
     }
 
+    #[cfg(test)]
     pub(crate) const fn requested(self) -> u64 {
         self.requested
     }
 
+    #[cfg(test)]
     pub(crate) const fn completed(self) -> u64 {
         self.completed
     }
@@ -71,6 +73,7 @@ impl VerificationState {
         self.requested != self.completed
     }
 
+    #[cfg(test)]
     pub(crate) fn request(self) -> Option<Self> {
         if self.is_pending() {
             Some(self)
@@ -82,6 +85,7 @@ impl VerificationState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn complete(self) -> Self {
         Self {
             requested: self.requested,
@@ -94,6 +98,7 @@ pub(crate) struct DerivedStateInput {
     pub(crate) metadata_available: bool,
     pub(crate) root_available: bool,
     pub(crate) desired_running: bool,
+    pub(crate) has_wanted_pieces: bool,
     pub(crate) payload: PayloadState,
     pub(crate) verification: VerificationState,
     pub(crate) all_wanted_verified: bool,
@@ -104,7 +109,13 @@ pub(crate) fn derive_torrent_state(input: DerivedStateInput) -> TorrentState {
     if input.quarantined {
         TorrentState::NeedsRepair
     } else if !input.metadata_available {
-        TorrentState::AwaitingMetadata
+        if input.desired_running {
+            TorrentState::AwaitingMetadata
+        } else {
+            TorrentState::Paused
+        }
+    } else if !input.has_wanted_pieces {
+        TorrentState::Paused
     } else if !input.root_available {
         TorrentState::AwaitingStorage
     } else if input.verification.is_pending() {
@@ -191,6 +202,7 @@ mod tests {
             metadata_available: true,
             root_available: true,
             desired_running: true,
+            has_wanted_pieces: true,
             payload: PayloadState::FinalOwned,
             verification: VerificationState::new(2, 2).unwrap(),
             all_wanted_verified: true,

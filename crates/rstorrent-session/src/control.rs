@@ -385,21 +385,6 @@ impl TorrentState {
             Self::Error => "error",
         }
     }
-
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value {
-            "awaiting_metadata" => Some(Self::AwaitingMetadata),
-            "awaiting_storage" => Some(Self::AwaitingStorage),
-            "checking" => Some(Self::Checking),
-            "downloading" => Some(Self::Downloading),
-            "awaiting_publication" => Some(Self::AwaitingPublication),
-            "paused" => Some(Self::Paused),
-            "complete" => Some(Self::Complete),
-            "needs_repair" => Some(Self::NeedsRepair),
-            "error" => Some(Self::Error),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -411,29 +396,6 @@ pub enum StorageState {
     Prepared,
     Published,
     NeedsRepair,
-}
-
-impl StorageState {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Staging => "staging",
-            Self::Prepared => "prepared",
-            Self::Published => "published",
-            Self::NeedsRepair => "needs_repair",
-        }
-    }
-
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value {
-            "none" => Some(Self::None),
-            "staging" => Some(Self::Staging),
-            "prepared" => Some(Self::Prepared),
-            "published" => Some(Self::Published),
-            "needs_repair" => Some(Self::NeedsRepair),
-            _ => None,
-        }
-    }
 }
 
 pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCode, String)> {
