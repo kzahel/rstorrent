@@ -189,13 +189,14 @@ that observation does not become a public-tracker reliability claim.
   whole-generation file-selection restart with serialized torrent
   reconciliation and a per-torrent storage fence, makes full checking
   selection-independent, separates integrity outcomes, and exposes bounded
-  checker progress to the shared UI. The next queue item is a bounded tactical
-  for the atomic skipped-file `Download now` slice; its product implementation
-  is not part of Tactical `108`.
+  checker progress to the shared UI.
+- Accepted Tactical [`110`](../tactical/110-atomic-download-now.md) is the
+  current bounded product slice. It adds one atomic wanted-plus-running
+  application command and exposes it for skipped targets in the shared Files
+  surface. Implementation has not started.
 
 ### Next
 
-- Create a bounded tactical for the atomic skipped-file `Download now` action.
 - A separate later tactical may add an explicit faster, more trusting resume
   option while keeping conservative behavior as the default and Force recheck
   as a full validation pass.

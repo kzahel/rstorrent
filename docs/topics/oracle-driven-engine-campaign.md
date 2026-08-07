@@ -8,8 +8,9 @@ completed the next oracle-driven engine/application boundary on 2026-08-07.
 It used pinned libtorrent checking, file-priority, disk-fence, resume, and
 tests to replace whole-generation selection restart with serialized torrent
 reconciliation, selection-independent checking, and observable bounded
-progress. The next queue item is a bounded tactical for the atomic skipped-file
-`Download now` operation. The completed maximum-throughput storage campaign
+progress. Accepted Tactical
+[`110`](../tactical/110-atomic-download-now.md) is the current bounded
+application/product slice. The completed maximum-throughput storage campaign
 remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -324,9 +325,9 @@ Campaign state: **Tactical `108` complete**.
 Latest completed tactical:
 [`108-serialized-torrent-control-and-observable-checking.md`](../tactical/108-serialized-torrent-control-and-observable-checking.md).
 
-Current milestone: create a bounded tactical for the atomic skipped-file
-`Download now` operation. Keep the separate trusting fast-resume option
-deferred so conservative checking remains the default.
+Current milestone: implement Tactical `110` without reopening the completed
+checker or storage architecture. Keep the separate trusting fast-resume
+option deferred so conservative checking remains the default.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,
