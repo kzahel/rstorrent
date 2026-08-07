@@ -111,10 +111,10 @@ destroyed webview's view resources.
 ### Desktop frontend migration
 
 Detect the Tauri runtime at the web entry point and construct the React
-`InspectionApplication` with the new in-process client. Demo URLs and explicit
-`?live=` loopback-browser URLs retain their current adapters. A plain non-Tauri
-browser may retain the legacy proof entry during this slice; it is not the
-product desktop path.
+`InspectionApplication` with the new in-process client. Demo URLs retain their
+adapter; hosted loopback-browser builds use their exact page origin. A plain
+non-Tauri browser may retain the legacy proof entry during this slice; it is
+not the product desktop path.
 
 `./scripts/desktop` must continue to install locked dependencies when needed,
 build the production frontend, and launch the in-process online product. The
@@ -366,11 +366,11 @@ close a replacement window's resources. The application service continues
 running across ordinary macOS window close/reopen.
 
 The web entry selects the React `InspectionApplication` and in-process Tauri
-client when the Tauri runtime is present. Explicit `?demo` and `?live` browser
-hosts retain their deterministic and HTTP adapters, and plain non-Tauri
-startup retains the old proof entry. The desktop does not open or depend on a
-loopback server. Tactical `008` subscriptions, Android UniFFI, and the old
-`/control` WebSocket remain compatibility paths.
+client when the Tauri runtime is present. Explicit `?demo` hosts retain their
+deterministic adapter, hosted browser builds use their exact page origin, and
+plain non-Tauri startup retains the old proof entry. The desktop does not open
+or depend on a loopback server. Tactical `008` subscriptions, Android UniFFI,
+and the old `/control` WebSocket remain compatibility paths.
 
 Deterministic TypeScript tests prove early Channel delivery before attach
 returns, post-apply acknowledgement order, no acknowledgement for malformed or

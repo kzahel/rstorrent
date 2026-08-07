@@ -117,8 +117,8 @@ to the new endpoint before deletion; historical tactical records remain.
 - Pending command calls are failed on disconnect and are never automatically
   replayed. Their semantic `request_id`, not the connection's `call_id`, owns
   explicit retry and idempotency.
-- The ordinary `?live=...` browser path selects WebSocket. A deliberate
-  loopback-only `transport=http` query selects the complete current HTTP
+- A hosted browser build selects the WebSocket at its exact page origin. A
+  deliberate loopback-only `transport=http` query selects the complete HTTP
   adapter for diagnostics and controlled A/B evidence. It is not exposed in
   Settings, persisted or selected automatically; `poll_ms` is valid only with
   that diagnostic selection.

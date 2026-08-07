@@ -29,7 +29,11 @@ product trust boundary: a fresh loopback profile chooses local-open or bounded
 remembered-browser sessions, exact Host/Origin checks protect cookie mode, and
 revocation closes an admitted WebSocket with a typed authentication failure.
 Its four-digit local handoff and restart recovery are not remote owner
-authentication or a new semantic application protocol.
+authentication or a new semantic application protocol. Tactical `109` makes
+browser application authority strictly same-origin: hosted builds connect to
+their own page origin, caller input cannot redirect the API or WebSocket, and
+the manual launcher serves assets and application routes from one stable
+loopback listener.
 
 ## Purpose And Scope
 

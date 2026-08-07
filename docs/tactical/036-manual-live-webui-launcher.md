@@ -1,20 +1,19 @@
 # Tactical 036: Manual Live Web UI Launcher
 
-Status: complete; awaiting maintainer confirmation before Tauri migration.
+Status: Complete; launcher topology superseded by Tactical `109`.
 
 ## Motivation And Outcome
 
-The new React inspection surface is proven through a controlled headless
-gateway harness, but a maintainer cannot launch the same live surface in a
-normal browser with one command. `./scripts/desktop` still selects the legacy
-Tauri presentation. Add `./scripts/webui` as the manual bridge before changing
-the desktop entry.
+This tactical introduced `./scripts/webui` as the one-command normal-browser
+bridge to the React inspection surface. Tactical `109` retains that outcome
+while replacing the original two-listener bootstrap topology.
 
-The launcher builds the locked production web assets and gateway, starts an
-online application service plus a production web preview on loopback, opens
-the exact live URL in the normal browser, and keeps ownership in the invoking
-terminal. One `Ctrl+C` must gracefully stop and join both servers. A no-open
-mode provides non-disruptive lifecycle validation.
+The launcher now builds the locked production web assets and gateway, starts
+one online application service on a stable loopback origin, and lets that
+gateway serve both the UI and application transport. It opens the plain root
+URL and keeps ownership in the invoking terminal. One `Ctrl+C` gracefully
+stops and joins the process. A no-open mode provides non-disruptive lifecycle
+validation.
 
 ## Dependencies And Owning Topics
 
@@ -30,8 +29,8 @@ therefore requires no new BEP or libtorrent behavior survey.
 
 - Use the implemented `LiveApplication` and explicit unauthenticated loopback
   development gateway; do not create another API or product daemon.
-- Bind control and web listeners only to loopback. The gateway keeps its exact
-  Origin and opaque owner checks.
+- Bind the one hosted application listener only to loopback. The gateway keeps
+  its exact Origin and opaque owner checks.
 - Select `NetworkPolicy::Online` for real torrent egress by default while
   allowing the existing policy environment override for controlled checks.
 - Keep one persistent, isolated local profile beneath a documented ignored
@@ -39,11 +38,11 @@ therefore requires no new BEP or libtorrent behavior survey.
 - Install locked web dependencies when needed, build production web assets and
   the gateway, then serve the production build rather than a development-only
   bundle.
-- Print the live URL and data root before opening the browser. Support macOS
-  `open`, Linux `xdg-open`, and `--no-open`.
-- Own exact gateway and web-preview process IDs. Signal graceful shutdown,
-  wait for both children, escalate only for a child that refuses a bounded
-  join, and remove only the launcher's exact temporary runtime files.
+- Print the stable root URL and data root before opening the browser. Support
+  macOS `open`, Linux `xdg-open`, and `--no-open`.
+- Own the exact gateway process ID. Signal graceful shutdown, wait for the
+  child, escalate only if it refuses a bounded join, and remove only the
+  launcher's exact temporary runtime files.
 - A browser tab may remain open after server shutdown and must recover on the
   next launch; the launcher does not control or close the user's browser.
 
@@ -74,26 +73,26 @@ reference.
 
 ## Implementation And Evidence
 
-`scripts/webui` reuses the locked dependency check from the desktop launcher,
-builds the production Vite bundle and gateway binary, and serves the bundle
-through Vite preview. The gateway remains the explicit ephemeral-port,
-unauthenticated-loopback development adapter with one exact Origin and online
-engine egress. Its printed address is encoded into the `live` query before the
-normal browser opener runs.
+`scripts/webui` reuses the locked dependency check from the desktop launcher
+and builds the production Vite bundle with its same-origin hosted default plus
+the gateway binary. One fixed-port, unauthenticated-loopback development
+gateway serves the immutable bundle, health route, HTTP API, and application
+WebSocket with one exact Origin and online engine egress. The browser opener
+receives only that origin's plain root URL.
 
 The default data root is `.local/webui`; `RSTORRENT_WEBUI_DATA_ROOT`,
 `RSTORRENT_WEBUI_PORT`, and the existing `RSTORRENT_NETWORK_POLICY` provide
 bounded maintainer/test overrides. `--no-open` suppresses only browser opening.
-Exact web and gateway PIDs are signaled and awaited by the exit trap, with
-bounded TERM/KILL escalation only if a child refuses graceful shutdown.
+The exact gateway PID is signaled and awaited by the exit trap, with bounded
+TERM/KILL escalation only if it refuses graceful shutdown.
 
-The automated lifecycle run used a temporary data root, loopback-only engine
-policy, and `--no-open`. It fetched the printed production URL, observed the
-generated asset entry, fetched authenticated-owner hello from the gateway,
-and confirmed `torrent_peers` plus the advertised 300,000 ms lease. Sending
-the PTY's `Ctrl+C` printed `RSTorrent web UI stopped`; both listener ports were
-then closed and the wrapper removed the temporary validation data. No browser
-or Tauri window was opened.
+Tactical `109` revalidated the launcher with a temporary data root, port
+`44177`, online engine policy, and `--no-open` while leaving the active
+`4177` process untouched. The root and health routes came from the gateway,
+an owner-bearing application hello succeeded, and headless Chrome remained at
+the root URL while opening exactly one same-origin application WebSocket.
+Sending the PTY's `Ctrl+C` printed `RSTorrent web UI stopped`, closed the
+listener, and joined the gateway. The temporary profile was removed.
 
 Validation commands also include:
 
@@ -111,5 +110,5 @@ executed evidence.
 
 ## Stopping Condition
 
-The implementation stopping condition is met. Tauri remains unchanged pending
-explicit maintainer confirmation from a normal `./scripts/webui` run.
+The implementation stopping condition is met. Tactical `109` owns the current
+stable same-origin launcher contract; Tauri remains unchanged.

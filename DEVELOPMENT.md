@@ -212,7 +212,7 @@ authentication, build the bundle and gateway, provision a local profile, and
 run `serve`:
 
 ```bash
-npm run build --prefix clients/web
+VITE_RSTORRENT_DEFAULT_LIVE=same-origin npm run build --prefix clients/web
 cargo build -p rstorrent-gateway --bin rstorrent-gateway
 mkdir -p .local/headless-web/downloads
 RSTORRENT_STORAGE_ROOT="$PWD/.local/headless-web/downloads" \
@@ -245,15 +245,17 @@ in the normal browser without launching Tauri:
 ```
 
 The launcher installs locked web dependencies when needed, builds production
-web assets and the Rust gateway, starts both servers on loopback, and opens the
-exact live URL in the default browser. It remains attached to the terminal;
-one `Ctrl+C` gracefully stops and joins both servers. The browser tab itself
-may remain open and will reconnect after the next launch.
+web assets and the Rust gateway, and starts one gateway on the stable loopback
+origin. That process serves the assets, HTTP API, and WebSocket endpoint, and
+the launcher opens the plain root URL in the default browser. It remains
+attached to the terminal; one `Ctrl+C` gracefully stops and joins the process.
+The browser tab itself may remain open and will reconnect after the next
+launch.
 
 Web UI state and downloads persist beneath `.local/webui`, which is separate
 from the Tauri application profile and ignored by Git. Override that location
-with `RSTORRENT_WEBUI_DATA_ROOT` or the preview port with
-`RSTORRENT_WEBUI_PORT`. `./scripts/webui --no-open` starts the same servers
+with `RSTORRENT_WEBUI_DATA_ROOT` or the hosted application port with
+`RSTORRENT_WEBUI_PORT`. `./scripts/webui --no-open` starts the same server
 without disturbing the visible browser and is the automation/debug form.
 
 The launcher selects online torrent networking by default. This is the same

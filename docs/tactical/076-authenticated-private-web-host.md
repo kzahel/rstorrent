@@ -182,8 +182,9 @@ The executable reads the bounded password from a file, requires hosted web
 root and build identity together, accepts the existing explicit profile and
 storage roots, and handles both interrupt and terminate signals before joined
 application shutdown. The React entrypoint has one build-time-only
-`same-origin` default. Explicit demo, explicit live, and Tauri selection retain
-precedence, and ordinary builds still select the named demo.
+`same-origin` default. Explicit demo and Tauri selection retain precedence,
+and ordinary builds still select the named demo. Tactical `109` later removed
+caller-selected gateway destinations entirely.
 
 `scripts/verify-hosted-webui.mjs` checks the authenticated production index
 and module entrypoint, exact health/build identity, and one API-v1 WebSocket

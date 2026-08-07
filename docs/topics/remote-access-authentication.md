@@ -51,6 +51,13 @@ headless local UI understandable and revocable; they are intentionally too
 weak and too host-local to become a password, remembered remote device, relay
 credential, or E2E authentication claim.
 
+Tactical
+[`109-stable-same-origin-web-launch.md`](../tactical/109-stable-same-origin-web-launch.md)
+removes caller-selected browser gateway destinations and makes hosted browser
+authority the exact page origin. That reduces local bootstrap ambiguity but
+does not supply remote host identity, owner authentication, a relay, or E2E
+encryption.
+
 [`http-file-serving-and-streaming.md`](http-file-serving-and-streaming.md)
 owns local verified-file capability URLs and future incomplete-file streaming.
 Its loopback capability is not sufficient for nonlocal access; any remote

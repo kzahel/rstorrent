@@ -42,9 +42,12 @@ ordinary React or Compose control. The React draft, equality, refresh, and
 save paths preserve the hidden authoritative value. Advanced consumers can
 use the generated typed command; tracker rows render authenticated versus
 explicitly unauthenticated encryption without a client-side inference.
-Tactical `036` packages that same production-built live browser path behind
-`./scripts/webui`, with isolated persistent state, default online networking,
-normal-browser opening, and joined terminal-owned shutdown. Tactical `076`
+Tactical `036` introduced the production-built browser path behind
+`./scripts/webui`. Tactical `109` now gives it one fixed same-origin gateway:
+the root URL remains stable across restarts, the gateway serves both the UI
+and application transport, and the terminal owns one joined child process.
+It retains isolated persistent state, default online networking, and normal
+browser opening. Tactical `076`
 adds an explicit same-origin production build for one Basic-authenticated
 private maintainer host, including phone-sized browser access, without making
 remote hosting a general product capability. Tactical `048`
@@ -200,15 +203,20 @@ compatibility, and product remote-access policy require later threat models
 and tacticals.
 
 Tactical `035` also adds an explicit unauthenticated development mode for
-local UI bring-up and headless evidence. It binds only an OS-assigned loopback
-listener, requires one exact configured loopback Origin, retains resource
-checks, and isolates opaque view-set owners. It is a development convenience,
-not a production browser-control posture; the authenticated mode remains.
+local UI bring-up and headless evidence. It binds only loopback, requires one
+exact configured loopback Origin, retains resource checks, and isolates opaque
+view-set owners. Harnesses may use an OS-assigned port; Tactical `109` permits
+the local hosted launcher to use its explicit stable loopback port. It is a
+development convenience, not a production browser-control posture; the
+authenticated mode remains.
 
-The manual launcher serves the production bundle rather than the Vite
-development entry and stores its profile beneath ignored `.local/webui` by
-default. It is a maintainer-facing local bridge, not a change to the accepted
-in-process Tauri product architecture. Tactical `048` makes that same React
+The manual launcher uses one fixed-origin gateway to serve the production
+bundle and the application API, rather than running a Vite preview beside an
+ephemeral gateway. The browser derives application authority only from its
+page origin, so the visible root URL survives launcher restarts. The launcher
+stores its profile beneath ignored `.local/webui` by default. It is a
+maintainer-facing local bridge, not a change to the accepted in-process Tauri
+product architecture. Tactical `048` makes that same React
 application the Tauri product entry through an in-process adapter. The React
 application currently supports inspection, magnet and local `.torrent` add,
 pause/resume, force recheck, archive/restore, removal, and Normal/Skip file

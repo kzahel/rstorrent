@@ -49,7 +49,7 @@ without presenting ordinary localhost use as a high-security account system.
 - `clients/web/src/inspection/live/LiveApplication.ts` and the shared Settings
   surface own the browser connection bootstrap and user-facing controls.
 - `scripts/webui` remains a maintainer development launcher. Its explicit
-  ephemeral unauthenticated behavior is not the fresh headless-product
+  unauthenticated loopback behavior is not the fresh headless-product
   default and need not acquire onboarding friction.
 
 No BitTorrent protocol behavior is changed, so the pinned libtorrent oracle is
@@ -580,8 +580,8 @@ Completed on 2026-08-07 in these implementation slices:
   capability-gated Web access management, and the adaptive category-based
   Settings workspace with retained panel drafts and keyboard navigation.
 - `eb6f731` fixed the real-browser Fetch binding found by controlled evidence,
-  made the gateway print/open the explicit same-origin live application URL,
-  and added reusable production-hosted Playwright lifecycle coverage.
+  made the gateway print/open its same-origin application root, and added
+  reusable production-hosted Playwright lifecycle coverage.
 - `2be95b0` added local-open/restart browser evidence and made a revoked live
   application socket emit typed `authentication_failed` before closure.
 - `19627ab` added multi-connection initial-policy and correct-redemption race,
