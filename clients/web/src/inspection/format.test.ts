@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checkingStatusLabel,
   etaAccessibleLabel,
   etaSortValue,
   formatBytes,
   formatEta,
   formatExactBytes,
   formatRate,
+  torrentVisibleProgress,
 } from "./format";
+import type { TorrentCheckingPhase, TorrentRow } from "./model";
 
 describe("byte formatting", () => {
   it.each([
@@ -86,5 +89,44 @@ describe("ETA formatting", () => {
     expect(etaSortValue(eta)).toBe("9007199254740993");
     expect(etaSortValue({ state: "stalled" })).toBeNull();
     expect(formatEta({ state: "estimate", seconds: "invalid" })).toBe("—");
+  });
+});
+
+describe("checker formatting", () => {
+  const row = (phase: TorrentCheckingPhase): TorrentRow =>
+    ({
+      status: "checking",
+      progress: 0.75,
+      checking: {
+        generation: "3",
+        phase,
+        piecesTotal: 8,
+        piecesProcessed: 2,
+        piecesMatched: 1,
+        piecesAbsent: 1,
+        piecesMismatched: 0,
+        bytesHashed: "16384",
+        activeHashJobs: phase === "hashing" ? 1 : 0,
+        queuedHashJobs: 6,
+        elapsedMs: 1_200,
+        lastAdvanceAgeMs: 200,
+        oldestActiveJobAgeMs: phase === "hashing" ? 600 : null,
+      },
+    }) as TorrentRow;
+
+  it.each([
+    ["queued", "Queued for checking"],
+    ["preparing", "Preparing check"],
+    ["reconciling_storage", "Updating file selection"],
+    ["paused", "Checking paused"],
+    ["finalizing", "Finalizing check"],
+  ] as const)("keeps %s indeterminate and truthful", (phase, label) => {
+    expect(checkingStatusLabel(row(phase))).toBe(label);
+    expect(torrentVisibleProgress(row(phase))).toBeNull();
+  });
+
+  it("uses exact checker counters only while hashing", () => {
+    expect(checkingStatusLabel(row("hashing"))).toBe("Checked 25.0%");
+    expect(torrentVisibleProgress(row("hashing"))).toBe(0.25);
   });
 });
