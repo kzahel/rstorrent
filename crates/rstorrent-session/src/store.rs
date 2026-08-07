@@ -1285,15 +1285,9 @@ impl SessionStore {
         transaction.execute(
             "UPDATE torrents
              SET have_state = ?2,
-                 storage_state = ?3,
-                 updated_revision = ?4
+                 updated_revision = ?3
              WHERE info_hash = ?1",
-            params![
-                info_hash.as_slice(),
-                have.encode(),
-                StorageState::Staging.as_str(),
-                revision_sql
-            ],
+            params![info_hash.as_slice(), have.encode(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -6723,6 +6717,47 @@ mod tests {
                 .pieces(),
             &[true, true, true]
         );
+        drop(store);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn piece_checkpoint_does_not_relabel_published_payload() {
+        let root = test_root("published-piece-checkpoint");
+        let mut store =
+            SessionStore::open(&root, "default", &[configured_root(&root)]).expect("open");
+        let raw_info =
+            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
+        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(info_hash);
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-published-checkpoint".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add source");
+        store
+            .record_metadata(&torrent_id, raw_info)
+            .expect("record metadata");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record final ownership");
+
+        store
+            .record_piece(&torrent_id, 0)
+            .expect("checkpoint final-owned piece");
+
+        let resume = store.load_resume(&torrent_id).expect("load resume");
+        assert_eq!(resume.storage_state, StorageState::Published);
+        assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert_eq!(resume.have.expect("have state").pieces(), &[true]);
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

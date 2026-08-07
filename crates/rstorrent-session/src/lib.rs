@@ -11,6 +11,7 @@ mod application_connection;
 mod control;
 mod dht_views;
 mod diagnostics;
+mod durable_state;
 mod file_views;
 mod have;
 mod incoming_seeding;
