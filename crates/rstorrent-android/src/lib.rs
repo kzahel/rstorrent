@@ -244,6 +244,17 @@ impl AndroidApplicationClient {
         map_saf_storage_plan(plan)
     }
 
+    pub async fn probe_saf_storage_roots(&self) -> Result<bool, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .probe_platform_storage_roots()
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
     pub async fn start_saf(
         &self,
         torrent_id: String,

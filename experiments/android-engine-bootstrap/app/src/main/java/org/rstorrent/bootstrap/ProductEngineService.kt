@@ -109,7 +109,7 @@ class ProductEngineService : Service() {
         safTreeUri = ProductSafDocuments.selectedTree(this)
         mutableState.update {
             it.copy(
-                storageRootReady = safTreeUri != null,
+                storageRootReady = false,
                 storageRootLabel = safTreeUri?.lastPathSegment,
             )
         }
@@ -144,8 +144,21 @@ class ProductEngineService : Service() {
                 repeat(SAF_PROVIDER_CONCURRENCY) {
                     scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
                 }
+                val storageRootHealthy = client.probeSafStorageRoots()
+                Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
                 subscribeDiagnostics()
-                mutableState.update { it.copy(ready = true, error = null) }
+                mutableState.update {
+                    it.copy(
+                        ready = true,
+                        storageRootReady = storageRootHealthy,
+                        error =
+                            if (safTreeUri != null && !storageRootHealthy) {
+                                "Selected download folder is unavailable"
+                            } else {
+                                null
+                            },
+                    )
+                }
                 clientReady.complete(Unit)
                 observePowerAndNotification()
             } catch (error: Throwable) {
@@ -530,14 +543,22 @@ class ProductEngineService : Service() {
                 clientReady.await()
                 val restart = client.prepareSafTreeReplacement()
                 safTreeUri = treeUri
+                val storageRootHealthy = client.probeSafStorageRoots()
+                Log.i(TAG, "saf_root_health source=selection available=$storageRootHealthy")
                 Log.i(TAG, "saf_tree_ready uri=$treeUri")
                 mutableState.update {
                     it.copy(
-                        storageRootReady = true,
+                        storageRootReady = storageRootHealthy,
                         storageRootLabel = treeUri.lastPathSegment,
-                        error = null,
+                        error =
+                            if (storageRootHealthy) {
+                                null
+                            } else {
+                                "Selected download folder is unavailable"
+                            },
                     )
                 }
+                if (!storageRootHealthy) return@launch
                 advanceSaf(mutableState.value)
                 mutableState.value.torrents.values
                     .filter { it.state == TorrentState.AWAITING_STORAGE }

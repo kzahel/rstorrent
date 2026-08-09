@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
@@ -20,10 +20,12 @@ use rstorrent_engine::{
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
-    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
-    TrackerSource, TrackerTransport, download_magnet_metadata_with_external_discovery,
-    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
+    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig,
+    TrackerEndpoint, TrackerSource, TrackerTransport,
+    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
+    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
+    verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -306,6 +308,7 @@ pub struct ApplicationService {
     publication_delay_for_testing: Duration,
     publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
+    healthy_platform_roots: BTreeSet<String>,
     session_network: Option<SessionNetworkRuntime>,
     torrent_runtimes: BTreeMap<String, TorrentRuntime>,
     next_torrent_generation: u64,
@@ -398,9 +401,12 @@ impl ApplicationService {
                 )?
             }
         };
-        let snapshot = store.snapshot()?;
+        let mut snapshot = store.snapshot()?;
         let active_client_settings = snapshot.client_settings.clone();
-        let storage_roots = available_storage_roots(store.storage_roots()?);
+        let stored_storage_roots = store.storage_roots()?;
+        let healthy_platform_roots = BTreeSet::new();
+        let storage_roots = available_storage_roots(stored_storage_roots, &healthy_platform_roots);
+        apply_runtime_storage_availability(&mut snapshot, &storage_roots);
         let (initial_dht_snapshot, dht_state_warning) = match store.load_dht_snapshot() {
             Ok(snapshot) => (snapshot, None),
             Err(error) => (None, Some(error.to_string())),
@@ -413,9 +419,11 @@ impl ApplicationService {
                 .map_err(|error| ApplicationError::Persistence(error.to_string()))?,
         };
         let speed_recorder = speed.recorder.clone();
+        let admission_wake = Arc::new(Notify::new());
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
+        storage_file_pool.set_platform_health_wake(admission_wake.clone());
         let mut session_network = SessionNetworkRuntime::start(SessionNetworkConfig {
             settings: active_client_settings,
             network,
@@ -483,6 +491,7 @@ impl ApplicationService {
             publication_delay_for_testing: config.publication_delay_for_testing,
             publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool,
+            healthy_platform_roots,
             session_network: Some(session_network),
             torrent_runtimes,
             next_torrent_generation,
@@ -491,7 +500,7 @@ impl ApplicationService {
             eta_runtime: Some(eta_runtime),
             views,
             view_set_reaper: Some(view_set_reaper),
-            admission_wake: Arc::new(Notify::new()),
+            admission_wake,
             maintenance_cancellation: CancellationToken::new(),
             maintenance_started: false,
             maintenance_task: None,
@@ -733,7 +742,7 @@ impl ApplicationService {
             let mut store = self.store_mut()?;
             store.handle_durable(&request)
         };
-        let response = match durable_result {
+        let mut response = match durable_result {
             Ok(response) => response,
             Err(error) => {
                 if error.is_resource_limit() {
@@ -756,6 +765,7 @@ impl ApplicationService {
                 return Err(error.into());
             }
         };
+        self.apply_runtime_storage_to_response(&mut response);
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             if let Some(torrent_id) = incoming_fence.as_deref() {
                 self.reconcile_incoming_torrent(torrent_id).await?;
@@ -1071,7 +1081,7 @@ impl ApplicationService {
         let durable_result = self
             .store_mut()?
             .handle_prepared_torrent_bytes(&request, &prepared);
-        let response = match durable_result {
+        let mut response = match durable_result {
             Ok(response) => response,
             Err(error) => {
                 if error.is_resource_limit() {
@@ -1087,6 +1097,7 @@ impl ApplicationService {
                 return Err(error.into());
             }
         };
+        self.apply_runtime_storage_to_response(&mut response);
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
         }
@@ -1119,8 +1130,173 @@ impl ApplicationService {
         Ok(self.store_mut()?.revision()?)
     }
 
+    fn apply_runtime_storage_to_response(&self, response: &mut ResponseEnvelope) {
+        if let ResponseOutcome::Success { snapshot } = &mut response.outcome {
+            apply_runtime_storage_availability(snapshot, &self.storage_roots);
+        }
+    }
+
     pub fn storage_snapshot(&self) -> Result<crate::StorageSettingsSnapshot, ApplicationError> {
-        Ok(self.store_mut()?.snapshot()?.storage)
+        let mut snapshot = self.store_mut()?.snapshot()?;
+        apply_runtime_storage_availability(&mut snapshot, &self.storage_roots);
+        Ok(snapshot.storage)
+    }
+
+    /// Exercises every configured platform root through the bounded broker
+    /// before making it eligible for torrent work.
+    pub async fn probe_platform_storage_roots(&mut self) -> Result<bool, ApplicationError> {
+        self.reap_finished().await?;
+        let configured = self.store_mut()?.storage_roots()?;
+        let platform_roots = configured
+            .iter()
+            .filter(|root| matches!(root.location, StorageRootLocation::PlatformCapability))
+            .map(|root| root.id.clone())
+            .collect::<Vec<_>>();
+        let mut healthy = BTreeSet::new();
+        let mut failures = BTreeMap::new();
+        for root_id in &platform_roots {
+            let storage_id = format!("root-health:{root_id}");
+            let reference = StorageFileReference::new(
+                self.storage_file_pool.clone(),
+                StorageFileKey {
+                    storage_id: storage_id.clone(),
+                    namespace_generation: 0,
+                    role: StorageFileRole::Namespace,
+                },
+                StorageFileLocator::Platform(rstorrent_engine::PlatformStorageTarget {
+                    root_id: root_id.clone(),
+                    storage_id,
+                    namespace_generation: 0,
+                    role: StorageFileRole::Namespace,
+                    path: Vec::new(),
+                }),
+            );
+            match reference.observe().await {
+                Ok(observation)
+                    if observation.exists
+                        && observation.kind == Some(StorageObjectKind::Directory) =>
+                {
+                    healthy.insert(root_id.clone());
+                }
+                Ok(_) => {
+                    failures.insert(
+                        root_id.clone(),
+                        "platform storage root is missing or not a directory".to_owned(),
+                    );
+                }
+                Err(error) => {
+                    failures.insert(root_id.clone(), error.to_string());
+                }
+            }
+        }
+
+        let lost = self
+            .healthy_platform_roots
+            .difference(&healthy)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if !lost.is_empty() {
+            let affected = self
+                .store_mut()?
+                .snapshot()?
+                .torrents
+                .into_iter()
+                .filter(|torrent| lost.contains(&torrent.storage_root))
+                .map(|torrent| torrent.torrent_id)
+                .collect::<Vec<_>>();
+            for torrent_id in affected {
+                self.unregister_incoming(&torrent_id).await?;
+                self.join_active_content(&torrent_id).await?;
+                self.storage_file_pool.invalidate_storage(&torrent_id);
+                let detail = failures
+                    .get(&self.store_mut()?.load_resume(&torrent_id)?.storage_root)
+                    .map_or("platform storage root is unavailable", String::as_str);
+                self.store_mut()?
+                    .mark_awaiting_storage(&torrent_id, Some(detail))?;
+            }
+        }
+
+        self.healthy_platform_roots = healthy;
+        self.storage_file_pool.take_platform_root_failures();
+        self.storage_roots = Arc::new(available_storage_roots(
+            configured,
+            &self.healthy_platform_roots,
+        ));
+        for (root_id, detail) in &failures {
+            self.views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::PLATFORM_ADAPTER,
+                "platform_storage_root_unavailable",
+                None,
+                "Platform storage root is unavailable",
+                &[("root", root_id), ("detail", detail)],
+            )?;
+        }
+        self.reconcile_admission().await?;
+        self.reconcile_incoming_catalog().await?;
+        self.reconcile_discovery_catalog().await?;
+        self.refresh_views()?;
+        Ok(failures.is_empty())
+    }
+
+    async fn reconcile_platform_root_failures(&mut self) -> Result<(), ApplicationError> {
+        let failures = self.storage_file_pool.take_platform_root_failures();
+        if failures.is_empty() {
+            return Ok(());
+        }
+        let lost = failures
+            .iter()
+            .map(|(root_id, _)| root_id)
+            .filter(|root_id| self.healthy_platform_roots.contains(*root_id))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if lost.is_empty() {
+            return Ok(());
+        }
+        for root_id in &lost {
+            self.healthy_platform_roots.remove(root_id);
+        }
+        let configured = self.store_mut()?.storage_roots()?;
+        self.storage_roots = Arc::new(available_storage_roots(
+            configured,
+            &self.healthy_platform_roots,
+        ));
+        let affected = self
+            .store_mut()?
+            .snapshot()?
+            .torrents
+            .into_iter()
+            .filter(|torrent| lost.contains(&torrent.storage_root))
+            .map(|torrent| (torrent.torrent_id, torrent.storage_root))
+            .collect::<Vec<_>>();
+        for (torrent_id, root_id) in affected {
+            self.unregister_incoming(&torrent_id).await?;
+            self.join_active_content(&torrent_id).await?;
+            self.storage_file_pool.invalidate_storage(&torrent_id);
+            let detail = failures
+                .iter()
+                .find(|(failed_root, _)| failed_root == &root_id)
+                .map(|(_, failure)| failure.to_string())
+                .unwrap_or_else(|| "platform storage root is unavailable".to_owned());
+            self.store_mut()?
+                .mark_awaiting_storage(&torrent_id, Some(&detail))?;
+        }
+        for (root_id, failure) in failures {
+            if !lost.contains(&root_id) {
+                continue;
+            }
+            let detail = failure.to_string();
+            self.views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::PLATFORM_ADAPTER,
+                "platform_storage_root_lost",
+                None,
+                "Platform storage root became unavailable",
+                &[("root", &root_id), ("detail", &detail)],
+            )?;
+        }
+        self.refresh_views()?;
+        Ok(())
     }
 
     pub fn incoming_peer_snapshot(&self) -> Option<IncomingPeerServiceSnapshot> {
@@ -1404,8 +1580,14 @@ impl ApplicationService {
 
     fn reload_storage_roots(&mut self) -> Result<(), ApplicationError> {
         let roots = self.store_mut()?.storage_roots()?;
-        self.storage_roots = Arc::new(available_storage_roots(roots));
+        self.storage_roots = Arc::new(available_storage_roots(roots, &self.healthy_platform_roots));
         Ok(())
+    }
+
+    fn configured_platform_root(&self, root_id: &str) -> Result<bool, ApplicationError> {
+        Ok(self.store_mut()?.storage_roots()?.into_iter().any(|root| {
+            root.id == root_id && matches!(root.location, StorageRootLocation::PlatformCapability)
+        }))
     }
 
     pub fn api_hello(&self) -> crate::ApiHello {
@@ -1747,8 +1929,12 @@ impl ApplicationService {
     ) -> Result<Option<String>, ApplicationError> {
         self.reap_finished().await?;
         if !matches!(
-            self.storage_roots.get(root_id),
-            Some(StorageRootLocation::PlatformCapability)
+            self.store_mut()?
+                .storage_roots()?
+                .into_iter()
+                .find(|root| root.id == root_id)
+                .map(|root| root.location),
+            Some(StorageRootLocation::PlatformCapability),
         ) {
             return Err(ApplicationError::Configuration(format!(
                 "storage root {root_id} is not a platform capability"
@@ -1777,10 +1963,7 @@ impl ApplicationService {
         let removal = self.store_mut()?.load_removal(&torrent_id)?;
         if removal.policy != RemovalDataPolicy::DeleteManaged
             || removal.state != RemovalState::AwaitingPlatform
-            || !matches!(
-                self.storage_roots.get(&removal.storage_root),
-                Some(StorageRootLocation::PlatformCapability)
-            )
+            || !self.configured_platform_root(&removal.storage_root)?
         {
             return Err(ApplicationError::Configuration(
                 "torrent is not awaiting platform data removal".to_owned(),
@@ -2064,6 +2247,15 @@ impl ApplicationService {
                         )?;
                         self.refresh_views()
                     }
+                    None if self.configured_platform_root(&removal.storage_root)? => {
+                        self.store_mut()?.set_removal_state(
+                            torrent_id,
+                            &removal.operation_id,
+                            RemovalState::AwaitingPlatform,
+                            None,
+                        )?;
+                        self.refresh_views()
+                    }
                     None => self.fail_removal(
                         &removal,
                         "configured storage root is unavailable for removal",
@@ -2194,6 +2386,7 @@ impl ApplicationService {
                 checking: is_checking,
                 blocked: torrent.archived
                     || torrent.removal_state.is_some()
+                    || resume.state == TorrentState::AwaitingStorage
                     || matches!(
                         resume.state,
                         TorrentState::NeedsRepair
@@ -2285,8 +2478,10 @@ impl ApplicationService {
         let root = match self.storage_roots.get(&resume.storage_root).cloned() {
             Some(root) => root,
             None => {
-                self.store_mut()?
-                    .mark_needs_repair(torrent_id, "configured storage root is unavailable")?;
+                self.store_mut()?.mark_awaiting_storage(
+                    torrent_id,
+                    Some("configured storage root is unavailable"),
+                )?;
                 return Ok(());
             }
         };
@@ -2645,14 +2840,24 @@ impl ApplicationService {
 
     fn load_resume_conservative(&self, torrent_id: &str) -> Result<ResumeRecord, ApplicationError> {
         let mut store = self.store_mut()?;
-        match store.load_resume(torrent_id) {
-            Ok(resume) => Ok(resume),
+        let mut resume = match store.load_resume(torrent_id) {
+            Ok(resume) => resume,
             Err(StoreError::Have(_)) => {
                 store.reset_have_from_metadata(torrent_id)?;
-                Ok(store.load_resume(torrent_id)?)
+                store.load_resume(torrent_id)?
             }
-            Err(error) => Err(error.into()),
+            Err(error) => return Err(error.into()),
+        };
+        drop(store);
+        if !self.storage_roots.contains_key(&resume.storage_root)
+            && !matches!(
+                resume.state,
+                TorrentState::AwaitingMetadata | TorrentState::NeedsRepair
+            )
+        {
+            resume.state = TorrentState::AwaitingStorage;
         }
+        Ok(resume)
     }
 
     async fn pause(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
@@ -2698,6 +2903,7 @@ impl ApplicationService {
     }
 
     async fn reap_finished(&mut self) -> Result<(), ApplicationError> {
+        self.reconcile_platform_root_failures().await?;
         let finished = self
             .torrent_runtimes
             .iter()
@@ -4507,15 +4713,40 @@ impl ViewActivitySink {
     }
 }
 
-fn available_storage_roots(roots: Vec<StoredStorageRoot>) -> BTreeMap<String, StorageRootLocation> {
+fn available_storage_roots(
+    roots: Vec<StoredStorageRoot>,
+    healthy_platform_roots: &BTreeSet<String>,
+) -> BTreeMap<String, StorageRootLocation> {
     roots
         .into_iter()
         .filter(|root| match &root.location {
             StorageRootLocation::Path(path) => path.is_dir() && std::fs::read_dir(path).is_ok(),
-            StorageRootLocation::PlatformCapability => true,
+            StorageRootLocation::PlatformCapability => healthy_platform_roots.contains(&root.id),
         })
         .map(|root| (root.id, root.location))
         .collect()
+}
+
+fn apply_runtime_storage_availability(
+    snapshot: &mut crate::ServiceSnapshot,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+) {
+    for root in &mut snapshot.storage.roots {
+        root.availability = if storage_roots.contains_key(&root.root_id) {
+            crate::StorageRootAvailability::Available
+        } else {
+            crate::StorageRootAvailability::Unavailable
+        };
+    }
+    for torrent in &mut snapshot.torrents {
+        if !storage_roots.contains_key(&torrent.storage_root)
+            && torrent.metadata_available
+            && torrent.state != TorrentState::NeedsRepair
+        {
+            torrent.state = TorrentState::AwaitingStorage;
+            torrent.verified_piece_count = 0;
+        }
+    }
 }
 
 fn validate_selected_directory(path: &Path) -> Result<PathBuf, ApplicationError> {
@@ -4559,7 +4790,8 @@ fn durable_view_state(
     ),
     ApplicationError,
 > {
-    let snapshot = store.snapshot()?;
+    let mut snapshot = store.snapshot()?;
+    apply_runtime_storage_availability(&mut snapshot, storage_roots);
     let tracker_https_authentication = store.client_settings()?.tracker_https_server_authentication;
     let mut durable = BTreeMap::new();
     for torrent in &snapshot.torrents {
@@ -4848,7 +5080,10 @@ mod tests {
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
-        NetworkPolicy, PeerBudgetDirection, PublicationShape, torrent_storage_paths,
+        NetworkPolicy, PeerBudgetDirection, PlatformStorageFailure, PlatformStorageFailureKind,
+        PlatformStorageOperation, PublicationShape, StorageFileKey, StorageFileLocator,
+        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation,
+        platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -10572,6 +10807,82 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn platform_root_requires_broker_health_and_transitions_on_grant_loss() {
+        let root = test_root("platform-root-health");
+        let mut configuration = config(&root);
+        configuration.storage_roots = vec![ConfiguredStorageRoot::platform("downloads")];
+        let (client, broker) = platform_storage_channel();
+        configuration.platform_storage_client = Some(client);
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open service");
+        assert_eq!(
+            service.storage_snapshot().expect("initial storage").roots[0].availability,
+            crate::StorageRootAvailability::Unavailable
+        );
+
+        let provider = tokio::spawn(async move {
+            let healthy = broker.next_request().await.expect("health request");
+            assert_eq!(healthy.operation, PlatformStorageOperation::Observe);
+            assert!(healthy.path.is_empty());
+            assert!(
+                broker.complete_observation(
+                    healthy.request_id,
+                    StorageObservation::present(StorageObjectKind::Directory, None, None)
+                        .expect("root observation"),
+                )
+            );
+            let revoked = broker
+                .next_request()
+                .await
+                .expect("ordinary storage request");
+            assert_eq!(revoked.operation, PlatformStorageOperation::Observe);
+            assert!(broker.complete_error(
+                revoked.request_id,
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::GrantUnavailable,
+                    "test grant revoked",
+                ),
+            ));
+        });
+        assert!(
+            service
+                .probe_platform_storage_roots()
+                .await
+                .expect("healthy probe")
+        );
+        assert_eq!(
+            service.storage_snapshot().expect("healthy storage").roots[0].availability,
+            crate::StorageRootAvailability::Available
+        );
+        let reference = StorageFileReference::new(
+            service.storage_file_pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 1,
+                role: StorageFileRole::Payload(0),
+            },
+            StorageFileLocator::Platform(rstorrent_engine::PlatformStorageTarget {
+                root_id: "downloads".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 1,
+                role: StorageFileRole::Payload(0),
+                path: vec!["payload.bin".to_owned()],
+            }),
+        );
+        assert!(reference.observe().await.is_err());
+        service.reap_finished().await.expect("reconcile root loss");
+        assert_eq!(
+            service.storage_snapshot().expect("revoked storage").roots[0].availability,
+            crate::StorageRootAvailability::Unavailable
+        );
+        provider.await.expect("provider task");
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

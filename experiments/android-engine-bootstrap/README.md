@@ -42,6 +42,9 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --storage saf-internal --runs 3 \
   --profile product-dynamic-saf
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target pixel7a --storage saf-internal \
+  --profile product-saf-grant-repair
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --storage saf-internal \
   --profile product-https-tracker
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
@@ -67,6 +70,12 @@ name-only namespace acknowledgement, and verifies every non-padding file. It
 rejects info-hash output directories, eager/empty part artifacts, and staging
 survivors while recording the 40-handle native pool, 16-request channel, and
 whole-process descriptor high water.
+
+The `product-saf-grant-repair` profile exercises platform-root health rather
+than payload transfer. It proves an initially healthy persisted grant, retains
+the stable root identity after debug-only grant revocation, observes the root
+as unavailable after process restart, repairs it through the system picker,
+and observes it as healthy across another restart.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

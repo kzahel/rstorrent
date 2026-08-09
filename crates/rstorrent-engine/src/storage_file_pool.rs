@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::time::timeout;
 
 pub const DEFAULT_STORAGE_FILE_LIMIT: usize = 40;
@@ -380,6 +380,8 @@ pub struct PlatformStorageClient {
     next_request_id: Arc<AtomicU64>,
     pending: Arc<AtomicUsize>,
     pending_high_water: Arc<AtomicUsize>,
+    root_failures: Arc<Mutex<HashMap<String, PlatformStorageFailure>>>,
+    health_wake: Arc<Mutex<Option<Arc<Notify>>>>,
 }
 
 impl PlatformStorageClient {
@@ -424,7 +426,10 @@ impl PlatformStorageClient {
                     "platform returned an observation for an open request",
                 )),
             ),
-            Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
+            Ok(Ok(Err(error))) => {
+                self.record_root_failure(&target.root_id, &error);
+                Err(StorageFilePoolError::PlatformFailure(error))
+            }
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
@@ -507,7 +512,10 @@ impl PlatformStorageClient {
                     "platform returned an observation for a deletion request",
                 )),
             ),
-            Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
+            Ok(Ok(Err(error))) => {
+                self.record_root_failure(&target.root_id, &error);
+                Err(StorageFilePoolError::PlatformFailure(error))
+            }
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
@@ -522,6 +530,7 @@ impl PlatformStorageClient {
         &self,
         request: PlatformStorageRequest,
     ) -> Result<PlatformStorageResponse, StorageFilePoolError> {
+        let root_id = request.root_id.clone();
         let (reply, response) = oneshot::channel();
         self.sender
             .send(PendingPlatformStorageRequest { request, reply })
@@ -533,7 +542,10 @@ impl PlatformStorageClient {
         self.pending.fetch_sub(1, Ordering::AcqRel);
         match result {
             Ok(Ok(Ok(response))) => Ok(response),
-            Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
+            Ok(Ok(Err(error))) => {
+                self.record_root_failure(&root_id, &error);
+                Err(StorageFilePoolError::PlatformFailure(error))
+            }
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
@@ -550,6 +562,48 @@ impl PlatformStorageClient {
 
     pub fn pending_high_water(&self) -> usize {
         self.pending_high_water.load(Ordering::Acquire)
+    }
+
+    fn record_root_failure(&self, root_id: &str, failure: &PlatformStorageFailure) {
+        if !matches!(
+            failure.kind,
+            PlatformStorageFailureKind::GrantUnavailable
+                | PlatformStorageFailureKind::PermissionDenied
+                | PlatformStorageFailureKind::ProviderRefused
+                | PlatformStorageFailureKind::NonSeekable
+        ) {
+            return;
+        }
+        self.root_failures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(root_id.to_owned(), failure.clone());
+        if let Some(wake) = self
+            .health_wake
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+        {
+            wake.notify_one();
+        }
+    }
+
+    fn take_root_failures(&self) -> Vec<(String, PlatformStorageFailure)> {
+        std::mem::take(
+            &mut *self
+                .root_failures
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+        .into_iter()
+        .collect()
+    }
+
+    fn set_health_wake(&self, wake: Arc<Notify>) {
+        *self
+            .health_wake
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(wake);
     }
 }
 
@@ -645,6 +699,8 @@ pub fn platform_storage_channel() -> (PlatformStorageClient, Arc<PlatformStorage
             next_request_id: Arc::new(AtomicU64::new(1)),
             pending: Arc::new(AtomicUsize::new(0)),
             pending_high_water: Arc::new(AtomicUsize::new(0)),
+            root_failures: Arc::new(Mutex::new(HashMap::new())),
+            health_wake: Arc::new(Mutex::new(None)),
         },
         Arc::new(PlatformStorageBroker {
             receiver: AsyncMutex::new(receiver),
@@ -881,6 +937,19 @@ impl StorageFilePool {
             resource_retries: self.inner.metrics.resource_retries.load(Ordering::Relaxed),
             platform_pending,
             platform_pending_high_water,
+        }
+    }
+
+    pub fn take_platform_root_failures(&self) -> Vec<(String, PlatformStorageFailure)> {
+        self.inner
+            .platform
+            .as_ref()
+            .map_or_else(Vec::new, PlatformStorageClient::take_root_failures)
+    }
+
+    pub fn set_platform_health_wake(&self, wake: Arc<Notify>) {
+        if let Some(platform) = &self.inner.platform {
+            platform.set_health_wake(wake);
         }
     }
 

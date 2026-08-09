@@ -583,6 +583,31 @@ post-registration truncation, and a late platform observation is rejected
 after storage-generation invalidation. Root capability admission and physical
 SAF product evidence remain the next gate.
 
+### Stage 5: Android root health and physical SAF evidence
+
+Platform root configuration is now distinct from generation-scoped runtime
+health. A configured capability starts unavailable and is admitted only after
+the existing four-worker broker observes the empty-path root as a directory.
+The session projects unavailable roots and affected torrents consistently,
+blocks download/check/upload admission, and retains stable durable root
+identity. Grant, permission, provider-refusal, and non-seekable failures from
+ordinary storage work enter a bounded root-failure mailbox, wake the
+application owner, unregister uploads, join content work, invalidate pooled
+handles, and transition affected torrents to awaiting storage. Repair probes
+the replacement capability before resuming work.
+
+Deterministic session tests cover unavailable startup, healthy observation,
+ordinary-operation grant loss, and exact availability projection; the full
+225-test session suite passes. Generated bindings, both Android ABIs, APK
+assembly, and JVM tests pass. On the authorized physical Pixel 7a running
+Android 17/API 37, the normal dynamic SAF product profile downloaded,
+published, restarted, re-observed, hash-verified, and removed its controlled
+multi-file fixture. The shared pool peaked at 6/40 handles and the broker at
+3/16 pending requests. A separate exact-cleanup profile proved healthy startup,
+persisted-grant revocation, unavailable restart with stable root identity,
+system-picker repair, and a healthy second restart. No stable device identifier
+or raw provider identity is retained in repository evidence.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

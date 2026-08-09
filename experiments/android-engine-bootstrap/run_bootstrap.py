@@ -41,6 +41,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-saf-grant-repair",
     "product-https-tracker",
     "product-https-platform-trust",
     "product-mse",
@@ -1861,6 +1862,99 @@ def run_product_dynamic_saf_profile(
         fixture.close()
 
 
+def run_product_saf_grant_repair_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-saf-grant-repair requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+
+    def wait_for(marker: str, timeout_seconds: float = 15) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            if marker in logs:
+                return
+            time.sleep(0.2)
+        raise BootstrapFailure(f"timed out waiting for {marker}\n{logs}")
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        wait_for("saf_root_health source=selection available=true")
+
+        target.run(["logcat", "-c"], check=False)
+        released = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_release_saf_grant",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in released.stdout:
+            raise BootstrapFailure("could not trigger product SAF grant release")
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        restarted = target.shell(
+            ["am", "start", "-W", "-n", ACTIVITY],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart after SAF grant release")
+        wait_for("saf_root_health source=startup available=false")
+        if not app_text(target, "shared_prefs/product-saf.xml"):
+            raise BootstrapFailure("revoked grant erased the stable platform identity")
+
+        target.run(["logcat", "-c"], check=False)
+        selected = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_select_saf",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in selected.stdout:
+            raise BootstrapFailure("could not relaunch SAF repair picker")
+        probe.automate_tree_grant(target, grant_storage)
+        wait_for("saf_root_health source=selection available=true")
+
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["am", "start", "-W", "-n", ACTIVITY], timeout=30)
+        wait_for("saf_root_health source=startup available=true")
+        return {
+            "target": target_kind,
+            "profile": "product-saf-grant-repair",
+            "identity": identity,
+            "startup_healthy": True,
+            "revoked_startup_unavailable": True,
+            "stable_root_identity_retained": True,
+            "selection_repair_healthy": True,
+            "repaired_restart_healthy": True,
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+
+
 def run_product_mse_profile(
     target: Any,
     target_kind: str,
@@ -2525,6 +2619,14 @@ def main() -> int:
                         probe,
                         interop,
                         ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-saf-grant-repair":
+                    result = run_product_saf_grant_repair_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
                         arguments.storage,
                     )
                 elif profile == "product-https-tracker":
