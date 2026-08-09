@@ -1090,26 +1090,27 @@ M4 Pro / macOS 26.5.2 / Rust 1.97 measured:
 
 The contiguous RC4 diagnostic misses 1 GiB/s by 1%; the production-shaped and
 multi-stream profiles exceed it, DH is far below 2 ms, and no remaining
-avoidable scalar defect was found. Commit `0cf771c` extended the release
-paired comparator with symmetric pinned-libtorrent cohorts and then ran six
+avoidable scalar defect was found. Commits `0cf771c` and `3f7a52f` extended
+the release paired comparator with symmetric pinned-libtorrent cohorts and a
+six-case balanced mode/implementation order. The clean final run used six
 alternating 1 GiB pairs per implementation at 1 MiB pieces and storage `4/4`.
-RSTorrent's plain and RC4 medians were 463.922 and 366.992 MiB/s; its median
-within-pair RC4/plain ratio was `0.771056`, a 22.894% regression. Libtorrent's
-corresponding medians were 495.549 and 362.873 MiB/s; its median within-pair
-ratio was `0.740717`, a 25.928% regression. RSTorrent therefore retained 3.034
-percentage points more of its plain throughput, or `1.041x` the oracle's
+RSTorrent's plain and RC4 medians were 473.781 and 364.813 MiB/s; its median
+within-pair RC4/plain ratio was `0.779873`, a 22.013% regression. Libtorrent's
+corresponding medians were 493.383 and 366.520 MiB/s; its median within-pair
+ratio was `0.758292`, a 24.171% regression. RSTorrent therefore retained 2.158
+percentage points more of its plain throughput, or `1.028x` the oracle's
 relative RC4 retention. The 10% diagnostic target misses, but RSTorrent clears
 the explicit 75%-of-plain graduation guardrail and is not worse than the
 pinned mature oracle, so no further RC4 optimization is justified by this
 result.
 
-Raw process-tree CPU measurements report RSTorrent at 2.104 plain and 2.081
-RC4 median core-equivalents and libtorrent at 2.763 plain and 2.592 RC4. These
+Raw process-tree CPU measurements report RSTorrent at 2.087 plain and 2.077
+RC4 median core-equivalents and libtorrent at 2.754 plain and 2.615 RC4. These
 rates are normalized by each run's wall time and are diagnostic rather than
 the decision metric. Every run verified the exact 1 GiB SHA-1, asserted RC4
 on both libtorrent endpoints in forced cases and no MSE in ordinary-plain
 cases, retained the payload and storage bounds, and cleaned up. The clean
-report names repository commit `0cf771cae7fc30252d9269a1ed028c20b26c0ec3`,
+report names repository commit `c5e80074a6fd49b111397dd6d7769ce60bfa55f2`,
 libtorrent `2.0.13.0`, and production release binary SHA-256
 `97466986206f9d11697db6b6624db3cc061396f986471804a3dd98a1a833883d`.
 

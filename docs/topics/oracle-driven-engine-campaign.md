@@ -329,9 +329,9 @@ implemented: pure primitives and sans-IO state, bounded DH ownership, both TCP
 roles and payload methods, live persisted policy, exact diagnostics and peer
 flag, all 28 pinned-libtorrent cases, setup/flight shape, six paired 1 GiB
 performance runs per implementation, Android cross-build, and an API 34 AVD
-product run pass. The RSTorrent RC4/plain median paired ratio is `0.771056`
-(22.894% loss), compared with pinned libtorrent's `0.740717` (25.928% loss).
-RSTorrent retains 3.034 percentage points more throughput than the oracle and
+product run pass. The RSTorrent RC4/plain median paired ratio is `0.779873`
+(22.013% loss), compared with pinned libtorrent's `0.758292` (24.171% loss).
+RSTorrent retains 2.158 percentage points more throughput than the oracle and
 clears the accepted 75% broad floor. The cost remains explicit rather than
 being described as negligible, but the oracle-relative result does not call
 for more RC4 optimization.

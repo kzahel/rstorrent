@@ -1204,16 +1204,16 @@ CPU seconds, core-equivalents, and host-capacity-normalized utilization
 introduced in Schema 5 and adds the oracle-relative retention comparison.
 
 On Apple M4 Pro / macOS 26.5.2 / Rust 1.97, six alternating 1 GiB pairs with
-1 MiB pieces and storage `4/4` measured RSTorrent at 463.922 MiB/s plain and
-366.992 MiB/s RC4. Its median within-pair ratio was `0.771056`, a 22.894%
-regression. Pinned libtorrent `2.0.13.0` measured 495.549 MiB/s plain and
-362.873 MiB/s RC4, with a `0.740717` median paired ratio and 25.928%
-regression. RSTorrent retained 3.034 percentage points more of its plain
-throughput, or `1.041x` the oracle's relative RC4 retention. This misses the
+1 MiB pieces and storage `4/4` measured RSTorrent at 473.781 MiB/s plain and
+364.813 MiB/s RC4. Its median within-pair ratio was `0.779873`, a 22.013%
+regression. Pinned libtorrent `2.0.13.0` measured 493.383 MiB/s plain and
+366.520 MiB/s RC4, with a `0.758292` median paired ratio and 24.171%
+regression. RSTorrent retained 2.158 percentage points more of its plain
+throughput, or `1.028x` the oracle's relative RC4 retention. This misses the
 10% diagnostic target but clears the accepted 75%-of-plain catastrophe floor
 and is not worse than the mature oracle, so the paired result does not justify
-further RC4 optimization. Median process-tree load was 2.104 plain versus
-2.081 RC4 core-equivalents for RSTorrent and 2.763 versus 2.592 for libtorrent;
+further RC4 optimization. Median process-tree load was 2.087 plain versus
+2.077 RC4 core-equivalents for RSTorrent and 2.754 versus 2.615 for libtorrent;
 throughput retention, not the wall-time-normalized CPU rate, is the decision
 authority. Every run verified the 1 GiB SHA-1, asserted the required method on
 both libtorrent endpoints, and cleaned up.
