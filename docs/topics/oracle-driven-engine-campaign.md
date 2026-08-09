@@ -8,11 +8,12 @@ controlled IPv6 DHT-only interoperability, bounded public dual-family
 metadata, Android cross-build, and API 34 AVD policy/restart gates passed on
 2026-08-09. Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) is
-the single authoritative **Now**. Its protocol client, coordinated runtime,
-product projection, Android contract, and physical harness are implemented;
-the live negative control passes, but the observed gateway returns typed `606`
-to `AddPinhole`. Graduation is blocked at Tactical `113`'s explicit direction
-boundary. The completed
+closed evidence-limited: its implementation and negative control pass, but the
+available gateway returns typed `606` to `AddPinhole`, so positive physical
+capability is unknown on the current hardware and the tactical is not
+graduated. Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is the
+single authoritative **Now**, planned and not started. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -322,10 +323,9 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `112` graduated; Tactical `113` is implemented
-through its deterministic, scripted-gateway, product-contract, web, Android
-cross-build, and physical-harness gates; its live negative control passes, but
-the observed gateway rejects `AddPinhole` with typed SOAP fault `606`**.
+Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
+limited with positive physical capability unknown on the current hardware;
+Tactical `114` is the planned, not-started authoritative Now**.
 
 Latest graduated tactical:
 [`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).
@@ -339,21 +339,24 @@ profile pass. The named API 37 Pixel 7a subsequently passed the same default,
 disable, forced-restart persistence, degraded re-enable, and cleanup assertions
 on its current network; no incoming IPv6 reachability is claimed.
 
-Current milestone: finish Tactical
-[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
-through its final physical evidence and graduation step. Commits `6e4bb80`,
-`51c3644`, and `845f388` implement independent IPv4 mapping and IPv6 pinhole
-slots under the existing coordinator, bounded service/lease/uncertainty
-behavior, generated product state, and an identity-free physical harness.
+Latest closed tactical:
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md).
+Commits `6e4bb80`, `51c3644`, and `845f388` implement independent IPv4 mapping
+and IPv6 pinhole slots under the existing coordinator, bounded service/lease/
+uncertainty behavior, generated product state, and an identity-free physical
+harness. The live negative control passes; `AddPinhole` returns `606` on the
+available gateway. The accepted closure records positive physical capability
+as unknown on current hardware without graduation or control-transport scope.
 
-Next executable action: obtain direction at Tactical `113`'s recorded
-escalation boundary. The reachable verifier passes the negative control, the
-gateway advertises the service and permissive firewall status, and the safely
-correlated IPv4 control path returns `606` to `AddPinhole`. Do not weaken the
-same-responder URL policy, try an unrelated control endpoint, or claim the
-mechanism physically usable. If a separately bounded IPv6-control-transport
-investigation is authorized, amend the tactical before implementation;
-otherwise close or defer the physical claim and select the next **Now**.
+Current milestone: Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is the
+single authoritative **Now**, planned and not started.
+
+Next executable action: await implementation authorization for Tactical `114`.
+Once authorized, revalidate its accepted owner/resource boundary against the
+current repository checkpoint before changing code. Tactical `113` needs no
+further action unless different gateway hardware becomes available or a
+separate control-transport investigation is explicitly authorized.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

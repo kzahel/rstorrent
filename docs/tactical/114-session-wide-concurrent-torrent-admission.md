@@ -1,10 +1,10 @@
 # Tactical 114: Session-Wide Concurrent Torrent Admission
 
-Status: Planned **Next** on 2026-08-09. Not started. The direction and the
-boundary of this first multi-torrent slice were accepted in product discussion
-on 2026-08-09. This tactical follows authoritative Tactical `112` and its
-planned `113` successor and does not displace the authoritative **Now** in
-`capability-readiness.md`.
+Status: Authoritative **Now** on 2026-08-09. Not started and not authorized for
+implementation by this status change alone. The direction and the boundary of
+this first multi-torrent slice were accepted in product discussion on
+2026-08-09. It follows graduated Tactical `112` and evidence-limited closed
+Tactical `113`; `capability-readiness.md` owns this promotion.
 
 Topics: `capability-readiness`, `application-control`, `application-view-api`,
 `client-persistence`, `download-correctness`, `peer-lifecycle`,

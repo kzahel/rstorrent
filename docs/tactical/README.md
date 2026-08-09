@@ -528,27 +528,29 @@ that scope and its cleanup or compatibility rules explicitly.
   evidence pass with exact publication, bounded resources, full owner drain,
   and cleanup.
 - [`112-dual-stack-transport-and-ipv6-dht.md`](112-dual-stack-transport-and-ipv6-dht.md):
-  authoritative **Now**, planned and not started; gives the session one
+  complete and graduated; gives the session one
   coordinated TCP/UDP socket pair per address family, runs a BEP 32 IPv6 DHT
   node with its own BEP 42 identity and routing table beside the IPv4 node,
   makes the reachable peer port a per-family fact for BEP 7 announcing, and
   gates every IPv6 path behind one persisted `ipv6_enabled` setting defaulting
   to enabled. Claims no IPv6 incoming reachability.
 - [`113-ipv6-firewall-pinhole-and-incoming-reachability.md`](113-ipv6-firewall-pinhole-and-incoming-reachability.md):
-  active **Now**; bounded UPnP IGD v2 `WANIPv6FirewallControl:1` pinhole control
-  beside the existing IPv4 mapping under one reachability coordinator,
+  closed, evidence-limited; bounded UPnP IGD v2
+  `WANIPv6FirewallControl:1` pinhole control beside the existing IPv4 mapping
+  under one reachability coordinator,
   distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
   incoming evidence, and stages an off-LAN IPv6 peer hash-verifying proof.
   Protocol, coordinator/product, and physical-harness commits pass their
   deterministic, scripted, generated-contract, web, and Android gates. The live
   negative control passes, but the observed gateway returns typed `606` to
-  `AddPinhole`; the tactical is blocked at its explicit control-transport/
-  authorization direction boundary and remains ungraduated. The pinned oracle
-  implements no pinhole support, so every deterministic test is independently
-  authored.
+  `AddPinhole`. Positive physical capability is recorded as unknown on the
+  current hardware; the tactical remains ungraduated and no control-transport
+  expansion is implied. The pinned oracle implements no pinhole support, so
+  every deterministic test is independently authored.
 - [`114-session-wide-concurrent-torrent-admission.md`](114-session-wide-concurrent-torrent-admission.md):
-  planned **Next** after the dual-stack/reachability sequence; replaces the
-  single-active-torrent slot with bounded session-wide download/checking
+  authoritative **Now**, planned and not started after the dual-stack/
+  reachability sequence; replaces the single-active-torrent slot with bounded
+  session-wide download/checking
   admission, durable queue order, and shared memory, storage, hashing,
   connection, and discovery resource authority.
 - [`115-mse-policy-advertisement-and-peer-detail.md`](115-mse-policy-advertisement-and-peer-detail.md):

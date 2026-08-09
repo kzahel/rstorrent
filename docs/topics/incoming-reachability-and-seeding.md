@@ -87,8 +87,9 @@ physical harness is committed, but its opt-in off-LAN transfer and gateway
 cleanup proof does not pass: the live negative control succeeds, then the
 observed gateway returns typed SOAP fault `606` to `AddPinhole` on the safely
 correlated control path. No pinhole was created. Tactical `113` remains at its
-explicit direction boundary without weakening URL correlation or claiming
-incoming IPv6 reachability.
+evidence-limited closure: positive physical capability is unknown on the
+current hardware, URL correlation remains unchanged, and incoming IPv6
+reachability is not claimed.
 
 ## Purpose And Scope
 

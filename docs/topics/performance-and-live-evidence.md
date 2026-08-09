@@ -1301,7 +1301,9 @@ permissive firewall state but returned typed SOAP fault `606` at the
 `AddPinhole` stage. Joined shutdown completed and no pinhole was created. No
 positive timing, throughput, resource high-water, packet-count, cleanup-`704`,
 or incoming-reachability result is recorded. The tactical stops at its explicit
-authorization/control-transport direction boundary.
+authorization/control-transport boundary and closes with positive physical
+capability unknown on the current hardware. Future evidence requires different
+listener-side gateway hardware or a separately authorized transport study.
 
 ## Maintenance Contract
 

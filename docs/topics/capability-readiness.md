@@ -213,28 +213,16 @@ network. No IPv6 pinhole or incoming-reachability claim is made.
 
 ### Now
 
-- Active Tactical
-  [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
-  is the single authoritative **Now**. It has implemented bounded UPnP IGD v2
-  `WANIPv6FirewallControl:1` pinhole control beside the existing IPv4 mapping,
-  distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
-  incoming evidence, and includes the opt-in gate that will prove an off-LAN
-  IPv6 peer hash-verifying payload through it. Deterministic, scripted-gateway,
-  generated-contract, web, and Android cross-build evidence pass; the live
-  negative control also passes, but the observed gateway returns typed SOAP
-  fault `606` to `AddPinhole` on its safely correlated control path. Tactical
-  `113` is blocked at its explicit direction boundary before any positive
-  incoming transfer claim. Completed Tactical `112` is its hard transport
-  prerequisite.
+- Planned Tactical
+  [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is the
+  single authoritative **Now**. It replaces the one-active-torrent slot with
+  bounded session-wide download/checking admission, durable queue order, and
+  shared memory, storage, hashing, connection, and discovery resource
+  authority. It is not started, and queue status alone is not implementation
+  authorization.
 
 ### Next
 
-- Planned Tactical
-  [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md)
-  follows the dual-stack/reachability sequence and replaces the one-active-
-  torrent slot with bounded session-wide download/checking admission, durable
-  queue order, and shared memory, storage, hashing, connection, and discovery
-  resource authority.
 - A separate later tactical may add an explicit faster, more trusting resume
   option while keeping conservative behavior as the default and Force recheck
   as a full validation pass.
@@ -249,7 +237,9 @@ playback-oriented file priorities, dynamic
 VPN and metered-network controls, verified HTTP file serving, incomplete-file
 streaming, and production remote access remain
 important. Tactical `112` now owns IPv6 DHT operation and dual-stack
-listening, while Tactical `113` owns IPv6 firewall-pinhole reachability.
+listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
+records positive physical capability as unknown on the current hardware after
+the live gateway returned typed `606` to `AddPinhole`.
 The uTP topic records an adaptive investigation and evidence campaign without
 promoting it out of **Later** or accepting an implementation tactical.
 Tactical

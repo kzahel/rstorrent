@@ -1,16 +1,16 @@
 # Tactical 113: IPv6 Firewall Pinhole And Incoming Reachability
 
-Status: Authoritative **Now**, planned on 2026-08-08, source-reconciled on
-2026-08-09, and implementation-complete through Gates 1 and 2 plus the Gate 3
-physical harness on 2026-08-09. Deterministic, scripted-gateway, generated-
-contract, web, and Android cross-build evidence pass. The opt-in off-LAN
-gateway gate passed its negative control but `AddPinhole` returned typed SOAP
-fault `606` on 2026-08-09. This is the accepted escalation boundary below, so
-the tactical is blocked on direction, is not graduated, and makes no physical
-IPv6 incoming-reachability claim. The split from Tactical `112` and the
-decision to write this slice against read-only gateway evidence, deferring any
-mutating gateway action to implementation time, were accepted in product
-discussion on 2026-08-08.
+Status: **Closed, evidence-limited** on 2026-08-09. The implementation is
+complete through Gates 1 and 2 plus the Gate 3 physical harness. Deterministic,
+scripted-gateway, generated-contract, web, and Android cross-build evidence
+pass. The live gate passed its negative control but `AddPinhole` returned typed
+SOAP fault `606` on the available listener-side gateway. Product discussion on
+2026-08-09 accepted recording positive physical capability as **unknown on the
+current hardware**, without expanding into a gateway-control transport study.
+This tactical did not satisfy its positive physical stopping condition, is not
+graduated, and makes no physical IPv6 incoming-reachability claim. The split
+from Tactical `112` and the original read-only-evidence boundary were accepted
+in product discussion on 2026-08-08.
 
 Topics: `incoming-reachability-and-seeding`, `protocol-support`,
 `dht-discovery`, `tracker-discovery`, `performance-and-live-evidence`,
@@ -598,9 +598,29 @@ read its permissive firewall status. `AddPinhole` then returned typed SOAP
 fault `606` at the `add` stage. The harness shut down cleanly; no pinhole was
 created, no positive transfer or packet-count evidence exists, and no address,
 gateway identity, control URL, ID, or verifier target is retained. Per the
-accepted escalation rule, further work requires direction on whether to study
-a safely correlated IPv6 control transport or stop this mechanism on the
-observed gateway. The existing IPv4 same-responder URL policy remains intact.
+accepted escalation rule, this triggered a direction request. The evidence-
+limited closure below records the resulting decision without studying a new
+control transport. The existing IPv4 same-responder URL policy remains intact.
+
+## Evidence-Limited Closure
+
+The accepted outcome is **unknown**, not supported or unsupported in general.
+The current gateway advertises `WANIPv6FirewallControl:1`, reports filtering
+enabled and inbound pinholes allowed, but rejects this correctly bounded
+`AddPinhole` request with `606`. That may be hardware, firmware, authorization,
+or control-transport policy; this evidence does not distinguish them.
+
+The implementation remains because its protocol and ownership behavior is
+independently validated, it fails safely and visibly on this gateway, and a
+different conforming gateway may accept the same request. The physical harness
+is retained for future hardware. A later revalidation needs either a different
+listener-side gateway known to accept the action or a separately authorized,
+bounded control-transport investigation. Neither is implied follow-up work.
+
+Stopping conditions 1--4 and the non-physical portions of 7--8 pass. Condition
+6, the live negative control, passes. Conditions 5 and the positive/cleanup
+parts of 7--8 remain unsatisfied by design at closure. Closing the record does
+not relabel those missing results as graduation evidence.
 
 ## Validation Matrix
 
@@ -674,7 +694,20 @@ Stop and ask for direction if any of the following occurs:
 - adding the second mechanism would require weakening the existing
   same-responder URL policy or exposing a general LAN HTTP client.
 
+The `606` boundary occurred on 2026-08-09. Direction was to record the positive
+physical result as unknown on the current hardware, retain the safe failure and
+harness, and perform no control-transport expansion in this tactical.
+
 ## Execution Record
 
-Not started. The read-only gateway inspection recorded above is the only
-evidence gathered so far. No mutating gateway action has been taken.
+Implemented in commits `6e4bb80`, `51c3644`, and `845f388`, with documentation,
+Android-contract, verifier-preflight, and typed-live-failure follow-ups through
+`28175de`. The full Rust, generated web, TypeScript, web-test, Android ABI,
+UniFFI/Kotlin, APK, and JVM baselines pass as recorded above.
+
+The conclusive live gate observed a definitive `AddPinhole` response after its
+negative control. The gateway returned `606`; it did not return a pinhole ID,
+no lease was represented as active or uncertain, and joined shutdown
+completed. No positive transfer, packet-count, deletion, or post-deletion claim
+was made. The accepted evidence-limited closure is the final outcome of this
+tactical.
