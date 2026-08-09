@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_engine::PathPublicationStage;
@@ -24,7 +25,10 @@ async fn main() {
 
 async fn run() -> Result<(), DiagnosticError> {
     let config = parse_arguments(env::args_os().skip(1))?;
-    let mut service = ApplicationService::open(config).await?;
+    let service = Arc::new(tokio::sync::Mutex::new(
+        ApplicationService::open(config).await?,
+    ));
+    ApplicationService::ensure_maintenance_owner(&service).await;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut output = BufWriter::new(tokio::io::stdout());
     while let Some(line) = lines
@@ -33,11 +37,12 @@ async fn run() -> Result<(), DiagnosticError> {
         .map_err(DiagnosticError::ReadInput)?
     {
         if line.len() > 64 * 1024 {
+            let revision = service.lock().await.revision().unwrap_or(0);
             write_response(
                 &mut output,
                 &ResponseEnvelope::error(
                     String::new(),
-                    service.revision().unwrap_or(0),
+                    revision,
                     ErrorCode::InvalidRequest,
                     "diagnostic request exceeds 65536 bytes",
                 ),
@@ -48,11 +53,12 @@ async fn run() -> Result<(), DiagnosticError> {
         let request = match serde_json::from_str::<RequestEnvelope>(&line) {
             Ok(request) => request,
             Err(error) => {
+                let revision = service.lock().await.revision().unwrap_or(0);
                 write_response(
                     &mut output,
                     &ResponseEnvelope::error(
                         String::new(),
-                        service.revision().unwrap_or(0),
+                        revision,
                         ErrorCode::InvalidRequest,
                         error.to_string(),
                     ),
@@ -63,18 +69,22 @@ async fn run() -> Result<(), DiagnosticError> {
         };
         let shutdown = matches!(request.command, Command::Shutdown);
         let request_id = request.request_id.clone();
-        let response = match service.dispatch(request).await {
+        let mut service_guard = service.lock().await;
+        let response = match service_guard.dispatch(request).await {
             Ok(response) => response,
-            Err(error) => {
-                application_error_response(request_id, service.revision().unwrap_or(0), &error)
-            }
+            Err(error) => application_error_response(
+                request_id,
+                service_guard.revision().unwrap_or(0),
+                &error,
+            ),
         };
+        drop(service_guard);
         write_response(&mut output, &response).await?;
         if shutdown {
             break;
         }
     }
-    service.shutdown().await?;
+    service.lock().await.shutdown().await?;
     Ok(())
 }
 

@@ -104,7 +104,7 @@ impl AndroidClientError {
 
 #[derive(Debug, uniffi::Object)]
 pub struct AndroidApplicationClient {
-    service: AsyncMutex<Option<ApplicationService>>,
+    service: Arc<AsyncMutex<Option<ApplicationService>>>,
     platform_storage: Arc<PlatformStorageBroker>,
 }
 
@@ -126,8 +126,10 @@ impl AndroidApplicationClient {
         let service = ApplicationService::open(application_config)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
+        let service = Arc::new(AsyncMutex::new(Some(service)));
+        ApplicationService::ensure_optional_maintenance_owner(&service).await;
         Ok(Arc::new(Self {
-            service: AsyncMutex::new(Some(service)),
+            service,
             platform_storage,
         }))
     }

@@ -1600,7 +1600,20 @@ async fn run_active_tracker_manager(
                     )));
                     let operation_control = control.clone();
                     let mut token_cache = token_caches.remove(&id).unwrap_or_default();
+                    let session_permit = tokio::select! {
+                        biased;
+                        _ = cancellation.cancelled() => {
+                            shutdown_tracker_operations(&mut operations).await;
+                            return;
+                        }
+                        _ = control.cancelled() => {
+                            shutdown_tracker_operations(&mut operations).await;
+                            return;
+                        }
+                        permit = control.acquire_tracker_operation() => permit,
+                    };
                     operations.spawn(async move {
+                        let _session_permit = session_permit;
                         let result = announce_udp_tracker(
                             &url,
                             network.policy,
@@ -2718,6 +2731,9 @@ impl TorrentPeerCoordinator {
                 .enforce_address_families(address_families)
                 .map_err(map_torrent_peer_error)?;
             while sockets.pending_len() + workers.len() < MAX_METADATA_PEERS {
+                if !self.control.try_acquire_outbound_turn() {
+                    break;
+                }
                 let context = PeerSelectionContext {
                     now: self.elapsed(),
                 };
@@ -2738,6 +2754,9 @@ impl TorrentPeerCoordinator {
                     self.control.mse_handshake_sink(),
                 ) {
                     self.dial_cancelled(attempt)?;
+                    if matches!(error, PeerSetError::ConnectionLimit(_)) {
+                        break;
+                    }
                     return Err(download_peer_set_error(error));
                 }
             }
@@ -4088,7 +4107,7 @@ impl<'a> ContentSwarmDownload<'a> {
             control,
         } = context;
         let maximum_planned_bytes = config.max_active_piece_bytes;
-        let state = SwarmState::new_with_wanted(
+        let mut state = SwarmState::new_with_wanted(
             config,
             layout.piece_count(),
             wanted_pieces,
@@ -4096,6 +4115,7 @@ impl<'a> ContentSwarmDownload<'a> {
             picker_seed,
         )
         .map_err(DownloadError::Swarm)?;
+        state.set_session_resources(control.session_resources());
         let checkpoints = resume.map(|resume| resume.checkpoints.clone());
         Ok(Self {
             state,
@@ -4751,6 +4771,9 @@ fn fill_content_dials(
         state.config(),
         state.replacement_candidate(peers.elapsed()).is_some(),
     ) {
+        if !peers.control.try_acquire_outbound_turn() {
+            break;
+        }
         let context = PeerSelectionContext {
             now: peers.elapsed(),
         };
@@ -4777,6 +4800,9 @@ fn fill_content_dials(
                 .finish_dial(pending_dial_id(attempt))
                 .map_err(DownloadError::Swarm)?;
             peers.dial_cancelled(attempt)?;
+            if matches!(error, PeerSetError::ConnectionLimit(_)) {
+                break;
+            }
             return Err(download_peer_set_error(error));
         }
         started += 1;
@@ -5702,7 +5728,7 @@ async fn full_recheck_managed_storage(
             control.storage_command_started(StorageCommandKind::Hash, started_at, started_at);
             let job_control = control.clone();
             running.spawn(async move {
-                job_control.wait_before_storage_hash().await;
+                let _session_permit = job_control.wait_before_storage_hash().await;
                 (
                     piece_index,
                     piece_length,

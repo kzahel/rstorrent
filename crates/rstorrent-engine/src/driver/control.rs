@@ -27,6 +27,7 @@ use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
 use crate::piece_picker::PieceActivationPolicy;
 use crate::selective_storage::PlatformStorageSpec;
+use crate::session_resources::{SessionExecutionPermit, SessionTorrentResources};
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
 use crate::torrent_peer::TorrentPeerActivitySink;
@@ -409,6 +410,7 @@ struct DownloadControlInner {
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
+    session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
     checking_paused: watch::Sender<bool>,
     selection_applied_revision: AtomicU64,
@@ -762,6 +764,7 @@ impl DownloadControl {
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
+                session_resources: Mutex::new(None),
                 selection_updates,
                 checking_paused,
                 selection_applied_revision: AtomicU64::new(0),
@@ -810,6 +813,22 @@ impl DownloadControl {
             .platform_storage
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(storage);
+    }
+
+    pub fn set_session_resources(&self, resources: SessionTorrentResources) {
+        *self
+            .inner
+            .session_resources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(resources);
+    }
+
+    pub(super) fn session_resources(&self) -> Option<SessionTorrentResources> {
+        self.inner
+            .session_resources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub(super) fn storage_file_pool(&self) -> Option<StorageFilePool> {
@@ -2426,6 +2445,13 @@ impl DownloadControl {
     }
 
     pub(super) fn try_buffer_payload(&self, bytes: usize, limit: usize) -> bool {
+        let mut session_reservation = match self.session_resources() {
+            Some(resources) => match resources.try_reserve_payload_bytes(bytes) {
+                Some(reservation) => Some(reservation),
+                None => return false,
+            },
+            None => None,
+        };
         let mut current = self.inner.buffered_payload_bytes.load(Ordering::Acquire);
         loop {
             let Some(next) = current.checked_add(bytes) else {
@@ -2441,6 +2467,9 @@ impl DownloadControl {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
+                    if let Some(reservation) = session_reservation.take() {
+                        reservation.commit();
+                    }
                     self.inner
                         .payload_high_water
                         .fetch_max(next, Ordering::AcqRel);
@@ -2467,6 +2496,9 @@ impl DownloadControl {
             .buffered_payload_bytes
             .fetch_sub(bytes, Ordering::AcqRel);
         debug_assert!(previous >= bytes);
+        if let Some(resources) = self.session_resources() {
+            resources.release_payload_bytes(bytes);
+        }
         self.update_disk_pressure(previous.saturating_sub(bytes));
         self.emit_storage_state();
     }
@@ -2664,9 +2696,12 @@ impl DownloadControl {
     }
 
     pub(super) fn clear_buffered_payload(&self) {
-        self.inner
-            .buffered_payload_bytes
-            .store(0, Ordering::Release);
+        let buffered = self.inner.buffered_payload_bytes.swap(0, Ordering::AcqRel);
+        if let Some(resources) = self.session_resources()
+            && buffered != 0
+        {
+            resources.release_payload_bytes(buffered);
+        }
         self.update_disk_pressure(0);
         self.emit_storage_state_force();
     }
@@ -2677,7 +2712,11 @@ impl DownloadControl {
             .store(0, Ordering::Release);
     }
 
-    pub(super) async fn wait_before_storage(&self) {
+    pub(super) async fn wait_before_storage(&self) -> Option<SessionExecutionPermit> {
+        let permit = match self.session_resources() {
+            Some(resources) => Some(resources.acquire_storage_write().await),
+            None => None,
+        };
         let millis = self
             .inner
             .storage_write_delay_millis
@@ -2685,15 +2724,33 @@ impl DownloadControl {
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
         }
+        permit
     }
 
-    pub(super) async fn wait_before_storage_hash(&self) {
+    pub(super) async fn wait_before_storage_hash(&self) -> Option<SessionExecutionPermit> {
+        let permit = match self.session_resources() {
+            Some(resources) => Some(resources.acquire_storage_hash().await),
+            None => None,
+        };
         self.inner
             .storage_hashes_started
             .fetch_add(1, Ordering::AcqRel);
         let millis = self.inner.storage_hash_delay_millis.load(Ordering::Acquire);
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
+        }
+        permit
+    }
+
+    pub(super) fn try_acquire_outbound_turn(&self) -> bool {
+        self.session_resources()
+            .is_none_or(|resources| resources.try_acquire_outbound_turn())
+    }
+
+    pub(super) async fn acquire_tracker_operation(&self) -> Option<SessionExecutionPermit> {
+        match self.session_resources() {
+            Some(resources) => Some(resources.acquire_tracker_operation().await),
+            None => None,
         }
     }
 

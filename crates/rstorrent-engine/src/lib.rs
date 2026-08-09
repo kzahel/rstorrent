@@ -24,6 +24,7 @@ pub mod port_mapping;
 mod positional_io;
 mod seed_content;
 mod selective_storage;
+mod session_resources;
 mod session_socket;
 mod session_udp;
 mod storage_file_pool;
@@ -107,6 +108,9 @@ pub use selective_storage::{
     selective_part_path, selective_staging_path, torrent_storage_paths,
     torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
     validate_publication_name, verify_prepared_descriptors, verify_prepared_platform_files,
+};
+pub use session_resources::{
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionTorrentResources,
 };
 pub use session_socket::{
     MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,

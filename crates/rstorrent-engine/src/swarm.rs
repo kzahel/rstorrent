@@ -9,6 +9,7 @@ use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, Peer
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
+use crate::session_resources::SessionTorrentResources;
 
 pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
 pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
@@ -897,6 +898,7 @@ impl PieceStorageJoin {
 #[derive(Debug)]
 pub struct SwarmState {
     config: SwarmConfig,
+    session_resources: Option<SessionTorrentResources>,
     piece_count: usize,
     picker: AvailabilityPicker,
     pieces: BTreeMap<u32, PieceState>,
@@ -974,6 +976,7 @@ impl SwarmState {
         .map_err(SwarmError::Invariant)?;
         let mut state = Self {
             config,
+            session_resources: None,
             piece_count,
             picker,
             pieces: BTreeMap::new(),
@@ -1012,6 +1015,10 @@ impl SwarmState {
         };
         state.append_piece_plans(plans)?;
         Ok(state)
+    }
+
+    pub(crate) fn set_session_resources(&mut self, resources: Option<SessionTorrentResources>) {
+        self.session_resources = resources;
     }
 
     pub fn append_piece_plans(&mut self, plans: Vec<PiecePlan>) -> Result<(), SwarmError> {
@@ -1158,6 +1165,7 @@ impl SwarmState {
         self.cancelled_request_attempts = self
             .cancelled_request_attempts
             .saturating_add(cancellations.len());
+        self.release_current_session_resources();
         self.picker = picker;
         self.pieces.clear();
         self.blocks.clear();
@@ -1599,10 +1607,17 @@ impl SwarmState {
                 if !self.request_budget_allows(block)? {
                     continue;
                 }
-                let assignment = self.assign(connection, block, now, false)?;
+                let assignment = match self.assign(connection, block, now, false) {
+                    Ok(assignment) => assignment,
+                    Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
+                    Err(error) => return Err(error),
+                };
                 assignments.push(assignment);
                 self.last_scheduled_connection = Some(connection);
                 progress = true;
+                if self.session_resources.is_some() {
+                    return Ok(assignments);
+                }
             }
             if progress {
                 continue;
@@ -1610,9 +1625,16 @@ impl SwarmState {
             let Some((connection, block)) = self.next_inactive_assignment(&ordered)? else {
                 break;
             };
-            let assignment = self.assign(connection, block, now, false)?;
+            let assignment = match self.assign(connection, block, now, false) {
+                Ok(assignment) => assignment,
+                Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
+                Err(error) => return Err(error),
+            };
             assignments.push(assignment);
             self.last_scheduled_connection = Some(connection);
+            if self.session_resources.is_some() {
+                return Ok(assignments);
+            }
         }
         if self.missing_blocks == 0 {
             for connection in self.ordered_connection_ids() {
@@ -1631,8 +1653,16 @@ impl SwarmState {
                 {
                     continue;
                 }
-                assignments.push(self.assign(connection, block, now, true)?);
+                let assignment = match self.assign(connection, block, now, true) {
+                    Ok(assignment) => assignment,
+                    Err(SwarmError::SessionResourceUnavailable) => break,
+                    Err(error) => return Err(error),
+                };
+                assignments.push(assignment);
                 self.last_scheduled_connection = Some(connection);
+                if self.session_resources.is_some() {
+                    break;
+                }
             }
         }
         Ok(assignments)
@@ -2254,6 +2284,7 @@ impl SwarmState {
             self.note_piece_block_became_missing(block)?;
             self.release_unverified_contribution(source)?;
         }
+        self.release_active_piece_session_resources();
         self.active_pieces.clear();
         self.requestable_active_pieces.clear();
         self.requestable_active_block_keys.clear();
@@ -2261,6 +2292,25 @@ impl SwarmState {
         self.active_piece_bytes = 0;
         self.pending_dials.clear();
         Ok(())
+    }
+
+    fn release_current_session_resources(&self) {
+        let Some(resources) = &self.session_resources else {
+            return;
+        };
+        if self.outstanding_request_bytes != 0 {
+            resources.release_request_bytes(self.outstanding_request_bytes);
+        }
+        self.release_active_piece_session_resources();
+    }
+
+    fn release_active_piece_session_resources(&self) {
+        let Some(resources) = &self.session_resources else {
+            return;
+        };
+        for piece in &self.active_pieces {
+            resources.release_active_piece(self.piece_working_set_bytes(*piece));
+        }
     }
 
     pub fn replacement_candidate(&self, now: Duration) -> Option<ConnectionId> {
@@ -2662,7 +2712,11 @@ impl SwarmState {
         Ok(self
             .outstanding_request_bytes
             .checked_add(length)
-            .is_some_and(|reserved| reserved <= self.config.max_outstanding_request_bytes))
+            .is_some_and(|reserved| reserved <= self.config.max_outstanding_request_bytes)
+            && self
+                .session_resources
+                .as_ref()
+                .is_none_or(|resources| resources.can_reserve_request_bytes(length)))
     }
 
     fn next_endgame_block_for_connection(
@@ -2725,6 +2779,9 @@ impl SwarmState {
         self.active_piece_bytes
             .checked_add(self.piece_working_set_bytes(piece))
             .is_some_and(|bytes| bytes <= self.config.max_active_piece_bytes)
+            && self.session_resources.as_ref().is_none_or(|resources| {
+                resources.can_reserve_active_piece(self.piece_working_set_bytes(piece))
+            })
     }
 
     fn assign(
@@ -2741,7 +2798,7 @@ impl SwarmState {
             .ok_or(SwarmError::IdentifierOverflow("request attempt"))?;
         let state = self
             .blocks
-            .get_mut(&block)
+            .get(&block)
             .ok_or(SwarmError::UnknownBlock(block))?;
         let valid_phase = if endgame {
             matches!(state.phase, BlockPhase::Requested)
@@ -2762,6 +2819,41 @@ impl SwarmState {
                 "block is not missing"
             }));
         }
+        let length = usize::try_from(block.length)
+            .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
+        let mut request_reservation = match &self.session_resources {
+            Some(resources) => Some(
+                resources
+                    .try_reserve_request_bytes(length)
+                    .ok_or(SwarmError::SessionResourceUnavailable)?,
+            ),
+            None => None,
+        };
+        let mut piece_reservation = if !endgame
+            && usize::try_from(block.piece)
+                .ok()
+                .is_some_and(|piece| !self.active_pieces.contains(&piece))
+        {
+            match &self.session_resources {
+                Some(resources) => Some(
+                    resources
+                        .try_reserve_active_piece(
+                            self.piece_working_set_bytes(
+                                usize::try_from(block.piece)
+                                    .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?,
+                            ),
+                        )
+                        .ok_or(SwarmError::SessionResourceUnavailable)?,
+                ),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let state = self
+            .blocks
+            .get_mut(&block)
+            .ok_or(SwarmError::UnknownBlock(block))?;
         trim_terminal_attempts(
             state,
             self.config
@@ -2788,6 +2880,9 @@ impl SwarmState {
                 .ok_or(SwarmError::ArithmeticOverflow("requested block count"))?;
             self.note_piece_block_assigned(block)?;
             self.activate_piece(block.piece)?;
+            if let Some(reservation) = piece_reservation.take() {
+                reservation.commit();
+            }
         }
         let attempt = RequestAttempt {
             id: attempt_id,
@@ -2806,8 +2901,6 @@ impl SwarmState {
             connection_state.active_request_count.checked_add(1).ok_or(
                 SwarmError::ArithmeticOverflow("connection active request count"),
             )?;
-        let length = usize::try_from(block.length)
-            .map_err(|_| SwarmError::ArithmeticOverflow("block length"))?;
         self.outstanding_request_bytes = self
             .outstanding_request_bytes
             .checked_add(length)
@@ -2815,6 +2908,9 @@ impl SwarmState {
         self.outstanding_request_high_water = self
             .outstanding_request_high_water
             .max(self.outstanding_request_bytes);
+        if let Some(reservation) = request_reservation.take() {
+            reservation.commit();
+        }
         if endgame {
             self.endgame_assignments = self.endgame_assignments.saturating_add(1);
         }
@@ -2913,6 +3009,9 @@ impl SwarmState {
             .outstanding_request_bytes
             .checked_sub(length)
             .ok_or(SwarmError::Invariant("request reservation underflow"))?;
+        if let Some(resources) = &self.session_resources {
+            resources.release_request_bytes(length);
+        }
         Ok(())
     }
 
@@ -2985,10 +3084,14 @@ impl SwarmState {
             return Ok(());
         }
         self.remove_requestable_piece(index)?;
+        let bytes = self.piece_working_set_bytes(index);
         self.active_piece_bytes = self
             .active_piece_bytes
-            .checked_sub(self.piece_working_set_bytes(index))
+            .checked_sub(bytes)
             .ok_or(SwarmError::Invariant("active piece byte count underflow"))?;
+        if let Some(resources) = &self.session_resources {
+            resources.release_active_piece(bytes);
+        }
         Ok(())
     }
 
@@ -3231,6 +3334,15 @@ fn trim_terminal_attempts(
     Ok(())
 }
 
+impl Drop for SwarmState {
+    fn drop(&mut self) {
+        self.release_current_session_resources();
+        self.outstanding_request_bytes = 0;
+        self.active_pieces.clear();
+        self.active_piece_bytes = 0;
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SwarmError {
     InvalidConfig(&'static str),
@@ -3259,6 +3371,7 @@ pub enum SwarmError {
     DuplicateConnection(ConnectionId),
     UnknownConnection(ConnectionId),
     ConnectionCapacity,
+    SessionResourceUnavailable,
     InvalidAvailability {
         actual: usize,
         expected: usize,
@@ -3312,6 +3425,9 @@ impl fmt::Display for SwarmError {
             Self::UnknownConnection(id) => write!(formatter, "unknown connection {}", id.get()),
             Self::ConnectionCapacity => {
                 formatter.write_str("established connection capacity is full")
+            }
+            Self::SessionResourceUnavailable => {
+                formatter.write_str("session download resource is temporarily unavailable")
             }
             Self::InvalidAvailability { actual, expected } => write!(
                 formatter,
@@ -3783,6 +3899,59 @@ mod tests {
         let refilled = state.snapshot(Duration::from_millis(1));
         assert_eq!(refilled.active_piece_count, 2);
         assert_eq!(refilled.active_piece_bytes, 2 * BLOCK as usize);
+    }
+
+    #[test]
+    fn separate_swarms_share_request_and_active_piece_ceilings() {
+        let resources = crate::SessionDownloadResources::new(
+            crate::DownloadResourceLimits {
+                max_outstanding_request_bytes: BLOCK as usize,
+                max_buffered_payload_bytes: BLOCK as usize,
+                max_active_piece_bytes: BLOCK as usize,
+                max_active_pieces: 1,
+            },
+            1,
+            1,
+        );
+        let mut first = state(1, vec![plan(0, 1)], 1);
+        let mut second = state(1, vec![plan(0, 1)], 1);
+        first.set_session_resources(Some(resources.register("first", 1)));
+        second.set_session_resources(Some(resources.register("second", 1)));
+        add_peer(&mut first, connection(1), &[0], false);
+        add_peer(&mut second, connection(2), &[0], false);
+
+        assert_eq!(
+            first
+                .schedule(Duration::ZERO)
+                .expect("first schedule")
+                .len(),
+            1
+        );
+        assert!(
+            second
+                .schedule(Duration::ZERO)
+                .expect("bounded second")
+                .is_empty()
+        );
+        let full = resources.snapshot();
+        assert_eq!(full.outstanding_request_bytes, BLOCK as usize);
+        assert_eq!(full.active_piece_bytes, BLOCK as usize);
+        assert_eq!(full.active_pieces, 1);
+
+        first.cancel_all().expect("release first swarm");
+        assert_eq!(
+            second
+                .schedule(Duration::ZERO)
+                .expect("second schedule")
+                .len(),
+            1
+        );
+        drop(first);
+        drop(second);
+        let released = resources.snapshot();
+        assert_eq!(released.outstanding_request_bytes, 0);
+        assert_eq!(released.active_piece_bytes, 0);
+        assert_eq!(released.active_pieces, 0);
     }
 
     #[test]

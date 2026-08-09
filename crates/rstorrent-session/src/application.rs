@@ -18,19 +18,21 @@ use rstorrent_engine::{
     IncomingPeerServiceSnapshot, MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
     NetworkConfig, PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, SessionSocketError,
-    SessionUdpError, StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig,
-    TrackerEndpoint, TrackerSource, TrackerTransport,
-    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
-    verify_prepared_descriptors, verify_prepared_platform_files,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
+    StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
+    TrackerSource, TrackerTransport, download_magnet_metadata_with_external_discovery,
+    plan_descriptor_storage, resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_descriptors, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::auto_manager::{AdmissionAction, TorrentAdmissionState, TorrentAutoManager};
 use crate::control::{
@@ -126,11 +128,6 @@ use crate::{
     OpenViewSetRequest, OpenViewSetResponse, UpdateViewSetRequest, ViewSet, ViewSetError,
     ViewSetOwner,
 };
-
-// Raised when session-wide memory, storage, and outbound admission own the
-// former per-download limits. Keeping this explicit makes the queue/schema
-// slice safe at every intermediate commit.
-const RESOURCE_AUTHORITY_ACTIVE_DOWNLOAD_CAP: u16 = 1;
 
 #[derive(Clone, Debug)]
 pub struct ApplicationConfig {
@@ -296,6 +293,7 @@ pub struct ApplicationService {
     storage_roots: Arc<BTreeMap<String, StorageRootLocation>>,
     network: NetworkConfig,
     download_resource_limits: DownloadResourceLimits,
+    session_download_resources: SessionDownloadResources,
     active_download_cap: Option<u16>,
     storage_write_delay_for_testing: Duration,
     storage_hash_delay_for_testing: Duration,
@@ -316,6 +314,10 @@ pub struct ApplicationService {
     eta_runtime: Option<TorrentEtaRuntime>,
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
+    admission_wake: Arc<Notify>,
+    maintenance_cancellation: CancellationToken,
+    maintenance_started: bool,
+    maintenance_task: Option<JoinHandle<()>>,
 }
 
 impl ApplicationService {
@@ -441,6 +443,11 @@ impl ApplicationService {
         let speed_history = speed.start(views.clone());
         let view_set_reaper =
             ViewSetLeaseReaper::start(views.clone(), config.view_set_reaper_interval);
+        let session_download_resources = SessionDownloadResources::new(
+            config.download_resource_limits,
+            config.storage_write_concurrency_for_testing,
+            config.storage_hash_concurrency_for_testing,
+        );
         let advertised_endpoint = session_network.advertised_endpoint();
         let mut torrent_runtimes = BTreeMap::new();
         let mut next_torrent_generation = 1_u64;
@@ -463,6 +470,7 @@ impl ApplicationService {
             storage_roots: Arc::new(storage_roots),
             network,
             download_resource_limits: config.download_resource_limits,
+            session_download_resources,
             active_download_cap: config.active_download_cap,
             storage_write_delay_for_testing: config.storage_write_delay_for_testing,
             storage_hash_delay_for_testing: config.storage_hash_delay_for_testing,
@@ -483,6 +491,10 @@ impl ApplicationService {
             eta_runtime: Some(eta_runtime),
             views,
             view_set_reaper: Some(view_set_reaper),
+            admission_wake: Arc::new(Notify::new()),
+            maintenance_cancellation: CancellationToken::new(),
+            maintenance_started: false,
+            maintenance_task: None,
         };
         service.views.record_diagnostic(
             DiagnosticSeverity::Info,
@@ -1117,6 +1129,120 @@ impl ApplicationService {
             .and_then(SessionNetworkRuntime::incoming_peer_snapshot)
     }
 
+    pub fn session_download_resource_snapshot(&self) -> SessionDownloadResourceSnapshot {
+        self.session_download_resources.snapshot()
+    }
+
+    pub async fn ensure_maintenance_owner(service: &Arc<tokio::sync::Mutex<Self>>) {
+        let (wake, cancellation) = {
+            let mut service = service.lock().await;
+            if service.maintenance_started {
+                return;
+            }
+            service.maintenance_started = true;
+            (
+                service.admission_wake.clone(),
+                service.maintenance_cancellation.clone(),
+            )
+        };
+        let weak_service = Arc::downgrade(service);
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    _ = wake.notified() => {}
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+                }
+                let Some(service) = weak_service.upgrade() else {
+                    break;
+                };
+                let mut service = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    service = service.lock() => service,
+                };
+                if service.session_network.is_none() {
+                    break;
+                }
+                if let Err(error) = service.reconcile_admission().await {
+                    let detail = error.to_string();
+                    let _ = service.views.record_diagnostic(
+                        DiagnosticSeverity::Error,
+                        category::LIFECYCLE_SESSION,
+                        "download_admission_reconcile_failed",
+                        None,
+                        "Automatic download admission could not converge",
+                        &[("detail", &detail)],
+                    );
+                }
+            }
+        });
+        service.lock().await.maintenance_task = Some(task);
+    }
+
+    #[doc(hidden)]
+    pub async fn ensure_optional_maintenance_owner(
+        service: &Arc<tokio::sync::Mutex<Option<Self>>>,
+    ) {
+        let (wake, cancellation) = {
+            let mut service = service.lock().await;
+            let Some(service) = service.as_mut() else {
+                return;
+            };
+            if service.maintenance_started {
+                return;
+            }
+            service.maintenance_started = true;
+            (
+                service.admission_wake.clone(),
+                service.maintenance_cancellation.clone(),
+            )
+        };
+        let weak_service = Arc::downgrade(service);
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    _ = wake.notified() => {}
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+                }
+                let Some(service) = weak_service.upgrade() else {
+                    break;
+                };
+                let mut service = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => break,
+                    service = service.lock() => service,
+                };
+                let Some(service) = service.as_mut() else {
+                    break;
+                };
+                if service.session_network.is_none() {
+                    break;
+                }
+                if let Err(error) = service.reconcile_admission().await {
+                    let detail = error.to_string();
+                    let _ = service.views.record_diagnostic(
+                        DiagnosticSeverity::Error,
+                        category::LIFECYCLE_SESSION,
+                        "download_admission_reconcile_failed",
+                        None,
+                        "Automatic download admission could not converge",
+                        &[("detail", &detail)],
+                    );
+                }
+            }
+        });
+        let mut service = service.lock().await;
+        if let Some(service) = service.as_mut() {
+            service.maintenance_task = Some(task);
+        } else {
+            task.abort();
+        }
+    }
+
     /// Issues one opt-in interoperability diagnostic against the active or
     /// most recently deleted IPv6 pinhole without exposing its volatile ID.
     #[doc(hidden)]
@@ -1739,6 +1865,13 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        self.maintenance_cancellation.cancel();
+        self.admission_wake.notify_waiters();
+        if let Some(task) = self.maintenance_task.take()
+            && let Err(error) = task.await
+        {
+            active_join_error = Some(format!("download admission owner: {error}"));
+        }
         if let Some(session_network) = self.session_network.as_mut() {
             session_network.begin_shutdown();
         }
@@ -2012,8 +2145,7 @@ impl ApplicationService {
         let effective_limit = snapshot
             .client_settings
             .active_downloads
-            .min(self.active_download_cap.unwrap_or(u16::MAX))
-            .min(RESOURCE_AUTHORITY_ACTIVE_DOWNLOAD_CAP);
+            .min(self.active_download_cap.unwrap_or(u16::MAX));
         let mut states = Vec::with_capacity(snapshot.torrents.len());
         let mut checking = Vec::new();
         let mut checking_to_resume = Vec::new();
@@ -2399,6 +2531,15 @@ impl ApplicationService {
     ) -> Result<(DownloadControl, u64), ApplicationError> {
         let eta_generation = self.views.reserve_eta_generation(torrent_id)?;
         let control = DownloadControl::new();
+        let runtime_generation = self
+            .torrent_runtimes
+            .get(torrent_id)
+            .ok_or_else(|| ApplicationError::Configuration("torrent runtime is absent".into()))?
+            .generation();
+        control.set_session_resources(
+            self.session_download_resources
+                .register(torrent_id, runtime_generation),
+        );
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
@@ -2460,6 +2601,7 @@ impl ApplicationService {
             .expect("torrent runtime exists before its operation starts")
             .handle();
         let discovery_handle = self.session_network().discovery_handle();
+        let admission_wake = self.admission_wake.clone();
         let views = self.views.clone();
         let torrent_id = torrent_id.to_owned();
         Ok(tokio::spawn(async move {
@@ -2483,12 +2625,14 @@ impl ApplicationService {
                 &torrent_id,
             )
             .await;
-            match (result, reconcile, advertise) {
+            let result = match (result, reconcile, advertise) {
                 (Ok(()), Ok(()), Ok(())) => Ok(()),
                 (Err(error), _, _) | (Ok(()), Err(error), _) | (Ok(()), Ok(()), Err(error)) => {
                     Err(error)
                 }
-            }
+            };
+            admission_wake.notify_one();
+            result
         }))
     }
 
@@ -2893,6 +3037,10 @@ fn tracker_metadata_state(
 
 impl Drop for ApplicationService {
     fn drop(&mut self) {
+        self.maintenance_cancellation.cancel();
+        if let Some(task) = self.maintenance_task.take() {
+            task.abort();
+        }
         for runtime in self.torrent_runtimes.values() {
             if let Some(active) = runtime.active_download() {
                 active.control.cancel();
@@ -4648,6 +4796,7 @@ mod tests {
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
@@ -5060,6 +5209,27 @@ mod tests {
     }
 
     async fn spawn_metadata_peer(raw_info: Vec<u8>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let (release, released) = tokio::sync::oneshot::channel();
+        release.send(()).expect("release ordinary metadata peer");
+        spawn_metadata_peer_after_release(raw_info, released).await
+    }
+
+    async fn spawn_gated_metadata_peer(
+        raw_info: Vec<u8>,
+    ) -> (
+        SocketAddr,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (release, released) = tokio::sync::oneshot::channel();
+        let (address, task) = spawn_metadata_peer_after_release(raw_info, released).await;
+        (address, release, task)
+    }
+
+    async fn spawn_metadata_peer_after_release(
+        raw_info: Vec<u8>,
+        released: tokio::sync::oneshot::Receiver<()>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -5112,6 +5282,7 @@ mod tests {
                 parse_metadata_message(&request).expect("parse metadata request"),
                 MetadataMessage::Request { piece: 0 }
             );
+            released.await.expect("release metadata response");
             stream
                 .write_all(
                     &encode_message(&PeerMessage::Extended {
@@ -5131,6 +5302,253 @@ mod tests {
             }
         });
         (address, task)
+    }
+
+    #[tokio::test]
+    async fn startup_and_live_limit_changes_admit_only_durable_queue_heads() {
+        let root = test_root("automatic-admission-limits");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                active_downloads: 1,
+                ..ClientSettings::default()
+            },
+        );
+        let mut listeners = Vec::new();
+        for _ in 0..4 {
+            listeners.push(
+                TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .expect("bind held metadata peer"),
+            );
+        }
+        let ids = (1_u8..=4)
+            .map(|value| format!("{value:02x}").repeat(20))
+            .collect::<Vec<_>>();
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        for (index, listener) in listeners.iter().enumerate() {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("add-admission-{index}"),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet: format!(
+                            "magnet:?xt=urn:btih:{}&x.pe={}",
+                            ids[index],
+                            listener.local_addr().expect("listener address")
+                        ),
+                        storage_root: "downloads".to_owned(),
+                        start_content: false,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("persist queued magnet");
+        }
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open queued application");
+        let (first_stream, _) = tokio::time::timeout(Duration::from_secs(2), listeners[0].accept())
+            .await
+            .expect("first queue head dials")
+            .expect("accept first queue head");
+        assert_eq!(service.active_download_ids(), vec![ids[0].clone()]);
+        assert_eq!(
+            service
+                .session_download_resource_snapshot()
+                .registered_generations,
+            1
+        );
+        for listener in &listeners[1..] {
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                    .await
+                    .is_err(),
+                "queued torrents must not dial"
+            );
+        }
+
+        let increased = ClientSettings {
+            active_downloads: 3,
+            ..ClientSettings::default()
+        };
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "increase-active-downloads".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: increased.clone(),
+                },
+            })
+            .await
+            .expect("increase active limit");
+        let (second_stream, _) =
+            tokio::time::timeout(Duration::from_secs(2), listeners[1].accept())
+                .await
+                .expect("second queue entry dials")
+                .expect("accept second queue entry");
+        let (third_stream, _) = tokio::time::timeout(Duration::from_secs(2), listeners[2].accept())
+            .await
+            .expect("third queue entry dials")
+            .expect("accept third queue entry");
+        assert_eq!(service.active_download_ids(), ids[..3]);
+        assert_eq!(
+            service
+                .session_download_resource_snapshot()
+                .registered_generations,
+            3
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listeners[3].accept())
+                .await
+                .is_err()
+        );
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "decrease-active-downloads".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: ClientSettings {
+                        active_downloads: 1,
+                        ..increased
+                    },
+                },
+            })
+            .await
+            .expect("decrease active limit");
+        assert_eq!(service.active_download_ids(), vec![ids[0].clone()]);
+        let snapshot = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("snapshot");
+        assert!(
+            snapshot
+                .torrents
+                .iter()
+                .all(|torrent| torrent.download_queue_position.is_some())
+        );
+        assert_eq!(
+            service
+                .session_download_resource_snapshot()
+                .registered_generations,
+            1
+        );
+
+        drop((first_stream, second_stream, third_stream));
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn terminal_wake_promotes_the_next_download_without_a_command() {
+        let root = test_root("automatic-admission-terminal-wake");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                active_downloads: 1,
+                ..ClientSettings::default()
+            },
+        );
+        let first_info = single_file_info("first.bin", b"first", 5);
+        let second_info = single_file_info("second.bin", b"second", 6);
+        let first_id = super::encode_info_hash(Sha1::digest(&first_info).into());
+        let second_id = super::encode_info_hash(Sha1::digest(&second_info).into());
+        let (first_peer, release_first, first_task) = spawn_gated_metadata_peer(first_info).await;
+        let (second_peer, second_task) = spawn_metadata_peer(second_info).await;
+        let service = Arc::new(tokio::sync::Mutex::new(
+            ApplicationService::open(configuration)
+                .await
+                .expect("open application"),
+        ));
+        ApplicationService::ensure_maintenance_owner(&service).await;
+        for (request_id, torrent_id, peer) in [
+            ("add-first-metadata", &first_id, first_peer),
+            ("add-second-metadata", &second_id, second_peer),
+        ] {
+            service
+                .lock()
+                .await
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
+                        storage_root: "downloads".to_owned(),
+                        start_content: false,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .await
+                .expect("add metadata acquisition");
+        }
+        assert_eq!(
+            service.lock().await.active_download_ids(),
+            vec![first_id.clone()]
+        );
+        release_first
+            .send(())
+            .expect("release first metadata response");
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let complete = {
+                    let service = service.lock().await;
+                    service
+                        .store_mut()
+                        .expect("store")
+                        .load_resume(&second_id)
+                        .expect("second resume")
+                        .raw_info
+                        .is_some()
+                };
+                if complete {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("terminal wake did not promote the second torrent");
+        first_task.await.expect("first metadata peer");
+        second_task.await.expect("second metadata peer");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if service.lock().await.active_download_ids().is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("terminal owner did not reap the final metadata task");
+        assert_eq!(
+            service
+                .lock()
+                .await
+                .session_download_resource_snapshot()
+                .registered_generations,
+            0
+        );
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     async fn serve_single_piece_peer(

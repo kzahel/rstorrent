@@ -807,7 +807,7 @@ async fn run_content_storage_task(
                     active_writes += 1;
                     let job_control = control.clone();
                     running.spawn(async move {
-                        job_control.wait_before_storage().await;
+                        let _session_permit = job_control.wait_before_storage().await;
                         ContentStorageJobResult::Write {
                             started_at,
                             blocks: block_keys,
@@ -850,7 +850,7 @@ async fn run_content_storage_task(
                     active_hashes += 1;
                     let job_control = control.clone();
                     running.spawn(async move {
-                        job_control.wait_before_storage_hash().await;
+                        let _session_permit = job_control.wait_before_storage_hash().await;
                         ContentStorageJobResult::Hash {
                             started_at,
                             result: execute_content_hash_job(job).await,
@@ -1094,7 +1094,7 @@ pub(super) async fn execute_content_storage_writes(
     commands: Vec<QueuedContentStorageCommand>,
     control: &DownloadControl,
 ) -> Vec<ContentStorageCompletion> {
-    control.wait_before_storage().await;
+    let _session_permit = control.wait_before_storage().await;
     match prepare_content_storage_writes(storage, commands).await {
         Ok(job) => execute_content_write_job(job).await,
         Err(completions) => completions,
@@ -1324,7 +1324,7 @@ pub(super) async fn execute_content_storage_verification(
         Ok(job) => job,
         Err(completion) => return completion,
     };
-    control.wait_before_storage_hash().await;
+    let _session_permit = control.wait_before_storage_hash().await;
     let result = execute_content_hash_job(job).await;
     finish_content_hash_job(storage, result, control)
 }

@@ -456,8 +456,10 @@ pub fn run() {
                 desktop_application_config(&app_data),
             ))
             .map_err(|error| error.to_string())?;
+            let service = Arc::new(Mutex::new(service));
+            tauri::async_runtime::block_on(ApplicationService::ensure_maintenance_owner(&service));
             let state = DesktopState {
-                service: Arc::new(Mutex::new(service)),
+                service,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 view_resources: Arc::new(DesktopViewResources::new()),
                 torrent_uploads: Arc::new(Semaphore::new(1)),

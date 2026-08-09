@@ -433,6 +433,7 @@ async fn bind_with_picker_and_assets(
     hosted_assets: Option<HostedAssets>,
 ) -> Result<GatewayServer, GatewayError> {
     config.validate()?;
+    ApplicationService::ensure_maintenance_owner(&service).await;
     let listener = TcpListener::bind(config.bind)
         .await
         .map_err(GatewayError::Bind)?;
