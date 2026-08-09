@@ -183,6 +183,7 @@ pub(crate) struct SessionNetworkRuntime {
     reconciliation_task: Option<JoinHandle<SessionNetworkOwner>>,
     convergence: Arc<Mutex<SettingsConvergenceModel>>,
     initial_mapping_generation: SettingsDomainGeneration,
+    initial_transport_application: ClientSettingsApplicationState,
     initial_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
     initial_tracker_https_application: ClientSettingsApplicationState,
     views: Option<ViewHub>,
@@ -321,12 +322,12 @@ impl SessionNetworkRuntime {
             incoming_inactivity_timeout,
             peer_budget_max_open_files_for_testing,
         } = config;
-        let address_families = if settings.ipv6_enabled {
+        let requested_address_families = if settings.ipv6_enabled {
             AddressFamilyPolicy::dual_stack()
         } else {
             AddressFamilyPolicy::ipv4_only()
         };
-        network = network.with_address_families(address_families);
+        network = network.with_address_families(requested_address_families);
         let mut peer_budget_config = settings.peer_budget_config();
         if let Some(maximum) = peer_budget_max_open_files_for_testing {
             peer_budget_config.max_open_files = maximum;
@@ -365,10 +366,17 @@ impl SessionNetworkRuntime {
             settings.preferred_listen_port,
             dht.bind_address,
         )
-        .with_address_families(address_families);
+        .with_address_families(requested_address_families);
         let mut listener_failure = None;
         let socket_set = SessionSocketSet::bind(socket_config).await?;
         let (ipv4, ipv6) = socket_set.into_families();
+        let ipv6_unavailable = ipv6.error().map(ToString::to_string);
+        let address_families = if requested_address_families.ipv6_enabled() && ipv6.is_bound() {
+            AddressFamilyPolicy::dual_stack()
+        } else {
+            AddressFamilyPolicy::ipv4_only()
+        };
+        network = network.with_address_families(address_families);
         let ipv4 = match ipv4 {
             SessionSocketFamilyState::Bound(sockets) => sockets,
             SessionSocketFamilyState::Unavailable(error)
@@ -532,8 +540,17 @@ impl SessionNetworkRuntime {
         } else {
             None
         };
+        let mut effective_settings = settings.clone();
+        effective_settings.ipv6_enabled = address_families.ipv6_enabled();
+        let initial_transport_application =
+            ipv6_unavailable.map_or(ClientSettingsApplicationState::Applied, |detail| {
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::TransportBindFailed,
+                    detail,
+                }
+            });
         let pending_owner = SessionNetworkOwner {
-            effective_settings: settings.clone(),
+            effective_settings,
             effective_listener,
             listener_status: listener_status.clone(),
             session_udp_status: session_udp_status.clone(),
@@ -562,8 +579,11 @@ impl SessionNetworkRuntime {
         let initial_attempt = convergence
             .begin(settings.clone())
             .expect("initial client-settings generation is available");
+        assert!(convergence.apply(
+            initial_attempt.domain(SettingsDomain::Transport),
+            initial_transport_application.clone(),
+        ));
         for domain in [
-            SettingsDomain::Transport,
             SettingsDomain::PortMapping,
             SettingsDomain::PeerConnections,
             SettingsDomain::UploadSlots,
@@ -600,6 +620,7 @@ impl SessionNetworkRuntime {
             reconciliation_task: None,
             convergence: Arc::new(Mutex::new(convergence)),
             initial_mapping_generation,
+            initial_transport_application,
             initial_tracker_https_authentication,
             initial_tracker_https_application,
             views: None,
@@ -628,9 +649,15 @@ impl SessionNetworkRuntime {
             *address = observed.ip().to_string();
             *port = observed.port();
         }
+        let active = self
+            .pending_owner
+            .as_ref()
+            .expect("session network owner exists before reconciliation")
+            .effective_settings
+            .clone();
         let mut view = ClientSettingsRuntimeView::from_started(
             self.settings.clone(),
-            self.settings.clone(),
+            active,
             self.effective_peer_connection_limit,
             self.listener_status.clone(),
             session_udp_status,
@@ -648,6 +675,8 @@ impl SessionNetworkRuntime {
             &self.session_udp_handle,
             advertised,
         );
+        view.transport_application = self.initial_transport_application.clone();
+        view.ipv6_application = self.initial_transport_application.clone();
         view.effective_tracker_https_server_authentication =
             self.initial_tracker_https_authentication;
         view.tracker_https_authentication_application =
@@ -945,7 +974,10 @@ async fn run_session_network(
 }
 
 impl SessionNetworkOwner {
-    fn transport_family_views(&self) -> Vec<TransportFamilyRuntimeView> {
+    fn transport_family_views(
+        &self,
+        configured_policy: AddressFamilyPolicy,
+    ) -> Vec<TransportFamilyRuntimeView> {
         let advertised = *self.advertised_endpoint.subscribe_wire().borrow();
         let udp = self
             .session_udp
@@ -953,7 +985,7 @@ impl SessionNetworkOwner {
             .expect("session UDP exists while projecting transport")
             .handle();
         transport_family_runtime_views(
-            self.address_families,
+            configured_policy,
             &self.listener_status,
             self.incoming_ipv6_acceptor.as_ref().and_then(|acceptor| {
                 acceptor
@@ -1140,6 +1172,10 @@ impl SessionNetworkOwner {
         } else {
             AddressFamilyPolicy::ipv4_only()
         };
+        let transport_families = self.transport_family_views(desired_address_families);
+        let _ = views.update_client_settings_runtime_for(generation, |runtime| {
+            runtime.transport_families = transport_families;
+        });
         let transport_rebind_required = transport_rebind_required(
             self.effective_listener.as_ref(),
             &desired,
@@ -1496,7 +1532,7 @@ impl SessionNetworkOwner {
             state,
             views,
         );
-        let transport_families = self.transport_family_views();
+        let transport_families = self.transport_family_views(desired_address_families);
         let _ = views.update_client_settings_runtime_for(generation, |runtime| {
             runtime.transport_families = transport_families;
         });
@@ -1683,7 +1719,7 @@ impl SessionNetworkOwner {
             state,
             views,
         );
-        let transport_families = self.transport_family_views();
+        let transport_families = self.transport_family_views(desired_address_families);
         let _ = views.update_client_settings_runtime_for(generation, |runtime| {
             runtime.transport_families = transport_families;
         });

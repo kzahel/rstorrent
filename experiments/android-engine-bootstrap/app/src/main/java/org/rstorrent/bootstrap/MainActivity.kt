@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductStartContent = true
     private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingProductMseEvidence = false
+    private var pendingProductIpv6Policy: String? = null
     private var pendingCrashAfterSafRename = false
     private val productConnection =
         object : ServiceConnection {
@@ -66,6 +67,11 @@ class MainActivity : ComponentActivity() {
                 if (pendingProductMseEvidence) {
                     pendingProductMseEvidence = false
                     service.logMseDhEvidenceForTest()
+                }
+                pendingProductIpv6Policy?.let {
+                    pendingProductIpv6Policy = null
+                    android.util.Log.i("RSTorrentProduct", "ipv6_settings_bound mode=$it")
+                    service.exerciseIpv6PolicyForTest(it)
                 }
             }
 
@@ -206,6 +212,19 @@ class MainActivity : ComponentActivity() {
                     service.logMseDhEvidenceForTest()
                 }
             }
+            command
+                .getStringExtra(EXTRA_PRODUCT_IPV6_POLICY)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_IPV6_POLICY)
+                    android.util.Log.i("RSTorrentProduct", "ipv6_settings_intent mode=$it")
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductIpv6Policy = it
+                    } else {
+                        service.exerciseIpv6PolicyForTest(it)
+                    }
+                }
         }
         command.getStringExtra(EXTRA_PRODUCT_MAGNET)?.takeIf(String::isNotBlank)?.let {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
@@ -374,6 +393,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
         const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"
         const val EXTRA_PRODUCT_MSE_EVIDENCE = "product_mse_evidence"
+        const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"

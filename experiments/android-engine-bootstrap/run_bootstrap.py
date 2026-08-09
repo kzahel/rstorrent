@@ -44,6 +44,7 @@ PROFILE_CHOICES = (
     "product-https-tracker",
     "product-https-platform-trust",
     "product-mse",
+    "product-ipv6-policy",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -1326,6 +1327,114 @@ def product_logs(target: Any) -> str:
     ).stdout
 
 
+def launch_product_ipv6_policy(target: Any, mode: str) -> None:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-S",
+            "-W",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_ipv6_policy",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or "Error:" in result.stderr or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(
+            f"could not exercise Android IPv6 policy mode {mode}: "
+            f"code={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+
+
+def wait_product_ipv6_policy(target: Any, mode: str) -> dict[str, str]:
+    marker = f"ipv6_settings mode={mode} "
+    deadline = time.monotonic() + 20
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            fields = dict(re.findall(r"([a-z_]+)=([^ ]+)", rows[-1]))
+            if fields.get("application") == "APPLYING":
+                time.sleep(0.2)
+                continue
+            return fields
+        time.sleep(0.2)
+    raise BootstrapFailure(f"timed out waiting for Android IPv6 policy {mode}\n{logs}")
+
+
+def run_product_ipv6_policy_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    ordinal: int,
+) -> dict[str, Any]:
+    target.run(["logcat", "-c"], timeout=15, check=False)
+    target.shell(
+        ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
+        check=False,
+    )
+    launch_product_ipv6_policy(target, "disable_sequence")
+    initial = wait_product_ipv6_policy(target, "initial")
+    if initial.get("configured") != "true":
+        raise BootstrapFailure("fresh Android profile did not default IPv6 to enabled")
+
+    disabled = wait_product_ipv6_policy(target, "disabled")
+    if not (
+        disabled.get("configured") == "false"
+        and disabled.get("effective") == "false"
+        and disabled.get("application") == "APPLIED"
+        and disabled.get("tcp") == "none"
+        and disabled.get("udp") == "none"
+    ):
+        raise BootstrapFailure(f"Android IPv6 disable did not converge: {disabled}")
+
+    target.shell(["am", "force-stop", PACKAGE], check=False)
+    time.sleep(1)
+    launch_product_ipv6_policy(target, "enable_sequence")
+    restarted = wait_product_ipv6_policy(target, "restarted")
+    if not (
+        restarted.get("configured") == "false"
+        and restarted.get("effective") == "false"
+        and restarted.get("application") == "APPLIED"
+    ):
+        raise BootstrapFailure(f"Android IPv6 setting did not survive restart: {restarted}")
+
+    enabled = wait_product_ipv6_policy(target, "reenabled")
+    if enabled.get("configured") != "true" or enabled.get("application") not in (
+        "APPLIED",
+        "DEGRADED",
+    ):
+        raise BootstrapFailure(f"Android IPv6 re-enable did not terminate: {enabled}")
+    if enabled.get("effective") == "false" and not (
+        enabled.get("application") == "DEGRADED"
+        and enabled.get("tcp") == "none"
+        and enabled.get("udp") == "none"
+    ):
+        raise BootstrapFailure(
+            f"Android absent IPv6 address did not degrade to IPv4-only: {enabled}"
+        )
+
+    target.shell(["am", "force-stop", PACKAGE], check=False)
+    return {
+        "target": target_kind,
+        "profile": "product-ipv6-policy",
+        "run": ordinal,
+        "identity": identity,
+        "fresh_default_enabled": True,
+        "disabled_applied": True,
+        "disabled_survived_restart": True,
+        "reenabled_effective": enabled.get("effective") == "true",
+        "reenabled_application": enabled.get("application"),
+    }
+
+
 def start_product_tracker_evidence(target: Any, torrent_id: str) -> None:
     result = target.shell(
         [
@@ -2249,6 +2358,13 @@ def main() -> int:
                         identity,
                         probe,
                         interop,
+                        ordinal,
+                    )
+                elif profile == "product-ipv6-policy":
+                    result = run_product_ipv6_policy_profile(
+                        target,
+                        arguments.target,
+                        identity,
                         ordinal,
                     )
                 else:

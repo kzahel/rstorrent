@@ -3289,7 +3289,7 @@ fn migrate_dual_stack_state_to_v16(connection: &mut Connection) -> Result<(), St
     let transaction = connection.transaction()?;
     migrate_client_settings_to_v16(&transaction)?;
     transaction.execute_batch(
-        "CREATE TABLE dht_identities (
+        "CREATE TABLE IF NOT EXISTS dht_identities (
             family INTEGER NOT NULL CHECK (family IN (4, 6)),
             identity_order INTEGER NOT NULL CHECK (
                 identity_order >= 0 AND identity_order < 8

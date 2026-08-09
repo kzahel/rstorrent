@@ -57,6 +57,7 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
                 encryption = EncryptionPolicy.REQUIRED,
+                ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
             )
 
@@ -316,6 +317,7 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
                 encryption = EncryptionPolicy.ALLOW,
+                ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             ),
     ): ClientSettingsRuntimeView =
@@ -330,6 +332,7 @@ class ProductStateReducerTest {
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
             effectiveEncryption = configured.encryption,
+            effectiveIpv6Enabled = configured.ipv6Enabled,
             effectiveTrackerHttpsServerAuthentication =
                 configured.trackerHttpsServerAuthentication,
             transportApplication =
@@ -342,11 +345,13 @@ class ProductStateReducerTest {
             peerConnectionsApplication = ClientSettingsApplicationState.Applied,
             uploadSlotsApplication = ClientSettingsApplicationState.Applied,
             encryptionApplication = ClientSettingsApplicationState.Applied,
+            ipv6Application = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,
             portMappingStatus = PortMappingStatus.Disabled,
             advertisedPeerEndpoint = AdvertisedPeerEndpointStatus.Unavailable,
+            transportFamilies = emptyList(),
         )
 
     private fun update(

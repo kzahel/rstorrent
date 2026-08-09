@@ -43,6 +43,7 @@ import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
+import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.DeliveryPolicy
 import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticFilter
@@ -228,6 +229,7 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             encryption = EncryptionPolicy.ALLOW,
+                            ipv6Enabled = true,
                             trackerHttpsServerAuthentication = policy,
                         ),
                     ),
@@ -274,6 +276,7 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             encryption = policy,
+                            ipv6Enabled = true,
                             trackerHttpsServerAuthentication =
                                 HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
                         ),
@@ -306,6 +309,117 @@ class ProductEngineService : Service() {
             } catch (error: Throwable) {
                 reportError(error)
             }
+        }
+    }
+
+    fun exerciseIpv6PolicyForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "IPv6 policy evidence is debug-only"
+        }
+        Log.i(TAG, "ipv6_settings_begin mode=$mode")
+        scope.launch {
+            try {
+                clientReady.await()
+                val current = awaitIpv6Policy(null)
+                if (mode == "disable_sequence") {
+                    logIpv6Evidence("initial", current)
+                    dispatchAwait(
+                        Command.SetClientSettings(
+                            current.configured.copy(ipv6Enabled = false),
+                        ),
+                    )
+                    logIpv6Evidence("disabled", awaitIpv6Policy(false))
+                    return@launch
+                }
+                if (mode == "enable_sequence") {
+                    logIpv6Evidence("restarted", current)
+                    dispatchAwait(
+                        Command.SetClientSettings(
+                            current.configured.copy(ipv6Enabled = true),
+                        ),
+                    )
+                    logIpv6Evidence("reenabled", awaitIpv6Policy(true))
+                    return@launch
+                }
+                val desired =
+                    when (mode) {
+                        "observe" -> null
+                        "disable" -> false
+                        "enable" -> true
+                        else -> error("unknown IPv6 policy evidence mode")
+                    }
+                val observed =
+                    if (desired == null) {
+                        current
+                    } else {
+                        dispatchAwait(
+                            Command.SetClientSettings(
+                                current.configured.copy(ipv6Enabled = desired),
+                            ),
+                        )
+                        awaitIpv6Policy(desired)
+                    }
+                logIpv6Evidence(mode, observed)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private fun logIpv6Evidence(mode: String, observed: ClientSettingsRuntimeView) {
+        val application =
+            when (observed.ipv6Application) {
+                is ClientSettingsApplicationState.Applied -> "APPLIED"
+                is ClientSettingsApplicationState.Applying -> "APPLYING"
+                is ClientSettingsApplicationState.Degraded -> "DEGRADED"
+            }
+        val ipv6 = observed.transportFamilies.firstOrNull { it.family.name == "IPV6" }
+        Log.i(
+            TAG,
+            "ipv6_settings mode=$mode configured=${observed.configured.ipv6Enabled} " +
+                "effective=${observed.effectiveIpv6Enabled} application=$application " +
+                "tcp=${ipv6?.tcpEndpoint ?: "none"} udp=${ipv6?.udpEndpoint ?: "none"}",
+        )
+    }
+
+    private suspend fun awaitIpv6Policy(configured: Boolean?): ClientSettingsRuntimeView {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.TorrentList,
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            return withTimeout(10_000) {
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("settings view closed")
+                    val settings =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    if (
+                        settings != null &&
+                        (configured == null || settings.configured.ipv6Enabled == configured) &&
+                        settings.ipv6Application !is ClientSettingsApplicationState.Applying
+                    ) {
+                        return@withTimeout settings
+                    }
+                }
+                error("unreachable")
+            }
+        } finally {
+            subscription.close()
         }
     }
 
