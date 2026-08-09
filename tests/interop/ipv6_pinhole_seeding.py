@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -114,6 +115,27 @@ def verifier_config(
     }
 
 
+def terminal_pinhole_summary(status: object) -> str:
+    if not isinstance(status, dict):
+        return "malformed"
+    kind = status.get("type")
+    if not isinstance(kind, str) or not re.fullmatch(r"[a-z_]{1,32}", kind):
+        return "malformed"
+    parts = [kind]
+    stage = status.get("stage")
+    if isinstance(stage, str) and re.fullmatch(r"[a-z_]{1,32}", stage):
+        parts.append(f"stage={stage}")
+    detail = status.get("detail")
+    if isinstance(detail, str):
+        fault = re.search(r"(?:fault|error)(?: code)?[^0-9]{0,16}([67][0-9]{2})\b", detail, re.I)
+        if fault is not None:
+            parts.append(f"fault={fault.group(1)}")
+    remaining = status.get("remaining_lease_seconds")
+    if isinstance(remaining, int) and not isinstance(remaining, bool):
+        parts.append(f"uncertain_seconds={min(max(remaining, 0), 86_400)}")
+    return " ".join(parts)
+
+
 def run(repository: Path) -> dict[str, object]:
     target = os.environ.get("RSTORRENT_OFF_LAN_SSH_TARGET")
     if not target:
@@ -141,6 +163,11 @@ def run(repository: Path) -> dict[str, object]:
 
         pinholed = command_seed(seed, "enable-pinhole")
         status = pinholed.get("ipv6_pinhole")
+        if pinholed.get("event") == "pinhole_terminal":
+            raise GateFailure(
+                "coordinator reached terminal pinhole state: "
+                + terminal_pinhole_summary(status)
+            )
         if (
             pinholed.get("event") != "pinholed"
             or pinholed.get("ipv6_listener") != endpoint

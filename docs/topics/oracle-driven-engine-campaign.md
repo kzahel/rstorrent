@@ -10,8 +10,9 @@ metadata, Android cross-build, and API 34 AVD policy/restart gates passed on
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) is
 the single authoritative **Now**. Its protocol client, coordinated runtime,
 product projection, Android contract, and physical harness are implemented;
-graduation awaits the opt-in off-LAN gateway mutation and incoming-transfer
-proof. The completed
+the live negative control passes, but the observed gateway returns typed `606`
+to `AddPinhole`. Graduation is blocked at Tactical `113`'s explicit direction
+boundary. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -323,8 +324,8 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` is implemented
 through its deterministic, scripted-gateway, product-contract, web, Android
-cross-build, and physical-harness gates but awaits its opt-in live gateway
-evidence**.
+cross-build, and physical-harness gates; its live negative control passes, but
+the observed gateway rejects `AddPinhole` with typed SOAP fault `606`**.
 
 Latest graduated tactical:
 [`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).
@@ -345,14 +346,14 @@ through its final physical evidence and graduation step. Commits `6e4bb80`,
 slots under the existing coordinator, bounded service/lease/uncertainty
 behavior, generated product state, and an identity-free physical harness.
 
-Next executable action: restore SSH reachability to the already-authorized
-off-LAN verifier, supply it through `RSTORRENT_OFF_LAN_SSH_TARGET`, and rerun
-`tests/interop/ipv6_pinhole_seeding.py`. The first configured attempt stopped at
-the negative control without enabling a pinhole. After the harness gained an
-identity-free verifier preflight, a configured rerun stopped there before
-fixture creation, listener startup, or gateway mutation. On success, record its
-exact bounded evidence, reconcile the owning topics, and graduate Tactical
-`113` before advancing the single **Now**.
+Next executable action: obtain direction at Tactical `113`'s recorded
+escalation boundary. The reachable verifier passes the negative control, the
+gateway advertises the service and permissive firewall status, and the safely
+correlated IPv4 control path returns `606` to `AddPinhole`. Do not weaken the
+same-responder URL policy, try an unrelated control endpoint, or claim the
+mechanism physically usable. If a separately bounded IPv6-control-transport
+investigation is authorized, amend the tactical before implementation;
+otherwise close or defer the physical claim and select the next **Now**.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

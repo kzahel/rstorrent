@@ -154,11 +154,16 @@ async fn run() -> Result<(), SeedHarnessError> {
         }
         if command.trim() == "enable-pinhole" && arguments.staged_ipv6_pinhole {
             apply_port_mapping(&mut service, &arguments, PortMappingPolicy::Upnp).await?;
-            let (status, endpoint) = wait_for_ipv6_pinhole(&service, PinholeWait::Pinholed).await?;
+            let (status, endpoint) = wait_for_ipv6_pinhole(&service, PinholeWait::Settled).await?;
+            let event = if matches!(status, Ipv6PinholeStatus::Pinholed { .. }) {
+                "pinholed"
+            } else {
+                "pinhole_terminal"
+            };
             write_observation(
                 &mut stdout,
                 serde_json::json!({
-                    "event": "pinholed",
+                    "event": event,
                     "ipv6_listener": endpoint.to_string(),
                     "ipv6_pinhole": status,
                 }),
@@ -527,7 +532,7 @@ impl Arguments {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PinholeWait {
     Disabled,
-    Pinholed,
+    Settled,
 }
 
 async fn apply_port_mapping(
@@ -623,21 +628,21 @@ async fn wait_for_ipv6_pinhole(
                         internal_port,
                         ..
                     },
-                    PinholeWait::Pinholed,
+                    PinholeWait::Settled,
                 ) => {
                     internal_address == &endpoint.ip().to_string()
                         && *internal_port == endpoint.port()
                 }
-                (Ipv6PinholeStatus::Failed { stage, detail }, PinholeWait::Pinholed) => {
-                    return Err(SeedHarnessError::Catalog(format!(
-                        "IPv6 pinhole failed during {stage:?}: {detail}"
-                    )));
-                }
-                (Ipv6PinholeStatus::CleanupFailed { detail, .. }, _) => {
-                    return Err(SeedHarnessError::Catalog(format!(
-                        "IPv6 pinhole cleanup remains uncertain: {detail}"
-                    )));
-                }
+                (
+                    Ipv6PinholeStatus::ServiceUnavailable
+                    | Ipv6PinholeStatus::ActionUnavailable { .. }
+                    | Ipv6PinholeStatus::InboundPinholeDisallowed
+                    | Ipv6PinholeStatus::Unfiltered { .. }
+                    | Ipv6PinholeStatus::Failed { .. }
+                    | Ipv6PinholeStatus::RenewalFailed { .. }
+                    | Ipv6PinholeStatus::CleanupFailed { .. },
+                    PinholeWait::Settled,
+                ) => true,
                 _ => false,
             };
             if ready {

@@ -84,7 +84,11 @@ accepted `Pinholed` are distinct advertisement evidence; none is an observed
 incoming connection. Deterministic and scripted-gateway lifecycle,
 independence, uncertainty, and zero-owner tests pass. The identity-free
 physical harness is committed, but its opt-in off-LAN transfer and gateway
-cleanup proof remains to run before Tactical `113` graduates.
+cleanup proof does not pass: the live negative control succeeds, then the
+observed gateway returns typed SOAP fault `606` to `AddPinhole` on the safely
+correlated control path. No pinhole was created. Tactical `113` remains at its
+explicit direction boundary without weakening URL correlation or claiming
+incoming IPv6 reachability.
 
 ## Purpose And Scope
 

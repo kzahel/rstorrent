@@ -1041,8 +1041,9 @@ validators, and React fixtures cover simultaneous success/failure and the
 distinction between a gateway-accepted pinhole and an observed incoming peer.
 The doc-hidden physical diagnostic reports only a packet count or bounded
 fault for the currently in-memory active/deleted pinhole; production does not
-call it, and it exposes neither pinhole ID nor gateway identity. Physical
-off-LAN evidence remains pending.
+call it, and it exposes neither pinhole ID nor gateway identity. The live
+gateway reaches the generated `Failed { stage: Add }` state with typed SOAP
+fault `606`; no positive off-LAN evidence or packet diagnostic follows.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

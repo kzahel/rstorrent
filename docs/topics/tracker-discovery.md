@@ -375,11 +375,12 @@ scrape, custom roots/pins, client certificates, and a public-tracker
 reliability claim remain absent. IPv6 tracker connectivity, outbound peers,
 and a listener-backed family endpoint are usable. An IPv6 firewall-pinhole
 mechanism now exists and is covered by scripted-gateway evidence, but its
-physical gate has not yet run and there is still no observed off-LAN incoming-
-reachability claim. One tracker row still selects one operation family rather
-than simultaneously announcing each publishable local address. Full BEP 7
-multi-address announcing is therefore absent. The headless public-torrent
-comparator remains useful changing-network evidence but cannot replace
+physical gate reaches only the successful negative control: the observed
+gateway returns typed `606` to `AddPinhole`, and there is still no observed off-
+LAN incoming-reachability claim. One tracker row still selects one operation
+family rather than simultaneously announcing each publishable local address.
+Full BEP 7 multi-address announcing is therefore absent. The headless public-
+torrent comparator remains useful changing-network evidence but cannot replace
 controlled protocol and libtorrent tests.
 
 Metadata-only tracker activation now follows the owned metadata task rather

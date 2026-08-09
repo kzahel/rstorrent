@@ -1294,14 +1294,14 @@ production path performs no packet polling; the two diagnostics exist only in
 the retained test process and expose no gateway-assigned ID.
 
 The harness and deterministic/scripted resource assertions are implemented.
-Its structured no-opt-in skip passes. A first configured attempt on 2026-08-09
-found the selected verifier unreachable over SSH during the negative control
-and never enabled a pinhole. The harness then gained an identity-free SSH/
-Python/IPv6-socket preflight; a configured rerun stopped there before fixture
-creation, listener startup, or gateway mutation. No timing, throughput,
-resource high-water, or incoming-reachability result is recorded until the
-verifier is reachable and the authorized gateway mutation plus off-LAN
-transfer complete.
+Its structured no-opt-in skip and identity-free SSH/Python/IPv6-socket
+preflight pass. On 2026-08-09, the reachable off-LAN verifier proved the
+pre-pinhole dial fails. The gateway then advertised the expected service and
+permissive firewall state but returned typed SOAP fault `606` at the
+`AddPinhole` stage. Joined shutdown completed and no pinhole was created. No
+positive timing, throughput, resource high-water, packet-count, cleanup-`704`,
+or incoming-reachability result is recorded. The tactical stops at its explicit
+authorization/control-transport direction boundary.
 
 ## Maintenance Contract
 

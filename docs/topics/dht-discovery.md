@@ -30,8 +30,9 @@ Active Tactical
 refines the existing listener-backed IPv6 advertisement input with
 `GlobalUnicast`, `Unfiltered`, or `Pinholed` evidence. The DHT actor retains no
 gateway or lease authority and announces the same actual listener port under
-each eligible scope. Scripted coverage passes; no off-LAN incoming IPv6 claim
-is made before the physical gate runs.
+each eligible scope. Scripted coverage and the live negative control pass, but
+the observed gateway returns typed `606` to `AddPinhole`; no off-LAN incoming
+IPv6 claim is made.
 
 ## Why DHT Was Front-Loaded
 

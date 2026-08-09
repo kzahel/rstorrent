@@ -540,10 +540,12 @@ that scope and its cleanup or compatibility rules explicitly.
   distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
   incoming evidence, and stages an off-LAN IPv6 peer hash-verifying proof.
   Protocol, coordinator/product, and physical-harness commits pass their
-  deterministic, scripted, generated-contract, and web gates; live gateway
-  mutation and incoming-transfer evidence remain before graduation. The pinned
-  oracle implements no pinhole support, so every deterministic test is
-  independently authored.
+  deterministic, scripted, generated-contract, web, and Android gates. The live
+  negative control passes, but the observed gateway returns typed `606` to
+  `AddPinhole`; the tactical is blocked at its explicit control-transport/
+  authorization direction boundary and remains ungraduated. The pinned oracle
+  implements no pinhole support, so every deterministic test is independently
+  authored.
 - [`114-session-wide-concurrent-torrent-admission.md`](114-session-wide-concurrent-torrent-admission.md):
   planned **Next** after the dual-stack/reachability sequence; replaces the
   single-active-torrent slot with bounded session-wide download/checking

@@ -4,11 +4,13 @@ Status: Authoritative **Now**, planned on 2026-08-08, source-reconciled on
 2026-08-09, and implementation-complete through Gates 1 and 2 plus the Gate 3
 physical harness on 2026-08-09. Deterministic, scripted-gateway, generated-
 contract, web, and Android cross-build evidence pass. The opt-in off-LAN
-gateway mutation and transfer proof remains to run, so this tactical is not yet
-graduated and no physical IPv6 incoming-reachability claim is made. The split
-from Tactical `112` and the decision to write this slice against read-only
-gateway evidence, deferring any mutating gateway action to implementation time,
-were accepted in product discussion on 2026-08-08.
+gateway gate passed its negative control but `AddPinhole` returned typed SOAP
+fault `606` on 2026-08-09. This is the accepted escalation boundary below, so
+the tactical is blocked on direction, is not graduated, and makes no physical
+IPv6 incoming-reachability claim. The split from Tactical `112` and the
+decision to write this slice against read-only gateway evidence, deferring any
+mutating gateway action to implementation time, were accepted in product
+discussion on 2026-08-08.
 
 Topics: `incoming-reachability-and-seeding`, `protocol-support`,
 `dht-discovery`, `tracker-discovery`, `performance-and-live-evidence`,
@@ -580,15 +582,25 @@ typecheck, and web tests pass at this checkpoint. Both Android native ABIs,
 regenerated UniFFI/Kotlin, `assembleDebug`, and `testDebugUnitTest` also pass;
 the Android reducer fixture supplies the new complete-view field explicitly.
 The physical gate's no-opt-in path exits with the expected structured skip. An
-initial configured attempt on 2026-08-09 found the operator-selected verifier
-unreachable over SSH during the negative control and therefore never enabled a
-pinhole. The harness now requires an identity-free SSH/Python/IPv6-socket
-preflight before fixture creation, build, listener startup, or gateway
-mutation; a configured rerun stopped at that preflight. Bounded SSH options
-prevent a missing verifier from consuming the transfer timeout, and raw SSH
-diagnostics cannot disclose its address. That preflight failure does not
-satisfy the stopping condition. Physical evidence resumes when the verifier is
-reachable.
+initial configured attempt found the operator-selected verifier unreachable
+over SSH during the negative control and therefore never enabled a pinhole.
+The harness now requires an identity-free SSH/Python/IPv6-socket preflight
+before fixture creation, build, listener startup, or gateway mutation; bounded
+SSH options prevent a missing verifier from consuming the transfer timeout,
+and raw SSH diagnostics cannot disclose its address. It also keeps the seed
+alive after a typed terminal pinhole state, emits only status kind, failure
+stage, numeric SOAP fault, and bounded uncertainty, and performs joined
+cleanup.
+
+With verifier reachability restored, the 2026-08-09 rerun passed the
+pre-pinhole off-LAN failed-dial control, rediscovered the expected service, and
+read its permissive firewall status. `AddPinhole` then returned typed SOAP
+fault `606` at the `add` stage. The harness shut down cleanly; no pinhole was
+created, no positive transfer or packet-count evidence exists, and no address,
+gateway identity, control URL, ID, or verifier target is retained. Per the
+accepted escalation rule, further work requires direction on whether to study
+a safely correlated IPv6 control transport or stop this mechanism on the
+observed gateway. The existing IPv4 same-responder URL policy remains intact.
 
 ## Validation Matrix
 
