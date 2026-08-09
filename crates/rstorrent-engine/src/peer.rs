@@ -165,6 +165,14 @@ pub enum PeerFailure {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MseEndpointState {
+    #[default]
+    Unknown,
+    MseCapable,
+    PlainPreferred,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PeerIntegrity {
     pub trust_points: i8,
     pub hash_failures: u8,
@@ -188,6 +196,7 @@ pub struct PeerHistory {
     pub last_disconnected_at: Option<Duration>,
     pub retry_at: Option<Duration>,
     pub last_failure: Option<PeerFailure>,
+    pub mse_endpoint: MseEndpointState,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -346,6 +355,7 @@ pub struct DialAttempt {
     connection_id: ConnectionId,
     record_id: PeerRecordId,
     endpoint: PeerEndpoint,
+    mse_endpoint: MseEndpointState,
 }
 
 impl DialAttempt {
@@ -363,6 +373,10 @@ impl DialAttempt {
 
     pub fn endpoint(self) -> PeerEndpoint {
         self.endpoint
+    }
+
+    pub fn mse_endpoint(self) -> MseEndpointState {
+        self.mse_endpoint
     }
 }
 
@@ -703,7 +717,18 @@ impl PeerRegistry {
             connection_id,
             record_id: candidate.record_id,
             endpoint: candidate.endpoint,
+            mse_endpoint: record.history.mse_endpoint,
         })
+    }
+
+    pub fn update_mse_endpoint(
+        &mut self,
+        attempt: DialAttempt,
+        state: MseEndpointState,
+    ) -> Result<(), PeerRegistryError> {
+        let record = self.record_for_attempt_mut(attempt, false)?;
+        record.history.mse_endpoint = state;
+        Ok(())
     }
 
     pub(crate) fn incoming_connected(

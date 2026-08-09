@@ -8,15 +8,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rstorrent_protocol::mse::{MseCipherPair, MseHandshakeError, Rc4};
 use rstorrent_protocol::peer_wire::{
     FrameDecoder, FrameError, HandshakeError, PeerMessage, encode_message,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tokio::time::{Instant, timeout, timeout_at};
+use tokio::time::{Instant, timeout_at};
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
+use crate::mse::MseDhWorkError;
 use crate::network::NetworkPolicy;
+use crate::peer::MseEndpointState;
 
 pub(crate) const NETWORK_READ_LENGTH: usize = 16 * 1024;
 
@@ -26,6 +29,8 @@ pub(crate) struct PeerIo {
     pub(crate) decoder: FrameDecoder,
     pub(crate) queued_messages: VecDeque<PeerMessage>,
     queued_frames: VecDeque<QueuedFrame>,
+    receive_cipher: Option<Rc4>,
+    send_cipher: Option<Rc4>,
     pub(crate) io_timeout: Duration,
     pub(crate) byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 }
@@ -49,9 +54,17 @@ impl PeerIo {
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
             queued_frames: VecDeque::new(),
+            receive_cipher: None,
+            send_cipher: None,
             io_timeout,
             byte_metric_sink,
         }
+    }
+
+    pub(crate) fn attach_ciphers(&mut self, ciphers: MseCipherPair) {
+        let (send, receive) = ciphers.into_parts();
+        self.send_cipher = Some(send);
+        self.receive_cipher = Some(receive);
     }
 
     pub(crate) fn prepend_messages(&mut self, mut messages: VecDeque<PeerMessage>) {
@@ -133,21 +146,16 @@ impl PeerIo {
             if read == 0 {
                 return Err(PeerIoError::Closed);
             }
-            record_bytes(
-                self.byte_metric_sink.as_ref(),
-                ByteMetric::PeerWireReceived,
-                read,
-            );
-            self.queued_messages.extend(
-                self.decoder
-                    .push(&network_buffer[..read])
-                    .map_err(PeerIoError::Frame)?,
-            );
+            let messages = self.decode_received(&mut network_buffer[..read])?;
+            self.queued_messages.extend(messages);
         }
     }
 
     pub(crate) fn queue_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
-        let bytes = encode_message(message).map_err(PeerIoError::Frame)?;
+        let mut bytes = encode_message(message).map_err(PeerIoError::Frame)?;
+        if let Some(cipher) = self.send_cipher.as_mut() {
+            cipher.apply(&mut bytes);
+        }
         let (payload_length, payload_metric) = message_payload_metric(message);
         self.queued_frames.push_back(QueuedFrame {
             bytes,
@@ -205,24 +213,45 @@ impl PeerIo {
     }
 
     pub(crate) async fn send_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
-        let frame = encode_message(message).map_err(PeerIoError::Frame)?;
-        timeout(self.io_timeout, self.stream.write_all(&frame))
-            .await
-            .map_err(|_| PeerIoError::TimedOut {
-                operation: "message write",
-                timeout: self.io_timeout,
-            })?
-            .map_err(|source| PeerIoError::Io {
-                operation: "send peer message",
-                source,
-            })?;
-        let (payload_length, payload_metric) = message_payload_metric(message);
-        record_sent_frame(
+        self.queue_message(message)?;
+        let deadline = Instant::now() + self.io_timeout;
+        while !self.queued_frames.is_empty() {
+            self.flush_queued_frames()?;
+            if self.queued_frames.is_empty() {
+                break;
+            }
+            timeout_at(deadline, self.stream.writable())
+                .await
+                .map_err(|_| PeerIoError::TimedOut {
+                    operation: "message write",
+                    timeout: self.io_timeout,
+                })?
+                .map_err(|source| PeerIoError::Io {
+                    operation: "wait to send peer message",
+                    source,
+                })?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn decode_received(
+        &mut self,
+        bytes: &mut [u8],
+    ) -> Result<Vec<PeerMessage>, PeerIoError> {
+        record_bytes(
             self.byte_metric_sink.as_ref(),
-            frame.len(),
-            payload_length,
-            payload_metric,
+            ByteMetric::PeerWireReceived,
+            bytes.len(),
         );
+        if let Some(cipher) = self.receive_cipher.as_mut() {
+            cipher.apply(bytes);
+        }
+        self.decoder.push(bytes).map_err(PeerIoError::Frame)
+    }
+
+    pub(crate) fn push_decrypted(&mut self, bytes: &[u8]) -> Result<(), PeerIoError> {
+        self.queued_messages
+            .extend(self.decoder.push(bytes).map_err(PeerIoError::Frame)?);
         Ok(())
     }
 
@@ -254,23 +283,6 @@ pub(crate) fn message_payload_metric(message: &PeerMessage) -> (usize, Option<By
             (payload.len(), Some(ByteMetric::MetadataPayloadSent))
         }
         _ => (0, None),
-    }
-}
-
-fn record_sent_frame(
-    sink: Option<&Arc<dyn ByteMetricSink>>,
-    frame_length: usize,
-    payload_length: usize,
-    payload_metric: Option<ByteMetric>,
-) {
-    record_bytes(sink, ByteMetric::PeerWireSent, frame_length);
-    record_bytes(
-        sink,
-        ByteMetric::PeerProtocolSent,
-        frame_length.saturating_sub(payload_length),
-    );
-    if let Some(metric) = payload_metric {
-        record_bytes(sink, metric, payload_length);
     }
 }
 
@@ -314,6 +326,13 @@ pub(crate) enum PeerIoError {
     },
     Closed,
     Handshake(HandshakeError),
+    MseHandshake(MseHandshakeError),
+    MseDh(MseDhWorkError),
+    Entropy(getrandom::Error),
+    MseEndpointUpdate {
+        state: MseEndpointState,
+        source: Box<PeerIoError>,
+    },
     Frame(FrameError),
 }
 
@@ -333,6 +352,10 @@ impl fmt::Display for PeerIoError {
             ),
             Self::Closed => formatter.write_str("peer closed the connection"),
             Self::Handshake(error) => write!(formatter, "peer handshake: {error}"),
+            Self::MseHandshake(error) => write!(formatter, "MSE handshake: {error}"),
+            Self::MseDh(error) => error.fmt(formatter),
+            Self::Entropy(error) => write!(formatter, "MSE entropy: {error}"),
+            Self::MseEndpointUpdate { source, .. } => source.fmt(formatter),
             Self::Frame(error) => write!(formatter, "peer frame: {error}"),
         }
     }
@@ -343,8 +366,15 @@ impl Error for PeerIoError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Handshake(error) => Some(error),
+            Self::MseDh(error) => Some(error),
+            Self::MseEndpointUpdate { source, .. } => Some(source),
             Self::Frame(error) => Some(error),
-            _ => None,
+            Self::Cancelled
+            | Self::NetworkPolicyDenied { .. }
+            | Self::TimedOut { .. }
+            | Self::Closed
+            | Self::MseHandshake(_)
+            | Self::Entropy(_) => None,
         }
     }
 }
@@ -365,8 +395,16 @@ pub(crate) fn record_bytes(
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
-    use super::record_sent_range;
+    use rstorrent_protocol::mse::{
+        DhPrivateExponent, MseCipherPair, MseRole, compute_public_key, compute_shared_secret,
+    };
+    use rstorrent_protocol::peer_wire::{PeerMessage, encode_message};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::{PeerIo, record_sent_range};
     use crate::metrics::{ByteMetric, ByteMetricSink};
 
     #[derive(Debug, Default)]
@@ -426,5 +464,65 @@ mod tests {
         assert_eq!(bytes[&ByteMetric::PeerWireSent], 20);
         assert_eq!(bytes[&ByteMetric::PeerProtocolSent], 12);
         assert_eq!(bytes[&ByteMetric::PayloadUploaded], 8);
+    }
+
+    #[tokio::test]
+    async fn encrypted_direct_send_preserves_queued_order_and_receive_decodes_in_place() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let client = TcpStream::connect(address).await.expect("connect");
+        let (mut server, _) = listener.accept().await.expect("accept");
+        let (initiator_ciphers, mut responder_ciphers) = cipher_pairs();
+        let mut io = PeerIo::new(client, Duration::from_secs(1), None);
+        io.attach_ciphers(initiator_ciphers);
+
+        let first = PeerMessage::Have(7);
+        let second = PeerMessage::Interested;
+        io.queue_message(&first).expect("queue first");
+        io.send_message(&second).await.expect("send both");
+
+        let first_wire = encode_message(&first).expect("first frame");
+        let second_wire = encode_message(&second).expect("second frame");
+        let mut encrypted = vec![0; first_wire.len() + second_wire.len()];
+        server
+            .read_exact(&mut encrypted)
+            .await
+            .expect("read frames");
+        assert_ne!(
+            encrypted,
+            [first_wire.as_slice(), second_wire.as_slice()].concat()
+        );
+        responder_ciphers.apply_receive(&mut encrypted);
+        assert_eq!(
+            encrypted,
+            [first_wire.as_slice(), second_wire.as_slice()].concat()
+        );
+
+        let response = PeerMessage::Unchoke;
+        let mut response_wire = encode_message(&response).expect("response frame");
+        responder_ciphers.apply_send(&mut response_wire);
+        server
+            .write_all(&response_wire)
+            .await
+            .expect("write response");
+        assert_eq!(io.next_message().await.expect("decode response"), response);
+    }
+
+    fn cipher_pairs() -> (MseCipherPair, MseCipherPair) {
+        let initiator_private = DhPrivateExponent::from_entropy([0x11; 20]);
+        let responder_private = DhPrivateExponent::from_entropy([0x91; 20]);
+        let initiator_public = compute_public_key(&initiator_private);
+        let responder_public = compute_public_key(&responder_private);
+        let initiator_shared =
+            compute_shared_secret(&initiator_private, responder_public.as_bytes())
+                .expect("initiator shared secret");
+        let responder_shared =
+            compute_shared_secret(&responder_private, initiator_public.as_bytes())
+                .expect("responder shared secret");
+        let info_hash = [0x44; 20];
+        (
+            MseCipherPair::new(MseRole::Initiator, &initiator_shared, &info_hash),
+            MseCipherPair::new(MseRole::Responder, &responder_shared, &info_hash),
+        )
     }
 }

@@ -262,6 +262,12 @@ impl Rc4 {
     }
 }
 
+impl fmt::Debug for Rc4 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Rc4([REDACTED])")
+    }
+}
+
 struct Rc4Core {
     state: [u8; 256],
     i: u8,
@@ -311,6 +317,12 @@ impl Drop for Rc4Core {
 pub struct MseCipherPair {
     send: Rc4,
     receive: Rc4,
+}
+
+impl fmt::Debug for MseCipherPair {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MseCipherPair([REDACTED])")
+    }
 }
 
 impl MseCipherPair {

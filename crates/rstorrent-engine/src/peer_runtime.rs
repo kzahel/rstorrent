@@ -6,6 +6,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use rstorrent_protocol::mse::MseMethod;
 use rstorrent_protocol::peer_wire::Handshake;
 
 use crate::peer::{DialAttempt, PeerFailure, PeerRecordId, PeerSources};
@@ -114,6 +115,7 @@ pub struct PeerConnectionObservation {
     pub peer_id: Option<[u8; 20]>,
     pub supports_extensions: Option<bool>,
     pub supports_ut_metadata: Option<bool>,
+    pub mse_method: Option<MseMethod>,
     pub content: Option<PeerContentActivity>,
     pub upload: Option<PeerUploadActivity>,
     pub close_reason: Option<PeerFailure>,
@@ -194,6 +196,7 @@ impl PeerRuntime {
             peer_id: None,
             supports_extensions: None,
             supports_ut_metadata: None,
+            mse_method: None,
             content: None,
             upload: None,
             close_reason: None,
@@ -222,6 +225,7 @@ impl PeerRuntime {
             peer_id: Some(start.peer_id),
             supports_extensions: Some(start.supports_extensions),
             supports_ut_metadata: None,
+            mse_method: None,
             content: None,
             upload: None,
             close_reason: None,
@@ -254,6 +258,15 @@ impl PeerRuntime {
                 Some(handshake.supports_extensions());
         }
         Ok(outcome)
+    }
+
+    pub(crate) fn set_mse_method(
+        &mut self,
+        connection: ConnectionId,
+        method: Option<MseMethod>,
+    ) -> Result<(), PeerRuntimeError> {
+        self.connection_mut(connection)?.mse_method = method;
+        Ok(())
     }
 
     pub(crate) fn incoming_handshake_completed(

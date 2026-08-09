@@ -4,6 +4,15 @@ use std::time::Duration;
 
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PeerEncryptionPolicy {
+    Disabled,
+    #[default]
+    Allow,
+    Prefer,
+    Required,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkPolicy {
     Offline,
@@ -48,6 +57,7 @@ pub struct NetworkConfig {
     pub peer_connect_timeout: Duration,
     pub peer_io_timeout: Duration,
     pub peer_id: [u8; 20],
+    pub encryption: PeerEncryptionPolicy,
 }
 
 impl NetworkConfig {
@@ -61,11 +71,17 @@ impl NetworkConfig {
             peer_connect_timeout,
             peer_io_timeout,
             peer_id: DEFAULT_PEER_ID,
+            encryption: PeerEncryptionPolicy::Allow,
         }
     }
 
     pub const fn with_peer_id(mut self, peer_id: [u8; 20]) -> Self {
         self.peer_id = peer_id;
+        self
+    }
+
+    pub const fn with_encryption(mut self, encryption: PeerEncryptionPolicy) -> Self {
+        self.encryption = encryption;
         self
     }
 }

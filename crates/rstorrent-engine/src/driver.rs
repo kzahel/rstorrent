@@ -1986,6 +1986,15 @@ impl TorrentPeerCoordinator {
         let outcome = self
             .peers
             .with_state(|state| {
+                if let Some(endpoint_state) = connection.mse_endpoint_update() {
+                    state
+                        .registry
+                        .update_mse_endpoint(attempt, endpoint_state)?;
+                }
+                state
+                    .runtime
+                    .set_mse_method(connection_id, connection.mse_method())
+                    .map_err(TorrentPeerError::Runtime)?;
                 state.registry.dial_succeeded(attempt, now)?;
                 let outcome = state
                     .runtime
@@ -2039,6 +2048,16 @@ impl TorrentPeerCoordinator {
             .map_err(map_torrent_peer_error)?;
         self.peers.unregister_connection_cancellation(connection);
         self.publish_peer_runtime(true)
+    }
+
+    fn update_mse_endpoint(
+        &mut self,
+        attempt: DialAttempt,
+        endpoint: crate::peer::MseEndpointState,
+    ) -> Result<(), DownloadError> {
+        self.peers
+            .with_state(|state| state.registry.update_mse_endpoint(attempt, endpoint))
+            .map_err(DownloadError::PeerRegistry)
     }
 
     fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
@@ -2723,6 +2742,9 @@ impl TorrentPeerCoordinator {
                             );
                         } else {
                             let detail = error.to_string();
+                            if let Some(endpoint) = error.mse_endpoint_update() {
+                                self.update_mse_endpoint(attempt, endpoint)?;
+                            }
                             self.dial_failed(attempt, error.peer_failure())?;
                             self.last_error = Some(download_peer_socket_error(error));
                             self.control.metadata_peer_finished(
@@ -5278,6 +5300,9 @@ async fn run_selective_swarm_loop(
                     }
                     Err(error) => {
                         let failure = error.peer_failure();
+                        if let Some(endpoint) = error.mse_endpoint_update() {
+                            peers.update_mse_endpoint(attempt, endpoint)?;
+                        }
                         peers.dial_failed(attempt, failure)?;
                         peers.last_error = Some(download_peer_socket_error(error));
                     }
@@ -6266,6 +6291,10 @@ fn download_peer_socket_error(error: PeerSocketError) -> DownloadError {
         }
         PeerSocketError::Closed => DownloadError::PeerClosed,
         PeerSocketError::Handshake(error) => DownloadError::Handshake(error),
+        error @ (PeerSocketError::MseHandshake(_)
+        | PeerSocketError::MseDh(_)
+        | PeerSocketError::Entropy(_)) => DownloadError::PeerTask(error.to_string()),
+        PeerSocketError::MseEndpointUpdate { source, .. } => download_peer_socket_error(*source),
         PeerSocketError::Frame(error) => DownloadError::Frame(error),
     }
 }
