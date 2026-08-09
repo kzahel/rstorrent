@@ -1600,7 +1600,6 @@ async fn run_incoming_mse(
         shared,
         cancellation,
         budget_cancellation,
-        policy,
         &mut accounting,
     )
     .await;
@@ -1627,7 +1626,6 @@ async fn run_incoming_mse_inner(
     shared: &Arc<Shared>,
     cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
-    policy: PeerEncryptionPolicy,
     accounting: &mut MseHandshakeAccounting,
 ) -> Result<ReceivedIncomingHandshake, IncomingHandshakeFailure> {
     let mut private_entropy = [0_u8; DH_PRIVATE_EXPONENT_LEN];
@@ -1642,7 +1640,7 @@ async fn run_incoming_mse_inner(
         pad_b,
         pad_d,
         MSE_KNOWN_METHODS,
-        policy.prefers_rc4_when_selecting(),
+        accounting.policy().prefers_rc4_when_selecting(),
     )
     .map_err(|error| IncomingHandshakeFailure::Invalid {
         info_hash: None,

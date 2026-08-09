@@ -125,6 +125,10 @@ impl MseHandshakeAccounting {
         }
     }
 
+    pub(crate) const fn policy(&self) -> PeerEncryptionPolicy {
+        self.policy
+    }
+
     pub(crate) fn wire_sent(&mut self, bytes: usize) {
         self.wire_bytes_sent = self
             .wire_bytes_sent

@@ -668,6 +668,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
 
     peer.lifecycle = PeerConnectionLifecycle::Connected;
     peer.role = PeerConnectionRole::Content;
+    peer.mse_method = Some(rstorrent_protocol::mse::MseMethod::Rc4);
     peer.lifecycle_changed_at = Duration::from_millis(12);
     peer.peer_id = Some(*b"-UT3550-abcdefghijkl");
     peer.content = Some(PeerContentActivity {
@@ -699,6 +700,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         }] if upsert.len() == 1
             && upsert[0].client_name.as_deref() == Some("µTorrent 3.5.5")
             && upsert[0].capabilities.client_name == crate::CapabilityStatus::Available
+            && upsert[0].mse_method == Some(crate::PeerMseMethodView::Rc4)
             && upsert[0].peer_flags == [
                 crate::PeerFlagView::Incoming,
                 crate::PeerFlagView::Encrypted,
