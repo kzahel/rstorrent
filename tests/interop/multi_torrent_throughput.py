@@ -201,14 +201,17 @@ def run_case(
     payload_root = case_root / "payload"
     report_path = case_root / "resources.json"
     payload_root.mkdir(parents=True)
-    seed_session = create_session()
     alerts: list[str] = []
+    seed_sessions = []
     seed_handles = []
+    seed_ports = []
     process: subprocess.Popen[str] | None = None
     started = time.monotonic()
     try:
-        port = wait_for_listener(seed_session, alerts)
         for fixture in fixtures[:count]:
+            seed_session = create_session()
+            seed_sessions.append(seed_session)
+            seed_ports.append(wait_for_listener(seed_session, alerts))
             seed_handles.append(
                 add_seed(
                     seed_session,
@@ -243,7 +246,7 @@ def run_case(
             ),
         )
         transfer_started = time.monotonic()
-        for fixture in fixtures[:count]:
+        for fixture, port in zip(fixtures[:count], seed_ports, strict=True):
             exchange(
                 process,
                 envelope(
@@ -369,20 +372,29 @@ def run_case(
         if process is not None and process.poll() is None:
             process.kill()
             process.wait(timeout=10)
-        for handle in seed_handles:
+        for seed_session, handle in zip(seed_sessions, seed_handles, strict=True):
             try:
                 if handle.is_valid():
                     seed_session.remove_torrent(handle)
             except Exception:
                 pass
-        seed_session.pause()
+            seed_session.pause()
         seed_handles.clear()
+        seed_sessions.clear()
         gc.collect()
         shutil.rmtree(case_root, ignore_errors=True)
 
 
 def median(values: list[float]) -> float:
     return float(statistics.median(values))
+
+
+def command_value(commands: list[list[str]]) -> str:
+    for command in commands:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode == 0 and completed.stdout.strip():
+            return completed.stdout.strip()
+    return "unknown"
 
 
 def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -503,6 +515,15 @@ def main() -> int:
                 "platform": platform.platform(),
                 "machine": platform.machine(),
                 "logical_cpus": os.cpu_count(),
+                "host_model": command_value(
+                    [["sysctl", "-n", "hw.model"], ["uname", "-m"]]
+                ),
+                "filesystem": command_value(
+                    [
+                        ["stat", "-f", "%T", str(root)],
+                        ["stat", "-f", "-c", "%T", str(root)],
+                    ]
+                ),
             },
             "size_mib_per_torrent": arguments.size_mib,
             "piece_size_kib": arguments.piece_size_kib,
