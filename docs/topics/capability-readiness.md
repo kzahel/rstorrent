@@ -204,8 +204,10 @@ state; tracker and DHT advertisement select the same-family listener port; and
 one default-enabled persisted policy gates all IPv6 ingress, discovery, and
 dials. Controlled IPv6 DHT-only libtorrent discovery/download, a public
 dual-family metadata run, web/Tauri contract coverage, both Android ABIs, and
-an API 34 AVD degradation/restart profile pass. No IPv6 pinhole or incoming-
-reachability claim is made.
+an API 34 AVD degradation/restart profile pass. The named API 37 Pixel 7a
+subsequently passed the same default, disable, forced-restart persistence,
+degraded re-enable, and cleanup assertions on its current no-eligible-address
+network. No IPv6 pinhole or incoming-reachability claim is made.
 
 ## Current Queue
 

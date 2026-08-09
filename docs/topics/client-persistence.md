@@ -764,7 +764,9 @@ and durable reopen tests pass. A live enable-disable-enable cycle is
 generation-fenced, including connection cancellation before `Applied`. An API
 34 arm64 AVD observed the default, applied disable, forced-restart persistence,
 and expected degraded re-enable when no eligible global-unicast address was
-available; that environment observation does not rewrite configured intent.
+available. The named API 37 Pixel 7a repeated those exact policy and restart
+assertions on its current no-eligible-address network. Neither environment
+observation rewrites configured intent.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

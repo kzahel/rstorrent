@@ -330,7 +330,9 @@ run reached 18 IPv4 and 40 IPv6 routing nodes; the IPv6 node reached K=8 in
 1.218 seconds and received 41 valid responses while the merged lookup acquired
 and verified metadata in 107.553 seconds. IPv6 returned no peer value in that
 one live sample. Both Android ABIs and the API 34 AVD family-policy/restart
-profile pass; no incoming IPv6 reachability is claimed.
+profile pass. The named API 37 Pixel 7a subsequently passed the same default,
+disable, forced-restart persistence, degraded re-enable, and cleanup assertions
+on its current network; no incoming IPv6 reachability is claimed.
 
 Current milestone: execute Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)

@@ -1020,7 +1020,9 @@ pass. Live enable-disable-enable proves the settings view cannot report
 `Applied` before IPv6 sockets, DHT work, candidates, and plaintext or MSE peer
 generations have terminated; IPv4 observations survive the same transition.
 The API 34 AVD reports configured enabled plus effective disabled as a typed
-degradation when no eligible global-unicast address exists.
+degradation when no eligible global-unicast address exists. The named API 37
+Pixel 7a subsequently repeated the same default, disable, forced-restart,
+degraded re-enable, and cleanup assertions on its current network.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

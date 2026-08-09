@@ -851,6 +851,10 @@ An API 34 arm64 AVD product-policy run observed the fresh default enabled,
 applied disable, disabled state after forced process restart, and an expected
 `Degraded` re-enable with `effective=false` because the AVD had no eligible
 global-unicast IPv6 address. It then removed its application and artifacts.
+The same profile subsequently passed on the named API 37 Pixel 7a: exact
+serial/model/API/ABI verification, default enabled, applied disable, forced-
+restart persistence, expected `Degraded`/`effective=false` re-enable on its
+current no-eligible-address network, and cleanup all passed.
 
 Validation:
 
@@ -905,8 +909,9 @@ leg supplied the winning peer or that incoming IPv6 is reachable.
 The final repository baseline passed workspace formatting, clippy with
 warnings denied, all Rust workspace tests, generated-contract drift,
 TypeScript typecheck and unit tests, the full Playwright suite, both Android
-ABIs, the API 34 AVD policy profile, the pre-existing IPv4 DHT harness, and
-the new controlled IPv6 DHT harness. The refactor audit retained the single
-DHT actor and session-network reconciler; their post-slice size is recorded
+ABIs, the API 34 AVD and API 37 Pixel 7a policy profiles, the pre-existing IPv4
+DHT harness, and the new controlled IPv6 DHT harness. The refactor audit
+retained the single DHT actor and session-network reconciler; their post-slice
+size is recorded
 in `code-organization-and-refactoring.md` as a watch point rather than a new
 owner or prerequisite split.

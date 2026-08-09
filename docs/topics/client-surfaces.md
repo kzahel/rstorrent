@@ -55,8 +55,9 @@ Completed Tactical
 default-enabled IPv6 control and configured/effective/application state to the
 same generated settings contract. Browser and Tauri share the control and
 typed degradation presentation. Android compiles and persists the value and
-its retained product harness proves policy/restart behavior, but deliberately
-adds no Compose settings screen. The DHT inspection surface renders both
+its retained product harness proves policy/restart behavior on the API 34 AVD
+and named API 37 Pixel 7a, but deliberately adds no Compose settings screen.
+The DHT inspection surface renders both
 families within its existing bounded view rather than adding a second page or
 client-owned inference.
 Completed Tactical

@@ -581,7 +581,9 @@ lifecycle, or navigation problem remains.
   route, and observation owner. DHT production/test size grew materially and
   is now a watch point, but no lifecycle or dependency seam justifies a split.
   Application callback/test topology and schema/migration ownership remain
-  the strongest standalone candidates; neither displaces Tactical `113`.
+  the strongest standalone candidates; neither displaces Tactical `113`. The
+  subsequent API 37 Pixel 7a family-policy/restart pass exposed no new owner,
+  lifecycle, or platform-boundary defect.
 - **2026-08-09:** Refreshed the repository snapshot at source commit
   `0b25152`, 121 commits after the prior baseline and after Tactical `111`'s
   physical graduation. Application callback/test topology and store
