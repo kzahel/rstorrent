@@ -9,7 +9,7 @@ use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
     DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
     DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    download_magnet_with_control, download_verified_piece_with_control,
+    PeerEncryptionPolicy, download_magnet_with_control, download_verified_piece_with_control,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -29,6 +29,7 @@ Usage: rstorrent-download-piece \\
 Options:\n\
   [--timeout-seconds SECONDS] \\
   [--max-buffered-payload-bytes BYTES] \\
+  [--encryption disabled|allow|prefer|required] \\
   [--dht-bootstrap IP:PORT] \\
   [--skip-file INDEX]... [--materialize-file INDEX]...";
 
@@ -230,6 +231,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     let mut output_path = None;
     let mut dht_bootstrap = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
+    let mut encryption = PeerEncryptionPolicy::Allow;
     let mut resource_limits = DownloadResourceLimits::DESKTOP;
     let mut skip_files = Vec::new();
     let mut materialize_files = Vec::new();
@@ -301,6 +303,22 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                     ));
                 }
             }
+            "--encryption" => {
+                encryption = match value
+                    .to_str()
+                    .ok_or_else(|| "--encryption must be valid UTF-8".to_owned())?
+                {
+                    "disabled" => PeerEncryptionPolicy::Disabled,
+                    "allow" => PeerEncryptionPolicy::Allow,
+                    "prefer" => PeerEncryptionPolicy::Prefer,
+                    "required" => PeerEncryptionPolicy::Required,
+                    _ => {
+                        return Err(
+                            "--encryption must be disabled, allow, prefer, or required".to_owned()
+                        );
+                    }
+                };
+            }
             "--skip-file" => {
                 let file_index = parse_file_index(value, flag)?;
                 push_unique(&mut skip_files, file_index, flag)?;
@@ -318,7 +336,8 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
         return Err("--dht-bootstrap is only valid with --magnet".to_owned());
     }
     let peer_timeout = Duration::from_secs(timeout_seconds);
-    let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, peer_timeout, peer_timeout);
+    let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, peer_timeout, peer_timeout)
+        .with_encryption(encryption);
     match (metainfo_path, magnet, peer) {
         (Some(metainfo_path), None, Some(peer)) => Ok(DownloadCommand::Metainfo(DownloadConfig {
             metainfo_path,
@@ -390,7 +409,7 @@ mod tests {
 
     use super::{
         DEFAULT_TIMEOUT_SECONDS, DownloadCommand, DownloadResourceLimits, NetworkConfig,
-        NetworkPolicy, parse_arguments,
+        NetworkPolicy, PeerEncryptionPolicy, parse_arguments,
     };
 
     fn strings(arguments: &[&str]) -> Vec<OsString> {
@@ -456,6 +475,38 @@ mod tests {
                 Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
                 Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
             )
+        );
+    }
+
+    #[test]
+    fn parses_closed_encryption_policy() {
+        let command = parse_arguments(strings(&[
+            "--metainfo",
+            "fixture.torrent",
+            "--peer",
+            "127.0.0.1:6881",
+            "--output",
+            "payload.bin",
+            "--encryption",
+            "required",
+        ]))
+        .expect("valid encryption policy");
+        let DownloadCommand::Metainfo(config) = command else {
+            panic!("expected metainfo command");
+        };
+        assert_eq!(config.network.encryption, PeerEncryptionPolicy::Required);
+        assert!(
+            parse_arguments(strings(&[
+                "--metainfo",
+                "fixture.torrent",
+                "--peer",
+                "127.0.0.1:6881",
+                "--output",
+                "payload.bin",
+                "--encryption",
+                "sometimes",
+            ]))
+            .is_err()
         );
     }
 

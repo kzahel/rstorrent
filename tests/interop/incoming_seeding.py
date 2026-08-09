@@ -443,17 +443,24 @@ def read_json_line(
     return value
 
 
-def start_seed(binary: Path, fixture: Fixture) -> tuple[subprocess.Popen[str], dict[str, object]]:
+def start_seed(
+    binary: Path,
+    fixture: Fixture,
+    encryption: str | None = None,
+) -> tuple[subprocess.Popen[str], dict[str, object]]:
+    command = [
+        str(binary),
+        "--profile-root",
+        str(fixture.profile_root),
+        "--storage-root",
+        str(fixture.storage_root),
+        "--metainfo",
+        str(fixture.torrent_path),
+    ]
+    if encryption is not None:
+        command.extend(["--encryption", encryption])
     process = subprocess.Popen(
-        [
-            str(binary),
-            "--profile-root",
-            str(fixture.profile_root),
-            "--storage-root",
-            str(fixture.storage_root),
-            "--metainfo",
-            str(fixture.torrent_path),
-        ],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

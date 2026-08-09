@@ -10,10 +10,10 @@ use rstorrent_engine::dht::BootstrapNode;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
-    ConfiguredStorageRoot, DeliveryPolicy, ListenerPolicy, NetworkConfig, NetworkPolicy,
-    PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
-    StorageState, StoreError, SubscriptionSpec, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewUpdatePayload,
+    ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, ListenerPolicy, NetworkConfig,
+    NetworkPolicy, PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome,
+    SessionStore, StorageState, StoreError, SubscriptionSpec, ViewProjection, ViewSelector,
+    ViewSnapshot, ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -60,6 +60,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         &metainfo,
         &raw_info,
         arguments.upnp,
+        arguments.encryption,
         arguments.tracker.as_deref(),
     )?;
 
@@ -234,6 +235,7 @@ fn initialize_catalog(
     metainfo: &Metainfo,
     raw_info: &[u8],
     upnp: bool,
+    encryption: EncryptionPolicy,
     tracker: Option<&str>,
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
@@ -249,6 +251,7 @@ fn initialize_catalog(
         } else {
             PortMappingPolicy::Disabled
         },
+        encryption,
         ..ClientSettings::default()
     };
     if store.client_settings()? != desired_settings {
@@ -316,6 +319,7 @@ struct Arguments {
     storage_root: PathBuf,
     metainfo: PathBuf,
     upnp: bool,
+    encryption: EncryptionPolicy,
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
 }
@@ -329,6 +333,7 @@ impl Arguments {
         let mut storage_root = None;
         let mut metainfo = None;
         let mut upnp = false;
+        let mut encryption = None;
         let mut tracker = None;
         let mut dht_bootstrap = None;
         let mut index = 0;
@@ -377,6 +382,28 @@ impl Arguments {
                 index += 2;
                 continue;
             }
+            if flag == "--encryption" {
+                let value = match value.to_str().ok_or_else(|| {
+                    SeedHarnessError::Arguments("--encryption must be UTF-8".to_owned())
+                })? {
+                    "disabled" => EncryptionPolicy::Disabled,
+                    "allow" => EncryptionPolicy::Allow,
+                    "prefer" => EncryptionPolicy::Prefer,
+                    "required" => EncryptionPolicy::Required,
+                    _ => {
+                        return Err(SeedHarnessError::Arguments(
+                            "--encryption must be disabled, allow, prefer, or required".to_owned(),
+                        ));
+                    }
+                };
+                if encryption.replace(value).is_some() {
+                    return Err(SeedHarnessError::Arguments(
+                        "--encryption may appear only once".to_owned(),
+                    ));
+                }
+                index += 2;
+                continue;
+            }
             let target = match flag {
                 "--profile-root" => &mut profile_root,
                 "--storage-root" => &mut storage_root,
@@ -404,6 +431,7 @@ impl Arguments {
             metainfo: metainfo
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
+            encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
             tracker,
             dht_bootstrap,
         })
@@ -560,6 +588,8 @@ impl From<rstorrent_session::ApplicationError> for SeedHarnessError {
 mod tests {
     use std::ffi::OsString;
 
+    use rstorrent_session::EncryptionPolicy;
+
     use super::Arguments;
 
     #[test]
@@ -579,6 +609,7 @@ mod tests {
         .expect("parse harness arguments");
         assert_eq!(parsed.profile_root.to_string_lossy(), "profile");
         assert!(!parsed.upnp);
+        assert_eq!(parsed.encryption, EncryptionPolicy::Allow);
         let upnp = Arguments::parse(
             [
                 "--upnp",
@@ -594,6 +625,22 @@ mod tests {
         )
         .expect("parse UPnP harness arguments");
         assert!(upnp.upnp);
+        let required = Arguments::parse(
+            [
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+                "--encryption",
+                "required",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse required encryption policy");
+        assert_eq!(required.encryption, EncryptionPolicy::Required);
         assert!(Arguments::parse(std::iter::empty()).is_err());
     }
 }
