@@ -16,6 +16,18 @@ pub enum PeerEncryptionPolicy {
     Required,
 }
 
+impl PeerEncryptionPolicy {
+    #[must_use]
+    pub const fn accepts_incoming_mse(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    #[must_use]
+    pub const fn prefers_rc4_when_selecting(self) -> bool {
+        matches!(self, Self::Prefer | Self::Required)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PeerEncryptionPolicyHandle {
     value: Arc<AtomicU8>,
@@ -159,6 +171,19 @@ mod tests {
         );
         assert_eq!(captured, PeerEncryptionPolicy::Allow);
         assert_eq!(policy.load(), PeerEncryptionPolicy::Required);
+    }
+
+    #[test]
+    fn encryption_policy_separates_compatibility_from_method_preference() {
+        assert!(!PeerEncryptionPolicy::Disabled.accepts_incoming_mse());
+        assert!(PeerEncryptionPolicy::Allow.accepts_incoming_mse());
+        assert!(PeerEncryptionPolicy::Prefer.accepts_incoming_mse());
+        assert!(PeerEncryptionPolicy::Required.accepts_incoming_mse());
+
+        assert!(!PeerEncryptionPolicy::Disabled.prefers_rc4_when_selecting());
+        assert!(!PeerEncryptionPolicy::Allow.prefers_rc4_when_selecting());
+        assert!(PeerEncryptionPolicy::Prefer.prefers_rc4_when_selecting());
+        assert!(PeerEncryptionPolicy::Required.prefers_rc4_when_selecting());
     }
 
     #[test]

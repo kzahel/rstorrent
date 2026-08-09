@@ -602,12 +602,14 @@ def run_matrix(repository: Path) -> dict[str, object]:
                     or (oracle_policy == "forced" and rst_policy == "disabled")
                 )
                 method = (
-                    "rc4"
+                    "plaintext_payload"
                     if success
-                    and (
-                        oracle_policy == "forced"
-                        or (oracle_policy == "enabled" and rst_policy != "disabled")
-                    )
+                    and oracle_policy in {"forced", "enabled"}
+                    and rst_policy == "allow"
+                    else "rc4"
+                    if success
+                    and oracle_policy in {"forced", "enabled"}
+                    and rst_policy in {"prefer", "required"}
                     else None
                 )
                 results.append(
@@ -646,6 +648,19 @@ def run_matrix(repository: Path) -> dict[str, object]:
                 "plaintext_payload",
                 level="plaintext",
                 label="incoming-method-plaintext",
+            )
+        )
+        results.append(
+            run_incoming_case(
+                seed_binary,
+                fixture,
+                root,
+                "allow",
+                "forced",
+                True,
+                "rc4",
+                level="rc4",
+                label="incoming-method-rc4-only",
             )
         )
 

@@ -1600,6 +1600,7 @@ async fn run_incoming_mse(
         shared,
         cancellation,
         budget_cancellation,
+        policy,
         &mut accounting,
     )
     .await;
@@ -1626,6 +1627,7 @@ async fn run_incoming_mse_inner(
     shared: &Arc<Shared>,
     cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
+    policy: PeerEncryptionPolicy,
     accounting: &mut MseHandshakeAccounting,
 ) -> Result<ReceivedIncomingHandshake, IncomingHandshakeFailure> {
     let mut private_entropy = [0_u8; DH_PRIVATE_EXPONENT_LEN];
@@ -1635,12 +1637,17 @@ async fn run_incoming_mse_inner(
     })?;
     let pad_b = random_incoming_mse_padding()?;
     let pad_d = random_incoming_mse_padding()?;
-    let mut handshake =
-        MseHandshake::new_responder(private_entropy, pad_b, pad_d, MSE_KNOWN_METHODS, true)
-            .map_err(|error| IncomingHandshakeFailure::Invalid {
-                info_hash: None,
-                mse_failure: Some(MseHandshakeFailure::Protocol(error)),
-            })?;
+    let mut handshake = MseHandshake::new_responder(
+        private_entropy,
+        pad_b,
+        pad_d,
+        MSE_KNOWN_METHODS,
+        policy.prefers_rc4_when_selecting(),
+    )
+    .map_err(|error| IncomingHandshakeFailure::Invalid {
+        info_hash: None,
+        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+    })?;
     let mut step = handshake
         .start()
         .map_err(|error| IncomingHandshakeFailure::Invalid {
@@ -4053,6 +4060,51 @@ mod tests {
         assert_eq!(terminal.reads, 0);
         assert_eq!(terminal.registrations, 0);
         assert!(!terminal.accepting_registrations);
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn live_allow_policy_selects_plaintext_payload_from_both_methods() {
+        let (root, _, registration, _, _) = registration("allow-mse-method").await;
+        let info_hash = registration.info_hash();
+        let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        service_config.encryption = PeerEncryptionPolicy::Allow;
+        service_config.handshake_timeout = Duration::from_secs(2);
+        let mse_observations = Arc::new(RecordingMseHandshakes::default());
+        service_config.mse_handshake_sink = Some(mse_observations.clone());
+        let service = IncomingPeerService::bind(service_config)
+            .await
+            .expect("bind service")
+            .expect("enabled service");
+        let handle = service.handle();
+        let token = handle.register(registration).await.expect("register seed");
+
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .with_peer_id(*b"-RS-ALLOW---00000000")
+        .with_encryption(PeerEncryptionPolicy::Required);
+        let (peer, handshake) = peer_socket::connect(
+            dial_attempt(service.listen_address()),
+            info_hash,
+            true,
+            network,
+        )
+        .await
+        .expect("connect MSE peer");
+        assert_eq!(handshake.peer_id, DEFAULT_PEER_ID);
+        assert_eq!(peer.mse_method(), Some(MseMethod::PlaintextPayload));
+        assert_eq!(
+            mse_observations.0.lock().expect("MSE observations")[0].outcome,
+            MseHandshakeOutcome::Negotiated(MseMethod::PlaintextPayload)
+        );
+
+        drop(peer);
+        assert!(handle.unregister(token).await.expect("unregister seed"));
+        drop(handle);
+        service.shutdown().await.expect("shutdown service");
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 
