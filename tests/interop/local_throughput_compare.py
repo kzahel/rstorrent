@@ -1238,7 +1238,9 @@ def main() -> int:
                                     for encryption in encryption_order
                                 ]
                                 groups = [rstorrent_cases, libtorrent_cases]
-                                if case_ordinal % 4 >= 2:
+                                # Balance which implementation runs first while
+                                # covering both mode orders in each six-case cohort.
+                                if case_ordinal % 6 in {2, 3, 5}:
                                     groups.reverse()
                                 owner_order = [
                                     client_case
@@ -1399,7 +1401,7 @@ def main() -> int:
             ],
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
             "client_order": (
-                "alternating-mode-and-implementation-by-case"
+                "six-case-balanced-mode-and-implementation-order"
                 if arguments.encryption_pair
                 else "rotating-by-case"
             ),
