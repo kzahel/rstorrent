@@ -37,10 +37,11 @@ mod upload_scheduler;
 pub use advertisement::{
     DHT_ANNOUNCE_INTERVAL, DHT_LOOKUP_INTERVAL, DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY,
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
-    DiscoveryAdvertisementRegistration, DiscoveryAdvertisementService, MAX_TRACKER_OPERATIONS,
-    OUTBOUND_ONLY_TRACKER_PORT, PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope,
-    PeerAdvertisementFamilyEndpoint, TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot,
-    TrackerCounters, UNKNOWN_METADATA_LEFT_BYTES,
+    DiscoveryAdvertisementRegistration, DiscoveryAdvertisementRuntimeSnapshot,
+    DiscoveryAdvertisementService, MAX_TRACKER_OPERATIONS, OUTBOUND_ONLY_TRACKER_PORT,
+    PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope, PeerAdvertisementFamilyEndpoint,
+    TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,
+    UNKNOWN_METADATA_LEFT_BYTES,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,

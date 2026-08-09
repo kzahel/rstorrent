@@ -210,6 +210,15 @@ pub struct DiscoveryAdvertisementOwnerCounts {
     pub dht_operations_high_water: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DiscoveryAdvertisementRuntimeSnapshot {
+    pub registrations: usize,
+    pub active_registrations: usize,
+    pub tracker_operations: usize,
+    pub dht_operations: usize,
+    pub command_queue_high_water: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct DiscoveryAdvertisementHandle {
     sender: mpsc::Sender<Command>,
@@ -285,6 +294,16 @@ impl DiscoveryAdvertisementHandle {
         receiver
             .await
             .map_err(|_| DiscoveryAdvertisementError::OwnerStopped)?
+    }
+
+    pub async fn snapshot(
+        &self,
+    ) -> Result<DiscoveryAdvertisementRuntimeSnapshot, DiscoveryAdvertisementError> {
+        let (sender, receiver) = oneshot::channel();
+        self.send(Command::Snapshot(sender)).await?;
+        receiver
+            .await
+            .map_err(|_| DiscoveryAdvertisementError::OwnerStopped)
     }
 
     async fn send(&self, command: Command) -> Result<(), DiscoveryAdvertisementError> {
@@ -488,6 +507,7 @@ enum Command {
         policy: AddressFamilyPolicy,
         response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
     },
+    Snapshot(oneshot::Sender<DiscoveryAdvertisementRuntimeSnapshot>),
     Shutdown(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
 }
 
@@ -854,6 +874,24 @@ async fn run_service(
                             tokio::time::sleep(Duration::from_millis(10)).await;
                         };
                         let _ = response.send(result);
+                    }
+                    Command::Snapshot(response) => {
+                        let _ = response.send(DiscoveryAdvertisementRuntimeSnapshot {
+                            registrations: entries.len(),
+                            active_registrations: entries
+                                .values()
+                                .filter(|entry| {
+                                    entry.registration.desired_running
+                                        && entry.removal.is_none()
+                                })
+                                .count(),
+                            tracker_operations: operations.len(),
+                            dht_operations: dht_operations.len(),
+                            command_queue_high_water: queue_high_water
+                                .load(Ordering::Acquire)
+                                .try_into()
+                                .unwrap_or(usize::MAX),
+                        });
                     }
                     Command::Shutdown(response) => {
                         shutting_down = true;

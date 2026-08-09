@@ -2834,8 +2834,10 @@ impl ApplicationService {
         let handle = runtime.handle();
         let counters = handle.tracker_counters();
         let (privacy, left) = tracker_metadata_state(&resume)?;
-        let metadata_discovery_active =
-            resume.raw_info.is_none() && self.active_download_for(torrent_id).is_some();
+        let complete = resume.state == TorrentState::Complete;
+        let admitted_download = !complete
+            && resume.state != TorrentState::Checking
+            && self.active_download_for(torrent_id).is_some();
         counters.set_left(left);
         let registration = DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
@@ -2843,8 +2845,12 @@ impl ApplicationService {
                 ApplicationError::Configuration("invalid torrent identity".to_owned())
             })?,
             trackers: operational_trackers(&resume.trackers)?,
-            desired_running: resume.desired_running || metadata_discovery_active,
-            complete: resume.state == TorrentState::Complete,
+            desired_running: if complete {
+                resume.desired_running
+            } else {
+                admitted_download
+            },
+            complete,
             incoming_registered: handle.has_seed_registration(),
             privacy,
             counters,
@@ -5717,6 +5723,16 @@ mod tests {
         let runtime = service.views.client_settings_for_testing();
         assert_eq!(runtime.active_download_count, 3);
         assert_eq!(runtime.checking_count, 0);
+        let discovery = service
+            .session_network()
+            .discovery_handle()
+            .snapshot()
+            .await
+            .expect("discovery snapshot");
+        assert_eq!(discovery.registrations, 100);
+        assert_eq!(discovery.active_registrations, 3);
+        assert!(discovery.tracker_operations <= 3);
+        assert!(discovery.dht_operations <= 3);
 
         drop(streams);
         service.shutdown().await.expect("shutdown");

@@ -31,6 +31,12 @@ pub struct SessionDownloadResourceSnapshot {
     pub active_tracker_operations_high_water: usize,
     pub registered_generations: usize,
     pub outbound_turns_granted: usize,
+    pub request_waiters: usize,
+    pub request_waiters_high_water: usize,
+    pub active_piece_waiters: usize,
+    pub active_piece_waiters_high_water: usize,
+    pub outbound_waiters: usize,
+    pub outbound_waiters_high_water: usize,
     pub storage_roots: Vec<SessionStorageRootResourceSnapshot>,
 }
 
@@ -63,19 +69,45 @@ struct SessionDownloadResourcesInner {
     active_piece_bytes_high_water: AtomicUsize,
     active_pieces: AtomicUsize,
     active_pieces_high_water: AtomicUsize,
+    request_admission: FairTryAdmission,
+    active_piece_admission: FairTryAdmission,
     storage_writes: Arc<FairExecutionAuthority>,
     storage_hashes: Arc<FairExecutionAuthority>,
     tracker_operations: Arc<Semaphore>,
     active_tracker_operations: Arc<AtomicUsize>,
     active_tracker_operations_high_water: AtomicUsize,
     registrations: Mutex<BTreeMap<String, Weak<TorrentResourceUsage>>>,
-    dial_fairness: Mutex<DialFairness>,
+    dial_admission: FairDialAdmission,
     outbound_turns_granted: AtomicUsize,
 }
 
+const BYTE_ADMISSION_QUANTUM: usize = 16 * 1024;
+
+#[derive(Debug)]
+struct FairTryAdmission {
+    quantum: usize,
+    high_water: AtomicUsize,
+    state: Mutex<FairTryState>,
+}
+
 #[derive(Debug, Default)]
-struct DialFairness {
+struct FairTryState {
+    queue: VecDeque<String>,
+    costs: BTreeMap<String, usize>,
+    deficits: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Default)]
+struct FairDialAdmission {
+    high_water: AtomicUsize,
+    state: Mutex<FairDialState>,
+}
+
+#[derive(Debug, Default)]
+struct FairDialState {
+    queue: VecDeque<String>,
     last_granted: Option<String>,
+    yielded_last: bool,
 }
 
 #[derive(Debug)]
@@ -185,6 +217,163 @@ struct FairWaiterGuard {
     authority: Arc<FairExecutionAuthority>,
     ticket: u64,
     queued: bool,
+}
+
+impl FairTryAdmission {
+    fn new(quantum: usize) -> Self {
+        assert!(quantum > 0);
+        Self {
+            quantum,
+            high_water: AtomicUsize::new(0),
+            state: Mutex::new(FairTryState::default()),
+        }
+    }
+
+    fn try_admit(&self, key: &str, cost: usize, reserve: impl FnOnce() -> bool) -> bool {
+        if cost == 0 {
+            return reserve();
+        }
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(queued_cost) = state.costs.get_mut(key) {
+            *queued_cost = cost;
+        } else {
+            state.queue.push_back(key.to_owned());
+            state.costs.insert(key.to_owned(), cost);
+            self.high_water
+                .fetch_max(state.queue.len(), Ordering::AcqRel);
+        }
+        state.advance(self.quantum);
+        if state.queue.front().map(String::as_str) != Some(key) {
+            return false;
+        }
+        if !reserve() {
+            if state.queue.len() > 1 {
+                state.queue.rotate_left(1);
+            }
+            return false;
+        }
+        let granted = state
+            .queue
+            .pop_front()
+            .expect("selected fair waiter exists");
+        let granted_cost = state
+            .costs
+            .remove(&granted)
+            .expect("selected fair waiter has a cost");
+        let deficit = state.deficits.entry(granted).or_default();
+        *deficit = deficit
+            .checked_sub(granted_cost)
+            .expect("selected fair waiter has enough deficit");
+        true
+    }
+
+    fn remove(&self, key: &str) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.queue.retain(|queued| queued != key);
+        state.costs.remove(key);
+        state.deficits.remove(key);
+    }
+
+    fn snapshot(&self) -> (usize, usize) {
+        let queued = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .queue
+            .len();
+        (queued, load(&self.high_water))
+    }
+}
+
+impl FairTryState {
+    fn advance(&mut self, quantum: usize) {
+        if self.queue.len() == 1 {
+            let key = self.queue.front().expect("single fair waiter").clone();
+            let cost = self.costs[&key];
+            let deficit = self.deficits.entry(key).or_default();
+            *deficit = (*deficit).max(cost);
+            return;
+        }
+        if self.queue.front().is_some_and(|key| {
+            self.deficits.get(key).copied().unwrap_or_default() >= self.costs[key]
+        }) {
+            return;
+        }
+        let waiters = self.queue.len();
+        for _ in 0..waiters {
+            let key = self.queue.front().expect("fair waiter exists").clone();
+            let cost = self.costs[&key];
+            let deficit = self.deficits.entry(key).or_default();
+            *deficit = deficit
+                .saturating_add(quantum)
+                .min(cost.saturating_add(quantum));
+            if *deficit >= cost {
+                return;
+            }
+            self.queue.rotate_left(1);
+        }
+    }
+}
+
+impl FairDialAdmission {
+    fn try_acquire(&self, key: &str) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.queue.iter().any(|queued| queued == key) {
+            state.queue.push_back(key.to_owned());
+            self.high_water
+                .fetch_max(state.queue.len(), Ordering::AcqRel);
+        }
+        if state.queue.len() > 1
+            && state.queue.front().map(String::as_str) == state.last_granted.as_deref()
+        {
+            state.queue.rotate_left(1);
+        }
+        if state.queue.front().map(String::as_str) != Some(key) {
+            return false;
+        }
+        if state.queue.len() == 1
+            && state.last_granted.as_deref() == Some(key)
+            && !state.yielded_last
+        {
+            state.yielded_last = true;
+            return false;
+        }
+        state.queue.pop_front();
+        state.last_granted = Some(key.to_owned());
+        state.yielded_last = false;
+        true
+    }
+
+    fn remove(&self, key: &str) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.queue.retain(|queued| queued != key);
+        if state.last_granted.as_deref() == Some(key) {
+            state.last_granted = None;
+            state.yielded_last = false;
+        }
+    }
+
+    fn snapshot(&self) -> (usize, usize) {
+        let queued = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .queue
+            .len();
+        (queued, load(&self.high_water))
+    }
 }
 
 impl FairExecutionAuthority {
@@ -401,13 +590,15 @@ impl SessionDownloadResources {
                 active_piece_bytes_high_water: AtomicUsize::new(0),
                 active_pieces: AtomicUsize::new(0),
                 active_pieces_high_water: AtomicUsize::new(0),
+                request_admission: FairTryAdmission::new(BYTE_ADMISSION_QUANTUM),
+                active_piece_admission: FairTryAdmission::new(BYTE_ADMISSION_QUANTUM),
                 storage_writes: Arc::new(FairExecutionAuthority::new(storage_write_concurrency)),
                 storage_hashes: Arc::new(FairExecutionAuthority::new(storage_hash_concurrency)),
                 tracker_operations: Arc::new(Semaphore::new(8)),
                 active_tracker_operations: Arc::new(AtomicUsize::new(0)),
                 active_tracker_operations_high_water: AtomicUsize::new(0),
                 registrations: Mutex::new(BTreeMap::new()),
-                dial_fairness: Mutex::new(DialFairness::default()),
+                dial_admission: FairDialAdmission::default(),
                 outbound_turns_granted: AtomicUsize::new(0),
             }),
         }
@@ -466,6 +657,10 @@ impl SessionDownloadResources {
             entry.queued_hashes = root.queued;
             entry.queued_hashes_high_water = root.queued_high_water;
         }
+        let (request_waiters, request_waiters_high_water) = self.inner.request_admission.snapshot();
+        let (active_piece_waiters, active_piece_waiters_high_water) =
+            self.inner.active_piece_admission.snapshot();
+        let (outbound_waiters, outbound_waiters_high_water) = self.inner.dial_admission.snapshot();
         SessionDownloadResourceSnapshot {
             outstanding_request_bytes: load(&self.inner.outstanding_request_bytes),
             outstanding_request_high_water: load(&self.inner.outstanding_request_high_water),
@@ -485,6 +680,12 @@ impl SessionDownloadResources {
             ),
             registered_generations,
             outbound_turns_granted: load(&self.inner.outbound_turns_granted),
+            request_waiters,
+            request_waiters_high_water,
+            active_piece_waiters,
+            active_piece_waiters_high_water,
+            outbound_waiters,
+            outbound_waiters_high_water,
             storage_roots: storage_roots.into_values().collect(),
         }
     }
@@ -503,12 +704,20 @@ impl SessionTorrentResources {
         bytes: usize,
     ) -> Option<SessionResourceReservation> {
         let owner = self.owner();
-        try_reserve(
-            &owner.outstanding_request_bytes,
-            &owner.outstanding_request_high_water,
-            owner.limits.max_outstanding_request_bytes,
-            bytes,
-        )?;
+        if !owner
+            .request_admission
+            .try_admit(&self.usage.key, bytes, || {
+                try_reserve(
+                    &owner.outstanding_request_bytes,
+                    &owner.outstanding_request_high_water,
+                    owner.limits.max_outstanding_request_bytes,
+                    bytes,
+                )
+                .is_some()
+            })
+        {
+            return None;
+        }
         self.usage
             .outstanding_request_bytes
             .fetch_add(bytes, Ordering::AcqRel);
@@ -590,25 +799,37 @@ impl SessionTorrentResources {
         bytes: usize,
     ) -> Option<SessionResourceReservation> {
         let owner = self.owner();
-        try_reserve(
-            &owner.active_piece_bytes,
-            &owner.active_piece_bytes_high_water,
-            owner.limits.max_active_piece_bytes,
-            bytes,
-        )?;
-        if try_reserve(
-            &owner.active_pieces,
-            &owner.active_pieces_high_water,
-            owner.limits.max_active_pieces,
-            1,
-        )
-        .is_none()
+        if !owner
+            .active_piece_admission
+            .try_admit(&self.usage.key, bytes, || {
+                if try_reserve(
+                    &owner.active_piece_bytes,
+                    &owner.active_piece_bytes_high_water,
+                    owner.limits.max_active_piece_bytes,
+                    bytes,
+                )
+                .is_none()
+                {
+                    return false;
+                }
+                if try_reserve(
+                    &owner.active_pieces,
+                    &owner.active_pieces_high_water,
+                    owner.limits.max_active_pieces,
+                    1,
+                )
+                .is_none()
+                {
+                    checked_release(
+                        &owner.active_piece_bytes,
+                        bytes,
+                        "session active piece bytes",
+                    );
+                    return false;
+                }
+                true
+            })
         {
-            checked_release(
-                &owner.active_piece_bytes,
-                bytes,
-                "session active piece bytes",
-            );
             return None;
         }
         self.usage
@@ -641,15 +862,9 @@ impl SessionTorrentResources {
 
     pub(crate) fn try_acquire_outbound_turn(&self) -> bool {
         let owner = self.owner();
-        let mut fairness = owner
-            .dial_fairness
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if fairness.last_granted.as_deref() == Some(self.usage.key.as_str()) {
-            fairness.last_granted = None;
+        if !owner.dial_admission.try_acquire(&self.usage.key) {
             return false;
         }
-        fairness.last_granted = Some(self.usage.key.clone());
         owner.outbound_turns_granted.fetch_add(1, Ordering::AcqRel);
         true
     }
@@ -708,6 +923,9 @@ impl Drop for TorrentResourceUsage {
             "session active piece bytes",
         );
         checked_release(&owner.active_pieces, active_pieces, "session active pieces");
+        owner.request_admission.remove(&self.key);
+        owner.active_piece_admission.remove(&self.key);
+        owner.dial_admission.remove(&self.key);
         owner
             .registrations
             .lock()
@@ -862,6 +1080,35 @@ mod tests {
         assert_eq!(snapshot.buffered_payload_bytes, 0);
         assert_eq!(snapshot.active_piece_bytes, 0);
         assert_eq!(snapshot.active_pieces, 0);
+    }
+
+    #[test]
+    fn request_admission_retains_a_contended_turn_and_cleans_cancelled_demand() {
+        let resources = resources();
+        let first = resources.register("first", 1, "root");
+        let second = resources.register("second", 1, "root");
+        first
+            .try_reserve_request_bytes(32)
+            .expect("first fills request authority")
+            .commit();
+        assert!(second.try_reserve_request_bytes(16).is_none());
+        assert_eq!(resources.snapshot().request_waiters, 1);
+
+        first.release_request_bytes(16);
+        assert!(first.try_reserve_request_bytes(16).is_none());
+        second
+            .try_reserve_request_bytes(16)
+            .expect("retained second-torrent turn wins released capacity")
+            .commit();
+        first.release_request_bytes(16);
+        second.release_request_bytes(16);
+        drop(first);
+        drop(second);
+
+        let snapshot = resources.snapshot();
+        assert_eq!(snapshot.request_waiters, 0);
+        assert!(snapshot.request_waiters_high_water >= 2);
+        assert_eq!(snapshot.outstanding_request_bytes, 0);
     }
 
     #[tokio::test]
