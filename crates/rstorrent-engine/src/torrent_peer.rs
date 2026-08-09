@@ -727,6 +727,7 @@ mod tests {
         PeerConnectionLifecycle, PeerConnectionRole, PeerUploadActivity, PeerUploadGrant,
     };
     use crate::swarm::ConnectionId;
+    use rstorrent_protocol::mse::MseMethod;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
@@ -820,37 +821,66 @@ mod tests {
     }
 
     #[test]
-    fn disabling_ipv6_cancels_an_active_connection_before_convergence() {
+    fn disabling_ipv6_cancels_plaintext_and_mse_connections_before_convergence() {
         let (handle, _) = handle();
-        let attachment = handle
-            .begin_incoming(
+        let plaintext = handle
+            .begin_incoming_with_mse(
                 "[2606:4700:4700::1111]:51413".parse().expect("remote"),
                 "[2606:4700:4700::2222]:6881".parse().expect("local"),
                 *b"-LTTEST-000000000000",
                 true,
                 PeerConnectionRole::Content,
+                None,
             )
-            .expect("incoming IPv6 peer");
+            .expect("incoming plaintext IPv6 peer");
         handle
-            .incoming_handshake_completed(attachment, *b"-RS0001-LOCALPEER001")
-            .expect("complete IPv6 handshake");
-        let cancellation = CancellationToken::new();
-        handle.register_connection_cancellation(attachment.connection_id(), cancellation.clone());
+            .incoming_handshake_completed(plaintext, *b"-RS0001-LOCALPEER001")
+            .expect("complete plaintext IPv6 handshake");
+        let encrypted = handle
+            .begin_incoming_with_mse(
+                "[2606:4700:4700::3333]:51413".parse().expect("remote"),
+                "[2606:4700:4700::2222]:6881".parse().expect("local"),
+                *b"-LTTEST-000000000001",
+                true,
+                PeerConnectionRole::Content,
+                Some(MseMethod::Rc4),
+            )
+            .expect("incoming MSE IPv6 peer");
+        handle
+            .incoming_handshake_completed(encrypted, *b"-RS0001-LOCALPEER002")
+            .expect("complete MSE IPv6 handshake");
+        let plaintext_cancellation = CancellationToken::new();
+        let encrypted_cancellation = CancellationToken::new();
+        handle.register_connection_cancellation(
+            plaintext.connection_id(),
+            plaintext_cancellation.clone(),
+        );
+        handle.register_connection_cancellation(
+            encrypted.connection_id(),
+            encrypted_cancellation.clone(),
+        );
 
         assert_eq!(
             handle
                 .enforce_address_families(AddressFamilyPolicy::ipv4_only())
                 .expect("disable IPv6"),
-            1
+            2
         );
-        assert!(cancellation.is_cancelled());
+        assert!(plaintext_cancellation.is_cancelled());
+        assert!(encrypted_cancellation.is_cancelled());
         assert!(!handle.address_families_converged(AddressFamilyPolicy::ipv4_only()));
         handle
-            .begin_incoming_disconnect(attachment, None)
-            .expect("begin IPv6 peer retirement");
+            .begin_incoming_disconnect(plaintext, None)
+            .expect("begin plaintext IPv6 peer retirement");
         handle
-            .remove_incoming(attachment, None)
-            .expect("retire IPv6 peer");
+            .begin_incoming_disconnect(encrypted, None)
+            .expect("begin MSE IPv6 peer retirement");
+        handle
+            .remove_incoming(plaintext, None)
+            .expect("retire plaintext IPv6 peer");
+        handle
+            .remove_incoming(encrypted, None)
+            .expect("retire MSE IPv6 peer");
         handle
             .enforce_address_families(AddressFamilyPolicy::ipv4_only())
             .expect("remove retired IPv6 candidate");

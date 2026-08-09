@@ -2641,6 +2641,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ipv4_only_policy_preserves_the_dual_stack_ipv4_wire_request() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind IPv4 tracker");
+        let url = format!("http://{}/announce", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.expect("accept announce");
+                let request = read_request(&mut stream).await;
+                stream
+                    .write_all(&http_response(&[], b"de"))
+                    .await
+                    .expect("write response");
+                requests.push(request);
+            }
+            requests
+        });
+        let clients = HttpTrackerClients::new(NetworkPolicy::LoopbackOnly).expect("HTTP clients");
+        let request = announce(AnnounceEvent::Started);
+        for policy in [
+            AddressFamilyPolicy::dual_stack(),
+            AddressFamilyPolicy::ipv4_only(),
+        ] {
+            announce_http_tracker_with_address_families(
+                &clients,
+                &url,
+                NetworkPolicy::LoopbackOnly,
+                policy,
+                false,
+                &request,
+                Duration::from_secs(2),
+            )
+            .await
+            .expect("IPv4 announce");
+        }
+        let requests = server.await.expect("tracker server");
+        assert_eq!(requests[0], requests[1]);
+    }
+
+    #[tokio::test]
     async fn runtime_aaaa_only_tracker_accepts_only_peers6() {
         let listener = match TcpListener::bind("[::1]:0").await {
             Ok(listener) => listener,
