@@ -4584,7 +4584,7 @@ pub fn application_error_response(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
@@ -6363,6 +6363,27 @@ mod tests {
         assert_eq!(tcp_port, preferred_port);
         assert_eq!(udp_port, tcp_port);
         assert!(coordinated_with_tcp);
+        assert_eq!(
+            application
+                .session_network()
+                .session_udp_local_address_for(rstorrent_engine::AddressFamily::Ipv6),
+            Some(SocketAddr::from((Ipv6Addr::LOCALHOST, preferred_port)))
+        );
+        assert_eq!(
+            application.session_network().session_udp_snapshot().tasks,
+            2
+        );
+        assert_eq!(
+            application
+                .session_network()
+                .session_udp_snapshot()
+                .task_high_water,
+            2
+        );
+        let ipv6_generation = application
+            .session_network()
+            .session_udp_generation_for(rstorrent_engine::AddressFamily::Ipv6)
+            .expect("IPv6 UDP generation exists");
 
         let observed_dht_source = answer_dht_query(&router).await;
         assert_eq!(observed_dht_source.ip().to_string(), udp_address);
@@ -6411,6 +6432,19 @@ mod tests {
             } if port == replacement_port
         ));
         assert_eq!(dht_runtime(&application).await.local_node_id, dht_node_id);
+        assert_eq!(
+            application
+                .session_network()
+                .session_udp_local_address_for(rstorrent_engine::AddressFamily::Ipv6),
+            Some(SocketAddr::from((Ipv6Addr::LOCALHOST, replacement_port)))
+        );
+        assert!(
+            application
+                .session_network()
+                .session_udp_generation_for(rstorrent_engine::AddressFamily::Ipv6)
+                .expect("replacement IPv6 UDP generation exists")
+                > ipv6_generation
+        );
         TcpStream::connect((Ipv4Addr::LOCALHOST, replacement_port))
             .await
             .expect("new TCP endpoint accepts after handover");
@@ -6424,7 +6458,7 @@ mod tests {
                 .session_network()
                 .session_udp_snapshot()
                 .task_high_water,
-            2
+            3
         );
         application.shutdown().await.expect("joined shutdown");
         assert!(application.session_network.is_none());
@@ -6536,7 +6570,7 @@ mod tests {
                 .session_network()
                 .session_udp_snapshot()
                 .task_high_water,
-            2
+            3
         );
         application.shutdown().await.expect("joined shutdown");
         drop(application);

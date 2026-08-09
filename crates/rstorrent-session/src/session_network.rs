@@ -9,12 +9,13 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService, DhtSnapshot};
 use rstorrent_engine::{
-    ByteMetricSink, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
-    DiscoveryAdvertisementService, IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle,
-    IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, MseDhWorkOwner,
-    MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, PeerBudget,
-    PeerEncryptionPolicy, PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError,
-    SessionSocketSet, SessionUdpError, SessionUdpHandle, SessionUdpService,
+    AddressFamily, AddressFamilyPolicy, ByteMetricSink, DiscoveryAdvertisementError,
+    DiscoveryAdvertisementHandle, DiscoveryAdvertisementService, IncomingPeerAcceptor,
+    IncomingPeerError, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
+    IncomingPeerServiceSnapshot, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
+    MseHandshakeSink, NetworkConfig, PeerBudget, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
+    SessionSocketConfig, SessionSocketError, SessionSocketFamilyState, SessionSocketSet,
+    SessionUdpError, SessionUdpHandle, SessionUdpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -281,6 +282,7 @@ struct SessionNetworkOwner {
     listener_status: ListenerStatus,
     session_udp_status: SessionUdpStatus,
     dht_bind_address: std::net::SocketAddr,
+    address_families: AddressFamilyPolicy,
     incoming_handshake_timeout: Duration,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
@@ -353,11 +355,14 @@ impl SessionNetworkRuntime {
             settings.incoming_bootstrap(),
             settings.preferred_listen_port,
             dht.bind_address,
-        );
+        )
+        .with_address_families(network.address_families);
         let mut listener_failure = None;
-        let socket_set = match SessionSocketSet::bind(socket_config).await {
-            Ok(sockets) => sockets,
-            Err(error)
+        let socket_set = SessionSocketSet::bind(socket_config).await?;
+        let (ipv4, ipv6) = socket_set.into_families();
+        let ipv4 = match ipv4 {
+            SessionSocketFamilyState::Bound(sockets) => sockets,
+            SessionSocketFamilyState::Unavailable(error)
                 if !matches!(
                     incoming_config.bootstrap,
                     rstorrent_engine::IncomingTcpBootstrap::Disabled
@@ -367,20 +372,35 @@ impl SessionNetworkRuntime {
                     return Err(error.into());
                 };
                 listener_failure = Some(failure);
-                SessionSocketSet::bind(SessionSocketConfig::new(
+                let fallback = SessionSocketSet::bind(SessionSocketConfig::new(
                     rstorrent_engine::IncomingTcpBootstrap::Disabled,
                     settings.preferred_listen_port,
                     dht.bind_address,
                 ))
-                .await?
+                .await?;
+                fallback
+                    .into_families()
+                    .0
+                    .into_bound()
+                    .expect("IPv4-only fallback binds its IPv4 UDP family")
             }
-            Err(error) => return Err(error.into()),
+            SessionSocketFamilyState::Unavailable(error) => return Err(error.into()),
+            SessionSocketFamilyState::Disabled => {
+                return Err(SessionNetworkError::Configuration(
+                    "IPv4 session sockets cannot be disabled".to_owned(),
+                ));
+            }
         };
-        let tcp_peer_address = socket_set.tcp_peer_address();
-        let udp_address = socket_set.udp_address();
-        let coordinated_with_tcp = socket_set.ports_match();
-        let (tcp_listener, udp_socket) = socket_set.into_parts();
-        let (session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
+        let tcp_peer_address = ipv4.tcp_peer_address();
+        let udp_address = ipv4.udp_address();
+        let coordinated_with_tcp = ipv4.ports_match();
+        let (tcp_listener, udp_socket) = ipv4.into_parts();
+        let (mut session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
+        if let Some(ipv6) = ipv6.into_bound() {
+            let (ipv6_listener, ipv6_udp) = ipv6.into_parts();
+            drop(ipv6_listener);
+            session_udp.replace_socket(ipv6_udp).await?;
+        }
         let session_udp_handle = session_udp.handle();
         let incoming_runtime = match IncomingPeerRuntime::start(incoming_config) {
             Ok(runtime) => runtime,
@@ -485,6 +505,7 @@ impl SessionNetworkRuntime {
             listener_status: listener_status.clone(),
             session_udp_status: session_udp_status.clone(),
             dht_bind_address,
+            address_families: network.address_families,
             incoming_handshake_timeout,
             advertised_endpoint: advertised_endpoint.clone(),
             peer_budget: peer_budget.clone(),
@@ -756,6 +777,19 @@ impl SessionNetworkRuntime {
     #[cfg(test)]
     pub(crate) fn session_udp_generation(&self) -> u64 {
         self.session_udp_handle.generation()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn session_udp_generation_for(&self, family: AddressFamily) -> Option<u64> {
+        self.session_udp_handle.generation_for(family)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn session_udp_local_address_for(
+        &self,
+        family: AddressFamily,
+    ) -> Option<std::net::SocketAddr> {
+        self.session_udp_handle.local_address_for(family)
     }
 
     pub(crate) async fn shutdown(mut self, views: &ViewHub) -> SessionNetworkShutdown {
@@ -1055,11 +1089,14 @@ impl SessionNetworkOwner {
             return false;
         }
 
-        let candidate = SessionSocketSet::bind(SessionSocketConfig::new(
-            attempt.settings.incoming_bootstrap(),
-            attempt.settings.preferred_listen_port,
-            self.dht_bind_address,
-        ))
+        let candidate = SessionSocketSet::bind(
+            SessionSocketConfig::new(
+                attempt.settings.incoming_bootstrap(),
+                attempt.settings.preferred_listen_port,
+                self.dht_bind_address,
+            )
+            .with_address_families(self.address_families),
+        )
         .await;
         let candidate = match candidate {
             Ok(candidate) => candidate,
@@ -1084,10 +1121,46 @@ impl SessionNetworkOwner {
             return false;
         }
 
-        let tcp_peer_address = candidate.tcp_peer_address();
-        let udp_address = candidate.udp_address();
-        let coordinated_with_tcp = candidate.ports_match();
-        let (tcp_listener, udp_socket) = candidate.into_parts();
+        let (ipv4, ipv6) = candidate.into_families();
+        let ipv4 = match ipv4 {
+            SessionSocketFamilyState::Bound(sockets) => sockets,
+            SessionSocketFamilyState::Unavailable(error) => {
+                publish_transport(
+                    convergence,
+                    generation,
+                    self.effective_listener.clone(),
+                    self.listener_status.clone(),
+                    self.session_udp_status.clone(),
+                    self.advertised_endpoint.status(Instant::now()),
+                    ClientSettingsApplicationState::Degraded {
+                        reason: ClientSettingsDegradedReason::TransportBindFailed,
+                        detail: error.to_string(),
+                    },
+                    views,
+                );
+                return false;
+            }
+            SessionSocketFamilyState::Disabled => {
+                publish_transport(
+                    convergence,
+                    generation,
+                    self.effective_listener.clone(),
+                    self.listener_status.clone(),
+                    self.session_udp_status.clone(),
+                    self.advertised_endpoint.status(Instant::now()),
+                    ClientSettingsApplicationState::Degraded {
+                        reason: ClientSettingsDegradedReason::TransportBindFailed,
+                        detail: "IPv4 session sockets cannot be disabled".to_owned(),
+                    },
+                    views,
+                );
+                return false;
+            }
+        };
+        let tcp_peer_address = ipv4.tcp_peer_address();
+        let udp_address = ipv4.udp_address();
+        let coordinated_with_tcp = ipv4.ports_match();
+        let (tcp_listener, udp_socket) = ipv4.into_parts();
         self.advertised_endpoint
             .replace_listener(&ListenerStatus::Disabled);
         let _ = views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
@@ -1158,6 +1231,24 @@ impl SessionNetworkOwner {
             .expect("session UDP exists during handover")
             .replace_socket(udp_socket)
             .await;
+        let ipv6_udp_result = match ipv6 {
+            SessionSocketFamilyState::Bound(sockets) => {
+                let (ipv6_listener, ipv6_udp) = sockets.into_parts();
+                drop(ipv6_listener);
+                self.session_udp
+                    .as_mut()
+                    .expect("session UDP exists during handover")
+                    .replace_socket(ipv6_udp)
+                    .await
+            }
+            SessionSocketFamilyState::Disabled | SessionSocketFamilyState::Unavailable(_) => {
+                self.session_udp
+                    .as_mut()
+                    .expect("session UDP exists during handover")
+                    .remove_family(AddressFamily::Ipv6)
+                    .await
+            }
+        };
         let listener_status = tcp_peer_address.map_or(ListenerStatus::Disabled, |address| {
             ListenerStatus::Listening {
                 address: address.ip().to_string(),
@@ -1204,9 +1295,9 @@ impl SessionNetworkOwner {
             );
             return true;
         }
-        let state = match udp_result {
-            Ok(()) => ClientSettingsApplicationState::Applied,
-            Err(error) => ClientSettingsApplicationState::Degraded {
+        let state = match (udp_result, ipv6_udp_result) {
+            (Ok(()), Ok(())) => ClientSettingsApplicationState::Applied,
+            (Err(error), _) | (_, Err(error)) => ClientSettingsApplicationState::Degraded {
                 reason: ClientSettingsDegradedReason::TransportHandoverFailed,
                 detail: format!("retire previous UDP generation: {error}"),
             },

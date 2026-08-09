@@ -172,6 +172,7 @@ pub struct DhtStats {
     pub responses_received: u64,
     pub queries_received: u64,
     pub malformed_received: u64,
+    pub family_mismatched: u64,
     pub rate_limited: u64,
     pub discovered_peers: u64,
     pub bootstrap_attempts: u64,
@@ -997,7 +998,12 @@ impl Actor {
                 }
                 received = self.transport.receive() => {
                     match received {
-                        Ok((bytes, source)) => {
+                        Ok((bytes, source, wire_family)) => {
+                            if wire_family != crate::AddressFamily::Ipv4 {
+                                self.stats.family_mismatched =
+                                    self.stats.family_mismatched.saturating_add(1);
+                                continue;
+                            }
                             let length = bytes.len();
                             self.stats.datagram_bytes_received = self
                                 .stats
@@ -2405,6 +2411,43 @@ mod tests {
         assert_eq!(snapshot.node_id, before.local_node_id);
         let terminal = udp.shutdown().await.expect("shutdown session UDP");
         assert_eq!(terminal.tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn ipv6_wire_datagrams_wait_for_an_ipv6_dht_node() {
+        let ipv4 = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind IPv4 session UDP");
+        let (mut udp, transport) = SessionUdpService::start(ipv4).expect("start session UDP");
+        let ipv6 = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0))
+            .await
+            .expect("bind IPv6 session UDP");
+        let ipv6_address = ipv6.local_addr().expect("IPv6 session address");
+        udp.replace_socket(ipv6).await.expect("add IPv6 receiver");
+        let dht = DhtService::start_with_transport(loopback_config(Vec::new()), transport)
+            .await
+            .expect("start IPv4-only DHT");
+        let remote = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0))
+            .await
+            .expect("bind IPv6 DHT probe");
+        let ping =
+            encode_query(b"v6", NodeId([6; 20]), &Query::Ping, true).expect("encode IPv6 ping");
+        remote
+            .send_to(&ping, ipv6_address)
+            .await
+            .expect("send IPv6 ping");
+        let mut response = [0_u8; MAX_DATAGRAM_SIZE];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), remote.recv_from(&mut response))
+                .await
+                .is_err()
+        );
+        let stats = dht.handle().stats().await.expect("read DHT stats");
+        assert_eq!(stats.family_mismatched, 1);
+        dht.shutdown().await.expect("shutdown DHT");
+        let terminal = udp.shutdown().await.expect("shutdown session UDP");
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.task_high_water, 2);
     }
 
     async fn exchange(socket: &UdpSocket, server: SocketAddr, bytes: &[u8]) -> Message {

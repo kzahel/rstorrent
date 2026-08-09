@@ -1,7 +1,7 @@
 # Tactical 112: Dual-Stack Session Transport And IPv6 DHT Participation
 
 Status: Authoritative **Now**, implementation in progress on 2026-08-09.
-Gate 1 is complete. The plan was source-reconciled after Tactical `111`
+Gates 1 and 2 are complete. The plan was source-reconciled after Tactical `111`
 graduated; the two-tactical split, IPv6 bind-address strategy, and settings
 shape and default were accepted in product discussion on 2026-08-08.
 
@@ -739,4 +739,35 @@ Validation:
 
 - `cargo test -p rstorrent-engine session_socket --lib` (14 passed);
 - `cargo check --workspace`; and
+- `git diff --check`.
+
+### Gate 2: One family-aware UDP receive owner
+
+Completed on 2026-08-09. `SessionUdpService` now owns one replaceable receiver
+generation per bound address family while retaining one bounded ingress queue,
+one DHT transport, one counter set, and one shutdown owner. Every ingress item
+carries its receiving family, outbound sends select the family socket from the
+destination address, and a missing family returns a typed error. Adding,
+replacing, or removing one family cancels and joins only that generation.
+
+The session runtime connects both independently allocated UDP sockets to that
+owner at startup and settings-driven transport replacement. The DHT actor still
+rejects IPv6 ingress explicitly until Gate 3 installs its IPv6 node, so this
+slice cannot accidentally treat IPv6 traffic as IPv4 traffic. Deterministic
+loopback coverage proves both families share the one route, either receiver can
+be retired independently, family-selected sends use the matching source, and
+shutdown joins both tasks. The steady task count is two; sequential candidate-
+first replacement reaches a bounded high-water mark of three and returns to
+two, then terminal shutdown reaches zero.
+
+Validation:
+
+- `cargo test -p rstorrent-engine session_udp --lib` (7 passed);
+- `cargo test -p rstorrent-engine
+  ipv6_wire_datagrams_wait_for_an_ipv6_dht_node --lib` (1 passed);
+- `cargo test -p rstorrent-session
+  application_coordinates_tcp_and_dht_udp_endpoints --lib` (1 passed);
+- `cargo test -p rstorrent-session
+  rapid_client_settings_changes_converge_only_to_latest_generation --lib`
+  (1 passed); and
 - `git diff --check`.
