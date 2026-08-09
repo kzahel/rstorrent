@@ -15,7 +15,8 @@ use rstorrent_engine::{
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
     DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
     DownloadControl, DownloadError, DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError,
-    IncomingPeerServiceSnapshot, NetworkConfig, PathPublicationStage, PlatformStorageClient,
+    IncomingPeerServiceSnapshot, MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
+    NetworkConfig, PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient,
     PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
     ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage, SessionSocketError,
     SessionUdpError, StorageFilePool, StorageFilePoolSnapshot, TorrentPrivacy, TrackerConfig,
@@ -2360,7 +2361,9 @@ impl ApplicationService {
             .expect("application configuration validated diagnostic storage limits");
         control.set_checkpoint_sync_delay_for_testing(self.checkpoint_sync_delay_for_testing);
         control.set_checkpoint_commit_delay_for_testing(self.checkpoint_commit_delay_for_testing);
-        control.set_activity_sink(self.view_activity_sink(torrent_id, Some(eta_generation)));
+        let activity = self.view_activity_sink(torrent_id, Some(eta_generation));
+        control.set_activity_sink(activity.clone());
+        control.set_mse_handshake_sink(activity);
         control.set_byte_metric_sink(self.speed_recorder.clone());
         Ok((control, eta_generation))
     }
@@ -2686,7 +2689,7 @@ impl ApplicationService {
         &self,
         torrent_id: &str,
         eta_generation: Option<u64>,
-    ) -> Arc<dyn DownloadActivitySink> {
+    ) -> Arc<ViewActivitySink> {
         Arc::new(ViewActivitySink {
             torrent_id: torrent_id.to_owned(),
             eta_generation,
@@ -2697,6 +2700,81 @@ impl ApplicationService {
             publication_delay: self.publication_delay_for_testing,
             last_checkpoint_stage: Mutex::new(None),
         })
+    }
+}
+
+impl MseHandshakeSink for ViewActivitySink {
+    fn record(&self, observation: MseHandshakeObservation) {
+        let role = match observation.role {
+            rstorrent_protocol::mse::MseRole::Initiator => "initiator",
+            rstorrent_protocol::mse::MseRole::Responder => "responder",
+        };
+        let policy = match observation.policy {
+            PeerEncryptionPolicy::Disabled => "disabled",
+            PeerEncryptionPolicy::Allow => "allow",
+            PeerEncryptionPolicy::Prefer => "prefer",
+            PeerEncryptionPolicy::Required => "required",
+        };
+        let (severity, code, message, outcome, detail) = match observation.outcome {
+            MseHandshakeOutcome::Negotiated(method) => {
+                let method = match method {
+                    rstorrent_protocol::mse::MseMethod::PlaintextPayload => "plaintext_payload",
+                    rstorrent_protocol::mse::MseMethod::Rc4 => "rc4",
+                };
+                (
+                    DiagnosticSeverity::Info,
+                    "mse_handshake_negotiated",
+                    "Peer stream obfuscation negotiated",
+                    "negotiated",
+                    method,
+                )
+            }
+            MseHandshakeOutcome::Failed(failure) => (
+                if observation.fallback_socket_used {
+                    DiagnosticSeverity::Info
+                } else {
+                    DiagnosticSeverity::Warning
+                },
+                "mse_handshake_failed",
+                "Peer stream obfuscation handshake ended",
+                "failed",
+                failure.code(),
+            ),
+        };
+        let total_wire = observation
+            .wire_bytes_sent
+            .saturating_add(observation.wire_bytes_received);
+        let classified = observation
+            .protocol_bytes_sent
+            .saturating_add(observation.protocol_bytes_received)
+            .saturating_add(observation.carried_wire_bytes);
+        self.record_structured(
+            severity,
+            category::PEER_PROTOCOL,
+            code,
+            message,
+            Vec::new(),
+            vec![
+                DiagnosticField::text("role", role),
+                DiagnosticField::text("policy", policy),
+                DiagnosticField::text("outcome", outcome),
+                DiagnosticField::text("detail", detail),
+                DiagnosticField::text(
+                    "fallback_socket_used",
+                    observation.fallback_socket_used.to_string(),
+                ),
+                DiagnosticField::bytes("wire_bytes_sent", observation.wire_bytes_sent),
+                DiagnosticField::bytes("wire_bytes_received", observation.wire_bytes_received),
+                DiagnosticField::bytes("protocol_bytes_sent", observation.protocol_bytes_sent),
+                DiagnosticField::bytes(
+                    "protocol_bytes_received",
+                    observation.protocol_bytes_received,
+                ),
+                DiagnosticField::bytes("carried_wire_bytes", observation.carried_wire_bytes),
+                DiagnosticField::bytes("mse_overhead_bytes", total_wire.saturating_sub(classified)),
+                DiagnosticField::count("exponentiations", u64::from(observation.exponentiations)),
+            ],
+        );
     }
 }
 

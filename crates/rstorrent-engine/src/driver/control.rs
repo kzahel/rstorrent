@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use super::DownloadError;
 use crate::checkpoint::CheckpointBatch;
 use crate::metrics::{ByteMetric, ByteMetricSink, SharedByteMetricSink};
+use crate::mse::MseHandshakeSink;
 use crate::peer::{DialAttempt, DialAttemptId, PeerRegistryCounts, PeerRegistrySnapshot};
 #[cfg(test)]
 use crate::peer::{PeerRegistry, PeerSelectionContext};
@@ -399,6 +400,7 @@ struct DownloadControlInner {
     last_storage_emitted_at: Mutex<Option<Instant>>,
     checker: Mutex<Option<CheckerProgressState>>,
     activity_sink: Mutex<Option<Arc<dyn DownloadActivitySink>>>,
+    mse_handshake_sink: Mutex<Option<Arc<dyn MseHandshakeSink>>>,
     byte_metric_sink: Mutex<Option<SharedByteMetricSink>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
@@ -751,6 +753,7 @@ impl DownloadControl {
                 last_storage_emitted_at: Mutex::new(None),
                 checker: Mutex::new(None),
                 activity_sink: Mutex::new(None),
+                mse_handshake_sink: Mutex::new(None),
                 byte_metric_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
@@ -1440,6 +1443,22 @@ impl DownloadControl {
             .byte_metric_sink
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
+    pub fn set_mse_handshake_sink(&self, sink: Arc<dyn MseHandshakeSink>) {
+        *self
+            .inner
+            .mse_handshake_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sink);
+    }
+
+    pub(super) fn mse_handshake_sink(&self) -> Option<Arc<dyn MseHandshakeSink>> {
+        self.inner
+            .mse_handshake_sink
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub(super) fn byte_metric_sink(&self) -> Option<SharedByteMetricSink> {

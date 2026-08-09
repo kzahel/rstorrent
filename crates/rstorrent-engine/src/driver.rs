@@ -2701,6 +2701,7 @@ impl TorrentPeerCoordinator {
                     true,
                     self.connection_network(),
                     self.control.byte_metric_sink(),
+                    self.control.mse_handshake_sink(),
                 ) {
                     self.dial_cancelled(attempt)?;
                     return Err(download_peer_set_error(error));
@@ -4717,6 +4718,7 @@ fn fill_content_dials(
             true,
             peers.connection_network(),
             peers.control.byte_metric_sink(),
+            peers.control.mse_handshake_sink(),
         ) {
             state
                 .finish_dial(pending_dial_id(attempt))

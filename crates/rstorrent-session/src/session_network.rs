@@ -12,7 +12,8 @@ use rstorrent_engine::{
     ByteMetricSink, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
     DiscoveryAdvertisementService, IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle,
     IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, MseDhWorkOwner,
-    NetworkConfig, PeerBudget, PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError,
+    MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NetworkConfig, PeerBudget,
+    PeerEncryptionPolicy, PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError,
     SessionSocketSet, SessionUdpError, SessionUdpHandle, SessionUdpService,
 };
 use tokio::sync::watch;
@@ -21,7 +22,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::advertised_endpoint::AdvertisedPeerEndpointSelector;
 use crate::dht_views::{DhtObservationRuntime, inspection_view};
-use crate::diagnostics::{DiagnosticSeverity, category};
+use crate::diagnostics::{
+    DiagnosticCategory, DiagnosticDraft, DiagnosticField, DiagnosticSeverity, category,
+};
 use crate::incoming_seeding::IncomingSeeding;
 use crate::reachability::{
     ReachabilityCoordinator, ReachabilityGenerationShutdown, UncertainMappingLease,
@@ -163,6 +166,7 @@ pub(crate) struct SessionNetworkRuntime {
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
+    mse_handshake_diagnostics: Arc<SessionMseHandshakeDiagnostics>,
     incoming_handle: IncomingPeerHandle,
     incoming_seeding: IncomingSeeding,
     session_udp_handle: SessionUdpHandle,
@@ -177,6 +181,95 @@ pub(crate) struct SessionNetworkRuntime {
     initial_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
     initial_tracker_https_application: ClientSettingsApplicationState,
     views: Option<ViewHub>,
+}
+
+#[derive(Debug, Default)]
+struct SessionMseHandshakeDiagnostics {
+    views: Mutex<Option<ViewHub>>,
+}
+
+impl SessionMseHandshakeDiagnostics {
+    fn attach(&self, views: ViewHub) {
+        *self
+            .views
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(views);
+    }
+}
+
+impl MseHandshakeSink for SessionMseHandshakeDiagnostics {
+    fn record(&self, observation: MseHandshakeObservation) {
+        let views = self
+            .views
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let Some(views) = views else {
+            return;
+        };
+        let role = match observation.role {
+            rstorrent_protocol::mse::MseRole::Initiator => "initiator",
+            rstorrent_protocol::mse::MseRole::Responder => "responder",
+        };
+        let policy = match observation.policy {
+            PeerEncryptionPolicy::Disabled => "disabled",
+            PeerEncryptionPolicy::Allow => "allow",
+            PeerEncryptionPolicy::Prefer => "prefer",
+            PeerEncryptionPolicy::Required => "required",
+        };
+        let (severity, code, outcome, detail) = match observation.outcome {
+            MseHandshakeOutcome::Negotiated(method) => (
+                DiagnosticSeverity::Info,
+                "mse_handshake_negotiated",
+                "negotiated",
+                match method {
+                    rstorrent_protocol::mse::MseMethod::PlaintextPayload => "plaintext_payload",
+                    rstorrent_protocol::mse::MseMethod::Rc4 => "rc4",
+                },
+            ),
+            MseHandshakeOutcome::Failed(failure) => (
+                DiagnosticSeverity::Warning,
+                "mse_handshake_failed",
+                "failed",
+                failure.code(),
+            ),
+        };
+        let total_wire = observation
+            .wire_bytes_sent
+            .saturating_add(observation.wire_bytes_received);
+        let classified = observation
+            .protocol_bytes_sent
+            .saturating_add(observation.protocol_bytes_received)
+            .saturating_add(observation.carried_wire_bytes);
+        let _ = views.record_structured_diagnostic(DiagnosticDraft {
+            severity,
+            category: DiagnosticCategory::from_static(category::PEER_PROTOCOL),
+            code: code.to_owned(),
+            torrent_id: None,
+            message: "Incoming peer stream obfuscation handshake ended".to_owned(),
+            subjects: Vec::new(),
+            fields: vec![
+                DiagnosticField::text("role", role),
+                DiagnosticField::text("policy", policy),
+                DiagnosticField::text("outcome", outcome),
+                DiagnosticField::text("detail", detail),
+                DiagnosticField::text(
+                    "fallback_socket_used",
+                    observation.fallback_socket_used.to_string(),
+                ),
+                DiagnosticField::bytes("wire_bytes_sent", observation.wire_bytes_sent),
+                DiagnosticField::bytes("wire_bytes_received", observation.wire_bytes_received),
+                DiagnosticField::bytes("protocol_bytes_sent", observation.protocol_bytes_sent),
+                DiagnosticField::bytes(
+                    "protocol_bytes_received",
+                    observation.protocol_bytes_received,
+                ),
+                DiagnosticField::bytes("carried_wire_bytes", observation.carried_wire_bytes),
+                DiagnosticField::bytes("mse_overhead_bytes", total_wire.saturating_sub(classified)),
+                DiagnosticField::count("exponentiations", u64::from(observation.exponentiations)),
+            ],
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -233,6 +326,7 @@ impl SessionNetworkRuntime {
         })?;
         let peer_budget = PeerBudget::new(peer_budget_config);
         let mse_dh = MseDhWorkOwner::new();
+        let mse_handshake_diagnostics = Arc::new(SessionMseHandshakeDiagnostics::default());
         let encryption = PeerEncryptionPolicyHandle::new(settings.encryption.into_engine());
         let mut incoming_config = IncomingPeerServiceConfig::new(settings.incoming_bootstrap())
             .with_peer_budget(peer_budget.clone())
@@ -247,6 +341,7 @@ impl SessionNetworkRuntime {
         incoming_config.inactivity_timeout = incoming_inactivity_timeout;
         incoming_config.peer_id = network.peer_id;
         incoming_config.byte_metric_sink = Some(byte_metric_sink.clone());
+        incoming_config.mse_handshake_sink = Some(mse_handshake_diagnostics.clone());
 
         dht.network_policy = network.policy;
         dht.initial_snapshot = initial_dht_snapshot;
@@ -436,6 +531,7 @@ impl SessionNetworkRuntime {
             peer_budget,
             mse_dh,
             encryption,
+            mse_handshake_diagnostics,
             incoming_handle,
             incoming_seeding,
             session_udp_handle,
@@ -491,6 +587,7 @@ impl SessionNetworkRuntime {
     }
 
     pub(crate) fn attach_views(&mut self, views: ViewHub) {
+        self.mse_handshake_diagnostics.attach(views.clone());
         views
             .set_client_settings_mapping_generation(self.initial_mapping_generation)
             .expect("view hub accepts initial client-settings generation");

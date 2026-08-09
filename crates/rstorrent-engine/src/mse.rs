@@ -6,14 +6,187 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rstorrent_protocol::mse::{
-    DhError, DhPrivateExponent, DhPublicKey, DhSharedSecret, compute_public_key,
-    compute_shared_secret,
+    DhError, DhPrivateExponent, DhPublicKey, DhSharedSecret, MseHandshakeError, MseMethod, MseRole,
+    compute_public_key, compute_shared_secret,
 };
 use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinError;
 use tokio_util::task::TaskTracker;
 
+use crate::network::PeerEncryptionPolicy;
+
 pub const MAX_MSE_DH_JOBS: usize = 4;
+
+/// One terminal, secret-free observation for an attempted MSE handshake.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MseHandshakeObservation {
+    pub role: MseRole,
+    pub policy: PeerEncryptionPolicy,
+    pub fallback_socket_used: bool,
+    pub outcome: MseHandshakeOutcome,
+    pub wire_bytes_sent: u64,
+    pub wire_bytes_received: u64,
+    pub protocol_bytes_sent: u64,
+    pub protocol_bytes_received: u64,
+    /// Bytes read in the handshake syscall that belong to post-handshake framing.
+    pub carried_wire_bytes: u64,
+    pub exponentiations: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MseHandshakeOutcome {
+    Negotiated(MseMethod),
+    Failed(MseHandshakeFailure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MseHandshakeFailure {
+    Cancelled,
+    TimedOut,
+    TransportClosed,
+    TransportIo,
+    Entropy,
+    DiffieHellman,
+    Protocol(MseHandshakeError),
+    BitTorrentHandshake,
+    PolicyRejected,
+    UnknownTorrent,
+    SelfConnection,
+    StaleRegistration,
+    PeerAdmission,
+}
+
+impl MseHandshakeFailure {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+            Self::TransportClosed => "transport_closed",
+            Self::TransportIo => "transport_io",
+            Self::Entropy => "entropy",
+            Self::DiffieHellman => "diffie_hellman",
+            Self::Protocol(error) => match error {
+                MseHandshakeError::AlreadyStarted => "protocol_already_started",
+                MseHandshakeError::NotStarted => "protocol_not_started",
+                MseHandshakeError::ActionOutstanding => "protocol_action_outstanding",
+                MseHandshakeError::UnexpectedResume => "protocol_unexpected_resume",
+                MseHandshakeError::Terminal => "protocol_terminal",
+                MseHandshakeError::BufferOverflow => "protocol_buffer_overflow",
+                MseHandshakeError::InvalidPaddingLength { .. } => "protocol_invalid_padding_length",
+                MseHandshakeError::InvalidInitialPayloadLength { .. } => {
+                    "protocol_invalid_initial_payload_length"
+                }
+                MseHandshakeError::SyncNotFound => "protocol_sync_not_found",
+                MseHandshakeError::InvalidVerificationConstant => {
+                    "protocol_invalid_verification_constant"
+                }
+                MseHandshakeError::Method(_) => "protocol_invalid_method",
+                MseHandshakeError::UnknownTorrent => "protocol_unknown_torrent",
+                MseHandshakeError::TorrentLookupMismatch => "protocol_torrent_lookup_mismatch",
+            },
+            Self::BitTorrentHandshake => "bittorrent_handshake",
+            Self::PolicyRejected => "policy_rejected",
+            Self::UnknownTorrent => "unknown_torrent",
+            Self::SelfConnection => "self_connection",
+            Self::StaleRegistration => "stale_registration",
+            Self::PeerAdmission => "peer_admission",
+        }
+    }
+}
+
+pub trait MseHandshakeSink: Send + Sync + fmt::Debug {
+    fn record(&self, observation: MseHandshakeObservation);
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MseHandshakeAccounting {
+    role: MseRole,
+    policy: PeerEncryptionPolicy,
+    wire_bytes_sent: u64,
+    wire_bytes_received: u64,
+    protocol_bytes_sent: u64,
+    protocol_bytes_received: u64,
+    carried_wire_bytes: u64,
+    exponentiations: u8,
+}
+
+impl MseHandshakeAccounting {
+    pub(crate) const fn new(role: MseRole, policy: PeerEncryptionPolicy) -> Self {
+        Self {
+            role,
+            policy,
+            wire_bytes_sent: 0,
+            wire_bytes_received: 0,
+            protocol_bytes_sent: 0,
+            protocol_bytes_received: 0,
+            carried_wire_bytes: 0,
+            exponentiations: 0,
+        }
+    }
+
+    pub(crate) fn wire_sent(&mut self, bytes: usize) {
+        self.wire_bytes_sent = self
+            .wire_bytes_sent
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    pub(crate) fn wire_received(&mut self, bytes: usize) {
+        self.wire_bytes_received = self
+            .wire_bytes_received
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    pub(crate) fn protocol_sent(&mut self, bytes: usize) {
+        self.protocol_bytes_sent = self
+            .protocol_bytes_sent
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    pub(crate) fn protocol_received(&mut self, bytes: usize) {
+        self.protocol_bytes_received = self
+            .protocol_bytes_received
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    pub(crate) fn carried_wire(&mut self, bytes: usize) {
+        self.carried_wire_bytes = self
+            .carried_wire_bytes
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    pub(crate) fn exponentiation_started(&mut self) {
+        self.exponentiations = self.exponentiations.saturating_add(1);
+    }
+
+    pub(crate) const fn finish(
+        self,
+        outcome: MseHandshakeOutcome,
+        fallback_socket_used: bool,
+    ) -> MseHandshakeObservation {
+        MseHandshakeObservation {
+            role: self.role,
+            policy: self.policy,
+            fallback_socket_used,
+            outcome,
+            wire_bytes_sent: self.wire_bytes_sent,
+            wire_bytes_received: self.wire_bytes_received,
+            protocol_bytes_sent: self.protocol_bytes_sent,
+            protocol_bytes_received: self.protocol_bytes_received,
+            carried_wire_bytes: self.carried_wire_bytes,
+            exponentiations: self.exponentiations,
+        }
+    }
+}
+
+pub(crate) fn record_mse_handshake(
+    sink: Option<&Arc<dyn MseHandshakeSink>>,
+    observation: MseHandshakeObservation,
+) {
+    if let Some(sink) = sink {
+        sink.record(observation);
+    }
+}
 
 #[derive(Clone)]
 pub struct MseDhWorkOwner {

@@ -24,7 +24,7 @@ use rstorrent_protocol::metadata::{
 };
 use rstorrent_protocol::mse::{
     DH_PRIVATE_EXPONENT_LEN, MSE_KNOWN_METHODS, MSE_MAX_PADDING_LEN, MseAction, MseCipherPair,
-    MseHandshake, MseMethod, MsePadding, MseResume, MseStep, req2_hash,
+    MseHandshake, MseMethod, MsePadding, MseResume, MseRole, MseStep, req2_hash,
 };
 use rstorrent_protocol::peer_wire::{
     BlockRequest, HANDSHAKE_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
@@ -39,7 +39,10 @@ use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
-use crate::mse::MseDhWorkOwner;
+use crate::mse::{
+    MseDhWorkOwner, MseHandshakeAccounting, MseHandshakeFailure, MseHandshakeOutcome,
+    MseHandshakeSink, record_mse_handshake,
+};
 use crate::network::{DEFAULT_PEER_ID, NetworkPolicy, PeerEncryptionPolicy};
 use crate::peer::{PeerEndpoint, PeerFailure};
 use crate::peer_budget::{
@@ -95,6 +98,7 @@ pub struct IncomingPeerServiceConfig {
     pub inactivity_timeout: Duration,
     pub peer_id: [u8; 20],
     pub byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    pub mse_handshake_sink: Option<Arc<dyn MseHandshakeSink>>,
     pub peer_budget: PeerBudget,
     pub upload_scheduler: UploadSchedulerConfig,
     pub upload_read_jobs: usize,
@@ -113,6 +117,7 @@ impl IncomingPeerServiceConfig {
             inactivity_timeout: DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
+            mse_handshake_sink: None,
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
@@ -411,6 +416,7 @@ struct Shared {
     inactivity_timeout: Duration,
     peer_id: [u8; 20],
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    mse_handshake_sink: Option<Arc<dyn MseHandshakeSink>>,
     encryption: Mutex<PeerEncryptionPolicy>,
     mse_dh: MseDhWorkOwner,
 }
@@ -872,6 +878,7 @@ impl IncomingPeerRuntime {
             inactivity_timeout: config.inactivity_timeout,
             peer_id: config.peer_id,
             byte_metric_sink: config.byte_metric_sink,
+            mse_handshake_sink: config.mse_handshake_sink,
             encryption: Mutex::new(config.encryption),
             mse_dh: config.mse_dh,
         });
@@ -1480,12 +1487,16 @@ struct ReceivedIncomingHandshake {
     method: Option<MseMethod>,
     ciphers: Option<MseCipherPair>,
     carried: Vec<u8>,
+    mse_accounting: Option<MseHandshakeAccounting>,
 }
 
 enum IncomingHandshakeFailure {
     Cancelled,
     Timeout,
-    Invalid(Option<[u8; 20]>),
+    Invalid {
+        info_hash: Option<[u8; 20]>,
+        mse_failure: Option<MseHandshakeFailure>,
+    },
     UnknownTorrent,
 }
 
@@ -1520,10 +1531,16 @@ async fn receive_incoming_handshake(
             .try_into()
             .expect("handshake info hash has a fixed length");
         if policy == PeerEncryptionPolicy::Required {
-            return Err(IncomingHandshakeFailure::Invalid(Some(info_hash)));
+            return Err(IncomingHandshakeFailure::Invalid {
+                info_hash: Some(info_hash),
+                mse_failure: None,
+            });
         }
-        let handshake = decode_handshake(&first, info_hash)
-            .map_err(|_| IncomingHandshakeFailure::Invalid(Some(info_hash)))?;
+        let handshake =
+            decode_handshake(&first, info_hash).map_err(|_| IncomingHandshakeFailure::Invalid {
+                info_hash: Some(info_hash),
+                mse_failure: None,
+            })?;
         record_bytes(
             shared.byte_metric_sink.as_ref(),
             ByteMetric::PeerProtocolReceived,
@@ -1535,10 +1552,23 @@ async fn receive_incoming_handshake(
             method: None,
             ciphers: None,
             carried: Vec::new(),
+            mse_accounting: None,
         });
     }
     if policy == PeerEncryptionPolicy::Disabled {
-        return Err(IncomingHandshakeFailure::Invalid(None));
+        let mut accounting = MseHandshakeAccounting::new(MseRole::Responder, policy);
+        accounting.wire_received(HANDSHAKE_LENGTH);
+        record_mse_handshake(
+            shared.mse_handshake_sink.as_ref(),
+            accounting.finish(
+                MseHandshakeOutcome::Failed(MseHandshakeFailure::PolicyRejected),
+                false,
+            ),
+        );
+        return Err(IncomingHandshakeFailure::Invalid {
+            info_hash: None,
+            mse_failure: Some(MseHandshakeFailure::PolicyRejected),
+        });
     }
     run_incoming_mse(
         stream,
@@ -1547,6 +1577,7 @@ async fn receive_incoming_handshake(
         shared,
         cancellation,
         budget_cancellation,
+        policy,
     )
     .await
 }
@@ -1558,17 +1589,64 @@ async fn run_incoming_mse(
     shared: &Arc<Shared>,
     cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
+    policy: PeerEncryptionPolicy,
+) -> Result<ReceivedIncomingHandshake, IncomingHandshakeFailure> {
+    let mut accounting = MseHandshakeAccounting::new(MseRole::Responder, policy);
+    accounting.wire_received(HANDSHAKE_LENGTH);
+    let result = run_incoming_mse_inner(
+        stream,
+        first,
+        deadline,
+        shared,
+        cancellation,
+        budget_cancellation,
+        &mut accounting,
+    )
+    .await;
+    match result {
+        Ok(mut received) => {
+            received.mse_accounting = Some(accounting);
+            Ok(received)
+        }
+        Err(failure) => {
+            let reason = incoming_mse_failure_reason(&failure);
+            record_mse_handshake(
+                shared.mse_handshake_sink.as_ref(),
+                accounting.finish(MseHandshakeOutcome::Failed(reason), false),
+            );
+            Err(failure)
+        }
+    }
+}
+
+async fn run_incoming_mse_inner(
+    stream: &mut TcpStream,
+    first: [u8; HANDSHAKE_LENGTH],
+    deadline: Instant,
+    shared: &Arc<Shared>,
+    cancellation: &CancellationToken,
+    budget_cancellation: &CancellationToken,
+    accounting: &mut MseHandshakeAccounting,
 ) -> Result<ReceivedIncomingHandshake, IncomingHandshakeFailure> {
     let mut private_entropy = [0_u8; DH_PRIVATE_EXPONENT_LEN];
-    getrandom::fill(&mut private_entropy).map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+    getrandom::fill(&mut private_entropy).map_err(|_| IncomingHandshakeFailure::Invalid {
+        info_hash: None,
+        mse_failure: Some(MseHandshakeFailure::Entropy),
+    })?;
     let pad_b = random_incoming_mse_padding()?;
     let pad_d = random_incoming_mse_padding()?;
     let mut handshake =
         MseHandshake::new_responder(private_entropy, pad_b, pad_d, MSE_KNOWN_METHODS, true)
-            .map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+            .map_err(|error| IncomingHandshakeFailure::Invalid {
+                info_hash: None,
+                mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+            })?;
     let mut step = handshake
         .start()
-        .map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+        .map_err(|error| IncomingHandshakeFailure::Invalid {
+            info_hash: None,
+            mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+        })?;
     let mut network_buffer = [0_u8; crate::peer_io::NETWORK_READ_LENGTH];
     network_buffer[..HANDSHAKE_LENGTH].copy_from_slice(&first);
     let mut buffered = HANDSHAKE_LENGTH;
@@ -1585,6 +1663,7 @@ async fn run_incoming_mse(
                         shared,
                         cancellation,
                         budget_cancellation,
+                        Some(accounting),
                     )
                     .await
                     .map_err(map_incoming_io_failure)?;
@@ -1592,32 +1671,50 @@ async fn run_incoming_mse(
                 }
                 let feed = handshake
                     .feed(&network_buffer[consumed..buffered])
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+                    .map_err(|error| IncomingHandshakeFailure::Invalid {
+                        info_hash: None,
+                        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+                    })?;
                 consumed += feed.consumed;
                 feed.step
             }
             MseStep::Action(MseAction::ComputePublicKey { private }) => {
-                let (private, public) = shared
-                    .mse_dh
-                    .compute_public_key(private)
-                    .await
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+                accounting.exponentiation_started();
+                let (private, public) =
+                    shared
+                        .mse_dh
+                        .compute_public_key(private)
+                        .await
+                        .map_err(|_| IncomingHandshakeFailure::Invalid {
+                            info_hash: None,
+                            mse_failure: Some(MseHandshakeFailure::DiffieHellman),
+                        })?;
                 handshake
                     .resume(MseResume::PublicKeyComputed { private, public })
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?
+                    .map_err(|error| IncomingHandshakeFailure::Invalid {
+                        info_hash: None,
+                        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+                    })?
             }
             MseStep::Action(MseAction::ComputeSharedSecret {
                 private,
                 remote_public,
             }) => {
+                accounting.exponentiation_started();
                 let shared_secret = shared
                     .mse_dh
                     .compute_shared_secret(private, remote_public)
                     .await
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+                    .map_err(|_| IncomingHandshakeFailure::Invalid {
+                        info_hash: None,
+                        mse_failure: Some(MseHandshakeFailure::DiffieHellman),
+                    })?;
                 handshake
                     .resume(MseResume::SharedSecretComputed(shared_secret))
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?
+                    .map_err(|error| IncomingHandshakeFailure::Invalid {
+                        info_hash: None,
+                        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+                    })?
             }
             MseStep::Action(MseAction::IdentifyTorrent { req2_hash }) => {
                 let Some(info_hash) = shared.identify_mse_torrent(req2_hash) else {
@@ -1625,7 +1722,10 @@ async fn run_incoming_mse(
                 };
                 handshake
                     .resume(MseResume::TorrentIdentified(Some(info_hash)))
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(Some(info_hash)))?
+                    .map_err(|error| IncomingHandshakeFailure::Invalid {
+                        info_hash: Some(info_hash),
+                        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+                    })?
             }
             MseStep::Action(MseAction::Send(bytes)) => {
                 write_incoming_mse_action(
@@ -1635,12 +1735,16 @@ async fn run_incoming_mse(
                     shared,
                     cancellation,
                     budget_cancellation,
+                    accounting,
                 )
                 .await
                 .map_err(map_incoming_io_failure)?;
-                handshake
-                    .resume(MseResume::Sent)
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(None))?
+                handshake.resume(MseResume::Sent).map_err(|error| {
+                    IncomingHandshakeFailure::Invalid {
+                        info_hash: None,
+                        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+                    }
+                })?
             }
             MseStep::Complete(mut complete) => {
                 let info_hash = complete.info_hash;
@@ -1649,9 +1753,18 @@ async fn run_incoming_mse(
                     .as_slice()
                     .get(..HANDSHAKE_LENGTH)
                     .and_then(|bytes| bytes.try_into().ok())
-                    .ok_or(IncomingHandshakeFailure::Invalid(Some(info_hash)))?;
-                let decoded = decode_handshake(&remote_handshake, info_hash)
-                    .map_err(|_| IncomingHandshakeFailure::Invalid(Some(info_hash)))?;
+                    .ok_or(IncomingHandshakeFailure::Invalid {
+                        info_hash: Some(info_hash),
+                        mse_failure: Some(MseHandshakeFailure::Protocol(
+                            rstorrent_protocol::mse::MseHandshakeError::BufferOverflow,
+                        )),
+                    })?;
+                let decoded = decode_handshake(&remote_handshake, info_hash).map_err(|_| {
+                    IncomingHandshakeFailure::Invalid {
+                        info_hash: Some(info_hash),
+                        mse_failure: Some(MseHandshakeFailure::BitTorrentHandshake),
+                    }
+                })?;
                 let mut carried = complete.carried.as_slice()[HANDSHAKE_LENGTH..].to_vec();
                 if consumed < buffered {
                     let unread = &mut network_buffer[consumed..buffered];
@@ -1660,17 +1773,20 @@ async fn run_incoming_mse(
                     }
                     carried.extend_from_slice(unread);
                 }
+                accounting.carried_wire(carried.len());
                 record_bytes(
                     shared.byte_metric_sink.as_ref(),
                     ByteMetric::PeerProtocolReceived,
                     HANDSHAKE_LENGTH,
                 );
+                accounting.protocol_received(HANDSHAKE_LENGTH);
                 return Ok(ReceivedIncomingHandshake {
                     info_hash,
                     handshake: decoded,
                     method: Some(complete.method),
                     ciphers: complete.ciphers,
                     carried,
+                    mse_accounting: None,
                 });
             }
         };
@@ -1679,18 +1795,41 @@ async fn run_incoming_mse(
 
 fn random_incoming_mse_padding() -> Result<MsePadding, IncomingHandshakeFailure> {
     let mut selector = [0_u8; 2];
-    getrandom::fill(&mut selector).map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
+    getrandom::fill(&mut selector).map_err(|_| IncomingHandshakeFailure::Invalid {
+        info_hash: None,
+        mse_failure: Some(MseHandshakeFailure::Entropy),
+    })?;
     let len = usize::from(u16::from_ne_bytes(selector)) % (MSE_MAX_PADDING_LEN + 1);
     let mut bytes = [0_u8; MSE_MAX_PADDING_LEN];
-    getrandom::fill(&mut bytes[..len]).map_err(|_| IncomingHandshakeFailure::Invalid(None))?;
-    MsePadding::new(&bytes[..len]).map_err(|_| IncomingHandshakeFailure::Invalid(None))
+    getrandom::fill(&mut bytes[..len]).map_err(|_| IncomingHandshakeFailure::Invalid {
+        info_hash: None,
+        mse_failure: Some(MseHandshakeFailure::Entropy),
+    })?;
+    MsePadding::new(&bytes[..len]).map_err(|error| IncomingHandshakeFailure::Invalid {
+        info_hash: None,
+        mse_failure: Some(MseHandshakeFailure::Protocol(error)),
+    })
 }
 
 fn map_incoming_io_failure(error: IncomingIoFailure) -> IncomingHandshakeFailure {
     match error {
         IncomingIoFailure::Cancelled => IncomingHandshakeFailure::Cancelled,
         IncomingIoFailure::Timeout => IncomingHandshakeFailure::Timeout,
-        IncomingIoFailure::Invalid => IncomingHandshakeFailure::Invalid(None),
+        IncomingIoFailure::Invalid => IncomingHandshakeFailure::Invalid {
+            info_hash: None,
+            mse_failure: Some(MseHandshakeFailure::TransportIo),
+        },
+    }
+}
+
+fn incoming_mse_failure_reason(failure: &IncomingHandshakeFailure) -> MseHandshakeFailure {
+    match failure {
+        IncomingHandshakeFailure::Cancelled => MseHandshakeFailure::Cancelled,
+        IncomingHandshakeFailure::Timeout => MseHandshakeFailure::TimedOut,
+        IncomingHandshakeFailure::Invalid { mse_failure, .. } => {
+            mse_failure.unwrap_or(MseHandshakeFailure::BitTorrentHandshake)
+        }
+        IncomingHandshakeFailure::UnknownTorrent => MseHandshakeFailure::UnknownTorrent,
     }
 }
 
@@ -1711,6 +1850,7 @@ async fn read_incoming_exact(
             shared,
             cancellation,
             budget_cancellation,
+            None,
         )
         .await?;
     }
@@ -1724,6 +1864,7 @@ async fn read_incoming_some(
     shared: &Arc<Shared>,
     cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
+    accounting: Option<&mut MseHandshakeAccounting>,
 ) -> Result<usize, IncomingIoFailure> {
     let read = tokio::select! {
         biased;
@@ -1741,6 +1882,9 @@ async fn read_incoming_some(
         ByteMetric::PeerWireReceived,
         read,
     );
+    if let Some(accounting) = accounting {
+        accounting.wire_received(read);
+    }
     Ok(read)
 }
 
@@ -1751,6 +1895,7 @@ async fn write_incoming_mse_action(
     shared: &Arc<Shared>,
     cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
+    accounting: &mut MseHandshakeAccounting,
 ) -> Result<(), IncomingIoFailure> {
     let mut written = 0;
     while written < bytes.len() {
@@ -1770,11 +1915,13 @@ async fn write_incoming_mse_action(
             ByteMetric::PeerWireSent,
             count,
         );
+        accounting.wire_sent(count);
         written += count;
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn write_incoming_response(
     stream: &mut TcpStream,
     bytes: &[u8],
@@ -1783,6 +1930,7 @@ async fn write_incoming_response(
     cancellation: &CancellationToken,
     registration_cancellation: &CancellationToken,
     budget_cancellation: &CancellationToken,
+    mut accounting: Option<&mut MseHandshakeAccounting>,
 ) -> Result<(), IncomingIoFailure> {
     let mut written = 0;
     while written < bytes.len() {
@@ -1805,9 +1953,40 @@ async fn write_incoming_response(
             ByteMetric::PeerWireSent,
             count,
         );
+        if let Some(accounting) = accounting.as_deref_mut() {
+            accounting.wire_sent(count);
+        }
         written += count;
     }
     Ok(())
+}
+
+fn finish_incoming_mse_failure(
+    shared: &Shared,
+    accounting: &mut Option<MseHandshakeAccounting>,
+    failure: MseHandshakeFailure,
+) {
+    let Some(accounting) = accounting.take() else {
+        return;
+    };
+    record_mse_handshake(
+        shared.mse_handshake_sink.as_ref(),
+        accounting.finish(MseHandshakeOutcome::Failed(failure), false),
+    );
+}
+
+fn finish_incoming_mse_success(
+    shared: &Shared,
+    accounting: &mut Option<MseHandshakeAccounting>,
+    method: MseMethod,
+) {
+    let Some(accounting) = accounting.take() else {
+        return;
+    };
+    record_mse_handshake(
+        shared.mse_handshake_sink.as_ref(),
+        accounting.finish(MseHandshakeOutcome::Negotiated(method), false),
+    );
 }
 
 async fn run_handshake(
@@ -1841,7 +2020,7 @@ async fn run_handshake(
             );
             return;
         }
-        Err(IncomingHandshakeFailure::Invalid(info_hash)) => {
+        Err(IncomingHandshakeFailure::Invalid { info_hash, .. }) => {
             shared.reject(
                 IncomingRejectionReason::HandshakeInvalid,
                 Some(remote),
@@ -1854,9 +2033,16 @@ async fn run_handshake(
             return;
         }
     };
+    let mut mse_accounting = received.mse_accounting;
     let info_hash = received.info_hash;
     let handshake = received.handshake;
+    let mse_method = received.method;
     if handshake.peer_id == shared.peer_id {
+        finish_incoming_mse_failure(
+            &shared,
+            &mut mse_accounting,
+            MseHandshakeFailure::SelfConnection,
+        );
         shared.reject(
             IncomingRejectionReason::SelfConnection,
             Some(remote),
@@ -1866,6 +2052,11 @@ async fn run_handshake(
     }
     let registration = shared.registry_guard().get(&info_hash).cloned();
     let Some(registration) = registration else {
+        finish_incoming_mse_failure(
+            &shared,
+            &mut mse_accounting,
+            MseHandshakeFailure::UnknownTorrent,
+        );
         shared.reject(
             IncomingRejectionReason::UnknownTorrent,
             Some(remote),
@@ -1876,6 +2067,11 @@ async fn run_handshake(
     if !registration.accepting.load(Ordering::Acquire)
         || !registration.healthy.load(Ordering::Acquire)
     {
+        finish_incoming_mse_failure(
+            &shared,
+            &mut mse_accounting,
+            MseHandshakeFailure::StaleRegistration,
+        );
         shared.reject(
             IncomingRejectionReason::StaleRegistration,
             Some(remote),
@@ -1886,6 +2082,11 @@ async fn run_handshake(
     let local = match stream.local_addr() {
         Ok(local) => local,
         Err(_) => {
+            finish_incoming_mse_failure(
+                &shared,
+                &mut mse_accounting,
+                MseHandshakeFailure::TransportIo,
+            );
             shared.reject(
                 IncomingRejectionReason::HandshakeInvalid,
                 Some(remote),
@@ -1900,10 +2101,15 @@ async fn run_handshake(
         handshake.peer_id,
         handshake.supports_extensions(),
         PeerConnectionRole::Content,
-        received.method,
+        mse_method,
     ) {
         Ok(attachment) => attachment,
         Err(_) => {
+            finish_incoming_mse_failure(
+                &shared,
+                &mut mse_accounting,
+                MseHandshakeFailure::PeerAdmission,
+            );
             shared.reject(
                 IncomingRejectionReason::PeerState,
                 Some(remote),
@@ -1933,15 +2139,40 @@ async fn run_handshake(
         &cancellation,
         &registration.cancellation,
         &budget_cancellation,
+        mse_accounting.as_mut(),
     )
     .await;
     match response_result {
         Ok(()) => {}
         Err(IncomingIoFailure::Cancelled) => {
+            finish_incoming_mse_failure(
+                &shared,
+                &mut mse_accounting,
+                MseHandshakeFailure::Cancelled,
+            );
             peer_attachment.begin_disconnect(None);
             return;
         }
-        Err(IncomingIoFailure::Timeout | IncomingIoFailure::Invalid) => {
+        Err(IncomingIoFailure::Timeout) => {
+            finish_incoming_mse_failure(
+                &shared,
+                &mut mse_accounting,
+                MseHandshakeFailure::TimedOut,
+            );
+            peer_attachment.begin_disconnect(Some(PeerFailure::Handshake));
+            shared.reject(
+                IncomingRejectionReason::HandshakeTimeout,
+                Some(remote),
+                Some(info_hash),
+            );
+            return;
+        }
+        Err(IncomingIoFailure::Invalid) => {
+            finish_incoming_mse_failure(
+                &shared,
+                &mut mse_accounting,
+                MseHandshakeFailure::TransportIo,
+            );
             peer_attachment.begin_disconnect(Some(PeerFailure::Handshake));
             shared.reject(
                 IncomingRejectionReason::HandshakeTimeout,
@@ -1956,6 +2187,11 @@ async fn run_handshake(
         admission,
         Ok(crate::peer_runtime::PeerAdmissionOutcome::Admitted { .. })
     ) {
+        finish_incoming_mse_failure(
+            &shared,
+            &mut mse_accounting,
+            MseHandshakeFailure::PeerAdmission,
+        );
         shared.reject(
             IncomingRejectionReason::PeerState,
             Some(remote),
@@ -1968,6 +2204,12 @@ async fn run_handshake(
         ByteMetric::PeerProtocolSent,
         response.len(),
     );
+    if let Some(accounting) = mse_accounting.as_mut() {
+        accounting.protocol_sent(response.len());
+    }
+    if let Some(method) = mse_method {
+        finish_incoming_mse_success(&shared, &mut mse_accounting, method);
+    }
     budget_permit.mark_established();
     if !registration
         .admit(IncomingAdmission {
@@ -3058,11 +3300,21 @@ mod tests {
     use crate::peer_io::PeerIo;
     use crate::peer_socket;
     use crate::{
-        DEFAULT_PEER_ID, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
-        PeerBudgetConfig, PeerConnectionDirection, PeerConnectionLifecycle,
-        PeerConnectionObservation, PeerEncryptionPolicy, PeerUploadGrant, SeedContent,
-        TorrentPeerActivitySink, TorrentPeerHandle, UploadSchedulerConfig,
+        DEFAULT_PEER_ID, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
+        MseHandshakeSink, NetworkConfig, NetworkPolicy, PeerBudget, PeerBudgetConfig,
+        PeerConnectionDirection, PeerConnectionLifecycle, PeerConnectionObservation,
+        PeerEncryptionPolicy, PeerUploadGrant, SeedContent, TorrentPeerActivitySink,
+        TorrentPeerHandle, UploadSchedulerConfig,
     };
+
+    #[derive(Debug, Default)]
+    struct RecordingMseHandshakes(Mutex<Vec<MseHandshakeObservation>>);
+
+    impl MseHandshakeSink for RecordingMseHandshakes {
+        fn record(&self, observation: MseHandshakeObservation) {
+            self.0.lock().expect("MSE observations").push(observation);
+        }
+    }
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -3285,6 +3537,7 @@ mod tests {
             inactivity_timeout: Duration::from_secs(2),
             peer_id: DEFAULT_PEER_ID,
             byte_metric_sink: None,
+            mse_handshake_sink: None,
             peer_budget: PeerBudget::system_default(),
             upload_scheduler: UploadSchedulerConfig::default(),
             upload_read_jobs: super::DEFAULT_UPLOAD_READ_JOBS,
@@ -3810,6 +4063,8 @@ mod tests {
         let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
         service_config.encryption = PeerEncryptionPolicy::Allow;
         service_config.handshake_timeout = Duration::from_secs(2);
+        let mse_observations = Arc::new(RecordingMseHandshakes::default());
+        service_config.mse_handshake_sink = Some(mse_observations.clone());
         let service = IncomingPeerService::bind(service_config)
             .await
             .expect("bind service")
@@ -3867,6 +4122,18 @@ mod tests {
         .expect("connect encrypted peer");
         assert_eq!(handshake.peer_id, DEFAULT_PEER_ID);
         assert_eq!(peer.mse_method(), Some(MseMethod::Rc4));
+        let mse_observation = mse_observations.0.lock().expect("MSE observations")[0];
+        assert_eq!(mse_observation.policy, PeerEncryptionPolicy::Required);
+        assert_eq!(
+            mse_observation.outcome,
+            MseHandshakeOutcome::Negotiated(MseMethod::Rc4)
+        );
+        assert_eq!(mse_observation.exponentiations, 2);
+        assert_eq!(mse_observation.protocol_bytes_sent, HANDSHAKE_LENGTH as u64);
+        assert_eq!(
+            mse_observation.protocol_bytes_received,
+            HANDSHAKE_LENGTH as u64
+        );
         let first = peer_socket::next_message(&mut peer)
             .await
             .expect("encrypted availability");

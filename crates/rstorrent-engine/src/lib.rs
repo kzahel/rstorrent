@@ -76,7 +76,10 @@ pub use metadata_seed::{
     bind_metadata_seed,
 };
 pub use metrics::{ByteMetric, ByteMetricSink};
-pub use mse::{MAX_MSE_DH_JOBS, MseDhWorkError, MseDhWorkOwner, MseDhWorkSnapshot};
+pub use mse::{
+    MAX_MSE_DH_JOBS, MseDhWorkError, MseDhWorkOwner, MseDhWorkSnapshot, MseHandshakeFailure,
+    MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
+};
 pub use network::{
     DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
 };
