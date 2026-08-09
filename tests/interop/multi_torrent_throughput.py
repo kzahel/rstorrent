@@ -397,6 +397,30 @@ def command_value(commands: list[list[str]]) -> str:
     return "unknown"
 
 
+def filesystem_name(path: Path) -> str:
+    completed = subprocess.run(["mount"], capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        return "unknown"
+    resolved = str(path.resolve())
+    candidates = []
+    for line in completed.stdout.splitlines():
+        mac = line.rsplit(" on ", 1)
+        if len(mac) != 2:
+            continue
+        target_and_type = mac[1]
+        if " type " in target_and_type:
+            target, details = target_and_type.split(" type ", 1)
+            filesystem = details.split(maxsplit=1)[0]
+        elif " (" in target_and_type:
+            target, details = target_and_type.split(" (", 1)
+            filesystem = details.split(",", 1)[0].rstrip(")")
+        else:
+            continue
+        if resolved == target or resolved.startswith(target.rstrip("/") + "/") or target == "/":
+            candidates.append((len(target), filesystem))
+    return max(candidates, default=(0, "unknown"))[1]
+
+
 def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[tuple[int, int], list[dict[str, Any]]] = {}
     for result in results:
@@ -518,12 +542,7 @@ def main() -> int:
                 "host_model": command_value(
                     [["sysctl", "-n", "hw.model"], ["uname", "-m"]]
                 ),
-                "filesystem": command_value(
-                    [
-                        ["stat", "-f", "%T", str(root)],
-                        ["stat", "-f", "-c", "%T", str(root)],
-                    ]
-                ),
+                "filesystem": filesystem_name(root),
             },
             "size_mib_per_torrent": arguments.size_mib,
             "piece_size_kib": arguments.piece_size_kib,
