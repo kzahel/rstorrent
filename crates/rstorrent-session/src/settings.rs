@@ -14,9 +14,10 @@ pub use contract::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
-    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings, EncryptionPolicy,
+    HttpsServerAuthenticationPolicy, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_ACTIVE_DOWNLOADS,
+    MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
     PortMappingStatus, SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot, TransportAddressFamily, TransportFamilyRuntimeView,
 };
@@ -26,7 +27,8 @@ pub(crate) use convergence::{
 pub(crate) use persistence::{
     SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,
     migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
-    migrate_client_settings_to_v16, read_client_settings, replace_client_settings,
+    migrate_client_settings_to_v16, migrate_client_settings_to_v17, read_client_settings,
+    replace_client_settings,
 };
 pub(crate) use runtime::{bounded_utf8, classify_listener_bind_failure};
 

@@ -8,9 +8,11 @@ uniffi::setup_scaffolding!();
 mod advertised_endpoint;
 mod application;
 mod application_connection;
+mod auto_manager;
 mod control;
 mod dht_views;
 mod diagnostics;
+mod download_queue;
 mod durable_state;
 mod file_views;
 mod have;
@@ -20,6 +22,7 @@ mod session_network;
 mod settings;
 mod speed;
 mod store;
+mod store_schema;
 mod torrent_runtime;
 mod tracker_views;
 mod views;
@@ -54,9 +57,10 @@ pub use settings::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
-    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
+    DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings, EncryptionPolicy,
+    HttpsServerAuthenticationPolicy, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_ACTIVE_DOWNLOADS,
+    MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
     PortMappingStatus, SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot, TransportAddressFamily, TransportFamilyRuntimeView,
 };

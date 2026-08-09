@@ -84,6 +84,12 @@ pub enum Command {
         torrent_id: String,
         file_indices: Vec<u32>,
     },
+    MoveDownloadToTop {
+        torrent_id: String,
+    },
+    MoveDownloadToBottom {
+        torrent_id: String,
+    },
     SetDefaultStorageRoot {
         storage_root: String,
     },
@@ -137,6 +143,8 @@ impl Command {
                 | Self::SetFilePriority { .. }
                 | Self::SetFilePriorityRanges { .. }
                 | Self::DownloadFiles { .. }
+                | Self::MoveDownloadToTop { .. }
+                | Self::MoveDownloadToBottom { .. }
                 | Self::Archive { .. }
                 | Self::RestoreArchive { .. }
                 | Self::RemoveTorrent { .. }
@@ -365,6 +373,8 @@ pub struct TorrentSnapshot {
     pub metadata_available: bool,
     pub piece_count: u32,
     pub verified_piece_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_queue_position: Option<u32>,
     pub skip_files: Vec<u32>,
     #[serde(default)]
     pub selection_default: FilePriority,
@@ -511,6 +521,10 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
                 }
                 previous = Some(*index);
             }
+        }
+        Command::MoveDownloadToTop { torrent_id }
+        | Command::MoveDownloadToBottom { torrent_id } => {
+            validate_torrent_id(torrent_id)?;
         }
         Command::SetFilePriorityRanges {
             torrent_id,

@@ -577,6 +577,7 @@ fn validate_application_config(
         application = application.with_fresh_profile_defaults();
     }
     application.download_resource_limits = DownloadResourceLimits::ANDROID;
+    application.active_download_cap = Some(2);
     Ok(application)
 }
 

@@ -27,6 +27,9 @@ const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
             peer_connection_limit BETWEEN 1 AND 2000
         ),
         upload_slots INTEGER NOT NULL CHECK (upload_slots BETWEEN 0 AND 50),
+        active_downloads INTEGER NOT NULL DEFAULT 3 CHECK (
+            active_downloads BETWEEN 1 AND 20
+        ),
         encryption TEXT NOT NULL DEFAULT 'allow' CHECK (
             encryption IN ('disabled', 'allow', 'prefer', 'required')
         ),
@@ -145,8 +148,9 @@ pub(crate) fn create_client_settings(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
             port_mapping_mode, peer_connection_limit, upload_slots,
-            encryption, ipv6_enabled, tracker_https_server_authentication
-         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            active_downloads, encryption, ipv6_enabled,
+            tracker_https_server_authentication
+         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             mode,
             port.map(i64::from),
@@ -154,6 +158,7 @@ pub(crate) fn create_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            i64::from(settings.active_downloads),
             encryption,
             settings.ipv6_enabled,
             tracker_https_authentication,
@@ -179,12 +184,14 @@ pub(crate) fn read_client_settings(
         mapping_mode,
         peer_connection_limit,
         upload_slots,
+        active_downloads,
         encryption,
         ipv6_enabled,
         tracker_https_authentication,
     ) = connection.query_row(
         "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
-                peer_connection_limit, upload_slots, encryption, ipv6_enabled,
+                peer_connection_limit, upload_slots, active_downloads,
+                encryption, ipv6_enabled,
                 tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
         [],
@@ -196,9 +203,10 @@ pub(crate) fn read_client_settings(
                 row.get::<_, String>(3)?,
                 row.get::<_, i64>(4)?,
                 row.get::<_, i64>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, bool>(7)?,
-                row.get::<_, String>(8)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, bool>(8)?,
+                row.get::<_, String>(9)?,
             ))
         },
     )?;
@@ -246,6 +254,11 @@ pub(crate) fn read_client_settings(
         })?,
         upload_slots: u16::try_from(upload_slots).map_err(|_| {
             SettingsPersistenceError::Corrupt("upload slots cannot be represented".to_owned())
+        })?,
+        active_downloads: u16::try_from(active_downloads).map_err(|_| {
+            SettingsPersistenceError::Corrupt(
+                "active download limit cannot be represented".to_owned(),
+            )
         })?,
         encryption: match encryption.as_str() {
             "disabled" => EncryptionPolicy::Disabled,
@@ -295,8 +308,8 @@ pub(crate) fn replace_client_settings(
          SET listener_mode = ?1, listener_port = ?2,
              preferred_listen_port = ?3, port_mapping_mode = ?4,
              peer_connection_limit = ?5, upload_slots = ?6,
-             encryption = ?7, ipv6_enabled = ?8,
-             tracker_https_server_authentication = ?9
+             active_downloads = ?7, encryption = ?8, ipv6_enabled = ?9,
+             tracker_https_server_authentication = ?10
          WHERE singleton = 1",
         params![
             mode,
@@ -305,6 +318,7 @@ pub(crate) fn replace_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            i64::from(settings.active_downloads),
             encryption,
             settings.ipv6_enabled,
             tracker_https_authentication,
@@ -389,6 +403,27 @@ pub(crate) fn migrate_client_settings_to_v16(
     transaction.execute_batch(
         "ALTER TABLE client_settings ADD COLUMN ipv6_enabled INTEGER NOT NULL DEFAULT 1
          CHECK (ipv6_enabled IN (0, 1));",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn migrate_client_settings_to_v17(
+    transaction: &Transaction<'_>,
+) -> Result<(), SettingsPersistenceError> {
+    let has_active_downloads = {
+        let mut statement = transaction.prepare("PRAGMA table_info(client_settings)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|column| column == "active_downloads")
+    };
+    if has_active_downloads {
+        return Ok(());
+    }
+    transaction.execute_batch(
+        "ALTER TABLE client_settings ADD COLUMN active_downloads INTEGER NOT NULL DEFAULT 3
+         CHECK (active_downloads BETWEEN 1 AND 20);",
     )?;
     Ok(())
 }

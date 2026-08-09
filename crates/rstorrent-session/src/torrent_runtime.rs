@@ -291,7 +291,6 @@ impl From<TorrentPeerError> for TorrentRuntimeError {
 
 #[derive(Debug)]
 pub(crate) struct TorrentRuntime {
-    torrent_id: String,
     generation: u64,
     accepting_peer_events: Arc<AtomicBool>,
     peers: TorrentPeerHandle,
@@ -324,17 +323,12 @@ impl TorrentRuntime {
             tracker_counters,
         };
         Ok(Self {
-            torrent_id,
             generation,
             accepting_peer_events,
             peers,
             handle,
             active_download: None,
         })
-    }
-
-    pub(crate) fn torrent_id(&self) -> &str {
-        &self.torrent_id
     }
 
     pub(crate) fn generation(&self) -> u64 {

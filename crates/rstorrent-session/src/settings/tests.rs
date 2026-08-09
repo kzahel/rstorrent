@@ -184,6 +184,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         port_mapping: PortMappingPolicy::Disabled,
         peer_connection_limit: 500,
         upload_slots: 1,
+        active_downloads: 3,
         encryption: EncryptionPolicy::Required,
         ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
@@ -274,6 +275,7 @@ fn version_fourteen_settings_migrate_to_allow_and_ipv6_enabled() {
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v15(&transaction).unwrap();
     super::migrate_client_settings_to_v16(&transaction).unwrap();
+    super::migrate_client_settings_to_v17(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap().encryption,
@@ -317,6 +319,7 @@ fn version_fifteen_settings_preserve_encryption_and_enable_ipv6() {
         .unwrap();
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v16(&transaction).unwrap();
+    super::migrate_client_settings_to_v17(&transaction).unwrap();
     transaction.commit().unwrap();
 
     let settings = read_client_settings(&connection).unwrap();
@@ -377,6 +380,7 @@ fn typed_persistence_round_trips_one_atomic_group() {
         port_mapping: PortMappingPolicy::Upnp,
         peer_connection_limit: 1,
         upload_slots: 0,
+        active_downloads: 3,
         encryption: Default::default(),
         ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
@@ -416,6 +420,7 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
             port_mapping: PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+            active_downloads: 3,
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
@@ -452,6 +457,7 @@ fn version_ten_settings_migrate_with_the_preferred_port_default() {
             port_mapping: PortMappingPolicy::Upnp,
             peer_connection_limit: 444,
             upload_slots: 5,
+            active_downloads: 3,
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,

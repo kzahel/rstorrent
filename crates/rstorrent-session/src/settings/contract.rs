@@ -12,6 +12,9 @@ pub const MIN_PREFERRED_LISTEN_PORT: u16 = 1_024;
 pub const MIN_PEER_CONNECTION_LIMIT: u32 = 1;
 pub const MAX_PEER_CONNECTION_LIMIT: u32 = 2_000;
 pub const MAX_UPLOAD_SLOTS: u16 = 50;
+pub const DEFAULT_ACTIVE_DOWNLOADS: u16 = 3;
+pub const MIN_ACTIVE_DOWNLOADS: u16 = 1;
+pub const MAX_ACTIVE_DOWNLOADS: u16 = 20;
 pub(crate) const MAX_RUNTIME_DETAIL_BYTES: usize = 512;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -101,6 +104,9 @@ pub struct ClientSettings {
     pub peer_connection_limit: u32,
     #[schemars(range(min = 0, max = 50))]
     pub upload_slots: u16,
+    #[serde(default = "default_active_downloads")]
+    #[schemars(range(min = 1, max = 20))]
+    pub active_downloads: u16,
     pub encryption: EncryptionPolicy,
     pub ipv6_enabled: bool,
     pub tracker_https_server_authentication: HttpsServerAuthenticationPolicy,
@@ -116,6 +122,7 @@ impl Default for ClientSettings {
                 .expect("engine connection default fits the settings contract"),
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
                 .expect("engine upload-slot default fits the settings contract"),
+            active_downloads: DEFAULT_ACTIVE_DOWNLOADS,
             encryption: EncryptionPolicy::Allow,
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
@@ -156,8 +163,17 @@ impl ClientSettings {
                 value: self.upload_slots,
             });
         }
+        if !(MIN_ACTIVE_DOWNLOADS..=MAX_ACTIVE_DOWNLOADS).contains(&self.active_downloads) {
+            return Err(ClientSettingsError::ActiveDownloads {
+                value: self.active_downloads,
+            });
+        }
         Ok(())
     }
+}
+
+const fn default_active_downloads() -> u16 {
+    DEFAULT_ACTIVE_DOWNLOADS
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,6 +182,7 @@ pub enum ClientSettingsError {
     FixedListenerPort { port: u16 },
     PeerConnectionLimit { value: u32 },
     UploadSlots { value: u16 },
+    ActiveDownloads { value: u16 },
 }
 
 impl fmt::Display for ClientSettingsError {
@@ -186,6 +203,10 @@ impl fmt::Display for ClientSettingsError {
             Self::UploadSlots { .. } => {
                 write!(formatter, "upload slots must be 0..={MAX_UPLOAD_SLOTS}")
             }
+            Self::ActiveDownloads { .. } => write!(
+                formatter,
+                "active downloads must be {MIN_ACTIVE_DOWNLOADS}..={MAX_ACTIVE_DOWNLOADS}"
+            ),
         }
     }
 }

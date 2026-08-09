@@ -72,6 +72,7 @@ fn service_snapshot(revision: u64, verified: u32) -> ServiceSnapshot {
             metadata_available: true,
             piece_count: 3,
             verified_piece_count: verified,
+            download_queue_position: None,
             skip_files: Vec::new(),
             selection_default: Default::default(),
             selection_exceptions: Vec::new(),

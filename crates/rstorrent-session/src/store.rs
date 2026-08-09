@@ -31,6 +31,7 @@ use crate::control::{
     encode_info_hash, parse_revision, validate_add_torrent_bytes_request, validate_identifier,
     validate_request,
 };
+use crate::download_queue::{self, QueueEdge};
 use crate::durable_state::{
     DerivedStateInput, PayloadState, VerificationState, derive_torrent_state,
 };
@@ -41,95 +42,17 @@ use crate::settings::{
     migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
     migrate_client_settings_to_v16, read_client_settings, replace_client_settings,
 };
+use crate::store_schema::{
+    DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
+    migrate_to_v17,
+};
 
-const SCHEMA_VERSION: i64 = 16;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
 pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
-const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
-        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-        format_version INTEGER NOT NULL CHECK (format_version > 0),
-        node_id BLOB NOT NULL CHECK (length(node_id) = 20)
-     );
-     CREATE TABLE dht_nodes (
-        family INTEGER NOT NULL CHECK (family IN (4, 6)),
-        sample_order INTEGER NOT NULL CHECK (
-            sample_order >= 0 AND sample_order < 64
-        ),
-        node_id BLOB NOT NULL CHECK (length(node_id) = 20),
-        address BLOB NOT NULL CHECK (
-            (family = 4 AND length(address) = 4) OR
-            (family = 6 AND length(address) = 16)
-        ),
-        port INTEGER NOT NULL CHECK (port > 0 AND port <= 65535),
-        PRIMARY KEY (family, sample_order),
-        UNIQUE (family, node_id),
-        UNIQUE (family, address, port)
-     ) WITHOUT ROWID;
-     CREATE TABLE dht_identities (
-        family INTEGER NOT NULL CHECK (family IN (4, 6)),
-        identity_order INTEGER NOT NULL CHECK (
-            identity_order >= 0 AND identity_order < 8
-        ),
-        address BLOB NOT NULL CHECK (
-            (family = 4 AND length(address) = 4) OR
-            (family = 6 AND length(address) = 16)
-        ),
-        node_id BLOB NOT NULL CHECK (length(node_id) = 20),
-        PRIMARY KEY (family, identity_order),
-        UNIQUE (family, address)
-     ) WITHOUT ROWID;";
-const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
-        info_hash BLOB PRIMARY KEY
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
-        operation_id TEXT NOT NULL UNIQUE
-            CHECK (length(operation_id) BETWEEN 1 AND 128),
-        data_policy TEXT NOT NULL
-            CHECK (data_policy IN ('keep', 'delete_managed')),
-        state TEXT NOT NULL
-            CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
-        error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-        created_revision INTEGER NOT NULL CHECK (created_revision >= 0),
-        updated_revision INTEGER NOT NULL CHECK (updated_revision >= 0)
-     ) WITHOUT ROWID;";
-const SOURCE_TABLES_SQL: &str = "CREATE TABLE torrent_source (
-        info_hash BLOB PRIMARY KEY
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
-        kind TEXT NOT NULL CHECK (kind IN ('magnet', 'metainfo')),
-        fidelity TEXT NOT NULL CHECK (fidelity IN ('verbatim', 'canonicalized')),
-        magnet TEXT CHECK (magnet IS NULL OR length(magnet) <= 16384),
-        metainfo BLOB CHECK (metainfo IS NULL OR length(metainfo) <= 67108864),
-        byte_length INTEGER NOT NULL CHECK (byte_length BETWEEN 1 AND 67108864),
-        sha256 BLOB NOT NULL CHECK (length(sha256) = 32),
-        CHECK (
-            (kind = 'magnet' AND magnet IS NOT NULL AND metainfo IS NULL) OR
-            (kind = 'metainfo' AND magnet IS NULL AND metainfo IS NOT NULL)
-        )
-     ) WITHOUT ROWID;
-     CREATE TABLE torrent_trackers (
-        info_hash BLOB NOT NULL
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
-        tier INTEGER NOT NULL CHECK (tier BETWEEN 0 AND 999993),
-        position INTEGER NOT NULL CHECK (position BETWEEN 0 AND 999993),
-        url TEXT NOT NULL CHECK (length(url) BETWEEN 1 AND 67108864),
-        transport TEXT NOT NULL CHECK (transport IN ('udp', 'http', 'https')),
-        source TEXT NOT NULL CHECK (source IN ('magnet', 'metainfo')),
-        PRIMARY KEY (info_hash, tier, position),
-        UNIQUE (info_hash, url)
-     ) WITHOUT ROWID;
-     CREATE TABLE torrent_peer_hints (
-        info_hash BLOB NOT NULL
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
-        position INTEGER NOT NULL CHECK (position BETWEEN 0 AND 31),
-        host TEXT NOT NULL CHECK (length(host) BETWEEN 1 AND 253),
-        port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
-        source TEXT NOT NULL CHECK (source = 'magnet'),
-        PRIMARY KEY (info_hash, position),
-        UNIQUE (info_hash, host, port)
-     ) WITHOUT ROWID;";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {
@@ -229,6 +152,7 @@ pub struct ResumeRecord {
     pub state: TorrentState,
     pub storage_state: StorageState,
     pub desired_running: bool,
+    pub download_queue_position: Option<i64>,
     pub raw_info: Option<Vec<u8>>,
     pub publication_name: Option<String>,
     pub managed_artifacts: ManagedArtifactState,
@@ -1024,7 +948,7 @@ impl SessionStore {
                 "SELECT magnet, storage_root, raw_info, publication_name,
                         piece_count, have_state, desired_state, payload_state,
                         verification_requested, verification_completed,
-                        quarantine_reason
+                        quarantine_reason, download_queue_position
                  FROM torrents
                 WHERE info_hash = ?1",
                 [info_hash.as_slice()],
@@ -1041,6 +965,7 @@ impl SessionStore {
                         row.get::<_, i64>(8)?,
                         row.get::<_, i64>(9)?,
                         row.get::<_, Option<String>>(10)?,
+                        row.get::<_, Option<i64>>(11)?,
                     ))
                 },
             )
@@ -1128,6 +1053,7 @@ impl SessionStore {
             state,
             storage_state,
             desired_running,
+            download_queue_position: row.11,
             raw_info: row.2,
             publication_name: row.3,
             managed_artifacts,
@@ -1738,6 +1664,10 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET payload_state = ?2,
+                 download_queue_position = CASE
+                    WHEN ?2 = 'final_owned' THEN NULL
+                    ELSE download_queue_position
+                 END,
                  updated_revision = ?3
              WHERE info_hash = ?1",
             params![info_hash.as_slice(), payload_state.as_str(), revision_sql],
@@ -1965,6 +1895,7 @@ impl SessionStore {
         transaction.execute(
             "UPDATE torrents
              SET error = NULL, payload_state = 'final_owned',
+                 download_queue_position = NULL,
                  updated_revision = ?2
              WHERE info_hash = ?1",
             params![info_hash.as_slice(), revision_sql],
@@ -2031,6 +1962,7 @@ impl SessionStore {
         transaction.execute(
             "UPDATE torrents
              SET error = NULL, payload_state = 'final_owned',
+                 download_queue_position = NULL,
                  verification_requested = ?2, updated_revision = ?3
              WHERE info_hash = ?1",
             params![info_hash.as_slice(), next_requested, revision_sql],
@@ -2131,6 +2063,10 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET payload_state = ?2, quarantine_reason = NULL,
+                 download_queue_position = CASE
+                    WHEN ?2 = 'final_owned' THEN NULL
+                    ELSE download_queue_position
+                 END,
                  error = ?3, updated_revision = ?4
              WHERE info_hash = ?1",
             params![
@@ -2410,6 +2346,7 @@ fn migrate(
                 archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
                 selection_default TEXT NOT NULL DEFAULT 'wanted'
                     CHECK (selection_default IN ('wanted', 'skipped')),
+                download_queue_position INTEGER,
                 created_revision INTEGER NOT NULL,
                 updated_revision INTEGER NOT NULL,
                 CHECK (
@@ -2467,6 +2404,7 @@ fn migrate(
         transaction.execute_batch(DHT_TABLES_SQL)?;
         transaction.execute_batch(REMOVAL_TABLE_SQL)?;
         transaction.execute_batch(SOURCE_TABLES_SQL)?;
+        transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
         transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
     }
@@ -2667,6 +2605,9 @@ fn migrate(
     }
     if (1..=15).contains(&version) {
         migrate_dual_stack_state_to_v16(connection)?;
+    }
+    if (1..=16).contains(&version) {
+        migrate_to_v17(connection)?;
     }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
@@ -3607,6 +3548,12 @@ fn apply_mutation(
             torrent_id,
             file_indices,
         } => download_files(transaction, torrent_id, file_indices, current_revision),
+        Command::MoveDownloadToTop { torrent_id } => {
+            move_download_to_edge(transaction, torrent_id, QueueEdge::Top, current_revision)
+        }
+        Command::MoveDownloadToBottom { torrent_id } => {
+            move_download_to_edge(transaction, torrent_id, QueueEdge::Bottom, current_revision)
+        }
         Command::SetDefaultStorageRoot { storage_root } => {
             set_default_storage_root(transaction, storage_root, current_revision)
         }
@@ -3759,6 +3706,10 @@ fn add_torrent_bytes(
             ],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
+    if request.start_content {
+        download_queue::append(transaction, &metainfo.info_hash)
+            .map_err(AddTorrentBytesError::Store)?;
+    }
     transaction
         .execute(
             "INSERT INTO torrent_source(
@@ -3897,6 +3848,74 @@ fn force_recheck(
                  verification_requested = ?3
              WHERE info_hash = ?1",
             params![info_hash.as_slice(), revision_sql, requested,],
+        )
+        .map_err(internal_error)?;
+    Ok(revision)
+}
+
+fn move_download_to_edge(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    edge: QueueEdge,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let eligible = transaction
+        .query_row(
+            "SELECT download_queue_position IS NOT NULL,
+                    payload_state <> 'final_owned', archived = 0,
+                    NOT EXISTS(SELECT 1 FROM removal_jobs r
+                               WHERE r.info_hash = torrents.info_hash)
+             FROM torrents WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, bool>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    if !(eligible.0 && eligible.1 && eligible.2 && eligible.3) {
+        return Err((
+            ErrorCode::InvalidTorrentState,
+            "queue movement requires an incomplete retained download with a queue position"
+                .to_owned(),
+        ));
+    }
+    if download_queue::is_at_edge(transaction, &info_hash, edge)
+        .map_err(|error| internal_message(&error.to_string()))?
+    {
+        return Ok(current_revision);
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    download_queue::move_to_edge(transaction, &info_hash, edge)
+        .map_err(|error| internal_message(&error.to_string()))?;
+    transaction
+        .execute(
+            "UPDATE torrents SET updated_revision = ?2 WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                i64::try_from(revision)
+                    .map_err(|_| internal_message("profile revision overflow"))?
+            ],
         )
         .map_err(internal_error)?;
     Ok(revision)
@@ -4190,6 +4209,8 @@ fn add_magnet(
             ],
         )
         .map_err(internal_error)?;
+    download_queue::append(transaction, &magnet.info_hash)
+        .map_err(|error| internal_message(&error.to_string()))?;
     let source_digest = Sha256::digest(source.as_bytes());
     transaction
         .execute(
@@ -4437,7 +4458,8 @@ where
         .query_row(
             "SELECT t.raw_info, t.payload_state, t.quarantine_reason,
                     r.info_hash IS NOT NULL,
-                    t.selection_default, t.desired_state, t.archived
+                    t.selection_default, t.desired_state, t.archived,
+                    t.download_queue_position
              FROM torrents t
              LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
              WHERE t.info_hash = ?1",
@@ -4451,6 +4473,7 @@ where
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, bool>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             },
         )
@@ -4529,6 +4552,14 @@ where
     }
     let selection_changed = exceptions != initial_exceptions;
     let running_changed = set_running && row.5 != "running";
+    let move_download_to_head = set_running
+        && row.7.is_some()
+        && !download_queue::is_at_edge(transaction, &info_hash, QueueEdge::Top)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    let append_reopened_download = selection_changed
+        && priority == FilePriority::Normal
+        && row.5 == "running"
+        && row.7.is_none();
     if (selection_changed || set_running)
         && (row.2.is_some() || payload_state == PayloadState::PublicationPending)
     {
@@ -4537,7 +4568,8 @@ where
             "file selection cannot change during repair or publication".to_owned(),
         ));
     }
-    if !selection_changed && !running_changed {
+    if !selection_changed && !running_changed && !move_download_to_head && !append_reopened_download
+    {
         return Ok(current_revision);
     }
     let revision = next_revision(transaction, current_revision)?;
@@ -4581,6 +4613,18 @@ where
             ],
         )
         .map_err(internal_error)?;
+    if set_running {
+        if row.7.is_some() {
+            download_queue::move_to_edge(transaction, &info_hash, QueueEdge::Top)
+                .map_err(|error| internal_message(&error.to_string()))?;
+        } else if selection_changed {
+            download_queue::place_missing(transaction, &info_hash, QueueEdge::Top)
+                .map_err(|error| internal_message(&error.to_string()))?;
+        }
+    } else if append_reopened_download {
+        download_queue::append(transaction, &info_hash)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    }
     Ok(revision)
 }
 
@@ -4598,7 +4642,7 @@ fn set_desired_state(
     })?;
     let row = transaction
         .query_row(
-            "SELECT t.desired_state, t.quarantine_reason,
+            "SELECT t.desired_state, t.quarantine_reason, t.payload_state,
                     r.info_hash IS NOT NULL
              FROM torrents t
              LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
@@ -4608,7 +4652,8 @@ fn set_desired_state(
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
-                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
                 ))
             },
         )
@@ -4623,7 +4668,7 @@ fn set_desired_state(
                 ),
             )
         })?;
-    if row.2 {
+    if row.3 {
         return Err((
             ErrorCode::InvalidTorrentState,
             "torrent removal is already in progress".to_owned(),
@@ -4658,6 +4703,10 @@ fn set_desired_state(
             params![info_hash.as_slice(), desired, revision_sql],
         )
         .map_err(internal_error)?;
+    if running && row.2 != PayloadState::FinalOwned.as_str() {
+        download_queue::append(transaction, &info_hash)
+            .map_err(|error| internal_message(&error.to_string()))?;
+    }
     Ok(revision)
 }
 
@@ -4833,6 +4882,7 @@ fn next_revision_strict(
 
 fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSnapshot, StoreError> {
     let revision = read_revision(connection)?;
+    let queue_ordinals = read_download_queue_ordinals(connection)?;
     let mut statement = connection.prepare(
         "SELECT t.info_hash, t.storage_root, t.raw_info, t.piece_count,
                 t.have_state, t.error, t.archived, r.state, r.error,
@@ -4943,6 +4993,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
             verified_piece_count: u32::try_from(verified_piece_count)
                 .map_err(|_| StoreError::DurableState("verified count overflow".to_owned()))?,
+            download_queue_position: queue_ordinals.get(&info_hash).copied(),
             skip_files: if selection_default == FilePriority::Normal {
                 selection_exceptions.clone()
             } else {
@@ -4974,6 +5025,27 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         client_settings: read_client_settings(connection)?,
         torrents,
     })
+}
+
+fn read_download_queue_ordinals(
+    connection: &Connection,
+) -> Result<std::collections::BTreeMap<[u8; 20], u32>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT info_hash FROM torrents
+         WHERE download_queue_position IS NOT NULL
+         ORDER BY download_queue_position, info_hash",
+    )?;
+    let rows = statement.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut ordinals = std::collections::BTreeMap::new();
+    for (index, row) in rows.enumerate() {
+        let info_hash: [u8; 20] = row?
+            .try_into()
+            .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
+        let ordinal = u32::try_from(index + 1)
+            .map_err(|_| StoreError::DurableState("download queue is too large".to_owned()))?;
+        ordinals.insert(info_hash, ordinal);
+    }
+    Ok(ordinals)
 }
 
 struct RemovalRow {
@@ -6084,6 +6156,148 @@ mod tests {
                 skip_files: vec![1, 3],
             },
         }
+    }
+
+    fn add_hash_request(request_id: &str, value: u8) -> RequestEnvelope {
+        RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet: format!(
+                    "magnet:?xt=urn:btih:{}&x.pe=127.0.0.1:1",
+                    format!("{value:02x}").repeat(20)
+                ),
+                storage_root: "downloads".to_owned(),
+                start_content: true,
+                skip_files: Vec::new(),
+            },
+        }
+    }
+
+    fn queued_ids(store: &SessionStore) -> Vec<String> {
+        let mut torrents = store.snapshot().expect("queue snapshot").torrents;
+        torrents.sort_unstable_by_key(|torrent| torrent.download_queue_position);
+        torrents
+            .into_iter()
+            .filter(|torrent| torrent.download_queue_position.is_some())
+            .map(|torrent| torrent.torrent_id)
+            .collect()
+    }
+
+    #[test]
+    fn download_queue_is_durable_replayable_and_keeps_pause_position() {
+        let root = test_root("download-queue");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        for value in 1..=3 {
+            store
+                .handle_durable(&add_hash_request(&format!("add-{value}"), value))
+                .expect("add queued torrent");
+        }
+        let ids = (1..=3)
+            .map(|value| format!("{value:02x}").repeat(20))
+            .collect::<Vec<_>>();
+        assert_eq!(queued_ids(&store), ids);
+
+        for (request_id, command) in [
+            (
+                "pause-middle",
+                Command::Pause {
+                    torrent_id: ids[1].clone(),
+                },
+            ),
+            (
+                "resume-middle",
+                Command::Resume {
+                    torrent_id: ids[1].clone(),
+                },
+            ),
+        ] {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command,
+                })
+                .expect("change durable intent");
+        }
+        assert_eq!(queued_ids(&store), ids);
+
+        let move_top = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "move-third-top".to_owned(),
+            expected_revision: None,
+            command: Command::MoveDownloadToTop {
+                torrent_id: ids[2].clone(),
+            },
+        };
+        let accepted = store.handle_durable(&move_top).expect("move to top");
+        assert_eq!(
+            queued_ids(&store),
+            vec![ids[2].clone(), ids[0].clone(), ids[1].clone()]
+        );
+        assert_eq!(
+            store.handle_durable(&move_top).expect("exact replay"),
+            accepted
+        );
+
+        let conflict = store
+            .handle_durable(&RequestEnvelope {
+                command: Command::MoveDownloadToBottom {
+                    torrent_id: ids[2].clone(),
+                },
+                ..move_top.clone()
+            })
+            .expect("request conflict response");
+        assert!(matches!(
+            conflict.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::RequestConflict,
+                    ..
+                }
+            }
+        ));
+        let stale = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "stale-queue-move".to_owned(),
+                expected_revision: Some("0".to_owned()),
+                command: Command::MoveDownloadToBottom {
+                    torrent_id: ids[2].clone(),
+                },
+            })
+            .expect("stale response");
+        assert!(matches!(
+            stale.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StaleRevision,
+                    ..
+                }
+            }
+        ));
+
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "move-third-bottom".to_owned(),
+                expected_revision: None,
+                command: Command::MoveDownloadToBottom {
+                    torrent_id: ids[2].clone(),
+                },
+            })
+            .expect("move to bottom");
+        assert_eq!(queued_ids(&store), ids);
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        assert_eq!(queued_ids(&reopened), ids);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
     }
 
     fn torrent_source() -> Vec<u8> {
@@ -8448,6 +8662,67 @@ mod tests {
     }
 
     #[test]
+    fn migrates_version_sixteen_to_default_setting_and_stable_queue_order() {
+        let root = test_root("schema-v16-download-queue");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&add_hash_request("add-second-hash-first", 2))
+            .expect("add first queue row");
+        store
+            .handle_durable(&add_hash_request("add-first-hash-second", 1))
+            .expect("add second queue row");
+        let database_path = store.database_path().expect("database path").to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        connection
+            .execute_batch(
+                "DROP INDEX download_queue_order;
+                 ALTER TABLE torrents DROP COLUMN download_queue_position;
+                 ALTER TABLE client_settings DROP COLUMN active_downloads;
+                 PRAGMA user_version = 16;",
+            )
+            .expect("downgrade fixture to version sixteen");
+        drop(connection);
+
+        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate");
+        assert_eq!(
+            migrated
+                .snapshot()
+                .expect("snapshot")
+                .client_settings
+                .active_downloads,
+            3
+        );
+        assert_eq!(
+            queued_ids(&migrated),
+            vec![
+                format!("{:02x}", 2).repeat(20),
+                format!("{:02x}", 1).repeat(20)
+            ]
+        );
+        let connection = Connection::open(database_path).expect("inspect migrated database");
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("schema version");
+        assert_eq!(version, SCHEMA_VERSION);
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'download_queue_order'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("queue index");
+        assert_eq!(index_count, 1);
+        drop(connection);
+        drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn client_settings_are_atomic_replayable_and_profile_scoped() {
         let root = test_root("client-settings-command");
         let configured_root = configured_root(&root);
@@ -8460,6 +8735,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+            active_downloads: 3,
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
