@@ -40,7 +40,10 @@ slice adds the generated four-value MSE/PE policy and live effective state to
 that same contract. Browser and Tauri share the labelled non-security control
 and the truthful encrypted-or-obfuscated peer flag; Android carries and
 compiles the enum/default, exposes bounded DH-owner evidence to the retained
-product harness, and deliberately adds no Compose settings screen.
+product harness, and deliberately adds no Compose settings screen. The named
+API 37 physical Pixel 7a profile applied `required`, completed five forced-RC4
+oracle sessions, published the exact payload, drained the DH owner, and cleaned
+up within the recorded descriptor and storage bounds.
 Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an

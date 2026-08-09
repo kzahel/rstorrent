@@ -1,8 +1,9 @@
 # Tactical 112: Dual-Stack Session Transport And IPv6 DHT Participation
 
-Status: Planned on 2026-08-08 and source-reconciled on 2026-08-09. Not
-started. The two-tactical split, the IPv6 bind-address strategy, and the
-settings shape and default were accepted in product discussion on 2026-08-08.
+Status: Authoritative **Now**, planned on 2026-08-08 and source-reconciled
+after Tactical `111` graduated on 2026-08-09. Not started. The two-tactical
+split, the IPv6 bind-address strategy, and the settings shape and default were
+accepted in product discussion on 2026-08-08.
 
 Topics: `dht-discovery`, `incoming-reachability-and-seeding`,
 `tracker-discovery`, `protocol-support`, `client-persistence`,
@@ -21,11 +22,10 @@ slice extends per family. Completed Tactical
 family-selected tracker transport and `peers6` intake. Completed Tactical
 [`097`](097-live-client-settings-and-replaceable-session-generations.md)
 established replaceable transport generations that every new socket must join.
-Planned Tactical [`111`](111-mse-peer-stream-encryption.md) is an execution
-prerequisite: it owns persistence schema version 15 and the final TCP peer
-stream path that family-policy convergence must close in both plaintext and
-encrypted modes. This tactical consumes schema version 16 only after `111`
-lands.
+Completed Tactical [`111`](111-mse-peer-stream-encryption.md) owns persistence
+schema version 15 and the final TCP peer-stream path that family-policy
+convergence must close in both plaintext and encrypted modes. This tactical
+therefore consumes schema version 16.
 Completed Tactical [`102`](102-ordinary-incoming-listener-settings.md) owns the
 ordinary listener product boundary this slice must not widen. Completed
 Tactical [`065`](065-dht-observatory.md) owns the routing-space projection that
@@ -58,10 +58,11 @@ Four concrete forces select this slice now:
    as an accepted temporary state; nothing downstream can improve until a
    per-family reachable endpoint exists.
 3. **IPv4 assumptions are hardening faster than they are being removed.**
-   `SocketAddrV4` and `Ipv4Addr` appear in 224 places across the crates, and
+   `SocketAddrV4` and `Ipv4Addr` appear in 250 places across the crates, and
    the concentration is in exactly the owners this slice must change:
-   `port_mapping/upnp.rs` (44), `dht.rs` (28), `reachability.rs` (24),
-   `advertised_endpoint.rs` (21), `session_socket.rs` (21), `incoming.rs` (21).
+   `port_mapping/upnp.rs` (49), `advertised_endpoint.rs` (32), `dht.rs` and
+   `reachability.rs` (28 each), `incoming.rs` (26), and `session_socket.rs`
+   (21).
    Every further reachability slice widens that surface.
 4. **Measurement on the validation network shows the interesting case is the
    normal one.** The development host has one stable RFC 7217 address, one

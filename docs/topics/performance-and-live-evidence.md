@@ -1234,6 +1234,13 @@ four for MSE: the measured 62.346 ms addition was within 20 ms of the expected
 50 ms extra round trip. These are controlled local measurements, not a public-
 swarm or permanent CI throughput claim.
 
+The final physical product gate ran on an API 37 Pixel 7a with five forced-RC4
+oracle sessions. It observed a session DH high-water of three under the
+four-job ceiling, full DH-owner drain, process descriptor high-water 177,
+storage ownership high-water 6 under the 40-handle limit, one pending storage
+request, exact publication, and cleanup. This is physical resource and product
+evidence, not a mobile throughput comparison.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

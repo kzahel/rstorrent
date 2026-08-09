@@ -521,19 +521,19 @@ that scope and its cleanup or compatibility rules explicitly.
   only current durable intent through the serialized torrent controller, and
   exposes it for skipped targets in the shared Files action menus.
 - [`111-mse-peer-stream-encryption.md`](111-mse-peer-stream-encryption.md):
-  in progress with implementation, controlled interop/performance evidence,
-  Android cross-build, and API 34 AVD product evidence complete; adds MSE/PE
-  for TCP peer connections in both directions through a sans-IO protocol state
-  machine and one four-value live client policy, while claiming compatibility
-  rather than security. The required physical Pixel 7a run remains pending
-  because the configured target was unavailable.
+  complete; adds MSE/PE for TCP peer connections in both directions through a
+  sans-IO protocol state machine and one four-value live client policy, while
+  claiming compatibility rather than security. Controlled interop/performance,
+  Android cross-build, API 34 AVD, and API 37 physical Pixel 7a product
+  evidence pass with exact publication, bounded resources, full owner drain,
+  and cleanup.
 - [`112-dual-stack-transport-and-ipv6-dht.md`](112-dual-stack-transport-and-ipv6-dht.md):
-  planned; gives the session one coordinated TCP/UDP socket pair per address
-  family, runs a BEP 32 IPv6 DHT node with its own BEP 42 identity and routing
-  table beside the IPv4 node, makes the reachable peer port a per-family fact
-  for BEP 7 announcing, and gates every IPv6 path behind one persisted
-  `ipv6_enabled` setting defaulting to enabled. Claims no IPv6 incoming
-  reachability.
+  authoritative **Now**, planned and not started; gives the session one
+  coordinated TCP/UDP socket pair per address family, runs a BEP 32 IPv6 DHT
+  node with its own BEP 42 identity and routing table beside the IPv4 node,
+  makes the reachable peer port a per-family fact for BEP 7 announcing, and
+  gates every IPv6 path behind one persisted `ipv6_enabled` setting defaulting
+  to enabled. Claims no IPv6 incoming reachability.
 - [`113-ipv6-firewall-pinhole-and-incoming-reachability.md`](113-ipv6-firewall-pinhole-and-incoming-reachability.md):
   planned; adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1` pinhole control
   beside the existing IPv4 mapping under one reachability coordinator,
@@ -541,6 +541,11 @@ that scope and its cleanup or compatibility rules explicitly.
   incoming evidence, and proves an off-LAN IPv6 peer hash-verifying payload
   through it. The pinned oracle implements no pinhole support, so every
   deterministic test is independently authored.
+- [`114-session-wide-concurrent-torrent-admission.md`](114-session-wide-concurrent-torrent-admission.md):
+  planned **Next** after the dual-stack/reachability sequence; replaces the
+  single-active-torrent slot with bounded session-wide download/checking
+  admission, durable queue order, and shared memory, storage, hashing,
+  connection, and discovery resource authority.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

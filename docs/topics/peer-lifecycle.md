@@ -657,7 +657,10 @@ replacement, exact terminal byte/exponentiation accounting, and all 28 pinned-
 libtorrent policy/method cases. Established generations retain their captured
 policy and cipher through later settings changes; the next generation observes
 the replacement. Both negotiated methods reuse the same peer owner and derive
-the truthful encrypted-or-obfuscated flag from its coherent observation.
+the truthful encrypted-or-obfuscated flag from its coherent observation. The
+physical Pixel 7a product profile completed five forced-RC4 attempts with a
+three-job DH high-water under the four-job ceiling and terminal
+`active=waiting=tracked=0`.
 Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
 measured picker refinement with exact availability accounting and preserves

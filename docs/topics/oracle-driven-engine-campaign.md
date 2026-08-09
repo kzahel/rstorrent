@@ -3,11 +3,11 @@
 Topic: `oracle-driven-engine-campaign`
 
 Status: Tactical
-[`110`](../tactical/110-atomic-download-now.md) completed the bounded atomic
-`Download now` application/product slice on 2026-08-07. It builds on Tactical
-`108`'s pinned-libtorrent checker dossier and serialized torrent controller
-without reopening the engine or storage architecture. The completed
-maximum-throughput storage campaign remains recorded in
+[`111`](../tactical/111-mse-peer-stream-encryption.md) graduated after its
+API 37 physical Pixel 7a product gate passed on 2026-08-09. Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) is the single
+authoritative **Now**, planned and not started. The completed maximum-
+throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
 gate.
@@ -316,38 +316,27 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `111` implementation and controlled evidence
-complete; physical graduation evidence pending**.
+Campaign state: **Tactical `111` graduated; Tactical `112` is the active
+planned dual-stack/IPv6-DHT slice and has not started implementation**.
 
 Latest graduated tactical:
-[`110-atomic-download-now.md`](../tactical/110-atomic-download-now.md). Tactical
-[`111`](../tactical/111-mse-peer-stream-encryption.md) remains in progress only
-because its named physical Pixel 7a was unavailable.
+[`111-mse-peer-stream-encryption.md`](../tactical/111-mse-peer-stream-encryption.md).
+Its final API 37 physical Pixel 7a run at `0b25152` completed five forced-RC4
+oracle sessions, exact verified publication, a three-job DH high-water under
+the four-job ceiling, terminal `active=waiting=tracked=0`, bounded storage and
+descriptors, and exact cleanup. The balanced paired result remains
+RSTorrent `0.779873` versus pinned libtorrent `0.758292` RC4/plain retention;
+the explicit cost clears the 75% floor and does not justify more RC4 work.
 
-Current milestone: physically graduate peer-wire MSE/PE. Gates 1--6 are
-implemented: pure primitives and sans-IO state, bounded DH ownership, both TCP
-roles and payload methods, live persisted policy, exact diagnostics and peer
-flag, all 28 pinned-libtorrent cases, setup/flight shape, six paired 1 GiB
-performance runs per implementation, Android cross-build, and an API 34 AVD
-product run pass. The RSTorrent RC4/plain median paired ratio is `0.779873`
-(22.013% loss), compared with pinned libtorrent's `0.758292` (24.171% loss).
-RSTorrent retains 2.158 percentage points more throughput than the oracle and
-clears the accepted 75% broad floor. The cost remains explicit rather than
-being described as negligible, but the oracle-relative result does not call
-for more RC4 optimization.
+Current milestone: execute Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) through its six
+independently committable gates without claiming IPv6 incoming reachability.
+Its source dossier and owner map have been reconciled after Tactical `111`;
+the crate graph remains unchanged.
 
-Next executable action: connect configured Pixel 7a serial
-`33031JEHN17672` and run exactly:
-
-```bash
-python3 experiments/android-engine-bootstrap/run_bootstrap.py \
-  --target pixel7a --profile product-mse --runs 1
-```
-
-Do not claim physical graduation until its exact payload, five forced-RC4
-oracle sessions, `<=4` DH high-water, zero drain, descriptor/storage bounds,
-and cleanup pass. Exact four-way saturation belongs to the deterministic
-barrier test; real sub-millisecond DH work is permitted to overlap less.
+Next executable action: implement Tactical `112` Gate 1, family-parameterised
+session socket allocation and probe-selected eligible global-unicast IPv6
+binding, with independent per-family failure and terminal ownership evidence.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

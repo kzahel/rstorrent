@@ -1,13 +1,10 @@
 # Tactical 111: MSE/PE Peer Stream Encryption
 
-Status: Implementation complete through Gates 1--6 on 2026-08-09. All
-deterministic, runtime, controlled-interoperability, performance, client, ABI,
-Android cross-build, and API 34 AVD evidence passes. Graduation remains
-in progress only because the required physical Pixel 7a run could not start:
-configured serial `33031JEHN17672` was not connected or ready. No physical
-device claim is made. Direction, settings shape, method preference,
-dependency, exponent width, and the performance-evidence direction were
-accepted in product discussion on 2026-08-08.
+Status: Complete on 2026-08-09. All deterministic, runtime, controlled-
+interoperability, performance, client, ABI, Android cross-build, API 34 AVD,
+and physical Pixel 7a evidence passes. Direction, settings shape, method
+preference, dependency, exponent width, and the performance-evidence direction
+were accepted in product discussion on 2026-08-08.
 
 Topics: `protocol-support`, `peer-lifecycle`, `client-persistence`,
 `incoming-reachability-and-seeding`, `peer-flag-vocabulary`,
@@ -836,8 +833,8 @@ typed method must agree in every successful MSE case.
 
 The controlled interoperability harness requires no public swarm, physical
 device, or destructive action. Live public-swarm behavior may be recorded as
-an observation only. The separate retained Android gate still requires its
-named physical Pixel 7a run before this tactical graduates.
+an observation only. The separate retained Android gate supplies the physical
+product evidence recorded below.
 
 The final command gate, in addition to focused tests and the two new interop
 harness modes, is:
@@ -1114,7 +1111,7 @@ report names repository commit `c5e80074a6fd49b111397dd6d7769ce60bfa55f2`,
 libtorrent `2.0.13.0`, and production release binary SHA-256
 `97466986206f9d11697db6b6624db3cc061396f986471804a3dd98a1a833883d`.
 
-### 2026-08-09: Android product evidence and remaining gate
+### 2026-08-09: Android product evidence and physical graduation
 
 Commit `fb273e9` added the retained `product-mse` bootstrap profile. It selects
 internal SAF storage, applies `required` before adding the magnet, starts five
@@ -1139,8 +1136,25 @@ passed: five forced-RC4 attempts, the same exact info hash, DH
 `active=0/high_water=2/tracked=0/waiting=0`, storage
 `limit=40/owned_high_water=6/pending_high_water=2`, and exact cleanup.
 
-The physical command was attempted for configured Pixel 7a serial
-`33031JEHN17672` but stopped before deployment or device mutation because the
-target was not connected/ready. That is the only remaining evidence item and
-the reason this tactical remains in progress rather than claiming physical
-graduation.
+The first physical attempt reached package installation but Android rejected
+an older `org.rstorrent.bootstrap` installation signed with a different key.
+The harness's documented failure cleanup cleared and uninstalled that owned
+experimental package. A second exact run from the clean package state passed
+on configured Pixel 7a serial `33031JEHN17672`, model `lynx`, API 37,
+`arm64-v8a`, at repository commit `0b25152`:
+
+- all five controlled oracle attempts negotiated forced RC4 and published the
+  exact fixture with info hash
+  `f2c09c855c0749be70ae5b5caa5f79077f914932`;
+- the session DH owner terminated at `active=0`, `waiting=0`, and `tracked=0`
+  with `high_water=3`, below the four-job ceiling;
+- process descriptors were `baseline=158`, `high_water=177`, and `final=174`;
+- storage reported `limit=40`, `owned_high_water=6`, and
+  `pending_high_water=1`; and
+- the runner reported exact device/host cleanup and final result `pass`.
+
+The deterministic barrier test remains the authority for exact four-active,
+one-waiting saturation. The physical run proves five real product attempts,
+the production ceiling, full owner drain, exact verified publication, and
+cleanup on the named device. This closes the final stopping condition and
+graduates Tactical `111`.

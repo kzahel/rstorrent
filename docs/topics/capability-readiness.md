@@ -179,41 +179,46 @@ pinned libtorrent all pass. The current AVD rejected the credential-free
 Ubuntu tracker certificate while accepting another public trusted origin, so
 that observation does not become a public-tracker reliability claim.
 
+Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) is complete.
+TCP initiator and responder roles support both negotiated MSE/PE payload
+methods under one live persisted four-value policy, bounded session DH work,
+exact diagnostics, and the truthful encrypted-or-obfuscated peer flag. All 28
+controlled pinned-libtorrent cases, six paired 1 GiB performance runs per
+implementation, Android cross-build, API 34 AVD, and API 37 physical Pixel 7a
+product evidence pass. The physical run completed five forced-RC4 sessions,
+exact publication, a three-job DH high-water under the four-job ceiling, full
+owner drain, bounded storage/descriptors, and cleanup. The claim is protocol
+compatibility and obfuscation, never transport security.
+
 ## Current Queue
 
 ### Now
 
-- Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) remains the
-  single authoritative **Now**. Its end-to-end implementation, all 28
-  controlled pinned-libtorrent cases, six paired 1 GiB performance runs per
-  implementation, Android cross-build, and API 34 AVD product profile pass.
-  RSTorrent's RC4/plain median paired ratio is `0.779873` (22.013% loss),
-  compared with pinned libtorrent's `0.758292` (24.171% loss). RSTorrent
-  retains 2.158 percentage points more throughput than the oracle and clears
-  the accepted 75% catastrophe floor. The cost is recorded explicitly, but
-  this oracle-relative result does not call for more RC4 optimization.
-  The tactical is not yet graduated because configured Pixel 7a serial
-  `33031JEHN17672` was unavailable for its required physical product run. It
-  claims TCP peer compatibility and protocol obfuscation, never a security
-  property. Tactical [`110`](../tactical/110-atomic-download-now.md) remains
-  the last graduated checkpoint.
+- Tactical
+  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) is the single
+  authoritative **Now**. It gives the session one coordinated TCP/UDP socket
+  pair per address family, adds a BEP 32 IPv6 DHT node with its own BEP 42
+  identity and routing table, makes the reachable peer port a per-family fact
+  so BEP 7 announces stop sending port `1` on IPv6, and gates every IPv6 path
+  behind one persisted `ipv6_enabled` setting defaulting to enabled. It is
+  planned and not started, and claims no IPv6 incoming reachability. Tactical
+  [`111`](../tactical/111-mse-peer-stream-encryption.md) is the latest
+  graduated checkpoint.
 
 ### Next
 
-- Planned Tactical
-  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) gives the
-  session one coordinated TCP/UDP socket pair per address family, adds a
-  BEP 32 IPv6 DHT node with its own BEP 42 identity and routing table, makes
-  the reachable peer port a per-family fact so BEP 7 announces stop sending
-  port `1` on IPv6, and gates every IPv6 path behind one persisted
-  `ipv6_enabled` setting defaulting to enabled. It claims no IPv6 incoming
-  reachability.
 - Planned Tactical
   [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
   depends on `112` and adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1`
   pinhole control beside the existing IPv4 mapping, distinguishes listener,
   unfiltered-gateway, installed-pinhole, and observed incoming evidence, and
   proves an off-LAN IPv6 peer hash-verifying payload through it.
+- Planned Tactical
+  [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md)
+  follows the dual-stack/reachability sequence and replaces the one-active-
+  torrent slot with bounded session-wide download/checking admission, durable
+  queue order, and shared memory, storage, hashing, connection, and discovery
+  resource authority.
 - A separate later tactical may add an explicit faster, more trusting resume
   option while keeping conservative behavior as the default and Force recheck
   as a full validation pass.
