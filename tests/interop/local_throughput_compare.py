@@ -79,6 +79,9 @@ class TransferResult:
     hash_concurrency: int | None
     transfer_seconds: float
     throughput_mib_s: float
+    cpu_seconds: float
+    cpu_core_equivalents: float
+    cpu_logical_capacity_percent: float
     validation_seconds: float
     payload_sha1: str
     payload_bytes: int
@@ -126,6 +129,12 @@ def deterministic_source(path: Path, size_bytes: int) -> tuple[str, int]:
             f"source size is {stat.st_size} bytes instead of {size_bytes}"
         )
     return digest.hexdigest(), allocated_bytes
+
+
+def process_tree_cpu_seconds() -> float:
+    """Return cumulative CPU time for this harness and reaped child processes."""
+    usage = os.times()
+    return usage.user + usage.system + usage.children_user + usage.children_system
 
 
 def create_fixture(root: Path, size_bytes: int, piece_sizes: list[int]) -> Fixture:
@@ -462,6 +471,7 @@ def run_transfer(
             f"{hash_concurrency if implementation == 'rstorrent' else 'n/a'}",
             flush=True,
         )
+        cpu_started = process_tree_cpu_seconds()
         if implementation == "rstorrent":
             output_root.mkdir(parents=True)
             transfer_seconds, metrics = run_rstorrent(
@@ -489,6 +499,11 @@ def run_transfer(
             version = lt.version
         else:
             raise ScenarioFailure(f"unknown implementation {implementation}")
+        cpu_seconds = max(0.0, process_tree_cpu_seconds() - cpu_started)
+        cpu_core_equivalents = cpu_seconds / transfer_seconds
+        cpu_logical_capacity_percent = (
+            cpu_core_equivalents / max(1, os.cpu_count() or 1) * 100.0
+        )
 
         if not output_path.is_file():
             raise ScenarioFailure(f"{implementation} did not publish {output_path}")
@@ -526,6 +541,9 @@ def run_transfer(
             ),
             transfer_seconds=transfer_seconds,
             throughput_mib_s=fixture.size_bytes / MIB / transfer_seconds,
+            cpu_seconds=cpu_seconds,
+            cpu_core_equivalents=cpu_core_equivalents,
+            cpu_logical_capacity_percent=cpu_logical_capacity_percent,
             validation_seconds=validation_seconds,
             payload_sha1=actual_sha1,
             payload_bytes=fixture.size_bytes,
@@ -537,6 +555,8 @@ def run_transfer(
             f"run={run} implementation={implementation} "
             f"transfer_seconds={transfer_seconds:.3f} "
             f"throughput_mib_s={result.throughput_mib_s:.3f} "
+            f"cpu_core_equivalents={cpu_core_equivalents:.3f} "
+            f"cpu_logical_capacity_percent={cpu_logical_capacity_percent:.3f} "
             f"validation_seconds={validation_seconds:.3f} sha1={actual_sha1} "
             f"cleanup={'ok' if cleanup_succeeded else 'failed'}",
             flush=True,
@@ -894,8 +914,20 @@ def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
                 "hash_concurrency": hash_concurrency,
                 "rstorrent_median_seconds": rstorrent_seconds,
                 "rstorrent_median_mib_s": rstorrent_throughput,
+                "rstorrent_median_cpu_core_equivalents": statistics.median(
+                    result.cpu_core_equivalents for result in cohort
+                ),
+                "rstorrent_median_cpu_logical_capacity_percent": statistics.median(
+                    result.cpu_logical_capacity_percent for result in cohort
+                ),
                 "libtorrent_median_seconds": libtorrent_seconds,
                 "libtorrent_median_mib_s": libtorrent_throughput,
+                "libtorrent_median_cpu_core_equivalents": statistics.median(
+                    result.cpu_core_equivalents for result in reference
+                ),
+                "libtorrent_median_cpu_logical_capacity_percent": statistics.median(
+                    result.cpu_logical_capacity_percent for result in reference
+                ),
                 "rstorrent_libtorrent_ratio": (
                     rstorrent_throughput / libtorrent_throughput
                 ),
@@ -949,6 +981,14 @@ def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, 
                     "rc4_seconds": rc4.transfer_seconds,
                     "plain_mib_s": plain.throughput_mib_s,
                     "rc4_mib_s": rc4.throughput_mib_s,
+                    "plain_cpu_core_equivalents": plain.cpu_core_equivalents,
+                    "rc4_cpu_core_equivalents": rc4.cpu_core_equivalents,
+                    "plain_cpu_logical_capacity_percent": (
+                        plain.cpu_logical_capacity_percent
+                    ),
+                    "rc4_cpu_logical_capacity_percent": (
+                        rc4.cpu_logical_capacity_percent
+                    ),
                     "rc4_plain_ratio": ratio,
                 }
             )
@@ -966,6 +1006,18 @@ def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, 
                 ),
                 "rc4_median_mib_s": statistics.median(
                     pair["rc4_mib_s"] for pair in pairs
+                ),
+                "plain_median_cpu_core_equivalents": statistics.median(
+                    pair["plain_cpu_core_equivalents"] for pair in pairs
+                ),
+                "rc4_median_cpu_core_equivalents": statistics.median(
+                    pair["rc4_cpu_core_equivalents"] for pair in pairs
+                ),
+                "plain_median_cpu_logical_capacity_percent": statistics.median(
+                    pair["plain_cpu_logical_capacity_percent"] for pair in pairs
+                ),
+                "rc4_median_cpu_logical_capacity_percent": statistics.median(
+                    pair["rc4_cpu_logical_capacity_percent"] for pair in pairs
                 ),
                 "median_paired_rc4_plain_ratio": median_ratio,
                 "median_paired_regression_percent": (1.0 - median_ratio) * 100.0,
@@ -988,7 +1040,7 @@ def main() -> int:
     )
     if applicability_failures:
         report = {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario": "controlled-single-file-loopback-throughput",
             "status": "not_applicable",
             "environment": hardware_environment,
@@ -1202,7 +1254,7 @@ def main() -> int:
                 )
 
     report = {
-        "schema_version": 4,
+        "schema_version": 5,
         "scenario": (
             "controlled-mse-paired-loopback-throughput"
             if arguments.encryption_pair
