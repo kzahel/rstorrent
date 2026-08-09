@@ -1143,6 +1143,19 @@ impl ApplicationService {
             .and_then(SessionNetworkRuntime::incoming_peer_snapshot)
     }
 
+    /// Issues one opt-in interoperability diagnostic against the active or
+    /// most recently deleted IPv6 pinhole without exposing its volatile ID.
+    #[doc(hidden)]
+    pub async fn ipv6_pinhole_packets_for_diagnostics(
+        &self,
+        deleted: bool,
+    ) -> Option<crate::Ipv6PinholeDiagnosticResult> {
+        self.session_network
+            .as_ref()?
+            .ipv6_pinhole_packets_for_diagnostics(deleted)
+            .await
+    }
+
     pub fn mse_dh_work_snapshot(&self) -> rstorrent_engine::MseDhWorkSnapshot {
         self.session_network().mse_dh().snapshot()
     }

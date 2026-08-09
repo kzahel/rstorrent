@@ -29,7 +29,8 @@ use crate::diagnostics::{
 };
 use crate::incoming_seeding::IncomingSeeding;
 use crate::reachability::{
-    ReachabilityBlocks, ReachabilityCoordinator, ReachabilityGenerationShutdown,
+    Ipv6PinholeDiagnosticResult, ReachabilityBlocks, ReachabilityCoordinator,
+    ReachabilityEvidenceProbe, ReachabilityGenerationShutdown, ReachabilityStartInputs,
     UncertainMappingLease, UncertainPinholeLease,
 };
 use crate::settings::{
@@ -177,6 +178,7 @@ pub(crate) struct SessionNetworkRuntime {
     incoming_seeding: IncomingSeeding,
     session_udp_handle: SessionUdpHandle,
     discovery_handle: DiscoveryAdvertisementHandle,
+    reachability_evidence: ReachabilityEvidenceProbe,
     listener_active: Arc<AtomicBool>,
     pending_owner: Option<SessionNetworkOwner>,
     settings_sender: Option<watch::Sender<Option<SettingsAttempt>>>,
@@ -301,6 +303,7 @@ struct SessionNetworkOwner {
     dht_observations: Option<DhtObservationRuntime>,
     discovery_advertisement: Option<DiscoveryAdvertisementService>,
     reachability: Option<ReachabilityCoordinator>,
+    reachability_evidence: ReachabilityEvidenceProbe,
     listener_active: Arc<AtomicBool>,
     uncertain_mapping: Option<UncertainMappingLease>,
     uncertain_pinhole: Option<UncertainPinholeLease>,
@@ -556,6 +559,7 @@ impl SessionNetworkRuntime {
                 }
             }),
         };
+        let reachability_evidence = ReachabilityEvidenceProbe::default();
         let pending_owner = SessionNetworkOwner {
             effective_settings,
             effective_listener,
@@ -577,6 +581,7 @@ impl SessionNetworkRuntime {
             dht_observations: None,
             discovery_advertisement: Some(discovery_advertisement),
             reachability: None,
+            reachability_evidence: reachability_evidence.clone(),
             listener_active: listener_active.clone(),
             uncertain_mapping: None,
             uncertain_pinhole: None,
@@ -621,6 +626,7 @@ impl SessionNetworkRuntime {
             incoming_seeding,
             session_udp_handle,
             discovery_handle,
+            reachability_evidence,
             listener_active,
             pending_owner: Some(pending_owner),
             settings_sender: None,
@@ -776,14 +782,17 @@ impl SessionNetworkRuntime {
         owner.reachability = Some(ReachabilityCoordinator::start(
             &owner.effective_settings,
             &owner.listener_status,
-            owner
-                .incoming_ipv6_acceptor
-                .as_ref()
-                .and_then(ipv6_acceptor_address),
+            ReachabilityStartInputs {
+                ipv6_listener: owner
+                    .incoming_ipv6_acceptor
+                    .as_ref()
+                    .and_then(ipv6_acceptor_address),
+                blocks: ReachabilityBlocks::default(),
+                evidence: owner.reachability_evidence.clone(),
+            },
             views.clone(),
             owner.advertised_endpoint.clone(),
             self.initial_mapping_generation,
-            ReachabilityBlocks::default(),
         ));
         let (settings_sender, settings_receiver) = watch::channel(None);
         let cancellation = self.reconciliation_cancellation.clone();
@@ -855,6 +864,13 @@ impl SessionNetworkRuntime {
         self.listener_active
             .load(Ordering::Acquire)
             .then(|| self.incoming_handle.snapshot())
+    }
+
+    pub(crate) async fn ipv6_pinhole_packets_for_diagnostics(
+        &self,
+        deleted: bool,
+    ) -> Option<Ipv6PinholeDiagnosticResult> {
+        self.reachability_evidence.pinhole_packets(deleted).await
     }
 
     #[cfg(test)]
@@ -1332,16 +1348,20 @@ impl SessionNetworkOwner {
             self.reachability = Some(ReachabilityCoordinator::start(
                 &self.effective_settings,
                 &self.listener_status,
-                self.incoming_ipv6_acceptor
-                    .as_ref()
-                    .and_then(ipv6_acceptor_address),
+                ReachabilityStartInputs {
+                    ipv6_listener: self
+                        .incoming_ipv6_acceptor
+                        .as_ref()
+                        .and_then(ipv6_acceptor_address),
+                    blocks: ReachabilityBlocks {
+                        mapping: self.uncertain_mapping.is_some(),
+                        pinhole: self.uncertain_pinhole.is_some(),
+                    },
+                    evidence: self.reachability_evidence.clone(),
+                },
                 views.clone(),
                 self.advertised_endpoint.clone(),
                 attempt.domain(SettingsDomain::PortMapping),
-                ReachabilityBlocks {
-                    mapping: self.uncertain_mapping.is_some(),
-                    pinhole: self.uncertain_pinhole.is_some(),
-                },
             ));
             return false;
         }
@@ -1392,16 +1412,20 @@ impl SessionNetworkOwner {
                     self.reachability = Some(ReachabilityCoordinator::start(
                         &self.effective_settings,
                         &self.listener_status,
-                        self.incoming_ipv6_acceptor
-                            .as_ref()
-                            .and_then(ipv6_acceptor_address),
+                        ReachabilityStartInputs {
+                            ipv6_listener: self
+                                .incoming_ipv6_acceptor
+                                .as_ref()
+                                .and_then(ipv6_acceptor_address),
+                            blocks: ReachabilityBlocks {
+                                mapping: self.uncertain_mapping.is_some(),
+                                pinhole: self.uncertain_pinhole.is_some(),
+                            },
+                            evidence: self.reachability_evidence.clone(),
+                        },
                         views.clone(),
                         self.advertised_endpoint.clone(),
                         attempt.domain(SettingsDomain::PortMapping),
-                        ReachabilityBlocks {
-                            mapping: self.uncertain_mapping.is_some(),
-                            pinhole: self.uncertain_pinhole.is_some(),
-                        },
                     ));
                     publish_transport(
                         convergence,
@@ -1836,16 +1860,20 @@ impl SessionNetworkOwner {
         self.reachability = Some(ReachabilityCoordinator::start(
             &coordinator_settings,
             &self.listener_status,
-            self.incoming_ipv6_acceptor
-                .as_ref()
-                .and_then(ipv6_acceptor_address),
+            ReachabilityStartInputs {
+                ipv6_listener: self
+                    .incoming_ipv6_acceptor
+                    .as_ref()
+                    .and_then(ipv6_acceptor_address),
+                blocks: ReachabilityBlocks {
+                    mapping: mapping_blocked,
+                    pinhole: pinhole_blocked,
+                },
+                evidence: self.reachability_evidence.clone(),
+            },
             views.clone(),
             self.advertised_endpoint.clone(),
             generation,
-            ReachabilityBlocks {
-                mapping: mapping_blocked,
-                pinhole: pinhole_blocked,
-            },
         ));
         let mut expiry = None;
         let mut cleanup_application_detail = None;

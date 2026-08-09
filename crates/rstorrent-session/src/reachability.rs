@@ -5,6 +5,7 @@
 
 use std::net::{Ipv4Addr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
@@ -62,6 +63,77 @@ pub(crate) struct ReachabilityOwnerCounts {
 pub(crate) struct ReachabilityBlocks {
     pub mapping: bool,
     pub pinhole: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Ipv6PinholeDiagnosticResult {
+    Packets(u32),
+    Fault { code: Option<u16>, detail: String },
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ReachabilityEvidenceProbe {
+    state: Arc<Mutex<ReachabilityEvidenceState>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ReachabilityEvidenceState {
+    active: Option<(UpnpIpv6Firewall, UpnpPinhole)>,
+    deleted: Option<(UpnpIpv6Firewall, UpnpPinhole)>,
+}
+
+impl ReachabilityEvidenceProbe {
+    fn record_active(&self, firewall: &UpnpIpv6Firewall, pinhole: &UpnpPinhole) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.active = Some((firewall.clone(), pinhole.clone()));
+        state.deleted = None;
+    }
+
+    fn record_deleted(&self, firewall: &UpnpIpv6Firewall, pinhole: &UpnpPinhole) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.active = None;
+        state.deleted = Some((firewall.clone(), pinhole.clone()));
+    }
+
+    pub(crate) async fn pinhole_packets(
+        &self,
+        deleted: bool,
+    ) -> Option<Ipv6PinholeDiagnosticResult> {
+        let target = {
+            let state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if deleted {
+                state.deleted.clone()
+            } else {
+                state.active.clone()
+            }
+        }?;
+        let cancellation = CancellationToken::new();
+        Some(
+            match target.0.pinhole_packets(&target.1, &cancellation).await {
+                Ok(packets) => Ipv6PinholeDiagnosticResult::Packets(packets),
+                Err(error) => Ipv6PinholeDiagnosticResult::Fault {
+                    code: error.fault_code(),
+                    detail: error.detail().to_owned(),
+                },
+            },
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ReachabilityStartInputs {
+    pub ipv6_listener: Option<SocketAddrV6>,
+    pub blocks: ReachabilityBlocks,
+    pub evidence: ReachabilityEvidenceProbe,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +212,7 @@ struct ReachabilityTaskContext {
     counters: Arc<ReachabilityCounters>,
     settings_generation: SettingsDomainGeneration,
     discovery_config: Option<UpnpDiscoveryConfig>,
+    evidence: ReachabilityEvidenceProbe,
 }
 
 #[derive(Debug)]
@@ -154,12 +227,16 @@ impl ReachabilityCoordinator {
     pub(crate) fn start(
         settings: &ClientSettings,
         listener_status: &ListenerStatus,
-        ipv6_listener: Option<SocketAddrV6>,
+        inputs: ReachabilityStartInputs,
         views: ViewHub,
         endpoint_selector: AdvertisedPeerEndpointSelector,
         settings_generation: SettingsDomainGeneration,
-        blocks: ReachabilityBlocks,
     ) -> Self {
+        let ReachabilityStartInputs {
+            ipv6_listener,
+            blocks,
+            evidence,
+        } = inputs;
         let generation = endpoint_selector.begin_mapping_generation();
         let mut mapping_state = ReachabilityState::new(generation, settings, listener_status);
         let mut pinhole_state = Ipv6PinholeState::new(generation, settings, ipv6_listener);
@@ -196,6 +273,7 @@ impl ReachabilityCoordinator {
                         counters: task_counters.clone(),
                         settings_generation,
                         discovery_config: None,
+                        evidence,
                     },
                 )
                 .await;
@@ -371,6 +449,7 @@ fn context_without_discovery(
         counters,
         settings_generation,
         discovery_config: None,
+        evidence: ReachabilityEvidenceProbe::default(),
     }
 }
 
@@ -619,6 +698,7 @@ async fn run_ipv4_mapping(
         counters,
         settings_generation,
         discovery_config: _,
+        evidence: _,
     } = context;
     if let Err(error) = publish(
         &mut state,
@@ -781,6 +861,7 @@ async fn run_ipv6_pinhole(
         counters,
         settings_generation,
         discovery_config: _,
+        evidence,
     } = context;
     let status = match firewall.firewall_status(&cancellation).await {
         Ok(status) => status,
@@ -902,6 +983,7 @@ async fn run_ipv6_pinhole(
             }
         };
         counters.pinholes.store(1, Ordering::Release);
+        evidence.record_active(&firewall, &pinhole);
         let now = Instant::now();
         let mut confirmed_deadline = now
             .checked_add(Duration::from_secs(u64::from(pinhole.lease_seconds)))
@@ -931,6 +1013,7 @@ async fn run_ipv6_pinhole(
                     }
                     match firewall.renew_pinhole(&mut pinhole, &cancellation).await {
                         Ok(()) => {
+                            evidence.record_active(&firewall, &pinhole);
                             let now = Instant::now();
                             confirmed_deadline = now
                                 .checked_add(Duration::from_secs(u64::from(pinhole.lease_seconds)))
@@ -962,6 +1045,7 @@ async fn run_ipv6_pinhole(
                             }
                             let now = Instant::now();
                             if error.fault_code() == Some(704) {
+                                evidence.record_deleted(&firewall, &pinhole);
                                 counters.pinholes.store(0, Ordering::Release);
                                 if endpoint_selector.ipv6_pinhole_lost(state.generation())
                                     && let Err(publish_error) =
@@ -1015,8 +1099,14 @@ async fn run_ipv6_pinhole(
         .await;
         counters.pinholes.store(0, Ordering::Release);
         let uncertain_pinhole = match delete {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) if error.fault_code() == Some(704) => None,
+            Ok(Ok(())) => {
+                evidence.record_deleted(&firewall, &pinhole);
+                None
+            }
+            Ok(Err(error)) if error.fault_code() == Some(704) => {
+                evidence.record_deleted(&firewall, &pinhole);
+                None
+            }
             Ok(Err(error)) => {
                 record_pinhole_failure_diagnostic(&views, &error);
                 (latest_possible_deadline > Instant::now()).then(|| UncertainPinholeLease {
@@ -1839,6 +1929,7 @@ mod tests {
             .expect("install mapping generation");
         let cancellation = CancellationToken::new();
         let counters = Arc::new(ReachabilityCounters::default());
+        let evidence = ReachabilityEvidenceProbe::default();
         let task = tokio::spawn(run_reachability(
             mapping_state,
             pinhole_state,
@@ -1850,6 +1941,7 @@ mod tests {
                 counters: counters.clone(),
                 settings_generation,
                 discovery_config: Some(config),
+                evidence: evidence.clone(),
             },
         ));
         tokio::time::timeout(Duration::from_secs(3), async {
@@ -1888,12 +1980,27 @@ mod tests {
         let active_mappings = counters.mappings.load(Ordering::Acquire);
         let active_pinholes = counters.pinholes.load(Ordering::Acquire);
         let runtime = views.client_settings_for_testing();
+        if active_pinholes == 1 {
+            assert_eq!(
+                evidence.pinhole_packets(false).await,
+                Some(Ipv6PinholeDiagnosticResult::Packets(5)),
+            );
+        }
 
         cancellation.cancel();
         let outcome = task.await.expect("join combined reachability");
         assert_eq!(outcome, ReachabilityRunOutcome::default());
         assert_eq!(counters.mappings.load(Ordering::Acquire), 0);
         assert_eq!(counters.pinholes.load(Ordering::Acquire), 0);
+        if active_pinholes == 1 {
+            assert!(matches!(
+                evidence.pinhole_packets(true).await,
+                Some(Ipv6PinholeDiagnosticResult::Fault {
+                    code: Some(704),
+                    ..
+                })
+            ));
+        }
         udp_task.await.expect("join scripted SSDP");
         http_task.await.expect("join scripted HTTP");
         let transcript = transcript.lock().unwrap().clone();
@@ -2060,12 +2167,13 @@ mod tests {
         let udp_transcript = transcript.clone();
         let http_transcript = transcript.clone();
         let response_count = match behavior {
-            ScriptedDualBehavior::BothAvailable => 12,
+            ScriptedDualBehavior::BothAvailable => 14,
             ScriptedDualBehavior::PinholeDisallowed => 10,
-            ScriptedDualBehavior::MappingUnavailable => 6,
+            ScriptedDualBehavior::MappingUnavailable => 8,
         };
         let http_task = tokio::spawn(async move {
             let mut mapped = false;
+            let mut pinhole_present = false;
             for _ in 0..response_count {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let request = read_http_request(&mut stream).await;
@@ -2142,12 +2250,23 @@ mod tests {
                             assert!(request.contains("<RemotePort>0</RemotePort>"));
                             assert!(request.contains("<Protocol>6</Protocol>"));
                             assert!(request.contains("<InternalPort>42006</InternalPort>"));
+                            pinhole_present = true;
                             (
                                 "200 OK",
                                 firewall_soap_response(action, "<UniqueID>41</UniqueID>"),
                             )
                         }
-                        "DeletePinhole" => ("200 OK", firewall_soap_response(action, "")),
+                        "GetPinholePackets" if pinhole_present => (
+                            "200 OK",
+                            firewall_soap_response(action, "<PinholePackets>5</PinholePackets>"),
+                        ),
+                        "GetPinholePackets" => {
+                            ("500 Internal Server Error", soap_fault(704, "NoSuchEntry"))
+                        }
+                        "DeletePinhole" => {
+                            pinhole_present = false;
+                            ("200 OK", firewall_soap_response(action, ""))
+                        }
                         other => panic!("unexpected scripted dual action {other}"),
                     };
                     (status, "text/xml; charset=utf-8", body, action)

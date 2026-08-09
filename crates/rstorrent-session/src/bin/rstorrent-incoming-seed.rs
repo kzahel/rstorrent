@@ -10,10 +10,11 @@ use rstorrent_engine::dht::BootstrapNode;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
-    ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, ListenerPolicy, NetworkConfig,
-    NetworkPolicy, PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome,
-    SessionStore, StorageState, StoreError, SubscriptionSpec, ViewProjection, ViewSelector,
-    ViewSnapshot, ViewUpdatePayload,
+    ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
+    Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PortMappingPolicy,
+    PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore, StorageState, StoreError,
+    SubscriptionSpec, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -59,18 +60,16 @@ async fn run() -> Result<(), SeedHarnessError> {
         &storage_roots,
         &metainfo,
         &raw_info,
-        arguments.upnp,
-        arguments.encryption,
-        arguments.tracker.as_deref(),
+        &arguments,
     )?;
 
-    let network_policy = if arguments.upnp {
+    let network_policy = if arguments.local_network_listener() {
         NetworkPolicy::Online
     } else {
         NetworkPolicy::LoopbackOnly
     };
     let mut config = ApplicationConfig::new(
-        arguments.profile_root,
+        arguments.profile_root.clone(),
         PROFILE_ID.to_owned(),
         storage_roots,
         NetworkConfig::new(
@@ -100,8 +99,13 @@ async fn run() -> Result<(), SeedHarnessError> {
     } else {
         None
     };
+    let staged_ipv6 = if arguments.staged_ipv6_pinhole {
+        Some(wait_for_ipv6_pinhole(&service, PinholeWait::Disabled).await?)
+    } else {
+        None
+    };
     let ready_json = serde_json::json!({
-        "event": "ready",
+        "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "info_hash": hex(metainfo.info_hash),
         "listen": ready.listen_address.to_string(),
         "registrations": ready.registrations,
@@ -115,6 +119,8 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_bytes_high_water": ready.read_bytes_high_water,
         "payload_bytes_sent": ready.payload_bytes_sent,
         "mapping": mapping,
+        "ipv6_listener": staged_ipv6.as_ref().map(|(_, endpoint)| endpoint.to_string()),
+        "ipv6_pinhole": staged_ipv6.as_ref().map(|(status, _)| status),
     });
     let mut stdout = tokio::io::stdout();
     stdout
@@ -145,6 +151,66 @@ async fn run() -> Result<(), SeedHarnessError> {
             })?;
         if read == 0 || command.trim().is_empty() || command.trim() == "stop" {
             break;
+        }
+        if command.trim() == "enable-pinhole" && arguments.staged_ipv6_pinhole {
+            apply_port_mapping(&mut service, &arguments, PortMappingPolicy::Upnp).await?;
+            let (status, endpoint) = wait_for_ipv6_pinhole(&service, PinholeWait::Pinholed).await?;
+            write_observation(
+                &mut stdout,
+                serde_json::json!({
+                    "event": "pinholed",
+                    "ipv6_listener": endpoint.to_string(),
+                    "ipv6_pinhole": status,
+                }),
+            )
+            .await?;
+            continue;
+        }
+        if command.trim() == "pinhole-packets" && arguments.staged_ipv6_pinhole {
+            let result = service
+                .ipv6_pinhole_packets_for_diagnostics(false)
+                .await
+                .ok_or_else(|| {
+                    SeedHarnessError::Catalog(
+                        "active IPv6 pinhole diagnostic is unavailable".to_owned(),
+                    )
+                })?;
+            write_observation(
+                &mut stdout,
+                pinhole_diagnostic_json("pinhole_packets", result),
+            )
+            .await?;
+            continue;
+        }
+        if command.trim() == "disable-pinhole" && arguments.staged_ipv6_pinhole {
+            apply_port_mapping(&mut service, &arguments, PortMappingPolicy::Disabled).await?;
+            let (status, endpoint) = wait_for_ipv6_pinhole(&service, PinholeWait::Disabled).await?;
+            write_observation(
+                &mut stdout,
+                serde_json::json!({
+                    "event": "pinhole_disabled",
+                    "ipv6_listener": endpoint.to_string(),
+                    "ipv6_pinhole": status,
+                }),
+            )
+            .await?;
+            continue;
+        }
+        if command.trim() == "deleted-pinhole-packets" && arguments.staged_ipv6_pinhole {
+            let result = service
+                .ipv6_pinhole_packets_for_diagnostics(true)
+                .await
+                .ok_or_else(|| {
+                    SeedHarnessError::Catalog(
+                        "deleted IPv6 pinhole diagnostic is unavailable".to_owned(),
+                    )
+                })?;
+            write_observation(
+                &mut stdout,
+                pinhole_diagnostic_json("deleted_pinhole_packets", result),
+            )
+            .await?;
+            continue;
         }
         if command.trim() != "snapshot" {
             return Err(SeedHarnessError::Arguments(format!(
@@ -211,6 +277,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "writer_send_buffer_high_water": final_snapshot.writer_send_buffer_high_water,
         "mapping_tasks_after_shutdown": 0,
         "mappings_after_shutdown": 0,
+        "pinholes_after_shutdown": 0,
     });
     stdout
         .write_all(format!("{stopped_json}\n").as_bytes())
@@ -234,24 +301,22 @@ fn initialize_catalog(
     storage_roots: &[ConfiguredStorageRoot],
     metainfo: &Metainfo,
     raw_info: &[u8],
-    upnp: bool,
-    encryption: EncryptionPolicy,
-    tracker: Option<&str>,
+    arguments: &Arguments,
 ) -> Result<(), SeedHarnessError> {
     let torrent_id = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
     let desired_settings = ClientSettings {
-        listener: if upnp {
+        listener: if arguments.local_network_listener() {
             ListenerPolicy::AutomaticLocalNetwork
         } else {
             ListenerPolicy::AutomaticLoopback
         },
-        port_mapping: if upnp {
+        port_mapping: if arguments.upnp {
             PortMappingPolicy::Upnp
         } else {
             PortMappingPolicy::Disabled
         },
-        encryption,
+        encryption: arguments.encryption,
         ..ClientSettings::default()
     };
     if store.client_settings()? != desired_settings {
@@ -289,7 +354,7 @@ fn initialize_catalog(
         request_id: "initialize-incoming-seed".to_owned(),
         expected_revision: None,
         command: Command::AddMagnet {
-            magnet: tracker.map_or_else(
+            magnet: arguments.tracker.as_deref().map_or_else(
                 || format!("magnet:?xt=urn:btih:{torrent_id}"),
                 |tracker| format!("magnet:?xt=urn:btih:{torrent_id}&tr={tracker}"),
             ),
@@ -319,6 +384,7 @@ struct Arguments {
     storage_root: PathBuf,
     metainfo: PathBuf,
     upnp: bool,
+    staged_ipv6_pinhole: bool,
     encryption: EncryptionPolicy,
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
@@ -333,6 +399,7 @@ impl Arguments {
         let mut storage_root = None;
         let mut metainfo = None;
         let mut upnp = false;
+        let mut staged_ipv6_pinhole = false;
         let mut encryption = None;
         let mut tracker = None;
         let mut dht_bootstrap = None;
@@ -345,6 +412,15 @@ impl Arguments {
                 if std::mem::replace(&mut upnp, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--upnp may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--staged-ipv6-pinhole" {
+                if std::mem::replace(&mut staged_ipv6_pinhole, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--staged-ipv6-pinhole may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -421,6 +497,11 @@ impl Arguments {
             }
             index += 2;
         }
+        if upnp && staged_ipv6_pinhole {
+            return Err(SeedHarnessError::Arguments(
+                "--upnp and --staged-ipv6-pinhole are mutually exclusive".to_owned(),
+            ));
+        }
         Ok(Self {
             profile_root: profile_root.ok_or_else(|| {
                 SeedHarnessError::Arguments("--profile-root is required".to_owned())
@@ -431,10 +512,168 @@ impl Arguments {
             metainfo: metainfo
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
+            staged_ipv6_pinhole,
             encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
             tracker,
             dht_bootstrap,
         })
+    }
+
+    fn local_network_listener(&self) -> bool {
+        self.upnp || self.staged_ipv6_pinhole
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PinholeWait {
+    Disabled,
+    Pinholed,
+}
+
+async fn apply_port_mapping(
+    service: &mut ApplicationService,
+    arguments: &Arguments,
+    port_mapping: PortMappingPolicy,
+) -> Result<(), SeedHarnessError> {
+    let response = service
+        .dispatch(RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: format!("staged-pinhole-{}-{port_mapping:?}", service.revision()?),
+            expected_revision: None,
+            command: Command::SetClientSettings {
+                settings: ClientSettings {
+                    listener: ListenerPolicy::AutomaticLocalNetwork,
+                    port_mapping,
+                    encryption: arguments.encryption,
+                    ..ClientSettings::default()
+                },
+            },
+        })
+        .await?;
+    if matches!(response.outcome, ResponseOutcome::Success { .. }) {
+        Ok(())
+    } else {
+        Err(SeedHarnessError::Catalog(
+            "staged IPv6 pinhole settings request was rejected".to_owned(),
+        ))
+    }
+}
+
+async fn wait_for_ipv6_pinhole(
+    service: &ApplicationService,
+    target: PinholeWait,
+) -> Result<(Ipv6PinholeStatus, std::net::SocketAddrV6), SeedHarnessError> {
+    let subscription = service
+        .subscribe(SubscriptionSpec {
+            selector: ViewSelector::TorrentList,
+            projection: ViewProjection::Summary,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 64 * 1_024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    timeout(READY_TIMEOUT, async {
+        loop {
+            let update = subscription.next_update().await.ok_or_else(|| {
+                SeedHarnessError::Catalog(
+                    "IPv6 pinhole view subscription closed before readiness".to_owned(),
+                )
+            })?;
+            let runtime = match update.payload {
+                ViewUpdatePayload::Snapshot {
+                    snapshot:
+                        ViewSnapshot::TorrentList {
+                            client_settings, ..
+                        },
+                } => Some(client_settings),
+                ViewUpdatePayload::Patch {
+                    patch:
+                        rstorrent_session::ViewPatch::TorrentList {
+                            client_settings: Some(client_settings),
+                            ..
+                        },
+                } => Some(client_settings),
+                _ => None,
+            };
+            let Some(runtime) = runtime else {
+                continue;
+            };
+            let endpoint = runtime
+                .transport_families
+                .iter()
+                .find(|family| family.family == TransportAddressFamily::Ipv6)
+                .and_then(|family| family.tcp_endpoint.as_deref())
+                .and_then(|endpoint| endpoint.parse::<std::net::SocketAddr>().ok())
+                .and_then(|endpoint| match endpoint {
+                    std::net::SocketAddr::V6(endpoint) => Some(endpoint),
+                    std::net::SocketAddr::V4(_) => None,
+                });
+            let Some(endpoint) = endpoint else {
+                continue;
+            };
+            let status = runtime.ipv6_pinhole_status;
+            let ready = match (&status, target) {
+                (Ipv6PinholeStatus::Disabled, PinholeWait::Disabled) => true,
+                (
+                    Ipv6PinholeStatus::Pinholed {
+                        internal_address,
+                        internal_port,
+                        ..
+                    },
+                    PinholeWait::Pinholed,
+                ) => {
+                    internal_address == &endpoint.ip().to_string()
+                        && *internal_port == endpoint.port()
+                }
+                (Ipv6PinholeStatus::Failed { stage, detail }, PinholeWait::Pinholed) => {
+                    return Err(SeedHarnessError::Catalog(format!(
+                        "IPv6 pinhole failed during {stage:?}: {detail}"
+                    )));
+                }
+                (Ipv6PinholeStatus::CleanupFailed { detail, .. }, _) => {
+                    return Err(SeedHarnessError::Catalog(format!(
+                        "IPv6 pinhole cleanup remains uncertain: {detail}"
+                    )));
+                }
+                _ => false,
+            };
+            if ready {
+                return Ok((status, endpoint));
+            }
+        }
+    })
+    .await
+    .map_err(|_| SeedHarnessError::ReadinessTimeout)?
+}
+
+async fn write_observation(
+    stdout: &mut tokio::io::Stdout,
+    observation: serde_json::Value,
+) -> Result<(), SeedHarnessError> {
+    stdout
+        .write_all(format!("{observation}\n").as_bytes())
+        .await
+        .map_err(|source| SeedHarnessError::Io {
+            operation: "write pinhole observation",
+            source,
+        })?;
+    stdout.flush().await.map_err(|source| SeedHarnessError::Io {
+        operation: "flush pinhole observation",
+        source,
+    })
+}
+
+fn pinhole_diagnostic_json(event: &str, result: Ipv6PinholeDiagnosticResult) -> serde_json::Value {
+    match result {
+        Ipv6PinholeDiagnosticResult::Packets(packets) => {
+            serde_json::json!({ "event": event, "type": "packets", "packets": packets })
+        }
+        Ipv6PinholeDiagnosticResult::Fault { code, .. } => {
+            serde_json::json!({ "event": event, "type": "fault", "code": code })
+        }
     }
 }
 
@@ -625,6 +864,39 @@ mod tests {
         )
         .expect("parse UPnP harness arguments");
         assert!(upnp.upnp);
+        let staged = Arguments::parse(
+            [
+                "--staged-ipv6-pinhole",
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse staged IPv6 pinhole harness");
+        assert!(staged.staged_ipv6_pinhole);
+        assert!(staged.local_network_listener());
+        assert!(
+            Arguments::parse(
+                [
+                    "--upnp",
+                    "--staged-ipv6-pinhole",
+                    "--profile-root",
+                    "profile",
+                    "--storage-root",
+                    "storage",
+                    "--metainfo",
+                    "fixture.torrent",
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .is_err()
+        );
         let required = Arguments::parse(
             [
                 "--profile-root",

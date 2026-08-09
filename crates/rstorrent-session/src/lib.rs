@@ -45,6 +45,7 @@ pub use diagnostics::{
 };
 pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
+pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{
     DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
     NetworkPolicy,
