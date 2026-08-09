@@ -435,6 +435,29 @@ uv run --project tests/interop --locked \
   python tests/interop/multi_peer_liveness.py
 ```
 
+The concurrent-torrent profile downloads independent deterministic fixtures
+from separate pinned-libtorrent source sessions. It alternates recorded case
+order, checks the single-torrent and two-torrent throughput gates, and reports
+per-torrent progress plus CPU, RSS, session resources, handles, peers, and
+shutdown across the 1/2/3/4/8 sweep:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/multi_torrent_throughput.py \
+  --output /tmp/rstorrent-multi-torrent.json
+```
+
+The Android product concurrency profile uses the same generated application
+contract and Android session limits. It requires an explicit target, two
+active downloads plus one queued promotion, exact payload hashes, bounded
+resource/file-descriptor high-waters, and cleanup:
+
+```bash
+experiments/android-engine-bootstrap/build.sh
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target pixel7a --profile product-concurrent-downloads --no-build
+```
+
 Tactical `003`'s self-contained Android probe builds both supported native
 ABIs and targets only an explicitly verified environment:
 

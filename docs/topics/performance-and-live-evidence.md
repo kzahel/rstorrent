@@ -1280,6 +1280,44 @@ one `find_node`, three `get_peers`, two `announce_peer`, and eight query forms.
 Neither controlled loopback nor outbound public evidence claims an
 off-network incoming IPv6 TCP path; Tactical `113` owns that gate.
 
+## Concurrent-Torrent Admission Evidence: 2026-08-09
+
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds a
+release-build local comparator for one, two, three, four, and eight simultaneous
+RSTorrent downloads from independent pinned-libtorrent `2.0.13.0` source
+sessions. Independent oracle sessions prevent a single libtorrent session
+thread from becoming the measured bottleneck. The authoritative Mac16,7 arm64,
+macOS 26.5.2/APFS run used 128 MiB per torrent, 1 MiB pieces, one warm-up, and
+five recorded repetitions per case.
+
+| Active downloads | Median aggregate MiB/s | Median CPU cores | Maximum RSS bytes |
+| ---: | ---: | ---: | ---: |
+| 1, configured limit 1 | 218.319 | 0.972 | 47,267,840 |
+| 1, configured limit 3 | 214.419 | 0.956 | 46,776,320 |
+| 2 | 236.122 | 1.081 | 132,562,944 |
+| 3 | 179.632 | 1.190 | 135,856,128 |
+| 4 | 154.563 | 1.223 | 151,781,376 |
+| 8 | 134.915 | 1.221 | 162,856,960 |
+
+The limit-three/limit-one single-torrent ratio is `0.9821`, above the `0.95`
+gate, and the two-torrent/one-torrent aggregate ratio is `1.0815`, above the
+`0.90` gate. Every concurrent torrent produced 3--17 progress samples. Sweep
+maxima were 41,762,816 request bytes, 33,554,432 payload bytes, 193,986,560
+active-piece bytes/185 pieces, four writes, four hashes, eight registered
+generations, eight peers, eight open files, and 0.011074-second shutdown;
+terminal resource counters were zero. Throughput saturation above two is a
+recorded limit of this host, not evidence to increase the default.
+
+The physical API 37 Pixel 7a `product-concurrent-downloads` run observed
+configured three/effective two, two active and one queued, automatic promotion,
+three exact published hashes, and terminal zero resource ownership. Android
+high-waters were 193,304 request bytes, 32,768 payload bytes, 257,768 active-
+piece bytes/nine pieces, two writes, two hashes, and two registered generations.
+The shared 40-handle pool held per-storage high-waters of 12, 12, and 18 with
+pending high-water two. This is bounded physical resource/product evidence,
+not an Android/desktop throughput comparison.
+
 ## IPv6 Firewall-Pinhole Evidence Gate
 
 Tactical

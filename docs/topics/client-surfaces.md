@@ -60,6 +60,15 @@ and named API 37 Pixel 7a, but deliberately adds no Compose settings screen.
 The DHT inspection surface renders both
 families within its existing bounded view rather than adding a second page or
 client-owned inference.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds
+authoritative operational state and queue position to shared torrent rows,
+configured/effective active-download limits and clamp state to Settings, and
+Move to top/Move to bottom actions to Transfers. Headless Chrome proves those
+settings and actions through the generated contract. Android consumes the
+same additive contract and a physical Pixel 7a proves configured three/
+effective two plus promotion, while Compose deliberately gains no new control
+in this tactical.
 Active Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 adds no setting. Browser and Tauri render the existing IPv4 mapping status and

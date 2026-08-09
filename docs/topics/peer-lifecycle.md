@@ -74,6 +74,15 @@ only bounded endpoint capability evidence and permits at most one fresh-socket
 early-transport plaintext fallback. Incoming `req2` routing is provisional
 until the decrypted BitTorrent handshake validates the same info hash and
 ordinary Tactical `090` admission succeeds.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds
+fair session outbound-turn admission above the unchanged peer budget and
+activates tracker/DHT/peer discovery only for admitted downloads. One hundred
+runnable catalog entries therefore own three content/resource generations and
+three active discovery registrations at limit three. A combined 500-complete-
+seed, ten-interested-peer, three-download test preserves the 200-connection
+ceiling and the existing global seven-regular/one-optimistic upload grants,
+then drains every download resource registration.
 
 ## Scope
 

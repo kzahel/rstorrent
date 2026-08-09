@@ -27,6 +27,14 @@ Tactical `049` completes the diagnostics specialization: hierarchical
 categories, structured bounded subjects and fields, capture interest,
 separate source/delivery/local loss semantics, and one ordered console over
 the existing view-set path.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) extends
+the existing torrent and client-settings projections without adding a view
+kind. Torrent rows carry authoritative operational state and stable one-based
+queue position; settings carry configured/effective active-download limits,
+platform clamp reason, active count, and checking count. Generated TypeScript,
+schema, validators, React/Tauri consumers, and Android UniFFI/Kotlin bindings
+all use those same facts; no adapter derives scheduler state locally.
 Tactical `051` adds an optional, defaulted, closed `PeerFlagView` set to active
 peer rows. Rust computes semantic connection state while clients retain
 presentation-only glyph ownership; old v1 producers that omit the field remain

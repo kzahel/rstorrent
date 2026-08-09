@@ -47,6 +47,15 @@ reconciles current durable intent after commit or replay, retains a healthy
 peer or checker generation where possible, and rejects a different busy
 torrent before durable mutation. Clients do not compose priority and Resume
 commands or inspect checker phase.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) removes
+that different-torrent busy boundary. Resume durably enters one automatic
+download queue, `Download now` atomically moves the torrent to its head, and
+top/bottom commands mutate only durable order. One application-generation
+admission owner reconciles an active-generation map under configured/effective
+limits; command success remains durable intent, while queued, active,
+checking, stopping, seeding, paused, and error are authoritative operational
+state rather than client inference.
 Tactical `075` keeps that semantic contract and its request receipts intact in
 an explicitly selected, private, bounded in-memory application-state mode.
 SQLite `FULL` now has the typed `resource_limit` response classification in
@@ -389,8 +398,8 @@ controlled pinned-libtorrent application transfer, live policy replacement,
 desktop platform trust, and Android product-verifier evidence through those
 same owners.
 
-Later work must define multi-torrent scheduling, stable product error
-taxonomy, capability installation, production remote
+Later work must define stable product error taxonomy, capability installation,
+production remote
 authentication and relay semantics, and compatibility rules for any
 published wire protocol.
 

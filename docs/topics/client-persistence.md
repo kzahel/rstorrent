@@ -768,7 +768,18 @@ available. The named API 37 Pixel 7a repeated those exact policy and restart
 assertions on its current no-eligible-address network. Neither environment
 observation rewrites configured intent.
 
-This evidence does not broaden into a general multi-torrent scheduler, stable
-public wire protocol, UI settings catalog, remote listener,
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds
+schema version `17`. One `active_downloads` value defaults to three and one
+nullable unique sortable queue position records automatic incomplete-download
+order without persisting derived active state. Version-16 migration assigns a
+stable order transactionally; pause retains position, completion removes it,
+Resume appends only when absent, and `Download now` plus top/bottom movement
+use the ordinary revision and receipt rules. Reopen, rollback, near-overflow
+renumbering, and a 1,000-entry/2,000-move reference model all preserve one
+total order. Runtime admission is reconstructed from these durable facts.
+
+This evidence does not broaden into a stable public wire protocol, complete UI
+settings catalog, remote listener,
 profile-management UI, simultaneous profiles, unfinished-block resume, or
 hash-skipping fast resume.

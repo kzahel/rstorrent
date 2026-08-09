@@ -12,8 +12,11 @@ closed evidence-limited: its implementation and negative control pass, but the
 available gateway returns typed `606` to `AddPinhole`, so positive physical
 capability is unknown on the current hardware and the tactical is not
 graduated. Tactical
-[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is the
-single authoritative **Now**, planned and not started. The completed
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is
+complete after deterministic, controlled pinned-libtorrent, browser, scale,
+performance, and physical Pixel evidence. Platform-storage coherence and
+cross-platform feasibility is the single authoritative **Now**, planned and
+not started. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -325,19 +328,19 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tactical `114` is the planned, not-started authoritative Now**.
+Tactical `114` graduated; platform-storage coherence and cross-platform
+feasibility is the planned, not-started authoritative Now**.
 
 Latest graduated tactical:
-[`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).
-Its final controlled pinned-libtorrent IPv6 profile completed direct and DHT-
-only exact transfers plus incoming BEP 32 queries. The bounded public product
-run reached 18 IPv4 and 40 IPv6 routing nodes; the IPv6 node reached K=8 in
-1.218 seconds and received 41 valid responses while the merged lookup acquired
-and verified metadata in 107.553 seconds. IPv6 returned no peer value in that
-one live sample. Both Android ABIs and the API 34 AVD family-policy/restart
-profile pass. The named API 37 Pixel 7a subsequently passed the same default,
-disable, forced-restart persistence, degraded re-enable, and cleanup assertions
-on its current network; no incoming IPv6 reachability is claimed.
+[`114-session-wide-concurrent-torrent-admission.md`](../tactical/114-session-wide-concurrent-torrent-admission.md).
+Commits `c9f4fbc` through `c545e91` implement schema-17 durable queueing, one
+application admission owner and active-generation map, shared memory/storage/
+hash/tracker/outbound resource authority, generated product controls, and the
+retained performance and Android harnesses. The one-torrent regression ratio
+is `0.9821`, the two/one aggregate ratio is `1.0815`, every 1/2/3/4/8 run
+finishes with terminal zero resources, 100 runnable and 500 complete catalog
+scales remain bounded, and the physical Pixel 7a proves configured three/
+effective two with promotion and exact publication.
 
 Latest closed tactical:
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md).
@@ -348,15 +351,15 @@ harness. The live negative control passes; `AddPinhole` returns `606` on the
 available gateway. The accepted closure records positive physical capability
 as unknown on current hardware without graduation or control-transport scope.
 
-Current milestone: Tactical
-[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is the
-single authoritative **Now**, planned and not started.
+Current milestone: platform-storage coherence and cross-platform feasibility
+is the single authoritative **Now**, planned and not started after graduated
+Tactical `114`.
 
-Next executable action: await implementation authorization for Tactical `114`.
-Once authorized, revalidate its accepted owner/resource boundary against the
-current repository checkpoint before changing code. Tactical `113` needs no
-further action unless different gateway hardware becomes available or a
-separate control-transport investigation is explicitly authorized.
+Next executable action: await implementation authorization for the platform-
+storage tactical. Once authorized, revalidate its accepted boundary against
+the graduated session-resource owners before changing code. Tactical `113`
+needs no further action unless different gateway hardware becomes available
+or a separate control-transport investigation is explicitly authorized.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

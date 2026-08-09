@@ -1,10 +1,11 @@
 # Tactical 114: Session-Wide Concurrent Torrent Admission
 
-Status: Authoritative **Now** on 2026-08-09. Not started and not authorized for
-implementation by this status change alone. The direction and the boundary of
-this first multi-torrent slice were accepted in product discussion on
-2026-08-09. It follows graduated Tactical `112` and evidence-limited closed
-Tactical `113`; `capability-readiness.md` owns this promotion.
+Status: **Complete** on 2026-08-09. Schema 17, the durable automatic download
+queue, session-wide resource authority, concurrent application admission,
+shared product controls, controlled performance evidence, and physical Pixel
+7a evidence are implemented. It follows graduated Tactical `112` and
+evidence-limited closed Tactical `113`; `capability-readiness.md` owns the
+current queue after this graduation.
 
 Topics: `capability-readiness`, `application-control`, `application-view-api`,
 `client-persistence`, `download-correctness`, `peer-lifecycle`,
@@ -491,7 +492,7 @@ contracts remain governed by their existing tacticals and references.
 ### Pinned libtorrent
 
 Reference commit: `7d7fc38fac61177fa5e02148f791b2f65250b09d`
-(`libtorrent-2.0.13`). Inspect and record at implementation time:
+(`libtorrent-2.0.13`). The implementation inspected and recorded:
 
 - `src/session_impl.cpp::auto_manage_checking_torrents`,
   `auto_manage_torrents`, and `recalculate_auto_managed_torrents` for separate
@@ -536,8 +537,8 @@ source, fixture, class layout, persistence encoding, or test data is copied.
 
 ### JSTorrent product history
 
-Inspect local JSTorrent commit `9895410beeed6aff554053769bd006a3fbd373ef`
-at implementation time:
+The implementation inspected local JSTorrent commit
+`9895410beeed6aff554053769bd006a3fbd373ef`:
 
 - `packages/engine/src/core/torrent-queue-manager.ts` for the product semantics
   of automatic download/checking limits, queue position, force activation, and
@@ -557,7 +558,7 @@ should prefer demand/goal-aware rank over blind time rotation.
 
 ### Existing RSTorrent source boundaries
 
-The implementation dossier must revisit:
+The implementation dossier revisited:
 
 - `crates/rstorrent-session/src/application.rs`, especially
   `ApplicationService::active_torrent`, `install_active_download`, startup
@@ -637,6 +638,159 @@ git diff --check
 Also run the focused controlled interoperability, performance/resource,
 headless browser, and Android commands added by the implementation. Rerun
 contract generation cleanly and prove it produces no diff.
+
+## Completion Record
+
+### Landed ownership and behavior
+
+Schema 17 adds `ClientSettings.active_downloads` and one unique sortable
+`download_queue_position` per incomplete torrent. Queue append, head/bottom
+movement, pause retention, completion removal, replay, conflict handling,
+near-overflow renumbering, and version-16 migration stay inside the existing
+SQLite transaction authority. `download_queue.rs` owns the task-free ordering
+operations, while `store_schema.rs` owns the current schema and newest bounded
+migration; historical one-off migrations deliberately remain with their
+existing projection helpers.
+
+`TorrentAutoManager` is a runtime-independent admission transition. The
+application generation owns one active-download map, one coalesced wake plus
+30-second lost-wakeup reconciliation task, and exact controller generations.
+It restores every durable running intent, admits the stable queue head up to
+the effective limit, retains healthy active torrents, gracefully joins excess
+generations after a limit decrease, and promotes work after terminal outcomes.
+Checking remains a separate one-torrent lane. Queued torrents retain catalog
+and source facts but own no content generation; discovery registrations remain
+task-free and become active only for admitted generations.
+
+`SessionDownloadResources` owns aggregate request, payload, active-piece,
+write, hash, tracker-operation, and outbound-turn admission. Each admitted
+torrent receives a generation-scoped registration tied to its storage root.
+Memory reservations use the existing platform totals, storage execution is
+work-conserving and fair across roots and torrents, outbound turns yield
+between ready torrents, and the existing 40-handle file pool and session peer
+budget remain the final descriptor/connection authorities. Explicit release
+after controller join prevents a completed generation retained by a client
+handle from delaying promotion or inflating live registration counts.
+
+Browser/Tauri now render authoritative queued/active/checking/seeding/paused/
+error state and queue position, expose Move to top/Move to bottom, and edit the
+configured active-download count. The application contract exposes configured
+and effective limits, clamp reason, and live active/checking counts. Android
+uses the same generated contract and session resources, reports a visible
+platform clamp, and deliberately adds no Compose settings control in this
+slice.
+
+The implementation used the pinned reference behavior listed above as its
+completeness oracle. It adopts automatic promotion, durable order, default
+three downloads, one checker, work conservation, and graceful limit changes.
+The intentional differences remain exactly those accepted in the plan:
+queued downloads have no dormant engine task, slow downloads do not bypass a
+hard active count, metadata consumes a slot, `Download now` moves queue intent
+without force-starting, Android is capped at two, and seed ranking, inactive-
+rate exemptions, and finite bandwidth policy remain deferred.
+
+### Scenario evidence
+
+| Scenarios | Executable evidence |
+| --- | --- |
+| `T114-C01`, `C03`, `C08` | `startup_and_live_limit_changes_admit_only_durable_queue_heads`, the existing joined-pause application tests, and `TorrentAutoManager::{starts_in_durable_order_up_to_the_limit,ineligible_active_torrents_stop_and_open_capacity,shrinking_demotes_the_latest_active_queue_positions}` cover startup, queued/active pause semantics, stable retention, promotion eligibility, and live growth/shrink. |
+| `T114-C02`, `C11`, `C12` | `terminal_wake_promotes_the_next_download_without_a_command` and `three_payload_downloads_progress_and_completion_promotes_the_fourth` run one small and two larger admitted payloads beside a queued fourth, verify exact publication, promote without a command, respect every memory ceiling, and finish with zero registrations or bytes. |
+| `T114-C04`--`C06` | `download_queue_is_durable_replayable_and_keeps_pause_position`, `download_files_commits_one_replay_safe_wanted_and_running_revision`, `near_overflow_is_renumbered_inside_the_transaction`, and `thousand_entry_queue_matches_model_across_moves_and_rollbacks` cover durable Resume/Download-now intent, head/bottom movement, replay/conflict/stale revision, restart, 1,000 entries, 2,000 model-checked moves, and repeated rollback boundaries. |
+| `T114-C07`, `C18` | `checking_and_metadata_acquisition_have_explicit_admission_shapes` and `one_hundred_runnable_torrents_own_only_three_content_generations` prove metadata consumes admission and a 100-row runnable catalog owns three resource generations, three active discovery registrations, and no queued storage work. |
+| `T114-C09`, `C10`, `C13`, `C14` | The `session_resources` memory, request-fairness, storage/root-fairness, cancellation, tracker-ceiling, and outbound-turn tests plus `separate_swarms_share_request_and_active_piece_ceilings` prove shared hard totals, idle-capacity use, fair contention, slow-root isolation, and exact release. |
+| `T114-C15`--`C17` | The Tactical `108` checker suite now runs through the same registered session storage/hash authority; existing injected storage/hash/failure, selection/removal/archive, generation-cancellation, and application shutdown suites remain green, while final-registration drop and joined-release tests prove terminal resource recovery. |
+| `T114-C19` | `five_hundred_complete_seeds_share_upload_slots_with_three_downloads` retains 500 complete registrations while three downloads run and ten interested incoming peers share exactly seven regular plus one optimistic global upload grant, the 200-peer ceiling, and the 40-handle pool; terminal download resources are zero. |
+| `T114-C20` | `platform_download_cap_is_visible_without_rewriting_configuration` and the physical `product-concurrent-downloads` profile prove configured three/effective two, two active plus one queued, promotion, Android memory totals, exact output hashes, and terminal cleanup. |
+
+The shared-client evidence includes generated-schema/validator round trips,
+React component and live-adapter tests, and the headless Chrome
+`inspection-demo.spec.ts` assertions for the active-download setting and
+authoritative queue actions. No client computes queue order or admission.
+
+### Controlled performance and resource evidence
+
+The authoritative release run used source commit
+`11246b42d734e8299135c80cd2637beb25817668`, pinned libtorrent `2.0.13.0`,
+128 MiB per torrent with 1 MiB pieces, one warm-up per case, five recorded
+repetitions, and independent libtorrent source sessions so an oracle thread
+bottleneck could not masquerade as RSTorrent saturation. The host was an
+arm64 Mac16,7 with 14 logical CPUs, macOS 26.5.2, and APFS.
+
+| Active downloads | Median aggregate MiB/s | Median CPU core equivalents | Maximum RSS bytes |
+| ---: | ---: | ---: | ---: |
+| 1, configured limit 1 | 218.319 | 0.972 | 47,267,840 |
+| 1, configured limit 3 | 214.419 | 0.956 | 46,776,320 |
+| 2 | 236.122 | 1.081 | 132,562,944 |
+| 3 | 179.632 | 1.190 | 135,856,128 |
+| 4 | 154.563 | 1.223 | 151,781,376 |
+| 8 | 134.915 | 1.221 | 162,856,960 |
+
+The one-torrent limit-three/limit-one ratio was `0.9821`, passing the `0.95`
+floor. The two-torrent/one-torrent aggregate ratio was `1.0815`, passing the
+`0.90` floor. Every concurrent torrent produced 3--17 measured progress
+samples. Across the sweep, maxima were 41,762,816 request bytes, 33,554,432
+payload bytes, 193,986,560 active-piece bytes and 185 pieces, four writes,
+four hashes, eight registered generations, eight peers, eight open files,
+162,856,960 RSS bytes, and 0.011074 seconds shutdown. Every terminal resource
+counter was zero. The decline above two is recorded saturation evidence, not
+a claim that the default or maximum should increase.
+
+The physical API 37 Pixel 7a run used the no-window Android
+`product-concurrent-downloads` profile against independently hash-verified
+host fixtures. Configured three produced effective two, two active and one
+queued; completion promoted the queued torrent. The registration high-water
+was two and terminal registered/request/payload/piece/write/hash counts were
+zero. High-waters were 193,304 request bytes, 32,768 payload bytes, 257,768
+active-piece bytes, nine pieces, two writes, and two hashes, all within the
+Android profile. The shared file-pool limit stayed 40; per-storage owned
+high-waters were 12, 12, and 18 with pending high-water two. File descriptors
+were 159 before, 186 at high-water, and 185 before successful harness cleanup.
+The three published SHA-1 values were
+`f2e61e6bd056677c1f9f0921e4b738e2c6453c0b`,
+`0a23591285a92566a934aaa7246643741168686d`, and
+`aeaf0325f5605ed9be5c320bf845f2e75ac7e234`.
+
+### Logical commits
+
+- `c9f4fbc` persists schema-17 queue and setting state and adds the pure
+  scheduler; `5fb7fe4`, `c6d864e`, and `b10086c` establish shared memory,
+  storage/root, outbound, tracker, and discovery authority.
+- `969348d` exposes authoritative state and controls through generated clients;
+  `f8e5cb3` adds controlled payload/resource and performance harnesses;
+  `fee5b1c` adds the Android contract and physical profile.
+- `4c80796`, `9a4df37`, and `11246b4` stabilize and isolate the performance
+  oracle; `42bd27f` closes the 500-seed and headless-browser evidence; and
+  `c545e91` model-checks the 1,000-entry queue and rollback boundary.
+
+### Final validation
+
+The final source and documentation checkpoint passed:
+
+```bash
+source ~/.profile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+npm run test:e2e --prefix clients/web -- \
+  inspection-demo.spec.ts -g 'typed torrent ETA|torrent and file rows'
+python3 -m py_compile tests/interop/multi_torrent_throughput.py \
+  experiments/android-engine-bootstrap/run_bootstrap.py
+git diff --check
+```
+
+Contract generation produced no diff. The web suite passed 239 tests with two
+intentional skips; the focused browser run passed both selected cases. Earlier
+in the same completed source checkpoint, the full Android build generated both
+x86_64 and arm64 native libraries and Kotlin bindings, then passed
+`assembleDebug` and `testDebugUnitTest`; the Pixel and performance commands
+documented in `DEVELOPMENT.md` produced the retained evidence above.
+
+No native host, daemon, per-torrent resource multiplier, seed auto-manager,
+finite bandwidth policy, dynamic memory-pressure profile, or Compose settings
+surface was introduced.
 
 ## Non-Goals And Follow-Ons
 

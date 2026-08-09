@@ -782,3 +782,11 @@ now completes live convergence for listener, preferred port, UPnP mapping,
 session peer limit, and upload slots through one stable session-network owner.
 Finite bandwidth, durable accounting/reset policy, and ratio/time goals remain
 separate future slices.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) keeps
+complete-seed registration outside the new download-count gate while sharing
+the existing peer, upload, read, and file-handle authorities. Its combined
+scale test retains 500 complete registrations beside three active downloads;
+ten interested peers receive exactly seven regular and one optimistic grant,
+stay beneath the 200-peer and 40-handle ceilings, and drain download-resource
+ownership at shutdown. No seed-rank or durable seeding-goal policy is implied.

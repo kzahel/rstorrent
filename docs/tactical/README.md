@@ -548,11 +548,11 @@ that scope and its cleanup or compatibility rules explicitly.
   expansion is implied. The pinned oracle implements no pinhole support, so
   every deterministic test is independently authored.
 - [`114-session-wide-concurrent-torrent-admission.md`](114-session-wide-concurrent-torrent-admission.md):
-  authoritative **Now**, planned and not started after the dual-stack/
-  reachability sequence; replaces the single-active-torrent slot with bounded
-  session-wide download/checking
-  admission, durable queue order, and shared memory, storage, hashing,
-  connection, and discovery resource authority.
+  complete session-wide concurrent download admission; schema 17 persists
+  queue order and the default-three setting, one application owner admits exact
+  generations, shared resources prevent per-torrent multiplication, controlled
+  performance and 100/500-catalog scale gates pass, and a physical Pixel 7a
+  proves the effective-two Android cap, promotion, exact payload, and cleanup.
 - [`115-mse-policy-advertisement-and-peer-detail.md`](115-mse-policy-advertisement-and-peer-detail.md):
   complete bounded post-graduation follow-up; matches libtorrent's default
   plaintext-payload selection under compatibility-only `allow`, derives the

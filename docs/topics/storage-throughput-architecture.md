@@ -18,6 +18,14 @@ all payload I/O in Rust after lazy platform capability acquisition.
 Tactical `073` removes the specialized single-file owner: every v1 metainfo
 shape now uses the same bounded positional write/hash executor, checkpoint
 epoch, managed full recheck, and publication fence.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) moves
+write/hash concurrency and request/payload/active-piece byte authority above
+individual torrents. Generation-scoped registrations share the existing
+desktop or Android totals; root/torrent-fair execution lets a healthy root
+advance beside a blocked one, while the session file pool remains the final
+40-handle authority. The controlled 1/2/3/4/8 sweep and physical Pixel result
+are recorded in `performance-and-live-evidence.md`.
 
 ## Purpose And Scope
 
@@ -858,7 +866,7 @@ final write completion and measure page-cache rereads, hash latency and memory
 cost. Keep this only if it produces a material controlled improvement beyond
 the simpler per-piece write fence.
 
-### 5. Graduate to session-wide multi-root scheduling
+### 5. Graduate to session-wide multi-root scheduling — complete
 
 Move aggregate resource authority above one torrent, add fair multi-torrent
 admission, root-specific concurrency profiles and slow-root isolation. This

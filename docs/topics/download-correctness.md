@@ -78,6 +78,15 @@ including skipped-file boundary bytes, but excludes BEP 47 padding synthesized
 locally. Current-generation accepted blocks reduce the estimate before
 verification; an exact hash-failure event restores them, while only verified
 pieces remain durable across generation replacement.
+Completed Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) retains
+all per-torrent request, verification, publication, and recovery semantics
+while moving their aggregate request, resident-payload, active-piece, write,
+and hash ceilings to one session authority. A controlled small-plus-large
+four-torrent fixture proves simultaneous progress, exact publication,
+completion-driven promotion, and terminal zero accounting. Queue order and
+active-count policy do not become integrity evidence or weaken conservative
+restart/checking behavior.
 
 ## Scope
 
