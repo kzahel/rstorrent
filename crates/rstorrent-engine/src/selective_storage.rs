@@ -17,6 +17,10 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::artifact_layout::PublicationShape;
 use crate::checkpoint::DurabilityTarget;
+use crate::namespace_transition::{
+    NamespaceAction, NamespaceState, NamespaceTransitionError, NamespaceTransitionInput,
+    NamespaceTransitionOutcome, decide_namespace_transition,
+};
 use crate::part_file::{
     PartFile, PartFileCheckpointReference, PartFileError, PartFileIdentity, PartFileSpan,
 };
@@ -65,6 +69,7 @@ pub struct DescriptorStorage {
     pub materialization_files: Vec<DescriptorFile>,
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DescriptorFileRole {
     Wanted,
@@ -72,6 +77,7 @@ pub enum DescriptorFileRole {
     Padding,
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescriptorStoragePlanFile {
     pub file_index: usize,
@@ -81,6 +87,7 @@ pub struct DescriptorStoragePlanFile {
     pub materialize: bool,
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescriptorStoragePlan {
     pub info_hash: [u8; 20],
@@ -127,13 +134,7 @@ pub enum ResumedStorage {
     Published,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ResumeArtifactState {
-    None,
-    Staging,
-    Publishing,
-    Published,
-}
+pub type ResumeArtifactState = NamespaceState;
 
 #[derive(Debug)]
 pub enum SelectiveStorageError {
@@ -180,6 +181,7 @@ pub enum SelectiveStorageError {
     PreparedHashMismatch {
         file_index: usize,
     },
+    NamespaceTransition(NamespaceTransitionError),
     NotPublished,
     InvalidStorageOperation(&'static str),
     AlreadyWanted {
@@ -278,6 +280,7 @@ impl fmt::Display for SelectiveStorageError {
                     "published file {file_index} hash differs from preparation"
                 )
             }
+            Self::NamespaceTransition(error) => write!(formatter, "namespace transition: {error}"),
             Self::NotPublished => {
                 write!(formatter, "selected tree is not published")
             }
@@ -304,6 +307,7 @@ impl Error for SelectiveStorageError {
         match self {
             Self::Layout(error) => Some(error),
             Self::PartFile(error) => Some(error),
+            Self::NamespaceTransition(error) => Some(error),
             Self::Io { source, .. } => Some(source),
             _ => None,
         }
@@ -368,6 +372,12 @@ impl From<PartFileError> for SelectiveStorageError {
     }
 }
 
+impl From<NamespaceTransitionError> for SelectiveStorageError {
+    fn from(error: NamespaceTransitionError) -> Self {
+        Self::NamespaceTransition(error)
+    }
+}
+
 #[derive(Debug)]
 enum StorageBacking {
     Paths {
@@ -401,7 +411,8 @@ pub struct SelectiveStorage {
     pending_promotions: Vec<usize>,
     route_epoch: u64,
     verified: Vec<bool>,
-    published: bool,
+    namespace_state: NamespaceState,
+    namespace_generation: u64,
 }
 
 pub(crate) type CheckpointHandles =
@@ -1108,7 +1119,8 @@ impl SelectiveStorage {
             pending_promotions: Vec::new(),
             route_epoch: 0,
             verified: vec![false; piece_count],
-            published: false,
+            namespace_state: NamespaceState::Staging,
+            namespace_generation: NamespaceState::Staging.initial_generation(),
         })
     }
 
@@ -1208,7 +1220,12 @@ impl SelectiveStorage {
                 } else {
                     verified
                 },
-                published: spec.published,
+                namespace_state: if spec.published {
+                    NamespaceState::Published
+                } else {
+                    NamespaceState::Staging
+                },
+                namespace_generation: spec.namespace_generation,
             },
             resumed,
         ))
@@ -1353,7 +1370,8 @@ impl SelectiveStorage {
             pending_promotions: Vec::new(),
             route_epoch: 0,
             verified: vec![false; piece_count],
-            published: false,
+            namespace_state: NamespaceState::Staging,
+            namespace_generation: NamespaceState::Staging.initial_generation(),
         })
     }
 
@@ -1445,7 +1463,8 @@ impl SelectiveStorage {
             pending_promotions: Vec::new(),
             route_epoch: 0,
             verified,
-            published: false,
+            namespace_state: NamespaceState::Staging,
+            namespace_generation: NamespaceState::Staging.initial_generation(),
         })
     }
 
@@ -1733,7 +1752,12 @@ impl SelectiveStorage {
             pending_promotions,
             route_epoch: 0,
             verified,
-            published,
+            namespace_state: if published {
+                NamespaceState::Published
+            } else {
+                NamespaceState::Staging
+            },
+            namespace_generation,
         };
         Ok((storage, resumed))
     }
@@ -1785,7 +1809,52 @@ impl SelectiveStorage {
     }
 
     pub fn is_published(&self) -> bool {
-        self.published
+        self.namespace_state == NamespaceState::Published
+    }
+
+    pub const fn namespace_state(&self) -> NamespaceState {
+        self.namespace_state
+    }
+
+    pub const fn namespace_generation(&self) -> u64 {
+        self.namespace_generation
+    }
+
+    fn decide_namespace_transition(
+        &self,
+        action: NamespaceAction,
+        observed: bool,
+    ) -> Result<NamespaceTransitionOutcome, SelectiveStorageError> {
+        let outcome = decide_namespace_transition(NamespaceTransitionInput {
+            state: self.namespace_state,
+            current_generation: self.namespace_generation,
+            expected_generation: self.namespace_generation,
+            action,
+        })?;
+        if outcome.observation_required && !observed {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "unobserved namespace transition",
+            ));
+        }
+        Ok(outcome)
+    }
+
+    fn commit_namespace_transition(&mut self, outcome: NamespaceTransitionOutcome) {
+        if outcome.revoke_access {
+            match &self.backing {
+                StorageBacking::Paths {
+                    part_reference,
+                    storage_id,
+                    ..
+                } => part_reference.pool().invalidate_storage(storage_id),
+                StorageBacking::Platform { spec, .. } => {
+                    spec.pool.invalidate_storage(&spec.storage_id);
+                }
+                StorageBacking::Descriptors { .. } => {}
+            }
+        }
+        self.namespace_state = outcome.state;
+        self.namespace_generation = outcome.generation;
     }
 
     pub fn verified_pieces(&self) -> &[bool] {
@@ -2273,6 +2342,9 @@ impl SelectiveStorage {
         if publication_shape == PublicationShape::Tree {
             sync_publication_directories(&staging_root).await?;
         }
+        let transition =
+            self.decide_namespace_transition(NamespaceAction::PreparePublication, false)?;
+        self.commit_namespace_transition(transition);
         Ok(())
     }
 
@@ -2326,6 +2398,8 @@ impl SelectiveStorage {
     }
 
     pub(crate) fn finish_path_publication(&mut self) -> Result<(), SelectiveStorageError> {
+        let transition =
+            self.decide_namespace_transition(NamespaceAction::ConfirmPublication, true)?;
         let publication_shape = self.publication_shape;
         let file_count = self.layout.files().len();
         let (output_root, pool, storage_id) = match &self.backing {
@@ -2354,7 +2428,7 @@ impl SelectiveStorage {
                 path_storage_reference(
                     &pool,
                     &storage_id,
-                    1,
+                    transition.generation,
                     StorageFileRole::Payload(file_index),
                     payload_path(
                         publication_shape,
@@ -2378,12 +2452,12 @@ impl SelectiveStorage {
             *part_reference = path_storage_reference(
                 &pool,
                 &storage_id,
-                1,
+                transition.generation,
                 StorageFileRole::Part,
                 part_path.clone(),
             );
         }
-        self.published = true;
+        self.commit_namespace_transition(transition);
         Ok(())
     }
 
@@ -2406,7 +2480,9 @@ impl SelectiveStorage {
                     .await?;
             }
         }
-        self.published = true;
+        let transition =
+            self.decide_namespace_transition(NamespaceAction::PreparePublication, false)?;
+        self.commit_namespace_transition(transition);
         Ok(())
     }
 
@@ -2429,12 +2505,14 @@ impl SelectiveStorage {
                     .await?;
             }
         }
-        self.published = true;
+        let transition =
+            self.decide_namespace_transition(NamespaceAction::PreparePublication, false)?;
+        self.commit_namespace_transition(transition);
         Ok(())
     }
 
     pub async fn finish_published(&mut self) -> Result<(), SelectiveStorageError> {
-        if !self.published {
+        if !self.is_published() {
             return Err(SelectiveStorageError::NotPublished);
         }
         self.ensure_complete_selection()?;
@@ -2673,6 +2751,8 @@ impl SelectiveStorage {
         let previous_skipped_sources = self.skipped_sources.clone();
         let previous_selection = self.selection.clone();
         let previous_verified = self.verified.clone();
+        let published = self.is_published();
+        let namespace_generation = self.namespace_generation;
         let mut promotions_requiring_part = BTreeSet::new();
         for &file_index in &demoted_files {
             if let Some(file) = self.files[file_index].take() {
@@ -2693,11 +2773,7 @@ impl SelectiveStorage {
                             storage_id,
                             ..
                         } => {
-                            let root = if self.published {
-                                output_root
-                            } else {
-                                staging_root
-                            };
+                            let root = if published { output_root } else { staging_root };
                             let path = payload_path(
                                 self.publication_shape,
                                 root,
@@ -2709,7 +2785,7 @@ impl SelectiveStorage {
                                 reference: path_storage_reference(
                                     part_reference.pool(),
                                     storage_id,
-                                    u64::from(self.published),
+                                    namespace_generation,
                                     StorageFileRole::Payload(file_index),
                                     path,
                                 ),
@@ -2782,7 +2858,10 @@ impl SelectiveStorage {
         &mut self,
         file_index: usize,
     ) -> Result<MaterializationReport, SelectiveStorageError> {
-        if !self.published {
+        if !matches!(
+            self.namespace_state,
+            NamespaceState::Publishing | NamespaceState::Published
+        ) {
             return Err(SelectiveStorageError::NotPublished);
         }
         let metainfo_file = self
@@ -3001,7 +3080,10 @@ impl SelectiveStorage {
                 "descriptor hash finalization",
             ));
         }
-        if !self.published {
+        if !matches!(
+            self.namespace_state,
+            NamespaceState::Publishing | NamespaceState::Published
+        ) {
             return Err(SelectiveStorageError::NotPublished);
         }
         let mut hashes = Vec::new();
@@ -3247,6 +3329,7 @@ impl SelectiveStorage {
     }
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 pub fn plan_descriptor_storage(
     metainfo: &Metainfo,
     skip_files: &[usize],
@@ -3305,6 +3388,7 @@ pub fn plan_descriptor_storage(
     })
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 pub async fn verify_prepared_descriptors(
     mut descriptors: Vec<DescriptorFile>,
     expected: &[PreparedFileHash],

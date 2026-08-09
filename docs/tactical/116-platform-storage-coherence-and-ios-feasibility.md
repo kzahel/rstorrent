@@ -608,6 +608,28 @@ persisted-grant revocation, unavailable restart with stable root identity,
 system-picker repair, and a healthy second restart. No stable device identifier
 or raw provider identity is retained in repository evidence.
 
+### Stage 6: Common namespace transitions and descriptor isolation
+
+The engine now owns a task-free namespace policy with explicit state,
+generation, action, disposition, access-revocation, and observation-required
+outcomes. `SelectiveStorage` uses it for both path and platform preparation;
+path publication advances the generation only after the final namespace has
+been observed and synchronized. The application consults the same policy for
+SAF publication, root loss/repair, and path/SAF removal. Removal operation IDs
+remain the durable stale-completion fence while storage generations fence
+pooled handles.
+
+Fixed descriptor-manifest download and publication calls have been removed
+from `ApplicationService` and `AndroidApplicationClient`, along with the dead
+fixed-handle product helpers. The original bounded `EngineService` proof is
+retained only through the explicitly named
+`descriptor-storage-diagnostics` engine feature. The Compose product service
+and its application client can construct storage only through the dynamic
+broker. Pure transition tests cover publication replay, invalid ordering,
+stale generations, removal, root loss, and repair. The 225-test session suite,
+focused engine tests, warning-denying clippy for the affected crates, both
+Android ABIs, generated Kotlin, APK assembly, and JVM tests pass.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

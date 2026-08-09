@@ -11,21 +11,20 @@ use rstorrent_engine::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
-    DEFAULT_UPLOAD_READ_JOBS, DescriptorFile, DescriptorStorage, DescriptorStoragePlan,
-    DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementRegistration,
-    DiskCheckpointStage, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadError, DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError,
-    IncomingPeerServiceSnapshot, MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
-    NetworkConfig, PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient,
-    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumedStorage,
-    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
-    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
-    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig,
-    TrackerEndpoint, TrackerSource, TrackerTransport,
-    download_magnet_metadata_with_external_discovery, plan_descriptor_storage,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control, torrent_storage_paths,
-    verify_prepared_descriptors, verify_prepared_platform_files,
+    DEFAULT_UPLOAD_READ_JOBS, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
+    DiscoveryAdvertisementRegistration, DiskCheckpointStage, DownloadActivityEvent,
+    DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
+    DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot,
+    MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NamespaceAction,
+    NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
+    PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient, PlatformStorageFailureKind,
+    PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
+    ResumeArtifactState, ResumedStorage, SessionDownloadResourceSnapshot, SessionDownloadResources,
+    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
+    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind,
+    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
+    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
+    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -1195,6 +1194,29 @@ impl ApplicationService {
             .difference(&healthy)
             .cloned()
             .collect::<BTreeSet<_>>();
+        let repaired = healthy
+            .difference(&self.healthy_platform_roots)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if !repaired.is_empty() {
+            let affected = self
+                .store_mut()?
+                .snapshot()?
+                .torrents
+                .into_iter()
+                .filter(|torrent| repaired.contains(&torrent.storage_root))
+                .map(|torrent| torrent.torrent_id)
+                .collect::<Vec<_>>();
+            for torrent_id in affected {
+                let resume = self.load_resume_conservative(&torrent_id)?;
+                let transition =
+                    decide_resume_namespace_transition(&resume, NamespaceAction::RepairRoot)?;
+                debug_assert!(transition.observation_required);
+                if transition.revoke_access {
+                    self.storage_file_pool.invalidate_storage(&torrent_id);
+                }
+            }
+        }
         if !lost.is_empty() {
             let affected = self
                 .store_mut()?
@@ -1205,11 +1227,16 @@ impl ApplicationService {
                 .map(|torrent| torrent.torrent_id)
                 .collect::<Vec<_>>();
             for torrent_id in affected {
+                let resume = self.load_resume_conservative(&torrent_id)?;
+                let transition =
+                    decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
                 self.unregister_incoming(&torrent_id).await?;
                 self.join_active_content(&torrent_id).await?;
-                self.storage_file_pool.invalidate_storage(&torrent_id);
+                if transition.revoke_access {
+                    self.storage_file_pool.invalidate_storage(&torrent_id);
+                }
                 let detail = failures
-                    .get(&self.store_mut()?.load_resume(&torrent_id)?.storage_root)
+                    .get(&resume.storage_root)
                     .map_or("platform storage root is unavailable", String::as_str);
                 self.store_mut()?
                     .mark_awaiting_storage(&torrent_id, Some(detail))?;
@@ -1270,9 +1297,14 @@ impl ApplicationService {
             .map(|torrent| (torrent.torrent_id, torrent.storage_root))
             .collect::<Vec<_>>();
         for (torrent_id, root_id) in affected {
+            let resume = self.load_resume_conservative(&torrent_id)?;
+            let transition =
+                decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
             self.unregister_incoming(&torrent_id).await?;
             self.join_active_content(&torrent_id).await?;
-            self.storage_file_pool.invalidate_storage(&torrent_id);
+            if transition.revoke_access {
+                self.storage_file_pool.invalidate_storage(&torrent_id);
+            }
             let detail = failures
                 .iter()
                 .find(|(failed_root, _)| failed_root == &root_id)
@@ -1637,136 +1669,6 @@ impl ApplicationService {
         self.views.close_all_view_sets();
     }
 
-    pub async fn descriptor_storage_plan(
-        &mut self,
-        torrent_id: &str,
-    ) -> Result<DescriptorStoragePlan, ApplicationError> {
-        self.reap_finished().await?;
-        let resume = self.load_resume_conservative(&torrent_id.to_ascii_lowercase())?;
-        if !matches!(
-            self.storage_roots.get(&resume.storage_root),
-            Some(StorageRootLocation::PlatformCapability)
-        ) {
-            return Err(ApplicationError::Configuration(
-                "torrent does not use a platform storage root".to_owned(),
-            ));
-        }
-        let raw_info = resume.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
-        let skip_files = resume
-            .skip_files
-            .into_iter()
-            .map(|index| index as usize)
-            .collect::<Vec<_>>();
-        plan_descriptor_storage(&metainfo, &skip_files, &[])
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))
-    }
-
-    pub async fn start_with_descriptors(
-        &mut self,
-        torrent_id: &str,
-        descriptors: DescriptorStorage,
-    ) -> Result<(), ApplicationError> {
-        self.reap_finished().await?;
-        let torrent_id = torrent_id.to_ascii_lowercase();
-        if let Some(active) = self.active_download_for(&torrent_id) {
-            active.control.resume_checking();
-            return Ok(());
-        }
-        let resume = self.load_resume_conservative(&torrent_id)?;
-        if !resume.desired_running
-            || matches!(
-                resume.state,
-                TorrentState::Paused | TorrentState::Complete | TorrentState::AwaitingPublication
-            )
-        {
-            return Ok(());
-        }
-        if resume.state == TorrentState::NeedsRepair {
-            return Err(ApplicationError::Configuration(format!(
-                "torrent cannot accept storage in state {}",
-                resume.state.as_str()
-            )));
-        }
-        if !matches!(
-            self.storage_roots.get(&resume.storage_root),
-            Some(StorageRootLocation::PlatformCapability)
-        ) {
-            return Err(ApplicationError::Configuration(
-                "torrent does not use a platform storage root".to_owned(),
-            ));
-        }
-        let artifact_state = resume_artifact_state(&resume)?;
-        let raw_info = resume.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        require_publication_name(resume.publication_name.as_deref(), &metainfo)?;
-        let initialize_storage = resume.storage_state == StorageState::None;
-        let skip_files = resume
-            .skip_files
-            .into_iter()
-            .map(|index| index as usize)
-            .collect::<Vec<_>>();
-        let verified_pieces = resume
-            .have
-            .as_ref()
-            .map_or_else(Vec::new, |have| have.pieces().to_vec());
-        let torrent_peers = self.torrent_peers(&torrent_id)?;
-        let config = ResumableMagnetDownloadConfig {
-            magnet: resume.magnet,
-            storage_root: PathBuf::new(),
-            network: self.network,
-            peer_budget: self.session_network().peer_budget(),
-            mse_dh: self.session_network().mse_dh(),
-            encryption: self.session_network().encryption(),
-            torrent_peers: Some(torrent_peers),
-            resource_limits: self.download_resource_limits,
-            skip_files,
-            verified_info: Some(raw_info),
-            verified_pieces,
-            artifact_state,
-            download_missing: true,
-            dht: None,
-            udp_trackers: Some(Vec::new()),
-        };
-        let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
-            store: self.store.clone(),
-            storage_roots: self.storage_roots.clone(),
-            torrent_id: torrent_id.clone(),
-            views: self.views.clone(),
-            recheck_generation: Mutex::new(None),
-        });
-        let (control, eta_generation) = self.download_control(&torrent_id)?;
-        let task_control = control.clone();
-        let operation = async move {
-            resume_magnet_to_descriptors_with_control(
-                config,
-                descriptors,
-                initialize_storage,
-                checkpoints,
-                task_control,
-            )
-            .await
-            .map(|_| ApplicationTaskReport::Download)
-        };
-        let task = self.spawn_supervised_task(&torrent_id, eta_generation, operation)?;
-        self.install_active_download(
-            &torrent_id,
-            ActiveDownload {
-                control,
-                task,
-                eta_generation,
-            },
-        )?;
-        Ok(())
-    }
-
     pub async fn prepared_files(
         &mut self,
         torrent_id: &str,
@@ -1798,12 +1700,16 @@ impl ApplicationService {
                 "torrent is not awaiting platform publication".to_owned(),
             ));
         }
+        let transition =
+            decide_resume_namespace_transition(&resume, NamespaceAction::PreparePublication)?;
         let raw_info = resume.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
         let metainfo = parse_durable_metainfo(&raw_info)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        self.storage_file_pool.invalidate_storage(&torrent_id);
+        if transition.revoke_access {
+            self.storage_file_pool.invalidate_storage(&torrent_id);
+        }
         Ok(metainfo.name)
     }
 
@@ -1814,8 +1720,14 @@ impl ApplicationService {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
         let resume = self.load_resume_conservative(&torrent_id)?;
+        let transition =
+            decide_resume_namespace_transition(&resume, NamespaceAction::ConfirmPublication)?;
         if resume.state == TorrentState::Complete && resume.storage_state == StorageState::Published
         {
+            debug_assert_eq!(
+                transition.disposition,
+                rstorrent_engine::NamespaceDisposition::AlreadyApplied
+            );
             return Ok(());
         }
         if resume.state != TorrentState::AwaitingPublication
@@ -1855,7 +1767,7 @@ impl ApplicationService {
                 storage_id: torrent_id.clone(),
                 publication_shape: PublicationShape::from_metainfo(&metainfo),
                 publication_name: metainfo.name.clone(),
-                namespace_generation: 1,
+                namespace_generation: transition.generation,
                 managed: true,
                 published: true,
             },
@@ -1864,45 +1776,13 @@ impl ApplicationService {
         )
         .await
         .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        debug_assert!(transition.observation_required);
         self.store_mut()?.begin_published_recheck(&torrent_id)?;
-        self.storage_file_pool.invalidate_storage(&torrent_id);
+        if transition.revoke_access {
+            self.storage_file_pool.invalidate_storage(&torrent_id);
+        }
         self.refresh_views()?;
         self.start_recheck_if_possible(&torrent_id).await?;
-        Ok(())
-    }
-
-    pub async fn confirm_descriptor_publication(
-        &mut self,
-        torrent_id: &str,
-        descriptors: Vec<DescriptorFile>,
-    ) -> Result<(), ApplicationError> {
-        self.reap_finished().await?;
-        let torrent_id = torrent_id.to_ascii_lowercase();
-        let resume = self.load_resume_conservative(&torrent_id)?;
-        if resume.state == TorrentState::Complete && resume.storage_state == StorageState::Published
-        {
-            return Ok(());
-        }
-        let prepared = self.store_mut()?.load_prepared_files(&torrent_id)?;
-        let expected = prepared
-            .into_iter()
-            .map(|file| PreparedFileHash {
-                file_index: file.file_index,
-                length: file.length,
-                sha1: file.sha1,
-            })
-            .collect::<Vec<_>>();
-        if expected.is_empty() {
-            return Err(ApplicationError::Configuration(
-                "torrent has no prepared publication manifest".to_owned(),
-            ));
-        }
-        verify_prepared_descriptors(descriptors, &expected)
-            .await
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        self.store_mut()?
-            .confirm_prepared_publication(&torrent_id)?;
-        self.refresh_views()?;
         Ok(())
     }
 
@@ -1916,9 +1796,13 @@ impl ApplicationService {
         if self.active_download_for(&torrent_id).is_some() {
             return Err(ApplicationError::Busy(torrent_id));
         }
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        let transition = decide_resume_namespace_transition(&resume, NamespaceAction::LoseRoot)?;
         self.store_mut()?
             .mark_awaiting_storage(&torrent_id, Some(message))?;
-        self.storage_file_pool.invalidate_storage(&torrent_id);
+        if transition.revoke_access {
+            self.storage_file_pool.invalidate_storage(&torrent_id);
+        }
         self.refresh_views()?;
         Ok(())
     }
@@ -1969,6 +1853,8 @@ impl ApplicationService {
                 "torrent is not awaiting platform data removal".to_owned(),
             ));
         }
+        let transition =
+            decide_removal_namespace_transition(&removal, NamespaceAction::BeginRemoval)?;
         let raw_info = removal.raw_info.ok_or_else(|| {
             ApplicationError::Configuration("torrent metadata is not available".to_owned())
         })?;
@@ -1977,14 +1863,14 @@ impl ApplicationService {
         if let Some(publication_name) = removal.publication_name.as_deref() {
             require_publication_name(Some(publication_name), &metainfo)?;
         }
-        self.storage_file_pool.invalidate_storage(&torrent_id);
-        let plan = plan_descriptor_storage(&metainfo, &[], &[])
-            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        if transition.revoke_access {
+            self.storage_file_pool.invalidate_storage(&torrent_id);
+        }
         Ok(PlatformRemovalPlan {
             operation_id: removal.operation_id,
             torrent_id,
             storage_root: removal.storage_root,
-            name: plan.name,
+            name: metainfo.name,
         })
     }
 
@@ -2001,6 +1887,12 @@ impl ApplicationService {
                 "platform removal confirmation is stale".to_owned(),
             ));
         }
+        let transition =
+            decide_removal_namespace_transition(&removal, NamespaceAction::ConfirmRemoval)?;
+        debug_assert!(
+            transition.observation_required
+                || removal_namespace_state(&removal) == NamespaceState::None
+        );
         self.prepare_torrent_runtime_removal(&torrent_id)?;
         self.store_mut()?
             .finalize_removal(&torrent_id, operation_id)?;
@@ -2204,6 +2096,13 @@ impl ApplicationService {
             RemovalDataPolicy::DeleteManaged => {
                 match self.storage_roots.get(&removal.storage_root).cloned() {
                     Some(StorageRootLocation::Path(root)) => {
+                        let transition = decide_removal_namespace_transition(
+                            &removal,
+                            NamespaceAction::BeginRemoval,
+                        )?;
+                        if transition.revoke_access {
+                            self.storage_file_pool.invalidate_storage(torrent_id);
+                        }
                         let publication_shape = match removal
                             .raw_info
                             .as_deref()
@@ -2230,7 +2129,18 @@ impl ApplicationService {
                         })
                         .await
                         {
-                            Ok(Ok(())) => self.complete_removal(&removal),
+                            Ok(Ok(())) => {
+                                let transition = decide_removal_namespace_transition(
+                                    &removal,
+                                    NamespaceAction::ConfirmRemoval,
+                                )?;
+                                debug_assert!(
+                                    transition.observation_required
+                                        || removal_namespace_state(&removal)
+                                            == NamespaceState::None
+                                );
+                                self.complete_removal(&removal)
+                            }
                             Ok(Err(error)) => self.fail_removal(&removal, &error.to_string()),
                             Err(error) => self.fail_removal(
                                 &removal,
@@ -4921,6 +4831,50 @@ fn resume_artifact_state(resume: &ResumeRecord) -> Result<ResumeArtifactState, A
             Ok(ResumeArtifactState::Publishing)
         }
     }
+}
+
+fn decide_resume_namespace_transition(
+    resume: &ResumeRecord,
+    action: NamespaceAction,
+) -> Result<NamespaceTransitionOutcome, ApplicationError> {
+    let state = resume_artifact_state(resume)?;
+    decide_namespace_transition(NamespaceTransitionInput {
+        state,
+        current_generation: state.initial_generation(),
+        expected_generation: state.initial_generation(),
+        action,
+    })
+    .map_err(|error| ApplicationError::Configuration(error.to_string()))
+}
+
+fn removal_namespace_state(removal: &RemovalRecord) -> NamespaceState {
+    match removal.storage_state {
+        StorageState::None => NamespaceState::None,
+        StorageState::Staging => NamespaceState::Staging,
+        StorageState::Prepared => NamespaceState::Publishing,
+        StorageState::Published => NamespaceState::Published,
+        StorageState::NeedsRepair => match removal.managed_artifacts {
+            ManagedArtifactState::None => NamespaceState::None,
+            ManagedArtifactState::Staging => NamespaceState::Staging,
+            ManagedArtifactState::Legacy | ManagedArtifactState::Published => {
+                NamespaceState::Published
+            }
+        },
+    }
+}
+
+fn decide_removal_namespace_transition(
+    removal: &RemovalRecord,
+    action: NamespaceAction,
+) -> Result<NamespaceTransitionOutcome, ApplicationError> {
+    let state = removal_namespace_state(removal);
+    decide_namespace_transition(NamespaceTransitionInput {
+        state,
+        current_generation: state.initial_generation(),
+        expected_generation: state.initial_generation(),
+        action,
+    })
+    .map_err(|error| ApplicationError::Configuration(error.to_string()))
 }
 
 #[derive(Debug)]

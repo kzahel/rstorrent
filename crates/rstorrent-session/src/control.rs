@@ -409,22 +409,6 @@ pub enum TorrentState {
     Error,
 }
 
-impl TorrentState {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::AwaitingMetadata => "awaiting_metadata",
-            Self::AwaitingStorage => "awaiting_storage",
-            Self::Checking => "checking",
-            Self::Downloading => "downloading",
-            Self::AwaitingPublication => "awaiting_publication",
-            Self::Paused => "paused",
-            Self::Complete => "complete",
-            Self::NeedsRepair => "needs_repair",
-            Self::Error => "error",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]

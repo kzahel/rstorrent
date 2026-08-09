@@ -4,8 +4,10 @@ This is the Tactical 004/005 integration harness. It packages the real
 `rstorrent-engine` behind generated UniFFI Kotlin bindings and gives one
 foreground service sole ownership of the native session. It contains the
 current Compose product surface plus the original bounded diagnostic harness.
-It supports app-private path-backed diagnostics and both legacy proof and
-dynamic product storage through an explicitly granted Android Storage Access
+The fixed-descriptor SAF proof is retained behind the engine's
+`descriptor-storage-diagnostics` compatibility feature for that diagnostic
+service only. The product application has one storage architecture: bounded
+dynamic acquisition through an explicitly granted Android Storage Access
 Framework tree.
 
 Build both locked Android ABIs and the debug APK:

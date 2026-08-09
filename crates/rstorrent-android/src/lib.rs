@@ -228,22 +228,6 @@ impl AndroidApplicationClient {
         })
     }
 
-    pub async fn saf_storage_plan(
-        &self,
-        torrent_id: String,
-    ) -> Result<SafStoragePlan, AndroidClientError> {
-        let plan = self
-            .service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .descriptor_storage_plan(&torrent_id)
-            .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))?;
-        map_saf_storage_plan(plan)
-    }
-
     pub async fn probe_saf_storage_roots(&self) -> Result<bool, AndroidClientError> {
         self.service
             .lock()
@@ -251,22 +235,6 @@ impl AndroidApplicationClient {
             .as_mut()
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .probe_platform_storage_roots()
-            .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))
-    }
-
-    pub async fn start_saf(
-        &self,
-        torrent_id: String,
-        storage: SafStorage,
-    ) -> Result<(), AndroidClientError> {
-        let descriptors = duplicate_saf_storage(storage).map_err(AndroidClientError::message)?;
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .start_with_descriptors(&torrent_id, descriptors)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
@@ -321,36 +289,6 @@ impl AndroidApplicationClient {
             .as_mut()
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .confirm_platform_publication(&torrent_id)
-            .await
-            .map_err(|error| AndroidClientError::message(error.to_string()))
-    }
-
-    pub async fn confirm_saf_publication(
-        &self,
-        torrent_id: String,
-        files: Vec<SafDescriptor>,
-    ) -> Result<(), AndroidClientError> {
-        if files.len() > MAX_FILE_SELECTIONS {
-            return Err(AndroidClientError::message(format!(
-                "published descriptor list exceeds {MAX_FILE_SELECTIONS} entries"
-            )));
-        }
-        let files = files
-            .into_iter()
-            .map(|descriptor| {
-                Ok(DescriptorFile {
-                    file_index: descriptor.file_index as usize,
-                    file: duplicate_descriptor(descriptor.fd)
-                        .map_err(AndroidClientError::message)?,
-                })
-            })
-            .collect::<Result<Vec<_>, AndroidClientError>>()?;
-        self.service
-            .lock()
-            .await
-            .as_mut()
-            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
-            .confirm_descriptor_publication(&torrent_id, files)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }

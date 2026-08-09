@@ -553,6 +553,7 @@ pub async fn resume_magnet_with_control(
     resume_magnet_owned(config, checkpoints, control, None).await
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 pub async fn resume_magnet_to_descriptors_with_control(
     config: ResumableMagnetDownloadConfig,
     descriptors: DescriptorStorage,
@@ -782,6 +783,7 @@ pub async fn download_verified_piece_with_peer_state(
     }
 }
 
+#[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
 pub async fn download_verified_piece_to_descriptors_with_control(
     config: DownloadConfig,
     descriptors: DescriptorStorage,

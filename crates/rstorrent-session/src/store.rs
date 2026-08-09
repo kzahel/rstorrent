@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtIdentity, DhtSnapshot};
 use rstorrent_engine::{
-    PreparedFileHash, PublicationShape, plan_descriptor_storage,
-    torrent_storage_paths_for_metainfo, validate_publication_name,
+    PreparedFileHash, PublicationShape, torrent_storage_paths_for_metainfo,
+    validate_publication_name,
 };
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
@@ -1764,13 +1764,15 @@ impl SessionStore {
             .into_iter()
             .map(|index| index as usize)
             .collect::<Vec<_>>();
-        let plan = plan_descriptor_storage(&metainfo, &skip_files, &[])
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &skip_files)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
-        let wanted = plan
-            .files
+        let wanted = layout
+            .files()
             .iter()
-            .filter(|file| matches!(file.role, rstorrent_engine::DescriptorFileRole::Wanted))
-            .map(|file| (file.file_index, file.length))
+            .enumerate()
+            .filter(|(file_index, file)| !file.padding && selection.is_wanted(*file_index))
+            .map(|(file_index, file)| (file_index, file.length))
             .collect::<Vec<_>>();
         if files.len() != wanted.len() {
             return Err(StoreError::DurableState(

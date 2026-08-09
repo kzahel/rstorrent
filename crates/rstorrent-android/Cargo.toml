@@ -19,7 +19,9 @@ required-features = ["bindgen"]
 
 [dependencies]
 libc = "=0.2.189"
-rstorrent-engine = { path = "../rstorrent-engine" }
+# The fixed descriptor surface is retained only for the separate EngineService
+# diagnostic harness. AndroidApplicationClient product storage is dynamic.
+rstorrent-engine = { path = "../rstorrent-engine", features = ["descriptor-storage-diagnostics"] }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
 sha1.workspace = true

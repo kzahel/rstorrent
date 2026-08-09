@@ -12,6 +12,7 @@ mod incoming;
 mod metadata_seed;
 mod metrics;
 mod mse;
+mod namespace_transition;
 mod network;
 mod part_file;
 pub mod peer;
@@ -57,10 +58,13 @@ pub use driver::{
     PathPublicationStage, ResumableMagnetDownloadConfig, SwarmActivitySnapshot, download_magnet,
     download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_metadata_with_dht_and_peers, download_magnet_metadata_with_external_discovery,
-    download_magnet_with_control, download_verified_piece,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
-    download_verified_piece_with_peer_state, resume_magnet,
-    resume_magnet_to_descriptors_with_control, resume_magnet_with_control,
+    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
+    download_verified_piece_with_peer_state, resume_magnet, resume_magnet_with_control,
+};
+#[cfg(feature = "descriptor-storage-diagnostics")]
+#[doc(hidden)]
+pub use driver::{
+    download_verified_piece_to_descriptors_with_control, resume_magnet_to_descriptors_with_control,
 };
 #[cfg(feature = "test-platform-root")]
 #[doc(hidden)]
@@ -86,6 +90,10 @@ pub use mse::{
     MAX_MSE_DH_JOBS, MseDhWorkError, MseDhWorkOwner, MseDhWorkSnapshot, MseHandshakeFailure,
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
 };
+pub use namespace_transition::{
+    NamespaceAction, NamespaceDisposition, NamespaceState, NamespaceTransitionError,
+    NamespaceTransitionInput, NamespaceTransitionOutcome, decide_namespace_transition,
+};
 pub use network::{
     AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, DEFAULT_PEER_ID, NetworkConfig,
     NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
@@ -104,15 +112,19 @@ pub use peer_runtime::{
 pub use pex::PexError;
 pub use piece_picker::PieceActivationPolicy;
 pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
+#[cfg(feature = "descriptor-storage-diagnostics")]
+#[doc(hidden)]
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
-    DescriptorStoragePlanFile, MaterializationReport, PlatformStorageSpec, PreparedFileHash,
-    ResumeArtifactState, ResumedStorage, SelectionReconcileReport, SelectiveStorage,
-    SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths, plan_descriptor_storage,
-    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-    selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
-    torrent_storage_paths_with_shape, validate_publication_name, verify_prepared_descriptors,
-    verify_prepared_platform_files,
+    DescriptorStoragePlanFile, plan_descriptor_storage, verify_prepared_descriptors,
+};
+pub use selective_storage::{
+    MaterializationReport, PlatformStorageSpec, PreparedFileHash, ResumeArtifactState,
+    ResumedStorage, SelectionReconcileReport, SelectiveStorage, SelectiveStorageError,
+    SelectiveWriteStats, TorrentStoragePaths, remove_selective_part_if_present,
+    remove_selective_staging_if_present, selective_part_path, selective_staging_path,
+    torrent_storage_paths, torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
+    validate_publication_name, verify_prepared_platform_files,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,
