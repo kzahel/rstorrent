@@ -38,6 +38,7 @@ import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentEtaView
+import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
@@ -57,6 +58,7 @@ class ProductStateReducerTest {
                 portMapping = PortMappingPolicy.UPNP,
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
+                activeDownloads = 20U.toUShort(),
                 encryption = EncryptionPolicy.REQUIRED,
                 ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
@@ -317,6 +319,7 @@ class ProductStateReducerTest {
                 portMapping = PortMappingPolicy.DISABLED,
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
+                activeDownloads = 3U.toUShort(),
                 encryption = EncryptionPolicy.ALLOW,
                 ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
@@ -332,6 +335,10 @@ class ProductStateReducerTest {
             effectivePortMapping = PortMappingPolicy.DISABLED,
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
+            effectiveActiveDownloads = configured.activeDownloads,
+            activeDownloadsClampReason = null,
+            activeDownloadCount = 0U.toUShort(),
+            checkingCount = 0U.toUShort(),
             effectiveEncryption = configured.encryption,
             effectiveIpv6Enabled = configured.ipv6Enabled,
             effectiveTrackerHttpsServerAuthentication =
@@ -380,6 +387,8 @@ class ProductStateReducerTest {
             torrentId = id,
             displayName = "Verified torrent",
             state = state,
+            operationalState = TorrentOperationalState.DOWNLOADING,
+            downloadQueuePosition = null,
             storageState = StorageState.STAGING,
             metadataAvailable = true,
             pieceCount = 100_000U,

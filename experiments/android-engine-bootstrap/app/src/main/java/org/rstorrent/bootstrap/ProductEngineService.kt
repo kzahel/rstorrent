@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -228,6 +229,7 @@ class ProductEngineService : Service() {
                             portMapping = PortMappingPolicy.DISABLED,
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
+                            activeDownloads = 3U.toUShort(),
                             encryption = EncryptionPolicy.ALLOW,
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication = policy,
@@ -275,6 +277,7 @@ class ProductEngineService : Service() {
                             portMapping = PortMappingPolicy.DISABLED,
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
+                            activeDownloads = 3U.toUShort(),
                             encryption = policy,
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication =
@@ -309,6 +312,103 @@ class ProductEngineService : Service() {
             } catch (error: Throwable) {
                 reportError(error)
             }
+        }
+    }
+
+    fun logDownloadAdmissionEvidenceForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "download admission evidence is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val expectedActive =
+                    when (mode) {
+                        "active" -> 2U.toUShort()
+                        "terminal" -> 0U.toUShort()
+                        else -> error("unknown download admission evidence mode")
+                    }
+                val settings = awaitDownloadAdmission(expectedActive)
+                val queued =
+                    withTimeout(10_000) {
+                        while (true) {
+                            val count =
+                                mutableState.value.torrents.values.count {
+                                    it.operationalState.name == "QUEUED"
+                                }
+                            if ((mode == "active" && count >= 1) || (mode == "terminal" && count == 0)) {
+                                return@withTimeout count
+                            }
+                            delay(25)
+                        }
+                        error("unreachable")
+                    }
+                val resources =
+                    withTimeout(10_000) {
+                        while (true) {
+                            val snapshot = client.downloadResourceSnapshot()
+                            if (mode != "terminal" || snapshot.registeredGenerations == 0UL) {
+                                return@withTimeout snapshot
+                            }
+                            delay(25)
+                        }
+                        error("unreachable")
+                    }
+                Log.i(
+                    TAG,
+                    "download_admission mode=$mode " +
+                        "configured=${settings.configured.activeDownloads} " +
+                        "effective=${settings.effectiveActiveDownloads} " +
+                        "active=${settings.activeDownloadCount} queued=$queued " +
+                        "registered=${resources.registeredGenerations} " +
+                        "registered_high=${resources.registeredGenerationsHighWater} " +
+                        "request_high=${resources.outstandingRequestHighWater} " +
+                        "payload_high=${resources.bufferedPayloadHighWater} " +
+                        "piece_bytes_high=${resources.activePieceBytesHighWater} " +
+                        "pieces_high=${resources.activePiecesHighWater} " +
+                        "writes_high=${resources.activeStorageWritesHighWater} " +
+                        "hashes_high=${resources.activeStorageHashesHighWater}",
+                )
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private suspend fun awaitDownloadAdmission(active: UShort): ClientSettingsRuntimeView {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.TorrentList,
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            return withTimeout(10_000) {
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("settings view closed")
+                    val settings =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    if (settings != null && settings.activeDownloadCount == active) {
+                        return@withTimeout settings
+                    }
+                }
+                error("unreachable")
+            }
+        } finally {
+            subscription.close()
         }
     }
 

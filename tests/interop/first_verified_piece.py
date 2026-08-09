@@ -240,21 +240,23 @@ def create_fixture(
 
 def create_selective_fixture(
     run_directory: Path,
+    root_name: str = SELECTIVE_ROOT_NAME,
+    content_offset: int = 0,
 ) -> tuple[Path, Path, lt.torrent_info, dict[str, str], list[str]]:
     seed_directory = run_directory / "seed"
-    torrent_root = seed_directory / SELECTIVE_ROOT_NAME
+    torrent_root = seed_directory / root_name
     torrent_root.mkdir(parents=True)
     files = lt.file_storage()
     expected_file_hashes: dict[str, str] = {}
     torrent_offset = 0
     for relative_path, length, padding in SELECTIVE_FILES:
-        torrent_path = f"{SELECTIVE_ROOT_NAME}/{relative_path}"
+        torrent_path = f"{root_name}/{relative_path}"
         flags = lt.file_storage.flag_pad_file if padding else 0
         files.add_file(torrent_path, length, flags)
         if not padding:
             expected_file_hashes[relative_path] = write_deterministic_range(
                 torrent_root / relative_path,
-                torrent_offset,
+                torrent_offset + content_offset,
                 length,
             )
         torrent_offset += length

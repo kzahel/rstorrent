@@ -79,6 +79,24 @@ pub struct AndroidMseDhWorkSnapshot {
     pub closed: bool,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidDownloadResourceSnapshot {
+    pub registered_generations: u64,
+    pub registered_generations_high_water: u64,
+    pub outstanding_request_bytes: u64,
+    pub outstanding_request_high_water: u64,
+    pub buffered_payload_bytes: u64,
+    pub buffered_payload_high_water: u64,
+    pub active_piece_bytes: u64,
+    pub active_piece_bytes_high_water: u64,
+    pub active_pieces: u64,
+    pub active_pieces_high_water: u64,
+    pub active_storage_writes: u64,
+    pub active_storage_writes_high_water: u64,
+    pub active_storage_hashes: u64,
+    pub active_storage_hashes_high_water: u64,
+}
+
 #[derive(Debug, uniffi::Error)]
 pub enum AndroidClientError {
     Failure { detail: String },
@@ -179,6 +197,34 @@ impl AndroidApplicationClient {
             high_water: snapshot.high_water as u64,
             tracked: snapshot.tracked as u64,
             closed: snapshot.closed,
+        })
+    }
+
+    pub async fn download_resource_snapshot(
+        &self,
+    ) -> Result<AndroidDownloadResourceSnapshot, AndroidClientError> {
+        let snapshot = self
+            .service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .session_download_resource_snapshot();
+        Ok(AndroidDownloadResourceSnapshot {
+            registered_generations: snapshot.registered_generations as u64,
+            registered_generations_high_water: snapshot.registered_generations_high_water as u64,
+            outstanding_request_bytes: snapshot.outstanding_request_bytes as u64,
+            outstanding_request_high_water: snapshot.outstanding_request_high_water as u64,
+            buffered_payload_bytes: snapshot.buffered_payload_bytes as u64,
+            buffered_payload_high_water: snapshot.buffered_payload_high_water as u64,
+            active_piece_bytes: snapshot.active_piece_bytes as u64,
+            active_piece_bytes_high_water: snapshot.active_piece_bytes_high_water as u64,
+            active_pieces: snapshot.active_pieces as u64,
+            active_pieces_high_water: snapshot.active_pieces_high_water as u64,
+            active_storage_writes: snapshot.active_storage_writes as u64,
+            active_storage_writes_high_water: snapshot.active_storage_writes_high_water as u64,
+            active_storage_hashes: snapshot.active_storage_hashes as u64,
+            active_storage_hashes_high_water: snapshot.active_storage_hashes_high_water as u64,
         })
     }
 

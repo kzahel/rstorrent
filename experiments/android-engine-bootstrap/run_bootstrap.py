@@ -44,6 +44,7 @@ PROFILE_CHOICES = (
     "product-https-tracker",
     "product-https-platform-trust",
     "product-mse",
+    "product-concurrent-downloads",
     "product-ipv6-policy",
     "slow-storage",
     "cancellation",
@@ -159,6 +160,8 @@ class SeedFixture:
         label: str,
         *,
         force_rc4: bool = False,
+        root_name: str | None = None,
+        content_offset: int = 0,
     ) -> "SeedFixture":
         run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
         alerts: list[str] = []
@@ -168,7 +171,11 @@ class SeedFixture:
             torrent_info,
             expected_file_hashes,
             piece_hashes,
-        ) = interop.create_selective_fixture(run_path)
+        ) = interop.create_selective_fixture(
+            run_path,
+            root_name or interop.SELECTIVE_ROOT_NAME,
+            content_offset,
+        )
         session = interop.create_session()
         if force_rc4:
             import libtorrent as lt
@@ -2036,6 +2043,195 @@ def run_product_mse_profile(
             candidate.close()
 
 
+def request_download_admission_evidence(
+    target: Any,
+    mode: str,
+) -> dict[str, int]:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_download_admission_evidence",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure("could not request Android download admission evidence")
+    marker = f"download_admission mode={mode} "
+    deadline = time.monotonic() + 15
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            return {
+                key: int(value)
+                for key, value in re.findall(r"([a-z_]+)=(\d+)", rows[-1])
+            }
+        time.sleep(0.2)
+    raise BootstrapFailure(
+        f"timed out waiting for Android download admission {mode}\n{logs}"
+    )
+
+
+def run_product_concurrent_downloads_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+) -> dict[str, Any]:
+    grant_storage = "internal"
+    fixtures = [
+        SeedFixture.create(
+            interop,
+            f"{target_kind}-product-concurrent-{ordinal}-{index}",
+            root_name=f"concurrent-{ordinal}-{index}",
+            content_offset=index * 1_000_000,
+        )
+        for index in range(1, 4)
+    ]
+    transports: list[ReverseTransport] = []
+    grant_root = probe.grant_path(grant_storage)
+    output_roots = [f"{grant_root}/{fixture.name}" for fixture in fixtures]
+    staging_roots = [f"{grant_root}/.{fixture.name}.rstorrent-staging" for fixture in fixtures]
+    part_roots = [f"{grant_root}/.{fixture.name}.rstorrent-parts" for fixture in fixtures]
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        for fixture in fixtures:
+            fixture.handle.set_upload_limit(16 * 1024)
+        transports = [
+            ReverseTransport.create(
+                target,
+                target_kind,
+                fixture.host_port,
+                ordinal,
+                slot=index,
+            )
+            for index, fixture in enumerate(fixtures)
+        ]
+        for fixture, transport in zip(fixtures, transports, strict=True):
+            magnet = (
+                f"magnet:?xt=urn:btih:{fixture.info_hash}&dn={fixture.name}"
+                f"&x.pe=127.0.0.1:{transport.device_port}"
+            )
+            started = target.shell(
+                [
+                    "am",
+                    "start",
+                    "-n",
+                    ACTIVITY,
+                    "--es",
+                    "product_magnet",
+                    shlex.quote(magnet),
+                ],
+                timeout=30,
+                check=False,
+            )
+            if "Error:" in started.stdout or (
+                started.returncode != 0 and "Starting:" not in started.stdout
+            ):
+                raise BootstrapFailure("could not add Android concurrent product magnet")
+            time.sleep(0.1)
+
+        active = request_download_admission_evidence(target, "active")
+        expected_active = {
+            "configured": 3,
+            "effective": 2,
+            "active": 2,
+            "queued": 1,
+            "registered": 2,
+            "registered_high": 2,
+        }
+        if any(active.get(key) != value for key, value in expected_active.items()):
+            raise BootstrapFailure(f"Android active admission evidence diverged: {active}")
+
+        def validate_resource_ceilings(evidence: dict[str, int]) -> None:
+            if evidence.get("request_high", 0) > 128 * 1024 * 1024:
+                raise BootstrapFailure(f"Android request ceiling exceeded: {evidence}")
+            if evidence.get("payload_high", 0) > 16 * 1024 * 1024:
+                raise BootstrapFailure(f"Android payload ceiling exceeded: {evidence}")
+            if evidence.get("piece_bytes_high", 0) > 128 * 1024 * 1024:
+                raise BootstrapFailure(f"Android piece-byte ceiling exceeded: {evidence}")
+            if evidence.get("pieces_high", 0) > 2_048:
+                raise BootstrapFailure(f"Android piece-count ceiling exceeded: {evidence}")
+            if evidence.get("writes_high", 0) > 4 or evidence.get("hashes_high", 0) > 4:
+                raise BootstrapFailure(f"Android storage ceiling exceeded: {evidence}")
+
+        validate_resource_ceilings(active)
+
+        storage_metrics = []
+        fd_high_water = baseline_fds
+        for fixture in fixtures:
+            metrics, observed_fds = wait_product_publication(
+                target,
+                fixture.info_hash,
+                baseline_fds,
+            )
+            storage_metrics.append(metrics)
+            fd_high_water = max(fd_high_water, observed_fds)
+        terminal = request_download_admission_evidence(target, "terminal")
+        if (
+            terminal.get("active") != 0
+            or terminal.get("queued") != 0
+            or terminal.get("registered") != 0
+            or terminal.get("registered_high") != 2
+        ):
+            raise BootstrapFailure(f"Android terminal admission did not drain: {terminal}")
+        validate_resource_ceilings(terminal)
+
+        for fixture, output_root in zip(fixtures, output_roots, strict=True):
+            for relative_path, _, padding in fixture_files():
+                path = f"{output_root}/{relative_path}"
+                exists = target.shell(["test", "-f", path], check=False).returncode == 0
+                if padding:
+                    if exists:
+                        raise BootstrapFailure(f"padding file was published: {path}")
+                    continue
+                if not exists:
+                    raise BootstrapFailure(f"concurrent product output is absent: {path}")
+                digest = target.shell(["sha1sum", path]).stdout.split()[0]
+                if digest != fixture.expected_file_hashes[relative_path]:
+                    raise BootstrapFailure(f"concurrent product hash differs: {path}")
+            if fixture.handle.status().total_upload <= 0:
+                raise BootstrapFailure(f"host oracle uploaded no payload for {fixture.info_hash}")
+
+        return {
+            "target": target_kind,
+            "profile": "product-concurrent-downloads",
+            "run": ordinal,
+            "identity": identity,
+            "torrents": [fixture.info_hash for fixture in fixtures],
+            "active_admission": active,
+            "terminal_admission": terminal,
+            "storage_metrics": storage_metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in output_roots + staging_roots + part_roots:
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        for transport in reversed(transports):
+            transport.close()
+        for fixture in fixtures:
+            fixture.close()
+
+
 def run_product_https_platform_trust_profile(
     target: Any,
     target_kind: str,
@@ -2298,6 +2494,7 @@ def main() -> int:
                     "product-dynamic-saf",
                     "product-https-tracker",
                     "product-mse",
+                    "product-concurrent-downloads",
                 )
                 else 1
             )
@@ -2353,6 +2550,15 @@ def main() -> int:
                     )
                 elif profile == "product-mse":
                     result = run_product_mse_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                    )
+                elif profile == "product-concurrent-downloads":
+                    result = run_product_concurrent_downloads_profile(
                         target,
                         arguments.target,
                         identity,
