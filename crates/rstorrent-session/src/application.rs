@@ -5747,6 +5747,170 @@ mod tests {
         fs::remove_dir_all(root).expect("remove test root");
     }
 
+    #[tokio::test]
+    async fn five_hundred_complete_seeds_share_upload_slots_with_three_downloads() {
+        let root = test_root("automatic-admission-five-hundred-seeds");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                port_mapping: crate::PortMappingPolicy::Disabled,
+                peer_connection_limit: 200,
+                upload_slots: 8,
+                active_downloads: 3,
+                ..ClientSettings::default()
+            },
+        );
+        fs::create_dir_all(root.join("payload")).expect("create seed payload root");
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open seed catalog store");
+        let payload = b"abcdefg";
+        let mut first_seed = None;
+        for sequence in 0..500_u16 {
+            let name = format!("seed-{sequence}.bin");
+            let raw_info = single_file_info(&name, payload, 4);
+            let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+            let torrent_id = super::encode_info_hash(info_hash);
+            store
+                .handle_durable(&add_request(&format!("add-seed-{sequence}"), &torrent_id))
+                .expect("add complete seed row");
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record complete seed metadata");
+            store
+                .record_pieces(&torrent_id, &[0, 1])
+                .expect("record complete seed pieces");
+            store
+                .mark_storage_prepared(&torrent_id, StorageState::Published)
+                .expect("record complete seed publication");
+            store.mark_complete(&torrent_id).expect("complete seed row");
+            fs::write(root.join("payload").join(name), payload)
+                .expect("write complete seed payload");
+            first_seed.get_or_insert(info_hash);
+        }
+
+        let listeners = [
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("first active listener"),
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("second active listener"),
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("third active listener"),
+        ];
+        for (index, listener) in listeners.iter().enumerate() {
+            let torrent_id = format!("{:040x}", 10_000 + index);
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("add-active-{index}"),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet: format!(
+                            "magnet:?xt=urn:btih:{torrent_id}&x.pe={}",
+                            listener.local_addr().expect("active listener address")
+                        ),
+                        storage_root: "downloads".to_owned(),
+                        start_content: false,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("add active download row");
+        }
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open combined seed and download session");
+        let mut active_streams = Vec::new();
+        for listener in &listeners {
+            active_streams.push(
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("active download dials")
+                    .expect("accept active download")
+                    .0,
+            );
+        }
+        wait_for_seed_registrations(&service, 500).await;
+        assert_eq!(service.active_download_ids().len(), 3);
+        assert_eq!(
+            service
+                .session_download_resource_snapshot()
+                .registered_generations,
+            3
+        );
+
+        let mut incoming_peers = Vec::new();
+        for generation in 1_u8..=10 {
+            let (mut stream, decoder, pending) = connect_application_seed(
+                &service,
+                first_seed.expect("first seed identity"),
+                [generation; 20],
+            )
+            .await;
+            stream
+                .write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
+                .await
+                .expect("send seed interest");
+            incoming_peers.push((stream, decoder, pending));
+        }
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let snapshot = service
+                    .incoming_peer_snapshot()
+                    .expect("incoming session remains active");
+                if snapshot.upload_scheduler.interested == 10
+                    && snapshot.upload_scheduler.regular == 7
+                    && snapshot.upload_scheduler.optimistic == 1
+                {
+                    break snapshot;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("global upload grants converge beside downloads");
+        let combined = service
+            .incoming_peer_snapshot()
+            .expect("combined incoming snapshot");
+        assert_eq!(combined.registrations, 500);
+        assert_eq!(combined.established, 10);
+        assert_eq!(combined.upload_scheduler.peers, 10);
+        assert_eq!(combined.upload_scheduler.interested, 10);
+        assert_eq!(combined.upload_scheduler.regular, 7);
+        assert_eq!(combined.upload_scheduler.optimistic, 1);
+        assert_eq!(combined.torrent_uploads.len(), 500);
+        assert_eq!(
+            combined
+                .torrent_uploads
+                .iter()
+                .map(|torrent| torrent.peers)
+                .sum::<usize>(),
+            10
+        );
+        assert!(combined.peer_budget.total <= 200);
+        assert!(combined.peer_budget.total_high_water <= 200);
+        assert!(service.storage_file_pool_snapshot().owned_high_water <= 40);
+
+        service.shutdown().await.expect("shutdown combined session");
+        let terminal = service.session_download_resource_snapshot();
+        assert_eq!(terminal.registered_generations, 0);
+        assert_eq!(terminal.outstanding_request_bytes, 0);
+        assert_eq!(terminal.buffered_payload_bytes, 0);
+        drop((incoming_peers, active_streams, service));
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
     async fn serve_single_piece_peer(
         listener: TcpListener,
         info_hash: [u8; 20],

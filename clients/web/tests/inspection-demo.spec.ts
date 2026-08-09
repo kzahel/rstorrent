@@ -176,7 +176,9 @@ test("torrent and file rows expose exact accessible context actions", async ({
   await sintelRow.click({ button: "right", position: { x: 300, y: 18 } });
   let menu = page.getByRole("menu", { name: "Torrent actions" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveCount(7);
+  await expect(menu.getByRole("menuitem")).toHaveCount(9);
+  await expect(menu.getByRole("menuitem", { name: "Move to top" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Move to bottom" })).toBeVisible();
   await expect(
     menu.getByRole("menuitem", { name: "Copy magnet link" }),
   ).toBeVisible();
@@ -411,6 +413,12 @@ test("typed torrent ETA stays explicit across responsive surfaces", async ({
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("tab", { name: "Connection & seeding" }).click();
+  await expect(
+    settings.getByRole("spinbutton", { name: "Simultaneous downloads" }),
+  ).toHaveValue("3");
+  await expect(settings.getByText("Active downloads: 0 of 3.")).toBeVisible();
+  await settings.getByRole("tab", { name: "Appearance" }).click();
   await settings.getByRole("radio", { name: /Compact/ }).check();
   await page.keyboard.press("Escape");
   await expect(primary.getByLabel(/Estimated time remaining:/)).toHaveText(
