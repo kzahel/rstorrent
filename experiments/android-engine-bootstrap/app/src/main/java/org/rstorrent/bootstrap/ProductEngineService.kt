@@ -201,12 +201,15 @@ class ProductEngineService : Service() {
         super.onDestroy()
     }
 
-    fun addMagnet(magnet: String) {
+    fun addMagnet(
+        magnet: String,
+        skipFiles: List<UInt> = emptyList(),
+    ) {
         if (safTreeUri == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
-        dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, emptyList()))
+        dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles))
     }
 
     fun addMagnetWithTrackerPolicyForTest(

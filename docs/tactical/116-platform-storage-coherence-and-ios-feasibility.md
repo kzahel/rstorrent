@@ -634,11 +634,33 @@ The dynamic SAF product runner now continues beyond publication: it
 force-stops and restores the product, observes verified state rebuild from
 zero to the exact piece count, completes an explicit Force recheck, enables a
 fixed test listener, serves the entire multi-file torrent from SAF to pinned
-libtorrent, and removes the namespace through the product command. Its first
-authorized physical run passed with 133,304 uploaded bytes, exact post-remove
-absence, pool high water 6/40, broker pending high water 4/16, and process
-descriptor baseline/high/final of 161/174/170. Stable device identity is not
-retained as evidence.
+libtorrent, and removes the namespace through the product command. It then
+re-adds the same torrent with one file skipped and proves exact selective
+publication, removes it, starts another transfer under a throttled seed,
+joins Pause in flight, and removes all managed staging state.
+
+### Stage 7: Android product matrix
+
+The complete matrix passes on a no-window API 34 AVD and the authorized
+physical Android 17/API 37 device. Dynamic product runs covered download,
+publication, forced process restart, conservative verification
+reconstruction, Force recheck, full SAF-backed upload to pinned libtorrent,
+exact selective publication, joined in-flight cancellation, removal, and
+cleanup. Root-health runs covered persisted-grant revocation, unavailable
+restart with stable root identity, picker repair, and healthy restart. The
+bounded diagnostic compatibility profile additionally repeated cross-piece
+selection, materialization, force-stop/reopen hashing, cancellation before
+and after a stored block, and cleanup.
+
+Three concurrent dynamic product downloads observed two active generations,
+one queued generation, and a terminal high water of three only while the one
+allowed checker overlapped a promoted download; all live counts returned to
+zero. AVD/physical storage pool high water was 11/40, broker pending high water
+was 3/16 and 3/16 respectively, and process descriptor baseline/high/final was
+120/140/136 for the full AVD lifecycle and 146/173/169 for its final physical
+repeat. Both dynamic upload runs transferred and independently verified
+133,304 bytes. Stable device identifiers and raw provider identity are not
+retained in repository evidence.
 
 ## Staged Implementation And Intermediate Gates
 

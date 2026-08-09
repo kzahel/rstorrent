@@ -1976,6 +1976,81 @@ def run_product_dynamic_saf_profile(
             if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
                 raise BootstrapFailure(f"managed artifact survived removal: {exact_path}")
 
+        target.run(["logcat", "-c"], check=False)
+        selected = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+                "--es",
+                "product_skip_files",
+                "1",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in selected.stdout:
+            raise BootstrapFailure("could not start selective product download")
+        wait_product_publication(target, fixture.info_hash, product_fd_count(target))
+        for file_index, (relative_path, _, padding) in enumerate(fixture_files()):
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if padding or file_index == 1:
+                if exists:
+                    raise BootstrapFailure(f"selective product published {relative_path}")
+                continue
+            if not exists:
+                raise BootstrapFailure(f"selective product omitted {relative_path}")
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != fixture.expected_file_hashes[relative_path]:
+                raise BootstrapFailure(f"selective product hash differs: {relative_path}")
+        request_product_torrent_action(target, fixture.info_hash, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            "selective SAF removal",
+        )
+
+        target.run(["logcat", "-c"], check=False)
+        fixture.handle.set_upload_limit(4 * 1024)
+        cancelling = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in cancelling.stdout:
+            raise BootstrapFailure("could not start cancellable product download")
+        wait_product_log(
+            target,
+            f"torrent={fixture.info_hash} kind=patch state=DOWNLOADING",
+            "active product download before cancellation",
+        )
+        request_product_torrent_action(target, fixture.info_hash, "pause")
+        request_product_torrent_action(target, fixture.info_hash, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            "cancelled SAF cleanup",
+        )
+        fixture.handle.set_upload_limit(0)
+        for exact_path in (output_root, staging_root, part_path):
+            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"cancelled managed artifact survived removal: {exact_path}"
+                )
+
         return {
             "target": target_kind,
             "profile": profile,
@@ -1994,6 +2069,8 @@ def run_product_dynamic_saf_profile(
             "force_recheck": "complete",
             "uploaded_bytes": uploaded_bytes,
             "removal": "exact",
+            "selection": "skip_exact",
+            "cancellation": "joined_and_removed",
             "tracker_security": (
                 "encrypted_unauthenticated"
                 if controlled_tracker is not None
@@ -2436,7 +2513,9 @@ def run_product_concurrent_downloads_profile(
             terminal.get("active") != 0
             or terminal.get("queued") != 0
             or terminal.get("registered") != 0
-            or terminal.get("registered_high") != 2
+            # Android admits at most two downloads. One separately bounded
+            # publication checker may overlap the next promoted download.
+            or terminal.get("registered_high") != 3
         ):
             raise BootstrapFailure(f"Android terminal admission did not drain: {terminal}")
         validate_resource_ceilings(terminal)

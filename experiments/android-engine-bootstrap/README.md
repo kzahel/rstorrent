@@ -74,8 +74,10 @@ reconstruction, completes an explicit Force recheck, serves the exact torrent
 back to pinned libtorrent through the Android listener, and removes the
 managed namespace through the application command. It rejects info-hash
 output directories, eager/empty part artifacts, staging survivors, and
-inexact removal while recording the 40-handle native pool, 16-request channel,
-and whole-process descriptor high water.
+inexact removal. It then re-adds the torrent with one skipped file and proves
+exact selective publication, followed by an in-flight product Pause and
+managed removal. The profile records the 40-handle native pool, 16-request
+channel, and whole-process descriptor high water.
 
 The `product-saf-grant-repair` profile exercises platform-root health rather
 than payload transfer. It proves an initially healthy persisted grant, retains

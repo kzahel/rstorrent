@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
+    private var pendingProductSkipFiles: List<UInt> = emptyList()
     private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingProductMseEvidence = false
     private var pendingProductDownloadAdmissionEvidence: String? = null
@@ -58,9 +59,10 @@ class MainActivity : ComponentActivity() {
                         )
                         encryption != null ->
                             service.addMagnetWithEncryptionPolicyForTest(it, encryption)
-                        else -> service.addMagnet(it)
+                        else -> service.addMagnet(it, pendingProductSkipFiles)
                     }
                     pendingProductStartContent = true
+                    pendingProductSkipFiles = emptyList()
                 }
                 pendingProductTrackerEvidenceTorrent?.let {
                     pendingProductTrackerEvidenceTorrent = null
@@ -269,10 +271,19 @@ class MainActivity : ComponentActivity() {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
             val startContent = command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
             command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
+            val skipFiles =
+                command
+                    .getStringExtra(EXTRA_PRODUCT_SKIP_FILES)
+                    ?.split(',')
+                    ?.filter(String::isNotBlank)
+                    ?.map(String::toUInt)
+                    .orEmpty()
+            command.removeExtra(EXTRA_PRODUCT_SKIP_FILES)
             val service = productService.value
             if (service == null) {
                 pendingProductMagnet = it
                 pendingProductStartContent = startContent
+                pendingProductSkipFiles = skipFiles
             } else {
                 val policy = pendingProductTrackerPolicy
                 pendingProductTrackerPolicy = null
@@ -283,7 +294,7 @@ class MainActivity : ComponentActivity() {
                         service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
                     encryption != null ->
                         service.addMagnetWithEncryptionPolicyForTest(it, encryption)
-                    else -> service.addMagnet(it)
+                    else -> service.addMagnet(it, skipFiles)
                 }
             }
         }
@@ -438,6 +449,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
+        const val EXTRA_PRODUCT_SKIP_FILES = "product_skip_files"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
         const val EXTRA_PRODUCT_RELEASE_SAF_GRANT = "product_release_saf_grant"
