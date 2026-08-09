@@ -29,7 +29,7 @@ use crate::diagnostics::{
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::settings::{
     AdvertisedPeerEndpointStatus, ClientSettingsApplicationState, ClientSettingsDegradedReason,
-    ClientSettingsRuntimeView, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus,
+    ClientSettingsRuntimeView, Ipv6PinholeStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus,
     SettingsDomainGeneration, StorageSettingsSnapshot, bounded_utf8,
 };
 use crate::speed::SessionRateHistory;
@@ -83,6 +83,15 @@ pub struct ViewSubscription {
 }
 
 impl ViewHub {
+    #[cfg(test)]
+    pub(crate) fn client_settings_for_testing(&self) -> ClientSettingsRuntimeView {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .client_settings
+            .clone()
+    }
+
     pub fn new(snapshot: &ServiceSnapshot) -> Result<Self, SubscriptionError> {
         Self::new_with_view_set_lease(snapshot, Duration::from_millis(VIEW_SET_LEASE_MILLIS))
     }
@@ -517,6 +526,28 @@ impl ViewHub {
         if let Some(degraded) = degraded {
             hub.client_settings.port_mapping_application = degraded;
         }
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
+        Ok(true)
+    }
+
+    pub(crate) fn set_ipv6_pinhole_status_for(
+        &self,
+        generation: SettingsDomainGeneration,
+        status: Ipv6PinholeStatus,
+    ) -> Result<bool, SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings_mapping_generation != Some(generation) {
+            return Ok(false);
+        }
+        if hub.client_settings.ipv6_pinhole_status == status {
+            return Ok(true);
+        }
+        let previous_torrents = hub.torrents.clone();
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.set_ipv6_pinhole_status(status);
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
         Ok(true)
     }

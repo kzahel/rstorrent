@@ -7,8 +7,8 @@ use rstorrent_engine::{
 use super::contract::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsRuntimeView, EffectiveListenerSettings, HttpsServerAuthenticationPolicy,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_RUNTIME_DETAIL_BYTES,
-    PortMappingStatus, SessionUdpStatus,
+    Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -84,6 +84,7 @@ impl ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
             transport_families: Vec::new(),
         }
@@ -151,6 +152,13 @@ impl ClientSettingsRuntimeView {
             listener_status,
             session_udp_status,
             port_mapping_status,
+            ipv6_pinhole_status: if active.port_mapping
+                == super::contract::PortMappingPolicy::Disabled
+            {
+                Ipv6PinholeStatus::Disabled
+            } else {
+                Ipv6PinholeStatus::Ineligible
+            },
             advertised_peer_endpoint,
             transport_families: Vec::new(),
         }
@@ -158,6 +166,10 @@ impl ClientSettingsRuntimeView {
 
     pub(crate) fn set_port_mapping_status(&mut self, status: PortMappingStatus) {
         self.port_mapping_status = status;
+    }
+
+    pub(crate) fn set_ipv6_pinhole_status(&mut self, status: Ipv6PinholeStatus) {
+        self.ipv6_pinhole_status = status;
     }
 
     pub(crate) fn set_advertised_peer_endpoint(&mut self, status: AdvertisedPeerEndpointStatus) {

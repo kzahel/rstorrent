@@ -29,7 +29,8 @@ use crate::diagnostics::{
 };
 use crate::incoming_seeding::IncomingSeeding;
 use crate::reachability::{
-    ReachabilityCoordinator, ReachabilityGenerationShutdown, UncertainMappingLease,
+    ReachabilityBlocks, ReachabilityCoordinator, ReachabilityGenerationShutdown,
+    UncertainMappingLease, UncertainPinholeLease,
 };
 use crate::settings::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
@@ -302,6 +303,7 @@ struct SessionNetworkOwner {
     reachability: Option<ReachabilityCoordinator>,
     listener_active: Arc<AtomicBool>,
     uncertain_mapping: Option<UncertainMappingLease>,
+    uncertain_pinhole: Option<UncertainPinholeLease>,
     mapping_runtime_error: Option<String>,
     effective_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
 }
@@ -577,6 +579,7 @@ impl SessionNetworkRuntime {
             reachability: None,
             listener_active: listener_active.clone(),
             uncertain_mapping: None,
+            uncertain_pinhole: None,
             mapping_runtime_error: None,
             effective_tracker_https_authentication: initial_tracker_https_authentication,
         };
@@ -773,9 +776,14 @@ impl SessionNetworkRuntime {
         owner.reachability = Some(ReachabilityCoordinator::start(
             &owner.effective_settings,
             &owner.listener_status,
+            owner
+                .incoming_ipv6_acceptor
+                .as_ref()
+                .and_then(ipv6_acceptor_address),
             views.clone(),
             owner.advertised_endpoint.clone(),
             self.initial_mapping_generation,
+            ReachabilityBlocks::default(),
         ));
         let (settings_sender, settings_receiver) = watch::channel(None);
         let cancellation = self.reconciliation_cancellation.clone();
@@ -1015,6 +1023,9 @@ impl SessionNetworkOwner {
                 }
                 if let Some(uncertain_mapping) = shutdown.uncertain_mapping {
                     self.uncertain_mapping = Some(uncertain_mapping);
+                }
+                if let Some(uncertain_pinhole) = shutdown.uncertain_pinhole {
+                    self.uncertain_pinhole = Some(uncertain_pinhole);
                 }
             }
             Err(error) => self.mapping_runtime_error = Some(error),
@@ -1321,9 +1332,16 @@ impl SessionNetworkOwner {
             self.reachability = Some(ReachabilityCoordinator::start(
                 &self.effective_settings,
                 &self.listener_status,
+                self.incoming_ipv6_acceptor
+                    .as_ref()
+                    .and_then(ipv6_acceptor_address),
                 views.clone(),
                 self.advertised_endpoint.clone(),
                 attempt.domain(SettingsDomain::PortMapping),
+                ReachabilityBlocks {
+                    mapping: self.uncertain_mapping.is_some(),
+                    pinhole: self.uncertain_pinhole.is_some(),
+                },
             ));
             return false;
         }
@@ -1374,9 +1392,16 @@ impl SessionNetworkOwner {
                     self.reachability = Some(ReachabilityCoordinator::start(
                         &self.effective_settings,
                         &self.listener_status,
+                        self.incoming_ipv6_acceptor
+                            .as_ref()
+                            .and_then(ipv6_acceptor_address),
                         views.clone(),
                         self.advertised_endpoint.clone(),
                         attempt.domain(SettingsDomain::PortMapping),
+                        ReachabilityBlocks {
+                            mapping: self.uncertain_mapping.is_some(),
+                            pinhole: self.uncertain_pinhole.is_some(),
+                        },
                     ));
                     publish_transport(
                         convergence,
@@ -1746,6 +1771,7 @@ impl SessionNetworkOwner {
         if !policy_changed
             && !transport_changed
             && self.uncertain_mapping.is_none()
+            && self.uncertain_pinhole.is_none()
             && self.mapping_runtime_error.is_none()
             && !reachability_finished
         {
@@ -1778,6 +1804,51 @@ impl SessionNetworkOwner {
         {
             self.uncertain_mapping = None;
         }
+        if self
+            .uncertain_pinhole
+            .as_ref()
+            .is_some_and(|pinhole| pinhole.remaining_lease_seconds(now) == 0)
+        {
+            self.uncertain_pinhole = None;
+        }
+        if let Some(error) = self.mapping_runtime_error.take() {
+            publish_mapping(
+                convergence,
+                generation,
+                self.effective_settings.port_mapping,
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::PortMappingCleanupFailed,
+                    detail: error,
+                },
+                views,
+            );
+            return None;
+        }
+        let mapping_blocked = self.uncertain_mapping.is_some();
+        let pinhole_blocked = self.uncertain_pinhole.is_some();
+        let cleanup_blocks_disable = attempt.settings.port_mapping == PortMappingPolicy::Disabled
+            && (mapping_blocked || pinhole_blocked);
+        let mut coordinator_settings = self.effective_settings.clone();
+        coordinator_settings.port_mapping = attempt.settings.port_mapping;
+        if !cleanup_blocks_disable {
+            self.effective_settings.port_mapping = attempt.settings.port_mapping;
+        }
+        self.reachability = Some(ReachabilityCoordinator::start(
+            &coordinator_settings,
+            &self.listener_status,
+            self.incoming_ipv6_acceptor
+                .as_ref()
+                .and_then(ipv6_acceptor_address),
+            views.clone(),
+            self.advertised_endpoint.clone(),
+            generation,
+            ReachabilityBlocks {
+                mapping: mapping_blocked,
+                pinhole: pinhole_blocked,
+            },
+        ));
+        let mut expiry = None;
+        let mut cleanup_application_detail = None;
         if let Some(mapping) = &self.uncertain_mapping {
             let remaining_lease_seconds = mapping.remaining_lease_seconds(now);
             let detail = format!(
@@ -1793,47 +1864,46 @@ impl SessionNetworkOwner {
                     detail: detail.clone(),
                 },
             );
-            publish_mapping(
-                convergence,
+            cleanup_application_detail = Some(detail);
+            expiry = Some(mapping.expires_at);
+        }
+        if let Some(pinhole) = &self.uncertain_pinhole {
+            let remaining_lease_seconds = pinhole.remaining_lease_seconds(now);
+            let detail = format!(
+                "{}; the prior IPv6 pinhole may remain for {remaining_lease_seconds} seconds",
+                pinhole.detail,
+            );
+            let _ = views.set_ipv6_pinhole_status_for(
                 generation,
-                self.effective_settings.port_mapping,
+                crate::Ipv6PinholeStatus::CleanupFailed {
+                    internal_address: pinhole.internal_endpoint.ip().to_string(),
+                    internal_port: pinhole.internal_endpoint.port(),
+                    remaining_lease_seconds,
+                    detail: detail.clone(),
+                },
+            );
+            if cleanup_blocks_disable && cleanup_application_detail.is_none() {
+                cleanup_application_detail = Some(detail);
+            }
+            expiry = Some(expiry.map_or(pinhole.expires_at, |current| {
+                current.min(pinhole.expires_at)
+            }));
+        }
+        let application =
+            cleanup_application_detail.map_or(ClientSettingsApplicationState::Applied, |detail| {
                 ClientSettingsApplicationState::Degraded {
                     reason: ClientSettingsDegradedReason::PortMappingCleanupFailed,
                     detail,
-                },
-                views,
-            );
-            return Some(mapping.expires_at);
-        }
-        if let Some(error) = self.mapping_runtime_error.take() {
-            publish_mapping(
-                convergence,
-                generation,
-                self.effective_settings.port_mapping,
-                ClientSettingsApplicationState::Degraded {
-                    reason: ClientSettingsDegradedReason::PortMappingCleanupFailed,
-                    detail: error,
-                },
-                views,
-            );
-            return None;
-        }
-        self.effective_settings.port_mapping = attempt.settings.port_mapping;
-        self.reachability = Some(ReachabilityCoordinator::start(
-            &self.effective_settings,
-            &self.listener_status,
-            views.clone(),
-            self.advertised_endpoint.clone(),
-            generation,
-        ));
+                }
+            });
         publish_mapping(
             convergence,
             generation,
             self.effective_settings.port_mapping,
-            ClientSettingsApplicationState::Applied,
+            application,
             views,
         );
-        None
+        expiry
     }
 
     async fn shutdown(mut self, views: &ViewHub) -> SessionNetworkShutdown {
@@ -1868,8 +1938,10 @@ impl SessionNetworkOwner {
         if let Some(reachability) = self.reachability.take() {
             match reachability.shutdown().await {
                 Ok(terminal) => {
-                    let terminal_counts =
-                        format!("tasks={},mappings={}", terminal.tasks, terminal.mappings);
+                    let terminal_counts = format!(
+                        "tasks={},mappings={},pinholes={}",
+                        terminal.tasks, terminal.mappings, terminal.pinholes
+                    );
                     let _ = views.record_diagnostic(
                         DiagnosticSeverity::Info,
                         category::DISCOVERY_REACHABILITY,
@@ -1894,6 +1966,17 @@ impl SessionNetworkOwner {
                     mapping.external_port,
                     mapping.remaining_lease_seconds(Instant::now()),
                     mapping.detail,
+                ),
+            );
+        }
+        if let Some(pinhole) = self.uncertain_pinhole.take() {
+            remember_error(
+                &mut join_error,
+                format!(
+                    "uncertain IPv6 UPnP pinhole {} may remain for {} seconds: {}",
+                    pinhole.internal_endpoint,
+                    pinhole.remaining_lease_seconds(Instant::now()),
+                    pinhole.detail,
                 ),
             );
         }

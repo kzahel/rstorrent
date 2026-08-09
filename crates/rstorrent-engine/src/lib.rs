@@ -110,7 +110,8 @@ pub use selective_storage::{
 };
 pub use session_socket::{
     MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,
-    SessionSocketFamilyState, SessionSocketSet, SessionSocketTransport, select_global_ipv6,
+    SessionSocketFamilyState, SessionSocketSet, SessionSocketTransport, eligible_global_ipv6,
+    select_global_ipv6,
 };
 pub use session_udp::{
     SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpHandle, SessionUdpService,

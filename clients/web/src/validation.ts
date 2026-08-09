@@ -1408,6 +1408,81 @@ function validateClientSettingsRuntime(value: unknown): void {
     );
     boundedString(mappingStatus.detail, "mapping cleanup failure detail", 512);
   }
+
+  const pinholeStatus = asRecord(
+    runtime.ipv6_pinhole_status,
+    "IPv6 pinhole status",
+  );
+  const pinholeStatusType = oneOf(
+    pinholeStatus.type,
+    "IPv6 pinhole status type",
+    [
+      "disabled",
+      "ineligible",
+      "discovering",
+      "service_unavailable",
+      "action_unavailable",
+      "inbound_pinhole_disallowed",
+      "unfiltered",
+      "creating",
+      "pinholed",
+      "failed",
+      "renewal_failed",
+      "cleanup_failed",
+      "stopping",
+    ],
+  );
+  if (pinholeStatusType === "disabled") {
+    if (runtime.effective_port_mapping !== "disabled") {
+      throw new ContractError("enabled port mapping reports a disabled IPv6 pinhole status");
+    }
+  } else if (runtime.effective_port_mapping !== "upnp") {
+    throw new ContractError("disabled port mapping reports active IPv6 pinhole work");
+  }
+  if (pinholeStatusType === "action_unavailable") {
+    boundedString(pinholeStatus.detail, "IPv6 pinhole action detail", 512);
+  } else if (
+    pinholeStatusType === "unfiltered" ||
+    pinholeStatusType === "creating" ||
+    pinholeStatusType === "pinholed" ||
+    pinholeStatusType === "renewal_failed" ||
+    pinholeStatusType === "cleanup_failed"
+  ) {
+    boundedString(
+      pinholeStatus.internal_address,
+      "IPv6 pinhole internal address",
+      64,
+    );
+    boundedInteger(
+      pinholeStatus.internal_port,
+      "IPv6 pinhole internal port",
+      1_024,
+      65_535,
+    );
+    if (pinholeStatusType === "pinholed") {
+      boundedInteger(pinholeStatus.lease_seconds, "IPv6 pinhole lease", 1, 86_400);
+    } else if (pinholeStatusType === "renewal_failed") {
+      boundedString(pinholeStatus.detail, "IPv6 pinhole renewal detail", 512);
+    } else if (pinholeStatusType === "cleanup_failed") {
+      boundedInteger(
+        pinholeStatus.remaining_lease_seconds,
+        "IPv6 pinhole remaining lease",
+        0,
+        86_400,
+      );
+      boundedString(pinholeStatus.detail, "IPv6 pinhole cleanup detail", 512);
+    }
+  } else if (pinholeStatusType === "failed") {
+    oneOf(pinholeStatus.stage, "IPv6 pinhole failure stage", [
+      "discovery",
+      "description",
+      "firewall_status",
+      "add",
+      "renewal",
+      "delete",
+    ]);
+    boundedString(pinholeStatus.detail, "IPv6 pinhole failure detail", 512);
+  }
 }
 
 function validateSettingsApplicationState(value: unknown, label: string): void {

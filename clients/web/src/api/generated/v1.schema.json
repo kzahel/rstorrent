@@ -1480,6 +1480,9 @@
         "ipv6_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         },
+        "ipv6_pinhole_status": {
+          "$ref": "#/$defs/Ipv6PinholeStatus"
+        },
         "listener_status": {
           "$ref": "#/$defs/ListenerStatus"
         },
@@ -1528,6 +1531,7 @@
         "listener_status",
         "session_udp_status",
         "port_mapping_status",
+        "ipv6_pinhole_status",
         "advertised_peer_endpoint",
         "transport_families"
       ],
@@ -3153,6 +3157,286 @@
         "end_exclusive"
       ],
       "type": "object"
+    },
+    "Ipv6PinholeFailureStage": {
+      "enum": [
+        "discovery",
+        "description",
+        "firewall_status",
+        "add",
+        "renewal",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "Ipv6PinholeStatus": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "disabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "ineligible",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "discovering",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "service_unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "type": {
+              "const": "action_unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "inbound_pinhole_disallowed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "internal_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "internal_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "unfiltered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "internal_address",
+            "internal_port"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "internal_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "internal_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "creating",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "internal_address",
+            "internal_port"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "internal_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "internal_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lease_seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "pinholed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "internal_address",
+            "internal_port",
+            "lease_seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "stage": {
+              "$ref": "#/$defs/Ipv6PinholeFailureStage"
+            },
+            "type": {
+              "const": "failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stage",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "internal_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "internal_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "renewal_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "internal_address",
+            "internal_port",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "internal_address": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "internal_port": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "remaining_lease_seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "cleanup_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "internal_address",
+            "internal_port",
+            "remaining_lease_seconds",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "stopping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "ListenerBindFailureReason": {
       "enum": [
@@ -5791,6 +6075,9 @@
                 },
                 "ipv6_application": {
                   "type": "applied"
+                },
+                "ipv6_pinhole_status": {
+                  "type": "disabled"
                 },
                 "listener_status": {
                   "type": "disabled"

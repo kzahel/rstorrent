@@ -81,6 +81,7 @@ struct SelectorState {
     endpoint: AdvertisedPeerEndpointState,
     local_endpoint: Option<(SocketAddrV4, EndpointScope)>,
     ipv6_local_endpoint: Option<SocketAddrV6>,
+    ipv6_scope: Option<PeerAdvertisementEndpointScope>,
     incoming_observed: bool,
     latest_mapping_generation: u64,
 }
@@ -99,6 +100,7 @@ impl AdvertisedPeerEndpointSelector {
             endpoint,
             local_endpoint,
             ipv6_local_endpoint: None,
+            ipv6_scope: None,
             incoming_observed: false,
             latest_mapping_generation: 0,
         };
@@ -178,7 +180,40 @@ impl AdvertisedPeerEndpointSelector {
     pub(crate) fn begin_mapping_generation(&self) -> u64 {
         let mut state = self.selector_state();
         state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
+        if matches!(
+            state.ipv6_scope,
+            Some(
+                PeerAdvertisementEndpointScope::Unfiltered
+                    | PeerAdvertisementEndpointScope::Pinholed
+            )
+        ) {
+            state.ipv6_scope = Some(PeerAdvertisementEndpointScope::GlobalUnicast);
+            let generation = next_generation(state.endpoint.generation());
+            state.endpoint = replace_generation(state.endpoint.clone(), generation);
+            self.publish(&state);
+        }
         state.latest_mapping_generation
+    }
+
+    pub(crate) fn ipv6_unfiltered(&self, reachability_generation: u64) -> bool {
+        self.replace_ipv6_scope(
+            reachability_generation,
+            PeerAdvertisementEndpointScope::Unfiltered,
+        )
+    }
+
+    pub(crate) fn ipv6_pinhole_verified(&self, reachability_generation: u64) -> bool {
+        self.replace_ipv6_scope(
+            reachability_generation,
+            PeerAdvertisementEndpointScope::Pinholed,
+        )
+    }
+
+    pub(crate) fn ipv6_pinhole_lost(&self, reachability_generation: u64) -> bool {
+        self.replace_ipv6_scope(
+            reachability_generation,
+            PeerAdvertisementEndpointScope::GlobalUnicast,
+        )
     }
 
     pub(crate) fn renewal_failed(
@@ -255,6 +290,9 @@ impl AdvertisedPeerEndpointSelector {
         state.local_endpoint = local_endpoint;
         state.incoming_observed = false;
         state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
+        if state.ipv6_local_endpoint.is_some() {
+            state.ipv6_scope = Some(PeerAdvertisementEndpointScope::GlobalUnicast);
+        }
         state.endpoint = with_generation(endpoint, generation);
         self.publish(&state);
         true
@@ -268,6 +306,14 @@ impl AdvertisedPeerEndpointSelector {
             return false;
         }
         state.ipv6_local_endpoint = endpoint;
+        state.ipv6_scope = endpoint.map(|endpoint| {
+            if endpoint.ip().is_loopback() {
+                PeerAdvertisementEndpointScope::Loopback
+            } else {
+                PeerAdvertisementEndpointScope::GlobalUnicast
+            }
+        });
+        state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
         let generation = next_generation(state.endpoint.generation());
         state.endpoint = replace_generation(state.endpoint.clone(), generation);
         self.publish(&state);
@@ -299,6 +345,27 @@ impl AdvertisedPeerEndpointSelector {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    fn replace_ipv6_scope(
+        &self,
+        reachability_generation: u64,
+        scope: PeerAdvertisementEndpointScope,
+    ) -> bool {
+        let mut state = self.selector_state();
+        if reachability_generation != state.latest_mapping_generation
+            || matches!(state.endpoint, AdvertisedPeerEndpointState::Stopping { .. })
+            || state.ipv6_local_endpoint.is_none()
+            || state.ipv6_scope == Some(PeerAdvertisementEndpointScope::Loopback)
+            || state.ipv6_scope == Some(scope)
+        {
+            return false;
+        }
+        state.ipv6_scope = Some(scope);
+        let generation = next_generation(state.endpoint.generation());
+        state.endpoint = replace_generation(state.endpoint.clone(), generation);
+        self.publish(&state);
+        true
+    }
 }
 
 fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
@@ -307,11 +374,7 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
         |endpoint| PeerAdvertisementFamilyEndpoint {
             endpoint: Some(SocketAddr::V6(endpoint)),
             source_address: Some((*endpoint.ip()).into()),
-            scope: Some(if endpoint.ip().is_loopback() {
-                PeerAdvertisementEndpointScope::Loopback
-            } else {
-                PeerAdvertisementEndpointScope::GlobalUnicast
-            }),
+            scope: state.ipv6_scope,
         },
     );
     match &state.endpoint {
@@ -600,6 +663,52 @@ mod tests {
             selector.subscribe_wire().borrow().ipv6,
             PeerAdvertisementFamilyEndpoint::outbound_only()
         );
+    }
+
+    #[test]
+    fn ipv6_gateway_evidence_is_generation_fenced_and_wire_visible() {
+        let selector = local_selector();
+        let ipv6 = "[2001:4860:4860::8888]:42006".parse().unwrap();
+        assert!(selector.replace_ipv6_listener(Some(ipv6)));
+        let generation = selector.begin_mapping_generation();
+        assert!(selector.ipv6_unfiltered(generation));
+        assert_eq!(
+            selector.subscribe_wire().borrow().ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::Unfiltered)
+        );
+        assert!(selector.ipv6_pinhole_verified(generation));
+        assert_eq!(
+            selector.subscribe_wire().borrow().ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::Pinholed)
+        );
+        assert!(!selector.ipv6_pinhole_lost(generation.saturating_sub(1)));
+        assert_eq!(
+            selector.subscribe_wire().borrow().ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::Pinholed)
+        );
+        assert!(selector.ipv6_pinhole_lost(generation));
+        assert_eq!(
+            selector.subscribe_wire().borrow().ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::GlobalUnicast)
+        );
+    }
+
+    #[test]
+    fn listener_replacement_invalidates_ipv6_gateway_evidence() {
+        let selector = local_selector();
+        let first = "[2001:4860:4860::8888]:42006".parse().unwrap();
+        assert!(selector.replace_ipv6_listener(Some(first)));
+        let generation = selector.begin_mapping_generation();
+        assert!(selector.ipv6_pinhole_verified(generation));
+        let replacement = "[2606:4700:4700::1111]:42007".parse().unwrap();
+        assert!(selector.replace_ipv6_listener(Some(replacement)));
+        let wire = *selector.subscribe_wire().borrow();
+        assert_eq!(wire.ipv6.endpoint, Some(SocketAddr::V6(replacement)));
+        assert_eq!(
+            wire.ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::GlobalUnicast)
+        );
+        assert!(!selector.ipv6_pinhole_verified(generation));
     }
 
     #[test]

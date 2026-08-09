@@ -9,7 +9,8 @@ use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
 use crate::TorrentEtaView;
 use crate::file_views::FileProgressModel;
 use crate::settings::{
-    ClientSettings, PortMappingStatus, SettingsConvergenceModel, SettingsDomain,
+    ClientSettings, ClientSettingsApplicationState, Ipv6PinholeStatus, PortMappingStatus,
+    SettingsConvergenceModel, SettingsDomain,
 };
 
 const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
@@ -1030,6 +1031,26 @@ fn stale_settings_attempts_cannot_publish_runtime_or_mapping_facts() {
             PortMappingStatus::Mapping,
         )
         .expect("accept current mapping status")
+    );
+    assert!(
+        !hub.set_ipv6_pinhole_status_for(
+            first.domain(SettingsDomain::PortMapping),
+            Ipv6PinholeStatus::ServiceUnavailable,
+        )
+        .expect("reject stale pinhole status")
+    );
+    assert!(
+        hub.set_ipv6_pinhole_status_for(
+            second.domain(SettingsDomain::PortMapping),
+            Ipv6PinholeStatus::ServiceUnavailable,
+        )
+        .expect("accept current pinhole status")
+    );
+    let runtime = hub.client_settings_for_testing();
+    assert_eq!(
+        runtime.port_mapping_application,
+        ClientSettingsApplicationState::Applying,
+        "optional IPv6 service absence must not degrade IPv4 policy convergence",
     );
     let stale_transport = first.domain(SettingsDomain::Transport);
     assert!(

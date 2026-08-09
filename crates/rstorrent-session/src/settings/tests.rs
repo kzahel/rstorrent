@@ -8,10 +8,10 @@ use rusqlite::Connection;
 use super::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings,
     ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerPolicy,
-    ListenerStatus, PortMappingPolicy, PortMappingStatus, SessionUdpStatus,
-    SettingsPersistenceError, classify_listener_bind_failure, create_client_settings,
-    read_client_settings, replace_client_settings,
+    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
+    Ipv6PinholeStatus, ListenerPolicy, ListenerStatus, PortMappingPolicy, PortMappingStatus,
+    SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
+    create_client_settings, read_client_settings, replace_client_settings,
 };
 
 #[test]
@@ -219,6 +219,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
             coordinated_with_tcp: false,
         },
         port_mapping_status: PortMappingStatus::Disabled,
+        ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
         advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Local {
             generation: "1".to_owned(),
             address: "127.0.0.1".to_owned(),

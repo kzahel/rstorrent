@@ -299,6 +299,71 @@ pub enum PortMappingStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
+pub enum Ipv6PinholeFailureStage {
+    Discovery,
+    Description,
+    FirewallStatus,
+    Add,
+    Renewal,
+    Delete,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Ipv6PinholeStatus {
+    #[default]
+    Disabled,
+    Ineligible,
+    Discovering,
+    ServiceUnavailable,
+    ActionUnavailable {
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    InboundPinholeDisallowed,
+    Unfiltered {
+        #[schemars(length(max = 64))]
+        internal_address: String,
+        internal_port: u16,
+    },
+    Creating {
+        #[schemars(length(max = 64))]
+        internal_address: String,
+        internal_port: u16,
+    },
+    Pinholed {
+        #[schemars(length(max = 64))]
+        internal_address: String,
+        internal_port: u16,
+        lease_seconds: u32,
+    },
+    Failed {
+        stage: Ipv6PinholeFailureStage,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    RenewalFailed {
+        #[schemars(length(max = 64))]
+        internal_address: String,
+        internal_port: u16,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    CleanupFailed {
+        #[schemars(length(max = 64))]
+        internal_address: String,
+        internal_port: u16,
+        remaining_lease_seconds: u32,
+        #[schemars(length(max = 512))]
+        detail: String,
+    },
+    Stopping,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
 pub enum AdvertisedPeerEndpointScope {
     Loopback,
     LocalNetwork,
@@ -438,6 +503,7 @@ pub struct ClientSettingsRuntimeView {
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
+    pub ipv6_pinhole_status: Ipv6PinholeStatus,
     pub advertised_peer_endpoint: AdvertisedPeerEndpointStatus,
     pub transport_families: Vec<TransportFamilyRuntimeView>,
 }
@@ -466,6 +532,7 @@ impl Default for ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
             transport_families: Vec::new(),
         }
@@ -499,6 +566,7 @@ impl ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
             transport_families: Vec::new(),
         }

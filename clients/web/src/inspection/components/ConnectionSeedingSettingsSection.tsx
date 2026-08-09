@@ -5,6 +5,7 @@ import type {
   ClientSettings,
   ClientSettingsRuntimeView,
   EncryptionPolicy,
+  Ipv6PinholeStatus,
   ListenerBindFailureReason,
   ListenerPolicy,
   PortMappingPolicy,
@@ -507,6 +508,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         Effective gateway mapping policy: {settings.effective_port_mapping === "upnp" ? "UPnP IGD v2" : "off"}.
       </span>
       <PortMappingRuntime status={settings.port_mapping_status} />
+      <Ipv6PinholeRuntime status={settings.ipv6_pinhole_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
       {settings.transport_families.map((family) => (
         <span key={family.family}>
@@ -678,6 +680,84 @@ function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) 
       );
     case "stopping":
       return <span>Removing the gateway mapping…</span>;
+  }
+}
+
+function Ipv6PinholeRuntime({ status }: { readonly status: Ipv6PinholeStatus }) {
+  switch (status.type) {
+    case "disabled":
+      return <span>Automatic IPv6 firewall pinhole control is off.</span>;
+    case "ineligible":
+      return (
+        <span className={styles.runtimeWarning}>
+          IPv6 pinhole control requires a global-unicast IPv6 listener and UPnP gateway control.
+        </span>
+      );
+    case "discovering":
+      return <span>Discovering IPv6 firewall control on the UPnP gateway…</span>;
+    case "service_unavailable":
+      return (
+        <span className={styles.runtimeWarning}>
+          The gateway does not advertise IPv6 firewall control. The IPv6 listener remains
+          advertised as global unicast; gateway filtering is unknown.
+        </span>
+      );
+    case "action_unavailable":
+      return (
+        <span className={styles.runtimeWarning}>
+          The gateway IPv6 firewall service is incomplete: {status.detail}
+        </span>
+      );
+    case "inbound_pinhole_disallowed":
+      return (
+        <span className={styles.runtimeWarning}>
+          The gateway firewall is enabled but does not allow requested inbound pinholes.
+        </span>
+      );
+    case "unfiltered":
+      return (
+        <span>
+          The gateway reports IPv6 filtering disabled for {status.internal_address}:
+          {status.internal_port}. This is gateway state, not an observed incoming peer.
+        </span>
+      );
+    case "creating":
+      return (
+        <span>
+          Requesting an IPv6 firewall pinhole for {status.internal_address}:
+          {status.internal_port}…
+        </span>
+      );
+    case "pinholed":
+      return (
+        <span>
+          The gateway accepted an IPv6 pinhole for {status.internal_address}:
+          {status.internal_port} for {status.lease_seconds} seconds. This does not mean an
+          incoming peer has connected.
+        </span>
+      );
+    case "failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          IPv6 pinhole control failed during {status.stage.replaceAll("_", " ")}: {status.detail}
+        </span>
+      );
+    case "renewal_failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          The IPv6 pinhole for {status.internal_address}:{status.internal_port} could not be
+          renewed: {status.detail}
+        </span>
+      );
+    case "cleanup_failed":
+      return (
+        <span className={styles.runtimeWarning}>
+          The old IPv6 pinhole for {status.internal_address}:{status.internal_port} could not be
+          confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
+        </span>
+      );
+    case "stopping":
+      return <span>Removing the IPv6 firewall pinhole…</span>;
   }
 }
 

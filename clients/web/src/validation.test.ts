@@ -224,6 +224,7 @@ describe("client settings validation", () => {
         remaining_lease_seconds: 42,
         detail: "delete verification failed",
       },
+      ipv6_pinhole_status: { type: "ineligible" },
       port_mapping_application: {
         type: "degraded",
         reason: "port_mapping_cleanup_failed",
@@ -237,6 +238,39 @@ describe("client settings validation", () => {
     expect(() => decodeUpdateBatch(JSON.stringify(uncertainCleanup))).toThrow(
       /remaining_lease_seconds must be >= 0/,
     );
+
+    const pinholed = torrentBatch("IPv6 pinhole");
+    pinholed.updates[0]!.snapshot.client_settings = {
+      ...clientSettingsRuntimeFixture(),
+      effective_port_mapping: "upnp",
+      port_mapping_status: { type: "ineligible" },
+      ipv6_pinhole_status: {
+        type: "pinholed",
+        internal_address: "2001:4860:4860::8888",
+        internal_port: 42_006,
+        lease_seconds: 3_600,
+      },
+      port_mapping_application: { type: "applied" },
+    };
+    expect(decodeUpdateBatch(JSON.stringify(pinholed)).updates).toHaveLength(1);
+    const invalidPinhole = pinholed.updates[0]!.snapshot.client_settings
+      .ipv6_pinhole_status as unknown as Record<string, unknown>;
+    invalidPinhole.lease_seconds = 86_401;
+    expect(() => decodeUpdateBatch(JSON.stringify(pinholed))).toThrow(
+      /IPv6 pinhole lease must be an integer in range/,
+    );
+
+    const optionalServiceAbsent = torrentBatch("Optional service absent");
+    optionalServiceAbsent.updates[0]!.snapshot.client_settings = {
+      ...clientSettingsRuntimeFixture(),
+      effective_port_mapping: "upnp",
+      port_mapping_status: { type: "ineligible" },
+      ipv6_pinhole_status: { type: "service_unavailable" },
+      port_mapping_application: { type: "applied" },
+    };
+    expect(
+      decodeUpdateBatch(JSON.stringify(optionalServiceAbsent)).updates,
+    ).toHaveLength(1);
   });
 });
 

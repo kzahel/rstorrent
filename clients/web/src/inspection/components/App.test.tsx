@@ -1900,6 +1900,7 @@ describe("inspection application", () => {
             coordinated_with_tcp: false,
           },
           port_mapping_status: { type: "disabled" },
+          ipv6_pinhole_status: { type: "disabled" },
           advertised_peer_endpoint: {
             type: "outbound_only",
             generation: "1",
@@ -1970,6 +1971,12 @@ describe("inspection application", () => {
             remaining_lease_seconds: 42,
             detail: "delete verification failed",
           },
+          ipv6_pinhole_status: {
+            type: "pinholed",
+            internal_address: "2001:4860:4860::8888",
+            internal_port: 41_234,
+            lease_seconds: 3_600,
+          },
           advertised_peer_endpoint: {
             type: "local",
             generation: "9",
@@ -1998,6 +2005,9 @@ describe("inspection application", () => {
     ).toBeVisible();
     expect(
       within(dialog).getByText(/may remain for 42 seconds/i),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/does not mean an incoming peer has connected/i),
     ).toBeVisible();
     expect(within(dialog).getByText(/Port mapping: degraded/i)).toBeVisible();
     expect(within(dialog).queryByText(/restart/i)).not.toBeInTheDocument();

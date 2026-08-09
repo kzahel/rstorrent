@@ -48,6 +48,8 @@ pub enum PeerAdvertisementEndpointScope {
     Loopback,
     LocalNetwork,
     GlobalUnicast,
+    Unfiltered,
+    Pinholed,
     Mapped,
 }
 
@@ -1649,7 +1651,9 @@ fn family_port(policy: NetworkPolicy, endpoint: PeerAdvertisementFamilyEndpoint)
             Some(
                 PeerAdvertisementEndpointScope::Mapped
                 | PeerAdvertisementEndpointScope::LocalNetwork
-                | PeerAdvertisementEndpointScope::GlobalUnicast,
+                | PeerAdvertisementEndpointScope::GlobalUnicast
+                | PeerAdvertisementEndpointScope::Unfiltered
+                | PeerAdvertisementEndpointScope::Pinholed,
             ),
         ) => endpoint.port(),
         (Some(endpoint), Some(PeerAdvertisementEndpointScope::Loopback))
