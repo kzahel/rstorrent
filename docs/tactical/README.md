@@ -520,6 +520,13 @@ that scope and its cleanup or compatibility rules explicitly.
   complete; adds one atomic wanted-plus-running application command, reconciles
   only current durable intent through the serialized torrent controller, and
   exposes it for skipped targets in the shared Files action menus.
+- [`111-mse-peer-stream-encryption.md`](111-mse-peer-stream-encryption.md):
+  in progress with implementation, controlled interop/performance evidence,
+  Android cross-build, and API 34 AVD product evidence complete; adds MSE/PE
+  for TCP peer connections in both directions through a sans-IO protocol state
+  machine and one four-value live client policy, while claiming compatibility
+  rather than security. The required physical Pixel 7a run remains pending
+  because the configured target was unavailable.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

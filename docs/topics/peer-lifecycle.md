@@ -64,6 +64,16 @@ task-free exact peer-ID admission index to that torrent owner. Self IDs and
 duplicate losers close before scheduling or upload admission; crossed sockets
 use deterministic byte ordering, while same-direction races retain the first
 generation. Endpoint records and all accumulated history remain independent.
+Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
+slice inserts a bounded MSE phase before that duplicate-admission boundary in
+both directions. The existing connection generation owns handshake deadline,
+cancellation, socket, peer budget, and terminal observation. One session DH
+owner bounds blocking exponentiation to four jobs and drains on shutdown; no
+long-lived peer task or parallel registry is added. Outgoing `Prefer` stores
+only bounded endpoint capability evidence and permits at most one fresh-socket
+early-transport plaintext fallback. Incoming `req2` routing is provisional
+until the decrypted BitTorrent handshake validates the same info hash and
+ordinary Tactical `090` admission succeeds.
 
 ## Scope
 
@@ -637,6 +647,15 @@ Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records the
 post-handshake duplicate-connection boundary with deterministic, saturated
 runtime, generated-contract, and controlled libtorrent evidence. Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md) proves both MSE methods,
+carried bytes, early fallback and no-fallback classifications, collision-safe
+incoming routing, frame-commit cipher ownership, live `allow -> required`
+replacement, exact terminal byte/exponentiation accounting, and all 28 pinned-
+libtorrent policy/method cases. Established generations retain their captured
+policy and cipher through later settings changes; the next generation observes
+the replacement. Both negotiated methods reuse the same peer owner and derive
+the truthful encrypted-or-obfuscated flag from its coherent observation.
+Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
 measured picker refinement with exact availability accounting and preserves
 unique unplanned-piece retention across replacement. Tactical

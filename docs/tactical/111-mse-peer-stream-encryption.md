@@ -1,9 +1,13 @@
 # Tactical 111: MSE/PE Peer Stream Encryption
 
-Status: In progress. Gates 1--2 completed on 2026-08-09; Gates 3--6
-remain. Direction, settings shape, method preference, dependency, exponent
-width, and the performance-evidence direction were accepted in product
-discussion on 2026-08-08.
+Status: Implementation complete through Gates 1--6 on 2026-08-09. All
+deterministic, runtime, controlled-interoperability, performance, client, ABI,
+Android cross-build, and API 34 AVD evidence passes. Graduation remains
+in progress only because the required physical Pixel 7a run could not start:
+configured serial `33031JEHN17672` was not connected or ready. No physical
+device claim is made. Direction, settings shape, method preference,
+dependency, exponent width, and the performance-evidence direction were
+accepted in product discussion on 2026-08-08.
 
 Topics: `protocol-support`, `peer-lifecycle`, `client-persistence`,
 `incoming-reachability-and-seeding`, `peer-flag-vocabulary`,
@@ -665,7 +669,7 @@ choosing their outgoing mode.
 | Maximum initiator-to-responder bytes through IA | 1,244 |
 | Maximum responder-to-initiator bytes through PE4 | 1,134 |
 | Per-connection handshake buffer | One fixed 2 KiB buffer, released at completion |
-| Steady-state per `MseMethod::Rc4` connection | Two RC4 states, under 1 KiB total; plaintext-payload MSE retains neither |
+| Steady-state per `MseMethod::Rc4` connection | Two inline RC4 states: 1,056 bytes on the supported 64-bit targets after the measured throughput optimization, and always bounded by the 4 KiB differential guardrail; plaintext-payload MSE retains neither |
 | Incoming `req2` index | At most one 20-byte candidate entry per `MAX_SEED_REGISTRATIONS` registration, bucketed by a 20-byte key |
 | DH private exponent | Uniform integer in `[2^159, 2^160-1]` from OS entropy |
 | Per-socket handshake deadline | The existing per-direction peer handshake deadline; MSE does not extend it. The one fallback socket gets its own existing connect/handshake operations |
@@ -791,7 +795,7 @@ Each gate is independently committable and leaves the workspace green.
 | Runtime | Verified download and upload on loopback in both methods with exact payload hashes; handshake timeout; junk flood; `Ya`-then-stall; close/half-close before and during owner handoff at every state; controlled cancellation during admitted DH with the permit retained until work ends and every job joined; a second MSE or BitTorrent handshake on an established stream closes; `Prefer` fallback/memory; `required` refusing ordinary plain in both directions |
 | Settings/persistence | Fresh and migrated profiles default `allow`; schema-15 checked-value migration; malformed durable value fails profile open; exact no-op, request replay, transaction rollback, ephemeral, and reopen behavior; independent convergence state; `A -> B -> A` stale-generation fencing; in-flight handshake retains captured policy while the next generation observes the replacement; no listener/torrent restart |
 | Regression | Payload and post-handshake protocol accounting, frame lengths, send watermarks, and partial-write bookkeeping identical between plain and RC4 transfers of the same content; pre-framing raw-wire and embedded-protocol event fields reconcile independently, and their MSE-only overhead explains the total-wire delta from plain; Tactical `093` reject/refill evidence in both methods |
-| Resource | Handshake-buffer high-water at most 2 KiB per connection; steady-state cipher state under 1 KiB; a five-attempt saturation test observes exactly four DH jobs running and the fifth waiting while never exceeding admitted pending connections; zero/one/two exponentiations match the terminal handshake state; cancelled jobs drain; terminal zero connections, tasks, jobs, permits, and sockets |
+| Resource | Handshake-buffer high-water at most 2 KiB per connection; steady-state duplex cipher state at most 4 KiB; a deterministic barrier test observes exactly four DH jobs running and the fifth waiting while never exceeding admitted pending connections; the product smoke exercises five real attempts and observes a high-water in `1..=4` because sub-millisecond jobs need not overlap; zero/one/two exponentiations match the terminal handshake state; cancelled jobs drain; terminal zero connections, tasks, jobs, permits, and sockets |
 | Controlled interoperability | The explicit matrix below in both initiator directions, with `peer_info.rc4_encrypted` / `plaintext_encrypted` asserted on the oracle and exact content hashes on both; method-forcing cases in each direction; scripted capture proving the exact known 68-byte BitTorrent handshake is absent in both directions under `0x02`, while under `0x01` the initiator's `IA` remains concealed and the responder's post-PE4 handshake is plaintext as specified |
 | Performance | The paired targets and broad regression guardrail below |
 | Client | Component tests cover the labelled four-option "Protocol obfuscation (MSE/PE)" control, non-security helper text, draft refresh/save semantics, and keyboard operation; persistence, live convergence, and restart pass; the `E` legend says "Encrypted or obfuscated"; `PeerFlagView::Encrypted` appears for both MSE methods and not for ordinary plain; the exact method remains observable in engine diagnostics; generated web/UniFFI/Kotlin consumers, web tests, typecheck, production build, and both Android ABI cross-builds pass |
@@ -810,19 +814,29 @@ not just final success:
 | --- | --- | --- | --- |
 | `pe_disabled` | Plain succeeds | Plain succeeds | Plain is rejected |
 | `pe_forced` | MSE is rejected | MSE succeeds | MSE succeeds |
-| fresh `pe_enabled` | Initial plain succeeds | Initial plain succeeds | Initial plain is rejected; libtorrent's MSE retry succeeds |
+| fresh `pe_enabled` through `torrent_handle::connect_peer` | Initial MSE is rejected; libtorrent's one plaintext retry succeeds | Initial MSE succeeds | Initial MSE succeeds |
 
-The `pe_enabled`/`required` case must observe both sockets and the oracle's
-endpoint-capability transition; treating it as a static one-attempt policy
-would miss libtorrent's actual behavior. Method selection is forced separately:
+The manually connected oracle peer begins MSE-capable because
+`torrent_handle::connect_peer` defaults its PEX flags to `pex_encryption`
+(`include/libtorrent/torrent_handle.hpp:1260`) and `peer_list.cpp:1049` maps
+that flag to `torrent_peer::pe_support`. This overrides the constructor's
+ordinary no-evidence default of `false` (`torrent_peer.cpp:174`). The
+`pe_enabled`/RSTorrent-`disabled` case therefore observes two sockets: an
+initial MSE refusal followed by libtorrent's successful plaintext retry. The
+other incoming `pe_enabled` cases complete on the first MSE socket. Treating
+the policy as a static one-attempt choice, or assuming a manually connected
+fresh peer starts plain, would miss the pinned oracle's actual behavior.
+Method selection is forced separately:
 with RSTorrent initiating and offering `0x03`, libtorrent `pe_both` selects
 `0x01` when `prefer_rc4 = false` and `0x02` when true. With libtorrent
 initiating under `pe_forced`, `pe_plaintext` makes RSTorrent select `0x01`,
 while `pe_both` makes RSTorrent select `0x02`. The oracle flag and RSTorrent's
 typed method must agree in every successful MSE case.
 
-No public swarm, physical device, or destructive action is required. Live
-public-swarm behavior may be recorded as an observation only.
+The controlled interoperability harness requires no public swarm, physical
+device, or destructive action. Live public-swarm behavior may be recorded as
+an observation only. The separate retained Android gate still requires its
+named physical Pixel 7a run before this tactical graduates.
 
 The final command gate, in addition to focused tests and the two new interop
 harness modes, is:
@@ -930,7 +944,7 @@ Implemented `rstorrent-protocol::mse` with:
 
 Added exact `crypto-bigint = 0.7.5` resolution with default features disabled,
 updated the protocol architecture allowlist and third-party notices, and added
-the release primitive profiler. The final Apple M4 Pro / macOS 26.5 / Rust
+the release primitive profiler. The initial Apple M4 Pro / macOS 26.5 / Rust
 1.97.0 profile measured:
 
 | Primitive | Result |
@@ -982,3 +996,139 @@ Validation passed:
 - `cargo clippy -p rstorrent-protocol --all-targets -- -D warnings`;
 - `cargo fmt --all -- --check`; and
 - `git diff --check`.
+
+### 2026-08-09: Gates 3--4 peer runtime integration
+
+Commits `90477c6`, `b37764a`, `ef22b2f`, and `ed22ecc` integrated both roles
+without adding a long-lived task. One session-scoped `MseDhWorkOwner` owns a
+four-permit semaphore and tracked blocking work; its deterministic barrier
+test holds exactly four jobs active, observes the fifth waiting, cancels an
+attempt without releasing its in-flight permit, and drains every tracked job.
+The same owner is injected into the incoming service and every metadata and
+content peer runtime, and shutdown closes and joins it after peer admission
+ends.
+
+Outgoing `Prefer` now retains bounded endpoint evidence and uses at most one
+new-socket plaintext fallback for an early transport close, reset, EOF, or
+timeout. A complete invalid DH key and every later protocol error fail without
+downgrade. `PeerIo` has one ordered outbound queue and applies the send cipher
+only at its commit point; receive bytes are decrypted before framing. Runtime
+tests cover both methods, carried bytes, the eligible two-socket fallback,
+invalid-DH no-fallback, exact payload hashes, cancellation, and owner drain.
+
+Incoming detection shares the existing handshake deadline, distinguishes the
+ordinary 68-byte header from a 96-byte MSE public key, and uses the bounded
+collision-preserving `req2` index for provisional routing. The decrypted
+BitTorrent handshake must name the same info hash before duplicate admission.
+RC4 receive state remains with the reader and send state moves to the split
+writer. The writer checks generation validity before advancing RC4 and then
+finishes the one committed frame. Tests cover both negotiated methods,
+carried handshake/frame bytes, ambiguous buckets and uniqueness restoration,
+policy rejection, invalid provisional routing, generation fences, and the
+Fast reject/refill path. A live incoming test proves that an established
+plaintext peer survives `allow -> required`, a new plaintext peer is refused,
+and a new RC4 peer transfers successfully.
+
+### 2026-08-09: Gate 5 settings, product, and observability
+
+Commits `5a95418` and `7b904cd` added the four-value persisted policy and the
+terminal handshake evidence. Schema 15 adds the checked `encryption` column;
+fresh and migrated profiles default to `allow`, unknown durable values fail
+profile open, and an independent convergence domain applies later handshakes
+without restarting a listener or torrent. Generated TypeScript, JSON Schema,
+UniFFI, and Kotlin consumers carry configured/effective/application state. The
+shared React settings section renders the exact four options and the accepted
+non-security helper text.
+
+Both MSE methods derive the existing `E` peer flag from the coherent
+connection observation, and its legend now says "Encrypted or obfuscated."
+The engine's terminal `MseHandshakeObservation` records role, captured policy,
+fallback use, exact method or typed failure, raw wire and embedded protocol
+bytes, carried raw bytes, and exponentiation count. Outgoing events project
+through torrent diagnostics and incoming events through a session-wide
+diagnostic sink. Tests reconcile raw and protocol byte metrics under both
+methods and cover successful incoming RC4 plus fallback failure. No secret,
+public key, shared secret, key material, or obfuscated torrent identifier
+enters an event or application view.
+
+### 2026-08-09: Gate 6 controlled interoperability and performance
+
+Commits `47afbff`, `eb2b4a9`, `d856357`, and `426f2e0` added and exercised the
+retained controlled harnesses. Against pinned libtorrent `2.0.13.0`, all 28
+cases passed in both initiator directions: the complete policy matrix, forced
+`0x01` and `0x02` selection in each direction, two delayed-flight probes, and
+exact SHA-1 verification of an 8,389,339-byte payload. The proxy asserted
+socket counts, fallback wire shape, absence of the known handshake header
+under RC4, the specified plaintext response after a `0x01` PE4, and oracle
+`peer_info` method flags. This run exposed and corrected the manually
+connected `pe_enabled` assumption documented above.
+
+The local setup medians were 8.872 ms plain and 9.319 ms MSE when RSTorrent
+initiated, adding 0.447 ms. With libtorrent initiating they were 509.741 ms
+plain and 511.817 ms MSE, adding 2.075 ms; those absolute values include the
+oracle's roughly 500 ms connection-scheduling cadence. Both deltas meet the
+25 ms diagnostic target. A transport proxy adding a fixed 25 ms one-way delay
+observed two delayed turns for ordinary setup and four for MSE. The expected
+extra round trip was 50 ms and the measured added setup was 62.346 ms, within
+the 20 ms timer tolerance.
+
+Profiling the original byte S-box found an avoidable RC4 hot-path cost. The
+first-party implementation now uses an inline `u16[256]` S-box, native index
+arithmetic, and an explicitly unrolled 16-byte production loop. This makes a
+duplex state 1,056 bytes on the supported 64-bit targets, still inline and
+well below the 4 KiB memory bound. A final release primitive profile on Apple
+M4 Pro / macOS 26.5.2 / Rust 1.97 measured:
+
+| Primitive | Result |
+| --- | ---: |
+| RC4 contiguous, 64 MiB | 0.990 GiB/s |
+| RC4 16 KiB chunks, 64 MiB aggregate | 1.515 GiB/s |
+| RC4 four-stream 16 KiB chunks, 64 MiB aggregate | 5.629 GiB/s |
+| DH public-key work, 100 samples | 0.021 ms median / 0.023 ms p95 |
+| DH valid remote-base shared secret, 100 samples | 0.021 ms median / 0.023 ms p95 |
+
+The contiguous RC4 diagnostic misses 1 GiB/s by 1%; the production-shaped and
+multi-stream profiles exceed it, DH is far below 2 ms, and no remaining
+avoidable scalar defect was found. The release paired comparator then ran six
+alternating 1 GiB pairs at 1 MiB pieces and storage `4/4`. Plain and RC4
+medians were 489.067 and 372.243 MiB/s. The median within-pair RC4/plain ratio
+was `0.762675`, a 23.732% regression: the 10% diagnostic target misses, but the
+explicit 75%-of-plain graduation guardrail passes. Raw process-tree CPU
+measurements report 2.067 plain and 2.069 RC4 median core-equivalents, or
+14.761% and 14.776% of the host's 14-logical-CPU capacity; RC4's longer wall
+time raises median total CPU from approximately 4.325 to 5.685 seconds. Every
+run verified the exact 1 GiB SHA-1, forced the oracle's RC4 flag, retained the
+payload and storage bounds, and cleaned up. The production release binary
+SHA-256 was
+`97466986206f9d11697db6b6624db3cc061396f986471804a3dd98a1a833883d`.
+
+### 2026-08-09: Android product evidence and remaining gate
+
+Commit `fb273e9` added the retained `product-mse` bootstrap profile. It selects
+internal SAF storage, applies `required` before adding the magnet, starts five
+controlled host seeds forced to RC4, verifies all five oracle sessions and the
+published payload hash, samples the session DH owner, and checks exact device
+and host cleanup. The full Android build cross-compiled release Rust and
+generated Kotlin for x86_64 and arm64-v8a, built the APK, and passed Kotlin
+tests.
+
+One API 34 AVD product run passed with five forced-RC4 attempts, DH
+`active=0`, `high_water=2`, `tracked=0`, and `waiting=0` at termination; file
+descriptors were `baseline=116`, `high_water=140`, and `final=140`; storage
+observed `limit=40`, `owned_high_water=6`, and `pending_high_water=3`; the
+published info hash began `f2c09c855`; cleanup passed. Requiring exactly four
+overlapping real DH jobs on a device would be timing-sensitive because these
+operations complete in well under a millisecond. The deterministic
+barrier-controlled Rust test owns exact saturation; the product run owns five
+real attempts, the `<=4` ceiling, and complete drain.
+
+A final no-build revalidation after the RC4 and diagnostic changes also
+passed: five forced-RC4 attempts, the same exact info hash, DH
+`active=0/high_water=2/tracked=0/waiting=0`, storage
+`limit=40/owned_high_water=6/pending_high_water=2`, and exact cleanup.
+
+The physical command was attempted for configured Pixel 7a serial
+`33031JEHN17672` but stopped before deployment or device mutation because the
+target was not connected/ready. That is the only remaining evidence item and
+the reason this tactical remains in progress rather than claiming physical
+graduation.

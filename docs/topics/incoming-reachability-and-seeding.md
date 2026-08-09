@@ -80,8 +80,10 @@ drafted, and prospective slices; drafting and numbering a slice does not by
 itself authorize or prioritize implementation.
 
 The topic does not make PEX, local service discovery, uTP, BEP 55 hole
-punching, incoming MSE/PE, a remote daemon, or broad public-swarm seeding part
-of the first slice. Those capabilities may depend on this foundation but keep
+punching, a remote daemon, or broad public-swarm seeding part of the first
+slice. Incoming MSE/PE has since been implemented as its own bounded Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md) slice. Those
+capabilities may depend on this foundation but keep
 their own protocol, ownership, security, and evidence requirements. Completed
 Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) records the
 Fast upload request/reject lifecycle against the established upload owner,
@@ -106,6 +108,13 @@ endpoint:
   pre-handshake tasks, routes exact v1 info hashes through up to 1,024
   generation-fenced registrations, and admits peers under one session budget
   shared with outgoing connecting and established sockets;
+- that listener detects ordinary BitTorrent versus MSE before torrent identity,
+  shares the existing handshake deadline and four-job session DH owner, and
+  uses a collision-preserving `req2` index for expected `O(1)` provisional
+  routing; the decrypted BitTorrent handshake must validate the same info hash
+  before ordinary duplicate admission. `disabled` refuses MSE, `allow` and
+  `prefer` accept either transport, and `required` refuses new plaintext while
+  established generations retain their captured policy;
 - the ordinary connection default is 200 after descriptor-aware clamping,
   accepted incoming sockets have exactly ten connections of slack, and all
   loopback sockets consume those limits;
@@ -685,8 +694,9 @@ After completed Tactical `084`, the campaign direction does not yet settle:
   permission affect listening and mapping;
 - the eventual relationship among the DHT UDP port, future uTP, and UDP
   mapping; and
-- when incoming MSE/PE, IPv6 firewall pinholes, LSD, or BEP 55 become
-  independently justified tacticals. Bounded PEX is complete in Tactical
+- when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
+  tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
+  complete in Tactical
   [`094`](../tactical/094-bounded-bep11-peer-exchange.md); it does not itself
   authorize those transports or discovery mechanisms.
 

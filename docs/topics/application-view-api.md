@@ -131,6 +131,15 @@ authoritative and heartbeat state is not persisted. ViewHub generation-fences
 completion, preserves queued/paused reconstruction, and carries the optional
 summary through the generated Rust, JSON Schema, validator, and TypeScript
 contract without changing the established v2 view-contract version.
+Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented slice
+extends the same complete client-settings value with configured/effective
+encryption policy and independent applying/applied/degraded state. It also
+fills `PeerFlagView::Encrypted` from a coherent connection observation for
+either MSE payload method. The application contract deliberately carries only
+the honest encrypted-or-obfuscated flag; the exact method and typed handshake
+failure remain engine diagnostics. No view kind, contract-version bump, lease,
+queue, cadence, task, or client-side inference is added.
 
 ## Purpose And Scope
 
@@ -977,6 +986,14 @@ old row's unauthenticated truth while the settings value reported the new
 secure effective policy. The API 34 arm64 product run rendered secure-policy
 success/failure rows through its ordinary tracker view; explicit disabled mode
 remained visibly unauthenticated.
+
+Tactical `111` preserves the complete-replacement settings and active-peer
+paths while adding the independent encryption convergence domain. Generated
+TypeScript/schema/validators, React fixtures and control tests, UniFFI, and
+Kotlin consumers pass. A live `allow -> required` change publishes effective
+policy without restarting the listener or established peers; later incoming
+plaintext is rejected and later RC4 succeeds. Both MSE methods project `E`,
+ordinary plain does not, and the legend says "Encrypted or obfuscated."
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

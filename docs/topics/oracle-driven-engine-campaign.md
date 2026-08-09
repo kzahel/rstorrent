@@ -316,14 +316,39 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `110` complete**.
+Campaign state: **Tactical `111` implementation and controlled evidence
+complete; physical graduation evidence pending**.
 
-Latest completed tactical:
-[`110-atomic-download-now.md`](../tactical/110-atomic-download-now.md).
+Latest graduated tactical:
+[`110-atomic-download-now.md`](../tactical/110-atomic-download-now.md). Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md) remains in progress only
+because its named physical Pixel 7a was unavailable.
 
-Current milestone: no successor implementation tactical is accepted. A
-separate trusting fast-resume option remains a candidate, with conservative
-checking still the default and Force recheck still the full validation pass.
+Current milestone: physically graduate peer-wire MSE/PE. Gates 1--6 are
+implemented: pure primitives and sans-IO state, bounded DH ownership, both TCP
+roles and payload methods, live persisted policy, exact diagnostics and peer
+flag, all 28 pinned-libtorrent cases, setup/flight shape, six paired 1 GiB
+performance runs, Android cross-build, and an API 34 AVD product run pass. The
+RC4/plain median paired ratio is `0.762675`: above the accepted 75% broad floor
+but well outside the 10% diagnostic target, so the cost remains an explicit
+product tradeoff rather than being described as negligible.
+
+Next executable action: connect configured Pixel 7a serial
+`33031JEHN17672` and run exactly:
+
+```bash
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target pixel7a --profile product-mse --runs 1
+```
+
+Do not claim physical graduation until its exact payload, five forced-RC4
+oracle sessions, `<=4` DH high-water, zero drain, descriptor/storage bounds,
+and cleanup pass. Exact four-way saturation belongs to the deterministic
+barrier test; real sub-millisecond DH work is permitted to overlap less.
+
+A separate trusting fast-resume option remains a later candidate, with
+conservative checking still the default and Force recheck still the full
+validation pass.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,

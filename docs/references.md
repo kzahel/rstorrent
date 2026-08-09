@@ -308,3 +308,41 @@ RSTorrent does not adopt librqbit as its engine. It remains useful for:
 
 If RSTorrent ever imports rqbit source or fixtures, review and record the exact
 license and provenance at that time.
+
+## MSE/PE References
+
+MSE/PE has no BEP. Tactical
+[`111`](tactical/111-mse-peer-stream-encryption.md) pins the Internet Archive
+capture from 2022-03-08 15:52:49 UTC of the Vuze/Azureus
+`Message_Stream_Encryption` wiki page, rendered from wiki revision
+`oldid=16077`, as the de facto normative wire description:
+
+<https://web.archive.org/web/20220308155249id_/http://wiki.vuze.com/w/Message_Stream_Encryption>
+
+The original wiki URL returned 404 during review, so only that immutable
+capture owns the specification provenance for this slice. It was used to
+independently describe the DH-768, padding, request-hash, method-negotiation,
+and RC4-drop1024 contract; no prose or fixture was copied.
+
+Pinned libtorrent commit `7d7fc38fac61177fa5e02148f791b2f65250b09d`
+is the implementation and interoperability oracle. Tactical `111` records the
+exact `pe_crypto.cpp`, `bt_peer_connection.cpp`, settings, torrent-index,
+unit-test, and simulation-test paths inspected and every adopted or
+intentionally different edge case. The simulator sources were inspected but
+not imported, linked, or executed through their GPL `libsimulator`
+dependency. Pinned rqbit contains no MSE implementation.
+
+[IETF RFC 6229](https://www.rfc-editor.org/rfc/rfc6229) supplies only selected
+RC4 keystream vectors. The adjacent independently transcribed test fixture
+cites its exact section, and `THIRD_PARTY_NOTICES.md` preserves the RFC Code
+Components' Simplified BSD notice. Those vectors validate RC4; they are not
+treated as MSE handshake evidence.
+
+`crypto-bigint` `0.7.5` is pinned with default features disabled for
+stack-allocated `U768` constant-modulus Montgomery arithmetic. It is licensed
+`Apache-2.0 OR MIT`; the dependency and notice audit is recorded in
+`THIRD_PARTY_NOTICES.md`. RSTorrent authors RC4, key derivation, and the
+sans-IO handshake state machine independently.
+
+No MSE specification prose, libtorrent/JSTorrent/rqbit source, fixture, or
+test data was copied into RSTorrent.

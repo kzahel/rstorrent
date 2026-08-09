@@ -183,11 +183,17 @@ that observation does not become a public-tracker reliability claim.
 
 ### Now
 
-- Completed Tactical [`110`](../tactical/110-atomic-download-now.md) is the
-  current checkpoint. One atomic wanted-plus-running command now reconciles
-  through Tactical `108`'s serialized torrent owner, and both shared Files
-  menus expose it as `Download now` for skipped targets. No successor
-  implementation tactical is accepted.
+- Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) remains the
+  single authoritative **Now**. Its end-to-end implementation, all 28
+  controlled pinned-libtorrent cases, six paired 1 GiB performance runs,
+  Android cross-build, and API 34 AVD product profile pass. The RC4/plain
+  median paired ratio is `0.762675`: above the accepted 75% catastrophe floor
+  but outside the 10% diagnostic target, so the cost is recorded explicitly.
+  The tactical is not yet graduated because configured Pixel 7a serial
+  `33031JEHN17672` was unavailable for its required physical product run. It
+  claims TCP peer compatibility and protocol obfuscation, never a security
+  property. Tactical [`110`](../tactical/110-atomic-download-now.md) remains
+  the last graduated checkpoint.
 
 ### Next
 

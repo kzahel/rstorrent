@@ -35,6 +35,12 @@ appearance, download, and connection/seeding sections. Browser-hosted and
 Tauri clients now share one atomic persisted loopback-listener/global-peer/
 upload-slot form and authoritative active/effective/bind status; Android
 receives the generated contract but no Compose settings screen.
+Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
+slice adds the generated four-value MSE/PE policy and live effective state to
+that same contract. Browser and Tauri share the labelled non-security control
+and the truthful encrypted-or-obfuscated peer flag; Android carries and
+compiles the enum/default, exposes bounded DH-owner evidence to the retained
+product harness, and deliberately adds no Compose settings screen.
 Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an
@@ -433,8 +439,9 @@ future server.
   remain truthful scaffolds or later feeds.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
-  and integrity edges.
-  Deeper typed peer negotiation, tracker-attempt, scheduler, and performance
+  integrity, and terminal MSE handshake edges, including role, captured policy,
+  exact negotiated method or typed failure, fallback use, byte accounting, and
+  exponentiation count. Deeper tracker-attempt, scheduler, and performance
   instrumentation remains to be added as those runtime owners grow.
 - Android has no connectivity, metered-network, or VPN-only settings yet.
   Those controls should extend application network prerequisites while
@@ -442,7 +449,8 @@ future server.
   Android network binding and race analysis.
 - Android has no Compose connection/seeding settings screen. Tactical `084`
   deliberately stops at generated contract and build/test coverage there;
-  mobile restart UX and connectivity policy require their own product slice.
+  Tactical `111` follows the same boundary for its MSE/PE policy. Mobile
+  restart UX and connectivity policy require their own product slice.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

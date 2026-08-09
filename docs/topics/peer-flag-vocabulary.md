@@ -6,7 +6,10 @@ Status: Implemented by Tactical `051` on 2026-08-02. Rust now projects the
 typed semantic set, generated v1 bindings carry it additively, and React uses
 one exhaustive definition table for compact cells and the accessible legend.
 The compact glyph mapping remains explicitly revisable as broader client
-comparison and real inspection use provide evidence. Completed Tactical
+comparison and real inspection use provide evidence. Tactical `111`'s
+implemented slice now fills the reserved encryption/obfuscation fact for either
+MSE-negotiated payload method and changes the legend to avoid a confidentiality
+claim. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now makes the
 existing incoming, upload-relationship, metadata, and optimistic-unchoke
 variants truthful for routed incoming seed connections.
@@ -161,7 +164,7 @@ references. Rust emits only states it currently owns.
 | Semantic flag | Provisional glyph | Meaning | Initial RSTorrent state |
 | --- | --- | --- | --- |
 | `incoming` | `I` | Remote peer initiated this connection | Implemented for routed incoming seed connections |
-| `encrypted` | `E` | Peer transport is encrypted or obfuscated | Reserved; no application-view fact yet |
+| `encrypted` | `E` | Peer transport is encrypted or obfuscated | Exact coherent connection observation reports either MSE plaintext-payload or RC4 method |
 | `download_allowed` | `D` | We are interested and the peer is not choking us | Derivable for current content peers |
 | `download_choked` | `d` | We are interested but the peer is choking us | Derivable for current content peers |
 | `upload_allowed` | `U` | Peer is interested and we are not choking it | Implemented from the connection-scoped upload grant |
@@ -264,9 +267,11 @@ state.
 `PeerView::from_observation` computes the canonical typed set after mapping the
 coherent connection-generation observation. It currently emits incoming,
 download allowed/choked, upload allowed/choked when both nullable inputs are
-known, extension protocol, metadata extension when represented, and uTP. It
-does not emit reserved variants from lifecycle names, rates, timing, or demo
-policy.
+known, extension protocol, metadata extension when represented, uTP, and
+encrypted for either exact MSE payload method. It does not emit reserved
+variants from lifecycle names, rates, timing, or demo policy. The `E` label is
+"Encrypted or obfuscated" because MSE `0x01` conceals only the handshake;
+engine diagnostics retain the exact negotiated method.
 
 The optional generated v1 field preserves old-producer compatibility. The web
 validator bounds it to the 16-value catalog and rejects duplicate or unknown
@@ -288,8 +293,8 @@ counts remain in Tactical `051`.
 
 ## Current Gaps
 
-- The engine does not yet project encryption, hole-punch, seed, upload-only,
-  connection parole, or connection-scoped endgame facts. Optimistic upload
+- The engine does not yet project hole-punch, seed, upload-only, connection
+  parole, or connection-scoped endgame facts. Optimistic upload
   grants exist but are not yet attached to ordinary connection observations.
 - Incoming and uTP are representable and tested vocabulary. Incoming TCP is a
   live capability but is not yet attached to the ordinary peer owner; uTP

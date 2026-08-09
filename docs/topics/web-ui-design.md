@@ -103,6 +103,14 @@ skipped. It submits one semantic wanted-plus-running command and waits for
 authoritative file and torrent views rather than mutating rows optimistically.
 Mixed selections submit one sorted target set; the action is not a high or
 streaming priority.
+Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
+slice adds a four-option **Protocol obfuscation (MSE/PE)** control to the
+existing Connection & seeding section. Its helper says the setting improves
+compatibility and is not privacy or security. The ordinary settings draft,
+refresh, equality, save, and keyboard paths use the generated closed enum and
+authoritative configured/effective/application state. The Peers legend now
+labels `E` as "Encrypted or obfuscated" for both MSE payload methods rather
+than inferring encryption strength in React.
 Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and

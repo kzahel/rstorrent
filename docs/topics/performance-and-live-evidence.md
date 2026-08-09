@@ -1192,6 +1192,41 @@ the matching exact pre-091 cohorts were 475.1 and 476.1 MiB/s. Hash-service
 time returned close to the pre-091 range. These warm-uncontrolled measurements
 are revision-comparison evidence, not replacement calibrated floors.
 
+## MSE/PE Cost: 2026-08-09
+
+Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) extends the
+controlled loopback comparator with a release-only paired encryption mode. It
+runs identical RSTorrent cohorts in alternating ordinary-plain and forced-RC4
+order, verifies the oracle's negotiated method and the exact payload hash, and
+reports the median of within-pair throughput ratios. Schema 5 also records
+process-tree CPU seconds, core-equivalents, and utilization normalized to the
+host's logical capacity for every run and cohort median.
+
+On Apple M4 Pro / macOS 26.5.2 / Rust 1.97, six alternating 1 GiB pairs with
+1 MiB pieces and storage `4/4` measured 489.067 MiB/s plain and 372.243 MiB/s
+RC4. The median within-pair ratio was `0.762675`, a 23.732% regression. This
+misses the 10% diagnostic target but remains above the accepted 75%-of-plain
+catastrophe floor. Median process-tree load was 2.067 versus 2.069
+core-equivalents (14.761% versus 14.776% of 14 logical CPUs); because RC4 runs
+longer, median total CPU rose from approximately 4.325 to 5.685 seconds. Every
+run verified the 1 GiB SHA-1 and cleaned up.
+
+After profiling, the scalar RC4 loop uses an inline `u16` S-box and a 16-byte
+unrolled production path. The final release microprofile measured 0.990 GiB/s
+contiguous, 1.515 GiB/s in production-shaped 16 KiB chunks, and 5.629 GiB/s
+across four independent streams. The 1 GiB paired outcome remains the
+graduation authority: the contiguous microprofile's 1% diagnostic miss does
+not override it. DH-768 public and shared-secret work measured 0.021 ms median
+and 0.023 ms p95 over 100 samples each, so no keypair pre-generation pool is
+justified.
+
+Same-host setup added 0.447 ms with RSTorrent initiating and 2.075 ms with
+libtorrent initiating, both below the 25 ms diagnostic target. A proxy with a
+fixed 25 ms one-way delay observed two delayed turns for ordinary setup and
+four for MSE: the measured 62.346 ms addition was within 20 ms of the expected
+50 ms extra round trip. These are controlled local measurements, not a public-
+swarm or permanent CI throughput claim.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

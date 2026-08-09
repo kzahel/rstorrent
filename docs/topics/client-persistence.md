@@ -79,6 +79,15 @@ facts. The tactical deliberately adds no trusting resume field or heuristic,
 but establishes a pure admission-policy seam for a later explicit faster,
 more trusting option. Force recheck remains full under either future policy.
 
+Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented slice
+advances the client-settings singleton to schema version 15 with one checked
+`encryption` value: `disabled`, `allow`, `prefer`, or `required`. Fresh and
+migrated profiles default to `allow`; explicit values survive no-op, replay,
+rollback, ephemeral lifetime, and reopen, while an unknown durable value fails
+profile open. Encryption has its own live convergence domain, but effective
+policy and negotiated peer methods remain non-durable runtime facts.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database
@@ -728,6 +737,15 @@ revision, receipt, conflict, rollback, durable reopen, and ephemeral-lifetime
 semantics. A generated typed consumer can select `disabled`, while the
 ordinary React settings draft preserves that hidden authoritative field when
 saving visible connection or seeding values.
+
+[`../tactical/111-mse-peer-stream-encryption.md`](../tactical/111-mse-peer-stream-encryption.md)
+adds schema version `15` to the same settings row and command. Migration and
+fresh DDL carry the identical closed-value check; typed decode independently
+rejects corrupt values. Live `A -> B -> A` replacement is generation-fenced,
+an in-flight handshake retains its captured policy, and no listener or torrent
+restart is needed. Generated TypeScript, JSON Schema, UniFFI, and Kotlin
+consumers plus the shared React control pass; the outstanding physical-device
+evidence does not change the implemented persistence claim.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,
