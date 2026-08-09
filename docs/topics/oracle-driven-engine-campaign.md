@@ -9,8 +9,9 @@ metadata, Android cross-build, and API 34 AVD policy/restart gates passed on
 2026-08-09. Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) is
 the single authoritative **Now**. Its protocol client, coordinated runtime,
-product projection, and physical harness are implemented; graduation awaits
-the opt-in off-LAN gateway mutation and incoming-transfer proof. The completed
+product projection, Android contract, and physical harness are implemented;
+graduation awaits the opt-in off-LAN gateway mutation and incoming-transfer
+proof. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -321,8 +322,9 @@ reason to stop.
 ## Current Checkpoint
 
 Campaign state: **Tactical `112` graduated; Tactical `113` is implemented
-through its deterministic, scripted-gateway, product-contract, web, and
-physical-harness gates but awaits its opt-in live gateway evidence**.
+through its deterministic, scripted-gateway, product-contract, web, Android
+cross-build, and physical-harness gates but awaits its opt-in live gateway
+evidence**.
 
 Latest graduated tactical:
 [`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).

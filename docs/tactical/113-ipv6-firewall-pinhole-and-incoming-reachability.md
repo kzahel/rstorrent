@@ -3,12 +3,12 @@
 Status: Authoritative **Now**, planned on 2026-08-08, source-reconciled on
 2026-08-09, and implementation-complete through Gates 1 and 2 plus the Gate 3
 physical harness on 2026-08-09. Deterministic, scripted-gateway, generated-
-contract, and web evidence pass. The opt-in off-LAN gateway mutation and
-transfer proof remains to run, so this tactical is not yet graduated and no
-physical IPv6 incoming-reachability claim is made. The split from Tactical
-`112` and the decision to write this slice against read-only gateway evidence,
-deferring any mutating gateway action to implementation time, were accepted in
-product discussion on 2026-08-08.
+contract, web, and Android cross-build evidence pass. The opt-in off-LAN
+gateway mutation and transfer proof remains to run, so this tactical is not yet
+graduated and no physical IPv6 incoming-reachability claim is made. The split
+from Tactical `112` and the decision to write this slice against read-only
+gateway evidence, deferring any mutating gateway action to implementation time,
+were accepted in product discussion on 2026-08-08.
 
 Topics: `incoming-reachability-and-seeding`, `protocol-support`,
 `dht-discovery`, `tracker-discovery`, `performance-and-live-evidence`,
@@ -576,10 +576,13 @@ commits:
   pinhole ID, or SSH target.
 
 The ordinary Rust workspace baseline, generated contract drift check, web
-typecheck, and web tests pass at this checkpoint. The physical gate's no-opt-in
-path exits with the expected structured skip because
-`RSTORRENT_OFF_LAN_SSH_TARGET` is not configured in the current shell. That
-skip is harness validation only; it does not satisfy the stopping condition.
+typecheck, and web tests pass at this checkpoint. Both Android native ABIs,
+regenerated UniFFI/Kotlin, `assembleDebug`, and `testDebugUnitTest` also pass;
+the Android reducer fixture supplies the new complete-view field explicitly.
+The physical gate's no-opt-in path exits with the expected structured skip
+because `RSTORRENT_OFF_LAN_SSH_TARGET` is not configured in the current shell.
+That skip is harness validation only; it does not satisfy the stopping
+condition.
 
 ## Validation Matrix
 

@@ -67,7 +67,10 @@ the sibling IPv6 firewall-pinhole status independently, including service
 absence, gateway-reported unfiltered state, finite lease, renewal, and cleanup
 failure. Product wording says that an accepted pinhole is gateway evidence,
 not an observed incoming peer. Android receives the additive generated binding
-but deliberately gains no Compose surface or physical pinhole gate.
+and passes both native ABI builds, UniFFI/Kotlin regeneration, `assembleDebug`,
+and `testDebugUnitTest`, but deliberately gains no Compose surface or physical
+pinhole gate.
+
 Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an

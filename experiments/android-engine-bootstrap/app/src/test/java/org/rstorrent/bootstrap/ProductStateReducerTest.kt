@@ -24,6 +24,7 @@ import org.rstorrent.session.uniffi.FileIndexRange
 import org.rstorrent.session.uniffi.FilePriority
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
+import org.rstorrent.session.uniffi.Ipv6PinholeStatus
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.PortMappingPolicy
@@ -350,6 +351,7 @@ class ProductStateReducerTest {
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,
             portMappingStatus = PortMappingStatus.Disabled,
+            ipv6PinholeStatus = Ipv6PinholeStatus.Disabled,
             advertisedPeerEndpoint = AdvertisedPeerEndpointStatus.Unavailable,
             transportFamilies = emptyList(),
         )

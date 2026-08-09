@@ -220,9 +220,9 @@ network. No IPv6 pinhole or incoming-reachability claim is made.
   distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
   incoming evidence, and includes the opt-in gate that will prove an off-LAN
   IPv6 peer hash-verifying payload through it. Deterministic, scripted-gateway,
-  generated-contract, and web evidence pass; the live gateway mutation and
-  transfer proof remain before graduation. Completed Tactical `112` is its
-  hard transport prerequisite.
+  generated-contract, web, and Android cross-build evidence pass; the live
+  gateway mutation and transfer proof remain before graduation. Completed
+  Tactical `112` is its hard transport prerequisite.
 
 ### Next
 
