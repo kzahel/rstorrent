@@ -448,8 +448,11 @@ multi-peer payload-upload ownership. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) owns ordinary
 incoming swarm/view integration and the per-torrent lifetime boundary it
 requires; both now pass controlled interoperability and resource closure.
-LSD, uTP, NAT traversal, persistent peer caches, and dynamic VPN or metered
-policy remain separate future tacticals. Completed Tactical
+LSD, NAT traversal, persistent peer caches, and dynamic VPN or metered policy
+remain separate future tacticals. The
+[`utp-transport-campaign`](utp-transport-campaign.md) topic now owns uTP's
+adaptive source, transport-owner, and evidence direction without accepting an
+implementation tactical. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after

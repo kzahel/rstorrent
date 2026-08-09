@@ -197,19 +197,38 @@ that observation does not become a public-tracker reliability claim.
 
 ### Next
 
+- Planned Tactical
+  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) gives the
+  session one coordinated TCP/UDP socket pair per address family, adds a
+  BEP 32 IPv6 DHT node with its own BEP 42 identity and routing table, makes
+  the reachable peer port a per-family fact so BEP 7 announces stop sending
+  port `1` on IPv6, and gates every IPv6 path behind one persisted
+  `ipv6_enabled` setting defaulting to enabled. It claims no IPv6 incoming
+  reachability.
+- Planned Tactical
+  [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+  depends on `112` and adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1`
+  pinhole control beside the existing IPv4 mapping, distinguishes listener,
+  unfiltered-gateway, installed-pinhole, and observed incoming evidence, and
+  proves an off-LAN IPv6 peer hash-verifying payload through it.
 - A separate later tactical may add an explicit faster, more trusting resume
   option while keeping conservative behavior as the default and Force recheck
   as a full validation pass.
 
 ### Later
 
-Complete IPv6 DHT operation, finite bandwidth and seeding goals,
-multi-interface and IPv6 binding,
-local service discovery, uTP, NAT traversal, v2 and hybrid torrents,
+Finite bandwidth and seeding goals,
+multi-interface and BEP 45 multi-address binding,
+local service discovery,
+[uTP](utp-transport-campaign.md), NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic
 VPN and metered-network controls, verified HTTP file serving, incomplete-file
 streaming, and production remote access remain
-important. Tactical
+important. Tactical `112` now owns IPv6 DHT operation and dual-stack
+listening, while Tactical `113` owns IPv6 firewall-pinhole reachability.
+The uTP topic records an adaptive investigation and evidence campaign without
+promoting it out of **Later** or accepting an implementation tactical.
+Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
 policy. After core parity,

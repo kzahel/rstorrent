@@ -346,3 +346,24 @@ sans-IO handshake state machine independently.
 
 No MSE specification prose, libtorrent/JSTorrent/rqbit source, fixture, or
 test data was copied into RSTorrent.
+
+## uTP Reference Candidates
+
+The living
+[`uTP transport campaign`](topics/utp-transport-campaign.md) records the
+initial BEP 29 source survey and the review gates that precede any
+implementation choice.
+
+The managed BEP and libtorrent checkouts are the current reproducible uTP
+specification and primary implementation/test oracle. The pinned rqbit tree
+resolves `librqbit-utp` `0.7.0`, but that package source is not captured by the
+rqbit checkout and must be pinned separately before source-level reliance.
+[BitTorrent's standalone libutp](https://github.com/bittorrent/libutp) is an
+MIT-licensed C++ library with a C callback API, but it is not a managed
+reference or accepted dependency.
+
+No uTP source, fixture, or test data has been copied into RSTorrent. Before
+executing either prospective reference as an oracle, pin its exact source and
+record the build recipe. Before copying, linking, vendoring, or distributing
+it, repeat the exact file-level license, notice, modification, dependency, and
+platform review required by the reference policy above.

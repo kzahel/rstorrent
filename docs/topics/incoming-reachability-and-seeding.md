@@ -79,12 +79,13 @@ end-to-end outcome. The suggested sequence below distinguishes completed,
 drafted, and prospective slices; drafting and numbering a slice does not by
 itself authorize or prioritize implementation.
 
-The topic does not make PEX, local service discovery, uTP, BEP 55 hole
-punching, a remote daemon, or broad public-swarm seeding part of the first
-slice. Incoming MSE/PE has since been implemented as its own bounded Tactical
-[`111`](../tactical/111-mse-peer-stream-encryption.md) slice. Those
-capabilities may depend on this foundation but keep
-their own protocol, ownership, security, and evidence requirements. Completed
+The topic does not make PEX, local service discovery, BEP 55 hole punching, a
+remote daemon, or broad public-swarm seeding part of the first slice. Incoming
+MSE/PE has since been implemented as its own bounded Tactical
+[`111`](../tactical/111-mse-peer-stream-encryption.md) slice. The separate
+[`utp-transport-campaign`](utp-transport-campaign.md) owns uTP's adaptive
+direction. Those capabilities may depend on this foundation but keep their own
+protocol, ownership, security, and evidence requirements. Completed
 Tactical [`093`](../tactical/093-bep6-fast-request-lifecycle.md) records the
 Fast upload request/reject lifecycle against the established upload owner,
 including terminal cancel/read/shutdown races and controlled pinned-libtorrent
@@ -692,8 +693,8 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
   permission affect listening and mapping;
-- the eventual relationship among the DHT UDP port, future uTP, and UDP
-  mapping; and
+- the eventual relationship among the DHT UDP port,
+  [future uTP](utp-transport-campaign.md), and UDP mapping; and
 - when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
   tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
   complete in Tactical

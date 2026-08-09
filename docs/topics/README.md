@@ -122,6 +122,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`peer-lifecycle.md`](peer-lifecycle.md): peer observations, bounded records,
   derived dial eligibility, connection attempts, adversarial multi-peer
   ownership, slot replacement, and the discovery-to-swarm boundary.
+- [`utp-transport-campaign.md`](utp-transport-campaign.md): adaptive BEP 29
+  investigation and implementation campaign, source/license choices, UDP and
+  peer-owner boundaries, evidence ladder, WAN strategy, and human review gates.
 - [`incoming-reachability-and-seeding.md`](incoming-reachability-and-seeding.md):
   campaign direction from a session-owned peer listener through verified
   upload, truthful advertisement, gateway mapping, settings, product status,

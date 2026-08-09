@@ -4,17 +4,27 @@
 
 ## Project Entry Points
 
-Start with [`README.md`](README.md), then read [`docs/vision.md`](docs/vision.md),
-[`docs/engineering-principles.md`](docs/engineering-principles.md),
-[`docs/topics/product-direction.md`](docs/topics/product-direction.md),
-[`docs/topics/product-surfaces-and-migration.md`](docs/topics/product-surfaces-and-migration.md),
-and [`docs/topics/desktop-inspection-surface.md`](docs/topics/desktop-inspection-surface.md),
+Start with [`README.md`](README.md) and
+[`DEVELOPMENT.md`](DEVELOPMENT.md), then read:
+
+- [`docs/vision.md`](docs/vision.md) and
+  [`docs/engineering-principles.md`](docs/engineering-principles.md);
+- [`docs/topics/product-direction.md`](docs/topics/product-direction.md) and
+  [`docs/topics/product-surfaces-and-migration.md`](docs/topics/product-surfaces-and-migration.md);
+- [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
+  which owns the current queue and exactly one **Now**; and
+- [`docs/references.md`](docs/references.md).
+
+[`docs/topics/README.md`](docs/topics/README.md) indexes every living topic;
+read the ones that own the area you are about to change rather than the whole
+directory. Engine, protocol, and performance work also reads
+[`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md)
+for the source-first runbook and restart checkpoint. Client work also reads
 [`docs/topics/web-ui-design.md`](docs/topics/web-ui-design.md),
-[`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md),
-[`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md),
-then [`docs/references.md`](docs/references.md). Once an implementation
-tactical exists, read it and every focused topic it names before changing code
-in its scope.
+[`docs/topics/client-surfaces.md`](docs/topics/client-surfaces.md), and
+[`docs/topics/application-view-api.md`](docs/topics/application-view-api.md).
+Once an implementation tactical exists, read it and every focused topic it
+names before changing code in its scope.
 
 For maintainer-specific cross-project context, see
 `~/code/dotfiles/projects/README.md` when that checkout is available.
@@ -48,9 +58,9 @@ a living topic records an accepted replacement:
 - A future JSTorrent extension is expected to control and integrate with the
   native engine rather than carry peer or file hot paths. This vision does not
   authorize extension or IPC work in an unrelated tactical.
-- The engine-correctness campaign is paused for the accepted detailed web UI
-  direction. Do not resume that campaign or begin product UI implementation
-  until the application-view discussion produces an authorized tactical.
+- Engine and product-client work both proceed, each under its own numbered
+  tactical. Neither is globally paused in favor of the other, and neither is
+  standing authorization to start implementing without one.
 
 These are direction guardrails, not permission to invent a complete
 architecture before the relevant tactical.
@@ -111,11 +121,13 @@ deferral only when a material known problem is deliberately left in place.
 ## Feature Campaign Execution
 
 [`docs/topics/capability-readiness.md`](docs/topics/capability-readiness.md)
-owns the current queue. During the active engine-parity campaign,
+owns the current queue and the single authoritative **Now**. Whenever engine
+work is in flight,
 [`docs/topics/oracle-driven-engine-campaign.md`](docs/topics/oracle-driven-engine-campaign.md)
 owns the source-first runbook, graduation rules, restart checkpoint, and next
-executable action. For each engine, protocol, discovery, scheduling, storage,
-or performance feature:
+executable action; keep its checkpoint reconciled with repository state rather
+than with transcript memory. For each engine, protocol, discovery, scheduling,
+storage, or performance feature:
 
 1. Create or update one bounded tactical before implementation. State its
    stopping condition, non-goals, invariants, resource limits, and required
@@ -202,8 +214,7 @@ that require Rust, Java, Android, or other locally installed tools:
 source ~/.profile
 ```
 
-Once the Rust workspace exists, use this default baseline in proportion to the
-change:
+Use this default Rust baseline in proportion to the change:
 
 ```bash
 cargo fmt --all -- --check
@@ -211,10 +222,20 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
-Add interoperability, Android, desktop, and physical-ChromeOS validation as
-their tacticals establish supported paths. Report exactly what ran. Remove
-temporary logs, captures, downloads, and investigation artifacts before
-finishing.
+Changes that touch `clients/web` or the generated application contract also
+run:
+
+```bash
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web
+```
+
+Regenerate the TypeScript contract with `npm run generate --prefix clients/web`
+whenever a Rust type crossing the application boundary changes.
+[`DEVELOPMENT.md`](DEVELOPMENT.md) owns the full command inventory, including
+the Playwright end-to-end suite and the `tests/interop` scenarios. Report
+exactly what ran. Remove temporary logs, captures, downloads, and
+investigation artifacts before finishing.
 
 Live public-swarm and comparative performance smokes are opt-in and follow
 [`docs/topics/performance-and-live-evidence.md`](docs/topics/performance-and-live-evidence.md)

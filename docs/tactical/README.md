@@ -527,6 +527,20 @@ that scope and its cleanup or compatibility rules explicitly.
   machine and one four-value live client policy, while claiming compatibility
   rather than security. The required physical Pixel 7a run remains pending
   because the configured target was unavailable.
+- [`112-dual-stack-transport-and-ipv6-dht.md`](112-dual-stack-transport-and-ipv6-dht.md):
+  planned; gives the session one coordinated TCP/UDP socket pair per address
+  family, runs a BEP 32 IPv6 DHT node with its own BEP 42 identity and routing
+  table beside the IPv4 node, makes the reachable peer port a per-family fact
+  for BEP 7 announcing, and gates every IPv6 path behind one persisted
+  `ipv6_enabled` setting defaulting to enabled. Claims no IPv6 incoming
+  reachability.
+- [`113-ipv6-firewall-pinhole-and-incoming-reachability.md`](113-ipv6-firewall-pinhole-and-incoming-reachability.md):
+  planned; adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1` pinhole control
+  beside the existing IPv4 mapping under one reachability coordinator,
+  distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
+  incoming evidence, and proves an off-LAN IPv6 peer hash-verifying payload
+  through it. The pinned oracle implements no pinhole support, so every
+  deterministic test is independently authored.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
