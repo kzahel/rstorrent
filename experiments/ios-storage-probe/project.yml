@@ -1,0 +1,82 @@
+name: RSTorrentIOSStorageProbe
+options:
+  minimumXcodeGenVersion: 2.45.0
+targets:
+  RSTorrentIOSStorageProbe:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App
+    preBuildScripts:
+      - name: Build Rust probe
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          source "$HOME/.profile"
+          case "${PLATFORM_NAME}" in
+            iphoneos)
+              RUST_TARGET=aarch64-apple-ios
+              ;;
+            iphonesimulator)
+              RUST_TARGET=aarch64-apple-ios-sim
+              ;;
+            *)
+              echo "unsupported Apple platform ${PLATFORM_NAME}" >&2
+              exit 1
+              ;;
+          esac
+          CARGO_TARGET_DIR="${SRCROOT}/../../target/ios-storage-probe" \
+            cargo build \
+              --manifest-path "${SRCROOT}/Cargo.toml" \
+              --release \
+              --target "${RUST_TARGET}"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kgraehl.rstorrent.storage-probe
+        PRODUCT_NAME: RSTorrent Storage Probe
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: include/RSTorrentIOSProbe.h
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: VD7BYQ6ABM
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ARCHS: arm64
+        OTHER_LDFLAGS: "$(inherited) -lrstorrent_ios_storage_probe -framework Security"
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(SRCROOT)/../../target/ios-storage-probe/aarch64-apple-ios/release"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(SRCROOT)/../../target/ios-storage-probe/aarch64-apple-ios-sim/release"
+      configs:
+        Debug:
+          ONLY_ACTIVE_ARCH: YES
+        Release:
+          ONLY_ACTIVE_ARCH: NO
+  RSTorrentIOSStorageProbeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: UITests
+    dependencies:
+      - target: RSTorrentIOSStorageProbe
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kgraehl.rstorrent.storage-probe.ui-tests
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: RSTorrentIOSStorageProbe
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: VD7BYQ6ABM
+schemes:
+  RSTorrentIOSStorageProbe:
+    build:
+      targets:
+        RSTorrentIOSStorageProbe: all
+        RSTorrentIOSStorageProbeUITests: [test]
+    test:
+      targets:
+        - RSTorrentIOSStorageProbeUITests

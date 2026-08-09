@@ -489,6 +489,58 @@ Validation for this stage is recorded with its commit. No runtime semantics
 were changed except making the pre-existing path-only seed-root decision an
 explicit testable helper.
 
+### Stage 2: front-loaded physical iOS feasibility
+
+The repository-owned harness under `experiments/ios-storage-probe` now links
+the real `rstorrent-engine` `StorageFilePool` into a small SwiftUI shell. Rust
+owns every payload byte, positioned read/write, truncate, sync, SHA-1,
+no-replace rename, observation, deletion, TCP, and UDP operation. Swift passes
+only a coordinated root path and receives bounded JSON evidence; no payload
+callback crosses the bridge.
+
+On a physical iPhone SE (3rd generation) running iOS 26.6:
+
+- both `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust builds pass, the
+  simulator Xcode build links, and an existing development identity signs,
+  installs, and launches the physical build without changing account state;
+- five app-owned Documents runs reproduce SHA-1
+  `48b6fdf2fd3b77c14cc54f54891dc6aed1eeec3a` for the 65,536-byte sparse
+  fixture, reject a no-replace collision, reopen and truncate to 40,960 bytes,
+  remove the exact workspace, peak at one of eight allowed Rust file leases,
+  and finish with zero cached or owned handles;
+- a bookmark/`NSFileCoordinator` run against the app's exported local
+  `PickerRoot` passes. Initial access needs no security-scope acquisition;
+  after forced termination, bookmark restoration is non-stale,
+  `startAccessingSecurityScopedResource()` succeeds, the balanced coordinated
+  Rust run passes again, and the workspace is absent afterward;
+- exact 30-byte TCP and UDP echoes pass with direct Rust sockets against a
+  controlled in-process loopback endpoint. A same-LAN Mac endpoint returned
+  `No route to host` before local-network consent could be automated, so this
+  stage proves direct socket ownership and loopback semantics, not local-LAN
+  or public-network reachability;
+- ordinary foreground-to-background delivery is observed, the deliberately
+  retained UIKit background assertion reaches its expiration handler, and an
+  uncatchable process kill followed by launch detects the armed durable fact
+  and reruns app-owned plus restored-bookmark storage cleanly; and
+- `BGContinuedProcessingTask` registration succeeds and one harness-submitted
+  finite ten-second Rust storage/check run continues after backgrounding and
+  completes with progress. Submission from an actual UI tap is not claimed.
+
+Two physical XCTest attempts installed and launched the UI-test runner but
+timed out while enabling Apple's automation mode. Therefore the real
+`UIDocumentPickerViewController` selection of a separate **On My iPhone**
+folder, first-access scope behavior for that selection, user-tap provenance
+for the continued task, and system-UI cancellation remain unproven. The
+bookmarked fixture result is intentionally labeled app-owned and does not
+stand in for external File Provider support.
+
+The architectural result is still decisive: current iOS can run the real Rust
+pool, payload I/O, hashing, durability calls, namespace operation, and direct
+sockets in-process, and coordinated bookmark restoration can enclose a Rust
+operation without Swift payload callbacks. The common seam should retain an
+opaque root capability and bounded coordination lifetime; it must not claim
+external-provider support until the picker case is physically exercised.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

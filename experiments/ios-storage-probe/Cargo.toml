@@ -1,0 +1,20 @@
+[package]
+name = "rstorrent-ios-storage-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+rstorrent-engine = { path = "../../crates/rstorrent-engine" }
+rustix = { version = "1.1.4", features = ["fs"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha1 = "0.10.6"
+tokio = { version = "1.47.1", features = ["rt", "sync"] }
+
+[workspace]
