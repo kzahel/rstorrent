@@ -636,6 +636,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         peer_id: None,
         supports_extensions: Some(true),
         supports_ut_metadata: None,
+        mse_method: None,
         content: None,
         upload: None,
         close_reason: None,
@@ -820,6 +821,7 @@ fn sixty_active_peer_snapshot_stays_inside_default_queue_bound() {
                 peer_id: connected.then_some([value as u8; 20]),
                 supports_extensions: connected.then_some(true),
                 supports_ut_metadata: None,
+                mse_method: None,
                 content: connected.then_some(PeerContentActivity {
                     choking: false,
                     wanted_piece_count: 8,

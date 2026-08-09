@@ -11,9 +11,9 @@ use rstorrent_engine::dht::{DhtConfig, DhtError, DhtService, DhtSnapshot};
 use rstorrent_engine::{
     ByteMetricSink, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
     DiscoveryAdvertisementService, IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle,
-    IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, NetworkConfig,
-    PeerBudget, SessionSocketConfig, SessionSocketError, SessionSocketSet, SessionUdpError,
-    SessionUdpHandle, SessionUdpService,
+    IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, MseDhWorkOwner,
+    NetworkConfig, PeerBudget, SessionSocketConfig, SessionSocketError, SessionSocketSet,
+    SessionUdpError, SessionUdpHandle, SessionUdpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -161,6 +161,7 @@ pub(crate) struct SessionNetworkRuntime {
     session_udp_status: SessionUdpStatus,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
+    mse_dh: MseDhWorkOwner,
     incoming_handle: IncomingPeerHandle,
     incoming_seeding: IncomingSeeding,
     session_udp_handle: SessionUdpHandle,
@@ -187,6 +188,7 @@ struct SessionNetworkOwner {
     incoming_handshake_timeout: Duration,
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
+    mse_dh: MseDhWorkOwner,
     incoming_runtime: Option<IncomingPeerRuntime>,
     incoming_acceptor: Option<IncomingPeerAcceptor>,
     incoming_seeding: IncomingSeeding,
@@ -228,8 +230,11 @@ impl SessionNetworkRuntime {
             )
         })?;
         let peer_budget = PeerBudget::new(peer_budget_config);
+        let mse_dh = MseDhWorkOwner::new();
         let mut incoming_config = IncomingPeerServiceConfig::new(settings.incoming_bootstrap())
-            .with_peer_budget(peer_budget.clone());
+            .with_peer_budget(peer_budget.clone())
+            .with_encryption(network.encryption)
+            .with_mse_dh(mse_dh.clone());
         incoming_config.upload_scheduler = settings.upload_scheduler_config();
         incoming_config.upload_read_jobs = upload_read_jobs;
         incoming_config.handshake_timeout = incoming_handshake_timeout;
@@ -383,6 +388,7 @@ impl SessionNetworkRuntime {
             incoming_handshake_timeout,
             advertised_endpoint: advertised_endpoint.clone(),
             peer_budget: peer_budget.clone(),
+            mse_dh: mse_dh.clone(),
             incoming_runtime,
             incoming_acceptor,
             incoming_seeding: incoming_seeding.clone(),
@@ -423,6 +429,7 @@ impl SessionNetworkRuntime {
             session_udp_status,
             advertised_endpoint,
             peer_budget,
+            mse_dh,
             incoming_handle,
             incoming_seeding,
             session_udp_handle,
@@ -608,6 +615,10 @@ impl SessionNetworkRuntime {
 
     pub(crate) fn peer_budget(&self) -> PeerBudget {
         self.peer_budget.clone()
+    }
+
+    pub(crate) fn mse_dh(&self) -> MseDhWorkOwner {
+        self.mse_dh.clone()
     }
 
     pub(crate) fn incoming_seeding(&self) -> IncomingSeeding {
@@ -1268,6 +1279,7 @@ impl SessionNetworkOwner {
                 }
             }
         }
+        self.mse_dh.shutdown().await;
         let (dht_snapshot, dht_error) = match self.dht.take() {
             Some(dht) => match dht.shutdown().await {
                 Ok(snapshot) => (Some(snapshot), None),

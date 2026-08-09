@@ -1419,6 +1419,7 @@ impl ApplicationService {
             storage_root: PathBuf::new(),
             network: self.network,
             peer_budget: self.session_network().peer_budget(),
+            mse_dh: self.session_network().mse_dh(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -2125,12 +2126,14 @@ impl ApplicationService {
                 let resource_limits = self.download_resource_limits;
                 let network = self.network;
                 let peer_budget = self.session_network().peer_budget();
+                let mse_dh = self.session_network().mse_dh();
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
                         magnet.clone(),
                         network,
                         task_control.clone(),
                         peer_budget.clone(),
+                        mse_dh.clone(),
                         torrent_peers.clone(),
                     )
                     .await?;
@@ -2158,6 +2161,7 @@ impl ApplicationService {
                             storage_root: PathBuf::new(),
                             network,
                             peer_budget,
+                            mse_dh,
                             torrent_peers: Some(torrent_peers),
                             resource_limits,
                             skip_files,
@@ -2227,12 +2231,14 @@ impl ApplicationService {
             let magnet = resume.magnet;
             let network = self.network;
             let peer_budget = self.session_network().peer_budget();
+            let mse_dh = self.session_network().mse_dh();
             let operation = async move {
                 let raw_info = download_magnet_metadata_with_external_discovery(
                     magnet,
                     network,
                     task_control,
                     peer_budget,
+                    mse_dh,
                     torrent_peers,
                 )
                 .await?;
@@ -2271,6 +2277,7 @@ impl ApplicationService {
             storage_root: root_path,
             network: self.network,
             peer_budget: self.session_network().peer_budget(),
+            mse_dh: self.session_network().mse_dh(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
