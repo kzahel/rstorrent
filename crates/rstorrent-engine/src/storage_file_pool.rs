@@ -1124,6 +1124,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn broker_cancellation_rejects_open_without_materializing_or_leaking() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+            }),
+        );
+        let open =
+            tokio::spawn(async move { reference.open(StorageFileAccess::ReadExisting).await });
+        let request = broker.next_request().await.expect("platform request");
+        assert_eq!(request.access, StorageFileAccess::ReadExisting);
+        assert!(!request.delete);
+        assert_eq!(
+            request.path,
+            ["published".to_owned(), "payload.bin".to_owned()]
+        );
+        assert_eq!(pool.snapshot().platform_pending, 1);
+
+        broker.cancel_all();
+        let error = open.await.expect("open task").expect_err("cancelled open");
+        assert_eq!(
+            error.platform_failure_kind(),
+            Some(PlatformStorageFailureKind::Cancelled)
+        );
+        assert_eq!(pool.snapshot().platform_pending, 0);
+        assert_eq!(pool.snapshot().current_owned, 0);
+        assert_eq!(pool.snapshot().cached_entries, 0);
+        pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
     async fn bounds_ten_thousand_logical_files_across_hundred_torrents() {
         let root = temp_root("logical-scale");
         let pool = StorageFilePool::new(8, None).expect("pool");

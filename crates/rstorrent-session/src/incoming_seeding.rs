@@ -231,10 +231,17 @@ fn eligibility_reason(
     if resume.raw_info.is_none() || resume.have.is_none() {
         return Some("torrent lacks verified metadata or have state");
     }
-    if !matches!(root, Some(StorageRootLocation::Path(_))) {
-        return Some("torrent storage root is not path backed");
+    storage_root_eligibility_reason(root)
+}
+
+fn storage_root_eligibility_reason(root: Option<&StorageRootLocation>) -> Option<&'static str> {
+    match root {
+        Some(StorageRootLocation::Path(_)) => None,
+        Some(StorageRootLocation::PlatformCapability) => {
+            Some("torrent storage root is not path backed")
+        }
+        None => Some("torrent storage root is not path backed"),
     }
-    None
 }
 
 #[derive(Debug)]
@@ -264,5 +271,29 @@ impl Error for IncomingSeedingError {
 impl From<IncomingPeerError> for IncomingSeedingError {
     fn from(error: IncomingPeerError) -> Self {
         Self::Engine(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::storage_root_eligibility_reason;
+    use crate::store::StorageRootLocation;
+
+    #[test]
+    fn current_seed_storage_eligibility_is_explicitly_path_only() {
+        let path = StorageRootLocation::Path(PathBuf::from("payload"));
+        let platform = StorageRootLocation::PlatformCapability;
+
+        assert_eq!(storage_root_eligibility_reason(Some(&path)), None);
+        assert_eq!(
+            storage_root_eligibility_reason(Some(&platform)),
+            Some("torrent storage root is not path backed")
+        );
+        assert_eq!(
+            storage_root_eligibility_reason(None),
+            Some("torrent storage root is not path backed")
+        );
     }
 }

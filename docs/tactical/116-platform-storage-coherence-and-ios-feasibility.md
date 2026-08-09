@@ -452,6 +452,43 @@ the physical matrix is required.
 No source, sample, fixture, project asset, or entitlement is imported from any
 reference by this planning change.
 
+## Execution Record
+
+### Stage 1: frozen starting behavior
+
+Revalidation on 2026-08-09 found the pinned libtorrent checkout clean at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d` and the local JSTorrent sibling at
+the recorded `9895410beeed6aff554053769bd006a3fbd373ef`. All dossier paths
+still exist. The exact starting behaviors are:
+
+- `file_view_pool::open_file`, `mmap_storage::open_file`, and
+  `posix_storage::open_file` retain one bounded compatible-open vocabulary
+  across read, write, hash, priority, and part-file cases. The
+  `file_pool_size` simulation and seed-mode missing-file cases remain the
+  relevant completeness checks; no C++ ownership shape or resume trust rule
+  is adopted.
+- JSTorrent still balances bookmark/security-scope restoration in
+  `AppSettings.swift`, performs positioned descriptor I/O in
+  `FileBindings.swift`, owns direct TCP/UDP in `SocketBindings.swift`, and
+  shuts its current runtime down on background entry in `ContentView.swift`.
+  These are product-history inputs, not RSTorrent evidence.
+- RSTorrent path and fake-platform writes, hashing, recheck, publication
+  inventory, pool eviction, generation fencing, and namespace mismatch cases
+  were already covered. Path upload already masks missing, skipped, truncated,
+  cross-file, and padding sources. A new broker-cancellation fixture freezes
+  read-existing request shape, typed cancellation, and zero handle/cache
+  leakage; a task-free session fixture freezes the current path-only upload
+  eligibility before it is deliberately widened.
+- The platform broker has only open and delete operations at this checkpoint.
+  It cannot observe a logical artifact without opening it, and
+  `SeedContent::open_published_with_pool` still performs path metadata and
+  symlink checks directly. This absence is the observation baseline, not a
+  capability claim.
+
+Validation for this stage is recorded with its commit. No runtime semantics
+were changed except making the pre-existing path-only seed-root decision an
+explicit testable helper.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and
