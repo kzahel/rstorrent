@@ -6,6 +6,71 @@ use std::time::Duration;
 
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AddressFamily {
+    Ipv4,
+    Ipv6,
+}
+
+impl AddressFamily {
+    #[must_use]
+    pub const fn of(address: IpAddr) -> Self {
+        match address {
+            IpAddr::V4(_) => Self::Ipv4,
+            IpAddr::V6(_) => Self::Ipv6,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ipv4 => "IPv4",
+            Self::Ipv6 => "IPv6",
+        }
+    }
+}
+
+impl fmt::Display for AddressFamily {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AddressFamilyPolicy {
+    ipv6_enabled: bool,
+}
+
+impl AddressFamilyPolicy {
+    #[must_use]
+    pub const fn ipv4_only() -> Self {
+        Self {
+            ipv6_enabled: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn dual_stack() -> Self {
+        Self { ipv6_enabled: true }
+    }
+
+    #[must_use]
+    pub const fn ipv6_enabled(self) -> bool {
+        self.ipv6_enabled
+    }
+
+    #[must_use]
+    pub const fn permits(self, address: IpAddr) -> bool {
+        matches!(address, IpAddr::V4(_)) || self.ipv6_enabled
+    }
+}
+
+impl Default for AddressFamilyPolicy {
+    fn default() -> Self {
+        Self::dual_stack()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(u8)]
 pub enum PeerEncryptionPolicy {
@@ -110,6 +175,7 @@ impl fmt::Display for NetworkPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NetworkConfig {
     pub policy: NetworkPolicy,
+    pub address_families: AddressFamilyPolicy,
     pub peer_connect_timeout: Duration,
     pub peer_io_timeout: Duration,
     pub peer_id: [u8; 20],
@@ -124,6 +190,7 @@ impl NetworkConfig {
     ) -> Self {
         Self {
             policy,
+            address_families: AddressFamilyPolicy::dual_stack(),
             peer_connect_timeout,
             peer_io_timeout,
             peer_id: DEFAULT_PEER_ID,
@@ -133,6 +200,11 @@ impl NetworkConfig {
 
     pub const fn with_peer_id(mut self, peer_id: [u8; 20]) -> Self {
         self.peer_id = peer_id;
+        self
+    }
+
+    pub const fn with_address_families(mut self, address_families: AddressFamilyPolicy) -> Self {
+        self.address_families = address_families;
         self
     }
 
@@ -155,11 +227,24 @@ pub(crate) fn is_valid_outbound_address(address: SocketAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     use super::{
-        NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle, is_valid_outbound_address,
+        AddressFamily, AddressFamilyPolicy, NetworkPolicy, PeerEncryptionPolicy,
+        PeerEncryptionPolicyHandle, is_valid_outbound_address,
     };
+
+    #[test]
+    fn address_family_policy_always_retains_ipv4() {
+        let ipv4 = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let ipv6 = IpAddr::V6(Ipv6Addr::LOCALHOST);
+        assert_eq!(AddressFamily::of(ipv4), AddressFamily::Ipv4);
+        assert_eq!(AddressFamily::of(ipv6), AddressFamily::Ipv6);
+        assert!(AddressFamilyPolicy::ipv4_only().permits(ipv4));
+        assert!(!AddressFamilyPolicy::ipv4_only().permits(ipv6));
+        assert!(AddressFamilyPolicy::dual_stack().permits(ipv4));
+        assert!(AddressFamilyPolicy::dual_stack().permits(ipv6));
+    }
 
     #[test]
     fn encryption_policy_handle_replaces_only_future_samples() {

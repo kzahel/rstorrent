@@ -1,9 +1,9 @@
 # Tactical 112: Dual-Stack Session Transport And IPv6 DHT Participation
 
-Status: Authoritative **Now**, planned on 2026-08-08 and source-reconciled
-after Tactical `111` graduated on 2026-08-09. Not started. The two-tactical
-split, the IPv6 bind-address strategy, and the settings shape and default were
-accepted in product discussion on 2026-08-08.
+Status: Authoritative **Now**, implementation in progress on 2026-08-09.
+Gate 1 is complete. The plan was source-reconciled after Tactical `111`
+graduated; the two-tactical split, IPv6 bind-address strategy, and settings
+shape and default were accepted in product discussion on 2026-08-08.
 
 Topics: `dht-discovery`, `incoming-reachability-and-seeding`,
 `tracker-discovery`, `protocol-support`, `client-persistence`,
@@ -717,5 +717,26 @@ Stop and ask for direction if any of the following occurs:
 
 ## Execution Record
 
-Not started. Each gate appends its actual validation, measured numbers, and
-deferrals here as it lands.
+### Gate 1: Family-parameterised allocation
+
+Completed on 2026-08-09 from baseline `af531ca`. `NetworkConfig` now carries a
+small address-family policy and the coordinated allocator owns independent
+family states. Each bound family owns its TCP listener, UDP socket, observed
+bind endpoints, and concrete peer endpoint; a typed failure in one family is
+retained without dropping or degrading the serving sibling. IPv4-only callers
+retain their prior behavior until the product setting is connected in Gate 5.
+
+The IPv6 route probe binds `[::]:0`, connects to the documentation-prefix
+target without calling `send`, and accepts only native global-unicast space.
+Deterministic cases reject unspecified, loopback, link-local, site-local,
+unique-local, multicast, IPv4-compatible, IPv4-mapped, documentation, Teredo,
+and 6to4 addresses. Loopback allocation proves both families independently
+attempt the preferred port; forced UDP conflicts in either family prove
+within-family TCP rollback and cross-family survival. A counting receiver
+proves the connect probe transmits no datagram.
+
+Validation:
+
+- `cargo test -p rstorrent-engine session_socket --lib` (14 passed);
+- `cargo check --workspace`; and
+- `git diff --check`.

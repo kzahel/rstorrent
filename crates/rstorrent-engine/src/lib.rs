@@ -81,7 +81,8 @@ pub use mse::{
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
 };
 pub use network::{
-    DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
+    AddressFamily, AddressFamilyPolicy, DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy,
+    PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{
@@ -108,8 +109,8 @@ pub use selective_storage::{
     validate_publication_name, verify_prepared_descriptors, verify_prepared_platform_files,
 };
 pub use session_socket::{
-    MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketSet,
-    SessionSocketTransport,
+    MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,
+    SessionSocketFamilyState, SessionSocketSet, SessionSocketTransport, select_global_ipv6,
 };
 pub use session_udp::{
     SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpHandle, SessionUdpService,

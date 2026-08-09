@@ -56,7 +56,9 @@ fn classify_session_socket_bind_failure(error: &SessionSocketError) -> Option<Li
     let kind = match error {
         SessionSocketError::Bind { source, .. }
         | SessionSocketError::LocalAddress { source, .. } => source.kind(),
-        SessionSocketError::LocalNetworkAddress(_) => io::ErrorKind::AddrNotAvailable,
+        SessionSocketError::GlobalIpv6Address(_)
+        | SessionSocketError::IneligibleGlobalIpv6Address(_)
+        | SessionSocketError::LocalNetworkAddress(_) => io::ErrorKind::AddrNotAvailable,
         SessionSocketError::InvalidPreferredPort(_)
         | SessionSocketError::InvalidFixedPort(_)
         | SessionSocketError::InvalidUdpFallbackAddress => return None,
