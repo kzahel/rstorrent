@@ -380,6 +380,7 @@ function peer(connectionId: string, torrentId: string): PeerRow {
     connectedAgeMs: 1,
     lastPayloadAgeMs: 1,
     flags: [],
+    mseMethod: null,
     useful: true,
   };
 }

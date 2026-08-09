@@ -656,6 +656,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             && upsert[0].lifecycle == crate::PeerLifecycle::TransportConnecting
             && upsert[0].client_name.is_none()
             && upsert[0].capabilities.client_name == crate::CapabilityStatus::Unavailable
+            && upsert[0].mse_method == Some(crate::PeerMseMethodView::PlaintextPayload)
             && upsert[0].peer_flags == [
                 crate::PeerFlagView::Incoming,
                 crate::PeerFlagView::Encrypted,

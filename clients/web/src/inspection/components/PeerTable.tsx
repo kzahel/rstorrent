@@ -178,7 +178,7 @@ const columns = (dataUnits: DataUnits): readonly VirtualColumn<PeerRow>[] => [
     headerHelpWidth: 260,
     render: (row) => {
       const glyphs = formatPeerFlags(row.flags);
-      const description = describePeerFlags(row.flags);
+      const description = describePeerFlags(row.flags, row.mseMethod);
       return (
         <code
           className={styles.flags}

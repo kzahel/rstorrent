@@ -6,6 +6,7 @@ import type {
   DhtInspectionView,
   PeerDisconnectReason,
   PeerFlagView,
+  PeerMseMethodView,
   PeerSourceView,
   SpeedHistoryView,
   SpeedMetric,
@@ -220,6 +221,7 @@ export interface PeerRow {
   readonly connectedAgeMs: number | null;
   readonly lastPayloadAgeMs: number | null;
   readonly flags: readonly PeerFlag[];
+  readonly mseMethod: PeerMseMethodView | null;
   readonly useful: boolean;
 }
 

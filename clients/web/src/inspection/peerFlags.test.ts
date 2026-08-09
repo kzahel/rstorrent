@@ -29,4 +29,14 @@ describe("peer flag presentation", () => {
     );
     expect(describePeerFlags([])).toBe("No active peer flags");
   });
+
+  it("adds exact MSE detail without changing the compact glyphs", () => {
+    expect(formatPeerFlags(["incoming", "encrypted"])).toBe("IE");
+    expect(describePeerFlags(["encrypted"], "plaintext_payload")).toBe(
+      "Peer flags: MSE handshake with plaintext payload",
+    );
+    expect(describePeerFlags(["encrypted"], "rc4")).toBe(
+      "Peer flags: MSE with RC4 payload",
+    );
+  });
 });

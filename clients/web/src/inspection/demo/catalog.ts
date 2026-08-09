@@ -1612,6 +1612,12 @@ function buildPeers(
     const stalled = connected && index % 17 === 0;
     const choked = connected && !stalled && index % 7 === 0;
     const useful = connected && !stalled && !choked && index % 5 !== 0;
+    const mseMethod =
+      connected && index % 8 === 0
+        ? index % 16 === 0
+          ? ("plaintext_payload" as const)
+          : ("rc4" as const)
+        : null;
     const rate = useful ? 110_000 + ((index * 7919 + Math.floor(seconds) * 997) % 2_300_000) : 0;
     const connectionId = `${torrentId.slice(0, 8)}-connection-${String(index + 1).padStart(5, "0")}`;
     rows.push({
@@ -1632,7 +1638,8 @@ function buildPeers(
         ? Math.max(0, Math.floor(seconds * 1_000) - index * 137)
         : null,
       lastPayloadAgeMs: useful ? 80 + ((index * 193) % 12_000) : null,
-      flags: demoPeerFlags(index, connected, choked, useful),
+      flags: demoPeerFlags(index, connected, choked, useful, mseMethod !== null),
+      mseMethod,
       useful,
     });
   }
@@ -1644,10 +1651,12 @@ function demoPeerFlags(
   connected: boolean,
   choked: boolean,
   useful: boolean,
+  mse: boolean,
 ): PeerRow["flags"] {
   if (!connected) return [];
   return [
     ...(index % 9 === 0 ? (["incoming"] as const) : []),
+    ...(mse ? (["encrypted"] as const) : []),
     choked ? "download_choked" : useful ? "download_allowed" : "download_choked",
     "upload_choked",
     ...(index % 3 !== 0 ? (["extension_protocol"] as const) : []),

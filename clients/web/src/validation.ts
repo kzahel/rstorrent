@@ -1665,6 +1665,9 @@ function validatePeerView(value: unknown, owningTorrent: string): void {
       throw new ContractError("peer flags contain duplicates");
     }
   }
+  if (peer.mse_method !== undefined && peer.mse_method !== null) {
+    oneOf(peer.mse_method, "peer MSE method", ["plaintext_payload", "rc4"]);
+  }
   decimal(peer.lifecycle_age_millis, "peer lifecycle age");
   boundedString(peer.remote_endpoint, "peer remote endpoint", 128);
   optionalString(peer.local_endpoint, "peer local endpoint", 128);

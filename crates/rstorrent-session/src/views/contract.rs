@@ -1043,6 +1043,14 @@ pub enum PeerTransportKind {
     Utp,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PeerMseMethodView {
+    PlaintextPayload,
+    Rc4,
+}
+
 #[derive(
     Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema, TS,
 )]
@@ -1208,6 +1216,8 @@ pub struct PeerView {
     pub role: PeerRole,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peer_flags: Vec<PeerFlagView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mse_method: Option<PeerMseMethodView>,
     pub lifecycle_age_millis: String,
     pub remote_endpoint: String,
     pub local_endpoint: Option<String>,

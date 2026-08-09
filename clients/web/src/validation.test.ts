@@ -310,6 +310,16 @@ describe("peer view validation", () => {
       ContractError,
     );
   });
+
+  it("accepts known MSE methods and rejects invented methods", () => {
+    const batch = peerBatch("0".repeat(40));
+    batch.updates[0]!.snapshot.peers[0]!.mse_method = "rc4";
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+    batch.updates[0]!.snapshot.peers[0]!.mse_method = "invented";
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      ContractError,
+    );
+  });
 });
 
 describe("swarm view validation", () => {
@@ -803,6 +813,7 @@ function peerBatch(torrentId: string) {
               lifecycle: "protocol_handshaking",
               role: "metadata",
               peer_flags: undefined as string[] | undefined,
+              mse_method: undefined as string | undefined,
               lifecycle_age_millis: "5",
               remote_endpoint: "127.0.0.1:6881",
               local_endpoint: null,

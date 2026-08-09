@@ -15,6 +15,7 @@ use rstorrent_engine::{
     PeerConnectionObservation, PeerConnectionRole, PeerRequestWindowPhase, PeerTransport,
     PeerUploadGrant,
 };
+use rstorrent_protocol::mse::MseMethod;
 use rstorrent_protocol::peer_id::identify_client;
 use rstorrent_protocol::storage_layout::RequiredPayloadGeometry;
 
@@ -29,10 +30,10 @@ use super::{
     DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtNetworkPolicyView,
     DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     IndexRange, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
-    PeerLifecycle, PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
-    ProgressAction, ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase,
-    ProgressReason, SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState,
-    SwarmPeerView, TorrentEtaView, TorrentView,
+    PeerLifecycle, PeerMseMethodView, PeerRequestPhase, PeerRole, PeerSourceView,
+    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
+    ProgressInputs, ProgressPhase, ProgressReason, SubscriptionError, SwarmCatalogState,
+    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -230,6 +231,10 @@ impl PeerView {
                 PeerConnectionRole::Content => PeerRole::Content,
             },
             peer_flags: Vec::new(),
+            mse_method: peer.mse_method.map(|method| match method {
+                MseMethod::PlaintextPayload => PeerMseMethodView::PlaintextPayload,
+                MseMethod::Rc4 => PeerMseMethodView::Rc4,
+            }),
             lifecycle_age_millis: duration_millis_string(
                 captured_at.saturating_sub(peer.lifecycle_changed_at),
             ),
@@ -333,24 +338,19 @@ impl PeerView {
         };
         view.peer_flags = derive_peer_flags(
             &view,
-            peer.mse_method.is_some(),
             upload.is_some_and(|activity| activity.grant == PeerUploadGrant::Optimistic),
         );
         view
     }
 }
 
-fn derive_peer_flags(
-    peer: &PeerView,
-    mse_obfuscated: bool,
-    optimistic_unchoke: bool,
-) -> Vec<PeerFlagView> {
+fn derive_peer_flags(peer: &PeerView, optimistic_unchoke: bool) -> Vec<PeerFlagView> {
     let mut flags = Vec::with_capacity(6);
 
     if peer.direction == PeerDirection::Incoming {
         flags.push(PeerFlagView::Incoming);
     }
-    if mse_obfuscated {
+    if peer.mse_method.is_some() {
         flags.push(PeerFlagView::Encrypted);
     }
     if peer.local_interested == Some(true) {

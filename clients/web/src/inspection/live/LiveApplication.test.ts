@@ -516,8 +516,10 @@ describe("LiveApplication", () => {
     expect(peer?.state).toBe("handshaking");
     expect(peer?.client).toBeNull();
     expect(peer?.downloadRate).toBeNull();
+    expect(peer?.mseMethod).toBe("plaintext_payload");
     expect(peer?.flags).toEqual([
       "incoming",
+      "encrypted",
       "download_choked",
       "extension_protocol",
       "metadata_extension",
@@ -703,6 +705,7 @@ describe("LiveApplication", () => {
       recovered.peersByTorrent[TORRENT_ID]?.rows["connection-2"]?.flags,
     ).toEqual([
       "incoming",
+      "encrypted",
       "upload_allowed",
       "extension_protocol",
       "metadata_extension",
@@ -712,6 +715,7 @@ describe("LiveApplication", () => {
       state: "connected",
       endpoint: "127.0.0.1:6881",
       client: "µTorrent 3.5.5",
+      mseMethod: "rc4",
       source: "incoming",
       uploadRate: 2048,
       uploadedBytes: 8192,
@@ -1107,11 +1111,13 @@ function peer(generation: number): PeerView {
     transport: uploading ? "tcp" : "utp",
     lifecycle: generation === 1 ? "protocol_handshaking" : "connected",
     role: "content",
+    mse_method: generation === 1 ? "plaintext_payload" : "rc4",
     ...(generation === 1
       ? {}
       : {
           peer_flags: [
             "incoming",
+            "encrypted",
             "upload_allowed",
             "extension_protocol",
             "metadata_extension",

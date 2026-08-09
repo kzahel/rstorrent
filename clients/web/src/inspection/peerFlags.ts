@@ -1,3 +1,4 @@
+import type { PeerMseMethodView } from "../api";
 import type { PeerFlag } from "./model";
 
 export type PeerFlagGroup =
@@ -127,9 +128,17 @@ export function formatPeerFlags(flags: readonly PeerFlag[]): string {
     .join("");
 }
 
-export function describePeerFlags(flags: readonly PeerFlag[]): string {
+export function describePeerFlags(
+  flags: readonly PeerFlag[],
+  mseMethod: PeerMseMethodView | null = null,
+): string {
   const labels = normalizedPeerFlags(flags).map(
-    (flag) => PEER_FLAG_DEFINITIONS[flag].label,
+    (flag) =>
+      flag === "encrypted" && mseMethod !== null
+        ? mseMethod === "rc4"
+          ? "MSE with RC4 payload"
+          : "MSE handshake with plaintext payload"
+        : PEER_FLAG_DEFINITIONS[flag].label,
   );
   return labels.length === 0
     ? "No active peer flags"

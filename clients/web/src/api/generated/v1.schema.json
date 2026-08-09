@@ -3347,6 +3347,13 @@
       ],
       "type": "string"
     },
+    "PeerMseMethodView": {
+      "enum": [
+        "plaintext_payload",
+        "rc4"
+      ],
+      "type": "string"
+    },
     "PeerRequestPhase": {
       "enum": [
         "slow_start",
@@ -3457,6 +3464,16 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "mse_method": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PeerMseMethodView"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "oldest_request_age_millis": {

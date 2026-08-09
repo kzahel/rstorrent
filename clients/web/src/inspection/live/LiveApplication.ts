@@ -1449,6 +1449,7 @@ function mapPeer(peer: PeerView): PeerRow {
     connectedAgeMs: safeNullableNumber(peer.connected_age_millis),
     lastPayloadAgeMs: safeNullableNumber(peer.last_payload_age_millis),
     flags: mapPeerFlags(peer),
+    mseMethod: peer.mse_method ?? null,
     useful:
       safeNullableNumber(peer.payload_downloaded_bytes) !== null &&
       safeNullableNumber(peer.payload_downloaded_bytes)! > 0,
@@ -1460,6 +1461,9 @@ function mapPeerFlags(peer: PeerView): readonly PeerFlag[] {
 
   const flags: PeerFlag[] = [];
   if (peer.direction === "incoming") flags.push("incoming");
+  if (peer.mse_method !== undefined && peer.mse_method !== null) {
+    flags.push("encrypted");
+  }
   if (peer.local_interested === true) {
     if (peer.remote_choking === false) flags.push("download_allowed");
     if (peer.remote_choking === true) flags.push("download_choked");
