@@ -40,6 +40,7 @@ import org.rstorrent.bootstrap.uniffi.AndroidApplicationConfig
 import org.rstorrent.bootstrap.uniffi.AndroidNetworkPolicy
 import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
+import org.rstorrent.bootstrap.uniffi.SafStorageOperation
 import org.rstorrent.session.uniffi.Command
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
@@ -942,27 +943,39 @@ class ProductEngineService : Service() {
                                 SafStorageFailureKind.GRANT_UNAVAILABLE,
                                 "persisted SAF grant is unavailable",
                             )
-                    if (request.delete) {
-                        ProductSafDocuments.deleteDynamic(
-                            this@ProductEngineService,
-                            treeUri,
-                            request,
-                        )
-                        client.completeSafStorageDelete(request.requestId)
-                    } else {
-                        ProductSafDocuments
-                            .openDynamic(
+                    when (request.operation) {
+                        SafStorageOperation.DELETE -> {
+                            ProductSafDocuments.deleteDynamic(
                                 this@ProductEngineService,
                                 treeUri,
                                 request,
-                                cancellation,
-                            ).use { descriptor ->
-                                client.completeSafStorageRequest(
-                                    request.requestId,
-                                    descriptor.fd,
-                                    request.access,
+                            )
+                            client.completeSafStorageDelete(request.requestId)
+                        }
+                        SafStorageOperation.OBSERVE -> {
+                            val observation =
+                                ProductSafDocuments.observeDynamic(
+                                    this@ProductEngineService,
+                                    treeUri,
+                                    request,
                                 )
-                            }
+                            client.completeSafStorageObservation(request.requestId, observation)
+                        }
+                        SafStorageOperation.OPEN -> {
+                            ProductSafDocuments
+                                .openDynamic(
+                                    this@ProductEngineService,
+                                    treeUri,
+                                    request,
+                                    cancellation,
+                                ).use { descriptor ->
+                                    client.completeSafStorageRequest(
+                                        request.requestId,
+                                        descriptor.fd,
+                                        request.access,
+                                    )
+                                }
+                        }
                     }
                 }
             } catch (error: kotlinx.coroutines.TimeoutCancellationException) {

@@ -124,12 +124,13 @@ pub use session_udp::{
     SessionUdpSnapshot, SessionUdpTransport,
 };
 pub use storage_file_pool::{
-    DEFAULT_STORAGE_FILE_LIMIT, PLATFORM_STORAGE_REQUEST_CAPACITY,
-    PLATFORM_STORAGE_REQUEST_TIMEOUT, PlatformStorageBroker, PlatformStorageClient,
-    PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageRequest,
-    PlatformStorageTarget, StorageFileAccess, StorageFileHandle, StorageFileKey, StorageFileLease,
-    StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFilePoolSnapshot,
-    StorageFileReference, StorageFileRole, platform_storage_channel,
+    DEFAULT_STORAGE_FILE_LIMIT, MAX_STORAGE_OBSERVATION_TOKEN_BYTES,
+    PLATFORM_STORAGE_REQUEST_CAPACITY, PLATFORM_STORAGE_REQUEST_TIMEOUT, PlatformStorageBroker,
+    PlatformStorageClient, PlatformStorageFailure, PlatformStorageFailureKind,
+    PlatformStorageOperation, PlatformStorageRequest, PlatformStorageTarget, StorageFileAccess,
+    StorageFileHandle, StorageFileKey, StorageFileLease, StorageFileLocator, StorageFilePool,
+    StorageFilePoolError, StorageFilePoolSnapshot, StorageFileReference, StorageFileRole,
+    StorageObjectKind, StorageObservation, platform_storage_channel,
 };
 pub use torrent_peer::{
     IncomingPeerAttachment, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,

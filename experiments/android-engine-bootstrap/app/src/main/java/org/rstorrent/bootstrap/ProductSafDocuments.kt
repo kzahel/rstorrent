@@ -8,6 +8,7 @@ import android.os.ParcelFileDescriptor
 import android.os.CancellationSignal
 import android.provider.DocumentsContract
 import java.io.Closeable
+import java.security.MessageDigest
 import org.rstorrent.bootstrap.uniffi.SafDescriptor
 import org.rstorrent.bootstrap.uniffi.SafDynamicFileRole
 import org.rstorrent.bootstrap.uniffi.SafFileRole
@@ -15,6 +16,8 @@ import org.rstorrent.bootstrap.uniffi.SafRemovalPlan
 import org.rstorrent.bootstrap.uniffi.SafStorage
 import org.rstorrent.bootstrap.uniffi.SafStorageAccess
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
+import org.rstorrent.bootstrap.uniffi.SafStorageObjectKind
+import org.rstorrent.bootstrap.uniffi.SafStorageObservation
 import org.rstorrent.bootstrap.uniffi.SafStoragePlan
 import org.rstorrent.bootstrap.uniffi.SafStorageRequest
 
@@ -227,6 +230,22 @@ object ProductSafDocuments {
         }
     }
 
+    fun observeDynamic(
+        context: Context,
+        treeUri: Uri,
+        request: SafStorageRequest,
+    ): SafStorageObservation {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        request.path.forEach(::requireValidComponent)
+        var current = documentUri(treeUri)
+        for (component in request.path) {
+            current =
+                findUniqueChild(context, current, component)
+                    ?: return SafStorageObservation(false, null, null, null)
+        }
+        return observeDocument(context, current)
+    }
+
     fun publish(
         context: Context,
         treeUri: Uri,
@@ -414,6 +433,59 @@ object ProductSafDocuments {
                 }
             }
         return match
+    }
+
+    private fun observeDocument(
+        context: Context,
+        document: Uri,
+    ): SafStorageObservation {
+        val projection =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            )
+        return context.contentResolver.query(document, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) {
+                return@use SafStorageObservation(false, null, null, null)
+            }
+            check(!cursor.moveToNext()) { "provider returned duplicate document observation" }
+            cursor.moveToFirst()
+            val documentId = cursor.getString(0)
+            val mime = cursor.getString(1)
+            val kind =
+                when {
+                    mime == DocumentsContract.Document.MIME_TYPE_DIR ->
+                        SafStorageObjectKind.DIRECTORY
+                    mime != null -> SafStorageObjectKind.FILE
+                    else -> SafStorageObjectKind.OTHER
+                }
+            val length =
+                if (kind == SafStorageObjectKind.FILE && !cursor.isNull(2)) {
+                    cursor.getLong(2).takeIf { it >= 0 }?.toULong()
+                } else {
+                    null
+                }
+            val modified = if (cursor.isNull(3)) null else cursor.getLong(3)
+            val tokenMaterial =
+                listOf(
+                    "saf-observation-v1",
+                    documentId,
+                    mime ?: "unknown",
+                    length?.toString() ?: "unknown",
+                    modified?.toString() ?: "unknown",
+                ).joinToString("\u0000")
+            val token =
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(tokenMaterial.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            SafStorageObservation(true, kind, length, "saf-v1:$token")
+        } ?: throw SafStorageRequestException(
+            SafStorageFailureKind.PROVIDER_REFUSED,
+            "provider refused SAF document observation",
+        )
     }
 
     private fun documentUri(treeUri: Uri): Uri =

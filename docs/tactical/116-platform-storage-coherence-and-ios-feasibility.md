@@ -541,6 +541,29 @@ operation without Swift payload callbacks. The common seam should retain an
 opaque root capability and bounded coordination lifetime; it must not claim
 external-provider support until the picker case is physically exercised.
 
+### Stage 3: backend-neutral observation contract
+
+`StorageFileReference` now observes an exact path or platform artifact without
+opening or creating it. The four-field value reports existence, object kind,
+file length, and an optional opaque token; constructors and broker completion
+reject internally inconsistent values and tokens above 256 bytes. Path
+observations use no-follow metadata, classify symlinks and special objects as
+wrong-kind candidates, and derive a bounded modification token only when the
+host supplies one. These facts remain disqualifying evidence rather than
+content proof.
+
+The platform request is now an explicit open/observe/delete operation instead
+of an open request plus a deletion flag. UniFFI carries typed SAF observation
+values and the expanded failure vocabulary. Kotlin resolves and queries the
+exact document without eager creation, hashes provider document identity and
+available metadata into a bounded opaque token, and never exports a document
+ID, URI, path, or descriptor as observation state. The real two-ABI Android
+build, generated bindings, APK assembly, and JVM tests pass with this contract.
+Engine fixtures prove missing path observation creates nothing, platform
+observation consumes no pool handle, and cancellation/open limits remain
+bounded. Root admission and common published reads intentionally follow in the
+next stages; no fast-resume decision consumes the new value.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

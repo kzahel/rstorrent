@@ -14,9 +14,9 @@ use rstorrent_engine::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan, DownloadConfig,
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, DownloadResourceLimits,
     NetworkConfig, NetworkPolicy, PlatformStorageBroker, PlatformStorageFailure,
-    PlatformStorageFailureKind, StorageFileAccess, StorageFileRole,
-    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
-    plan_descriptor_storage, platform_storage_channel,
+    PlatformStorageFailureKind, PlatformStorageOperation, StorageFileAccess, StorageFileRole,
+    StorageObjectKind, StorageObservation, download_verified_piece_to_descriptors_with_control,
+    download_verified_piece_with_control, plan_descriptor_storage, platform_storage_channel,
 };
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
@@ -434,12 +434,16 @@ impl AndroidApplicationClient {
                 role,
                 file_index,
                 path: request.path,
+                operation: match request.operation {
+                    PlatformStorageOperation::Open => SafStorageOperation::Open,
+                    PlatformStorageOperation::Observe => SafStorageOperation::Observe,
+                    PlatformStorageOperation::Delete => SafStorageOperation::Delete,
+                },
                 access: match request.access {
                     StorageFileAccess::ReadExisting => SafStorageAccess::ReadExisting,
                     StorageFileAccess::ReadWriteExisting => SafStorageAccess::ReadWriteExisting,
                     StorageFileAccess::ReadWriteCreate => SafStorageAccess::ReadWriteCreate,
                 },
-                delete: request.delete,
                 timeout_millis: request.timeout_millis,
             }
         })
@@ -520,7 +524,10 @@ impl AndroidApplicationClient {
         let kind = match kind {
             SafStorageFailureKind::Missing => PlatformStorageFailureKind::Missing,
             SafStorageFailureKind::GrantUnavailable => PlatformStorageFailureKind::GrantUnavailable,
+            SafStorageFailureKind::PermissionDenied => PlatformStorageFailureKind::PermissionDenied,
+            SafStorageFailureKind::WrongKind => PlatformStorageFailureKind::WrongKind,
             SafStorageFailureKind::NameCollision => PlatformStorageFailureKind::NameCollision,
+            SafStorageFailureKind::StaleGeneration => PlatformStorageFailureKind::StaleGeneration,
             SafStorageFailureKind::ProviderRefused => PlatformStorageFailureKind::ProviderRefused,
             SafStorageFailureKind::NonSeekable => PlatformStorageFailureKind::NonSeekable,
             SafStorageFailureKind::Cancelled => PlatformStorageFailureKind::Cancelled,
@@ -533,6 +540,41 @@ impl AndroidApplicationClient {
 
     pub fn complete_saf_storage_delete(&self, request_id: u64) -> bool {
         self.platform_storage.complete_deleted(request_id)
+    }
+
+    pub fn complete_saf_storage_observation(
+        &self,
+        request_id: u64,
+        observation: SafStorageObservation,
+    ) -> Result<bool, AndroidClientError> {
+        let observation = if observation.exists {
+            let kind = observation.kind.ok_or_else(|| {
+                AndroidClientError::message("present SAF observation has no kind")
+            })?;
+            StorageObservation::present(
+                match kind {
+                    SafStorageObjectKind::File => StorageObjectKind::File,
+                    SafStorageObjectKind::Directory => StorageObjectKind::Directory,
+                    SafStorageObjectKind::Other => StorageObjectKind::Other,
+                },
+                observation.length,
+                observation.opaque_token,
+            )
+            .map_err(|error| AndroidClientError::message(error.to_string()))?
+        } else {
+            if observation.kind.is_some()
+                || observation.length.is_some()
+                || observation.opaque_token.is_some()
+            {
+                return Err(AndroidClientError::message(
+                    "missing SAF observation contains present-only fields",
+                ));
+            }
+            StorageObservation::missing()
+        };
+        Ok(self
+            .platform_storage
+            .complete_observation(request_id, observation))
     }
 
     pub async fn shutdown(&self) -> Result<(), AndroidClientError> {
@@ -669,10 +711,35 @@ pub enum SafStorageAccess {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafStorageOperation {
+    Open,
+    Observe,
+    Delete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum SafStorageObjectKind {
+    File,
+    Directory,
+    Other,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SafStorageObservation {
+    pub exists: bool,
+    pub kind: Option<SafStorageObjectKind>,
+    pub length: Option<u64>,
+    pub opaque_token: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum SafStorageFailureKind {
     Missing,
     GrantUnavailable,
+    PermissionDenied,
+    WrongKind,
     NameCollision,
+    StaleGeneration,
     ProviderRefused,
     NonSeekable,
     Cancelled,
@@ -689,8 +756,8 @@ pub struct SafStorageRequest {
     pub role: SafDynamicFileRole,
     pub file_index: u32,
     pub path: Vec<String>,
+    pub operation: SafStorageOperation,
     pub access: SafStorageAccess,
-    pub delete: bool,
     pub timeout_millis: u64,
 }
 

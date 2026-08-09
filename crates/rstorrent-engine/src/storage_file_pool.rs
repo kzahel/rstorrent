@@ -15,6 +15,7 @@ use tokio::time::timeout;
 pub const DEFAULT_STORAGE_FILE_LIMIT: usize = 40;
 pub const PLATFORM_STORAGE_REQUEST_CAPACITY: usize = 16;
 pub const PLATFORM_STORAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub const MAX_STORAGE_OBSERVATION_TOKEN_BYTES: usize = 256;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StorageFileKey {
@@ -34,6 +35,90 @@ pub enum StorageFileAccess {
     ReadExisting,
     ReadWriteExisting,
     ReadWriteCreate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageObjectKind {
+    File,
+    Directory,
+    Other,
+}
+
+/// Backend-neutral evidence about one exact logical storage artifact.
+///
+/// This value can disqualify a later trusting decision, but cannot establish
+/// payload validity by itself. Unsupported tokens remain `None`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageObservation {
+    pub exists: bool,
+    pub kind: Option<StorageObjectKind>,
+    pub length: Option<u64>,
+    pub opaque_token: Option<String>,
+}
+
+impl StorageObservation {
+    pub fn missing() -> Self {
+        Self {
+            exists: false,
+            kind: None,
+            length: None,
+            opaque_token: None,
+        }
+    }
+
+    pub fn present(
+        kind: StorageObjectKind,
+        length: Option<u64>,
+        opaque_token: Option<String>,
+    ) -> Result<Self, StorageFilePoolError> {
+        let observation = Self {
+            exists: true,
+            kind: Some(kind),
+            length,
+            opaque_token,
+        };
+        observation.validate()?;
+        Ok(observation)
+    }
+
+    pub fn validate(&self) -> Result<(), StorageFilePoolError> {
+        if self.exists != self.kind.is_some() {
+            return Err(StorageFilePoolError::InvalidObservation(
+                "existence and object kind disagree",
+            ));
+        }
+        if !self.exists && (self.length.is_some() || self.opaque_token.is_some()) {
+            return Err(StorageFilePoolError::InvalidObservation(
+                "missing artifact contains present-only fields",
+            ));
+        }
+        if self
+            .kind
+            .is_some_and(|kind| kind != StorageObjectKind::File)
+            && self.length.is_some()
+        {
+            return Err(StorageFilePoolError::InvalidObservation(
+                "non-file artifact contains a file length",
+            ));
+        }
+        if self
+            .opaque_token
+            .as_ref()
+            .is_some_and(|token| token.len() > MAX_STORAGE_OBSERVATION_TOKEN_BYTES)
+        {
+            return Err(StorageFilePoolError::InvalidObservation(
+                "opaque storage observation token exceeds 256 bytes",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformStorageOperation {
+    Open,
+    Observe,
+    Delete,
 }
 
 impl StorageFileAccess {
@@ -114,6 +199,21 @@ impl StorageFileReference {
             }
         }
     }
+
+    pub async fn observe(&self) -> Result<StorageObservation, StorageFilePoolError> {
+        match &self.locator {
+            StorageFileLocator::Path(path) => observe_path(path.clone()).await,
+            StorageFileLocator::Platform(target) => {
+                self.pool
+                    .inner
+                    .platform
+                    .as_ref()
+                    .ok_or(StorageFilePoolError::PlatformUnavailable)?
+                    .observe(target)
+                    .await
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -177,6 +277,7 @@ pub enum StorageFilePoolError {
     InvalidPath,
     PlatformUnavailable,
     PlatformFailure(PlatformStorageFailure),
+    InvalidObservation(&'static str),
     Io {
         operation: &'static str,
         source: io::Error,
@@ -193,6 +294,9 @@ impl fmt::Display for StorageFilePoolError {
                 formatter.write_str("platform storage broker is unavailable")
             }
             Self::PlatformFailure(error) => write!(formatter, "platform storage: {error}"),
+            Self::InvalidObservation(detail) => {
+                write!(formatter, "invalid storage observation: {detail}")
+            }
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
         }
     }
@@ -222,7 +326,10 @@ impl StorageFilePoolError {
 pub enum PlatformStorageFailureKind {
     Missing,
     GrantUnavailable,
+    PermissionDenied,
+    WrongKind,
     NameCollision,
+    StaleGeneration,
     ProviderRefused,
     NonSeekable,
     Cancelled,
@@ -260,14 +367,15 @@ pub struct PlatformStorageRequest {
     pub namespace_generation: u64,
     pub role: StorageFileRole,
     pub path: Vec<String>,
+    pub operation: PlatformStorageOperation,
     pub access: StorageFileAccess,
-    pub delete: bool,
     pub timeout_millis: u64,
 }
 
 #[derive(Debug)]
 enum PlatformStorageResponse {
     File(std::fs::File),
+    Observation(StorageObservation),
     Deleted,
 }
 
@@ -298,8 +406,8 @@ impl PlatformStorageClient {
             namespace_generation: target.namespace_generation,
             role: target.role,
             path: target.path.clone(),
+            operation: PlatformStorageOperation::Open,
             access,
-            delete: false,
             timeout_millis: u64::try_from(PLATFORM_STORAGE_REQUEST_TIMEOUT.as_millis())
                 .expect("platform timeout fits u64 milliseconds"),
         };
@@ -320,12 +428,53 @@ impl PlatformStorageClient {
                     "platform returned deletion for an open request",
                 )),
             ),
+            Ok(Ok(Ok(PlatformStorageResponse::Observation(_)))) => Err(
+                StorageFilePoolError::PlatformFailure(PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned an observation for an open request",
+                )),
+            ),
             Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
                     PlatformStorageFailureKind::DeadlineExceeded,
                     "platform storage request exceeded its deadline",
+                ),
+            )),
+        }
+    }
+
+    async fn observe(
+        &self,
+        target: &PlatformStorageTarget,
+    ) -> Result<StorageObservation, StorageFilePoolError> {
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let request = PlatformStorageRequest {
+            request_id,
+            root_id: target.root_id.clone(),
+            storage_id: target.storage_id.clone(),
+            namespace_generation: target.namespace_generation,
+            role: target.role,
+            path: target.path.clone(),
+            operation: PlatformStorageOperation::Observe,
+            access: StorageFileAccess::ReadExisting,
+            timeout_millis: u64::try_from(PLATFORM_STORAGE_REQUEST_TIMEOUT.as_millis())
+                .expect("platform timeout fits u64 milliseconds"),
+        };
+        let response = self.request(request).await?;
+        match response {
+            PlatformStorageResponse::Observation(observation) => Ok(observation),
+            PlatformStorageResponse::File(_) => Err(StorageFilePoolError::PlatformFailure(
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned a file for an observation request",
+                ),
+            )),
+            PlatformStorageResponse::Deleted => Err(StorageFilePoolError::PlatformFailure(
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned deletion for an observation request",
                 ),
             )),
         }
@@ -340,8 +489,8 @@ impl PlatformStorageClient {
             namespace_generation: target.namespace_generation,
             role: target.role,
             path: target.path.clone(),
+            operation: PlatformStorageOperation::Delete,
             access: StorageFileAccess::ReadWriteExisting,
-            delete: true,
             timeout_millis: u64::try_from(PLATFORM_STORAGE_REQUEST_TIMEOUT.as_millis())
                 .expect("platform timeout fits u64 milliseconds"),
         };
@@ -362,12 +511,44 @@ impl PlatformStorageClient {
                     "platform returned a file for a deletion request",
                 )),
             ),
+            Ok(Ok(Ok(PlatformStorageResponse::Observation(_)))) => Err(
+                StorageFilePoolError::PlatformFailure(PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Internal,
+                    "platform returned an observation for a deletion request",
+                )),
+            ),
             Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
             Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
             Err(_) => Err(StorageFilePoolError::PlatformFailure(
                 PlatformStorageFailure::new(
                     PlatformStorageFailureKind::DeadlineExceeded,
                     "platform storage deletion exceeded its deadline",
+                ),
+            )),
+        }
+    }
+
+    async fn request(
+        &self,
+        request: PlatformStorageRequest,
+    ) -> Result<PlatformStorageResponse, StorageFilePoolError> {
+        let (reply, response) = oneshot::channel();
+        self.sender
+            .send(PendingPlatformStorageRequest { request, reply })
+            .await
+            .map_err(|_| StorageFilePoolError::PlatformUnavailable)?;
+        let pending = self.pending.fetch_add(1, Ordering::AcqRel) + 1;
+        update_high_water(&self.pending_high_water, pending);
+        let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
+        self.pending.fetch_sub(1, Ordering::AcqRel);
+        match result {
+            Ok(Ok(Ok(response))) => Ok(response),
+            Ok(Ok(Err(error))) => Err(StorageFilePoolError::PlatformFailure(error)),
+            Ok(Err(_)) => Err(StorageFilePoolError::PlatformUnavailable),
+            Err(_) => Err(StorageFilePoolError::PlatformFailure(
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::DeadlineExceeded,
+                    "platform storage request exceeded its deadline",
                 ),
             )),
         }
@@ -417,6 +598,25 @@ impl PlatformStorageBroker {
         self.pending_guard()
             .remove(&request_id)
             .is_some_and(|reply| reply.send(Ok(PlatformStorageResponse::Deleted)).is_ok())
+    }
+
+    pub fn complete_observation(&self, request_id: u64, observation: StorageObservation) -> bool {
+        if let Err(error) = observation.validate() {
+            return self.complete_error(
+                request_id,
+                PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::ProviderRefused,
+                    error.to_string(),
+                ),
+            );
+        }
+        self.pending_guard()
+            .remove(&request_id)
+            .is_some_and(|reply| {
+                reply
+                    .send(Ok(PlatformStorageResponse::Observation(observation)))
+                    .is_ok()
+            })
     }
 
     pub fn complete_error(&self, request_id: u64, failure: PlatformStorageFailure) -> bool {
@@ -893,6 +1093,51 @@ async fn open_path(
     })?
 }
 
+async fn observe_path(path: PathBuf) -> Result<StorageObservation, StorageFilePoolError> {
+    tokio::task::spawn_blocking(move || {
+        let metadata = match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                return Ok(StorageObservation::missing());
+            }
+            Err(source) => {
+                return Err(StorageFilePoolError::Io {
+                    operation: "observe storage artifact",
+                    source,
+                });
+            }
+        };
+        let kind = if metadata.file_type().is_symlink() {
+            StorageObjectKind::Other
+        } else if metadata.is_file() {
+            StorageObjectKind::File
+        } else if metadata.is_dir() {
+            StorageObjectKind::Directory
+        } else {
+            StorageObjectKind::Other
+        };
+        let length = (kind == StorageObjectKind::File).then_some(metadata.len());
+        let opaque_token = metadata.modified().ok().and_then(|modified| {
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|duration| {
+                    format!(
+                        "mtime-v1:{}:{}",
+                        duration.as_secs(),
+                        duration.subsec_nanos()
+                    )
+                })
+        });
+        StorageObservation::present(kind, length, opaque_token)
+    })
+    .await
+    .map_err(|source| StorageFilePoolError::Io {
+        operation: "join storage artifact observation",
+        source: io::Error::other(source),
+    })?
+}
+
 fn is_descriptor_exhaustion(error: &StorageFilePoolError) -> bool {
     let StorageFilePoolError::Io { source, .. } = error else {
         return false;
@@ -918,8 +1163,9 @@ fn update_high_water(high_water: &AtomicUsize, value: usize) {
 #[cfg(test)]
 mod tests {
     use super::{
-        PlatformStorageFailure, PlatformStorageFailureKind, StorageFileAccess, StorageFileKey,
-        StorageFileLocator, StorageFilePool, StorageFileReference, StorageFileRole,
+        PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageOperation,
+        StorageFileAccess, StorageFileKey, StorageFileLocator, StorageFilePool,
+        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation,
         platform_storage_channel,
     };
     use std::fs::OpenOptions;
@@ -1146,7 +1392,7 @@ mod tests {
             tokio::spawn(async move { reference.open(StorageFileAccess::ReadExisting).await });
         let request = broker.next_request().await.expect("platform request");
         assert_eq!(request.access, StorageFileAccess::ReadExisting);
-        assert!(!request.delete);
+        assert_eq!(request.operation, PlatformStorageOperation::Open);
         assert_eq!(
             request.path,
             ["published".to_owned(), "payload.bin".to_owned()]
@@ -1162,6 +1408,76 @@ mod tests {
         assert_eq!(pool.snapshot().platform_pending, 0);
         assert_eq!(pool.snapshot().current_owned, 0);
         assert_eq!(pool.snapshot().cached_entries, 0);
+        pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn path_observation_is_bounded_and_never_creates() {
+        let root = temp_root("observe-path");
+        std::fs::create_dir_all(&root).expect("root");
+        let pool = StorageFilePool::new(2, None).expect("pool");
+        let reference = reference(pool.clone(), &root, 0);
+        assert_eq!(
+            reference.observe().await.expect("missing observation"),
+            StorageObservation::missing()
+        );
+        assert!(!root.join("0.bin").exists());
+
+        std::fs::write(root.join("0.bin"), b"hello").expect("payload");
+        let observed = reference.observe().await.expect("file observation");
+        assert!(observed.exists);
+        assert_eq!(observed.kind, Some(StorageObjectKind::File));
+        assert_eq!(observed.length, Some(5));
+        assert!(
+            observed
+                .opaque_token
+                .as_ref()
+                .is_none_or(|token| token.len() <= super::MAX_STORAGE_OBSERVATION_TOKEN_BYTES)
+        );
+        assert_eq!(pool.snapshot().current_owned, 0);
+        pool.shutdown().await.expect("shutdown");
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn platform_observation_uses_typed_response_without_opening_a_handle() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 7,
+                role: StorageFileRole::Payload(1),
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 7,
+                role: StorageFileRole::Payload(1),
+                path: vec!["published".to_owned(), "file.bin".to_owned()],
+            }),
+        );
+        let observation = tokio::spawn(async move { reference.observe().await });
+        let request = broker.next_request().await.expect("observation request");
+        assert_eq!(request.operation, PlatformStorageOperation::Observe);
+        assert_eq!(request.namespace_generation, 7);
+        assert_eq!(request.path, ["published", "file.bin"]);
+        let expected = StorageObservation::present(
+            StorageObjectKind::File,
+            Some(23),
+            Some("provider-v1:opaque".to_owned()),
+        )
+        .expect("valid observation");
+        assert!(broker.complete_observation(request.request_id, expected.clone()));
+        assert_eq!(
+            observation
+                .await
+                .expect("observation task")
+                .expect("result"),
+            expected
+        );
+        assert_eq!(pool.snapshot().current_owned, 0);
         pool.shutdown().await.expect("shutdown");
     }
 

@@ -4453,7 +4453,10 @@ mod tests {
                     .fold(provider_root.clone(), |path, component| {
                         path.join(component)
                     });
-                if request.delete {
+                if matches!(
+                    request.operation,
+                    crate::storage_file_pool::PlatformStorageOperation::Delete
+                ) {
                     let result = match std::fs::remove_file(&path) {
                         Ok(()) => Ok(()),
                         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -4475,6 +4478,10 @@ mod tests {
                     }
                     continue;
                 }
+                assert_eq!(
+                    request.operation,
+                    crate::storage_file_pool::PlatformStorageOperation::Open
+                );
                 if matches!(request.access, StorageFileAccess::ReadWriteCreate) {
                     std::fs::create_dir_all(path.parent().expect("provider path parent"))
                         .expect("create provider parents");
