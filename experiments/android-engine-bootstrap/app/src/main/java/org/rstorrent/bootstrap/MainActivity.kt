@@ -10,15 +10,20 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import org.rstorrent.bootstrap.ui.ProductApp
+import org.rstorrent.bootstrap.ui.ProductThemeMode
 
 class MainActivity : ComponentActivity() {
     private var pendingCommand: Intent? = null
     private val productService = mutableStateOf<ProductEngineService?>(null)
+    private val notificationsGranted = mutableStateOf(false)
+    private val themeMode = mutableStateOf(ProductThemeMode.SYSTEM)
+    private val dynamicColor = mutableStateOf(true)
     private var productBound = false
     private var productMode = false
     private var pendingProductMagnet: String? = null
@@ -94,6 +99,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationsGranted.value = notificationPermissionGranted()
+        val preferences = getSharedPreferences(PRODUCT_PREFERENCES, Context.MODE_PRIVATE)
+        themeMode.value =
+            runCatching {
+                ProductThemeMode.valueOf(
+                    preferences.getString(PREFERENCE_THEME_MODE, ProductThemeMode.SYSTEM.name)
+                        ?: ProductThemeMode.SYSTEM.name,
+                )
+            }.getOrDefault(ProductThemeMode.SYSTEM)
+        dynamicColor.value = preferences.getBoolean(PREFERENCE_DYNAMIC_COLOR, true)
         route(intent)
     }
 
@@ -124,6 +139,13 @@ class MainActivity : ComponentActivity() {
         data: Intent?,
     ) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PRODUCT_TORRENT_REQUEST) {
+            val torrentUri = data?.data
+            if (resultCode == RESULT_OK && torrentUri != null) {
+                productService.value?.addTorrentFile(torrentUri)
+            }
+            return
+        }
         if (requestCode != TREE_REQUEST) {
             if (requestCode == PRODUCT_TREE_REQUEST) {
                 val treeUri = data?.data
@@ -185,7 +207,18 @@ class MainActivity : ComponentActivity() {
         if (!productMode) {
             productMode = true
             setContent {
-                ProductApp(productService.value, ::launchProductTreePicker)
+                ProductApp(
+                    service = productService.value,
+                    onSelectStorage = ::launchProductTreePicker,
+                    onBrowseTorrent = ::launchProductTorrentPicker,
+                    notificationsGranted = notificationsGranted.value,
+                    onRequestNotifications = ::requestNotificationPermission,
+                    onOpenNotificationSettings = ::openNotificationSettings,
+                    themeMode = themeMode.value,
+                    dynamicColor = dynamicColor.value,
+                    onThemeMode = ::setThemeMode,
+                    onDynamicColor = ::setDynamicColor,
+                )
             }
         }
         if (ProductSafDocuments.isDebuggable(this)) {
@@ -298,7 +331,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        requestNotificationPermission()
         startProductService()
         if (
             ProductSafDocuments.isDebuggable(this) &&
@@ -388,6 +420,21 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun launchProductTorrentPicker() {
+        startActivityForResult(
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/x-bittorrent"
+                putExtra(
+                    Intent.EXTRA_MIME_TYPES,
+                    arrayOf("application/x-bittorrent", "application/octet-stream"),
+                )
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            },
+            PRODUCT_TORRENT_REQUEST,
+        )
+    }
+
     private fun bindProductService() {
         if (productBound) return
         productBound =
@@ -405,7 +452,49 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 52)
+        } else {
+            notificationsGranted.value = true
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIFICATION_REQUEST) {
+            notificationsGranted.value = notificationPermissionGranted()
+        }
+    }
+
+    private fun notificationPermissionGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun openNotificationSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            },
+        )
+    }
+
+    private fun setThemeMode(mode: ProductThemeMode) {
+        themeMode.value = mode
+        getSharedPreferences(PRODUCT_PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putString(PREFERENCE_THEME_MODE, mode.name)
+            .apply()
+    }
+
+    private fun setDynamicColor(enabled: Boolean) {
+        dynamicColor.value = enabled
+        getSharedPreferences(PRODUCT_PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREFERENCE_DYNAMIC_COLOR, enabled)
+            .apply()
     }
 
     private fun isDiagnostic(command: Intent): Boolean =
@@ -439,6 +528,11 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val TREE_REQUEST = 51
         private const val PRODUCT_TREE_REQUEST = 53
+        private const val PRODUCT_TORRENT_REQUEST = 54
+        private const val NOTIFICATION_REQUEST = 52
+        private const val PRODUCT_PREFERENCES = "product_ui"
+        private const val PREFERENCE_THEME_MODE = "theme_mode"
+        private const val PREFERENCE_DYNAMIC_COLOR = "dynamic_color"
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
         const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"

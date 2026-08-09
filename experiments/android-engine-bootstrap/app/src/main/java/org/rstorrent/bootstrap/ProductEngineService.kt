@@ -15,6 +15,7 @@ import android.os.CancellationSignal
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -42,6 +43,7 @@ import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.bootstrap.uniffi.SafStorageOperation
 import org.rstorrent.session.uniffi.Command
+import org.rstorrent.session.uniffi.AddTorrentBytesRequest
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
@@ -52,6 +54,7 @@ import org.rstorrent.session.uniffi.DiagnosticFilter
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.EncryptionPolicy
+import org.rstorrent.session.uniffi.FileSelectionIntent
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
@@ -210,6 +213,54 @@ class ProductEngineService : Service() {
             return
         }
         dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles))
+    }
+
+    fun addTorrentFile(uri: Uri) {
+        if (safTreeUri == null) {
+            mutableState.update { it.copy(error = "Select a download folder first") }
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                clientReady.await()
+                val source = readTorrentSource(uri)
+                val request =
+                    AddTorrentBytesRequest(
+                        version = 1U.toUShort(),
+                        requestId = "android-$requestPrefix-${requestIds.getAndIncrement()}",
+                        expectedRevision = null,
+                        storageRoot = "downloads",
+                        startContent = true,
+                        selection = FileSelectionIntent.All,
+                        sourceLength = source.size.toUInt(),
+                    )
+                val response = client.addTorrentBytes(request, source)
+                val outcome = response.outcome
+                if (outcome is ResponseOutcome.Error) error(outcome.error.message)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private fun readTorrentSource(uri: Uri): ByteArray {
+        val input = contentResolver.openInputStream(uri) ?: error("Unable to open torrent file")
+        return input.use { stream ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_TORRENT_SOURCE_BYTES) {
+                    "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
+                }
+                output.write(buffer, 0, count)
+            }
+            require(total > 0) { "Torrent file is empty" }
+            output.toByteArray()
+        }
     }
 
     fun addMagnetWithTrackerPolicyForTest(
@@ -712,6 +763,45 @@ class ProductEngineService : Service() {
 
     fun resume(torrentId: String) {
         dispatch(Command.Resume(torrentId))
+    }
+
+    fun forceRecheck(torrentId: String) {
+        dispatch(Command.ForceRecheck(torrentId))
+    }
+
+    fun moveDownloadToTop(torrentId: String) {
+        dispatch(Command.MoveDownloadToTop(torrentId))
+    }
+
+    fun moveDownloadToBottom(torrentId: String) {
+        dispatch(Command.MoveDownloadToBottom(torrentId))
+    }
+
+    fun archive(torrentId: String) {
+        dispatch(Command.Archive(torrentId))
+    }
+
+    fun restoreArchive(torrentId: String) {
+        dispatch(Command.RestoreArchive(torrentId))
+    }
+
+    fun removeTorrent(
+        torrentId: String,
+        policy: RemovalDataPolicy,
+    ) {
+        dispatch(Command.RemoveTorrent(torrentId, policy))
+    }
+
+    fun shutdownFromUi() {
+        scope.launch {
+            try {
+                clientReady.await()
+                shutdown()
+            } finally {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
     }
 
     fun selectTorrent(torrentId: String) {
@@ -1310,7 +1400,7 @@ class ProductEngineService : Service() {
                 Notification.Builder(this)
             }
         return builder
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_rstorrent_notification)
             .setContentTitle("RSTorrent")
             .setContentText(detail)
             .setContentIntent(open)
@@ -1334,6 +1424,7 @@ class ProductEngineService : Service() {
         const val ACTION_STOP = "org.rstorrent.bootstrap.PRODUCT_STOP"
         private const val CHANNEL_ID = "rstorrent-product"
         private const val NOTIFICATION_ID = 42
+        private const val MAX_TORRENT_SOURCE_BYTES = 64 * 1024 * 1024
         private const val SAF_PROVIDER_CONCURRENCY = 4
         private const val TAG = "RSTorrentProduct"
     }

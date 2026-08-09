@@ -1,555 +1,620 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package org.rstorrent.bootstrap.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.BatterySaver
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.NetworkCheck
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
 import org.rstorrent.bootstrap.ProductState
-import org.rstorrent.session.uniffi.TorrentState
-import org.rstorrent.session.uniffi.TorrentView
-import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticEvent
-import org.rstorrent.session.uniffi.DiagnosticProfile
-import org.rstorrent.session.uniffi.DiagnosticSeverity
-
-private val RSTorrentColors =
-    darkColorScheme(
-        primary = Color(0xFF55D6A7),
-        secondary = Color(0xFFE9AA4F),
-        background = Color(0xFF0B1116),
-        surface = Color(0xFF121B22),
-        surfaceVariant = Color(0xFF293541),
-    )
-
-private val diagnosticCategoryChoices =
-    listOf(
-        "lifecycle",
-        "discovery",
-        "tracker",
-        "peer",
-        "metadata",
-        "scheduler",
-        "piece",
-        "storage",
-        "integrity",
-        "platform",
-        "performance",
-    ).map(::DiagnosticCategory)
+import org.rstorrent.session.uniffi.RemovalDataPolicy
+import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentView
 
 @Composable
 fun ProductApp(
     service: ProductEngineService?,
     onSelectStorage: () -> Unit,
+    onBrowseTorrent: () -> Unit,
+    notificationsGranted: Boolean,
+    onRequestNotifications: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    themeMode: ProductThemeMode,
+    dynamicColor: Boolean,
+    onThemeMode: (ProductThemeMode) -> Unit,
+    onDynamicColor: (Boolean) -> Unit,
 ) {
-    MaterialTheme(colorScheme = RSTorrentColors) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+    RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
+        val state =
             if (service == null) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text("RSTorrent", style = MaterialTheme.typography.headlineLarge)
-                    Spacer(Modifier.height(12.dp))
-                    Text("Connecting to foreground engine…")
-                }
+                ProductState()
             } else {
-                val state by service.state.collectAsState()
-                ProductContent(service, state, onSelectStorage)
+                val collected by service.state.collectAsStateWithLifecycle()
+                collected
             }
+        Surface(modifier = Modifier.fillMaxSize()) {
+            ProductNavHost(
+                state = state,
+                service = service,
+                onSelectStorage = onSelectStorage,
+                onBrowseTorrent = onBrowseTorrent,
+                notificationsGranted = notificationsGranted,
+                onRequestNotifications = onRequestNotifications,
+                onOpenNotificationSettings = onOpenNotificationSettings,
+                themeMode = themeMode,
+                dynamicColor = dynamicColor,
+                onThemeMode = onThemeMode,
+                onDynamicColor = onDynamicColor,
+            )
         }
     }
 }
 
 @Composable
-private fun ProductContent(
-    service: ProductEngineService,
+private fun ProductNavHost(
     state: ProductState,
+    service: ProductEngineService?,
     onSelectStorage: () -> Unit,
+    onBrowseTorrent: () -> Unit,
+    notificationsGranted: Boolean,
+    onRequestNotifications: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    themeMode: ProductThemeMode,
+    dynamicColor: Boolean,
+    onThemeMode: (ProductThemeMode) -> Unit,
+    onDynamicColor: (Boolean) -> Unit,
 ) {
-    var magnet by remember { mutableStateOf("") }
-    var diagnosticProfile by remember { mutableStateOf(DiagnosticProfile.NORMAL) }
-    var diagnosticSeverity by remember { mutableStateOf(DiagnosticSeverity.INFO) }
-    var diagnosticCategories by remember { mutableStateOf(emptySet<DiagnosticCategory>()) }
-    var diagnosticTorrentOnly by remember { mutableStateOf(false) }
-    var diagnosticSearch by remember { mutableStateOf("") }
-    var diagnosticAutoscroll by remember { mutableStateOf(false) }
-    val torrents = state.torrents.values.sortedBy { it.torrentId }
-    val listState = rememberLazyListState()
-    LaunchedEffect(state.diagnostics.size, diagnosticAutoscroll) {
-        if (diagnosticAutoscroll && state.diagnostics.isNotEmpty()) {
-            listState.animateScrollToItem(1 + torrents.size)
+    val navController = rememberNavController()
+    var removeTargets by remember { mutableStateOf(emptySet<String>()) }
+    NavHost(navController = navController, startDestination = ProductRoutes.LIBRARY) {
+        composable(ProductRoutes.LIBRARY) {
+            LibraryScreen(
+                state = state,
+                notificationsGranted = notificationsGranted,
+                onRequestNotifications = onRequestNotifications,
+                onSelectStorage = onSelectStorage,
+                onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
+                onAddMagnet = { service?.addMagnet(it) },
+                onBrowseTorrent = onBrowseTorrent,
+                onPause = { service?.pause(it) },
+                onResume = { service?.resume(it) },
+                onRemove = { removeTargets = it },
+                onSpeed = { navController.navigate(ProductRoutes.SPEED) },
+                onDht = { navController.navigate(ProductRoutes.DHT) },
+                onLogs = { navController.navigate(ProductRoutes.LOGS) },
+                onSettings = { navController.navigate(ProductRoutes.SETTINGS) },
+                onShutdown = { service?.shutdownFromUi() },
+            )
         }
-    }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        state = listState,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Spacer(Modifier.height(20.dp))
-            Text(
-                "RSTorrent",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                if (state.ready) "Foreground engine connected" else "Opening durable profile",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            state.error?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
+        composable(ProductRoutes.DETAIL) { entry ->
+            val torrentId = requireNotNull(entry.arguments?.getString("torrentId"))
+            val torrent = state.torrents[torrentId]
+            DisposableEffect(torrentId) {
+                service?.selectTorrent(torrentId)
+                onDispose { }
             }
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onSelectStorage) {
-                Text(
-                    if (state.storageRootReady) {
-                        "Change download folder"
-                    } else {
-                        "Select download folder"
+            TorrentDetailScreen(
+                torrent = torrent,
+                state = state,
+                onBack = navController::popBackStack,
+                onPause = { service?.pause(torrentId) },
+                onResume = { service?.resume(torrentId) },
+                onForceRecheck = { service?.forceRecheck(torrentId) },
+                onMoveTop = { service?.moveDownloadToTop(torrentId) },
+                onMoveBottom = { service?.moveDownloadToBottom(torrentId) },
+                onArchive = { service?.archive(torrentId) },
+                onRestore = { service?.restoreArchive(torrentId) },
+                onRemove = { removeTargets = setOf(torrentId) },
+                onSpeed = { navController.navigate(ProductRoutes.SPEED) },
+                onDht = { navController.navigate(ProductRoutes.DHT) },
+                onLogs = { navController.navigate(ProductRoutes.LOGS) },
+                onSettings = { navController.navigate(ProductRoutes.SETTINGS) },
+            )
+        }
+        composable(ProductRoutes.SPEED) {
+            SimpleRouteScreen(
+                title = "Speed",
+                onBack = navController::popBackStack,
+                description =
+                    "Rust-native download, upload, and storage history. " +
+                        "QuickJS thread-health metrics are intentionally not part of this screen.",
+            )
+        }
+        composable(ProductRoutes.DHT) {
+            SimpleRouteScreen(
+                title = "DHT Info",
+                onBack = navController::popBackStack,
+                description = "IPv4 and IPv6 DHT state will be presented independently.",
+            )
+        }
+        composable(ProductRoutes.LOGS) {
+            LogsShell(state.diagnostics, navController::popBackStack)
+        }
+        composable(ProductRoutes.SETTINGS) {
+            SettingsHub(navController)
+        }
+        composable(ProductRoutes.SETTINGS_STORAGE) {
+            SettingsPage("Storage", navController::popBackStack) {
+                SettingAction(
+                    title = state.storageRootLabel ?: "Download folder",
+                    detail = if (state.storageRootReady) "Available" else "Unavailable or not selected",
+                    onClick = onSelectStorage,
+                    action = if (state.storageRootReady) "Change" else "Select",
+                )
+            }
+        }
+        composable(ProductRoutes.SETTINGS_SPEED) {
+            SettingsPage("Speed & Connection Limits", navController::popBackStack) {
+                val settings = state.clientSettings
+                if (settings == null) {
+                    Text("Settings are loading…", modifier = Modifier.padding(16.dp))
+                } else {
+                    ReadOnlySetting("Peer connections", settings.effectivePeerConnectionLimit.toString())
+                    ReadOnlySetting("Upload slots", settings.effectiveUploadSlots.toString())
+                    ReadOnlySetting("Active downloads", settings.effectiveActiveDownloads.toString())
+                    UnavailableSetting("Download rate limit")
+                    UnavailableSetting("Upload rate limit")
+                }
+            }
+        }
+        composable(ProductRoutes.SETTINGS_NOTIFICATIONS) {
+            SettingsPage("Notifications", navController::popBackStack) {
+                SettingAction(
+                    title = if (notificationsGranted) "Notifications enabled" else "Notifications disabled",
+                    detail = "Foreground-service status is managed by Android.",
+                    onClick = if (notificationsGranted) onOpenNotificationSettings else onRequestNotifications,
+                    action = if (notificationsGranted) "Manage" else "Enable",
+                )
+                UnavailableSetting("Completion notifications")
+            }
+        }
+        composable(ProductRoutes.SETTINGS_NETWORK) {
+            SettingsPage("Network & Privacy", navController::popBackStack) {
+                state.clientSettings?.let { settings ->
+                    ReadOnlySetting("Listener", settings.listenerStatus.toString())
+                    ReadOnlySetting("Port mapping", settings.portMappingStatus.toString())
+                    ReadOnlySetting("Encryption policy", settings.effectiveEncryption.name)
+                    ReadOnlySetting("IPv6", if (settings.effectiveIpv6Enabled) "Enabled" else "Disabled")
+                } ?: Text("Settings are loading…", modifier = Modifier.padding(16.dp))
+                UnavailableSetting("VPN-only mode")
+                UnavailableSetting("Metered network policy")
+                UnavailableSetting("Proxy")
+            }
+        }
+        composable(ProductRoutes.SETTINGS_POWER) {
+            SettingsPage("Power Management", navController::popBackStack) {
+                ReadOnlySetting(
+                    "Foreground operation",
+                    "RSTorrent holds Android power and Wi-Fi locks only while transfer work is active.",
+                )
+                UnavailableSetting("Battery policy")
+            }
+        }
+        composable(ProductRoutes.SETTINGS_ADVANCED) {
+            SettingsPage("Advanced", navController::popBackStack) {
+                Text("Theme", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.SemiBold)
+                ProductThemeMode.entries.forEach { mode ->
+                    ListItem(
+                        headlineContent = { Text(mode.name.lowercase().replaceFirstChar(Char::titlecase)) },
+                        leadingContent = {
+                            RadioButton(selected = themeMode == mode, onClick = { onThemeMode(mode) })
+                        },
+                        modifier = Modifier.semantics { role = Role.RadioButton },
+                    )
+                }
+                ListItem(
+                    headlineContent = { Text("Use system colors") },
+                    supportingContent = { Text("Available on Android 12 and later") },
+                    trailingContent = {
+                        Switch(checked = dynamicColor, onCheckedChange = onDynamicColor)
                     },
                 )
-            }
-            state.storageRootLabel?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            OutlinedTextField(
-                value = magnet,
-                onValueChange = { magnet = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Magnet link") },
-                minLines = 2,
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    service.addMagnet(magnet)
-                    magnet = ""
-                },
-                enabled = state.ready && state.storageRootReady && magnet.isNotBlank(),
-            ) {
-                Text("Add magnet")
-            }
-            Spacer(Modifier.height(20.dp))
-            Text(
-                "Transfers · ${torrents.size}",
-                style = MaterialTheme.typography.titleLarge,
-            )
-        }
-        if (torrents.isEmpty()) {
-            item {
-                Card {
-                    Text(
-                        "No torrents yet. Add a controlled magnet to begin.",
-                        modifier = Modifier.padding(20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Divider()
+                UnavailableSetting("Search plugins")
+                UnavailableSetting("Reset engine settings")
             }
         }
-        items(torrents, key = TorrentView::torrentId) { torrent ->
-            TorrentCard(
-                torrent = torrent,
-                selected = state.selectedTorrent == torrent.torrentId,
-                onSelect = { service.selectTorrent(torrent.torrentId) },
-                onPause = { service.pause(torrent.torrentId) },
-                onResume = { service.resume(torrent.torrentId) },
-            )
-            if (state.selectedTorrent == torrent.torrentId) {
-                state.pieces[torrent.torrentId]?.let { pieces ->
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                            ),
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Piece activity", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                pieces.active.firstOrNull()?.let {
-                                    if (pieces.active.size == 1) {
-                                        "Active piece ${it.pieceIndex} · ${it.pieceLength} bytes"
-                                    } else {
-                                        "${pieces.active.size} active pieces"
-                                    }
-                                } ?: "No active pieces",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            PieceMap(
-                                piecesTotal = pieces.pieceCount,
-                                verified = pieces.verified,
-                                active = pieces.active,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            DiagnosticsPanel(
-                events = state.diagnostics,
-                sourceEvicted = state.diagnosticSourceEvicted,
-                resets = state.diagnosticResets,
-                selectedTorrent = state.selectedTorrent,
-                progressLabel =
-                    state.selectedTorrent
-                        ?.let(state.torrents::get)
-                        ?.progress
-                        ?.let {
-                            "${it.disposition.name.lowercase()} · " +
-                                "${it.phase.name.lowercase()} · " +
-                                it.reason.name.lowercase().replace('_', ' ')
-                        },
-                profile = diagnosticProfile,
-                severity = diagnosticSeverity,
-                categories = diagnosticCategories,
-                torrentOnly = diagnosticTorrentOnly,
-                search = diagnosticSearch,
-                autoscroll = diagnosticAutoscroll,
-                onProfile = {
-                    diagnosticProfile = it
-                    service.configureDiagnostics(
-                        diagnosticProfile,
-                        diagnosticSeverity,
-                        diagnosticCategories.toList(),
-                        diagnosticTorrentOnly,
-                    )
-                },
-                onSeverity = {
-                    diagnosticSeverity = it
-                    service.configureDiagnostics(
-                        diagnosticProfile,
-                        diagnosticSeverity,
-                        diagnosticCategories.toList(),
-                        diagnosticTorrentOnly,
-                    )
-                },
-                onCategory = { category ->
-                    diagnosticCategories =
-                        if (category in diagnosticCategories) {
-                            diagnosticCategories - category
-                        } else {
-                            diagnosticCategories + category
-                        }
-                    service.configureDiagnostics(
-                        diagnosticProfile,
-                        diagnosticSeverity,
-                        diagnosticCategories.toList(),
-                        diagnosticTorrentOnly,
-                    )
-                },
-                onTorrentOnly = {
-                    diagnosticTorrentOnly = !diagnosticTorrentOnly
-                    service.configureDiagnostics(
-                        diagnosticProfile,
-                        diagnosticSeverity,
-                        diagnosticCategories.toList(),
-                        diagnosticTorrentOnly,
-                    )
-                },
-                onSearch = { diagnosticSearch = it },
-                onAutoscroll = { diagnosticAutoscroll = !diagnosticAutoscroll },
-            )
-        }
-        item { Spacer(Modifier.height(28.dp)) }
+    }
+    if (removeTargets.isNotEmpty()) {
+        RemoveDialog(
+            count = removeTargets.size,
+            onDismiss = { removeTargets = emptySet() },
+            onKeep = {
+                removeTargets.forEach { service?.removeTorrent(it, RemovalDataPolicy.KEEP) }
+                removeTargets = emptySet()
+            },
+            onDelete = {
+                removeTargets.forEach { service?.removeTorrent(it, RemovalDataPolicy.DELETE_MANAGED) }
+                removeTargets = emptySet()
+            },
+        )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TorrentCard(
-    torrent: TorrentView,
-    selected: Boolean,
-    onSelect: () -> Unit,
+private fun TorrentDetailScreen(
+    torrent: TorrentView?,
+    state: ProductState,
+    onBack: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    onForceRecheck: () -> Unit,
+    onMoveTop: () -> Unit,
+    onMoveBottom: () -> Unit,
+    onArchive: () -> Unit,
+    onRestore: () -> Unit,
+    onRemove: () -> Unit,
+    onSpeed: () -> Unit,
+    onDht: () -> Unit,
+    onLogs: () -> Unit,
+    onSettings: () -> Unit,
 ) {
-    val percent =
-        if (torrent.pieceCount == 0U) {
-            0.0
-        } else {
-            torrent.verifiedPieceCount.toDouble() / torrent.pieceCount.toDouble() * 100.0
-        }
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onSelect),
-        shape = RoundedCornerShape(14.dp),
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    if (selected) Color(0xFF183128) else MaterialTheme.colorScheme.surface,
-            ),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                torrent.state.name.lowercase().replace('_', ' '),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Spacer(Modifier.height(5.dp))
-            Text(
-                torrent.displayName ?: torrent.torrentId,
-                maxLines = 1,
-                fontFamily = if (torrent.displayName == null) FontFamily.Monospace else null,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "${torrent.progress.disposition.name.lowercase()} · " +
-                    "${torrent.progress.phase.name.lowercase()} · " +
-                    torrent.progress.reason.name.lowercase().replace('_', ' '),
-                color =
-                    if (torrent.progress.disposition.name == "BLOCKED") {
-                        MaterialTheme.colorScheme.secondary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                style = MaterialTheme.typography.bodySmall,
-            )
-            torrent.error?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Spacer(Modifier.height(5.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    "${torrent.verifiedPieceCount} / ${torrent.pieceCount} pieces",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(String.format("%.2f%%", percent), fontFamily = FontFamily.Monospace)
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = if (torrent.state == TorrentState.PAUSED) onResume else onPause,
-            ) {
-                Text(if (torrent.state == TorrentState.PAUSED) "Resume" else "Pause")
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiagnosticsPanel(
-    events: List<DiagnosticEvent>,
-    sourceEvicted: String,
-    resets: ULong,
-    selectedTorrent: String?,
-    progressLabel: String?,
-    profile: DiagnosticProfile,
-    severity: DiagnosticSeverity,
-    categories: Set<DiagnosticCategory>,
-    torrentOnly: Boolean,
-    search: String,
-    autoscroll: Boolean,
-    onProfile: (DiagnosticProfile) -> Unit,
-    onSeverity: (DiagnosticSeverity) -> Unit,
-    onCategory: (DiagnosticCategory) -> Unit,
-    onTorrentOnly: () -> Unit,
-    onSearch: (String) -> Unit,
-    onAutoscroll: () -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    val needle = search.trim().lowercase()
-    val visible =
-        events.filter { event ->
-            (!torrentOnly || event.torrentId == selectedTorrent) &&
-                (
-                    needle.isEmpty() ||
-                        listOf(
-                            event.code,
-                            event.category.value,
-                            event.severity.name,
-                            event.message,
-                        ).any { it.lowercase().contains(needle) }
-                )
-        }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D151B)),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Diagnostics", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "${visible.size} shown · $sourceEvicted source evicted · $resets resyncs",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            progressLabel?.let {
-                Text(
-                    "Selected progress · $it",
-                    color =
-                        if (it.startsWith("blocked")) {
-                            MaterialTheme.colorScheme.secondary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            visible.lastOrNull()?.let { latest ->
-                Text(
-                    "Latest · ${latest.severity.name.lowercase()} · " +
-                        latest.category.value,
-                    color =
-                        if (latest.severity == DiagnosticSeverity.WARNING) {
-                            MaterialTheme.colorScheme.secondary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                Text(
-                    latest.code,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                Text(latest.message, style = MaterialTheme.typography.bodySmall)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DiagnosticProfile.entries.forEach { value ->
-                    Button(onClick = { onProfile(value) }, enabled = value != profile) {
-                        Text(value.name.lowercase())
+    var overflow by remember { mutableStateOf(false) }
+    val pager = rememberPagerState(pageCount = { TorrentDetailTab.entries.size })
+    val scope = rememberCoroutineScope()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
-                }
-            }
-            Text("Minimum severity", style = MaterialTheme.typography.labelSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                DiagnosticSeverity.entries.forEach { value ->
-                    Button(onClick = { onSeverity(value) }, enabled = value != severity) {
-                        Text(value.name.lowercase().take(3))
+                },
+                title = {
+                    Text(
+                        torrent?.displayName ?: torrent?.torrentId ?: "Torrent",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                actions = {
+                    val paused = torrent?.operationalState == TorrentOperationalState.PAUSED
+                    IconButton(onClick = if (paused) onResume else onPause, enabled = torrent != null) {
+                        Icon(
+                            if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                            contentDescription = if (paused) "Resume" else "Pause",
+                        )
                     }
-                }
-            }
-            Text("Categories", style = MaterialTheme.typography.labelSmall)
-            diagnosticCategoryChoices.chunked(3).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    row.forEach { category ->
-                        Button(
-                            onClick = { onCategory(category) },
-                            enabled = category !in categories,
-                        ) {
-                            Text(category.value.take(9))
+                    Box {
+                        IconButton(onClick = { overflow = true }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Force recheck") },
+                                enabled = torrent?.forceRecheckAvailable == true,
+                                onClick = { overflow = false; onForceRecheck() },
+                            )
+                            DropdownMenuItem(text = { Text("Move to top") }, onClick = { overflow = false; onMoveTop() })
+                            DropdownMenuItem(text = { Text("Move to bottom") }, onClick = { overflow = false; onMoveBottom() })
+                            DropdownMenuItem(
+                                text = { Text(if (torrent?.archived == true) "Restore archive" else "Archive") },
+                                onClick = { overflow = false; if (torrent?.archived == true) onRestore() else onArchive() },
+                            )
+                            DropdownMenuItem(text = { Text("Remove torrent") }, onClick = { overflow = false; onRemove() })
+                            Divider()
+                            DropdownMenuItem(text = { Text("Speed") }, onClick = { overflow = false; onSpeed() })
+                            DropdownMenuItem(text = { Text("DHT Info") }, onClick = { overflow = false; onDht() })
+                            DropdownMenuItem(text = { Text("Logs") }, onClick = { overflow = false; onLogs() })
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = { overflow = false; onSettings() })
                         }
                     }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(
-                    onClick = onTorrentOnly,
-                    enabled = selectedTorrent != null,
-                ) {
-                    Text(if (torrentOnly) "Selected torrent" else "Global scope")
-                }
-                Button(onClick = onAutoscroll) {
-                    Text(if (autoscroll) "Pause scroll" else "Resume scroll")
-                }
-            }
-            OutlinedTextField(
-                value = search,
-                onValueChange = onSearch,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Search diagnostics") },
-            )
-            Button(
-                onClick = {
-                    val text =
-                        visible
-                            .joinToString("\n") {
-                                "${it.timestampMillis} ${it.severity.name.lowercase()} " +
-                                    "${it.category.value} ${it.code} ${it.message}"
-                            }.take(64 * 1024)
-                    clipboard.setText(AnnotatedString(text))
                 },
-            ) {
-                Text("Copy shown")
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            ScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 8.dp) {
+                TorrentDetailTab.entries.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = pager.currentPage == index,
+                        onClick = { scope.launch { pager.animateScrollToPage(index) } },
+                        text = { Text(tab.label) },
+                    )
+                }
             }
-            if (profile == DiagnosticProfile.TRACE) {
-                Text(
-                    "Trace is high volume and session-scoped.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            if (visible.isEmpty()) {
-                Text(
-                    "No diagnostics match the current filters.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                visible.takeLast(80).forEach { DiagnosticRow(it) }
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+                DetailTabContent(TorrentDetailTab.entries[page], torrent, state)
             }
         }
     }
 }
 
 @Composable
-private fun DiagnosticRow(event: DiagnosticEvent) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                "${event.severity.name.lowercase()} · ${event.category.value}",
-                color =
-                    when (event.severity) {
-                        DiagnosticSeverity.ERROR -> MaterialTheme.colorScheme.error
-                        DiagnosticSeverity.WARNING -> MaterialTheme.colorScheme.secondary
-                        else -> MaterialTheme.colorScheme.primary
-                    },
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Text(
-                event.code,
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.labelSmall,
-            )
-        }
-        Text(event.message, style = MaterialTheme.typography.bodySmall)
+private fun DetailTabContent(
+    tab: TorrentDetailTab,
+    torrent: TorrentView?,
+    state: ProductState,
+) {
+    if (torrent == null) {
+        CenterMessage("Torrent is no longer available")
+        return
     }
+    when (tab) {
+        TorrentDetailTab.DETAILS ->
+            DetailList(
+                "Info hash" to torrent.torrentId,
+                "State" to operationalLabel(torrent.operationalState),
+                "Required" to formatBytes(torrent.requiredPayloadBytes),
+                "Remaining" to formatBytes(torrent.remainingPayloadBytes),
+                "Pieces" to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}",
+                "Trackers" to (torrent.configuredTrackerCount?.toString() ?: "—"),
+            )
+        TorrentDetailTab.STATUS ->
+            DetailList(
+                "Download" to formatRate(torrent.payloadDownloadRateBytes),
+                "Peers" to torrent.activePeerConnections.toString(),
+                "ETA" to torrentEta(torrent),
+                "Storage" to torrent.storageState.name.lowercase(),
+                "Progress" to torrent.progress.reason.name.lowercase(),
+                "Error" to (torrent.error ?: "None"),
+            )
+        TorrentDetailTab.PIECES -> {
+            val pieces = state.pieces[torrent.torrentId]
+            if (pieces == null) {
+                CenterMessage("Piece activity is loading…")
+            } else {
+                Column(Modifier.padding(16.dp)) {
+                    Text("${pieces.verified.sumOf { (it.endExclusive - it.start).toInt() }} of ${pieces.pieceCount} verified")
+                    Spacer(Modifier.height(12.dp))
+                    PieceMap(pieces.pieceCount, pieces.verified, pieces.active)
+                }
+            }
+        }
+        TorrentDetailTab.FILES -> CenterMessage("File catalog is loading…")
+        TorrentDetailTab.TRACKERS -> CenterMessage("Tracker catalog is loading…")
+        TorrentDetailTab.PEERS -> CenterMessage("Peer details are loading…")
+    }
+}
+
+@Composable
+private fun DetailList(vararg rows: Pair<String, String>) {
+    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+        items(rows.toList()) { (label, value) -> ReadOnlySetting(label, value) }
+    }
+}
+
+@Composable
+private fun LogsShell(
+    events: List<DiagnosticEvent>,
+    onBack: () -> Unit,
+) {
+    SettingsPage("Logs", onBack) {
+        if (events.isEmpty()) {
+            CenterMessage("No diagnostic records match the current filter")
+        } else {
+            events.takeLast(200).forEach { event ->
+                ListItem(
+                    headlineContent = { Text(event.code, fontFamily = FontFamily.Monospace) },
+                    supportingContent = {
+                        Text(
+                            "${event.severity.name.lowercase()} · ${event.category.value}",
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    },
+                )
+                Divider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsHub(navController: NavHostController) {
+    SettingsPage("Settings", navController::popBackStack) {
+        SettingsDestination("Storage", "Download folder and root health", Icons.Outlined.Folder) {
+            navController.navigate(ProductRoutes.SETTINGS_STORAGE)
+        }
+        SettingsDestination("Speed & Connection Limits", "Peers, uploads, and active downloads", Icons.Outlined.Speed) {
+            navController.navigate(ProductRoutes.SETTINGS_SPEED)
+        }
+        SettingsDestination("Notifications", "Android permission and channel", Icons.Outlined.Notifications) {
+            navController.navigate(ProductRoutes.SETTINGS_NOTIFICATIONS)
+        }
+        SettingsDestination("Network & Privacy", "Listening, mapping, encryption, and IPv6", Icons.Outlined.NetworkCheck) {
+            navController.navigate(ProductRoutes.SETTINGS_NETWORK)
+        }
+        SettingsDestination("Power Management", "Foreground operation and battery behavior", Icons.Outlined.BatterySaver) {
+            navController.navigate(ProductRoutes.SETTINGS_POWER)
+        }
+        SettingsDestination("Advanced", "Appearance and unavailable expert features", Icons.Outlined.Settings) {
+            navController.navigate(ProductRoutes.SETTINGS_ADVANCED)
+        }
+    }
+}
+
+@Composable
+private fun SettingsDestination(
+    title: String,
+    detail: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        leadingContent = { Icon(icon, contentDescription = null) },
+        trailingContent = { Text("›") },
+        modifier = Modifier.semantics(mergeDescendants = true) { role = Role.Button }.then(Modifier),
+    )
+    // ListItem has no click parameter; the transparent action preserves a full-row target.
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Open $title") }
+    Divider()
+}
+
+@Composable
+private fun SimpleRouteScreen(
+    title: String,
+    onBack: () -> Unit,
+    description: String,
+) {
+    SettingsPage(title, onBack) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SettingsPage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding), content = content)
+    }
+}
+
+@Composable
+private fun ReadOnlySetting(
+    title: String,
+    detail: String,
+) {
+    ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) })
+    Divider()
+}
+
+@Composable
+private fun UnavailableSetting(title: String) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text("Not available yet") },
+        colors = androidx.compose.material3.ListItemDefaults.colors(
+            headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            supportingColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
+    Divider()
+}
+
+@Composable
+private fun SettingAction(
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+    action: String,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        trailingContent = { TextButton(onClick = onClick) { Text(action) } },
+    )
+    Divider()
+}
+
+@Composable
+private fun CenterMessage(message: String) {
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun RemoveDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onKeep: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (count == 1) "Remove torrent?" else "Remove $count torrents?") },
+        text = { Text("Choose whether RSTorrent should keep or delete its managed downloaded data.") },
+        confirmButton = { TextButton(onClick = onDelete) { Text("Delete data") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onKeep) { Text("Keep data") }
+            }
+        },
+    )
 }

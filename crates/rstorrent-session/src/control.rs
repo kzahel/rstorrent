@@ -45,6 +45,7 @@ pub struct RequestEnvelope {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AddTorrentBytesRequest {
     pub version: u16,
     pub request_id: String,

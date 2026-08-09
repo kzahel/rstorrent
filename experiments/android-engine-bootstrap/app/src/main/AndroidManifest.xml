@@ -10,7 +10,9 @@
     <application
         android:name=".RstorrentApplication"
         android:allowBackup="false"
+        android:icon="@drawable/ic_rstorrent_launcher"
         android:label="RSTorrent"
+        android:roundIcon="@drawable/ic_rstorrent_launcher"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <activity

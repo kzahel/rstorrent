@@ -1,8 +1,10 @@
 package org.rstorrent.bootstrap
 
 import org.rstorrent.session.uniffi.ActivePiece
+import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.DiagnosticEvent
 import org.rstorrent.session.uniffi.IndexRange
+import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
 import org.rstorrent.session.uniffi.ViewSnapshot
@@ -23,6 +25,8 @@ data class ProductState(
     val storageRootLabel: String? = null,
     val selectedTorrent: String? = null,
     val torrents: Map<String, TorrentView> = emptyMap(),
+    val storage: StorageSettingsSnapshot? = null,
+    val clientSettings: ClientSettingsRuntimeView? = null,
     val pieces: Map<String, PieceActivityState> = emptyMap(),
     val diagnostics: List<DiagnosticEvent> = emptyList(),
     val diagnosticSourceEvicted: String = "0",
@@ -91,6 +95,8 @@ internal object ProductStateReducer {
             is ViewSnapshot.TorrentList ->
                 state.copy(
                     torrents = snapshot.torrents.associateBy(TorrentView::torrentId),
+                    storage = snapshot.storage,
+                    clientSettings = snapshot.clientSettings,
                 )
             is ViewSnapshot.Torrent -> {
                 val torrent = snapshot.torrent
@@ -137,7 +143,11 @@ internal object ProductStateReducer {
                 val torrents = state.torrents.toMutableMap()
                 patch.removed.forEach(torrents::remove)
                 patch.upsert.forEach { torrents[it.torrentId] = it }
-                state.copy(torrents = torrents)
+                state.copy(
+                    torrents = torrents,
+                    storage = patch.storage ?: state.storage,
+                    clientSettings = patch.clientSettings ?: state.clientSettings,
+                )
             }
             is ViewPatch.Torrent -> {
                 val torrent = patch.torrent

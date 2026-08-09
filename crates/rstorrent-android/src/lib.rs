@@ -20,8 +20,9 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, ConfiguredStorageRoot, PlatformRemovalPlan,
-    RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
+    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
+    ViewUpdate,
 };
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex as AsyncMutex;
@@ -162,6 +163,21 @@ impl AndroidApplicationClient {
             .as_mut()
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .dispatch(request)
+            .await
+            .map_err(|error| AndroidClientError::message(error.to_string()))
+    }
+
+    pub async fn add_torrent_bytes(
+        &self,
+        request: AddTorrentBytesRequest,
+        source: Vec<u8>,
+    ) -> Result<ResponseEnvelope, AndroidClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .add_torrent_bytes(request, source)
             .await
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
