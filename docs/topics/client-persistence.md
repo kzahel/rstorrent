@@ -99,12 +99,15 @@ identities/routing observations, tracker source, and active connection state
 remain runtime facts. The DHT snapshot's bounded address-keyed identities and
 per-family bootstrap samples retain their own version-2 blob contract.
 
-Planned Tactical
+Completed Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-now owns the prerequisite cross-platform storage-observation envelope, early
+adds the prerequisite cross-platform storage-observation envelope, early
 capability health, SAF published reads, and physical iOS persistence/lifecycle
-probe. It does not authorize a trusting resume decision; conservative restart
-and full Force recheck remain current behavior.
+evidence without changing schema 17. Portable rows retain root identity,
+payload state, verification generations, and current storage generation;
+platform locators and runtime health remain adapter-owned. It does not
+authorize a trusting resume decision: conservative restart and full Force
+recheck remain current behavior.
 
 ## Scope
 
@@ -629,11 +632,11 @@ successful mutation unreadable after upgrade.
   post-sync/pre-commit crashes retain zero false have bits; the observed
   post-commit boundary safely retains all 256. Broader filesystem failure
   profiles remain open.
-- The exact clean-shutdown, storage-generation, and file-observation evidence
-  required before a later fast-resume path may skip hashing. Tactical `116`
-  must first make those observations coherent for path and supported Android
-  SAF storage; it deliberately leaves the trust decision to the following
-  tactical.
+- The exact clean-shutdown envelope and explicit trust policy required before
+  a later fast-resume path may skip hashing. Tactical `116` makes storage
+  generation, root health, logical artifact identity, and file observations
+  coherent for path and supported Android SAF storage, but deliberately leaves
+  the trust decision to a following tactical.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
 - Tactical

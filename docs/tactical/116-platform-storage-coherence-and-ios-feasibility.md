@@ -1,6 +1,6 @@
 # Tactical 116: Platform Storage Coherence And iOS Feasibility
 
-Status: Authorized and in progress after completed Tactical
+Status: Completed on 2026-08-10 after Tactical
 [`114`](114-session-wide-concurrent-torrent-admission.md). Maintainer
 discussion on 2026-08-09 accepted Android as a non-deferrable engine parity
 gate and iOS as an eventual first-party native product worth testing on a
@@ -697,6 +697,34 @@ security-scoped and coordinated access to the app-owned picker fixture. It
 does not establish iCloud, offloaded, third-party, or external local-provider
 support. No stable device identifier, bookmark bytes, or path is retained in
 repository evidence.
+
+### Stage 9: closure and repository truth
+
+All ten stopping-condition outcomes are reconciled with the implementation
+and its accepted negative evidence. In particular, fast resume remains absent:
+the new observations can disqualify later trust but cannot establish payload
+validity, conservative restart still checks, and Force recheck always hashes.
+
+The final repository gate passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`, including 425 engine tests and 225 session tests
+  with only the documented opt-in tests ignored;
+- `npm run typecheck --prefix clients/web`;
+- `npm run test --prefix clients/web`, with 239 tests passing and two skipped;
+- the iOS harness's three host tests, both Apple Rust targets, unsigned
+  simulator Xcode build, and development-signed physical build;
+- both Android Rust ABIs, regenerated Kotlin bindings, debug APK assembly, JVM
+  tests, the no-window API 34 AVD matrix, and the authorized physical matrix;
+  and
+- `git diff --check` after the documentation reconciliation.
+
+The Android runner removed its installed test application and shut down its
+AVD. The iOS probe application was uninstalled; its exact workspaces were
+already absent, and temporary build and evidence directories were moved to
+Trash. Repository evidence retains no stable device identifier, platform
+locator, bookmark, SAF URI, raw provider identity, or payload capture.
 
 ## Staged Implementation And Intermediate Gates
 

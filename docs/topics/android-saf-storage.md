@@ -19,12 +19,16 @@ libtorrent-scale v1 metainfo: Android consumes compact selection and paged
 file catalogs, derives the same deterministic safe operational paths, and
 keeps provider requests, documents, and descriptors lazy. It does not add an
 Android `.torrent` picker or document-intent intake.
-Planned Tactical
+Completed Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-is now the prerequisite shoring slice: it adds platform observations and early
-root health, reuses the shared logical published-content owner for SAF upload,
-converges namespace outcomes, and makes applicable Android behavior a
-non-deferrable completion gate for future engine tacticals.
+adds typed platform observations and early root health, reuses the shared
+logical published-content owner for SAF upload, converges namespace outcomes,
+and isolates fixed descriptor manifests behind a diagnostic-only feature. Its
+API 34 AVD and physical Android 17/API 37 matrices pass download, selection,
+restart, complete recheck, publication, upload, removal, grant repair,
+cancellation, exact cleanup, and bounded-resource assertions. Applicable
+Android behavior is now a non-deferrable completion gate for future engine
+tacticals.
 
 ## Scope
 
@@ -54,8 +58,8 @@ It complements:
 This topic does not implement general Android multi-root UI, cloud document
 providers, torrent relocation, a general virtual filesystem, or a second
 Android storage engine. SAF-backed seeding and bounded file observations are
-planned specifically in Tactical `116` rather than implied by this topic
-alone.
+implemented specifically by Tactical `116`; that evidence does not broaden
+the provider claim beyond the tested local SAF path.
 
 ## Current State
 
@@ -106,7 +110,7 @@ remain shared Rust behavior for path and Android destinations:
 - part-file slot allocation and verified-span materialization;
 - routing-generation fences;
 - durability checkpoints and conservative recheck; and
-- publication preparation and seeding reads when seeding is implemented.
+- publication preparation and verified published-content reads for seeding.
 
 The platform-specific difference is intentionally narrow: how a safe logical
 file identity becomes one owned, seekable file descriptor, and how namespace
@@ -389,30 +393,36 @@ bridge; after acquisition, payload I/O remains in Rust.
 - The current resource snapshot exposes pool and request counters, but
   provider latency histograms, typed result counts, and Disk-view presentation
   remain follow-up observability work.
-- The AVD product profile covers the all-Normal transfer and lazy empty-part
-  case. Dynamic-provider live Skip/Normal, interruption/restart, grant repair,
-  and removal retain deterministic/session and earlier durable SAF evidence
-  but were not each repeated in a dedicated new AVD profile.
-- ChromeOS hardware was reachable and passed its nine-check doctor, but ARCVM
-  ADB refused connection, so no new physical dynamic-provider claim is made.
+- Tactical `116` repeats the complete dynamic product lifecycle on a no-window
+  API 34 AVD and a physical Android 17/API 37 device. Download, selective
+  publication, forced restart, conservative verification reconstruction,
+  Force recheck, SAF-backed upload to pinned libtorrent, removal, grant
+  loss/repair, cancellation before and after stored data, and exact staging,
+  part, and published cleanup all pass.
+- Three concurrent dynamic downloads retain two active generations and one
+  queued generation. The one permitted checker may overlap a promoted
+  download, producing a terminal registered high water of three; every live
+  resource count returns to zero. The shared pool peaks at 11/40 and broker
+  pending work at 3/16 on both device classes.
 - Tactical `081` passes both target-architecture Rust builds, generated UniFFI
   Kotlin compilation, APK assembly, and JVM tests. Its high-cardinality test
   represents 374,998 wanted files as one range while consuming one 1,024-row
   catalog page; no eager descriptor manifest is reconstructed.
-- Tactical `078` seeds path-backed storage only. Future SAF upload reads must
-  use this same shared pool rather than adding a separate seeding descriptor
-  cache.
-- The broker response currently carries only an opened file or deletion
-  success. `ProductSafDocuments` looks up document ID and display name but
-  does not return kind, length, modification, or opaque identity observations
-  to Rust; root availability is therefore learned late at operation time.
+- Tactical `116` makes SAF upload reads use the same logical artifact layout,
+  `StorageFileReference`, 40-handle pool, ten-read admission, verified/readable
+  availability, and joined lifecycle as path upload. Independent libtorrent
+  leechers verify the exact 133,304-byte fixture on both device classes.
+- The broker now observes exact artifacts without opening or creating them and
+  returns existence, kind, length, and a bounded opaque token when available.
+  Provider identifiers and URIs remain in Kotlin. Root restore and repair
+  exercise that observation before admitting torrent work, while later grant
+  or provider failure transitions the root back to unavailable.
 
 ## Recommended Next Work
 
-Do not extend the legacy fixed-manifest proof APIs. Execute planned Tactical
-`116` after Tactical `114`: add typed observations/root health, make
-SAF-backed seeding use this pool, converge lifecycle outcomes, isolate or
-remove descriptor-manifest production backing, and repeat the complete
-dynamic AVD/physical matrix. General root management, cloud/removable provider
-support, and an exposed advanced file-pool setting still require their own
-product decisions.
+Do not extend the diagnostic-only fixed-manifest APIs. General root
+management, cloud/removable provider support, relocation, and an exposed
+advanced file-pool setting still require their own product decisions. A later
+fast-resume tactical may consume the common observations only as
+disqualifying evidence: unsupported or mismatched facts fall back to full
+checking, and Force recheck always hashes.

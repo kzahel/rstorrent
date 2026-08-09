@@ -328,41 +328,35 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tactical `114` graduated; Tactical `116` is the planned, not-started
-authoritative Now**.
+Tacticals `114` and `116` graduated**.
 
 Latest graduated tactical:
-[`114-session-wide-concurrent-torrent-admission.md`](../tactical/114-session-wide-concurrent-torrent-admission.md).
-Commits `c9f4fbc` through `c545e91` implement schema-17 durable queueing, one
-application admission owner and active-generation map, shared memory/storage/
-hash/tracker/outbound resource authority, generated product controls, and the
-retained performance and Android harnesses. The one-torrent regression ratio
-is `0.9821`, the two/one aggregate ratio is `1.0815`, every 1/2/3/4/8 run
-finishes with terminal zero resources, 100 runnable and 500 complete catalog
-scales remain bounded, and the physical Pixel 7a proves configured three/
-effective two with promotion and exact publication.
+[`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
+Commits `2ffe6d1` through `99a4cf2` establish one artifact layout, observation
+contract, root-health gate, published-content read owner, namespace-transition
+policy, and dynamic Android product storage architecture. The complete API 34
+AVD and physical Android matrices pass within the 40-handle and 16-request
+bounds. The final physical-iPhone rerun proves app-owned storage, restored
+bookmark coordination, direct Rust TCP/UDP, ordinary expiration, finite
+continued processing, and force-close recovery; external File Provider access
+remains explicitly unproven.
 
 Latest closed tactical:
-[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md). Commit
-`d3ec497` records its completed deterministic, controlled-performance,
-browser, scale, and physical Android evidence.
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
+Its execution record retains the exact deterministic, Android, interop, and
+physical-iOS evidence without stable platform identifiers.
 
-Current milestone: Tactical
-[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md) is
-the single authoritative **Now**, authorized and in progress after graduated
-Tactical `114`.
+Current milestone: Tactical `116` is complete. The capability-readiness queue
+owns the next authoritative **Now**; there is no residual storage-shoring
+implementation action in this campaign checkpoint. Tactical `113` needs no
+further action unless different gateway hardware becomes available or a
+separate control-transport investigation is explicitly authorized.
 
-Next executable action: freeze the current path, SAF, observation, root-health,
-and upload behavior against the graduated session-resource owners, then run the
-front-loaded physical iOS feasibility spike before extracting the common
-logical-artifact seam. Tactical `113` needs no further action unless different
-gateway hardware becomes available or a separate control-transport
-investigation is explicitly authorized.
-
-A separate trusting fast-resume option follows Tactical `116`, whose common
-path/SAF observations and physical iOS feasibility establish the prerequisite
-storage seam. Conservative checking remains the default and Force recheck
-remains the full validation pass.
+A separate trusting fast-resume option may now be planned against Tactical
+`116`'s common path/SAF observations. Conservative checking remains the
+default, every unsupported or mismatched fact falls back to the common full
+checker, and Force recheck remains the full validation pass. No trust policy
+has landed yet.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,

@@ -26,10 +26,12 @@ configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
 Windows remains unimplemented, and Android already proves one
 user-selected persisted SAF root but not general multi-root management.
-Eventual iOS root behavior is accepted in shape but unimplemented; Tactical
+Eventual iOS root behavior is accepted in shape but unimplemented. Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-must test app-owned and user-selected local-provider roots on a physical
-device before a complete iOS product is planned.
+physically proves app-owned Documents and coordinated, security-scoped
+restoration of an app-owned bookmarked fixture. System-picker automation did
+not reach a separate local-provider root, so external **On My iPhone** and File
+Provider support remain unproven before a complete iOS product is planned.
 
 ## Scope
 
@@ -278,10 +280,12 @@ failure. An unresolved bookmark leaves the torrent waiting for repair; it
 must never redirect an established root to app-private Documents merely
 because the display name or path is unavailable.
 
-Tactical `116` first tests the app-owned Documents directory and an explicitly
-selected local **On My iPhone** directory on a physical device. iCloud,
-offloaded items, third-party File Providers, general root-management UI, and a
-support claim remain out of scope until separate evidence exists.
+Tactical `116` proves app-owned Documents plus non-stale bookmark restoration,
+balanced security scope, and coordination around Rust-owned I/O on a physical
+device. Its system-picker attempts do not prove a separate local **On My
+iPhone** directory. That external local-provider case, iCloud, offloaded
+items, third-party File Providers, general root-management UI, and a support
+claim remain out of scope until separate evidence exists.
 
 ## User-Visible Publication Layout
 
@@ -389,7 +393,6 @@ resume slice, and Tactical 063 completes the current metadata-only/live-
 selection flow.
 Later intake work should add `.torrent` sources or pre-metadata cancellation
 without moving file selection out of the Files tab.
-Planned Tactical `116` now precedes storage-facing feature work: it adds
-backend-neutral observations and root-health semantics, closes SAF published
-reads, and records physical iOS root feasibility without implementing fast
-resume or a complete iOS client.
+Completed Tactical `116` adds backend-neutral observations and root-health
+semantics, closes SAF published reads, and records bounded physical iOS root
+feasibility without implementing fast resume or a complete iOS client.
