@@ -10,6 +10,7 @@ import json
 import select
 import shutil
 import socket
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -37,15 +38,26 @@ CAPTURE_LIMIT = 4 * 1024
 class ConnectionTrace:
     client_to_upstream: bytearray
     upstream_to_client: bytearray
+    direction_turns: int
+    delayed_turns: int
+    last_direction: str | None
 
     @classmethod
     def empty(cls) -> ConnectionTrace:
-        return cls(bytearray(), bytearray())
+        return cls(bytearray(), bytearray(), 0, 0, None)
 
 
 class TcpProxy:
-    def __init__(self, upstream: tuple[str, int]) -> None:
+    def __init__(
+        self,
+        upstream: tuple[str, int],
+        *,
+        flight_delay_seconds: float = 0.0,
+        delayed_turn_limit: int = 0,
+    ) -> None:
         self._upstream = upstream
+        self._flight_delay_seconds = flight_delay_seconds
+        self._delayed_turn_limit = delayed_turn_limit
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("127.0.0.1", 0))
@@ -109,6 +121,13 @@ class TcpProxy:
                         if source is client
                         else trace.upstream_to_client
                     )
+                    direction = "client_to_upstream" if source is client else "upstream_to_client"
+                    if trace.last_direction != direction:
+                        trace.last_direction = direction
+                        trace.direction_turns += 1
+                        if trace.delayed_turns < self._delayed_turn_limit:
+                            trace.delayed_turns += 1
+                            time.sleep(self._flight_delay_seconds)
                     if len(capture) < CAPTURE_LIMIT:
                         capture.extend(chunk[: CAPTURE_LIMIT - len(capture)])
                     view = memoryview(chunk)
@@ -136,6 +155,9 @@ class TcpProxy:
                 ConnectionTrace(
                     bytearray(trace.client_to_upstream),
                     bytearray(trace.upstream_to_client),
+                    trace.direction_turns,
+                    trace.delayed_turns,
+                    trace.last_direction,
                 )
                 for trace in self._traces
             ]
@@ -265,6 +287,14 @@ def observed_method(handle: lt.torrent_handle) -> str | None:
     return None
 
 
+def handshake_completed(handle: lt.torrent_handle) -> bool:
+    return any(
+        not peer.flags & lt.peer_info.connecting
+        and not peer.flags & lt.peer_info.handshake
+        for peer in handle.get_peer_info()
+    )
+
+
 def assert_successful_wire_shape(
     traces: list[ConnectionTrace],
     method: str | None,
@@ -301,6 +331,8 @@ def run_outgoing_case(
     level: str = "both",
     prefer_rc4: bool = False,
     label: str | None = None,
+    flight_delay_seconds: float = 0.0,
+    delayed_turn_limit: int = 0,
 ) -> dict[str, object]:
     name = label or f"outgoing-{rst_policy}-{oracle_policy}"
     session = create_session()
@@ -318,7 +350,12 @@ def run_outgoing_case(
             fixture.storage_root,
             diagnostics,
         )
-        proxy = TcpProxy(("127.0.0.1", port))
+        proxy = TcpProxy(
+            ("127.0.0.1", port),
+            flight_delay_seconds=flight_delay_seconds,
+            delayed_turn_limit=delayed_turn_limit,
+        )
+        setup_started = time.monotonic()
         process = subprocess.Popen(
             [
                 str(downloader),
@@ -338,10 +375,13 @@ def run_outgoing_case(
             text=True,
         )
         deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
+        setup_seconds: float | None = None
         while process.poll() is None:
             method = observed_method(handle)
             if method is not None:
                 observed.add(method)
+            if setup_seconds is None and handshake_completed(handle):
+                setup_seconds = time.monotonic() - setup_started
             if time.monotonic() >= deadline:
                 process.kill()
                 raise ScenarioFailure(f"{name} exceeded its process deadline")
@@ -350,6 +390,8 @@ def run_outgoing_case(
         method = next(iter(observed), None)
         traces = proxy.traces()
         if expected_success:
+            if setup_seconds is None:
+                raise ScenarioFailure(f"{name} never exposed a completed peer handshake")
             if process.returncode != 0:
                 raise ScenarioFailure(
                     f"{name} failed unexpectedly: stdout={stdout!r} stderr={stderr!r}"
@@ -389,6 +431,9 @@ def run_outgoing_case(
             "negotiated_method": method,
             "connections": len(traces),
             "payload_sha1": fixture.files[0][1] if expected_success else None,
+            "setup_seconds": setup_seconds,
+            "flight_delay_seconds": flight_delay_seconds,
+            "delayed_turns": traces[-1].delayed_turns if traces else 0,
         }
     finally:
         if proxy is not None:
@@ -436,12 +481,16 @@ def run_incoming_case(
         parameters.flags |= lt.torrent_flags.disable_lsd
         parameters.flags |= lt.torrent_flags.disable_pex
         handle = session.add_torrent(parameters)
+        setup_started = time.monotonic()
         handle.connect_peer(proxy.endpoint)
         deadline = time.monotonic() + CASE_TIMEOUT_SECONDS
+        setup_seconds: float | None = None
         while time.monotonic() < deadline:
             method = observed_method(handle)
             if method is not None:
                 observed.add(method)
+            if setup_seconds is None and handshake_completed(handle):
+                setup_seconds = time.monotonic() - setup_started
             status = handle.status()
             if status.errc.value() != 0:
                 raise ScenarioFailure(f"{name} libtorrent error: {status.errc.message()}")
@@ -457,6 +506,8 @@ def run_incoming_case(
                 f"connections={len(traces)}"
             )
         if expected_success:
+            if setup_seconds is None:
+                raise ScenarioFailure(f"{name} never exposed a completed peer handshake")
             payload = output_root / PAYLOAD_NAME
             if (
                 not payload.is_file()
@@ -487,6 +538,7 @@ def run_incoming_case(
             "negotiated_method": method,
             "connections": len(traces),
             "payload_sha1": fixture.files[0][1] if expected_success else None,
+            "setup_seconds": setup_seconds,
         }
     finally:
         if handle is not None and handle.is_valid():
@@ -597,6 +649,105 @@ def run_matrix(repository: Path) -> dict[str, object]:
             )
         )
 
+        flight_delay_seconds = 0.025
+        results.append(
+            run_outgoing_case(
+                downloader,
+                fixture,
+                root,
+                "disabled",
+                "disabled",
+                True,
+                None,
+                label="outgoing-flight-plain",
+                flight_delay_seconds=flight_delay_seconds,
+                delayed_turn_limit=2,
+            )
+        )
+        results.append(
+            run_outgoing_case(
+                downloader,
+                fixture,
+                root,
+                "required",
+                "forced",
+                True,
+                "rc4",
+                prefer_rc4=True,
+                label="outgoing-flight-rc4",
+                flight_delay_seconds=flight_delay_seconds,
+                delayed_turn_limit=4,
+            )
+        )
+
+    setup_summary: list[dict[str, object]] = []
+    for direction in ("rstorrent_initiates", "libtorrent_initiates"):
+        successful = [
+            result
+            for result in results
+            if result["direction"] == direction
+            and result["expected_success"]
+            and result["setup_seconds"] is not None
+            and not str(result["name"]).startswith("outgoing-flight-")
+        ]
+        plain = [
+            float(result["setup_seconds"])
+            for result in successful
+            if result["negotiated_method"] is None
+        ]
+        mse = [
+            float(result["setup_seconds"])
+            for result in successful
+            if result["negotiated_method"] is not None
+        ]
+        plain_median = statistics.median(plain)
+        mse_median = statistics.median(mse)
+        setup_summary.append(
+            {
+                "direction": direction,
+                "plain_samples": len(plain),
+                "mse_samples": len(mse),
+                "plain_median_millis": plain_median * 1000,
+                "mse_median_millis": mse_median * 1000,
+                "added_median_millis": (mse_median - plain_median) * 1000,
+                "diagnostic_25ms_target_met": mse_median - plain_median <= 0.025,
+            }
+        )
+
+    delayed_plain = next(
+        result for result in results if result["name"] == "outgoing-flight-plain"
+    )
+    delayed_mse = next(
+        result for result in results if result["name"] == "outgoing-flight-rc4"
+    )
+    outgoing_setup = next(
+        summary
+        for summary in setup_summary
+        if summary["direction"] == "rstorrent_initiates"
+    )
+    plain_delay = float(delayed_plain["setup_seconds"]) - (
+        float(outgoing_setup["plain_median_millis"]) / 1000
+    )
+    mse_delay = float(delayed_mse["setup_seconds"]) - (
+        float(outgoing_setup["mse_median_millis"]) / 1000
+    )
+    measured_extra = mse_delay - plain_delay
+    expected_extra = flight_delay_seconds * 2
+    if delayed_plain["delayed_turns"] != 2 or delayed_mse["delayed_turns"] != 4:
+        raise ScenarioFailure("fixed-delay proxy did not observe the expected handshake flights")
+    network_flight = {
+        "one_way_delay_millis": flight_delay_seconds * 1000,
+        "plain_delayed_turns": delayed_plain["delayed_turns"],
+        "mse_delayed_turns": delayed_mse["delayed_turns"],
+        "expected_extra_round_trip_millis": expected_extra * 1000,
+        "measured_extra_millis": measured_extra * 1000,
+        "within_20ms_tolerance": abs(measured_extra - expected_extra) <= 0.020,
+    }
+    if not network_flight["within_20ms_tolerance"]:
+        raise ScenarioFailure(
+            "fixed-delay MSE setup did not add exactly one round trip within tolerance"
+        )
+
     return {
         "schema_version": 1,
         "scenario": "controlled-mse-peer-encryption",
@@ -617,6 +768,8 @@ def run_matrix(repository: Path) -> dict[str, object]:
         },
         "elapsed_seconds": time.monotonic() - started,
         "cases": results,
+        "setup_summary": setup_summary,
+        "network_flight": network_flight,
     }
 
 
