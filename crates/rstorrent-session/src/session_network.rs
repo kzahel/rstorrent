@@ -542,13 +542,18 @@ impl SessionNetworkRuntime {
         };
         let mut effective_settings = settings.clone();
         effective_settings.ipv6_enabled = address_families.ipv6_enabled();
-        let initial_transport_application =
-            ipv6_unavailable.map_or(ClientSettingsApplicationState::Applied, |detail| {
+        let initial_transport_application = match &listener_status {
+            ListenerStatus::BindFailed { detail, .. } => ClientSettingsApplicationState::Degraded {
+                reason: ClientSettingsDegradedReason::TransportBindFailed,
+                detail: detail.clone(),
+            },
+            _ => ipv6_unavailable.map_or(ClientSettingsApplicationState::Applied, |detail| {
                 ClientSettingsApplicationState::Degraded {
                     reason: ClientSettingsDegradedReason::TransportBindFailed,
                     detail,
                 }
-            });
+            }),
+        };
         let pending_owner = SessionNetworkOwner {
             effective_settings,
             effective_listener,

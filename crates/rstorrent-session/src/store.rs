@@ -7111,6 +7111,7 @@ mod tests {
         connection
             .execute_batch(
                 "DROP TABLE prepared_files;
+                 DROP TABLE dht_identities;
                  DROP TABLE dht_nodes;
                  DROP TABLE dht_state;
                  DROP TABLE removal_jobs;

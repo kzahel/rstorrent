@@ -10161,8 +10161,17 @@ mod tests {
         let mut conflicted = ApplicationService::open(configuration.clone())
             .await
             .expect("fixed bind conflict keeps application available");
-        assert!(conflicted.incoming_peer_snapshot().is_none());
+        let active_incoming = conflicted.incoming_peer_snapshot();
         let runtime = client_settings_runtime(&conflicted).await;
+        let ipv6_listener = runtime
+            .transport_families
+            .iter()
+            .find(|family| family.family == crate::TransportAddressFamily::Ipv6)
+            .and_then(|family| family.tcp_endpoint.as_ref());
+        assert_eq!(active_incoming.is_some(), ipv6_listener.is_some());
+        if let Some(active_incoming) = active_incoming {
+            assert!(active_incoming.listen_address.is_ipv6());
+        }
         assert_eq!(runtime.effective_listener, None);
         assert!(matches!(
             runtime.transport_application,
