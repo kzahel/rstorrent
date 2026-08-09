@@ -817,6 +817,34 @@ def parse_arguments(repository: Path) -> argparse.Namespace:
     return arguments
 
 
+def build_release_diagnostic(repository: Path) -> Path:
+    completed = subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "-p",
+            "rstorrent-engine",
+            "--bin",
+            "rstorrent-download-piece",
+        ],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ScenarioFailure(
+            "failed to build release throughput diagnostic\n"
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
+    binary = repository / "target/release/rstorrent-download-piece"
+    if not binary.is_file():
+        raise ScenarioFailure(f"release throughput diagnostic was not created at {binary}")
+    return binary
+
+
 def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
     libtorrent_groups: dict[tuple[int, int], list[TransferResult]] = {}
     rstorrent_groups: dict[tuple[int, int, int, int], list[TransferResult]] = {}
@@ -983,7 +1011,15 @@ def main() -> int:
             print(f"throughput profile is not applicable: {failure}", file=sys.stderr)
         return 2
 
-    binary = (arguments.binary or build_diagnostic(repository)).resolve()
+    if arguments.binary is not None:
+        binary = arguments.binary.resolve()
+        binary_profile = "explicit"
+    elif arguments.encryption_pair:
+        binary = build_release_diagnostic(repository).resolve()
+        binary_profile = "release"
+    else:
+        binary = build_diagnostic(repository).resolve()
+        binary_profile = "dev"
     if not binary.is_file():
         print(f"diagnostic binary is absent: {binary}", file=sys.stderr)
         return 2
@@ -1009,6 +1045,7 @@ def main() -> int:
         "rustc": command_text(["rustc", "--version"], repository),
         "libtorrent": lt.version,
         "rstorrent_binary_sha256": binary_sha256(binary),
+        "rstorrent_binary_profile": binary_profile,
         "source_cache_policy": "warm-uncontrolled-os-page-cache",
     }
     throughput_case_by_id = {

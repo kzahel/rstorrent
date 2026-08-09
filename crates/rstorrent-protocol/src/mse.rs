@@ -269,9 +269,9 @@ impl fmt::Debug for Rc4 {
 }
 
 struct Rc4Core {
-    state: [u8; 256],
-    i: u8,
-    j: u8,
+    state: [u16; 256],
+    i: usize,
+    j: usize,
 }
 
 impl Rc4Core {
@@ -279,30 +279,54 @@ impl Rc4Core {
         if key.is_empty() {
             return Err(Rc4Error::EmptyKey);
         }
-        let mut state = [0_u8; 256];
-        for (value, slot) in (0_u8..=u8::MAX).zip(state.iter_mut()) {
+        let mut state = [0_u16; 256];
+        for (value, slot) in (0_u16..=u8::MAX.into()).zip(state.iter_mut()) {
             *slot = value;
         }
-        let mut j = 0_u8;
+        let mut j = 0_usize;
         for i in 0..state.len() {
-            j = j.wrapping_add(state[i]).wrapping_add(key[i % key.len()]);
-            state.swap(i, usize::from(j));
+            j = (j + state[i] as usize + usize::from(key[i % key.len()])) & 0xff;
+            state.swap(i, j);
         }
         Ok(Self { state, i: 0, j: 0 })
     }
 
     fn apply(&mut self, bytes: &mut [u8]) {
-        let mut i = usize::from(self.i);
-        let mut j = usize::from(self.j);
-        for byte in bytes {
-            i = (i + 1) & 0xff;
-            j = (j + usize::from(self.state[i])) & 0xff;
-            self.state.swap(i, j);
-            let index = (usize::from(self.state[i]) + usize::from(self.state[j])) & 0xff;
-            *byte ^= self.state[index];
+        let mut chunks = bytes.chunks_exact_mut(16);
+        for chunk in &mut chunks {
+            chunk[0] ^= self.next_keystream_byte();
+            chunk[1] ^= self.next_keystream_byte();
+            chunk[2] ^= self.next_keystream_byte();
+            chunk[3] ^= self.next_keystream_byte();
+            chunk[4] ^= self.next_keystream_byte();
+            chunk[5] ^= self.next_keystream_byte();
+            chunk[6] ^= self.next_keystream_byte();
+            chunk[7] ^= self.next_keystream_byte();
+            chunk[8] ^= self.next_keystream_byte();
+            chunk[9] ^= self.next_keystream_byte();
+            chunk[10] ^= self.next_keystream_byte();
+            chunk[11] ^= self.next_keystream_byte();
+            chunk[12] ^= self.next_keystream_byte();
+            chunk[13] ^= self.next_keystream_byte();
+            chunk[14] ^= self.next_keystream_byte();
+            chunk[15] ^= self.next_keystream_byte();
         }
-        self.i = i as u8;
-        self.j = j as u8;
+        for byte in chunks.into_remainder() {
+            *byte ^= self.next_keystream_byte();
+        }
+    }
+
+    #[inline(always)]
+    fn next_keystream_byte(&mut self) -> u8 {
+        self.i = (self.i + 1) & 0xff;
+        let i = self.i;
+        let state_i = self.state[i] as usize;
+        self.j = (self.j + state_i) & 0xff;
+        let j = self.j;
+        let state_j = self.state[j];
+        self.state[i] = state_j;
+        self.state[j] = state_i as u16;
+        self.state[(state_i + state_j as usize) & 0xff] as u8
     }
 }
 
@@ -435,6 +459,11 @@ mod tests {
             select_method(0x8000_0000, MSE_KNOWN_METHODS, true),
             Err(MseMethodError::NoSupportedMethod)
         );
+    }
+
+    #[test]
+    fn duplex_rc4_state_stays_within_the_connection_memory_budget() {
+        assert!(core::mem::size_of::<MseCipherPair>() <= 4 * 1024);
     }
 
     #[test]
