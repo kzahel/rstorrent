@@ -345,12 +345,14 @@ through its final physical evidence and graduation step. Commits `6e4bb80`,
 slots under the existing coordinator, bounded service/lease/uncertainty
 behavior, generated product state, and an identity-free physical harness.
 
-Next executable action: supply the already-authorized off-LAN SSH target
-through `RSTORRENT_OFF_LAN_SSH_TARGET`, run
-`tests/interop/ipv6_pinhole_seeding.py`, and inspect any failure without
-retaining network identities. On success, record its exact bounded evidence,
-reconcile the owning topics, and graduate Tactical `113` before advancing the
-single **Now**.
+Next executable action: restore SSH reachability to the already-authorized
+off-LAN verifier, supply it through `RSTORRENT_OFF_LAN_SSH_TARGET`, and rerun
+`tests/interop/ipv6_pinhole_seeding.py`. The first configured attempt stopped at
+the negative control without enabling a pinhole. After the harness gained an
+identity-free verifier preflight, a configured rerun stopped there before
+fixture creation, listener startup, or gateway mutation. On success, record its
+exact bounded evidence, reconcile the owning topics, and graduate Tactical
+`113` before advancing the single **Now**.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

@@ -34,6 +34,18 @@ PAYLOAD_LENGTH = 4 * 1024 * 1024 + 731
 PROCESS_TIMEOUT = 60
 SSDP_ENDPOINT = ("239.255.255.250", 1900)
 SERVICE_TYPE = "urn:schemas-upnp-org:service:WANIPConnection:2"
+SSH_OPTIONS = (
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "-o",
+    "ServerAliveInterval=5",
+    "-o",
+    "ServerAliveCountMax=2",
+)
 
 
 class GateFailure(RuntimeError):
@@ -319,13 +331,34 @@ def remote_command(source: str) -> str:
     return f"'import base64;exec(base64.b64decode(\"{encoded}\"))'"
 
 
+def require_remote_ready(target: str) -> None:
+    source = (
+        "import socket,sys;"
+        "sys.stdout.write('ready' if socket.has_ipv6 else 'ipv6-unavailable')"
+    )
+    try:
+        completed = subprocess.run(
+            ["ssh", *SSH_OPTIONS, target, "python3", "-c", remote_command(source)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise GateFailure("off-LAN verifier SSH preflight timed out") from error
+    if completed.returncode != 0:
+        raise GateFailure("off-LAN verifier SSH/Python preflight failed")
+    if completed.stdout != "ready":
+        raise GateFailure("off-LAN verifier does not provide IPv6 sockets")
+
+
 def start_remote(
     target: str,
     source: str,
     config: dict[str, object],
 ) -> subprocess.Popen[str]:
     process = subprocess.Popen(
-        ["ssh", target, "python3", "-c", remote_command(source)],
+        ["ssh", *SSH_OPTIONS, target, "python3", "-c", remote_command(source)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -350,6 +383,8 @@ def finish_remote(process: subprocess.Popen[str], expected_status: str) -> dict[
     if returncode != 0:
         stderr = process.stderr.read() if process.stderr is not None else ""
         detail = " ".join(stderr.strip().split())[:240]
+        if not detail.startswith("off-LAN peer verification failed:"):
+            detail = ""
         raise GateFailure(
             "off-LAN verifier failed" + (f": {detail}" if detail else "")
         )

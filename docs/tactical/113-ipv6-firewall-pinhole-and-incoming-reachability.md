@@ -579,10 +579,16 @@ The ordinary Rust workspace baseline, generated contract drift check, web
 typecheck, and web tests pass at this checkpoint. Both Android native ABIs,
 regenerated UniFFI/Kotlin, `assembleDebug`, and `testDebugUnitTest` also pass;
 the Android reducer fixture supplies the new complete-view field explicitly.
-The physical gate's no-opt-in path exits with the expected structured skip
-because `RSTORRENT_OFF_LAN_SSH_TARGET` is not configured in the current shell.
-That skip is harness validation only; it does not satisfy the stopping
-condition.
+The physical gate's no-opt-in path exits with the expected structured skip. An
+initial configured attempt on 2026-08-09 found the operator-selected verifier
+unreachable over SSH during the negative control and therefore never enabled a
+pinhole. The harness now requires an identity-free SSH/Python/IPv6-socket
+preflight before fixture creation, build, listener startup, or gateway
+mutation; a configured rerun stopped at that preflight. Bounded SSH options
+prevent a missing verifier from consuming the transfer timeout, and raw SSH
+diagnostics cannot disclose its address. That preflight failure does not
+satisfy the stopping condition. Physical evidence resumes when the verifier is
+reachable.
 
 ## Validation Matrix
 

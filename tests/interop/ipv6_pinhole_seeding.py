@@ -3,7 +3,9 @@
 
 Set RSTORRENT_OFF_LAN_SSH_TARGET to an operator-controlled SSH destination.
 The destination value, IPv6 address, and gateway identity are consumed only in
-memory and are never printed or persisted by this gate.
+memory and are never printed or persisted by this gate. SSH, Python, and IPv6
+socket readiness are checked before fixture creation, build, listener startup,
+or gateway mutation.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from upnp_external_seeding import (
     create_fixture,
     finish_remote,
     read_json_line,
+    require_remote_ready,
     rows,
     start_remote,
     stop_seed,
@@ -115,6 +118,7 @@ def run(repository: Path) -> dict[str, object]:
     target = os.environ.get("RSTORRENT_OFF_LAN_SSH_TARGET")
     if not target:
         return {"status": "skipped", "reason": "off-LAN SSH target is not configured"}
+    require_remote_ready(target)
     remote_source = (repository / "tests/interop/off_lan_peer_wire.py").read_text()
     root = Path(tempfile.mkdtemp(prefix="rstorrent-ipv6-pinhole-"))
     seed: subprocess.Popen[str] | None = None
@@ -175,6 +179,8 @@ def run(repository: Path) -> dict[str, object]:
                 if "incoming" in (peer.get("sources") or []):
                     observed_swarm = True
             time.sleep(0.03)
+        if remote.poll() is None:
+            raise GateFailure("off-LAN positive verifier exceeded its transfer deadline")
         result = finish_remote(remote, "verified")
         if not observed_peer or not observed_swarm:
             raise GateFailure("ordinary Peers/Swarm views missed the incoming IPv6 peer")

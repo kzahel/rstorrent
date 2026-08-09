@@ -1294,10 +1294,14 @@ production path performs no packet polling; the two diagnostics exist only in
 the retained test process and expose no gateway-assigned ID.
 
 The harness and deterministic/scripted resource assertions are implemented.
-The current environment lacks `RSTORRENT_OFF_LAN_SSH_TARGET`, so the harness's
-structured no-opt-in skip passes but the physical gate has not run. No timing,
-throughput, resource high-water, or incoming-reachability result is recorded
-until that authorized gateway mutation and off-LAN transfer complete.
+Its structured no-opt-in skip passes. A first configured attempt on 2026-08-09
+found the selected verifier unreachable over SSH during the negative control
+and never enabled a pinhole. The harness then gained an identity-free SSH/
+Python/IPv6-socket preflight; a configured rerun stopped there before fixture
+creation, listener startup, or gateway mutation. No timing, throughput,
+resource high-water, or incoming-reachability result is recorded until the
+verifier is reachable and the authorized gateway mutation plus off-LAN
+transfer complete.
 
 ## Maintenance Contract
 

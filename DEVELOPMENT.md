@@ -388,7 +388,9 @@ RSTORRENT_OFF_LAN_SSH_TARGET=YOUR_TARGET \
 
 The harness never prints or persists the SSH target, listener address,
 gateway identity, control URL, or pinhole ID. Without the environment value it
-reports a structured skip and performs no build or gateway mutation.
+reports a structured skip. With a value, an identity-free bounded SSH/Python/
+IPv6-socket preflight must pass before the harness creates a fixture, builds,
+starts a listener, or mutates the gateway.
 
 The opt-in public metadata-only profile starts one session UDP owner with both
 available families and records per-family DHT endpoints, routing thresholds,
