@@ -110,7 +110,8 @@ pub use selective_storage::{
     validate_publication_name, verify_prepared_descriptors, verify_prepared_platform_files,
 };
 pub use session_resources::{
-    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionTorrentResources,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,
+    SessionTorrentResources,
 };
 pub use session_socket::{
     MAX_LISTEN_PORT_RETRIES, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,

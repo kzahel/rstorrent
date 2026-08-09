@@ -2536,10 +2536,12 @@ impl ApplicationService {
             .get(torrent_id)
             .ok_or_else(|| ApplicationError::Configuration("torrent runtime is absent".into()))?
             .generation();
-        control.set_session_resources(
-            self.session_download_resources
-                .register(torrent_id, runtime_generation),
-        );
+        let storage_root = self.load_resume_conservative(torrent_id)?.storage_root;
+        control.set_session_resources(self.session_download_resources.register(
+            torrent_id,
+            runtime_generation,
+            &storage_root,
+        ));
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
@@ -5617,6 +5619,106 @@ mod tests {
         assert_eq!(runtime.active_download_count, 0);
         assert_eq!(runtime.checking_count, 0);
 
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn one_hundred_runnable_torrents_own_only_three_content_generations() {
+        let root = test_root("automatic-admission-hundred-runnable");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                active_downloads: 3,
+                ..ClientSettings::default()
+            },
+        );
+        let listeners = [
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener one"),
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener two"),
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener three"),
+        ];
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        let mut ids = Vec::new();
+        for sequence in 1_u64..=100 {
+            let torrent_id = format!("{sequence:040x}");
+            let peer = usize::try_from(sequence - 1)
+                .ok()
+                .and_then(|index| listeners.get(index))
+                .map(|listener| listener.local_addr().expect("listener address"));
+            let magnet = match peer {
+                Some(peer) => format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
+                None => format!("magnet:?xt=urn:btih:{torrent_id}"),
+            };
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("add-hundred-{sequence}"),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet,
+                        storage_root: "downloads".to_owned(),
+                        start_content: false,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("persist runnable magnet");
+            ids.push(torrent_id);
+        }
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open hundred-torrent application");
+        let mut streams = Vec::new();
+        for listener in &listeners {
+            streams.push(
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("admitted torrent dials")
+                    .expect("accept admitted torrent")
+                    .0,
+            );
+        }
+        assert_eq!(service.active_download_ids(), ids[..3]);
+        let snapshot = service
+            .store_mut()
+            .expect("store")
+            .snapshot()
+            .expect("snapshot");
+        assert_eq!(snapshot.torrents.len(), 100);
+        assert_eq!(
+            snapshot
+                .torrents
+                .iter()
+                .filter(|torrent| torrent.download_queue_position.is_some())
+                .count(),
+            100
+        );
+        let resources = service.session_download_resource_snapshot();
+        assert_eq!(resources.registered_generations, 3);
+        assert_eq!(resources.active_storage_writes, 0);
+        assert_eq!(resources.active_storage_hashes, 0);
+        let runtime = service.views.client_settings_for_testing();
+        assert_eq!(runtime.active_download_count, 3);
+        assert_eq!(runtime.checking_count, 0);
+
+        drop(streams);
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");

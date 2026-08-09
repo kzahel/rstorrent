@@ -3915,8 +3915,8 @@ mod tests {
         );
         let mut first = state(1, vec![plan(0, 1)], 1);
         let mut second = state(1, vec![plan(0, 1)], 1);
-        first.set_session_resources(Some(resources.register("first", 1)));
-        second.set_session_resources(Some(resources.register("second", 1)));
+        first.set_session_resources(Some(resources.register("first", 1, "root")));
+        second.set_session_resources(Some(resources.register("second", 1, "root")));
         add_peer(&mut first, connection(1), &[0], false);
         add_peer(&mut second, connection(2), &[0], false);
 

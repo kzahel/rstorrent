@@ -4657,6 +4657,23 @@ mod tests {
             let mut registration = template.clone();
             registration.info_hash[..8].copy_from_slice(&(value as u64).to_be_bytes());
             handle.register(registration).await.expect("fill registry");
+            if value + 1 == 500 {
+                let retained = handle.snapshot();
+                assert_eq!(retained.registrations, 500);
+                assert_eq!(retained.pending, 0);
+                assert_eq!(retained.established, 0);
+                assert_eq!(retained.reads, 0);
+                assert_eq!(retained.peer_budget.total, 0);
+                assert_eq!(retained.upload_scheduler.peers, 0);
+                assert_eq!(retained.upload_scheduler.interested, 0);
+                assert_eq!(retained.upload_scheduler.regular, 0);
+                assert_eq!(retained.upload_scheduler.optimistic, 0);
+                assert_eq!(retained.torrent_uploads.len(), 500);
+                assert!(retained.torrent_uploads.iter().all(|torrent| {
+                    torrent.peers == 0 && torrent.traffic == super::UploadTrafficSnapshot::default()
+                }));
+                assert!(retained.peer_uploads.is_empty());
+            }
         }
         let mut overflow = template;
         overflow.info_hash = [0xff; 20];

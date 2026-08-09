@@ -27,7 +27,9 @@ use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
 use crate::piece_picker::PieceActivationPolicy;
 use crate::selective_storage::PlatformStorageSpec;
-use crate::session_resources::{SessionExecutionPermit, SessionTorrentResources};
+use crate::session_resources::{
+    SessionExecutionPermit, SessionSemaphorePermit, SessionTorrentResources,
+};
 use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
 use crate::torrent_peer::TorrentPeerActivitySink;
@@ -2747,14 +2749,18 @@ impl DownloadControl {
             .is_none_or(|resources| resources.try_acquire_outbound_turn())
     }
 
-    pub(super) async fn acquire_tracker_operation(&self) -> Option<SessionExecutionPermit> {
+    pub(super) async fn acquire_tracker_operation(&self) -> Option<SessionSemaphorePermit> {
         match self.session_resources() {
             Some(resources) => Some(resources.acquire_tracker_operation().await),
             None => None,
         }
     }
 
-    pub(super) async fn wait_before_checkpoint_sync(&self) {
+    pub(super) async fn wait_before_checkpoint_sync(&self) -> Option<SessionExecutionPermit> {
+        let permit = match self.session_resources() {
+            Some(resources) => Some(resources.acquire_storage_write().await),
+            None => None,
+        };
         let millis = self
             .inner
             .checkpoint_sync_delay_millis
@@ -2762,6 +2768,7 @@ impl DownloadControl {
         if millis != 0 {
             tokio::time::sleep(Duration::from_millis(millis)).await;
         }
+        permit
     }
 
     pub(super) async fn wait_before_checkpoint_commit(&self) {

@@ -656,7 +656,7 @@ async fn flush_content_checkpoint(
     }
     control.disk_checkpoint_sync_started(&batch);
     let sync_started = Instant::now();
-    control.wait_before_checkpoint_sync().await;
+    let _session_write_permit = control.wait_before_checkpoint_sync().await;
     let sync_result = if control.take_checkpoint_sync_failure() {
         Err(DownloadError::Checkpoint(
             "injected checkpoint sync failure".to_owned(),
