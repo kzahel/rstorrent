@@ -43,6 +43,7 @@ PROFILE_CHOICES = (
     "product-dynamic-saf",
     "product-https-tracker",
     "product-https-platform-trust",
+    "product-mse",
     "slow-storage",
     "cancellation",
     "peer-failure",
@@ -151,7 +152,13 @@ class SeedFixture:
     alerts: list[str]
 
     @classmethod
-    def create(cls, interop: ModuleType, label: str) -> "SeedFixture":
+    def create(
+        cls,
+        interop: ModuleType,
+        label: str,
+        *,
+        force_rc4: bool = False,
+    ) -> "SeedFixture":
         run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
         alerts: list[str] = []
         (
@@ -162,6 +169,17 @@ class SeedFixture:
             piece_hashes,
         ) = interop.create_selective_fixture(run_path)
         session = interop.create_session()
+        if force_rc4:
+            import libtorrent as lt
+
+            session.apply_settings(
+                {
+                    "in_enc_policy": int(lt.enc_policy.pe_forced),
+                    "out_enc_policy": int(lt.enc_policy.pe_forced),
+                    "allowed_enc_level": int(lt.enc_level.pe_rc4),
+                    "prefer_rc4": True,
+                }
+            )
         host_port = interop.wait_for_listener(session, alerts)
         handle = interop.add_seed(
             session,
@@ -319,9 +337,9 @@ class ReverseTransport:
         ordinal: int,
         slot: int = 0,
     ) -> "ReverseTransport":
-        if slot not in (0, 1):
-            raise BootstrapFailure("reverse transport slot must be zero or one")
-        device_port = 39_000 + (ordinal % 500) * 2 + slot
+        if not 0 <= slot <= 7:
+            raise BootstrapFailure("reverse transport slot must be between zero and seven")
+        device_port = 39_000 + (ordinal % 500) * 8 + slot
         chrome_tunnel: subprocess.Popen[str] | None = None
         if target_kind == "chromeos":
             chrome_tunnel = subprocess.Popen(
@@ -1438,6 +1456,7 @@ def wait_product_publication(
     target: Any,
     torrent_id: str,
     baseline_fds: int,
+    sample: Any | None = None,
 ) -> tuple[dict[str, int], int]:
     deadline = time.monotonic() + 90
     high_water_fds = baseline_fds
@@ -1447,6 +1466,8 @@ def wait_product_publication(
     )
     logs = ""
     while time.monotonic() < deadline:
+        if sample is not None:
+            sample()
         high_water_fds = max(high_water_fds, product_fd_count(target))
         logs = target.run(
             ["logcat", "-d", "-v", "brief", "RSTorrentProduct:I", "*:S"],
@@ -1724,6 +1745,188 @@ def run_product_dynamic_saf_profile(
         fixture.close()
 
 
+def run_product_mse_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    ordinal: int,
+) -> dict[str, Any]:
+    import libtorrent as lt
+
+    grant_storage = "internal"
+    fixtures = [
+        SeedFixture.create(
+            interop,
+            f"{target_kind}-product-mse-{ordinal}-{attempt}",
+            force_rc4=True,
+        )
+        for attempt in range(1, 6)
+    ]
+    fixture = fixtures[0]
+    transports: list[ReverseTransport] = []
+    observed_rc4: set[int] = set()
+    output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
+    staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        transports = [
+            ReverseTransport.create(
+                target,
+                target_kind,
+                candidate.host_port,
+                ordinal,
+                slot=index,
+            )
+            for index, candidate in enumerate(fixtures)
+        ]
+        peer_hints = "".join(
+            f"&x.pe=127.0.0.1:{transport.device_port}" for transport in transports
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}&dn={fixture.name}{peer_hints}"
+        )
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+                "--es",
+                "product_encryption_policy",
+                "required",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            raise BootstrapFailure("could not add Android product MSE magnet")
+
+        def sample_oracle_methods() -> None:
+            for index, candidate in enumerate(fixtures):
+                try:
+                    if any(
+                        peer.flags & lt.peer_info.rc4_encrypted
+                        for peer in candidate.handle.get_peer_info()
+                    ):
+                        observed_rc4.add(index)
+                except Exception:
+                    pass
+
+        metrics, fd_high_water = wait_product_publication(
+            target,
+            fixture.info_hash,
+            baseline_fds,
+            sample_oracle_methods,
+        )
+        sample_oracle_methods()
+        if len(observed_rc4) != len(fixtures):
+            raise BootstrapFailure(
+                "host oracle did not observe forced RC4 on all five attempts: "
+                f"{sorted(index + 1 for index in observed_rc4)}"
+            )
+        evidence = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_mse_evidence",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in evidence.stdout:
+            raise BootstrapFailure("could not request Android MSE work evidence")
+        pattern = re.compile(
+            r"mse_dh_work waiting=(\d+) active=(\d+) high_water=(\d+) "
+            r"tracked=(\d+) closed=(true|false)"
+        )
+        deadline = time.monotonic() + 10
+        match = None
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            match = pattern.search(logs)
+            if match is not None:
+                break
+            time.sleep(0.2)
+        if match is None:
+            raise BootstrapFailure("Android MSE work evidence was not logged\n" + logs)
+        waiting, active, high_water, tracked = (
+            int(match.group(index)) for index in range(1, 5)
+        )
+        if not 1 <= high_water <= 4:
+            raise BootstrapFailure(
+                f"five Android MSE attempts observed invalid DH high-water {high_water}"
+            )
+        if waiting != 0 or active != 0 or tracked != 0:
+            raise BootstrapFailure(
+                "Android MSE work did not drain: "
+                f"waiting={waiting} active={active} tracked={tracked}"
+            )
+        if "mse_settings configured=REQUIRED effective=REQUIRED application=APPLIED" not in logs:
+            raise BootstrapFailure("Android product did not apply Required MSE policy")
+
+        for relative_path, _, padding in fixture_files():
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if padding:
+                if exists:
+                    raise BootstrapFailure(f"padding file was published: {relative_path}")
+                continue
+            if not exists:
+                raise BootstrapFailure(f"product MSE output is absent: {relative_path}")
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != fixture.expected_file_hashes[relative_path]:
+                raise BootstrapFailure(f"product MSE output hash differs: {relative_path}")
+        for unexpected in (staging_root, part_path):
+            if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
+                raise BootstrapFailure(f"unexpected MSE artifact survived: {unexpected}")
+
+        return {
+            "target": target_kind,
+            "profile": "product-mse",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": fixture.info_hash,
+            "publication_name": fixture.name,
+            "forced_rc4_attempts": len(observed_rc4),
+            "mse_dh": {
+                "waiting": waiting,
+                "active": active,
+                "high_water": high_water,
+                "tracked": tracked,
+            },
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        for transport in reversed(transports):
+            transport.close()
+        for candidate in fixtures:
+            candidate.close()
+
+
 def run_product_https_platform_trust_profile(
     target: Any,
     target_kind: str,
@@ -1981,7 +2184,12 @@ def main() -> int:
             repetitions = (
                 arguments.runs
                 if profile
-                in ("success", "product-dynamic-saf", "product-https-tracker")
+                in (
+                    "success",
+                    "product-dynamic-saf",
+                    "product-https-tracker",
+                    "product-mse",
+                )
                 else 1
             )
             for ordinal in range(1, repetitions + 1):
@@ -2033,6 +2241,15 @@ def main() -> int:
                         tracker_support,
                         ordinal,
                         arguments.storage,
+                    )
+                elif profile == "product-mse":
+                    result = run_product_mse_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
                     )
                 else:
                     result = run_standard_profile(

@@ -1142,6 +1142,10 @@ impl ApplicationService {
             .and_then(SessionNetworkRuntime::incoming_peer_snapshot)
     }
 
+    pub fn mse_dh_work_snapshot(&self) -> rstorrent_engine::MseDhWorkSnapshot {
+        self.session_network().mse_dh().snapshot()
+    }
+
     pub fn suggested_storage_root_path(
         &self,
         repair_root: Option<&str>,

@@ -23,8 +23,10 @@ class MainActivity : ComponentActivity() {
     private var productMode = false
     private var pendingProductMagnet: String? = null
     private var pendingProductTrackerPolicy: String? = null
+    private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
     private var pendingProductTrackerEvidenceTorrent: String? = null
+    private var pendingProductMseEvidence = false
     private var pendingCrashAfterSafRename = false
     private val productConnection =
         object : ServiceConnection {
@@ -43,20 +45,27 @@ class MainActivity : ComponentActivity() {
                     pendingProductMagnet = null
                     val policy = pendingProductTrackerPolicy
                     pendingProductTrackerPolicy = null
-                    if (policy == null) {
-                        service.addMagnet(it)
-                    } else {
-                        service.addMagnetWithTrackerPolicyForTest(
+                    val encryption = pendingProductEncryptionPolicy
+                    pendingProductEncryptionPolicy = null
+                    when {
+                        policy != null -> service.addMagnetWithTrackerPolicyForTest(
                             it,
                             policy,
                             pendingProductStartContent,
                         )
+                        encryption != null ->
+                            service.addMagnetWithEncryptionPolicyForTest(it, encryption)
+                        else -> service.addMagnet(it)
                     }
                     pendingProductStartContent = true
                 }
                 pendingProductTrackerEvidenceTorrent?.let {
                     pendingProductTrackerEvidenceTorrent = null
                     service.subscribeTrackerEvidenceForTest(it)
+                }
+                if (pendingProductMseEvidence) {
+                    pendingProductMseEvidence = false
+                    service.logMseDhEvidenceForTest()
                 }
             }
 
@@ -181,6 +190,22 @@ class MainActivity : ComponentActivity() {
                         service.subscribeTrackerEvidenceForTest(it)
                     }
                 }
+            command
+                .getStringExtra(EXTRA_PRODUCT_ENCRYPTION_POLICY)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_ENCRYPTION_POLICY)
+                    pendingProductEncryptionPolicy = it
+                }
+            if (command.getBooleanExtra(EXTRA_PRODUCT_MSE_EVIDENCE, false)) {
+                command.removeExtra(EXTRA_PRODUCT_MSE_EVIDENCE)
+                val service = productService.value
+                if (service == null) {
+                    pendingProductMseEvidence = true
+                } else {
+                    service.logMseDhEvidenceForTest()
+                }
+            }
         }
         command.getStringExtra(EXTRA_PRODUCT_MAGNET)?.takeIf(String::isNotBlank)?.let {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
@@ -193,10 +218,14 @@ class MainActivity : ComponentActivity() {
             } else {
                 val policy = pendingProductTrackerPolicy
                 pendingProductTrackerPolicy = null
-                if (policy == null) {
-                    service.addMagnet(it)
-                } else {
-                    service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
+                val encryption = pendingProductEncryptionPolicy
+                pendingProductEncryptionPolicy = null
+                when {
+                    policy != null ->
+                        service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
+                    encryption != null ->
+                        service.addMagnetWithEncryptionPolicyForTest(it, encryption)
+                    else -> service.addMagnet(it)
                 }
             }
         }
@@ -343,6 +372,8 @@ class MainActivity : ComponentActivity() {
         private const val PRODUCT_TREE_REQUEST = 53
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
+        const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"
+        const val EXTRA_PRODUCT_MSE_EVIDENCE = "product_mse_evidence"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"

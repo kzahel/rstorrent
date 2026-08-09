@@ -70,6 +70,15 @@ pub enum AndroidNetworkPolicy {
     Online,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidMseDhWorkSnapshot {
+    pub waiting: u64,
+    pub active: u64,
+    pub high_water: u64,
+    pub tracked: u64,
+    pub closed: bool,
+}
+
 #[derive(Debug, uniffi::Error)]
 pub enum AndroidClientError {
     Failure { detail: String },
@@ -150,6 +159,25 @@ impl AndroidApplicationClient {
             .subscribe(spec)
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(AndroidViewSubscription { subscription }))
+    }
+
+    pub async fn mse_dh_work_snapshot(
+        &self,
+    ) -> Result<AndroidMseDhWorkSnapshot, AndroidClientError> {
+        let snapshot = self
+            .service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
+            .mse_dh_work_snapshot();
+        Ok(AndroidMseDhWorkSnapshot {
+            waiting: snapshot.waiting as u64,
+            active: snapshot.active as u64,
+            high_water: snapshot.high_water as u64,
+            tracked: snapshot.tracked as u64,
+            closed: snapshot.closed,
+        })
     }
 
     pub async fn saf_storage_plan(

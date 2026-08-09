@@ -48,6 +48,7 @@ import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticFilter
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.PortMappingPolicy
@@ -226,6 +227,7 @@ class ProductEngineService : Service() {
                             portMapping = PortMappingPolicy.DISABLED,
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
+                            encryption = EncryptionPolicy.ALLOW,
                             trackerHttpsServerAuthentication = policy,
                         ),
                     ),
@@ -235,6 +237,72 @@ class ProductEngineService : Service() {
                     Command.AddMagnet(magnet.trim(), "downloads", startContent, emptyList()),
                 )
                 subscribeTrackerEvidenceForTest(torrentId)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    fun addMagnetWithEncryptionPolicyForTest(
+        magnet: String,
+        policyName: String,
+    ) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "peer encryption injection is debug-only"
+        }
+        if (safTreeUri == null) {
+            mutableState.update { it.copy(error = "Select a download folder first") }
+            return
+        }
+        val policy =
+            when (policyName) {
+                "disabled" -> EncryptionPolicy.DISABLED
+                "allow" -> EncryptionPolicy.ALLOW
+                "prefer" -> EncryptionPolicy.PREFER
+                "required" -> EncryptionPolicy.REQUIRED
+                else -> error("unknown peer encryption policy")
+            }
+        scope.launch {
+            try {
+                clientReady.await()
+                dispatchAwait(
+                    Command.SetClientSettings(
+                        ClientSettings(
+                            listener = ListenerPolicy.Disabled,
+                            preferredListenPort = 6_881U.toUShort(),
+                            portMapping = PortMappingPolicy.DISABLED,
+                            peerConnectionLimit = 200U,
+                            uploadSlots = 8U.toUShort(),
+                            encryption = policy,
+                            trackerHttpsServerAuthentication =
+                                HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
+                        ),
+                    ),
+                )
+                awaitEncryptionPolicy(policy)
+                dispatchAwait(
+                    Command.AddMagnet(magnet.trim(), "downloads", true, emptyList()),
+                )
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    fun logMseDhEvidenceForTest() {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "MSE DH evidence is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                val snapshot = client.mseDhWorkSnapshot()
+                Log.i(
+                    TAG,
+                    "mse_dh_work waiting=${snapshot.waiting} active=${snapshot.active} " +
+                        "high_water=${snapshot.highWater} tracked=${snapshot.tracked} " +
+                        "closed=${snapshot.closed}",
+                )
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -427,6 +495,50 @@ class ProductEngineService : Service() {
                             TAG,
                             "tracker_https_settings configured=$policy effective=$policy " +
                                 "application=APPLIED",
+                        )
+                        return@withTimeout
+                    }
+                }
+            }
+        } finally {
+            subscription.close()
+        }
+    }
+
+    private suspend fun awaitEncryptionPolicy(policy: EncryptionPolicy) {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.TorrentList,
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            withTimeout(10_000) {
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("settings view closed")
+                    val settings =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    if (
+                        settings?.configured?.encryption == policy &&
+                        settings.effectiveEncryption == policy &&
+                        settings.encryptionApplication is ClientSettingsApplicationState.Applied
+                    ) {
+                        Log.i(
+                            TAG,
+                            "mse_settings configured=$policy effective=$policy application=APPLIED",
                         )
                         return@withTimeout
                     }

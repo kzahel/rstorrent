@@ -45,6 +45,8 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --storage saf-internal \
   --profile product-https-tracker
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target pixel7a --runs 1 --profile product-mse
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -73,3 +75,11 @@ but omits an explicit peer hint. It reaches a host-owned HTTPS tracker through
 an owned reverse transport, accepts its deliberately untrusted wrong-host
 certificate under the tracker-only unauthenticated TLS policy, consumes the
 returned libtorrent seed, and verifies the published files.
+
+The `product-mse` profile selects an internal SAF tree, applies the live
+`required` peer-obfuscation policy, and downloads from five controlled host
+seeds forced to RC4. It verifies every published file hash, observes all five
+oracle connections as RC4, checks the session-wide four-job DH ceiling and
+complete drain, and removes device and host artifacts. The deterministic Rust
+owner test proves exact `4 active + 1 waiting` saturation; the device profile
+asserts the scheduler-independent `1..=4` production high-water bound.

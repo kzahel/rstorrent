@@ -18,6 +18,7 @@ import org.rstorrent.session.uniffi.DiagnosticRetention
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.DeliveryPolicy
 import org.rstorrent.session.uniffi.EffectiveListenerSettings
+import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.FileCatalogState
 import org.rstorrent.session.uniffi.FileIndexRange
 import org.rstorrent.session.uniffi.FilePriority
@@ -55,6 +56,7 @@ class ProductStateReducerTest {
                 portMapping = PortMappingPolicy.UPNP,
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
+                encryption = EncryptionPolicy.REQUIRED,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
             )
 
@@ -313,6 +315,7 @@ class ProductStateReducerTest {
                 portMapping = PortMappingPolicy.DISABLED,
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
+                encryption = EncryptionPolicy.ALLOW,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
             ),
     ): ClientSettingsRuntimeView =
@@ -326,6 +329,7 @@ class ProductStateReducerTest {
             effectivePortMapping = PortMappingPolicy.DISABLED,
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
+            effectiveEncryption = configured.encryption,
             effectiveTrackerHttpsServerAuthentication =
                 configured.trackerHttpsServerAuthentication,
             transportApplication =
@@ -337,6 +341,7 @@ class ProductStateReducerTest {
             portMappingApplication = ClientSettingsApplicationState.Applied,
             peerConnectionsApplication = ClientSettingsApplicationState.Applied,
             uploadSlotsApplication = ClientSettingsApplicationState.Applied,
+            encryptionApplication = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,
@@ -388,6 +393,7 @@ class ProductStateReducerTest {
                 ProgressReason.TRANSFERRING_PIECES,
                 emptyList(),
             ),
+            checking = null,
             archived = false,
             removalState = null,
             deleteManagedDataSupported = true,
