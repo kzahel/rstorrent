@@ -69,9 +69,13 @@ The `product-dynamic-saf` profile exercises the real application service. It
 grants a tree, adds a controlled loopback magnet, serves provider requests
 through the four Kotlin workers, performs payload I/O in Rust, publishes by
 name-only namespace acknowledgement, and verifies every non-padding file. It
-rejects info-hash output directories, eager/empty part artifacts, and staging
-survivors while recording the 40-handle native pool, 16-request channel, and
-whole-process descriptor high water.
+then force-stops and restores the product, proves conservative verification
+reconstruction, completes an explicit Force recheck, serves the exact torrent
+back to pinned libtorrent through the Android listener, and removes the
+managed namespace through the application command. It rejects info-hash
+output directories, eager/empty part artifacts, staging survivors, and
+inexact removal while recording the 40-handle native pool, 16-request channel,
+and whole-process descriptor high water.
 
 The `product-saf-grant-repair` profile exercises platform-root health rather
 than payload transfer. It proves an initially healthy persisted grant, retains

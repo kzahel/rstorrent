@@ -1611,6 +1611,119 @@ def wait_product_publication(
     )
 
 
+def wait_product_log(target: Any, marker: str, description: str, timeout: float = 20) -> str:
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if marker in logs:
+            return logs
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+
+
+def request_product_torrent_action(target: Any, torrent_id: str, action: str) -> None:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_torrent_id",
+            torrent_id,
+            "--es",
+            "product_torrent_action",
+            action,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure(f"could not request product torrent action {action}")
+    wait_product_log(
+        target,
+        f"torrent_action_completed torrent={torrent_id} action={action}",
+        f"product torrent action {action}",
+    )
+
+
+def verify_product_upload(target: Any, fixture: SeedFixture) -> int:
+    import libtorrent as lt
+
+    forwarded = target.run(
+        ["forward", "tcp:0", "tcp:6881"], timeout=20, check=False
+    )
+    if forwarded.returncode != 0:
+        raise BootstrapFailure(f"could not forward Android upload listener: {forwarded.stderr}")
+    host_port_text = forwarded.stdout.strip()
+    if not host_port_text.isdigit():
+        raise BootstrapFailure(f"adb did not report an upload forward port: {host_port_text!r}")
+    host_port = int(host_port_text)
+    output_root = Path(tempfile.mkdtemp(prefix="rstorrent-android-upload-"))
+    session = lt.session(
+        {
+            "listen_interfaces": "127.0.0.1:0",
+            "enable_dht": False,
+            "enable_lsd": False,
+            "enable_upnp": False,
+            "enable_natpmp": False,
+            "enable_incoming_utp": False,
+            "enable_outgoing_utp": False,
+            "enable_incoming_tcp": False,
+            "enable_outgoing_tcp": True,
+            "alert_queue_size": 1000,
+        }
+    )
+    handle = None
+    diagnostics: list[str] = []
+    try:
+        parameters = lt.add_torrent_params()
+        parameters.ti = lt.torrent_info(str(fixture.torrent_path))
+        parameters.save_path = str(output_root)
+        parameters.flags &= ~lt.torrent_flags.paused
+        parameters.flags &= ~lt.torrent_flags.auto_managed
+        handle = session.add_torrent(parameters)
+        handle.connect_peer(("127.0.0.1", host_port))
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            diagnostics.extend(alert.message() for alert in session.pop_alerts())
+            status = handle.status()
+            if status.errc.value() != 0:
+                raise BootstrapFailure(f"Android upload leech failed: {status.errc.message()}")
+            if status.is_seeding:
+                break
+            time.sleep(0.02)
+        else:
+            raise BootstrapFailure(
+                "libtorrent did not complete from Android SAF storage\n"
+                + "\n".join(diagnostics[-30:])
+            )
+        for relative_path, expected_hash in fixture.expected_file_hashes.items():
+            actual_path = output_root / fixture.name / relative_path
+            if not actual_path.is_file():
+                raise BootstrapFailure(f"Android upload omitted {relative_path}")
+            actual_hash = hashlib.sha1(actual_path.read_bytes()).hexdigest()
+            if actual_hash != expected_hash:
+                raise BootstrapFailure(f"Android upload hash differs: {relative_path}")
+        downloaded = int(handle.status().total_payload_download)
+        if downloaded <= 0:
+            raise BootstrapFailure("libtorrent received no payload from Android")
+        return downloaded
+    finally:
+        if handle is not None and handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        handle = None
+        session = None
+        target.run(["forward", "--remove", f"tcp:{host_port}"], timeout=15, check=False)
+        shutil.rmtree(output_root)
+
+
 def run_product_dynamic_saf_profile(
     target: Any,
     target_kind: str,
@@ -1823,6 +1936,46 @@ def run_product_dynamic_saf_profile(
             if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
                 raise BootstrapFailure(f"unexpected managed artifact survived: {unexpected}")
 
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        restarted = target.shell(["am", "start", "-n", ACTIVITY], timeout=30, check=False)
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart the Android product application")
+        wait_product_log(
+            target,
+            "saf_root_health source=startup available=true",
+            "healthy SAF root after process restart",
+        )
+        restart_logs = wait_product_log(
+            target,
+            f"torrent={fixture.info_hash} kind=patch state=COMPLETE",
+            "complete torrent after restart recheck",
+            timeout=30,
+        )
+        if (
+            f"torrent={fixture.info_hash}" not in restart_logs
+            or "state=AWAITING_STORAGE" not in restart_logs
+            or "verified=0" not in restart_logs
+            or f"verified={len(fixture.piece_hashes)}" not in restart_logs
+        ):
+            raise BootstrapFailure(
+                "restart did not expose conservative verification reconstruction"
+            )
+
+        request_product_torrent_action(target, fixture.info_hash, "force_recheck")
+        request_product_torrent_action(target, fixture.info_hash, "enable_upload")
+        uploaded_bytes = verify_product_upload(target, fixture)
+
+        request_product_torrent_action(target, fixture.info_hash, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            "application-owned SAF removal",
+        )
+        for exact_path in (output_root, staging_root, part_path):
+            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
+                raise BootstrapFailure(f"managed artifact survived removal: {exact_path}")
+
         return {
             "target": target_kind,
             "profile": profile,
@@ -1837,6 +1990,10 @@ def run_product_dynamic_saf_profile(
                 "final": product_fd_count(target),
             },
             "peer_connections": peer_count(fixture),
+            "restart_recheck": "complete",
+            "force_recheck": "complete",
+            "uploaded_bytes": uploaded_bytes,
+            "removal": "exact",
             "tracker_security": (
                 "encrypted_unauthenticated"
                 if controlled_tracker is not None

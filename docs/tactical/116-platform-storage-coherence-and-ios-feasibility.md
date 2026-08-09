@@ -630,6 +630,16 @@ stale generations, removal, root loss, and repair. The 225-test session suite,
 focused engine tests, warning-denying clippy for the affected crates, both
 Android ABIs, generated Kotlin, APK assembly, and JVM tests pass.
 
+The dynamic SAF product runner now continues beyond publication: it
+force-stops and restores the product, observes verified state rebuild from
+zero to the exact piece count, completes an explicit Force recheck, enables a
+fixed test listener, serves the entire multi-file torrent from SAF to pinned
+libtorrent, and removes the namespace through the product command. Its first
+authorized physical run passed with 133,304 uploaded bytes, exact post-remove
+absence, pool high water 6/40, broker pending high water 4/16, and process
+descriptor baseline/high/final of 161/174/170. Stable device identity is not
+retained as evidence.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

@@ -54,9 +54,11 @@ import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
+import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.RemovalState
+import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.ResponseOutcome
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
@@ -577,6 +579,130 @@ class ProductEngineService : Service() {
         crashAfterSafRename.set(true)
     }
 
+    fun exerciseTorrentActionForTest(
+        torrentId: String,
+        action: String,
+    ) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "torrent lifecycle injection is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                when (action) {
+                    "pause" -> dispatchAwait(Command.Pause(torrentId))
+                    "resume" -> dispatchAwait(Command.Resume(torrentId))
+                    "force_recheck" -> forceRecheckAndAwaitForTest(torrentId)
+                    "remove" ->
+                        dispatchAwait(
+                            Command.RemoveTorrent(
+                                torrentId,
+                                RemovalDataPolicy.DELETE_MANAGED,
+                            ),
+                        )
+                    "enable_upload" -> {
+                        val current = awaitIpv6Policy(null)
+                        dispatchAwait(
+                            Command.SetClientSettings(
+                                current.configured.copy(
+                                    listener = ListenerPolicy.FixedLocalNetwork(6_881U.toUShort()),
+                                    preferredListenPort = 6_881U.toUShort(),
+                                    portMapping = PortMappingPolicy.DISABLED,
+                                ),
+                            ),
+                        )
+                        awaitFixedListener(6_881U.toUShort())
+                    }
+                    else -> error("unknown torrent lifecycle action")
+                }
+                Log.i(TAG, "torrent_action_completed torrent=$torrentId action=$action")
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private suspend fun awaitFixedListener(port: UShort): ClientSettingsRuntimeView {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.TorrentList,
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            return withTimeout(10_000) {
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("settings view closed")
+                    val settings =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.TorrentList)?.clientSettings
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    val listener = settings?.listenerStatus
+                    if (listener is ListenerStatus.Listening && listener.port == port) {
+                        return@withTimeout settings
+                    }
+                    if (listener is ListenerStatus.BindFailed) {
+                        error("fixed upload listener failed: ${listener.detail}")
+                    }
+                }
+                error("unreachable")
+            }
+        } finally {
+            subscription.close()
+        }
+    }
+
+    private suspend fun forceRecheckAndAwaitForTest(torrentId: String) {
+        val subscription =
+            client.subscribe(
+                SubscriptionSpec(
+                    ViewSelector.Torrent(torrentId),
+                    ViewProjection.SUMMARY,
+                    DeliveryPolicy(0U, 256U * 1024U),
+                    null,
+                    null,
+                ),
+            )
+        try {
+            dispatchAwait(Command.ForceRecheck(torrentId))
+            withTimeout(10_000) {
+                var sawChecking = false
+                while (true) {
+                    val update = subscription.nextUpdate() ?: error("torrent view closed")
+                    val torrent =
+                        when (val payload = update.payload) {
+                            is ViewUpdatePayload.Snapshot ->
+                                (payload.snapshot as? ViewSnapshot.Torrent)?.torrent
+                            is ViewUpdatePayload.Patch ->
+                                (payload.patch as? ViewPatch.Torrent)?.torrent
+                            is ViewUpdatePayload.ResetRequired -> {
+                                subscription.resync()
+                                null
+                            }
+                        }
+                    when (torrent?.state) {
+                        TorrentState.CHECKING -> sawChecking = true
+                        TorrentState.COMPLETE -> if (sawChecking) return@withTimeout
+                        else -> {}
+                    }
+                }
+            }
+        } finally {
+            subscription.close()
+        }
+    }
+
     fun pause(torrentId: String) {
         dispatch(Command.Pause(torrentId))
     }
@@ -1043,6 +1169,7 @@ class ProductEngineService : Service() {
         Log.i(
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +
+                "torrent=${torrent?.torrentId ?: "none"} " +
                 "kind=$kind state=${torrent?.state?.name ?: "none"} " +
                 "storage=${torrent?.storageState?.name ?: "none"} " +
                 "metadata=${torrent?.metadataAvailable ?: false} " +

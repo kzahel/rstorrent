@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductMseEvidence = false
     private var pendingProductDownloadAdmissionEvidence: String? = null
     private var pendingProductIpv6Policy: String? = null
+    private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingCrashAfterSafRename = false
     private val productConnection =
         object : ServiceConnection {
@@ -77,6 +78,10 @@ class MainActivity : ComponentActivity() {
                     pendingProductIpv6Policy = null
                     android.util.Log.i("RSTorrentProduct", "ipv6_settings_bound mode=$it")
                     service.exerciseIpv6PolicyForTest(it)
+                }
+                pendingProductTorrentAction?.let { (torrentId, action) ->
+                    pendingProductTorrentAction = null
+                    service.exerciseTorrentActionForTest(torrentId, action)
                 }
             }
 
@@ -240,6 +245,23 @@ class MainActivity : ComponentActivity() {
                         pendingProductIpv6Policy = it
                     } else {
                         service.exerciseIpv6PolicyForTest(it)
+                    }
+                }
+            command
+                .getStringExtra(EXTRA_PRODUCT_TORRENT_ACTION)
+                ?.takeIf(String::isNotBlank)
+                ?.let { action ->
+                    command.removeExtra(EXTRA_PRODUCT_TORRENT_ACTION)
+                    val torrentId =
+                        requireNotNull(command.getStringExtra(EXTRA_PRODUCT_TORRENT_ID)) {
+                            "product torrent action has no torrent identity"
+                        }
+                    command.removeExtra(EXTRA_PRODUCT_TORRENT_ID)
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductTorrentAction = torrentId to action
+                    } else {
+                        service.exerciseTorrentActionForTest(torrentId, action)
                     }
                 }
         }
@@ -413,6 +435,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_DOWNLOAD_ADMISSION_EVIDENCE =
             "product_download_admission_evidence"
         const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
+        const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
+        const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"
         const val EXTRA_PRODUCT_SELECT_SAF = "product_select_saf"
