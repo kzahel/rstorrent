@@ -1196,20 +1196,27 @@ are revision-comparison evidence, not replacement calibrated floors.
 
 Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) extends the
 controlled loopback comparator with a release-only paired encryption mode. It
-runs identical RSTorrent cohorts in alternating ordinary-plain and forced-RC4
-order, verifies the oracle's negotiated method and the exact payload hash, and
-reports the median of within-pair throughput ratios. Schema 5 also records
-process-tree CPU seconds, core-equivalents, and utilization normalized to the
-host's logical capacity for every run and cohort median.
+runs identical RSTorrent and pinned-libtorrent cohorts in alternating ordinary-
+plain and forced-RC4 order, balances which implementation runs first, verifies
+the exact method on both libtorrent endpoints and the payload hash, and reports
+the median of within-pair throughput ratios. Schema 6 retains the process-tree
+CPU seconds, core-equivalents, and host-capacity-normalized utilization
+introduced in Schema 5 and adds the oracle-relative retention comparison.
 
 On Apple M4 Pro / macOS 26.5.2 / Rust 1.97, six alternating 1 GiB pairs with
-1 MiB pieces and storage `4/4` measured 489.067 MiB/s plain and 372.243 MiB/s
-RC4. The median within-pair ratio was `0.762675`, a 23.732% regression. This
-misses the 10% diagnostic target but remains above the accepted 75%-of-plain
-catastrophe floor. Median process-tree load was 2.067 versus 2.069
-core-equivalents (14.761% versus 14.776% of 14 logical CPUs); because RC4 runs
-longer, median total CPU rose from approximately 4.325 to 5.685 seconds. Every
-run verified the 1 GiB SHA-1 and cleaned up.
+1 MiB pieces and storage `4/4` measured RSTorrent at 463.922 MiB/s plain and
+366.992 MiB/s RC4. Its median within-pair ratio was `0.771056`, a 22.894%
+regression. Pinned libtorrent `2.0.13.0` measured 495.549 MiB/s plain and
+362.873 MiB/s RC4, with a `0.740717` median paired ratio and 25.928%
+regression. RSTorrent retained 3.034 percentage points more of its plain
+throughput, or `1.041x` the oracle's relative RC4 retention. This misses the
+10% diagnostic target but clears the accepted 75%-of-plain catastrophe floor
+and is not worse than the mature oracle, so the paired result does not justify
+further RC4 optimization. Median process-tree load was 2.104 plain versus
+2.081 RC4 core-equivalents for RSTorrent and 2.763 versus 2.592 for libtorrent;
+throughput retention, not the wall-time-normalized CPU rate, is the decision
+authority. Every run verified the 1 GiB SHA-1, asserted the required method on
+both libtorrent endpoints, and cleaned up.
 
 After profiling, the scalar RC4 loop uses an inline `u16` S-box and a 16-byte
 unrolled production path. The final release microprofile measured 0.990 GiB/s

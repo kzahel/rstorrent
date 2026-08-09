@@ -185,10 +185,13 @@ that observation does not become a public-tracker reliability claim.
 
 - Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md) remains the
   single authoritative **Now**. Its end-to-end implementation, all 28
-  controlled pinned-libtorrent cases, six paired 1 GiB performance runs,
-  Android cross-build, and API 34 AVD product profile pass. The RC4/plain
-  median paired ratio is `0.762675`: above the accepted 75% catastrophe floor
-  but outside the 10% diagnostic target, so the cost is recorded explicitly.
+  controlled pinned-libtorrent cases, six paired 1 GiB performance runs per
+  implementation, Android cross-build, and API 34 AVD product profile pass.
+  RSTorrent's RC4/plain median paired ratio is `0.771056` (22.894% loss),
+  compared with pinned libtorrent's `0.740717` (25.928% loss). RSTorrent
+  retains 3.034 percentage points more throughput than the oracle and clears
+  the accepted 75% catastrophe floor. The cost is recorded explicitly, but
+  this oracle-relative result does not call for more RC4 optimization.
   The tactical is not yet graduated because configured Pixel 7a serial
   `33031JEHN17672` was unavailable for its required physical product run. It
   claims TCP peer compatibility and protocol obfuscation, never a security

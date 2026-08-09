@@ -226,15 +226,16 @@ identifiers are never logged.
 
 ### Performance evidence
 
-Paired RC4-versus-ordinary-plain measurement on the existing controlled
-loopback comparator, plus a microbenchmark for RC4 and for the modular
-exponentiation, recorded against the targets and broad regression guardrail in
-the performance contract below. The retained Android bootstrap runner gains a
-named `product-mse` profile. One run on the physical Pixel 7a uses the actual
-Android engine against a controlled host peer forced to `0x02`, verifies the
-published payload hash, exercises five concurrent MSE attempts while observing
-the four-job DH ceiling and complete drain, and leaves no APK, host peer, test
-root, socket, task, or capture artifact.
+Paired RC4-versus-ordinary-plain measurement for both RSTorrent and pinned
+libtorrent on the existing controlled loopback comparator, plus a
+microbenchmark for RC4 and for the modular exponentiation, recorded against
+the targets and broad regression guardrail in the performance contract below.
+The retained Android bootstrap runner gains a named `product-mse` profile. One
+run on the physical Pixel 7a uses the actual Android engine against a
+controlled host peer forced to `0x02`, verifies the published payload hash,
+exercises five concurrent MSE attempts while observing the four-job DH ceiling
+and complete drain, and leaves no APK, host peer, test root, socket, task, or
+capture artifact.
 
 ## Non-Goals
 
@@ -881,7 +882,7 @@ thresholds.
 | RC4 single-core throughput | Release microbenchmark over 64 MiB aggregate, once contiguous and once in production-shaped 16 KiB chunks; output is checksummed to prevent elision | Diagnostic target: at least 1 GiB/s in both shapes; a miss triggers profiling but does not override the paired result |
 | RC4 production-concurrency throughput | Four independent RC4 states processing 16 KiB chunks on the same executor/thread shape as the retained `4/4` transfer profile; aggregate rate and CPU utilization recorded | Diagnostic prerequisite: reconcile it with the retained plain rate and paired result |
 | DH-768 modular exponentiation, 160-bit exponent | Warmed release microbenchmark of generator-base public-key work and valid random remote-base shared-secret work, at least 100 samples of each on the recorded host; median and p95 reported | Diagnostic target: worse median at most 2 ms; a miss triggers profiling and Android comparison |
-| Verified-publication wall clock, RC4 versus plain | `tests/interop/local_throughput_compare.py` extended with an encryption mode; at least six same-cohort pairs with identical payload/profile and alternating plain-first/RC4-first order | Target at most 10% median paired regression; a result over 10% through 25% requires a recorded profile and explanation; below 75% of plain throughput blocks graduation pending optimization or an explicit product decision |
+| Verified-publication wall clock, RC4 versus plain | `tests/interop/local_throughput_compare.py` extended with an encryption mode; at least six same-cohort pairs for RSTorrent and pinned libtorrent with identical payload/profile and alternating plain-first/RC4-first and implementation order | RSTorrent target at most 10% median paired regression; a result over 10% requires a recorded profile, explanation, and comparison with the oracle's own penalty; below 75% of plain throughput blocks graduation pending optimization or an explicit product decision |
 | Local connection setup CPU/scheduling, MSE versus plain | Same-host scripted harness, TCP connected to validated remote BitTorrent handshake, with fixed deterministic pad lengths for comparability | Diagnostic target: median added latency at most 25 ms; a miss triggers profiling and is recorded |
 | Network-flight shape | Scripted transport with a fixed one-way delay, comparing ordinary and MSE setup after removing measured local work | MSE shows exactly one additional network round trip within timer tolerance |
 | Steady-state memory per RC4 connection | Existing resource high-water instrumentation | At most 4 KiB above the plain baseline |
@@ -1089,17 +1090,27 @@ M4 Pro / macOS 26.5.2 / Rust 1.97 measured:
 
 The contiguous RC4 diagnostic misses 1 GiB/s by 1%; the production-shaped and
 multi-stream profiles exceed it, DH is far below 2 ms, and no remaining
-avoidable scalar defect was found. The release paired comparator then ran six
-alternating 1 GiB pairs at 1 MiB pieces and storage `4/4`. Plain and RC4
-medians were 489.067 and 372.243 MiB/s. The median within-pair RC4/plain ratio
-was `0.762675`, a 23.732% regression: the 10% diagnostic target misses, but the
-explicit 75%-of-plain graduation guardrail passes. Raw process-tree CPU
-measurements report 2.067 plain and 2.069 RC4 median core-equivalents, or
-14.761% and 14.776% of the host's 14-logical-CPU capacity; RC4's longer wall
-time raises median total CPU from approximately 4.325 to 5.685 seconds. Every
-run verified the exact 1 GiB SHA-1, forced the oracle's RC4 flag, retained the
-payload and storage bounds, and cleaned up. The production release binary
-SHA-256 was
+avoidable scalar defect was found. Commit `0cf771c` extended the release
+paired comparator with symmetric pinned-libtorrent cohorts and then ran six
+alternating 1 GiB pairs per implementation at 1 MiB pieces and storage `4/4`.
+RSTorrent's plain and RC4 medians were 463.922 and 366.992 MiB/s; its median
+within-pair RC4/plain ratio was `0.771056`, a 22.894% regression. Libtorrent's
+corresponding medians were 495.549 and 362.873 MiB/s; its median within-pair
+ratio was `0.740717`, a 25.928% regression. RSTorrent therefore retained 3.034
+percentage points more of its plain throughput, or `1.041x` the oracle's
+relative RC4 retention. The 10% diagnostic target misses, but RSTorrent clears
+the explicit 75%-of-plain graduation guardrail and is not worse than the
+pinned mature oracle, so no further RC4 optimization is justified by this
+result.
+
+Raw process-tree CPU measurements report RSTorrent at 2.104 plain and 2.081
+RC4 median core-equivalents and libtorrent at 2.763 plain and 2.592 RC4. These
+rates are normalized by each run's wall time and are diagnostic rather than
+the decision metric. Every run verified the exact 1 GiB SHA-1, asserted RC4
+on both libtorrent endpoints in forced cases and no MSE in ordinary-plain
+cases, retained the payload and storage bounds, and cleaned up. The clean
+report names repository commit `0cf771cae7fc30252d9269a1ed028c20b26c0ec3`,
+libtorrent `2.0.13.0`, and production release binary SHA-256
 `97466986206f9d11697db6b6624db3cc061396f986471804a3dd98a1a833883d`.
 
 ### 2026-08-09: Android product evidence and remaining gate

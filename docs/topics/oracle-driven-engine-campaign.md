@@ -328,10 +328,13 @@ Current milestone: physically graduate peer-wire MSE/PE. Gates 1--6 are
 implemented: pure primitives and sans-IO state, bounded DH ownership, both TCP
 roles and payload methods, live persisted policy, exact diagnostics and peer
 flag, all 28 pinned-libtorrent cases, setup/flight shape, six paired 1 GiB
-performance runs, Android cross-build, and an API 34 AVD product run pass. The
-RC4/plain median paired ratio is `0.762675`: above the accepted 75% broad floor
-but well outside the 10% diagnostic target, so the cost remains an explicit
-product tradeoff rather than being described as negligible.
+performance runs per implementation, Android cross-build, and an API 34 AVD
+product run pass. The RSTorrent RC4/plain median paired ratio is `0.771056`
+(22.894% loss), compared with pinned libtorrent's `0.740717` (25.928% loss).
+RSTorrent retains 3.034 percentage points more throughput than the oracle and
+clears the accepted 75% broad floor. The cost remains explicit rather than
+being described as negligible, but the oracle-relative result does not call
+for more RC4 optimization.
 
 Next executable action: connect configured Pixel 7a serial
 `33031JEHN17672` and run exactly:
