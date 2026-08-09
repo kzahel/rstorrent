@@ -7,4 +7,5 @@ license.workspace = true
 publish = false
 
 [dependencies]
+crypto-bigint = { workspace = true }
 sha1 = { workspace = true }

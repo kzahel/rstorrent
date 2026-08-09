@@ -22,6 +22,22 @@ opt-in interoperability testing. The repository does not include the torrents'
 media payloads. Each work remains subject to its own public-domain or Creative
 Commons terms, which must be checked before redistributing a payload.
 
+## MSE Primitive Evidence
+
+`rstorrent-protocol` uses `crypto-bigint` 0.7.5 under its dual Apache-2.0 OR
+MIT license for fixed-width, constant-time modular exponentiation over the
+legacy MSE DH group. The crate's default features and RNG integration are
+disabled.
+
+Source: <https://crates.io/crates/crypto-bigint/0.7.5>
+
+The independently authored RC4 tests transcribe selected output bytes from
+IETF RFC 6229. Treat those bytes conservatively as RFC Code Components under
+the Simplified BSD terms in the IETF Trust Legal Provisions. The test contains
+an adjacent origin citation and does not copy explanatory RFC prose.
+
+Source: <https://www.rfc-editor.org/rfc/rfc6229.html>
+
 ## Package Dependencies And Release Artifacts
 
 Rust, npm, Gradle, and Python dependencies remain under their respective

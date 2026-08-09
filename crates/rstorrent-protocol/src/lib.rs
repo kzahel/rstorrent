@@ -8,6 +8,7 @@ pub mod extension;
 pub mod magnet;
 pub mod metadata;
 pub mod metainfo;
+pub mod mse;
 pub mod peer_id;
 pub mod peer_wire;
 pub mod piece;

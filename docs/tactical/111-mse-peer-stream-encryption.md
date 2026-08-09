@@ -1,7 +1,7 @@
 # Tactical 111: MSE/PE Peer Stream Encryption
 
-Status: Planned and source-reviewed on 2026-08-08; ready for implementation.
-Not started. Direction, settings shape, method preference, dependency, exponent
+Status: In progress. Gate 1 primitives completed on 2026-08-09; Gates 2--6
+remain. Direction, settings shape, method preference, dependency, exponent
 width, and the performance-evidence direction were accepted in product
 discussion on 2026-08-08.
 
@@ -915,5 +915,40 @@ Stop and ask for direction if any of the following occurs:
 
 ## Execution Record
 
-Not started. Each gate appends its actual validation, measured numbers, and
-deferrals here as it lands.
+### 2026-08-09: Gate 1 primitives
+
+Implemented `rstorrent-protocol::mse` with:
+
+- typed MSE roles and negotiated methods, including extension-bit handling and
+  strict single-known-method selection;
+- independently authored RC4 with the mandatory 1,024-byte discard, chunk
+  invariance, directional cipher ownership, and redacted state;
+- exact-width 160-bit private exponents from fixed caller entropy, constant-time
+  DH-768 public/shared exponentiation, degenerate remote-key rejection, and
+  96-byte big-endian export; and
+- allocation-free SHA-1 request, obfuscated-SKEY, and keyA/keyB derivation.
+
+Added exact `crypto-bigint = 0.7.5` resolution with default features disabled,
+updated the protocol architecture allowlist and third-party notices, and added
+the release primitive profiler. The final Apple M4 Pro / macOS 26.5 / Rust
+1.97.0 profile measured:
+
+| Primitive | Result |
+| --- | ---: |
+| RC4 contiguous, 64 MiB | 1.241 GiB/s |
+| RC4 16 KiB chunks, 64 MiB aggregate | 1.271 GiB/s |
+| RC4 four-stream 16 KiB chunks, 64 MiB aggregate | 4.646 GiB/s |
+| DH public-key work, 100 samples | 0.024 ms median / 0.029 ms p95 |
+| DH valid remote-base shared secret, 100 samples | 0.024 ms median / 0.029 ms p95 |
+
+Validation passed:
+
+- `cargo test -p rstorrent-protocol --no-fail-fast` (100 passed, 2 ignored;
+  architecture test passed);
+- `cargo clippy -p rstorrent-protocol --all-targets -- -D warnings`;
+- `cargo run -p rstorrent-protocol --release --example
+  mse_primitives_profile`; and
+- `cargo fmt --all` and `git diff --check`.
+
+Gate 1 is complete. No unsafe code, RNG feature, runtime dependency, copied
+oracle source, or variable-time secret exponentiation was introduced.
