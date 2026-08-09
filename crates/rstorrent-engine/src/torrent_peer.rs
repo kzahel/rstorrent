@@ -6,6 +6,8 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use rstorrent_protocol::mse::MseMethod;
 use tokio_util::sync::CancellationToken;
 
 use crate::peer::{
@@ -145,13 +147,17 @@ impl TorrentPeerState {
 
     fn begin_incoming(
         &mut self,
-        remote_endpoint: SocketAddr,
-        local_endpoint: SocketAddr,
-        peer_id: [u8; 20],
-        supports_extensions: bool,
-        role: PeerConnectionRole,
-        now: Duration,
+        start: TorrentIncomingStart,
     ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        let TorrentIncomingStart {
+            remote_endpoint,
+            local_endpoint,
+            peer_id,
+            supports_extensions,
+            mse_method,
+            role,
+            now,
+        } = start;
         let connection_id = self.allocate_connection_id()?;
         let endpoint = crate::peer::PeerEndpoint::new(remote_endpoint)?;
         let observed = self.registry.observe(
@@ -169,6 +175,7 @@ impl TorrentPeerState {
                 role,
                 peer_id,
                 supports_extensions,
+                mse_method,
             },
             now,
         ) {
@@ -303,6 +310,16 @@ impl TorrentPeerState {
     }
 }
 
+struct TorrentIncomingStart {
+    remote_endpoint: SocketAddr,
+    local_endpoint: SocketAddr,
+    peer_id: [u8; 20],
+    supports_extensions: bool,
+    mse_method: Option<MseMethod>,
+    role: PeerConnectionRole,
+    now: Duration,
+}
+
 #[derive(Debug)]
 struct TorrentPeerHandleInner {
     started_at: Instant,
@@ -347,16 +364,36 @@ impl TorrentPeerHandle {
         supports_extensions: bool,
         role: PeerConnectionRole,
     ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        self.begin_incoming_with_mse(
+            remote_endpoint,
+            local_endpoint,
+            peer_id,
+            supports_extensions,
+            role,
+            None,
+        )
+    }
+
+    pub(crate) fn begin_incoming_with_mse(
+        &self,
+        remote_endpoint: SocketAddr,
+        local_endpoint: SocketAddr,
+        peer_id: [u8; 20],
+        supports_extensions: bool,
+        role: PeerConnectionRole,
+        mse_method: Option<MseMethod>,
+    ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
         let now = self.elapsed();
         let attachment = self.with_state(|state| {
-            state.begin_incoming(
+            state.begin_incoming(TorrentIncomingStart {
                 remote_endpoint,
                 local_endpoint,
                 peer_id,
                 supports_extensions,
+                mse_method,
                 role,
                 now,
-            )
+            })
         })?;
         self.publish(true, true)?;
         Ok(attachment)
@@ -617,7 +654,9 @@ fn registry_publication(
 
 #[cfg(test)]
 mod tests {
-    use super::{TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle};
+    use super::{
+        TorrentIncomingStart, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
+    };
     use crate::peer::{
         PeerEndpoint, PeerObservation, PeerSelectionContext, PeerSelector, PeerSource,
     };
@@ -800,14 +839,15 @@ mod tests {
                 )
                 .expect("tracker observation");
             let attachment = state
-                .begin_incoming(
-                    remote,
-                    "127.0.0.1:43210".parse().expect("local"),
-                    *b"-LTTEST-000000000000",
-                    true,
-                    PeerConnectionRole::Content,
-                    Duration::ZERO,
-                )
+                .begin_incoming(TorrentIncomingStart {
+                    remote_endpoint: remote,
+                    local_endpoint: "127.0.0.1:43210".parse().expect("local"),
+                    peer_id: *b"-LTTEST-000000000000",
+                    supports_extensions: true,
+                    mse_method: None,
+                    role: PeerConnectionRole::Content,
+                    now: Duration::ZERO,
+                })
                 .expect("incoming");
             assert_eq!(attachment.record_id(), tracker.record_id);
             state

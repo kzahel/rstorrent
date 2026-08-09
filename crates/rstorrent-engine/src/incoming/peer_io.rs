@@ -5,6 +5,7 @@ use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use rstorrent_protocol::mse::{MseCipherPair, Rc4};
 use rstorrent_protocol::peer_wire::{FrameDecoder, PeerMessage, encode_message};
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -130,7 +131,11 @@ struct IncomingWriter {
 }
 
 impl IncomingWriter {
-    fn spawn(write: OwnedWriteHalf, byte_metric_sink: Option<Arc<dyn ByteMetricSink>>) -> Self {
+    fn spawn(
+        write: OwnedWriteHalf,
+        send_cipher: Option<Rc4>,
+        byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    ) -> Self {
         let (commands, receiver) = mpsc::channel(WRITER_FRAME_QUEUE);
         let state = Arc::new(Mutex::new(WriterState::new()));
         let (changes, change_receiver) = watch::channel(state_guard(&state).snapshot);
@@ -141,6 +146,7 @@ impl IncomingWriter {
             state.clone(),
             changes,
             cancellation.clone(),
+            send_cipher,
             byte_metric_sink,
         ));
         Self {
@@ -246,6 +252,7 @@ impl Drop for IncomingWriter {
 #[derive(Debug)]
 pub(super) struct IncomingPeerIo {
     read: OwnedReadHalf,
+    receive_cipher: Option<Rc4>,
     decoder: FrameDecoder,
     queued_messages: VecDeque<PeerMessage>,
     writer: IncomingWriter,
@@ -254,20 +261,46 @@ pub(super) struct IncomingPeerIo {
 }
 
 impl IncomingPeerIo {
+    #[cfg(test)]
     pub fn new(
         stream: TcpStream,
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Self {
+        Self::new_with_mse(stream, io_timeout, byte_metric_sink, None, &[])
+            .expect("empty carried input is valid")
+    }
+
+    pub fn new_with_mse(
+        stream: TcpStream,
+        io_timeout: Duration,
+        byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+        ciphers: Option<MseCipherPair>,
+        carried: &[u8],
+    ) -> Result<Self, PeerIoError> {
+        let mut decoder = FrameDecoder::new();
+        let queued_messages = decoder
+            .push(carried)
+            .map_err(PeerIoError::Frame)?
+            .into_iter()
+            .collect();
+        let (send_cipher, receive_cipher) = match ciphers {
+            Some(ciphers) => {
+                let (send, receive) = ciphers.into_parts();
+                (Some(send), Some(receive))
+            }
+            None => (None, None),
+        };
         let (read, write) = stream.into_split();
-        Self {
+        Ok(Self {
             read,
-            decoder: FrameDecoder::new(),
-            queued_messages: VecDeque::new(),
-            writer: IncomingWriter::spawn(write, byte_metric_sink.clone()),
+            receive_cipher,
+            decoder,
+            queued_messages,
+            writer: IncomingWriter::spawn(write, send_cipher, byte_metric_sink.clone()),
             io_timeout,
             byte_metric_sink,
-        }
+        })
     }
 
     pub async fn send_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
@@ -346,6 +379,9 @@ impl IncomingPeerIo {
                 ByteMetric::PeerWireReceived,
                 read,
             );
+            if let Some(cipher) = self.receive_cipher.as_mut() {
+                cipher.apply(&mut network_buffer[..read]);
+            }
             self.queued_messages.extend(
                 self.decoder
                     .push(&network_buffer[..read])
@@ -385,6 +421,7 @@ async fn run_writer(
     state: Arc<Mutex<WriterState>>,
     changes: watch::Sender<WriterSnapshot>,
     cancellation: CancellationToken,
+    mut send_cipher: Option<Rc4>,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
 ) -> Result<(), PeerIoError> {
     let result = async {
@@ -400,11 +437,14 @@ async fn run_writer(
             write_frame(
                 &mut write,
                 frame,
-                &state,
-                &changes,
-                &cancellation,
-                byte_metric_sink.as_ref(),
-                INCOMING_WRITER_NO_PROGRESS_TIMEOUT,
+                WriterCommitContext {
+                    state: &state,
+                    changes: &changes,
+                    cancellation: &cancellation,
+                    send_cipher: send_cipher.as_mut(),
+                    byte_metric_sink: byte_metric_sink.as_ref(),
+                    no_progress_timeout: INCOMING_WRITER_NO_PROGRESS_TIMEOUT,
+                },
             )
             .await?;
         }
@@ -419,15 +459,28 @@ async fn run_writer(
     result
 }
 
+struct WriterCommitContext<'a> {
+    state: &'a Arc<Mutex<WriterState>>,
+    changes: &'a watch::Sender<WriterSnapshot>,
+    cancellation: &'a CancellationToken,
+    send_cipher: Option<&'a mut Rc4>,
+    byte_metric_sink: Option<&'a Arc<dyn ByteMetricSink>>,
+    no_progress_timeout: Duration,
+}
+
 async fn write_frame<W: AsyncWrite + Unpin>(
     write: &mut W,
-    frame: WriterFrame,
-    state: &Arc<Mutex<WriterState>>,
-    changes: &watch::Sender<WriterSnapshot>,
-    cancellation: &CancellationToken,
-    byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
-    no_progress_timeout: Duration,
+    mut frame: WriterFrame,
+    context: WriterCommitContext<'_>,
 ) -> Result<(), PeerIoError> {
+    let WriterCommitContext {
+        state,
+        changes,
+        cancellation,
+        send_cipher,
+        byte_metric_sink,
+        no_progress_timeout,
+    } = context;
     if frame
         .validity
         .as_ref()
@@ -435,6 +488,9 @@ async fn write_frame<W: AsyncWrite + Unpin>(
     {
         discard_frame(state, changes, frame.bytes.len());
         return Ok(());
+    }
+    if let Some(cipher) = send_cipher {
+        cipher.apply(&mut frame.bytes);
     }
     let mut deadline = Instant::now() + no_progress_timeout;
     let mut offset = 0;
@@ -527,8 +583,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use rstorrent_protocol::peer_wire::PeerMessage;
-    use tokio::io::AsyncReadExt;
+    use rstorrent_protocol::mse::{
+        DhPrivateExponent, MseCipherPair, MseRole, compute_public_key, compute_shared_secret,
+    };
+    use rstorrent_protocol::peer_wire::{PeerMessage, encode_message};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
 
     use super::{
@@ -583,5 +642,81 @@ mod tests {
         assert_eq!(io.uploaded_payload_bytes(), 0);
         assert_eq!(io.send_buffer_size(), 0);
         io.shutdown().await.expect("join writer");
+    }
+
+    #[tokio::test]
+    async fn encrypted_writer_discards_before_advancing_the_cipher() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind pair");
+        let mut client = TcpStream::connect(listener.local_addr().expect("pair address"))
+            .await
+            .expect("connect pair");
+        let (server, _) = listener.accept().await.expect("accept pair");
+        let (mut initiator_ciphers, responder_ciphers) = cipher_pairs();
+        let mut io = IncomingPeerIo::new_with_mse(
+            server,
+            Duration::from_secs(1),
+            None,
+            Some(responder_ciphers),
+            &[],
+        )
+        .expect("construct encrypted incoming IO");
+        io.queue_generation_fenced_message(
+            &PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: vec![7; 16],
+            },
+            {
+                let validity = Arc::new(FrameValidity::new());
+                validity.cancel();
+                validity
+            },
+        )
+        .expect("queue invalid piece");
+        io.send_message(&PeerMessage::KeepAlive)
+            .await
+            .expect("flush through keepalive");
+
+        let mut encrypted_keepalive = [1_u8; 4];
+        client
+            .read_exact(&mut encrypted_keepalive)
+            .await
+            .expect("read first surviving encrypted frame");
+        assert_ne!(encrypted_keepalive, [0; 4]);
+        initiator_ciphers.apply_receive(&mut encrypted_keepalive);
+        assert_eq!(encrypted_keepalive, [0; 4]);
+
+        let message = PeerMessage::Interested;
+        let mut encrypted_message = encode_message(&message).expect("encode message");
+        initiator_ciphers.apply_send(&mut encrypted_message);
+        client
+            .write_all(&encrypted_message)
+            .await
+            .expect("write encrypted message");
+        assert_eq!(
+            io.next_message_or_send_ready(usize::MAX)
+                .await
+                .expect("read encrypted message"),
+            Some(message)
+        );
+        io.shutdown().await.expect("join writer");
+    }
+
+    fn cipher_pairs() -> (MseCipherPair, MseCipherPair) {
+        let initiator_private = DhPrivateExponent::from_entropy([0x11; 20]);
+        let responder_private = DhPrivateExponent::from_entropy([0x91; 20]);
+        let initiator_public = compute_public_key(&initiator_private);
+        let responder_public = compute_public_key(&responder_private);
+        let initiator_shared =
+            compute_shared_secret(&initiator_private, responder_public.as_bytes())
+                .expect("initiator shared secret");
+        let responder_shared =
+            compute_shared_secret(&responder_private, initiator_public.as_bytes())
+                .expect("responder shared secret");
+        let info_hash = [0x44; 20];
+        (
+            MseCipherPair::new(MseRole::Initiator, &initiator_shared, &info_hash),
+            MseCipherPair::new(MseRole::Responder, &responder_shared, &info_hash),
+        )
     }
 }

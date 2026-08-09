@@ -130,6 +130,7 @@ pub(crate) struct IncomingPeerStart {
     pub(crate) role: PeerConnectionRole,
     pub(crate) peer_id: [u8; 20],
     pub(crate) supports_extensions: bool,
+    pub(crate) mse_method: Option<MseMethod>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -225,7 +226,7 @@ impl PeerRuntime {
             peer_id: Some(start.peer_id),
             supports_extensions: Some(start.supports_extensions),
             supports_ut_metadata: None,
-            mse_method: None,
+            mse_method: start.mse_method,
             content: None,
             upload: None,
             close_reason: None,
@@ -601,6 +602,7 @@ mod tests {
                     role: PeerConnectionRole::Content,
                     peer_id,
                     supports_extensions: false,
+                    mse_method: None,
                 },
                 Duration::ZERO,
             )
@@ -670,6 +672,7 @@ mod tests {
                     role: PeerConnectionRole::Metadata,
                     peer_id: *b"-LTTEST-000000000000",
                     supports_extensions: true,
+                    mse_method: None,
                 },
                 Duration::from_secs(1),
             )
