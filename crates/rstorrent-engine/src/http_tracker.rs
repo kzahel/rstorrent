@@ -56,6 +56,7 @@ pub(crate) struct HttpTrackerAnnounce {
     pub event: AnnounceEvent,
     pub key: u32,
     pub num_want: u32,
+    pub support_crypto: bool,
     pub tracker_id: Option<Vec<u8>>,
 }
 
@@ -846,6 +847,9 @@ pub(crate) fn build_announce_target(
     append_decimal(&mut target, "downloaded", announce.downloaded);
     append_decimal(&mut target, "left", announce.left);
     target.push_str("&compact=1&no_peer_id=1");
+    if announce.support_crypto {
+        target.push_str("&supportcrypto=1");
+    }
     append_decimal(&mut target, "key", u64::from(announce.key));
     append_decimal(&mut target, "numwant", u64::from(announce.num_want));
     match announce.event {
@@ -1654,6 +1658,7 @@ mod tests {
             event,
             key: 5,
             num_want: 200,
+            support_crypto: true,
             tracker_id: None,
         }
     }
@@ -1709,7 +1714,7 @@ mod tests {
         assert!(
             target
                 .url
-                .contains("&compact=1&no_peer_id=1&key=5&numwant=200")
+                .contains("&compact=1&no_peer_id=1&supportcrypto=1&key=5&numwant=200")
         );
         assert!(target.url.contains("&event=started"));
         assert!(target.url.ends_with("&trackerid=%00%26%FF"));
@@ -1736,6 +1741,17 @@ mod tests {
             assert!(target.url.starts_with(expected), "{}", target.url);
             assert!(!target.url.contains("&event="));
         }
+    }
+
+    #[test]
+    fn request_omits_crypto_support_when_incoming_mse_is_disabled() {
+        let mut request = announce(AnnounceEvent::None);
+        request.support_crypto = false;
+
+        let target =
+            build_announce_target("http://tracker/announce", &request).expect("request target");
+
+        assert!(!target.url.contains("supportcrypto"));
     }
 
     #[test]

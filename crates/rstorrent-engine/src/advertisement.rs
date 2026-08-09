@@ -22,7 +22,7 @@ use crate::http_tracker::{
     HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerError,
     HttpTrackerResponse, TrackerRetryDirective, announce_http_tracker,
 };
-use crate::network::{NetworkConfig, NetworkPolicy};
+use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicy};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use crate::torrent_peer::TorrentPeerHandle;
 use crate::tracker::{
@@ -188,6 +188,21 @@ pub struct DiscoveryAdvertisementHandle {
 }
 
 impl DiscoveryAdvertisementHandle {
+    pub async fn replace_encryption_policy(
+        &self,
+        policy: PeerEncryptionPolicy,
+    ) -> Result<(), DiscoveryAdvertisementError> {
+        let (sender, receiver) = oneshot::channel();
+        self.send(Command::ReplaceEncryptionPolicy {
+            policy,
+            response: sender,
+        })
+        .await?;
+        receiver
+            .await
+            .map_err(|_| DiscoveryAdvertisementError::OwnerStopped)?
+    }
+
     pub async fn replace_https_authentication(
         &self,
         authentication: TrackerHttpsAuthentication,
@@ -408,6 +423,10 @@ enum Command {
         authentication: TrackerHttpsAuthentication,
         response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
     },
+    ReplaceEncryptionPolicy {
+        policy: PeerEncryptionPolicy,
+        response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
+    },
     Shutdown(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
 }
 
@@ -571,7 +590,7 @@ async fn run_service(
     queue_high_water: Arc<AtomicU64>,
 ) -> Result<DiscoveryAdvertisementOwnerCounts, DiscoveryAdvertisementError> {
     let DiscoveryAdvertisementRuntime {
-        network,
+        mut network,
         mut endpoint_receiver,
         dht,
         mut http_clients,
@@ -709,6 +728,17 @@ async fn run_service(
                                 ));
                             }
                         }
+                    }
+                    Command::ReplaceEncryptionPolicy { policy, response } => {
+                        if network.encryption != policy {
+                            network.encryption = policy;
+                            for entry in entries.values_mut() {
+                                if entry.registration.desired_running && entry.removal.is_none() {
+                                    entry.schedule.request_update();
+                                }
+                            }
+                        }
+                        let _ = response.send(Ok(()));
                     }
                     Command::Shutdown(response) => {
                         shutting_down = true;
@@ -1075,6 +1105,7 @@ fn fill_tracker_operations(
                                     event,
                                     key: tracker_key,
                                     num_want: u32::try_from(num_want).unwrap_or(0),
+                                    support_crypto: network.encryption.accepts_incoming_mse(),
                                     tracker_id,
                                 };
                                 let response = tokio::select! {
@@ -1915,9 +1946,9 @@ mod tests {
             .expect("bind HTTP tracker");
         let tracker_address = tracker.local_addr().expect("HTTP tracker address");
         let returned_peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 49_001);
-        let (request_sender, mut request_receiver) = mpsc::channel(3);
+        let (request_sender, mut request_receiver) = mpsc::channel(4);
         let tracker_task = tokio::spawn(async move {
-            for _ in 0..3 {
+            for _ in 0..4 {
                 let (mut stream, _) = tracker.accept().await.expect("accept HTTP announce");
                 let request = read_http_tracker_request(&mut stream).await;
                 request_sender
@@ -1982,6 +2013,13 @@ mod tests {
         let started = request_receiver.recv().await.expect("started announce");
         activity.wait_for_successes(1).await;
 
+        handle
+            .replace_encryption_policy(PeerEncryptionPolicy::Disabled)
+            .await
+            .expect("disable MSE announcement");
+        let corrected = request_receiver.recv().await.expect("corrective announce");
+        activity.wait_for_successes(2).await;
+
         let snapshot = peers.registry_snapshot(true);
         assert_eq!(snapshot.records.len(), 1);
         assert_eq!(snapshot.records[0].endpoint.address(), returned_peer.into());
@@ -1996,7 +2034,7 @@ mod tests {
             .await
             .expect("promote complete seed");
         let completed = request_receiver.recv().await.expect("completed announce");
-        activity.wait_for_successes(2).await;
+        activity.wait_for_successes(3).await;
 
         let remove = tokio::spawn(async move { handle.remove([4; 20], 3).await });
         let stopped = request_receiver.recv().await.expect("stopped announce");
@@ -2009,6 +2047,9 @@ mod tests {
         tracker_task.await.expect("HTTP tracker task");
 
         assert!(started.starts_with("GET /announce?passkey=fixture&"));
+        assert!(started.contains("&supportcrypto=1&"));
+        assert!(!corrected.contains("supportcrypto"));
+        assert!(!corrected.contains("&event="));
         assert!(started.contains("&port=48001&uploaded=7&downloaded=11&left=99&"));
         assert!(started.contains("&event=started "));
         assert!(!started.contains("trackerid="));

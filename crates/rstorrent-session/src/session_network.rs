@@ -972,19 +972,41 @@ impl SessionNetworkOwner {
         }
 
         let encryption_generation = attempt.domain(SettingsDomain::Encryption);
-        self.encryption
-            .replace(attempt.settings.encryption.into_engine());
-        self.incoming_runtime
+        let encryption_policy = attempt.settings.encryption.into_engine();
+        let encryption_state = self
+            .discovery_advertisement
             .as_ref()
-            .expect("incoming runtime exists during reconciliation")
-            .reconfigure_encryption(attempt.settings.encryption.into_engine());
-        self.effective_settings.encryption = attempt.settings.encryption;
-        publish_encryption(
-            convergence,
-            encryption_generation,
-            attempt.settings.encryption,
-            views,
-        );
+            .expect("discovery advertisement exists during reconciliation")
+            .handle()
+            .replace_encryption_policy(encryption_policy)
+            .await;
+        match encryption_state {
+            Ok(()) => {
+                self.encryption.replace(encryption_policy);
+                self.incoming_runtime
+                    .as_ref()
+                    .expect("incoming runtime exists during reconciliation")
+                    .reconfigure_encryption(encryption_policy);
+                self.effective_settings.encryption = attempt.settings.encryption;
+                publish_encryption(
+                    convergence,
+                    encryption_generation,
+                    attempt.settings.encryption,
+                    ClientSettingsApplicationState::Applied,
+                    views,
+                );
+            }
+            Err(error) => publish_encryption(
+                convergence,
+                encryption_generation,
+                self.effective_settings.encryption,
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::RuntimeStopped,
+                    detail: error.to_string(),
+                },
+                views,
+            ),
+        }
 
         let transport_changed = self
             .reconcile_transport(&attempt, convergence, views, cancellation)
@@ -1568,13 +1590,10 @@ fn publish_encryption(
     convergence: &Arc<Mutex<SettingsConvergenceModel>>,
     generation: SettingsDomainGeneration,
     effective_policy: EncryptionPolicy,
+    state: ClientSettingsApplicationState,
     views: &ViewHub,
 ) {
-    let Some(state) = apply_state(
-        convergence,
-        generation,
-        ClientSettingsApplicationState::Applied,
-    ) else {
+    let Some(state) = apply_state(convergence, generation, state) else {
         return;
     };
     let _ = views.update_client_settings_runtime_for(generation, |runtime| {
