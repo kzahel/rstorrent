@@ -1,6 +1,6 @@
 # Tactical 111: MSE/PE Peer Stream Encryption
 
-Status: In progress. Gate 1 primitives completed on 2026-08-09; Gates 2--6
+Status: In progress. Gates 1--2 completed on 2026-08-09; Gates 3--6
 remain. Direction, settings shape, method preference, dependency, exponent
 width, and the performance-evidence direction were accepted in product
 discussion on 2026-08-08.
@@ -952,3 +952,33 @@ Validation passed:
 
 Gate 1 is complete. No unsafe code, RNG feature, runtime dependency, copied
 oracle source, or variable-time secret exponentiation was introduced.
+
+### 2026-08-09: Gate 2 sans-IO handshake
+
+Implemented the synchronous initiator/responder state machine with explicit
+compute-public-key, compute-shared-secret, torrent-lookup, and ordered-send
+actions. The caller owns entropy and every external operation. One action may
+be outstanding, mismatched or repeated resumption fails terminally, and no
+runtime, socket, clock, task, or operating-system RNG entered the protocol
+crate.
+
+Both methods complete only after assembling the full remote 68-byte BitTorrent
+handshake. The implementation covers every `IA` length from zero through 68,
+the encrypted-handshake to selected-payload cipher transition, carried bytes,
+and every padding/synchronization bound. Protocol failures are typed and make
+the state terminal so partially advanced RC4 state cannot be reused.
+
+Deterministic tests cover byte-at-a-time and coalesced input, seeded chunk
+splits at BitTorrent-handshake field boundaries, zero and maximum pads, every
+sync offset through 512, post-handshake carried frames in both methods, the
+complete method-field hostile matrix, invalid verification constants,
+oversized pad and initial-payload declarations, lookup absence/mismatch, and
+the action ownership contract.
+
+Validation passed:
+
+- `cargo test -p rstorrent-protocol --no-fail-fast` (112 passed, 2 ignored;
+  architecture test passed);
+- `cargo clippy -p rstorrent-protocol --all-targets -- -D warnings`;
+- `cargo fmt --all -- --check`; and
+- `git diff --check`.

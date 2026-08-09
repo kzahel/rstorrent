@@ -9,6 +9,13 @@ use core::fmt;
 use crypto_bigint::{Encoding, U192, U768, const_monty_params, modular::ConstMontyForm};
 use sha1::{Digest, Sha1};
 
+mod handshake;
+
+pub use handshake::{
+    MSE_HANDSHAKE_BUFFER_LEN, MSE_MAX_PADDING_LEN, MseAction, MseBytes, MseFeed, MseHandshake,
+    MseHandshakeComplete, MseHandshakeError, MsePadding, MseResume, MseStep,
+};
+
 pub const DH_PUBLIC_KEY_LEN: usize = 96;
 pub const DH_PRIVATE_EXPONENT_LEN: usize = 20;
 pub const RC4_DROP_BYTES: usize = 1024;
