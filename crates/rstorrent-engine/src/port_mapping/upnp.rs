@@ -1,13 +1,13 @@
-//! Bounded IPv4 UPnP IGD v2 control point.
+//! Bounded UPnP IGD v2 control point.
 //!
-//! The public surface is deliberately one-service and one-mapping shaped. The
-//! XML, URL, SOAP, and mapping comparisons remain deterministic; Tokio owns
-//! only discovery and HTTP awaits.
+//! One source-bound root-device discovery may yield independent IPv4 mapping
+//! and IPv6 firewall-control clients. XML, URL, SOAP, and lease transitions
+//! remain deterministic; Tokio owns only discovery and HTTP awaits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::time::Duration;
 
 use quick_xml::Reader;
@@ -22,6 +22,7 @@ use url::Url;
 pub const SSDP_MULTICAST_ENDPOINT: SocketAddrV4 =
     SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1_900);
 pub const REQUESTED_LEASE_SECONDS: u32 = 3_600;
+pub const RECONCILIATION_LEASE_SECONDS: u32 = REQUESTED_LEASE_SECONDS + 1;
 pub const RENEWAL_NUMERATOR: u32 = 3;
 pub const RENEWAL_DENOMINATOR: u32 = 4;
 pub const MAX_SSDP_DATAGRAM_BYTES: usize = 8 * 1_024;
@@ -37,6 +38,7 @@ pub const MAX_MAPPING_CANDIDATES: usize = 4;
 pub const MAX_ERROR_DETAIL_BYTES: usize = 512;
 
 const WAN_IP_CONNECTION_V2: &str = "urn:schemas-upnp-org:service:WANIPConnection:2";
+const WAN_IPV6_FIREWALL_CONTROL_V1: &str = "urn:schemas-upnp-org:service:WANIPv6FirewallControl:1";
 const MAPPING_DESCRIPTION: &str = "RSTorrent";
 const DISCOVERY_ATTEMPTS: usize = 3;
 const DISCOVERY_WINDOW: Duration = Duration::from_millis(900);
@@ -55,6 +57,12 @@ pub enum UpnpStage {
     Verify,
     Renewal,
     Delete,
+    FirewallStatus,
+    PinholeAdd,
+    PinholeVerify,
+    PinholeRenewal,
+    PinholeDelete,
+    PinholePackets,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -193,6 +201,69 @@ pub struct UpnpGateway {
     control_url: Url,
     service_type: String,
     client: Client,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UpnpFirewallStatus {
+    pub firewall_enabled: bool,
+    pub inbound_pinhole_allowed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpnpPinhole {
+    pub internal_endpoint: SocketAddrV6,
+    pub lease_seconds: u32,
+    unique_id: u16,
+    gateway_address: Ipv4Addr,
+}
+
+impl UpnpPinhole {
+    pub fn renewal_delay(&self) -> Duration {
+        Duration::from_secs(
+            u64::from(self.lease_seconds) * u64::from(RENEWAL_NUMERATOR)
+                / u64::from(RENEWAL_DENOMINATOR),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn unique_id_for_testing(&self) -> u16 {
+        self.unique_id
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpnpUncertainPinhole {
+    pub internal_endpoint: SocketAddrV6,
+    pub lease_seconds: u32,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum UpnpPinholeCreateError {
+    Failed(UpnpError),
+    Uncertain(UpnpUncertainPinhole),
+}
+
+#[derive(Clone, Debug)]
+pub struct UpnpIpv6Firewall {
+    local_address: Ipv4Addr,
+    gateway_address: Ipv4Addr,
+    control_url: Url,
+    service_type: String,
+    client: Client,
+}
+
+#[derive(Clone, Debug)]
+pub enum UpnpDiscoveredService<T> {
+    Available(T),
+    Absent,
+    Unavailable(UpnpError),
+}
+
+#[derive(Clone, Debug)]
+pub struct UpnpIgdV2Services {
+    pub ipv4_mapping: UpnpDiscoveredService<UpnpGateway>,
+    pub ipv6_firewall: UpnpDiscoveredService<UpnpIpv6Firewall>,
 }
 
 impl UpnpGateway {
@@ -497,35 +568,269 @@ impl UpnpGateway {
         arguments: &[(&str, &str)],
         cancellation: &CancellationToken,
     ) -> Result<Vec<XmlLeaf>, UpnpError> {
-        let body = soap_request(&self.service_type, action, arguments);
-        let soap_action = format!("\"{}#{action}\"", self.service_type);
-        let request = self
-            .client
-            .post(self.control_url.clone())
-            .header("connection", "close")
-            .header(CONTENT_TYPE, "text/xml; charset=\"utf-8\"")
-            .header("soapaction", soap_action)
-            .body(body);
-        let response = cancellable(cancellation, request.send(), stage).await?;
-        let status = response.status();
-        validate_xml_content_type(response.headers(), stage)?;
-        let body = read_bounded_body(response, stage, cancellation).await?;
-        let leaves = parse_xml_leaves(&body, stage)?;
-        if let Some((code, description)) = parse_soap_fault(&leaves, stage)? {
-            return Err(UpnpError::fault(stage, code, &description));
-        }
-        if !status.is_success() {
-            return Err(UpnpError::new(
-                stage,
-                "gateway returned an HTTP error without a SOAP fault",
-            ));
-        }
-        Ok(leaves)
+        soap(
+            &self.client,
+            &self.control_url,
+            &self.service_type,
+            stage,
+            action,
+            arguments,
+            cancellation,
+        )
+        .await
     }
 
     pub fn gateway_address(&self) -> Ipv4Addr {
         self.gateway_address
     }
+}
+
+impl UpnpIpv6Firewall {
+    pub async fn firewall_status(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<UpnpFirewallStatus, UpnpError> {
+        let stage = UpnpStage::FirewallStatus;
+        let leaves = self
+            .soap(stage, "GetFirewallStatus", &[], cancellation)
+            .await?;
+        Ok(UpnpFirewallStatus {
+            firewall_enabled: parse_upnp_boolean(
+                unique_leaf(&leaves, "FirewallEnabled", stage)?,
+                stage,
+            )?,
+            inbound_pinhole_allowed: parse_upnp_boolean(
+                unique_leaf(&leaves, "InboundPinholeAllowed", stage)?,
+                stage,
+            )?,
+        })
+    }
+
+    pub async fn create_pinhole(
+        &self,
+        internal_endpoint: SocketAddrV6,
+        cancellation: &CancellationToken,
+    ) -> Result<UpnpPinhole, UpnpPinholeCreateError> {
+        validate_pinhole_endpoint(internal_endpoint).map_err(UpnpPinholeCreateError::Failed)?;
+        match self
+            .add_pinhole(internal_endpoint, REQUESTED_LEASE_SECONDS, cancellation)
+            .await
+        {
+            Ok(unique_id) => Ok(UpnpPinhole {
+                internal_endpoint,
+                lease_seconds: REQUESTED_LEASE_SECONDS,
+                unique_id,
+                gateway_address: self.gateway_address,
+            }),
+            Err(error) if error.is_transport() => {
+                tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
+                match self
+                    .add_pinhole(
+                        internal_endpoint,
+                        RECONCILIATION_LEASE_SECONDS,
+                        cancellation,
+                    )
+                    .await
+                {
+                    Ok(unique_id) => Ok(UpnpPinhole {
+                        internal_endpoint,
+                        lease_seconds: RECONCILIATION_LEASE_SECONDS,
+                        unique_id,
+                        gateway_address: self.gateway_address,
+                    }),
+                    Err(second) if second.is_transport() => {
+                        Err(UpnpPinholeCreateError::Uncertain(UpnpUncertainPinhole {
+                            internal_endpoint,
+                            lease_seconds: RECONCILIATION_LEASE_SECONDS,
+                            detail: bounded(
+                                "both bounded AddPinhole responses were transport-ambiguous",
+                                MAX_ERROR_DETAIL_BYTES,
+                            ),
+                        }))
+                    }
+                    Err(second) => Err(UpnpPinholeCreateError::Failed(second)),
+                }
+            }
+            Err(error) => Err(UpnpPinholeCreateError::Failed(error)),
+        }
+    }
+
+    pub async fn renew_pinhole(
+        &self,
+        pinhole: &mut UpnpPinhole,
+        cancellation: &CancellationToken,
+    ) -> Result<(), UpnpError> {
+        validate_pinhole_owner(self, pinhole, UpnpStage::PinholeRenewal)?;
+        let unique_id = pinhole.unique_id.to_string();
+        let lease = REQUESTED_LEASE_SECONDS.to_string();
+        self.soap(
+            UpnpStage::PinholeRenewal,
+            "UpdatePinhole",
+            &[("UniqueID", &unique_id), ("NewLeaseTime", &lease)],
+            cancellation,
+        )
+        .await?;
+        pinhole.lease_seconds = REQUESTED_LEASE_SECONDS;
+        Ok(())
+    }
+
+    pub async fn delete_pinhole(
+        &self,
+        pinhole: &UpnpPinhole,
+        cancellation: &CancellationToken,
+    ) -> Result<(), UpnpError> {
+        validate_pinhole_owner(self, pinhole, UpnpStage::PinholeDelete)?;
+        let unique_id = pinhole.unique_id.to_string();
+        self.soap(
+            UpnpStage::PinholeDelete,
+            "DeletePinhole",
+            &[("UniqueID", &unique_id)],
+            cancellation,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn check_pinhole_working(
+        &self,
+        pinhole: &UpnpPinhole,
+        cancellation: &CancellationToken,
+    ) -> Result<bool, UpnpError> {
+        validate_pinhole_owner(self, pinhole, UpnpStage::PinholeVerify)?;
+        let unique_id = pinhole.unique_id.to_string();
+        let leaves = self
+            .soap(
+                UpnpStage::PinholeVerify,
+                "CheckPinholeWorking",
+                &[("UniqueID", &unique_id)],
+                cancellation,
+            )
+            .await?;
+        parse_upnp_boolean(
+            unique_leaf(&leaves, "IsWorking", UpnpStage::PinholeVerify)?,
+            UpnpStage::PinholeVerify,
+        )
+    }
+
+    pub async fn pinhole_packets(
+        &self,
+        pinhole: &UpnpPinhole,
+        cancellation: &CancellationToken,
+    ) -> Result<u32, UpnpError> {
+        validate_pinhole_owner(self, pinhole, UpnpStage::PinholePackets)?;
+        let unique_id = pinhole.unique_id.to_string();
+        let leaves = self
+            .soap(
+                UpnpStage::PinholePackets,
+                "GetPinholePackets",
+                &[("UniqueID", &unique_id)],
+                cancellation,
+            )
+            .await?;
+        unique_leaf(&leaves, "PinholePackets", UpnpStage::PinholePackets)?
+            .parse::<u32>()
+            .map_err(|_| {
+                UpnpError::new(
+                    UpnpStage::PinholePackets,
+                    "gateway returned an invalid pinhole packet count",
+                )
+            })
+    }
+
+    async fn add_pinhole(
+        &self,
+        internal_endpoint: SocketAddrV6,
+        lease_seconds: u32,
+        cancellation: &CancellationToken,
+    ) -> Result<u16, UpnpError> {
+        let internal_client = internal_endpoint.ip().to_string();
+        let internal_port = internal_endpoint.port().to_string();
+        let lease = lease_seconds.to_string();
+        let leaves = self
+            .soap(
+                UpnpStage::PinholeAdd,
+                "AddPinhole",
+                &[
+                    ("RemoteHost", ""),
+                    ("RemotePort", "0"),
+                    ("InternalClient", &internal_client),
+                    ("InternalPort", &internal_port),
+                    ("Protocol", "6"),
+                    ("LeaseTime", &lease),
+                ],
+                cancellation,
+            )
+            .await?;
+        unique_leaf(&leaves, "UniqueID", UpnpStage::PinholeAdd)?
+            .parse::<u16>()
+            .map_err(|_| {
+                UpnpError::new(
+                    UpnpStage::PinholeAdd,
+                    "gateway returned an invalid pinhole unique ID",
+                )
+            })
+    }
+
+    async fn soap(
+        &self,
+        stage: UpnpStage,
+        action: &str,
+        arguments: &[(&str, &str)],
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<XmlLeaf>, UpnpError> {
+        soap(
+            &self.client,
+            &self.control_url,
+            &self.service_type,
+            stage,
+            action,
+            arguments,
+            cancellation,
+        )
+        .await
+    }
+
+    pub fn gateway_address(&self) -> Ipv4Addr {
+        self.gateway_address
+    }
+
+    pub fn control_local_address(&self) -> Ipv4Addr {
+        self.local_address
+    }
+}
+
+async fn soap(
+    client: &Client,
+    control_url: &Url,
+    service_type: &str,
+    stage: UpnpStage,
+    action: &str,
+    arguments: &[(&str, &str)],
+    cancellation: &CancellationToken,
+) -> Result<Vec<XmlLeaf>, UpnpError> {
+    let body = soap_request(service_type, action, arguments);
+    let soap_action = format!("\"{service_type}#{action}\"");
+    let request = client
+        .post(control_url.clone())
+        .header("connection", "close")
+        .header(CONTENT_TYPE, "text/xml; charset=\"utf-8\"")
+        .header("soapaction", soap_action)
+        .body(body);
+    let response = cancellable(cancellation, request.send(), stage).await?;
+    let status = response.status();
+    validate_xml_content_type(response.headers(), stage)?;
+    let body = read_bounded_body(response, stage, cancellation).await?;
+    let leaves = parse_xml_leaves(&body, stage)?;
+    if let Some((code, description)) = parse_soap_fault(&leaves, stage)? {
+        return Err(UpnpError::fault(stage, code, &description));
+    }
+    if !status.is_success() {
+        return Err(UpnpError::new(
+            stage,
+            "gateway returned an HTTP error without a SOAP fault",
+        ));
+    }
+    Ok(leaves)
 }
 
 pub async fn discover_igd_v2(
@@ -554,6 +859,49 @@ pub async fn discover_igd_v2(
             "no bounded IGD v2 device response was usable",
         )
     }))
+}
+
+/// Discovers one root device and independently resolves its IPv4 mapping and
+/// IPv6 firewall-control services.
+///
+/// A missing or malformed optional sibling does not discard a usable service.
+pub async fn discover_igd_v2_services(
+    config: UpnpDiscoveryConfig,
+    cancellation: &CancellationToken,
+) -> Result<UpnpIgdV2Services, UpnpError> {
+    let candidates = discover_locations(&config, cancellation).await?;
+    let client = Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(config.http_timeout)
+        .timeout(config.http_timeout)
+        .local_address(IpAddr::V4(config.local_address))
+        .build()
+        .map_err(|_| UpnpError::new(UpnpStage::Description, "build bounded HTTP client"))?;
+    let mut fallback = None;
+    let mut last_error = None;
+    for candidate in candidates {
+        match describe_gateway_services(&config, &client, candidate, cancellation).await {
+            Ok(services)
+                if matches!(&services.ipv4_mapping, UpnpDiscoveredService::Available(_))
+                    || matches!(&services.ipv6_firewall, UpnpDiscoveredService::Available(_)) =>
+            {
+                return Ok(services);
+            }
+            Ok(services) => {
+                fallback.get_or_insert(services);
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    fallback.ok_or_else(|| {
+        last_error.unwrap_or_else(|| {
+            UpnpError::new(
+                UpnpStage::Discovery,
+                "no bounded IGD v2 device response was usable",
+            )
+        })
+    })
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -730,6 +1078,126 @@ async fn describe_gateway(
         service_type: WAN_IP_CONNECTION_V2.to_owned(),
         client: client.clone(),
     })
+}
+
+async fn describe_gateway_services(
+    config: &UpnpDiscoveryConfig,
+    client: &Client,
+    candidate: DeviceLocation,
+    cancellation: &CancellationToken,
+) -> Result<UpnpIgdV2Services, UpnpError> {
+    let description = http_get_xml(client, candidate.url.clone(), cancellation).await?;
+    let leaves = parse_xml_leaves(&description, UpnpStage::Description)?;
+    let base = optional_unique_leaf(&leaves, "URLBase", UpnpStage::Description)?
+        .map(|value| {
+            validate_gateway_url(
+                value,
+                candidate.source,
+                config.allow_loopback_gateway,
+                UpnpStage::Description,
+            )
+        })
+        .transpose()?
+        .unwrap_or_else(|| candidate.url.clone());
+    let ipv4 = select_service(&leaves, WAN_IP_CONNECTION_V2, "WAN IP v2")?;
+    let ipv6 = select_service(
+        &leaves,
+        WAN_IPV6_FIREWALL_CONTROL_V1,
+        "WAN IPv6 firewall-control v1",
+    )?;
+
+    let ipv4_mapping = match ipv4 {
+        None => UpnpDiscoveredService::Absent,
+        Some(service) => match load_service(
+            config,
+            client,
+            candidate.source,
+            &base,
+            &service,
+            &[
+                "GetExternalIPAddress",
+                "GetSpecificPortMappingEntry",
+                "AddPortMapping",
+                "DeletePortMapping",
+            ],
+            "WAN IP",
+            cancellation,
+        )
+        .await
+        {
+            Ok(control_url) => UpnpDiscoveredService::Available(UpnpGateway {
+                local_address: config.local_address,
+                gateway_address: candidate.source,
+                control_url,
+                service_type: WAN_IP_CONNECTION_V2.to_owned(),
+                client: client.clone(),
+            }),
+            Err(error) => UpnpDiscoveredService::Unavailable(error),
+        },
+    };
+    let ipv6_firewall = match ipv6 {
+        None => UpnpDiscoveredService::Absent,
+        Some(service) => match load_service(
+            config,
+            client,
+            candidate.source,
+            &base,
+            &service,
+            &[
+                "GetFirewallStatus",
+                "AddPinhole",
+                "UpdatePinhole",
+                "DeletePinhole",
+                "GetPinholePackets",
+            ],
+            "WAN IPv6 firewall-control",
+            cancellation,
+        )
+        .await
+        {
+            Ok(control_url) => UpnpDiscoveredService::Available(UpnpIpv6Firewall {
+                local_address: config.local_address,
+                gateway_address: candidate.source,
+                control_url,
+                service_type: WAN_IPV6_FIREWALL_CONTROL_V1.to_owned(),
+                client: client.clone(),
+            }),
+            Err(error) => UpnpDiscoveredService::Unavailable(error),
+        },
+    };
+    Ok(UpnpIgdV2Services {
+        ipv4_mapping,
+        ipv6_firewall,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn load_service(
+    config: &UpnpDiscoveryConfig,
+    client: &Client,
+    source: Ipv4Addr,
+    base: &Url,
+    service: &SelectedService,
+    required_actions: &[&str],
+    label: &str,
+    cancellation: &CancellationToken,
+) -> Result<Url, UpnpError> {
+    let control_url = resolve_gateway_url(
+        base,
+        &service.control_url,
+        source,
+        config.allow_loopback_gateway,
+    )?;
+    let scpd_url = resolve_gateway_url(
+        base,
+        &service.scpd_url,
+        source,
+        config.allow_loopback_gateway,
+    )?;
+    let scpd = http_get_xml(client, scpd_url, cancellation).await?;
+    let leaves = parse_xml_leaves(&scpd, UpnpStage::Description)?;
+    require_service_actions(&leaves, required_actions, label)?;
+    Ok(control_url)
 }
 
 async fn http_get_xml(
@@ -993,6 +1461,19 @@ struct SelectedService {
 }
 
 fn select_wan_ip_service(leaves: &[XmlLeaf]) -> Result<SelectedService, UpnpError> {
+    select_service(leaves, WAN_IP_CONNECTION_V2, "WAN IP v2")?.ok_or_else(|| {
+        UpnpError::new(
+            UpnpStage::Description,
+            "device does not advertise WANIPConnection:2",
+        )
+    })
+}
+
+fn select_service(
+    leaves: &[XmlLeaf],
+    service_type: &str,
+    label: &str,
+) -> Result<Option<SelectedService>, UpnpError> {
     let mut services = BTreeMap::<u64, ServiceParts>::new();
     for leaf in leaves {
         let Some(last) = leaf.path.last() else {
@@ -1032,48 +1513,61 @@ fn select_wan_ip_service(leaves: &[XmlLeaf]) -> Result<SelectedService, UpnpErro
     }
     let mut selected = None;
     for parts in services.into_values() {
-        if parts.service_type.as_deref() != Some(WAN_IP_CONNECTION_V2) {
+        if parts.service_type.as_deref() != Some(service_type) {
             continue;
         }
         let service = SelectedService {
             control_url: parts.control_url.ok_or_else(|| {
-                UpnpError::new(UpnpStage::Description, "WAN IP service omitted controlURL")
+                UpnpError::new(
+                    UpnpStage::Description,
+                    format!("{label} service omitted controlURL"),
+                )
             })?,
             scpd_url: parts.scpd_url.ok_or_else(|| {
-                UpnpError::new(UpnpStage::Description, "WAN IP service omitted SCPDURL")
+                UpnpError::new(
+                    UpnpStage::Description,
+                    format!("{label} service omitted SCPDURL"),
+                )
             })?,
         };
         if selected.replace(service).is_some() {
             return Err(UpnpError::new(
                 UpnpStage::Description,
-                "device description contains duplicate WAN IP v2 services",
+                format!("device description contains duplicate {label} services"),
             ));
         }
     }
-    selected.ok_or_else(|| {
-        UpnpError::new(
-            UpnpStage::Description,
-            "device does not advertise WANIPConnection:2",
-        )
-    })
+    Ok(selected)
 }
 
 fn require_actions(leaves: &[XmlLeaf]) -> Result<(), UpnpError> {
+    require_service_actions(
+        leaves,
+        &[
+            "GetExternalIPAddress",
+            "GetSpecificPortMappingEntry",
+            "AddPortMapping",
+            "DeletePortMapping",
+        ],
+        "WAN IP",
+    )
+}
+
+fn require_service_actions(
+    leaves: &[XmlLeaf],
+    required_actions: &[&str],
+    label: &str,
+) -> Result<(), UpnpError> {
     let actions = leaves
         .iter()
         .filter(|leaf| path_ends_with(&leaf.path, &["action", "name"]))
         .map(|leaf| leaf.value.as_str())
         .collect::<BTreeSet<_>>();
-    for required in [
-        "GetExternalIPAddress",
-        "GetSpecificPortMappingEntry",
-        "AddPortMapping",
-        "DeletePortMapping",
-    ] {
+    for required in required_actions {
         if !actions.contains(required) {
             return Err(UpnpError::new(
                 UpnpStage::Description,
-                format!("WAN IP service omits required action {required}"),
+                format!("{label} service omits required action {required}"),
             ));
         }
     }
@@ -1240,6 +1734,51 @@ fn eligible_external_address(address: Ipv4Addr) -> bool {
         && !address.is_multicast()
         && address != Ipv4Addr::BROADCAST
         && !is_private_or_link_local(address)
+}
+
+fn validate_pinhole_endpoint(endpoint: SocketAddrV6) -> Result<(), UpnpError> {
+    if endpoint.port() < 1_024 || !crate::session_socket::eligible_global_ipv6(*endpoint.ip()) {
+        return Err(UpnpError::new(
+            UpnpStage::PinholeAdd,
+            "pinhole requires an eligible global-unicast IPv6 listener port at or above 1024",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pinhole_owner(
+    gateway: &UpnpIpv6Firewall,
+    pinhole: &UpnpPinhole,
+    stage: UpnpStage,
+) -> Result<(), UpnpError> {
+    if pinhole.gateway_address != gateway.gateway_address
+        || pinhole.lease_seconds == 0
+        || pinhole.lease_seconds > 86_400
+        || pinhole.internal_endpoint.port() < 1_024
+        || !crate::session_socket::eligible_global_ipv6(*pinhole.internal_endpoint.ip())
+    {
+        return Err(UpnpError::new(
+            stage,
+            "pinhole belongs to another gateway or has invalid finite state",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_upnp_boolean(value: &str, stage: UpnpStage) -> Result<bool, UpnpError> {
+    if value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes") {
+        Ok(true)
+    } else if value == "0"
+        || value.eq_ignore_ascii_case("false")
+        || value.eq_ignore_ascii_case("no")
+    {
+        Ok(false)
+    } else {
+        Err(UpnpError::new(
+            stage,
+            "gateway returned an invalid UPnP boolean",
+        ))
+    }
 }
 
 fn is_private_or_link_local(address: Ipv4Addr) -> bool {
@@ -1555,6 +2094,256 @@ mod tests {
         http_task.await.expect("join HTTP task");
     }
 
+    #[test]
+    fn ipv6_firewall_wire_values_boole_and_faults_are_typed() {
+        let endpoint = SocketAddrV6::new("2606:4700:4700::1111".parse().unwrap(), 42_000, 0, 0);
+        validate_pinhole_endpoint(endpoint).unwrap();
+        for invalid in [
+            SocketAddrV6::new("::".parse().unwrap(), 42_000, 0, 0),
+            SocketAddrV6::new("::1".parse().unwrap(), 42_000, 0, 0),
+            SocketAddrV6::new("fd00::1".parse().unwrap(), 42_000, 0, 0),
+            SocketAddrV6::new("2606:4700:4700::1111".parse().unwrap(), 1_023, 0, 0),
+        ] {
+            assert!(
+                validate_pinhole_endpoint(invalid).is_err(),
+                "accepted {invalid}"
+            );
+        }
+        let request = soap_request(
+            WAN_IPV6_FIREWALL_CONTROL_V1,
+            "AddPinhole",
+            &[
+                ("RemoteHost", ""),
+                ("RemotePort", "0"),
+                ("InternalClient", &endpoint.ip().to_string()),
+                ("InternalPort", "42000"),
+                ("Protocol", "6"),
+                ("LeaseTime", "3600"),
+            ],
+        );
+        assert!(request.contains("<RemoteHost></RemoteHost>"));
+        assert!(request.contains("<RemotePort>0</RemotePort>"));
+        assert!(request.contains("<InternalClient>2606:4700:4700::1111</InternalClient>"));
+        assert!(request.contains("<InternalPort>42000</InternalPort>"));
+        assert!(request.contains("<Protocol>6</Protocol>"));
+        assert!(!request.contains("<Protocol>TCP</Protocol>"));
+        assert!(request.contains("<LeaseTime>3600</LeaseTime>"));
+
+        for value in ["1", "true", "TRUE", "yes", "YES"] {
+            assert!(parse_upnp_boolean(value, UpnpStage::FirewallStatus).unwrap());
+        }
+        for value in ["0", "false", "FALSE", "no", "NO"] {
+            assert!(!parse_upnp_boolean(value, UpnpStage::FirewallStatus).unwrap());
+        }
+        assert!(parse_upnp_boolean("enabled", UpnpStage::FirewallStatus).is_err());
+
+        for code in std::iter::once(606).chain(701..=709) {
+            let body = soap_fault(code, "scripted");
+            let leaves = parse_xml_leaves(body.as_bytes(), UpnpStage::PinholeAdd).unwrap();
+            assert_eq!(
+                parse_soap_fault(&leaves, UpnpStage::PinholeAdd)
+                    .unwrap()
+                    .map(|fault| fault.0),
+                Some(code),
+            );
+        }
+    }
+
+    #[test]
+    fn dual_service_inventory_keeps_required_actions_independent() {
+        let description = br#"<root><device><serviceList>
+          <service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:2</serviceType>
+          <controlURL>/v4</controlURL><SCPDURL>/v4.xml</SCPDURL></service>
+          <service><serviceType>urn:schemas-upnp-org:service:WANIPv6FirewallControl:1</serviceType>
+          <controlURL>/v6</controlURL><SCPDURL>/v6.xml</SCPDURL></service>
+          </serviceList></device></root>"#;
+        let leaves = parse_xml_leaves(description, UpnpStage::Description).unwrap();
+        assert_eq!(
+            select_service(&leaves, WAN_IP_CONNECTION_V2, "v4")
+                .unwrap()
+                .unwrap()
+                .control_url,
+            "/v4",
+        );
+        assert_eq!(
+            select_service(&leaves, WAN_IPV6_FIREWALL_CONTROL_V1, "v6")
+                .unwrap()
+                .unwrap()
+                .control_url,
+            "/v6",
+        );
+        let firewall_actions = br#"<scpd><actionList>
+          <action><name>GetFirewallStatus</name></action>
+          <action><name>AddPinhole</name></action>
+          <action><name>UpdatePinhole</name></action>
+          <action><name>DeletePinhole</name></action>
+          <action><name>GetPinholePackets</name></action>
+          </actionList></scpd>"#;
+        let leaves = parse_xml_leaves(firewall_actions, UpnpStage::Description).unwrap();
+        require_service_actions(
+            &leaves,
+            &[
+                "GetFirewallStatus",
+                "AddPinhole",
+                "UpdatePinhole",
+                "DeletePinhole",
+                "GetPinholePackets",
+            ],
+            "firewall",
+        )
+        .unwrap();
+        assert!(
+            require_service_actions(
+                &leaves,
+                &["GetFirewallStatus", "CheckPinholeWorking"],
+                "firewall",
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn scripted_ipv6_firewall_runs_status_create_renew_verify_delete_lifecycle() {
+        let (config, transcript, udp_task, http_task) =
+            scripted_ipv6_firewall(ScriptedPinholeBehavior::Normal).await;
+        let cancellation = CancellationToken::new();
+        let services = discover_igd_v2_services(config, &cancellation)
+            .await
+            .expect("discover dual-service gateway");
+        assert!(matches!(
+            services.ipv4_mapping,
+            UpnpDiscoveredService::Available(_)
+        ));
+        let UpnpDiscoveredService::Available(firewall) = services.ipv6_firewall else {
+            panic!("IPv6 firewall service unavailable");
+        };
+        assert_eq!(
+            firewall.firewall_status(&cancellation).await.unwrap(),
+            UpnpFirewallStatus {
+                firewall_enabled: true,
+                inbound_pinhole_allowed: true,
+            },
+        );
+        let endpoint = SocketAddrV6::new("2606:4700:4700::1111".parse().unwrap(), 42_000, 0, 0);
+        let mut pinhole = firewall
+            .create_pinhole(endpoint, &cancellation)
+            .await
+            .expect("create finite pinhole");
+        assert_eq!(pinhole.unique_id_for_testing(), 73);
+        assert_eq!(pinhole.lease_seconds, REQUESTED_LEASE_SECONDS);
+        assert_eq!(pinhole.renewal_delay(), Duration::from_secs(2_700));
+        firewall
+            .renew_pinhole(&mut pinhole, &cancellation)
+            .await
+            .expect("renew pinhole");
+        assert!(
+            firewall
+                .check_pinhole_working(&pinhole, &cancellation)
+                .await
+                .expect("check pinhole")
+        );
+        assert_eq!(
+            firewall
+                .pinhole_packets(&pinhole, &cancellation)
+                .await
+                .expect("packet count"),
+            9,
+        );
+        firewall
+            .delete_pinhole(&pinhole, &cancellation)
+            .await
+            .expect("delete pinhole");
+        let missing = firewall
+            .pinhole_packets(&pinhole, &cancellation)
+            .await
+            .expect_err("deleted pinhole must be absent");
+        assert_eq!(missing.fault_code(), Some(704));
+        udp_task.await.expect("join SSDP task");
+        http_task.await.expect("join HTTP task");
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GET /firewall.xml",
+                "GetFirewallStatus",
+                "AddPinhole:3600",
+                "UpdatePinhole",
+                "CheckPinholeWorking",
+                "GetPinholePackets",
+                "DeletePinhole",
+                "GetPinholePackets",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn ambiguous_create_reconciles_with_different_lease_or_becomes_bounded_uncertainty() {
+        let endpoint = SocketAddrV6::new("2606:4700:4700::1111".parse().unwrap(), 42_000, 0, 0);
+        let (config, transcript, udp_task, http_task) =
+            scripted_ipv6_firewall(ScriptedPinholeBehavior::DropFirstCreate).await;
+        let cancellation = CancellationToken::new();
+        let services = discover_igd_v2_services(config, &cancellation)
+            .await
+            .unwrap();
+        let UpnpDiscoveredService::Available(firewall) = services.ipv6_firewall else {
+            panic!("IPv6 firewall service unavailable");
+        };
+        let pinhole = firewall
+            .create_pinhole(endpoint, &cancellation)
+            .await
+            .expect("different-lease reconciliation succeeds");
+        assert_eq!(pinhole.unique_id_for_testing(), 73);
+        assert_eq!(pinhole.lease_seconds, RECONCILIATION_LEASE_SECONDS);
+        firewall
+            .delete_pinhole(&pinhole, &cancellation)
+            .await
+            .unwrap();
+        udp_task.await.unwrap();
+        http_task.await.unwrap();
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GET /firewall.xml",
+                "AddPinhole:3600",
+                "AddPinhole:3601",
+                "DeletePinhole",
+            ]
+        );
+
+        let (config, transcript, udp_task, http_task) =
+            scripted_ipv6_firewall(ScriptedPinholeBehavior::DropBothCreates).await;
+        let services = discover_igd_v2_services(config, &cancellation)
+            .await
+            .unwrap();
+        let UpnpDiscoveredService::Available(firewall) = services.ipv6_firewall else {
+            panic!("IPv6 firewall service unavailable");
+        };
+        let error = firewall
+            .create_pinhole(endpoint, &cancellation)
+            .await
+            .expect_err("two ambiguous responses retain uncertainty");
+        let UpnpPinholeCreateError::Uncertain(uncertain) = error else {
+            panic!("expected uncertain pinhole");
+        };
+        assert_eq!(uncertain.internal_endpoint, endpoint);
+        assert_eq!(uncertain.lease_seconds, RECONCILIATION_LEASE_SECONDS);
+        udp_task.await.unwrap();
+        http_task.await.unwrap();
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GET /firewall.xml",
+                "AddPinhole:3600",
+                "AddPinhole:3601",
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn discovery_cancellation_preempts_the_response_window() {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -1569,6 +2358,192 @@ mod tests {
             .await
             .expect_err("cancelled discovery must terminate");
         assert_eq!(error.stage(), UpnpStage::Discovery);
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ScriptedPinholeBehavior {
+        Normal,
+        DropFirstCreate,
+        DropBothCreates,
+    }
+
+    async fn scripted_ipv6_firewall(
+        behavior: ScriptedPinholeBehavior,
+    ) -> (
+        UpnpDiscoveryConfig,
+        Arc<Mutex<Vec<String>>>,
+        tokio::task::JoinHandle<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let http_port = listener.local_addr().unwrap().port();
+        let ssdp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let SocketAddr::V4(ssdp_endpoint) = ssdp.local_addr().unwrap() else {
+            unreachable!();
+        };
+        let response_count = match behavior {
+            ScriptedPinholeBehavior::Normal => 10,
+            ScriptedPinholeBehavior::DropFirstCreate => 6,
+            ScriptedPinholeBehavior::DropBothCreates => 5,
+        };
+        let transcript = Arc::new(Mutex::new(Vec::new()));
+        let http_transcript = transcript.clone();
+        let http_task = tokio::spawn(async move {
+            let mut pinhole_present = false;
+            let mut create_count = 0_u8;
+            for _ in 0..response_count {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let request = read_http_request(&mut stream).await;
+                let first_line = request.lines().next().unwrap_or_default();
+                let (status, content_type, body, event, drop_response) = if first_line
+                    .starts_with("GET /root.xml ")
+                {
+                    (
+                        "200 OK",
+                        "text/xml",
+                        dual_service_description(http_port),
+                        "GET /root.xml".to_owned(),
+                        false,
+                    )
+                } else if first_line.starts_with("GET /wan.xml ") {
+                    (
+                        "200 OK",
+                        "application/xml",
+                        scpd_description(),
+                        "GET /wan.xml".to_owned(),
+                        false,
+                    )
+                } else if first_line.starts_with("GET /firewall.xml ") {
+                    (
+                        "200 OK",
+                        "application/xml",
+                        firewall_scpd_description(),
+                        "GET /firewall.xml".to_owned(),
+                        false,
+                    )
+                } else {
+                    let action = soap_action(&request);
+                    let mut event = action.to_owned();
+                    let (status, body, drop_response) = match action {
+                        "GetFirewallStatus" => (
+                            "200 OK",
+                            firewall_soap_response(
+                                action,
+                                "<FirewallEnabled>true</FirewallEnabled><InboundPinholeAllowed>yes</InboundPinholeAllowed>",
+                            ),
+                            false,
+                        ),
+                        "AddPinhole" => {
+                            create_count += 1;
+                            assert!(request.contains("<RemoteHost></RemoteHost>"));
+                            assert!(request.contains("<RemotePort>0</RemotePort>"));
+                            assert!(
+                                request.contains(
+                                    "<InternalClient>2606:4700:4700::1111</InternalClient>"
+                                )
+                            );
+                            assert!(request.contains("<InternalPort>42000</InternalPort>"));
+                            assert!(request.contains("<Protocol>6</Protocol>"));
+                            let lease = if request.contains("<LeaseTime>3601</LeaseTime>") {
+                                3_601
+                            } else {
+                                assert!(request.contains("<LeaseTime>3600</LeaseTime>"));
+                                3_600
+                            };
+                            event = format!("AddPinhole:{lease}");
+                            pinhole_present = true;
+                            let drop = behavior == ScriptedPinholeBehavior::DropBothCreates
+                                || (behavior == ScriptedPinholeBehavior::DropFirstCreate
+                                    && create_count == 1);
+                            (
+                                "200 OK",
+                                firewall_soap_response(action, "<UniqueID>73</UniqueID>"),
+                                drop,
+                            )
+                        }
+                        "UpdatePinhole" => {
+                            assert!(pinhole_present);
+                            assert!(request.contains("<UniqueID>73</UniqueID>"));
+                            assert!(request.contains("<NewLeaseTime>3600</NewLeaseTime>"));
+                            ("200 OK", firewall_soap_response(action, ""), false)
+                        }
+                        "CheckPinholeWorking" => {
+                            assert!(pinhole_present);
+                            (
+                                "200 OK",
+                                firewall_soap_response(action, "<IsWorking>1</IsWorking>"),
+                                false,
+                            )
+                        }
+                        "GetPinholePackets" if pinhole_present => (
+                            "200 OK",
+                            firewall_soap_response(action, "<PinholePackets>9</PinholePackets>"),
+                            false,
+                        ),
+                        "GetPinholePackets" => (
+                            "500 Internal Server Error",
+                            soap_fault(704, "NoSuchEntry"),
+                            false,
+                        ),
+                        "DeletePinhole" => {
+                            assert!(pinhole_present);
+                            pinhole_present = false;
+                            ("200 OK", firewall_soap_response(action, ""), false)
+                        }
+                        other => panic!("unexpected scripted action {other}"),
+                    };
+                    (
+                        status,
+                        "text/xml; charset=utf-8",
+                        body,
+                        event,
+                        drop_response,
+                    )
+                };
+                http_transcript.lock().unwrap().push(event);
+                if drop_response {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+        let udp_task = tokio::spawn(async move {
+            let mut request = [0_u8; 1_024];
+            let (length, peer) = ssdp.recv_from(&mut request).await.unwrap();
+            let request = std::str::from_utf8(&request[..length]).unwrap();
+            assert!(request.contains("ST: upnp:rootdevice\r\n"));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nLOCATION: http://127.0.0.1:{http_port}/root.xml\r\nUSN: uuid:scripted::upnp:rootdevice\r\n\r\n"
+            );
+            ssdp.send_to(response.as_bytes(), peer).await.unwrap();
+        });
+        (
+            UpnpDiscoveryConfig::scripted_for_testing(Ipv4Addr::LOCALHOST, ssdp_endpoint),
+            transcript,
+            udp_task,
+            http_task,
+        )
+    }
+
+    fn dual_service_description(port: u16) -> String {
+        format!(
+            "<?xml version=\"1.0\"?><root><URLBase>http://127.0.0.1:{port}/</URLBase><device><serviceList><service><serviceType>{WAN_IP_CONNECTION_V2}</serviceType><controlURL>/v4-control</controlURL><SCPDURL>/wan.xml</SCPDURL></service><service><serviceType>{WAN_IPV6_FIREWALL_CONTROL_V1}</serviceType><controlURL>/v6-control</controlURL><SCPDURL>/firewall.xml</SCPDURL></service></serviceList></device></root>"
+        )
+    }
+
+    fn firewall_scpd_description() -> String {
+        "<scpd><actionList><action><name>GetFirewallStatus</name></action><action><name>AddPinhole</name></action><action><name>UpdatePinhole</name></action><action><name>DeletePinhole</name></action><action><name>GetPinholePackets</name></action><action><name>CheckPinholeWorking</name></action></actionList></scpd>".to_owned()
+    }
+
+    fn firewall_soap_response(action: &str, arguments: &str) -> String {
+        format!(
+            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response xmlns:u=\"{WAN_IPV6_FIREWALL_CONTROL_V1}\">{arguments}</u:{action}Response></s:Body></s:Envelope>"
+        )
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
