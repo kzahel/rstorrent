@@ -8,17 +8,17 @@ use rstorrent_gateway::{
     ChooseDownloadRootRequest, ChooseDownloadRootResponse,
 };
 use rstorrent_session::{
-    ActivePiece, ActivePieceStageView, AddTorrentBytesRequest, AddTorrentDisposition,
-    AddTorrentResult, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello, ApiLimits, ApiVersion,
-    ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest, CatalogPageView,
-    CheckingPhaseView, CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
-    DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
-    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
-    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
-    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
-    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    ActiveDownloadsClampReason, ActivePiece, ActivePieceStageView, AddTorrentBytesRequest,
+    AddTorrentDisposition, AddTorrentResult, AdvertisedPeerEndpointScope,
+    AdvertisedPeerEndpointStatus, AdvertisedPeerEndpointUnavailableReason, ApiEncoding, ApiHello,
+    ApiLimits, ApiVersion, ApplicationCall, ApplicationCallResult, CapabilityStatus,
+    CatalogPageRequest, CatalogPageView, CheckingPhaseView, CheckingProgressView, ClientSettings,
+    ClientSettingsApplicationState, ClientSettingsDegradedReason, ClientSettingsRuntimeView,
+    Command, CommandResult, DeliveryMode, DeliveryPolicy, DhtAddressFamilyView, DhtBucketView,
+    DhtFamilyInspectionView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
+    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
+    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
+    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
     FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
@@ -33,12 +33,12 @@ use rstorrent_session::{
     SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
     StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
     SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentSnapshot, TorrentState, TorrentView, TrackerAnnounceEventView,
-    TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
-    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView,
-    TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
-    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
-    ViewSpec, ViewUpdate, ViewUpdatePayload,
+    TorrentEtaView, TorrentOperationalState, TorrentSnapshot, TorrentState, TorrentView,
+    TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
+    TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
+    TrackerTransportView, TrackerView, TransportAddressFamily, TransportFamilyRuntimeView,
+    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -99,6 +99,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<SessionUdpStatus>(&mut declarations)?;
     append::<TransportAddressFamily>(&mut declarations)?;
     append::<TransportFamilyRuntimeView>(&mut declarations)?;
+    append::<ActiveDownloadsClampReason>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_value(
         &mut declarations,
@@ -180,6 +181,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<TorrentEtaView>(&mut declarations)?;
     append::<CheckingPhaseView>(&mut declarations)?;
     append::<CheckingProgressView>(&mut declarations)?;
+    append::<TorrentOperationalState>(&mut declarations)?;
     append::<TorrentView>(&mut declarations)?;
     append::<CapabilityStatus>(&mut declarations)?;
     append::<PeerDirection>(&mut declarations)?;
@@ -485,6 +487,12 @@ fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
         } else {
             TorrentState::Downloading
         },
+        operational_state: if verified == 3 {
+            TorrentOperationalState::Seeding
+        } else {
+            TorrentOperationalState::Downloading
+        },
+        download_queue_position: if verified == 3 { None } else { Some(1) },
         storage_state: if verified == 3 {
             StorageState::Published
         } else {

@@ -11,7 +11,7 @@ mod runtime;
 
 pub(crate) use contract::MAX_RUNTIME_DETAIL_BYTES;
 pub use contract::{
-    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
     DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings, EncryptionPolicy,

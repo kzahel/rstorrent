@@ -19,6 +19,8 @@ const PEER_LIMIT_MINIMUM = 1;
 const PEER_LIMIT_MAXIMUM = 2_000;
 const UPLOAD_SLOTS_MINIMUM = 0;
 const UPLOAD_SLOTS_MAXIMUM = 50;
+const ACTIVE_DOWNLOADS_MINIMUM = 1;
+const ACTIVE_DOWNLOADS_MAXIMUM = 20;
 
 type ListenerMode = "automatic" | "fixed";
 
@@ -34,6 +36,7 @@ interface DraftValidation {
   readonly fixedPortError: string | null;
   readonly peerLimitError: string | null;
   readonly uploadSlotsError: string | null;
+  readonly activeDownloadsError: string | null;
 }
 
 export function ConnectionSeedingSettingsSection({
@@ -62,6 +65,9 @@ export function ConnectionSeedingSettingsSection({
   const [uploadSlots, setUploadSlots] = useState(
     String(configured.upload_slots),
   );
+  const [activeDownloads, setActiveDownloads] = useState(
+    String(configured.active_downloads),
+  );
   const [encryption, setEncryption] = useState<EncryptionPolicy>(
     configured.encryption,
   );
@@ -82,6 +88,7 @@ export function ConnectionSeedingSettingsSection({
     setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
+    setActiveDownloads(String(configured.active_downloads));
     setEncryption(configured.encryption);
     setIpv6Enabled(configured.ipv6_enabled);
   }, [
@@ -93,6 +100,7 @@ export function ConnectionSeedingSettingsSection({
     configured.preferred_listen_port,
     configured.peer_connection_limit,
     configured.upload_slots,
+    configured.active_downloads,
     configured.encryption,
     configured.ipv6_enabled,
   ]);
@@ -106,6 +114,7 @@ export function ConnectionSeedingSettingsSection({
         portMapping,
         peerLimit,
         uploadSlots,
+        activeDownloads,
         encryption,
         ipv6Enabled,
         configured.tracker_https_server_authentication,
@@ -118,6 +127,7 @@ export function ConnectionSeedingSettingsSection({
       portMapping,
       preferredPort,
       uploadSlots,
+      activeDownloads,
       encryption,
       ipv6Enabled,
     ],
@@ -142,6 +152,7 @@ export function ConnectionSeedingSettingsSection({
     setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
+    setActiveDownloads(String(configured.active_downloads));
     setEncryption(configured.encryption);
     setIpv6Enabled(configured.ipv6_enabled);
     setSaveStatus(null);
@@ -263,6 +274,18 @@ export function ConnectionSeedingSettingsSection({
             </small>
           </span>
         </label>
+
+        <NumberField
+          id="active-downloads"
+          label="Simultaneous downloads"
+          description="Incomplete torrents admitted at once. Additional runnable torrents remain queued and start automatically as capacity opens."
+          value={activeDownloads}
+          minimum={ACTIVE_DOWNLOADS_MINIMUM}
+          maximum={ACTIVE_DOWNLOADS_MAXIMUM}
+          error={validation.activeDownloadsError}
+          disabled={!manageable || pending}
+          onChange={(value) => updateDraft(() => setActiveDownloads(value))}
+        />
 
         <NumberField
           id="peer-connection-limit"
@@ -552,6 +575,17 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       )}
       <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
       <span>
+        Active downloads: {settings.active_download_count} of {settings.effective_active_downloads}
+        {settings.checking_count === 0
+          ? "."
+          : ` · ${settings.checking_count} checking.`}
+      </span>
+      {settings.active_downloads_clamp_reason === "platform_limit" ? (
+        <span>
+          The configured {settings.configured.active_downloads}-download setting is limited to {settings.effective_active_downloads} on this platform.
+        </span>
+      ) : null}
+      <span>
         Effective protocol obfuscation policy: {settings.effective_encryption}.
       </span>
       <span>
@@ -768,6 +802,7 @@ function validateDraft(
   portMapping: PortMappingPolicy,
   peerLimit: string,
   uploadSlots: string,
+  activeDownloads: string,
   encryption: EncryptionPolicy,
   ipv6Enabled: boolean,
   trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
@@ -792,6 +827,11 @@ function validateDraft(
     UPLOAD_SLOTS_MINIMUM,
     UPLOAD_SLOTS_MAXIMUM,
   );
+  const downloads = parseBoundedInteger(
+    activeDownloads,
+    ACTIVE_DOWNLOADS_MINIMUM,
+    ACTIVE_DOWNLOADS_MAXIMUM,
+  );
   const fixedPortError =
     !isFixedListenerMode(listenerMode)
       ? null
@@ -810,11 +850,16 @@ function validateDraft(
     slots === null
       ? `Enter a whole number from ${UPLOAD_SLOTS_MINIMUM} to ${UPLOAD_SLOTS_MAXIMUM}.`
       : null;
+  const activeDownloadsError =
+    downloads === null
+      ? `Enter a whole number from ${ACTIVE_DOWNLOADS_MINIMUM} to ${ACTIVE_DOWNLOADS_MAXIMUM}.`
+      : null;
   if (
     preferredPortError !== null ||
     fixedPortError !== null ||
     peerLimitError !== null ||
     uploadSlotsError !== null
+    || activeDownloadsError !== null
   ) {
     return {
       settings: null,
@@ -822,6 +867,7 @@ function validateDraft(
       fixedPortError,
       peerLimitError,
       uploadSlotsError,
+      activeDownloadsError,
     };
   }
   const listener: ListenerPolicy = listenerMode === "automatic"
@@ -834,6 +880,7 @@ function validateDraft(
       port_mapping: portMapping,
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
+      active_downloads: downloads as number,
       encryption,
       ipv6_enabled: ipv6Enabled,
       tracker_https_server_authentication: trackerHttpsServerAuthentication,
@@ -842,6 +889,7 @@ function validateDraft(
     fixedPortError: null,
     peerLimitError: null,
     uploadSlotsError: null,
+    activeDownloadsError: null,
   };
 }
 
@@ -867,6 +915,7 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
     left.preferred_listen_port === right.preferred_listen_port &&
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots &&
+    left.active_downloads === right.active_downloads &&
     left.encryption === right.encryption &&
     left.ipv6_enabled === right.ipv6_enabled &&
     left.tracker_https_server_authentication ===

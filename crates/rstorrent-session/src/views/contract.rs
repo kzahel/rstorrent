@@ -761,11 +761,26 @@ pub struct CheckingProgressView {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ProgressInputs {
     pub task_active: bool,
+    pub stopping: bool,
     pub network_disabled: bool,
     pub discovery_exhausted: bool,
     pub discovery_active: bool,
     pub discovery_retry_scheduled: bool,
     pub dht_enabled: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum TorrentOperationalState {
+    Queued,
+    Starting,
+    Downloading,
+    Checking,
+    Stopping,
+    Seeding,
+    Paused,
+    Error,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -1015,6 +1030,9 @@ pub struct TorrentView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     pub state: TorrentState,
+    pub operational_state: TorrentOperationalState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_queue_position: Option<u32>,
     pub storage_state: StorageState,
     pub metadata_available: bool,
     pub piece_count: u32,

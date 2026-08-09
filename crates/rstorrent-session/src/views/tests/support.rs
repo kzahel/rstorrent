@@ -42,6 +42,7 @@ pub(super) fn snapshot(revision: u64, piece_count: u32) -> ServiceSnapshot {
             metadata_available: true,
             piece_count,
             verified_piece_count: 0,
+            desired_running: true,
             download_queue_position: None,
             skip_files: Vec::new(),
             selection_default: Default::default(),

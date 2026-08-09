@@ -125,6 +125,9 @@ export class DemoApplication implements InspectionApplication {
         this.addCommandLog("lifecycle", "Torrent resumed in demo mode", command.torrentId);
         this.advance(0);
         return accepted("Torrent resumed");
+      case "move_download_to_top":
+      case "move_download_to_bottom":
+        return rejected("Queue movement is unavailable in demo scenarios");
       case "archive":
         this.archived.add(command.torrentId);
         this.addCommandLog("lifecycle", "Torrent archived in demo mode", command.torrentId);
@@ -567,6 +570,7 @@ function applyOverlays(
     torrents[id] = {
       ...row,
       status: paused.has(id) ? "paused" : row.status,
+      operationalState: paused.has(id) ? "paused" : row.operationalState,
       archived: archived.has(id),
       downloadRate: paused.has(id) ? 0 : row.downloadRate,
       uploadRate: paused.has(id) ? 0 : row.uploadRate,
@@ -583,6 +587,8 @@ function applyOverlays(
       id,
       name: `Generated demo transfer ${index + 1}`,
       status: "downloading",
+      operationalState: "downloading",
+      queuePosition: null,
       sizeBytes: 734_003_200 + index * 104_857_600,
       progress: 0.08 + index * 0.03,
       checking: null,

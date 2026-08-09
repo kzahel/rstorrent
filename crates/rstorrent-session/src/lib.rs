@@ -54,7 +54,7 @@ pub use rstorrent_engine::{
     NetworkPolicy,
 };
 pub use settings::{
-    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
     DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings, EncryptionPolicy,
@@ -89,8 +89,9 @@ pub use views::{
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
     ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState,
-    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView, UpdateBatch,
-    UpdateViewSetRequest, VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewHub, ViewPatch,
-    ViewProjection, ViewSelector, ViewSet, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate,
-    ViewSnapshot, ViewSpec, ViewSubscription, ViewUpdate, ViewUpdatePayload, assess_progress,
+    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentOperationalState,
+    TorrentView, UpdateBatch, UpdateViewSetRequest, VIEW_CONTRACT_VERSION, ViewDeliveryPolicy,
+    ViewHub, ViewPatch, ViewProjection, ViewSelector, ViewSet, ViewSetError, ViewSetOwner,
+    ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewSubscription, ViewUpdate,
+    ViewUpdatePayload, assess_progress,
 };

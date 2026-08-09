@@ -1655,6 +1655,7 @@ mod tests {
             config.download_resource_limits,
             DownloadResourceLimits::ANDROID
         );
+        assert_eq!(config.active_download_cap, Some(2));
     }
 
     fn two_file_metainfo() -> Vec<u8> {

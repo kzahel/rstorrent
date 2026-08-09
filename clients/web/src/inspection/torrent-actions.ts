@@ -4,6 +4,8 @@ import type { TorrentRow } from "./model";
 export type TorrentActionId =
   | "start"
   | "pause"
+  | "move_to_top"
+  | "move_to_bottom"
   | "force_recheck"
   | "copy_magnet"
   | "archive"
@@ -59,6 +61,24 @@ export const TORRENT_ACTIONS: readonly TorrentActionDefinition[] = [
     label: label("Force recheck"),
     pendingLabel: "Starting recheck",
     icon: "recheck",
+    group: "transfer",
+    placement: "overflow",
+    destructive: false,
+  },
+  {
+    id: "move_to_top",
+    label: label("Move to top"),
+    pendingLabel: "Moving to top",
+    icon: "transfers",
+    group: "transfer",
+    placement: "overflow",
+    destructive: false,
+  },
+  {
+    id: "move_to_bottom",
+    label: label("Move to bottom"),
+    pendingLabel: "Moving to bottom",
+    icon: "transfers",
     group: "transfer",
     placement: "overflow",
     destructive: false,
@@ -173,6 +193,20 @@ export function torrentActionAvailability(
               "torrent does",
               "torrents do",
             )} not have managed content available to recheck.`,
+          };
+    }
+    case "move_to_top":
+    case "move_to_bottom": {
+      const unavailable = targets.filter((row) => row.queuePosition === null).length;
+      return unavailable === 0
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: `${unavailable.toLocaleString()} selected ${plural(
+              unavailable,
+              "torrent is",
+              "torrents are",
+            )} not in the download queue.`,
           };
     }
     case "archive":

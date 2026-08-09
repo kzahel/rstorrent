@@ -29,7 +29,10 @@ const columns = (
     width: 430,
     minimumWidth: 210,
     sortable: true,
-    sortValue: (row) => row.name,
+    sortValue: (row) =>
+      row.operationalState === "queued"
+        ? `\uffff${String(row.queuePosition ?? Number.MAX_SAFE_INTEGER).padStart(10, "0")}`
+        : row.name,
     render: (row) => (
       <span className={tableStyles.name} title={row.name}>
         <span
@@ -46,7 +49,10 @@ const columns = (
     label: "Status",
     width: 132,
     sortable: true,
-    sortValue: (row) => row.status,
+    sortValue: (row) =>
+      row.operationalState === "queued"
+        ? `queued-${String(row.queuePosition ?? Number.MAX_SAFE_INTEGER).padStart(10, "0")}`
+        : row.operationalState,
     render: (row) => <TorrentStatus row={row} label={statusLabel(row)} />,
   },
   {
@@ -123,11 +129,23 @@ export function TransferTable() {
   const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
   const displayColumns = useMemo(() => columns(dataUnits), [dataUnits]);
   const rows = useMemo(
-    () =>
-      order
+    () => {
+      const visible = order
         .map((id) => torrents[id])
         .filter((row): row is TorrentRow => row !== undefined)
-        .filter((row) => torrentMatchesCategory(row, category)),
+        .filter((row) => torrentMatchesCategory(row, category));
+      const nonqueued = visible.filter(
+        (row) => row.operationalState !== "queued",
+      );
+      const queued = visible
+        .filter((row) => row.operationalState === "queued")
+        .sort(
+          (left, right) =>
+            (left.queuePosition ?? Number.MAX_SAFE_INTEGER) -
+            (right.queuePosition ?? Number.MAX_SAFE_INTEGER),
+        );
+      return [...nonqueued, ...queued];
+    },
     [category, order, torrents],
   );
   const selectedIdSet = useMemo(
@@ -181,8 +199,13 @@ function transferRate(row: TorrentRow, dataUnits: DataUnits): string {
 }
 
 function statusLabel(row: TorrentRow): string {
-  if (row.status === "complete" && (row.uploadRate ?? 0) > 0) return "Complete";
-  return row.status.slice(0, 1).toUpperCase() + row.status.slice(1);
+  if (row.operationalState === "queued" && row.queuePosition !== null) {
+    return `Queued #${row.queuePosition}`;
+  }
+  return (
+    row.operationalState.slice(0, 1).toUpperCase() +
+    row.operationalState.slice(1)
+  );
 }
 
 function materializationMessage(materialization: ViewMaterialization): string {

@@ -207,6 +207,8 @@ describe("LiveApplication", () => {
     });
 
     expect(snapshots.at(-1)?.torrents[TORRENT_ID]).toMatchObject({
+      operationalState: "downloading",
+      queuePosition: null,
       requiredPayloadBytes: "131072",
       remainingPayloadBytes: "98304",
       etaDownloadRateBytes: "4096",
@@ -339,6 +341,7 @@ describe("LiveApplication", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 2_000,
       upload_slots: 0,
+      active_downloads: 3,
       encryption: "allow" as const,
       ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
@@ -448,6 +451,35 @@ describe("LiveApplication", () => {
       type: "force_recheck",
       torrent_id: TORRENT_ID,
     });
+    await application.close();
+  });
+
+  it("maps semantic queue movement to the durable application commands", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({
+        type: "move_download_to_top",
+        torrentId: TORRENT_ID,
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Torrent moved to the top of the download queue",
+    });
+    await expect(
+      application.dispatch({
+        type: "move_download_to_bottom",
+        torrentId: TORRENT_ID,
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Torrent moved to the bottom of the download queue",
+    });
+    expect(client.requests.map((request) => request.command)).toEqual([
+      { type: "move_download_to_top", torrent_id: TORRENT_ID },
+      { type: "move_download_to_bottom", torrent_id: TORRENT_ID },
+    ]);
     await application.close();
   });
 
@@ -1087,6 +1119,7 @@ function torrent(): TorrentView {
     torrent_id: TORRENT_ID,
     display_name: "movie.mkv",
     state: "downloading",
+    operational_state: "downloading",
     storage_state: "prepared",
     metadata_available: true,
     piece_count: 8,

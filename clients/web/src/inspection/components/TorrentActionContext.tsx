@@ -365,6 +365,10 @@ function commandFor(
       return { type: "pause", torrentId };
     case "force_recheck":
       return { type: "force_recheck", torrentId };
+    case "move_to_top":
+      return { type: "move_download_to_top", torrentId };
+    case "move_to_bottom":
+      return { type: "move_download_to_bottom", torrentId };
     case "archive":
       return { type: "archive", torrentId };
     case "restore":
@@ -401,6 +405,10 @@ function resultVerb(
       return "Paused";
     case "force_recheck":
       return "Started recheck for";
+    case "move_to_top":
+      return "Moved to the top of the download queue";
+    case "move_to_bottom":
+      return "Moved to the bottom of the download queue";
     case "archive":
       return "Archived";
     case "restore":

@@ -34,7 +34,7 @@ use super::{
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
     SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentView,
+    TorrentEtaView, TorrentOperationalState, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -216,6 +216,43 @@ pub fn assess_progress(snapshot: &TorrentSnapshot, inputs: ProgressInputs) -> Pr
             actions: Vec::new(),
         },
     }
+}
+
+pub(crate) fn operational_state(
+    snapshot: &TorrentSnapshot,
+    inputs: ProgressInputs,
+) -> TorrentOperationalState {
+    if inputs.stopping {
+        return TorrentOperationalState::Stopping;
+    }
+    if snapshot.state == TorrentState::Checking {
+        return TorrentOperationalState::Checking;
+    }
+    if inputs.task_active {
+        return match snapshot.state {
+            TorrentState::AwaitingMetadata | TorrentState::AwaitingStorage => {
+                TorrentOperationalState::Starting
+            }
+            TorrentState::Checking => TorrentOperationalState::Checking,
+            _ => TorrentOperationalState::Downloading,
+        };
+    }
+    if matches!(
+        snapshot.state,
+        TorrentState::NeedsRepair | TorrentState::Error
+    ) {
+        return TorrentOperationalState::Error;
+    }
+    if !snapshot.desired_running {
+        return TorrentOperationalState::Paused;
+    }
+    if snapshot.state == TorrentState::Complete {
+        return TorrentOperationalState::Seeding;
+    }
+    if snapshot.download_queue_position.is_some() {
+        return TorrentOperationalState::Queued;
+    }
+    TorrentOperationalState::Error
 }
 
 fn phase_for(snapshot: &TorrentSnapshot) -> ProgressPhase {
@@ -653,6 +690,8 @@ impl TorrentModel {
                 torrent_id: snapshot.torrent_id.clone(),
                 display_name: None,
                 state: snapshot.state,
+                operational_state: operational_state(snapshot, progress_inputs),
+                download_queue_position: snapshot.download_queue_position,
                 storage_state: snapshot.storage_state,
                 metadata_available: snapshot.metadata_available,
                 piece_count: snapshot.piece_count,

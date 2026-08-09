@@ -4993,6 +4993,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
             verified_piece_count: u32::try_from(verified_piece_count)
                 .map_err(|_| StoreError::DurableState("verified count overflow".to_owned()))?,
+            desired_running: row.9 == "running",
             download_queue_position: queue_ordinals.get(&info_hash).copied(),
             skip_files: if selection_default == FilePriority::Normal {
                 selection_exceptions.clone()

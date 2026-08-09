@@ -228,6 +228,8 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "export_magnet" &&
       command.type !== "pause" &&
       command.type !== "resume" &&
+      command.type !== "move_download_to_top" &&
+      command.type !== "move_download_to_bottom" &&
       command.type !== "force_recheck" &&
       command.type !== "archive" &&
       command.type !== "unarchive" &&
@@ -284,6 +286,12 @@ export class LiveApplication implements InspectionApplication {
                 : command.type === "export_magnet"
                   ? {
                       type: "export_magnet",
+                      torrent_id: command.torrentId,
+                    }
+                : command.type === "move_download_to_top" ||
+                    command.type === "move_download_to_bottom"
+                  ? {
+                      type: command.type,
                       torrent_id: command.torrentId,
                     }
                 : command.type === "remove"
@@ -346,6 +354,10 @@ export class LiveApplication implements InspectionApplication {
                   ? "Torrent paused"
                   : command.type === "resume"
                     ? "Torrent resumed"
+                    : command.type === "move_download_to_top"
+                      ? "Torrent moved to the top of the download queue"
+                      : command.type === "move_download_to_bottom"
+                        ? "Torrent moved to the bottom of the download queue"
                     : command.type === "force_recheck"
                       ? "Torrent recheck started"
                     : command.type === "archive"
@@ -1012,6 +1024,8 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     id: torrent.torrent_id,
     name: torrent.display_name ?? `Torrent ${torrent.torrent_id.slice(0, 12)}`,
     status: mapTorrentState(torrent.state),
+    operationalState: torrent.operational_state,
+    queuePosition: torrent.download_queue_position ?? null,
     sizeBytes: null,
     progress:
       pieceCount === 0 ? null : torrent.verified_piece_count / pieceCount,

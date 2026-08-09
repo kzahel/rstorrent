@@ -24,10 +24,10 @@ pub use contract::{
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
     ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
     ResetReason, SubscriptionError, SubscriptionSpec, SubscriptionStats, SwarmCatalogState,
-    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView, UpdateBatch,
-    UpdateViewSetRequest, VIEW_CONTRACT_VERSION, ViewDeliveryPolicy, ViewPatch, ViewProjection,
-    ViewSelector, ViewSetError, ViewSetOwner, ViewSetStats, ViewSetUpdate, ViewSnapshot, ViewSpec,
-    ViewUpdate, ViewUpdatePayload,
+    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentOperationalState,
+    TorrentView, UpdateBatch, UpdateViewSetRequest, VIEW_CONTRACT_VERSION, ViewDeliveryPolicy,
+    ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetStats,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 pub(crate) use eta::TorrentEtaRuntime;
 pub(crate) use hub::ViewSetLeaseReaper;

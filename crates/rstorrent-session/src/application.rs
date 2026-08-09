@@ -2663,9 +2663,13 @@ impl ApplicationService {
     }
 
     async fn join_active_content(&mut self, torrent_id: &str) -> Result<(), ApplicationError> {
-        let Some(active) = self.take_active_download(torrent_id) else {
+        if self.active_download_for(torrent_id).is_none() {
             return Ok(());
-        };
+        }
+        self.views.set_stopping(torrent_id, true)?;
+        let active = self
+            .take_active_download(torrent_id)
+            .expect("active download remains installed until it is taken");
         let eta_generation = active.eta_generation;
         active.control.cancel_when_safe();
         let result = match active.task.await {
@@ -2678,7 +2682,11 @@ impl ApplicationService {
             .views
             .deactivate_eta_generation(torrent_id, eta_generation)
             .map_err(ApplicationError::from);
-        result.and(eta_result)
+        let stopping_result = self
+            .views
+            .set_stopping(torrent_id, false)
+            .map_err(ApplicationError::from);
+        result.and(eta_result).and(stopping_result)
     }
 
     async fn reap_finished(&mut self) -> Result<(), ApplicationError> {
@@ -2886,6 +2894,28 @@ impl ApplicationService {
             durable_view_state(&store, &self.storage_roots)?
         };
         self.views.replace_durable(&snapshot, &durable)?;
+        let configured_limit = snapshot.client_settings.active_downloads;
+        let effective_limit = configured_limit.min(self.active_download_cap.unwrap_or(u16::MAX));
+        let clamp_reason = (effective_limit != configured_limit)
+            .then_some(crate::ActiveDownloadsClampReason::PlatformLimit);
+        let mut active_download_count = 0_usize;
+        let mut checking_count = 0_usize;
+        for torrent in &snapshot.torrents {
+            if self.active_download_for(&torrent.torrent_id).is_none() {
+                continue;
+            }
+            if torrent.state == TorrentState::Checking {
+                checking_count = checking_count.saturating_add(1);
+            } else {
+                active_download_count = active_download_count.saturating_add(1);
+            }
+        }
+        self.views.set_download_admission_state(
+            effective_limit,
+            clamp_reason,
+            u16::try_from(active_download_count).unwrap_or(u16::MAX),
+            u16::try_from(checking_count).unwrap_or(u16::MAX),
+        )?;
         Ok(())
     }
 
@@ -5363,6 +5393,11 @@ mod tests {
             .expect("first queue head dials")
             .expect("accept first queue head");
         assert_eq!(service.active_download_ids(), vec![ids[0].clone()]);
+        let initial_runtime = service.views.client_settings_for_testing();
+        assert_eq!(initial_runtime.configured.active_downloads, 1);
+        assert_eq!(initial_runtime.effective_active_downloads, 1);
+        assert_eq!(initial_runtime.active_download_count, 1);
+        assert_eq!(initial_runtime.checking_count, 0);
         assert_eq!(
             service
                 .session_download_resource_snapshot()
@@ -5403,6 +5438,9 @@ mod tests {
             .expect("third queue entry dials")
             .expect("accept third queue entry");
         assert_eq!(service.active_download_ids(), ids[..3]);
+        let increased_runtime = service.views.client_settings_for_testing();
+        assert_eq!(increased_runtime.effective_active_downloads, 3);
+        assert_eq!(increased_runtime.active_download_count, 3);
         assert_eq!(
             service
                 .session_download_resource_snapshot()
@@ -5430,6 +5468,9 @@ mod tests {
             .await
             .expect("decrease active limit");
         assert_eq!(service.active_download_ids(), vec![ids[0].clone()]);
+        let decreased_runtime = service.views.client_settings_for_testing();
+        assert_eq!(decreased_runtime.effective_active_downloads, 1);
+        assert_eq!(decreased_runtime.active_download_count, 1);
         let snapshot = service
             .store_mut()
             .expect("store")
@@ -5547,6 +5588,36 @@ mod tests {
             0
         );
         service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn platform_download_cap_is_visible_without_rewriting_configuration() {
+        let root = test_root("automatic-admission-platform-cap");
+        let mut configuration = config(&root);
+        configuration.active_download_cap = Some(2);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                active_downloads: 3,
+                ..ClientSettings::default()
+            },
+        );
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open capped application");
+        let runtime = service.views.client_settings_for_testing();
+        assert_eq!(runtime.configured.active_downloads, 3);
+        assert_eq!(runtime.effective_active_downloads, 2);
+        assert_eq!(
+            runtime.active_downloads_clamp_reason,
+            Some(crate::ActiveDownloadsClampReason::PlatformLimit)
+        );
+        assert_eq!(runtime.active_download_count, 0);
+        assert_eq!(runtime.checking_count, 0);
+
+        service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
     }

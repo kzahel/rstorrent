@@ -1,5 +1,11 @@
 {
   "$defs": {
+    "ActiveDownloadsClampReason": {
+      "enum": [
+        "platform_limit"
+      ],
+      "type": "string"
+    },
     "ActivePiece": {
       "properties": {
         "age_millis": {
@@ -1314,6 +1320,13 @@
     "ClientSettings": {
       "additionalProperties": false,
       "properties": {
+        "active_downloads": {
+          "default": 3,
+          "format": "uint16",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
         "encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
         },
@@ -1428,11 +1441,39 @@
     "ClientSettingsRuntimeView": {
       "additionalProperties": false,
       "properties": {
+        "active_download_count": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "active_downloads_clamp_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActiveDownloadsClampReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "advertised_peer_endpoint": {
           "$ref": "#/$defs/AdvertisedPeerEndpointStatus"
         },
+        "checking_count": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
         "configured": {
           "$ref": "#/$defs/ClientSettings"
+        },
+        "effective_active_downloads": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
         },
         "effective_encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
@@ -1519,6 +1560,9 @@
         "effective_port_mapping",
         "effective_peer_connection_limit",
         "effective_upload_slots",
+        "effective_active_downloads",
+        "active_download_count",
+        "checking_count",
         "effective_encryption",
         "effective_ipv6_enabled",
         "transport_application",
@@ -1650,6 +1694,38 @@
             "type",
             "torrent_id",
             "file_indices"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "move_download_to_top",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "move_download_to_bottom",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id"
           ],
           "type": "object"
         },
@@ -4495,6 +4571,7 @@
         "client_settings": {
           "$ref": "#/$defs/ClientSettings",
           "default": {
+            "active_downloads": 3,
             "encryption": "allow",
             "ipv6_enabled": true,
             "listener": {
@@ -5063,6 +5140,19 @@
         }
       ]
     },
+    "TorrentOperationalState": {
+      "enum": [
+        "queued",
+        "starting",
+        "downloading",
+        "checking",
+        "stopping",
+        "seeding",
+        "paused",
+        "error"
+      ],
+      "type": "string"
+    },
     "TorrentSnapshot": {
       "properties": {
         "archived": {
@@ -5072,6 +5162,18 @@
         "delete_managed_data_supported": {
           "default": false,
           "type": "boolean"
+        },
+        "desired_running": {
+          "default": false,
+          "type": "boolean"
+        },
+        "download_queue_position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "error": {
           "type": [
@@ -5203,6 +5305,14 @@
             "null"
           ]
         },
+        "download_queue_position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "error": {
           "type": [
             "string",
@@ -5220,6 +5330,9 @@
         },
         "metadata_available": {
           "type": "boolean"
+        },
+        "operational_state": {
+          "$ref": "#/$defs/TorrentOperationalState"
         },
         "payload_download_rate_bytes": {
           "type": "string"
@@ -5281,6 +5394,7 @@
       "required": [
         "torrent_id",
         "state",
+        "operational_state",
         "storage_state",
         "metadata_available",
         "piece_count",
@@ -6043,10 +6157,13 @@
             "client_settings": {
               "$ref": "#/$defs/ClientSettingsRuntimeView",
               "default": {
+                "active_download_count": 0,
                 "advertised_peer_endpoint": {
                   "type": "unavailable"
                 },
+                "checking_count": 0,
                 "configured": {
+                  "active_downloads": 3,
                   "encryption": "allow",
                   "ipv6_enabled": true,
                   "listener": {
@@ -6058,6 +6175,7 @@
                   "tracker_https_server_authentication": "system_trust",
                   "upload_slots": 8
                 },
+                "effective_active_downloads": 3,
                 "effective_encryption": "allow",
                 "effective_ipv6_enabled": true,
                 "effective_listener": {

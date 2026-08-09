@@ -68,6 +68,10 @@ impl ClientSettingsRuntimeView {
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
+            effective_active_downloads: settings.active_downloads,
+            active_downloads_clamp_reason: None,
+            active_download_count: 0,
+            checking_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: settings.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(
@@ -127,6 +131,10 @@ impl ClientSettingsRuntimeView {
             effective_port_mapping: active.port_mapping,
             effective_peer_connection_limit,
             effective_upload_slots: active.upload_slots,
+            effective_active_downloads: active.active_downloads,
+            active_downloads_clamp_reason: None,
+            active_download_count: 0,
+            checking_count: 0,
             effective_encryption: active.encryption,
             effective_ipv6_enabled: active.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(

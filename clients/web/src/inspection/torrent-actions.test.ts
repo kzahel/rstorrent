@@ -21,6 +21,8 @@ describe("torrent selection actions", () => {
       ["transfer", "start"],
       ["transfer", "pause"],
       ["transfer", "force_recheck"],
+      ["transfer", "move_to_top"],
+      ["transfer", "move_to_bottom"],
       ["sharing", "copy_magnet"],
       ["organization", "archive"],
       ["organization", "restore"],
@@ -45,6 +47,7 @@ describe("torrent selection actions", () => {
     const mixed = [row("paused", { status: "paused" }), row("running")];
     expect(torrentActionAvailability("start", mixed).disabled).toBe(false);
     expect(torrentActionAvailability("pause", mixed).disabled).toBe(false);
+    expect(torrentActionAvailability("move_to_top", mixed).disabled).toBe(false);
     expect(torrentActionAvailability("archive", mixed).disabled).toBe(false);
     expect(torrentActionAvailability("restore", mixed).disabled).toBe(true);
 
@@ -55,6 +58,14 @@ describe("torrent selection actions", () => {
     expect(torrentActionAvailability("force_recheck", recheckMixed)).toEqual({
       disabled: true,
       reason: "1 selected torrent does not have managed content available to recheck.",
+    });
+    expect(
+      torrentActionAvailability("move_to_bottom", [
+        row("complete", { queuePosition: null }),
+      ]),
+    ).toEqual({
+      disabled: true,
+      reason: "1 selected torrent is not in the download queue.",
     });
   });
 
@@ -71,6 +82,8 @@ function row(id: string, overrides: Partial<TorrentRow> = {}): TorrentRow {
     id,
     name: id,
     status: "downloading",
+    operationalState: "downloading",
+    queuePosition: 1,
     sizeBytes: 100,
     progress: 0.5,
     checking: null,

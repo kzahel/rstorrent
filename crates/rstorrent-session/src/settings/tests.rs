@@ -6,8 +6,8 @@ use rstorrent_engine::{
 use rusqlite::Connection;
 
 use super::{
-    AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus, ClientSettings,
-    ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
+    ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
     EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
     Ipv6PinholeStatus, ListenerPolicy, ListenerStatus, PortMappingPolicy, PortMappingStatus,
     SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
@@ -198,6 +198,10 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         effective_port_mapping: PortMappingPolicy::Disabled,
         effective_peer_connection_limit: 120,
         effective_upload_slots: 8,
+        effective_active_downloads: 2,
+        active_downloads_clamp_reason: Some(ActiveDownloadsClampReason::PlatformLimit),
+        active_download_count: 2,
+        checking_count: 1,
         effective_encryption: Default::default(),
         effective_ipv6_enabled: true,
         effective_tracker_https_server_authentication: Some(

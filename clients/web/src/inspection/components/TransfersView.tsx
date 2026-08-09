@@ -24,7 +24,9 @@ export function TransfersView() {
     torrentMatchesCategory(row, category),
   ).length;
   const activeCount = rows.filter(
-    (row) => row.status === "metadata" || row.status === "downloading",
+    (row) =>
+      row.operationalState === "starting" ||
+      row.operationalState === "downloading",
   ).length;
 
   return (

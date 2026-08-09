@@ -27,6 +27,80 @@ fn current_torrent(hub: &ViewHub) -> crate::TorrentView {
 }
 
 #[test]
+fn operational_state_and_queue_position_are_authoritative() {
+    let mut queued = snapshot(0, 1);
+    queued.torrents[0].download_queue_position = Some(3);
+    let hub = ViewHub::new(&queued).expect("queued hub");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Queued
+    );
+    assert_eq!(current_torrent(&hub).download_queue_position, Some(3));
+
+    hub.set_progress_inputs(
+        TORRENT_ID,
+        ProgressInputs {
+            task_active: true,
+            ..ProgressInputs::default()
+        },
+    )
+    .expect("activate torrent");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Downloading
+    );
+    hub.set_stopping(TORRENT_ID, true).expect("stop torrent");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Stopping
+    );
+
+    let mut checking = queued.clone();
+    checking.revision = "1".to_owned();
+    checking.torrents[0].state = TorrentState::Checking;
+    hub.set_stopping(TORRENT_ID, false)
+        .expect("finish stopping torrent");
+    hub.replace_durable(&checking, &BTreeMap::new())
+        .expect("checking snapshot");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Checking
+    );
+
+    let mut complete = queued.clone();
+    complete.revision = "2".to_owned();
+    complete.torrents[0].state = TorrentState::Complete;
+    complete.torrents[0].download_queue_position = None;
+    hub.set_progress_inputs(TORRENT_ID, ProgressInputs::default())
+        .expect("clear runtime state");
+    hub.replace_durable(&complete, &BTreeMap::new())
+        .expect("complete snapshot");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Seeding
+    );
+
+    complete.revision = "3".to_owned();
+    complete.torrents[0].desired_running = false;
+    hub.replace_durable(&complete, &BTreeMap::new())
+        .expect("paused complete snapshot");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Paused
+    );
+
+    complete.revision = "4".to_owned();
+    complete.torrents[0].desired_running = true;
+    complete.torrents[0].state = TorrentState::Error;
+    hub.replace_durable(&complete, &BTreeMap::new())
+        .expect("error snapshot");
+    assert_eq!(
+        current_torrent(&hub).operational_state,
+        crate::TorrentOperationalState::Error
+    );
+}
+
+#[test]
 fn checker_progress_projects_exactly_and_rejects_stale_completion() {
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     hub.record_checker_progress(

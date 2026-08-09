@@ -337,6 +337,13 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
     id,
     name: id,
     status,
+    operationalState:
+      status === "metadata"
+        ? "starting"
+        : status === "complete"
+          ? "seeding"
+          : status,
+    queuePosition: null,
     sizeBytes: 100,
     progress: 0.5,
     checking: null,

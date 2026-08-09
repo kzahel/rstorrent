@@ -500,6 +500,13 @@ pub struct TransportFamilyRuntimeView {
     pub advertised_endpoint: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveDownloadsClampReason {
+    PlatformLimit,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
@@ -510,6 +517,11 @@ pub struct ClientSettingsRuntimeView {
     pub effective_port_mapping: PortMappingPolicy,
     pub effective_peer_connection_limit: u32,
     pub effective_upload_slots: u16,
+    pub effective_active_downloads: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_downloads_clamp_reason: Option<ActiveDownloadsClampReason>,
+    pub active_download_count: u16,
+    pub checking_count: u16,
     pub effective_encryption: EncryptionPolicy,
     pub effective_ipv6_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -537,6 +549,10 @@ impl Default for ClientSettingsRuntimeView {
             effective_port_mapping: settings.port_mapping,
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
+            effective_active_downloads: settings.active_downloads,
+            active_downloads_clamp_reason: None,
+            active_download_count: 0,
+            checking_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: settings.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(
@@ -571,6 +587,10 @@ impl ClientSettingsRuntimeView {
             effective_port_mapping: PortMappingPolicy::Disabled,
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
+            effective_active_downloads: settings.active_downloads,
+            active_downloads_clamp_reason: None,
+            active_download_count: 0,
+            checking_count: 0,
             effective_encryption: settings.encryption,
             effective_ipv6_enabled: false,
             effective_tracker_https_server_authentication: Some(

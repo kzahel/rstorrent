@@ -28,9 +28,10 @@ use crate::diagnostics::{
 };
 use crate::file_views::{FileCatalogState, FileProgressModel, FileView};
 use crate::settings::{
-    AdvertisedPeerEndpointStatus, ClientSettingsApplicationState, ClientSettingsDegradedReason,
-    ClientSettingsRuntimeView, Ipv6PinholeStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus,
-    SettingsDomainGeneration, StorageSettingsSnapshot, bounded_utf8,
+    ActiveDownloadsClampReason, AdvertisedPeerEndpointStatus, ClientSettingsApplicationState,
+    ClientSettingsDegradedReason, ClientSettingsRuntimeView, Ipv6PinholeStatus,
+    MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SettingsDomainGeneration, StorageSettingsSnapshot,
+    bounded_utf8,
 };
 use crate::speed::SessionRateHistory;
 use crate::tracker_views::{TrackerCatalogState, TrackerViewModel};
@@ -40,7 +41,7 @@ use super::diff::{
     disk_patch, patch_for, projection_requires_snapshot, targeted_activity_patch,
     targeted_peer_patch, targeted_swarm_patch, targeted_torrent_view_patch, targeted_tracker_patch,
 };
-use super::model::swarm_model;
+use super::model::{operational_state, swarm_model};
 use super::ranges::{insert_range, range_cardinality};
 use super::subscription::{QueueState, SubscriberInner, parse_revision};
 use super::view_set::{
@@ -398,6 +399,7 @@ impl ViewHub {
                 model.view.checking = old.view.checking.clone();
                 model.progress_inputs = old.progress_inputs;
                 model.view.progress = assess_progress(torrent, model.progress_inputs);
+                model.view.operational_state = operational_state(torrent, model.progress_inputs);
                 model.active = old.active.clone();
                 model.peers = old.peers.clone();
                 model.swarm = old.swarm.clone();
@@ -572,6 +574,29 @@ impl ViewHub {
         let previous_torrents = hub.torrents.clone();
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
         Ok(true)
+    }
+
+    pub(crate) fn set_download_admission_state(
+        &self,
+        effective_active_downloads: u16,
+        clamp_reason: Option<ActiveDownloadsClampReason>,
+        active_download_count: u16,
+        checking_count: u16,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.effective_active_downloads = effective_active_downloads;
+        hub.client_settings.active_downloads_clamp_reason = clamp_reason;
+        hub.client_settings.active_download_count = active_download_count;
+        hub.client_settings.checking_count = checking_count;
+        if hub.client_settings == previous_client_settings {
+            return Ok(());
+        }
+        let previous_torrents = hub.torrents.clone();
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
     }
 
     pub(crate) fn set_advertised_peer_endpoint(
@@ -932,6 +957,7 @@ impl ViewHub {
         let previous = model.view.clone();
         model.progress_inputs = inputs;
         model.view.progress = assess_progress(&model.snapshot, inputs);
+        model.view.operational_state = operational_state(&model.snapshot, inputs);
         model.eta.set_transfer_applicable(
             model.snapshot.state == TorrentState::Downloading && inputs.task_active,
             Instant::now(),
@@ -963,7 +989,27 @@ impl ViewHub {
         model.progress_inputs.discovery_retry_scheduled = retry_scheduled;
         model.progress_inputs.discovery_exhausted = false;
         model.view.progress = assess_progress(&model.snapshot, model.progress_inputs);
+        model.view.operational_state = operational_state(&model.snapshot, model.progress_inputs);
         hub.publish_changes(&previous, None, None)
+    }
+
+    pub(crate) fn set_stopping(
+        &self,
+        torrent_id: &str,
+        stopping: bool,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        let Some(model) = hub.torrents.get_mut(torrent_id) else {
+            return Ok(());
+        };
+        let previous = model.view.clone();
+        model.progress_inputs.stopping = stopping;
+        model.view.operational_state = operational_state(&model.snapshot, model.progress_inputs);
+        let current = model.view.clone();
+        hub.publish_torrent_view_changes(&[(torrent_id.to_owned(), previous, current)])
     }
 
     pub(crate) fn record_peer_connections(

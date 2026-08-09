@@ -1639,6 +1639,9 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     id: input.id,
     name: input.name,
     status: input.status,
+    operationalState:
+      input.operationalState ?? operationalStateForStatus(input.status),
+    queuePosition: input.queuePosition ?? null,
     sizeBytes: size,
     progress,
     checking: input.checking ?? null,
@@ -1663,6 +1666,25 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     error: input.error ?? null,
     progressReason: input.progressReason ?? "Waiting for activity",
   };
+}
+
+function operationalStateForStatus(
+  status: TorrentRow["status"],
+): TorrentRow["operationalState"] {
+  switch (status) {
+    case "metadata":
+      return "starting";
+    case "downloading":
+      return "downloading";
+    case "checking":
+      return "checking";
+    case "complete":
+      return "seeding";
+    case "paused":
+      return "paused";
+    case "error":
+      return "error";
+  }
 }
 
 function estimateEta(seconds: number): TorrentEta {

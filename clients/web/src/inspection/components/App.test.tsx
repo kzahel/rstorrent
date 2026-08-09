@@ -970,6 +970,8 @@ describe("inspection application", () => {
       "Start",
       "Pause",
       "Force recheck",
+      "Move to top",
+      "Move to bottom",
       "Copy magnet link",
       "Archive",
       "Restore",
@@ -1765,6 +1767,11 @@ describe("inspection application", () => {
     });
     await user.clear(slots);
     await user.type(slots, "0");
+    const activeDownloads = within(dialog).getByRole("spinbutton", {
+      name: "Simultaneous downloads",
+    });
+    await user.clear(activeDownloads);
+    await user.type(activeDownloads, "4");
     await user.click(
       within(dialog).getByRole("checkbox", {
         name: /Map incoming TCP with UPnP/,
@@ -1792,6 +1799,7 @@ describe("inspection application", () => {
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
+          active_downloads: 4,
           encryption: "prefer",
           ipv6_enabled: false,
           tracker_https_server_authentication: "disabled",
@@ -1815,6 +1823,7 @@ describe("inspection application", () => {
         port_mapping: "upnp",
         peer_connection_limit: 2000,
         upload_slots: 0,
+        active_downloads: 4,
         encryption: "prefer",
         ipv6_enabled: false,
         tracker_https_server_authentication: "system_trust",
@@ -1857,6 +1866,7 @@ describe("inspection application", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 200,
       upload_slots: 8,
+      active_downloads: 3,
       encryption: "allow" as const,
       ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
@@ -1874,6 +1884,9 @@ describe("inspection application", () => {
           effective_port_mapping: "disabled",
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
+          effective_active_downloads: 3,
+          active_download_count: 0,
+          checking_count: 0,
           effective_encryption: "allow",
           effective_ipv6_enabled: true,
           effective_tracker_https_server_authentication: "system_trust",

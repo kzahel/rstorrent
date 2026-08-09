@@ -14,6 +14,7 @@ function torrent(verified: number): TorrentView {
   return {
     torrent_id: torrentId,
     state: verified === 3 ? "complete" : "downloading",
+    operational_state: verified === 3 ? "seeding" : "downloading",
     storage_state: verified === 3 ? "published" : "staging",
     metadata_available: true,
     piece_count: 3,
@@ -192,6 +193,7 @@ describe("view-set reducer", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 320,
       upload_slots: 12,
+      active_downloads: 3,
       encryption: "allow" as const,
       ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,

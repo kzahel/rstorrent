@@ -373,6 +373,8 @@ pub struct TorrentSnapshot {
     pub metadata_available: bool,
     pub piece_count: u32,
     pub verified_piece_count: u32,
+    #[serde(default)]
+    pub desired_running: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_queue_position: Option<u32>,
     pub skip_files: Vec<u32>,

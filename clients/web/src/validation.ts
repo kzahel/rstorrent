@@ -1132,7 +1132,13 @@ function validateClientSettings(value: unknown): void {
     2_000,
   );
   boundedInteger(settings.upload_slots, "upload slots", 0, 50);
-  oneOf(settings.encryption, "encryption policy", ["allow", "prefer", "require"]);
+  boundedInteger(settings.active_downloads, "active downloads", 1, 20);
+  oneOf(settings.encryption, "encryption policy", [
+    "disabled",
+    "allow",
+    "prefer",
+    "required",
+  ]);
   boolean(settings.ipv6_enabled, "IPv6 enabled");
   oneOf(
     settings.tracker_https_server_authentication,
@@ -1180,10 +1186,29 @@ function validateClientSettingsRuntime(value: unknown): void {
     2_000,
   );
   boundedInteger(runtime.effective_upload_slots, "effective upload slots", 0, 50);
+  boundedInteger(
+    runtime.effective_active_downloads,
+    "effective active downloads",
+    1,
+    20,
+  );
+  if (
+    runtime.active_downloads_clamp_reason !== undefined &&
+    runtime.active_downloads_clamp_reason !== null
+  ) {
+    oneOf(
+      runtime.active_downloads_clamp_reason,
+      "active downloads clamp reason",
+      ["platform_limit"],
+    );
+  }
+  boundedInteger(runtime.active_download_count, "active download count", 0, 20);
+  boundedInteger(runtime.checking_count, "checking count", 0, 1);
   oneOf(runtime.effective_encryption, "effective encryption policy", [
+    "disabled",
     "allow",
     "prefer",
-    "require",
+    "required",
   ]);
   boolean(runtime.effective_ipv6_enabled, "effective IPv6 enabled");
   if (
@@ -1539,6 +1564,21 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
   const torrent = asRecord(value, "torrent view");
   torrentId(torrent.torrent_id);
   optionalString(torrent.display_name, "torrent display name", 255);
+  oneOf(torrent.operational_state, "torrent operational state", [
+    "queued",
+    "starting",
+    "downloading",
+    "checking",
+    "stopping",
+    "seeding",
+    "paused",
+    "error",
+  ]);
+  optionalInteger(
+    torrent.download_queue_position,
+    "download queue position",
+    MAX_U32,
+  );
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
   boundedInteger(
