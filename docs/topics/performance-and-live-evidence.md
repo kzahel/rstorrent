@@ -1234,6 +1234,14 @@ four for MSE: the measured 62.346 ms addition was within 20 ms of the expected
 50 ms extra round trip. These are controlled local measurements, not a public-
 swarm or permanent CI throughput claim.
 
+Post-graduation Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) uses that
+evidence to avoid the RC4 payload cost under compatibility-only `allow`:
+when both methods are offered, its responder now matches stock libtorrent's
+plaintext-payload default. `prefer` and `required` retain RC4, and RC4-only
+offers remain interoperable. No new throughput threshold or measurement is
+introduced by that policy correction.
+
 The final physical product gate ran on an API 37 Pixel 7a with five forced-RC4
 oracle sessions. It observed a session DH high-water of three under the
 four-job ceiling, full DH-owner drain, process descriptor high-water 177,

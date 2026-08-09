@@ -547,7 +547,7 @@ that scope and its cleanup or compatibility rules explicitly.
   admission, durable queue order, and shared memory, storage, hashing,
   connection, and discovery resource authority.
 - [`115-mse-policy-advertisement-and-peer-detail.md`](115-mse-policy-advertisement-and-peer-detail.md):
-  accepted bounded post-graduation follow-up; matches libtorrent's default
+  complete bounded post-graduation follow-up; matches libtorrent's default
   plaintext-payload selection under compatibility-only `allow`, derives the
   HTTP tracker MSE capability announcement from live policy, and exposes the
   exact peer method through the existing quiet `E` presentation.

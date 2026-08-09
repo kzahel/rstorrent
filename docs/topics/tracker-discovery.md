@@ -24,6 +24,12 @@ through desktop and Android platform trust. One persisted hidden `disabled`
 compatibility policy remains explicitly encrypted but unauthenticated; live
 changes replace the one bounded family client pair through Tactical `097`'s
 stable session-network machinery.
+Completed Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) adds the
+legacy HTTP `supportcrypto=1` capability hint whenever the effective policy
+accepts incoming MSE. `disabled` omits it, UDP trackers remain unchanged, and
+a live policy change requests one corrective update through the existing
+advertisement owner rather than replacing a torrent registration.
 
 ## Scope
 
@@ -42,7 +48,9 @@ the peer registry remains the only owner of accumulated peer records.
   transport endpoint. It is not a peer endpoint.
 - A **tracker announce** is one identified operation carrying torrent
   identity, client identity, transfer counters, event, listening port, key,
-  and requested peer count.
+  requested peer count, and transport-specific compatibility hints. The HTTP
+  MSE hint describes accepted incoming handshakes only; it is not a security
+  or reachability claim.
 - A **tracker response** is untrusted interval, optional swarm counts, peer
   endpoints, warning, and transport continuation data correlated to one
   announce operation. HTTP may return compact IPv4/IPv6 or noncompact peers;

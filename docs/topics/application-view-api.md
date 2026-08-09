@@ -136,10 +136,13 @@ Tactical
 extends the same complete client-settings value with configured/effective
 encryption policy and independent applying/applied/degraded state. It also
 fills `PeerFlagView::Encrypted` from a coherent connection observation for
-either MSE payload method. The application contract deliberately carries only
-the honest encrypted-or-obfuscated flag; the exact method and typed handshake
-failure remain engine diagnostics. No view kind, contract-version bump, lease,
-queue, cadence, task, or client-side inference is added.
+either MSE payload method. Completed follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) adds an
+optional closed `PeerMseMethodView::{PlaintextPayload, Rc4}` value from that
+same observation. The flag remains the compact semantic fact; the method is
+quiet detail, and typed handshake failures remain diagnostics. No view kind,
+contract-version bump, lease, queue, cadence, task, or client-side inference
+is added.
 
 ## Purpose And Scope
 
@@ -994,6 +997,12 @@ Kotlin consumers pass. A live `allow -> required` change publishes effective
 policy without restarting the listener or established peers; later incoming
 plaintext is rejected and later RC4 succeeds. Both MSE methods project `E`,
 ordinary plain does not, and the legend says "Encrypted or obfuscated."
+
+Tactical `115` preserves those view and convergence paths while adding the
+optional exact method. Rust projection tests cover plaintext-payload and RC4;
+generated TypeScript/schema/validators and UniFFI lowering pass. Older
+producers may omit the field, in which case clients retain the generic flag
+meaning.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

@@ -661,6 +661,12 @@ the truthful encrypted-or-obfuscated flag from its coherent observation. The
 physical Pixel 7a product profile completed five forced-RC4 attempts with a
 three-job DH high-water under the four-job ceiling and terminal
 `active=waiting=tracked=0`.
+Completed follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) adds a
+29th RC4-only compatibility case and aligns `allow` selection with stock
+libtorrent's plaintext-payload default. Existing generations still retain
+their captured method; the exact value now also projects as optional quiet
+peer detail.
 Tactical
 [`091`](../tactical/091-availability-ranked-piece-activation.md) completes the
 measured picker refinement with exact availability accounting and preserves

@@ -5,6 +5,11 @@ interoperability, performance, client, ABI, Android cross-build, API 34 AVD,
 and physical Pixel 7a evidence passes. Direction, settings shape, method
 preference, dependency, exponent width, and the performance-evidence direction
 were accepted in product discussion on 2026-08-08.
+Post-graduation Tactical
+[`115`](115-mse-policy-advertisement-and-peer-detail.md) subsequently aligned
+the default `allow` responder selection with stock libtorrent, added the HTTP
+tracker capability hint, and exposed the exact method without widening the
+visible peer table.
 
 Topics: `protocol-support`, `peer-lifecycle`, `client-persistence`,
 `incoming-reachability-and-seeding`, `peer-flag-vocabulary`,
@@ -605,17 +610,17 @@ responder preference.
 | Setting | Outgoing | Incoming | Offer | Select |
 | --- | --- | --- | --- | --- |
 | `disabled` | Plain only | Plain only; an MSE handshake is refused | none | none |
-| `allow` (default) | Plain only | Accept MSE or plain | not used | Prefer `0x02` |
+| `allow` (default) | Plain only | Accept MSE or plain | not used | Prefer `0x01` |
 | `prefer` | Try MSE, one plain fallback only after an eligible pre-response failure | Accept MSE or plain | `0x03` | Prefer `0x02` |
 | `required` | MSE only, no fallback | MSE only; plain is refused | `0x03` | Prefer `0x02` |
 
 Accepted decisions this table encodes:
 
-- **RC4 is preferred when we select and both methods are offered.** This
-  differs from stock libtorrent, whose `prefer_rc4 = false` default selects
-  plaintext, and matches JSTorrent and libtorrent configured with
-  `prefer_rc4 = true`. A peer's valid plaintext selection is still accepted,
-  so this preference costs no interoperability.
+- **Selection follows the product policy.** Compatibility-only `allow`
+  matches stock libtorrent's `prefer_rc4 = false` default and selects
+  plaintext payload when both methods are offered. `prefer` and `required`
+  select RC4, matching their stronger obfuscation posture. Every MSE-accepting
+  policy still accepts an offer containing only the other known method.
 - **Whenever RSTorrent initiates MSE, `0x03` is provided.** Restricting the
   offer gains nothing and loses peers. Consequently, `required` means
   "require an MSE/PE handshake", not
@@ -796,7 +801,7 @@ Each gate is independently committable and leaves the workspace green.
 | Resource | Handshake-buffer high-water at most 2 KiB per connection; steady-state duplex cipher state at most 4 KiB; a deterministic barrier test observes exactly four DH jobs running and the fifth waiting while never exceeding admitted pending connections; the product smoke exercises five real attempts and observes a high-water in `1..=4` because sub-millisecond jobs need not overlap; zero/one/two exponentiations match the terminal handshake state; cancelled jobs drain; terminal zero connections, tasks, jobs, permits, and sockets |
 | Controlled interoperability | The explicit matrix below in both initiator directions, with `peer_info.rc4_encrypted` / `plaintext_encrypted` asserted on the oracle and exact content hashes on both; method-forcing cases in each direction; scripted capture proving the exact known 68-byte BitTorrent handshake is absent in both directions under `0x02`, while under `0x01` the initiator's `IA` remains concealed and the responder's post-PE4 handshake is plaintext as specified |
 | Performance | The paired targets and broad regression guardrail below |
-| Client | Component tests cover the labelled four-option "Protocol obfuscation (MSE/PE)" control, non-security helper text, draft refresh/save semantics, and keyboard operation; persistence, live convergence, and restart pass; the `E` legend says "Encrypted or obfuscated"; `PeerFlagView::Encrypted` appears for both MSE methods and not for ordinary plain; the exact method remains observable in engine diagnostics; generated web/UniFFI/Kotlin consumers, web tests, typecheck, production build, and both Android ABI cross-builds pass |
+| Client | Component tests cover the labelled four-option "Protocol obfuscation (MSE/PE)" control, non-security helper text, draft refresh/save semantics, and keyboard operation; persistence, live convergence, and restart pass; the `E` legend says "Encrypted or obfuscated"; `PeerFlagView::Encrypted` appears for both MSE methods and not for ordinary plain; the exact method is observable in engine diagnostics and as an optional peer-view detail; generated web/UniFFI/Kotlin consumers, web tests, typecheck, production build, and both Android ABI cross-builds pass |
 | Physical Android | The existing bootstrap runner's named `product-mse` profile passes once on the explicitly selected Pixel 7a: controlled peer forces RC4, the actual Android engine publishes the exact verified payload, five concurrent attempts observe no more than four DH jobs and drain to zero, and device/host cleanup is exact |
 
 The controlled interoperability matrix records expected connection sequences,
@@ -828,8 +833,10 @@ Method selection is forced separately:
 with RSTorrent initiating and offering `0x03`, libtorrent `pe_both` selects
 `0x01` when `prefer_rc4 = false` and `0x02` when true. With libtorrent
 initiating under `pe_forced`, `pe_plaintext` makes RSTorrent select `0x01`,
-while `pe_both` makes RSTorrent select `0x02`. The oracle flag and RSTorrent's
-typed method must agree in every successful MSE case.
+while `pe_both` selects `0x01` under `allow` and `0x02` under
+`prefer`/`required`; an RC4-only offer remains accepted under `allow`. The
+oracle flag and RSTorrent's typed method must agree in every successful MSE
+case.
 
 The controlled interoperability harness requires no public swarm, physical
 device, or destructive action. Live public-swarm behavior may be recorded as
@@ -1049,6 +1056,10 @@ methods and cover successful incoming RC4 plus fallback failure. No secret,
 public key, shared secret, key material, or obfuscated torrent identifier
 enters an event or application view.
 
+Tactical `115` later added the exact closed method to `PeerView`. The web
+surface retains the same `E` glyph and generic legend, refining only its hover
+text and accessible label when that optional detail is present.
+
 ### 2026-08-09: Gate 6 controlled interoperability and performance
 
 Commits `47afbff`, `eb2b4a9`, `d856357`, and `426f2e0` added and exercised the
@@ -1158,3 +1169,19 @@ one-waiting saturation. The physical run proves five real product attempts,
 the production ceiling, full owner drain, exact verified publication, and
 cleanup on the named device. This closes the final stopping condition and
 graduates Tactical `111`.
+
+### 2026-08-09: Post-graduation policy and presentation refinement
+
+Tactical [`115`](115-mse-policy-advertisement-and-peer-detail.md) refined
+three behaviors without reopening the graduated protocol architecture.
+Commit `c812c26` made compatibility-only `allow` select plaintext payload
+when both methods are offered, while `prefer`/`required` retain RC4 and an
+RC4-only offer remains accepted. The retained controlled matrix now has 29
+passing libtorrent `2.0.13.0` cases, including that RC4-only `allow` case.
+
+Commit `4a1096b` derives HTTP tracker `supportcrypto=1` from the effective
+incoming policy and schedules a corrective update after a live change.
+Commit `01cb277` carries the exact negotiated method as an optional peer-view
+field while retaining the existing single `E` glyph and generic legend. These
+changes add no raw method-preference setting, Android Compose control, uTP
+runtime, or broader security claim.

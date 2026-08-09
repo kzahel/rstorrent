@@ -44,6 +44,12 @@ product harness, and deliberately adds no Compose settings screen. The named
 API 37 physical Pixel 7a profile applied `required`, completed five forced-RC4
 oracle sessions, published the exact payload, drained the DH owner, and cleaned
 up within the recorded descriptor and storage bounds.
+Completed follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) carries
+the optional exact MSE method through the shared generated contract. The
+browser/Tauri peer table uses it only in the existing `E` cell's tooltip and
+accessible name. Android receives the additive binding but still gains no
+Compose settings or peer-detail work.
 Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an
@@ -452,8 +458,9 @@ future server.
   Android network binding and race analysis.
 - Android has no Compose connection/seeding settings screen. Tactical `084`
   deliberately stops at generated contract and build/test coverage there;
-  Tactical `111` follows the same boundary for its MSE/PE policy. Mobile
-  restart UX and connectivity policy require their own product slice.
+  Tacticals `111` and `115` follow the same boundary for MSE/PE policy and
+  exact peer detail. Mobile restart UX and connectivity policy require their
+  own product slice.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

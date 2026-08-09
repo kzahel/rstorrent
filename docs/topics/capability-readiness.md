@@ -189,6 +189,12 @@ product evidence pass. The physical run completed five forced-RC4 sessions,
 exact publication, a three-job DH high-water under the four-job ceiling, full
 owner drain, bounded storage/descriptors, and cleanup. The claim is protocol
 compatibility and obfuscation, never transport security.
+Completed bounded follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) aligns
+default incoming method selection with stock libtorrent, adds live-policy
+HTTP tracker capability announcement, and exposes exact method detail through
+the existing quiet `E` presentation. Its 29-case controlled matrix passes; it
+adds no setting, Android Compose work, uTP support, or broader protocol claim.
 
 ## Current Queue
 
@@ -202,8 +208,9 @@ compatibility and obfuscation, never transport security.
   so BEP 7 announces stop sending port `1` on IPv6, and gates every IPv6 path
   behind one persisted `ipv6_enabled` setting defaulting to enabled. It is
   planned and not started, and claims no IPv6 incoming reachability. Tactical
-  [`111`](../tactical/111-mse-peer-stream-encryption.md) is the latest
-  graduated checkpoint.
+  [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) is the
+  latest completed bounded checkpoint; Tactical `111` remains the graduated
+  MSE capability record.
 
 ### Next
 

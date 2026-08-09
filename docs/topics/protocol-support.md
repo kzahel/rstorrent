@@ -17,6 +17,11 @@ Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
 slice additionally supports the de facto MSE/PE protocol over TCP in both
 directions under a bounded four-value session policy. Its claim is peer
 compatibility and header obfuscation, never transport security.
+Completed follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) aligns the
+default `allow` responder selection with stock libtorrent, advertises incoming
+MSE capability to HTTP trackers, and carries the exact method as optional peer
+detail without adding a method-preference setting.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.
@@ -145,7 +150,7 @@ BEP is external protocol metadata, not RSTorrent readiness.
 
 | Protocol | Claim | Implemented subset and evidence | Deliberate limits |
 | --- | --- | --- | --- |
-| [MSE/PE](../tactical/111-mse-peer-stream-encryption.md) | Supported subset | TCP initiator and responder roles; DH-768 with exact 160-bit local exponents and degenerate-key rejection; bounded pads, request-hash torrent lookup, and IA; RC4-drop1024 handshake protection; negotiated plaintext-payload (`0x01`) and RC4 (`0x02`) streams; `disabled`/`allow`/`prefer`/`required` session policy; one bounded early-transport plaintext fallback; exact method/failure diagnostics and peer flag. Deterministic hostile/truncation/state tests, scripted runtime and resource tests, all 28 controlled pinned-libtorrent `2.0.13.0` cases, forced methods in both directions, exact transfer hashes, setup/flight evidence, six paired 1 GiB performance runs per implementation with RSTorrent retaining more relative RC4 throughput than libtorrent, Android ABI builds, one API 34 AVD product run, and one API 37 physical Pixel 7a product run with five forced-RC4 sessions, exact publication, bounded DH/storage/descriptors, full owner drain, and cleanup pass. | MSE is legacy protocol obfuscation with no authentication, integrity, privacy, or security claim. TCP only; no uTP, per-torrent policy, public-swarm reliability claim, or user-selectable method preference. |
+| [MSE/PE](../tactical/111-mse-peer-stream-encryption.md) | Supported subset | TCP initiator and responder roles; DH-768 with exact 160-bit local exponents and degenerate-key rejection; bounded pads, request-hash torrent lookup, and IA; RC4-drop1024 handshake protection; negotiated plaintext-payload (`0x01`) and RC4 (`0x02`) streams; `disabled`/`allow`/`prefer`/`required` session policy; `allow` selects plaintext payload when both methods are offered while `prefer`/`required` select RC4; one bounded early-transport plaintext fallback; HTTP `supportcrypto=1` derived from incoming policy; exact method/failure diagnostics, optional peer detail, and the compact `E` flag. Deterministic hostile/truncation/state tests, scripted runtime and resource tests, all 29 controlled pinned-libtorrent `2.0.13.0` cases, forced methods in both directions, exact transfer hashes, setup/flight evidence, six paired 1 GiB performance runs per implementation with RSTorrent retaining more relative RC4 throughput than libtorrent, Android ABI builds, one API 34 AVD product run, and one API 37 physical Pixel 7a product run with five forced-RC4 sessions, exact publication, bounded DH/storage/descriptors, full owner drain, and cleanup pass. | MSE is legacy protocol obfuscation with no authentication, integrity, privacy, or security claim. TCP only; no uTP, per-torrent policy, public-swarm reliability claim, or user-selectable method preference. |
 
 ## Gateway Control Protocols
 

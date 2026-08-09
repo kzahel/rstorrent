@@ -45,10 +45,12 @@ source import, or make a protocol-support claim.
   controlled off-LAN peer before incoming public uTP is advertisable. UDP
   mapping or an IPv6 pinhole is a separate reachability decision, not an
   incidental addition to the first transport slice.
-- Planned Tactical
-  [`111`](../tactical/111-mse-peer-stream-encryption.md) deliberately excludes
-  uTP and MSE over uTP. Its sans-IO MSE state-machine direction is intended to
-  remain reusable once uTP can expose the same ordered peer-stream boundary.
+- Completed Tacticals
+  [`111`](../tactical/111-mse-peer-stream-encryption.md) and
+  [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md)
+  deliberately exclude uTP and MSE over uTP. Their sans-IO MSE state machine
+  and policy helpers remain reusable once uTP exposes the same ordered peer-
+  stream boundary; Stage 5 must compose and verify that path explicitly.
 - No deterministic uTP state machine, runtime stream, forced-uTP
   interoperability result, WAN result, product policy, or public-swarm
   support evidence exists in RSTorrent today.
@@ -304,5 +306,6 @@ Campaign state: **strategy recorded; no child tactical accepted**.
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). When uTP is promoted, the
 next action is to draft the Stage 0 decision-spike tactical, reconcile it with
-the landed Tactical `111`/`112`/`113` state, and obtain human review of its
-implementation-source and external-test boundaries before execution.
+the landed Tactical `111`/`115` and then-current `112`/`113` state, and obtain
+human review of its implementation-source and external-test boundaries before
+execution.

@@ -1,11 +1,11 @@
 # Tactical 115: MSE Policy, Advertisement, And Peer Detail
 
-Status: Accepted post-graduation follow-up on 2026-08-09 under explicit
-product direction; implementation in progress. Tactical `112` remains the
-strategic capability **Now** and resumes after this bounded correction.
+Status: Complete on 2026-08-09. The policy, tracker advertisement, optional
+peer detail, generated consumers, controlled interoperability, and repository
+baseline pass. Tactical `112` remains the strategic capability **Now**.
 
 Topics: `protocol-support`, `tracker-discovery`, `peer-flag-vocabulary`,
-`application-view-api`, `web-ui-design`, `client-surfaces`,
+`peer-lifecycle`, `application-view-api`, `web-ui-design`, `client-surfaces`,
 `performance-and-live-evidence`, `utp-transport-campaign`
 
 Dependency: completed Tactical
@@ -16,24 +16,24 @@ resource architecture.
 
 ## Motivation And Decisions
 
-Three small gaps remain after Tactical `111`:
+Three small gaps remained after Tactical `111`:
 
-1. The default `allow` policy exists for compatibility but currently selects
-   RC4 when an incoming initiator offers both payload methods. Pinned
+1. The default `allow` policy existed for compatibility but selected RC4 when
+   an incoming initiator offered both payload methods. Pinned
    libtorrent defaults to `prefer_rc4 = false` and selects plaintext-payload
    MSE. The measured RC4 cost makes paying it under compatibility-only policy
-   unnecessary. `allow` will match that default; `prefer` and `required` will
+   unnecessary. `allow` now matches that default; `prefer` and `required`
    continue to select RC4 when both methods are offered. An RC4-only offer
    remains accepted by every MSE-accepting policy.
 2. Pinned libtorrent appends `supportcrypto=1` to HTTP tracker announces when
    incoming MSE is enabled
    (`reference/libtorrent/src/http_tracker_connection.cpp:157-159`).
-   RSTorrent will advertise the same legacy capability whenever its effective
+   RSTorrent now advertises the same legacy capability whenever its effective
    policy accepts incoming MSE and omit it under `disabled`. This is derived
    behavior, not a new setting.
-3. The engine owns the exact negotiated method but `PeerView` collapses it
-   into the truthful `E` flag. The application contract will add an optional
-   closed method value. The web UI will retain the single `E` glyph and column
+3. The engine owned the exact negotiated method but `PeerView` collapsed it
+   into the truthful `E` flag. The application contract now adds an optional
+   closed method value. The web UI retains the single `E` glyph and column
    while using the exact method only in its accessible label and hover text.
    No additional glyph or always-visible column is added.
 
@@ -79,7 +79,9 @@ Three small gaps remain after Tactical `111`:
 
 ## Validation
 
-1. Pure policy tests cover all four policies and both method-offer shapes.
+1. Pure policy tests cover all four compatibility and method-preference
+   decisions; runtime and interoperability tests cover both method-offer
+   shapes.
 2. Incoming runtime tests prove `allow` selects plaintext from `0x03`, while
    `prefer`/`required` select RC4 and RC4-only remains usable.
 3. The full pinned-libtorrent MSE matrix passes with revised incoming-method
@@ -109,3 +111,48 @@ This follow-up is complete when the policy, HTTP announce, exact peer method,
 quiet web presentation, controlled libtorrent matrix, generated consumers,
 owning topics, and retained tests agree; all owners terminate cleanly; and no
 new product setting or protocol-support claim is introduced.
+
+## Execution Record
+
+- Commit `dd7fc27` accepted this bounded follow-up and fixed its decisions,
+  non-goals, ownership, and evidence before implementation.
+- Commit `c812c26` separated incoming-MSE compatibility from responder method
+  preference. A focused live incoming test proves `allow` selects
+  plaintext-payload from `0x03`; the retained controlled harness adds an
+  RC4-only `allow` case.
+- Commit `4a1096b` added conditional HTTP `supportcrypto=1`, a live
+  advertisement-owner replacement command, a corrective update, and session
+  settings convergence that retains the prior effective policy if that owner
+  has stopped.
+- Commit `01cb277` added optional `PeerMseMethodView`, regenerated the
+  TypeScript/schema/validators, and refined only the existing `E` cell's
+  tooltip and accessible name. Commit `0f7d3b0` made captured policy ownership
+  explicit in handshake accounting and asserted both exact view methods.
+- The uTP campaign already reserved MSE-over-uTP composition for Stage 5.
+  Its checkpoint now names completed Tacticals `111`/`115` and requires that
+  explicit composition after an ordered uTP stream exists.
+
+The controlled libtorrent `2.0.13.0` matrix passed all 29 cases with exact
+8,389,339-byte payload hashes. It observed `allow` selecting
+`plaintext_payload` from both methods, `prefer`/`required` selecting `rc4`,
+and `allow` accepting an RC4-only offer. The fixed-delay proxy still observed
+two ordinary and four MSE delayed turns; the measured extra was 51.818 ms for
+an expected 50 ms, within the retained 20 ms tolerance.
+
+The final repository gate passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace --no-fail-fast
+cargo check -p rstorrent-session --features uniffi
+npm run generate --prefix clients/web
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web -- --run
+git diff --check
+```
+
+The web suite reported 238 passed and 2 skipped tests across 34 passing and 2
+skipped files. No public swarm, new performance cohort, visible product
+client, physical device, Android setting, or uTP runtime was exercised or
+needed for this correction.

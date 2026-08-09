@@ -10,6 +10,9 @@ comparison and real inspection use provide evidence. Tactical `111`'s
 implemented slice now fills the reserved encryption/obfuscation fact for either
 MSE-negotiated payload method and changes the legend to avoid a confidentiality
 claim. Completed Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) now adds
+the exact optional method as quiet peer detail while preserving the same
+single glyph and generic legend. Completed Tactical
 [`086`](../tactical/086-long-lived-torrent-peer-runtime.md) now makes the
 existing incoming, upload-relationship, metadata, and optimistic-unchoke
 variants truthful for routed incoming seed connections.
@@ -155,6 +158,9 @@ an older producer. The live adapter may derive only the already-represented
 initial subset from older v1 row fields as a compatibility fallback; new Rust
 producers are authoritative. Unknown closed semantic variants require a
 contract capability or version decision rather than silent reinterpretation.
+The optional exact MSE method is independently backward-compatible. It may
+refine the existing `E` cell's accessible description, but it never creates a
+second glyph or changes the flag order.
 
 ## Initial Semantic Catalog And Provisional Glyphs
 
@@ -271,7 +277,9 @@ known, extension protocol, metadata extension when represented, uTP, and
 encrypted for either exact MSE payload method. It does not emit reserved
 variants from lifecycle names, rates, timing, or demo policy. The `E` label is
 "Encrypted or obfuscated" because MSE `0x01` conceals only the handshake;
-engine diagnostics retain the exact negotiated method.
+engine diagnostics and the optional peer-view detail retain the exact
+negotiated method. React displays that detail only in the existing cell's
+tooltip and accessible name.
 
 The optional generated v1 field preserves old-producer compatibility. The web
 validator bounds it to the 16-value catalog and rejects duplicate or unknown

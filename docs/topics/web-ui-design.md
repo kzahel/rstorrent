@@ -111,6 +111,11 @@ refresh, equality, save, and keyboard paths use the generated closed enum and
 authoritative configured/effective/application state. The Peers legend now
 labels `E` as "Encrypted or obfuscated" for both MSE payload methods rather
 than inferring encryption strength in React.
+Completed follow-up Tactical
+[`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) keeps that
+same glyph, column width, sort value, and generic legend. Only the existing
+cell tooltip and accessible name refine `E` to plaintext-payload MSE or RC4
+when the optional exact method is present, so ordinary scanning stays quiet.
 Tactical `071` adds a presentation-only **Copy magnet link** More action for
 exactly one selected torrent. It synthesizes the canonical v1 URI from the
 already projected info hash, reports actual clipboard success or failure, and
