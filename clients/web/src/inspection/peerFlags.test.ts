@@ -24,7 +24,9 @@ describe("peer flag presentation", () => {
     expect(new Set(PEER_FLAG_ORDER).size).toBe(
       Object.keys(PEER_FLAG_DEFINITIONS).length,
     );
-    expect(describePeerFlags(PEER_FLAG_ORDER)).toContain("Encrypted");
+    expect(describePeerFlags(PEER_FLAG_ORDER)).toContain(
+      "Encrypted or obfuscated",
+    );
     expect(describePeerFlags([])).toBe("No active peer flags");
   });
 });

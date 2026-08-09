@@ -1420,6 +1420,7 @@ impl ApplicationService {
             network: self.network,
             peer_budget: self.session_network().peer_budget(),
             mse_dh: self.session_network().mse_dh(),
+            encryption: self.session_network().encryption(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -2127,6 +2128,7 @@ impl ApplicationService {
                 let network = self.network;
                 let peer_budget = self.session_network().peer_budget();
                 let mse_dh = self.session_network().mse_dh();
+                let encryption = self.session_network().encryption();
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
                         magnet.clone(),
@@ -2134,6 +2136,7 @@ impl ApplicationService {
                         task_control.clone(),
                         peer_budget.clone(),
                         mse_dh.clone(),
+                        encryption.clone(),
                         torrent_peers.clone(),
                     )
                     .await?;
@@ -2162,6 +2165,7 @@ impl ApplicationService {
                             network,
                             peer_budget,
                             mse_dh,
+                            encryption,
                             torrent_peers: Some(torrent_peers),
                             resource_limits,
                             skip_files,
@@ -2232,6 +2236,7 @@ impl ApplicationService {
             let network = self.network;
             let peer_budget = self.session_network().peer_budget();
             let mse_dh = self.session_network().mse_dh();
+            let encryption = self.session_network().encryption();
             let operation = async move {
                 let raw_info = download_magnet_metadata_with_external_discovery(
                     magnet,
@@ -2239,6 +2244,7 @@ impl ApplicationService {
                     task_control,
                     peer_budget,
                     mse_dh,
+                    encryption,
                     torrent_peers,
                 )
                 .await?;
@@ -2278,6 +2284,7 @@ impl ApplicationService {
             network: self.network,
             peer_budget: self.session_network().peer_budget(),
             mse_dh: self.session_network().mse_dh(),
+            encryption: self.session_network().encryption(),
             torrent_peers: Some(torrent_peers),
             resource_limits: self.download_resource_limits,
             skip_files,
@@ -4529,7 +4536,7 @@ mod tests {
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, CatalogPageRequest, ClientSettings, Command,
         ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, ErrorCode, FilePriority,
+        DiagnosticProfile, DiagnosticSeverity, EncryptionPolicy, ErrorCode, FilePriority,
         HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
         OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
         PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
@@ -6553,6 +6560,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn live_encryption_policy_changes_without_restarting_the_listener() {
+        let root = test_root("live-encryption-policy");
+        let mut configuration = config(&root);
+        configuration.initial_client_settings = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            encryption: EncryptionPolicy::Allow,
+            ..ClientSettings::default()
+        };
+        let mut application = ApplicationService::open(configuration)
+            .await
+            .expect("open encryption-policy application");
+        let before = application
+            .incoming_peer_snapshot()
+            .expect("loopback listener snapshot")
+            .listen_address;
+        let policy = application.session_network().encryption();
+        let required = ClientSettings {
+            listener: ListenerPolicy::AutomaticLoopback,
+            encryption: EncryptionPolicy::Required,
+            ..ClientSettings::default()
+        };
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "require-mse-live".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: required.clone(),
+                },
+            })
+            .await
+            .expect("set encryption policy");
+        let runtime = wait_for_client_settings(&application, |runtime| {
+            runtime.configured == required
+                && runtime.effective_encryption == EncryptionPolicy::Required
+                && runtime.encryption_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(runtime.effective_encryption, EncryptionPolicy::Required);
+        assert_eq!(
+            policy.load(),
+            rstorrent_engine::PeerEncryptionPolicy::Required
+        );
+        assert_eq!(
+            application
+                .incoming_peer_snapshot()
+                .expect("retained listener snapshot")
+                .listen_address,
+            before
+        );
+
+        application.shutdown().await.expect("joined shutdown");
+        drop(application);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
     async fn application_coordinates_local_network_endpoints_when_available() {
         let Some(local_address) = local_network_ipv4().await else {
             return;
@@ -6807,6 +6871,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 3,
+            encryption: Default::default(),
             tracker_https_server_authentication: Default::default(),
         };
         service
@@ -9296,6 +9361,7 @@ mod tests {
                 port_mapping: crate::PortMappingPolicy::Disabled,
                 peer_connection_limit: 1,
                 upload_slots: 1,
+                encryption: Default::default(),
                 tracker_https_server_authentication: Default::default(),
             },
         );
@@ -9476,6 +9542,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 1,
             upload_slots: 1,
+            encryption: Default::default(),
             tracker_https_server_authentication: Default::default(),
         };
         first
@@ -9927,6 +9994,7 @@ mod tests {
             port_mapping: crate::PortMappingPolicy::Disabled,
             peer_connection_limit: 321,
             upload_slots: 0,
+            encryption: Default::default(),
             tracker_https_server_authentication: Default::default(),
         };
         let response = conflicted

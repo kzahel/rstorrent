@@ -1314,6 +1314,9 @@
     "ClientSettings": {
       "additionalProperties": false,
       "properties": {
+        "encryption": {
+          "$ref": "#/$defs/EncryptionPolicy"
+        },
         "listener": {
           "$ref": "#/$defs/ListenerPolicy"
         },
@@ -1348,6 +1351,7 @@
         "port_mapping",
         "peer_connection_limit",
         "upload_slots",
+        "encryption",
         "tracker_https_server_authentication"
       ],
       "type": "object"
@@ -1426,6 +1430,9 @@
         "configured": {
           "$ref": "#/$defs/ClientSettings"
         },
+        "effective_encryption": {
+          "$ref": "#/$defs/EncryptionPolicy"
+        },
         "effective_listener": {
           "anyOf": [
             {
@@ -1460,6 +1467,9 @@
           "minimum": 0,
           "type": "integer"
         },
+        "encryption_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
         "listener_status": {
           "$ref": "#/$defs/ListenerStatus"
         },
@@ -1490,10 +1500,12 @@
         "effective_port_mapping",
         "effective_peer_connection_limit",
         "effective_upload_slots",
+        "effective_encryption",
         "transport_application",
         "port_mapping_application",
         "peer_connections_application",
         "upload_slots_application",
+        "encryption_application",
         "tracker_https_authentication_application",
         "listener_status",
         "session_udp_status",
@@ -2770,6 +2782,15 @@
       ],
       "type": "object"
     },
+    "EncryptionPolicy": {
+      "enum": [
+        "disabled",
+        "allow",
+        "prefer",
+        "required"
+      ],
+      "type": "string"
+    },
     "ErrorCode": {
       "enum": [
         "invalid_version",
@@ -4027,6 +4048,7 @@
         "client_settings": {
           "$ref": "#/$defs/ClientSettings",
           "default": {
+            "encryption": "allow",
             "listener": {
               "type": "disabled"
             },
@@ -5536,6 +5558,7 @@
                   "type": "unavailable"
                 },
                 "configured": {
+                  "encryption": "allow",
                   "listener": {
                     "type": "disabled"
                   },
@@ -5545,6 +5568,7 @@
                   "tracker_https_server_authentication": "system_trust",
                   "upload_slots": 8
                 },
+                "effective_encryption": "allow",
                 "effective_listener": {
                   "listener": {
                     "type": "disabled"
@@ -5555,6 +5579,9 @@
                 "effective_port_mapping": "disabled",
                 "effective_tracker_https_server_authentication": "system_trust",
                 "effective_upload_slots": 8,
+                "encryption_application": {
+                  "type": "applied"
+                },
                 "listener_status": {
                   "type": "disabled"
                 },

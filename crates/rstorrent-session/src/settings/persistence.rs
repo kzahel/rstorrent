@@ -4,7 +4,8 @@ use std::fmt;
 use rusqlite::{Connection, Transaction, params};
 
 use super::contract::{
-    ClientSettings, HttpsServerAuthenticationPolicy, ListenerPolicy, PortMappingPolicy,
+    ClientSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerPolicy,
+    PortMappingPolicy,
 };
 
 const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
@@ -26,6 +27,9 @@ const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
             peer_connection_limit BETWEEN 1 AND 2000
         ),
         upload_slots INTEGER NOT NULL CHECK (upload_slots BETWEEN 0 AND 50),
+        encryption TEXT NOT NULL DEFAULT 'allow' CHECK (
+            encryption IN ('disabled', 'allow', 'prefer', 'required')
+        ),
         tracker_https_server_authentication TEXT NOT NULL CHECK (
             tracker_https_server_authentication IN ('system_trust', 'disabled')
         ),
@@ -135,12 +139,13 @@ pub(crate) fn create_client_settings(
     let mapping_mode = mapping_column(settings.port_mapping);
     let tracker_https_authentication =
         tracker_https_authentication_column(settings.tracker_https_server_authentication);
+    let encryption = encryption_column(settings.encryption);
     transaction.execute(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
             port_mapping_mode, peer_connection_limit, upload_slots,
-            tracker_https_server_authentication
-         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            encryption, tracker_https_server_authentication
+         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             mode,
             port.map(i64::from),
@@ -148,6 +153,7 @@ pub(crate) fn create_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            encryption,
             tracker_https_authentication,
         ],
     )?;
@@ -171,10 +177,12 @@ pub(crate) fn read_client_settings(
         mapping_mode,
         peer_connection_limit,
         upload_slots,
+        encryption,
         tracker_https_authentication,
     ) = connection.query_row(
         "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
-                peer_connection_limit, upload_slots, tracker_https_server_authentication
+                peer_connection_limit, upload_slots, encryption,
+                tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
         [],
         |row| {
@@ -186,6 +194,7 @@ pub(crate) fn read_client_settings(
                 row.get::<_, i64>(4)?,
                 row.get::<_, i64>(5)?,
                 row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
             ))
         },
     )?;
@@ -234,6 +243,17 @@ pub(crate) fn read_client_settings(
         upload_slots: u16::try_from(upload_slots).map_err(|_| {
             SettingsPersistenceError::Corrupt("upload slots cannot be represented".to_owned())
         })?,
+        encryption: match encryption.as_str() {
+            "disabled" => EncryptionPolicy::Disabled,
+            "allow" => EncryptionPolicy::Allow,
+            "prefer" => EncryptionPolicy::Prefer,
+            "required" => EncryptionPolicy::Required,
+            _ => {
+                return Err(SettingsPersistenceError::Corrupt(
+                    "encryption policy is invalid".to_owned(),
+                ));
+            }
+        },
         tracker_https_server_authentication: match tracker_https_authentication.as_str() {
             "system_trust" => HttpsServerAuthenticationPolicy::SystemTrust,
             "disabled" => HttpsServerAuthenticationPolicy::Disabled,
@@ -264,12 +284,13 @@ pub(crate) fn replace_client_settings(
     let mapping_mode = mapping_column(settings.port_mapping);
     let tracker_https_authentication =
         tracker_https_authentication_column(settings.tracker_https_server_authentication);
+    let encryption = encryption_column(settings.encryption);
     let changed = transaction.execute(
         "UPDATE client_settings
          SET listener_mode = ?1, listener_port = ?2,
              preferred_listen_port = ?3, port_mapping_mode = ?4,
              peer_connection_limit = ?5, upload_slots = ?6,
-             tracker_https_server_authentication = ?7
+             encryption = ?7, tracker_https_server_authentication = ?8
          WHERE singleton = 1",
         params![
             mode,
@@ -278,6 +299,7 @@ pub(crate) fn replace_client_settings(
             mapping_mode,
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
+            encryption,
             tracker_https_authentication,
         ],
     )?;
@@ -311,6 +333,36 @@ fn tracker_https_authentication_column(policy: HttpsServerAuthenticationPolicy) 
         HttpsServerAuthenticationPolicy::SystemTrust => "system_trust",
         HttpsServerAuthenticationPolicy::Disabled => "disabled",
     }
+}
+
+fn encryption_column(policy: EncryptionPolicy) -> &'static str {
+    match policy {
+        EncryptionPolicy::Disabled => "disabled",
+        EncryptionPolicy::Allow => "allow",
+        EncryptionPolicy::Prefer => "prefer",
+        EncryptionPolicy::Required => "required",
+    }
+}
+
+pub(crate) fn migrate_client_settings_to_v15(
+    transaction: &Transaction<'_>,
+) -> Result<(), SettingsPersistenceError> {
+    let has_encryption = {
+        let mut statement = transaction.prepare("PRAGMA table_info(client_settings)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|column| column == "encryption")
+    };
+    if has_encryption {
+        return Ok(());
+    }
+    transaction.execute_batch(
+        "ALTER TABLE client_settings ADD COLUMN encryption TEXT NOT NULL DEFAULT 'allow'
+         CHECK (encryption IN ('disabled', 'allow', 'prefer', 'required'));",
+    )?;
+    Ok(())
 }
 
 pub(crate) fn migrate_client_settings_to_v10(

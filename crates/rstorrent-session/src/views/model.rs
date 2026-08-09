@@ -333,17 +333,25 @@ impl PeerView {
         };
         view.peer_flags = derive_peer_flags(
             &view,
+            peer.mse_method.is_some(),
             upload.is_some_and(|activity| activity.grant == PeerUploadGrant::Optimistic),
         );
         view
     }
 }
 
-fn derive_peer_flags(peer: &PeerView, optimistic_unchoke: bool) -> Vec<PeerFlagView> {
+fn derive_peer_flags(
+    peer: &PeerView,
+    mse_obfuscated: bool,
+    optimistic_unchoke: bool,
+) -> Vec<PeerFlagView> {
     let mut flags = Vec::with_capacity(6);
 
     if peer.direction == PeerDirection::Incoming {
         flags.push(PeerFlagView::Incoming);
+    }
+    if mse_obfuscated {
+        flags.push(PeerFlagView::Encrypted);
     }
     if peer.local_interested == Some(true) {
         match peer.remote_choking {

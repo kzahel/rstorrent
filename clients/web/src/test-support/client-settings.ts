@@ -7,6 +7,7 @@ export function clientSettingsFixture(): ClientSettings {
     port_mapping: "disabled",
     peer_connection_limit: 200,
     upload_slots: 8,
+    encryption: "allow",
     tracker_https_server_authentication: "system_trust",
   };
 }
@@ -21,11 +22,13 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     effective_port_mapping: "disabled",
     effective_peer_connection_limit: 200,
     effective_upload_slots: 8,
+    effective_encryption: "allow",
     effective_tracker_https_server_authentication: "system_trust",
     transport_application: { type: "applied" },
     port_mapping_application: { type: "applied" },
     peer_connections_application: { type: "applied" },
     upload_slots_application: { type: "applied" },
+    encryption_application: { type: "applied" },
     tracker_https_authentication_application: { type: "applied" },
     listener_status: { type: "disabled" },
     session_udp_status: { type: "unavailable" },

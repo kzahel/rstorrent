@@ -636,7 +636,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
         peer_id: None,
         supports_extensions: Some(true),
         supports_ut_metadata: None,
-        mse_method: None,
+        mse_method: Some(rstorrent_protocol::mse::MseMethod::PlaintextPayload),
         content: None,
         upload: None,
         close_reason: None,
@@ -658,6 +658,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             && upsert[0].capabilities.client_name == crate::CapabilityStatus::Unavailable
             && upsert[0].peer_flags == [
                 crate::PeerFlagView::Incoming,
+                crate::PeerFlagView::Encrypted,
                 crate::PeerFlagView::ExtensionProtocol,
                 crate::PeerFlagView::Utp,
             ]
@@ -699,6 +700,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             && upsert[0].capabilities.client_name == crate::CapabilityStatus::Available
             && upsert[0].peer_flags == [
                 crate::PeerFlagView::Incoming,
+                crate::PeerFlagView::Encrypted,
                 crate::PeerFlagView::DownloadChoked,
                 crate::PeerFlagView::ExtensionProtocol,
                 crate::PeerFlagView::Utp,
@@ -747,6 +749,7 @@ async fn peer_view_upserts_generations_and_removes_only_on_cleanup() {
             && upsert[0].capabilities.upload == crate::CapabilityStatus::Available
             && upsert[0].peer_flags == [
                 crate::PeerFlagView::Incoming,
+                crate::PeerFlagView::Encrypted,
                 crate::PeerFlagView::UploadAllowed,
                 crate::PeerFlagView::ExtensionProtocol,
                 crate::PeerFlagView::MetadataExtension,

@@ -3804,11 +3804,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn required_policy_rejects_plaintext_and_serves_rc4_mse() {
+    async fn live_required_policy_retains_plaintext_and_serves_rc4_mse() {
         let (root, _, registration, torrent_peers, _) = registration("required-mse").await;
         let info_hash = registration.info_hash();
         let mut service_config = config(IncomingTcpBootstrap::AutomaticLoopback);
-        service_config.encryption = PeerEncryptionPolicy::Required;
+        service_config.encryption = PeerEncryptionPolicy::Allow;
         service_config.handshake_timeout = Duration::from_secs(2);
         let service = IncomingPeerService::bind(service_config)
             .await
@@ -3817,17 +3817,38 @@ mod tests {
         let handle = service.handle();
         let token = handle.register(registration).await.expect("register seed");
 
-        let mut plain = TcpStream::connect(service.listen_address())
+        let (mut retained_plain, mut plain_decoder, mut plain_queued) = connect(
+            service.listen_address(),
+            info_hash,
+            *b"-RS-PLAIN---00000000",
+        )
+        .await;
+        assert!(matches!(
+            next_message(&mut retained_plain, &mut plain_decoder, &mut plain_queued).await,
+            PeerMessage::Bitfield(_)
+        ));
+        assert!(matches!(
+            next_message(&mut retained_plain, &mut plain_decoder, &mut plain_queued).await,
+            PeerMessage::Extended { id: 0, .. }
+        ));
+        handle.reconfigure_encryption(PeerEncryptionPolicy::Required);
+
+        let mut rejected_plain = TcpStream::connect(service.listen_address())
             .await
-            .expect("connect plaintext peer");
-        plain
+            .expect("connect rejected plaintext peer");
+        rejected_plain
             .write_all(&rstorrent_protocol::peer_wire::encode_handshake(
                 info_hash,
-                *b"-RS-PLAIN---00000000",
+                *b"-RS-PLAIN---00000001",
             ))
             .await
             .expect("write plaintext handshake");
-        observe_close(&mut plain).await;
+        observe_close(&mut rejected_plain).await;
+        send(&mut retained_plain, &PeerMessage::Interested).await;
+        assert_eq!(
+            next_message(&mut retained_plain, &mut plain_decoder, &mut plain_queued).await,
+            PeerMessage::Unchoke
+        );
 
         let network = NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -3878,10 +3899,14 @@ mod tests {
             PeerMessage::Unchoke
         );
         let observations = torrent_peers.connection_snapshot();
-        assert_eq!(observations.len(), 1);
-        assert_eq!(observations[0].mse_method, Some(MseMethod::Rc4));
+        assert_eq!(observations.len(), 2);
+        assert!(
+            observations
+                .iter()
+                .any(|observation| observation.mse_method == Some(MseMethod::Rc4))
+        );
 
-        drop(peer);
+        drop((peer, retained_plain));
         assert!(handle.unregister(token).await.expect("unregister seed"));
         drop(handle);
         service.shutdown().await.expect("shutdown service");

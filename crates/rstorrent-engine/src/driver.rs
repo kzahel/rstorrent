@@ -46,7 +46,7 @@ use crate::metrics::ByteMetric;
 use crate::mse::MseDhWorkOwner;
 #[cfg(test)]
 use crate::network::DEFAULT_PEER_ID;
-use crate::network::{NetworkConfig, NetworkPolicy};
+use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicyHandle};
 use crate::peer::{
     DialAttempt, DialAttemptId, DialCandidate, PeerEndpoint, PeerFailure, PeerIntegrityAction,
     PeerObservation, PeerRegistryError, PeerSelectionContext, PeerSelector, PeerSource,
@@ -225,6 +225,8 @@ pub struct ResumableMagnetDownloadConfig {
     pub peer_budget: PeerBudget,
     /// Session-wide owner for bounded MSE Diffie-Hellman work.
     pub mse_dh: MseDhWorkOwner,
+    /// Live session policy sampled when each future handshake starts.
+    pub encryption: PeerEncryptionPolicyHandle,
     /// Long-lived per-torrent peer state supplied by the application session.
     /// Diagnostic and standalone callers leave this unset.
     pub torrent_peers: Option<TorrentPeerHandle>,
@@ -629,6 +631,7 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
             peer_budget,
             torrent_peers,
             mse_dh: MseDhWorkOwner::new(),
+            encryption: PeerEncryptionPolicyHandle::new(network.encryption),
         },
     )
     .await;
@@ -643,6 +646,7 @@ pub async fn download_magnet_metadata_with_external_discovery(
     control: DownloadControl,
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
+    encryption: PeerEncryptionPolicyHandle,
     torrent_peers: TorrentPeerHandle,
 ) -> Result<Vec<u8>, DownloadError> {
     validate_network_config(network)?;
@@ -659,6 +663,7 @@ pub async fn download_magnet_metadata_with_external_discovery(
             peer_budget,
             torrent_peers: Some(torrent_peers),
             mse_dh,
+            encryption,
         },
     )
     .await;
@@ -1788,6 +1793,7 @@ struct TorrentPeerCoordinator {
     network: NetworkConfig,
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
+    encryption: PeerEncryptionPolicyHandle,
     tracker: Option<TrackerManager>,
     dht: Option<DhtHandle>,
     control: DownloadControl,
@@ -1800,14 +1806,16 @@ struct TorrentPeerResources {
     peer_budget: PeerBudget,
     torrent_peers: Option<TorrentPeerHandle>,
     mse_dh: MseDhWorkOwner,
+    encryption: PeerEncryptionPolicyHandle,
 }
 
 impl TorrentPeerResources {
-    fn standalone() -> Self {
+    fn standalone(network: NetworkConfig) -> Self {
         Self {
             peer_budget: PeerBudget::system_default(),
             torrent_peers: None,
             mse_dh: MseDhWorkOwner::new(),
+            encryption: PeerEncryptionPolicyHandle::new(network.encryption),
         }
     }
 }
@@ -1930,7 +1938,14 @@ impl TorrentPeerCoordinator {
         control: DownloadControl,
         peer_budget: PeerBudget,
     ) -> Result<Self, DownloadError> {
-        Self::new_with_peer_state(network, control, peer_budget, None, MseDhWorkOwner::new())
+        Self::new_with_peer_state(
+            network,
+            control,
+            peer_budget,
+            None,
+            MseDhWorkOwner::new(),
+            PeerEncryptionPolicyHandle::new(network.encryption),
+        )
     }
 
     fn new_with_peer_state(
@@ -1939,6 +1954,7 @@ impl TorrentPeerCoordinator {
         peer_budget: PeerBudget,
         peers: Option<TorrentPeerHandle>,
         mse_dh: MseDhWorkOwner,
+        encryption: PeerEncryptionPolicyHandle,
     ) -> Result<Self, DownloadError> {
         validate_network_config(network)?;
         let owns_peer_sink = peers.is_none();
@@ -1957,6 +1973,7 @@ impl TorrentPeerCoordinator {
             network,
             peer_budget,
             mse_dh,
+            encryption,
             tracker: None,
             dht: None,
             control,
@@ -1980,6 +1997,10 @@ impl TorrentPeerCoordinator {
             .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)?;
         Ok(attempt)
+    }
+
+    fn connection_network(&self) -> NetworkConfig {
+        self.network.with_encryption(self.encryption.load())
     }
 
     fn transport_connected(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
@@ -2334,7 +2355,7 @@ impl TorrentPeerCoordinator {
             network,
             control,
             dht,
-            TorrentPeerResources::standalone(),
+            TorrentPeerResources::standalone(network),
         )
         .await
     }
@@ -2353,6 +2374,7 @@ impl TorrentPeerCoordinator {
             resources.peer_budget,
             resources.torrent_peers,
             resources.mse_dh,
+            resources.encryption,
         )?;
         peers.publish_peer_registry(true);
         peers.dht = dht;
@@ -2600,7 +2622,14 @@ impl TorrentPeerCoordinator {
                 peer: candidate.endpoint().to_string(),
             });
             let attempt = self.begin_dial(candidate, PeerConnectionRole::Content)?;
-            match connect_peer(attempt, info_hash, advertise_extensions, self.network).await {
+            match connect_peer(
+                attempt,
+                info_hash,
+                advertise_extensions,
+                self.connection_network(),
+            )
+            .await
+            {
                 Ok((connection, handshake)) => {
                     let admission = self.dial_succeeded(attempt, &connection, &handshake)?;
                     if let Some(failure) = admission_rejection_failure(admission) {
@@ -2670,7 +2699,7 @@ impl TorrentPeerCoordinator {
                     attempt,
                     info_hash,
                     true,
-                    self.network,
+                    self.connection_network(),
                     self.control.byte_metric_sink(),
                 ) {
                     self.dial_cancelled(attempt)?;
@@ -3470,6 +3499,7 @@ async fn run_resumable_magnet_download(
                 peer_budget: config.peer_budget.clone(),
                 torrent_peers: torrent_peers.clone(),
                 mse_dh: config.mse_dh.clone(),
+                encryption: config.encryption.clone(),
             },
         )
         .await?;
@@ -3512,6 +3542,7 @@ async fn run_resumable_magnet_download(
             peer_budget: config.peer_budget.clone(),
             torrent_peers,
             mse_dh: config.mse_dh,
+            encryption: config.encryption,
         },
     )
     .await?;
@@ -3830,6 +3861,7 @@ async fn run_download(
                 peer_budget,
                 Some(torrent_peers),
                 MseDhWorkOwner::new(),
+                PeerEncryptionPolicyHandle::new(config.network.encryption),
             )?;
             peers.observe_address(config.peer, PeerSource::Manual)?;
             peers
@@ -4683,7 +4715,7 @@ fn fill_content_dials(
             attempt,
             info_hash,
             true,
-            peers.network,
+            peers.connection_network(),
             peers.control.byte_metric_sink(),
         ) {
             state

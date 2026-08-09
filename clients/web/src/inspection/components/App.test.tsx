@@ -227,7 +227,9 @@ describe("inspection application", () => {
       name: "Flags column help",
     });
     expect(within(flagLegend).getByText("Incoming")).toBeVisible();
-    expect(within(flagLegend).getByText("Encrypted")).toBeVisible();
+    expect(
+      within(flagLegend).getByText("Encrypted or obfuscated"),
+    ).toBeVisible();
     expect(
       within(flagLegend).queryByText(/case-sensitive/),
     ).not.toBeInTheDocument();
@@ -1775,6 +1777,10 @@ describe("inspection application", () => {
     ).toBeVisible();
     expect(save).toBeEnabled();
 
+    await user.click(
+      within(dialog).getByRole("radio", { name: /^Prefer/ }),
+    );
+
     await user.click(save);
     await waitFor(() =>
       expect(application.commands.at(-1)).toEqual({
@@ -1785,6 +1791,7 @@ describe("inspection application", () => {
           port_mapping: "upnp",
           peer_connection_limit: 2000,
           upload_slots: 0,
+          encryption: "prefer",
           tracker_https_server_authentication: "disabled",
         },
       }),
@@ -1806,8 +1813,10 @@ describe("inspection application", () => {
         port_mapping: "upnp",
         peer_connection_limit: 2000,
         upload_slots: 0,
+        encryption: "prefer",
         tracker_https_server_authentication: "system_trust",
       },
+      effective_encryption: "prefer",
       effective_tracker_https_server_authentication: "system_trust",
     });
     expect(peers).toHaveValue(1999);
@@ -1845,6 +1854,7 @@ describe("inspection application", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 200,
       upload_slots: 8,
+      encryption: "allow" as const,
       tracker_https_server_authentication: "system_trust" as const,
     };
     const application = new RecordingLiveApplication({
@@ -1860,6 +1870,7 @@ describe("inspection application", () => {
           effective_port_mapping: "disabled",
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
+          effective_encryption: "allow",
           effective_tracker_https_server_authentication: "system_trust",
           transport_application: {
             type: "degraded",
@@ -1869,6 +1880,7 @@ describe("inspection application", () => {
           port_mapping_application: { type: "applied" },
           peer_connections_application: { type: "applied" },
           upload_slots_application: { type: "applied" },
+          encryption_application: { type: "applied" },
           tracker_https_authentication_application: { type: "applied" },
           listener_status: {
             type: "bind_failed",

@@ -114,6 +114,7 @@ describe("client settings validation", () => {
         port_mapping: "upnp",
         peer_connection_limit: 200,
         upload_slots: 8,
+        encryption: "allow",
         tracker_https_server_authentication: "system_trust",
       });
     }

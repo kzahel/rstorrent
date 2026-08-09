@@ -7,9 +7,11 @@ export type ListenerPolicy = { "type": "disabled" } | { "type": "automatic_loopb
 
 export type PortMappingPolicy = "disabled" | "upnp";
 
+export type EncryptionPolicy = "disabled" | "allow" | "prefer" | "required";
+
 export type HttpsServerAuthenticationPolicy = "system_trust" | "disabled";
 
-export type ClientSettings = { listener: ListenerPolicy, preferred_listen_port: number, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, tracker_https_server_authentication: HttpsServerAuthenticationPolicy, };
+export type ClientSettings = { listener: ListenerPolicy, preferred_listen_port: number, port_mapping: PortMappingPolicy, peer_connection_limit: number, upload_slots: number, encryption: EncryptionPolicy, tracker_https_server_authentication: HttpsServerAuthenticationPolicy, };
 
 export type EffectiveListenerSettings = { listener: ListenerPolicy, preferred_listen_port: number, };
 
@@ -35,11 +37,11 @@ export type AdvertisedPeerEndpointStatus = { "type": "unavailable" } | { "type":
 
 export type SessionUdpStatus = { "type": "unavailable" } | { "type": "bound", address: string, port: number, coordinated_with_tcp: boolean, };
 
-export type ClientSettingsRuntimeView = { configured: ClientSettings, effective_listener?: EffectiveListenerSettings | null, effective_port_mapping: PortMappingPolicy, effective_peer_connection_limit: number, effective_upload_slots: number, effective_tracker_https_server_authentication?: HttpsServerAuthenticationPolicy | null, transport_application: ClientSettingsApplicationState, port_mapping_application: ClientSettingsApplicationState, peer_connections_application: ClientSettingsApplicationState, upload_slots_application: ClientSettingsApplicationState, tracker_https_authentication_application: ClientSettingsApplicationState, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, advertised_peer_endpoint: AdvertisedPeerEndpointStatus, };
+export type ClientSettingsRuntimeView = { configured: ClientSettings, effective_listener?: EffectiveListenerSettings | null, effective_port_mapping: PortMappingPolicy, effective_peer_connection_limit: number, effective_upload_slots: number, effective_encryption: EncryptionPolicy, effective_tracker_https_server_authentication?: HttpsServerAuthenticationPolicy | null, transport_application: ClientSettingsApplicationState, port_mapping_application: ClientSettingsApplicationState, peer_connections_application: ClientSettingsApplicationState, upload_slots_application: ClientSettingsApplicationState, encryption_application: ClientSettingsApplicationState, tracker_https_authentication_application: ClientSettingsApplicationState, listener_status: ListenerStatus, session_udp_status: SessionUdpStatus, port_mapping_status: PortMappingStatus, advertised_peer_endpoint: AdvertisedPeerEndpointStatus, };
 
-export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"automatic_local_network"},"preferred_listen_port":6881,"port_mapping":"upnp","peer_connection_limit":200,"upload_slots":8,"tracker_https_server_authentication":"system_trust"};
+export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {"listener":{"type":"automatic_local_network"},"preferred_listen_port":6881,"port_mapping":"upnp","peer_connection_limit":200,"upload_slots":8,"encryption":"allow","tracker_https_server_authentication":"system_trust"};
 
-export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"automatic_local_network"},"preferred_listen_port":6881,"port_mapping":"upnp","peer_connection_limit":200,"upload_slots":8,"tracker_https_server_authentication":"system_trust"},"effective_listener":{"listener":{"type":"disabled"},"preferred_listen_port":6881},"effective_port_mapping":"disabled","effective_peer_connection_limit":200,"effective_upload_slots":8,"effective_tracker_https_server_authentication":"system_trust","transport_application":{"type":"applying"},"port_mapping_application":{"type":"applying"},"peer_connections_application":{"type":"applied"},"upload_slots_application":{"type":"applied"},"tracker_https_authentication_application":{"type":"applied"},"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"}};
+export const DEFAULT_CLIENT_SETTINGS_RUNTIME_VIEW: ClientSettingsRuntimeView = {"configured":{"listener":{"type":"automatic_local_network"},"preferred_listen_port":6881,"port_mapping":"upnp","peer_connection_limit":200,"upload_slots":8,"encryption":"allow","tracker_https_server_authentication":"system_trust"},"effective_listener":{"listener":{"type":"disabled"},"preferred_listen_port":6881},"effective_port_mapping":"disabled","effective_peer_connection_limit":200,"effective_upload_slots":8,"effective_encryption":"allow","effective_tracker_https_server_authentication":"system_trust","transport_application":{"type":"applying"},"port_mapping_application":{"type":"applying"},"peer_connections_application":{"type":"applied"},"upload_slots_application":{"type":"applied"},"encryption_application":{"type":"applied"},"tracker_https_authentication_application":{"type":"applied"},"listener_status":{"type":"disabled"},"session_udp_status":{"type":"unavailable"},"port_mapping_status":{"type":"disabled"},"advertised_peer_endpoint":{"type":"unavailable"}};
 
 export type FilePriority = "normal" | "skip";
 

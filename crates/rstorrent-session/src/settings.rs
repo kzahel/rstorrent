@@ -14,18 +14,18 @@ pub use contract::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
     AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
-    EffectiveListenerSettings, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
-    ListenerPolicy, ListenerStatus, PortMappingFailureStage, PortMappingMechanism,
-    PortMappingPolicy, PortMappingStatus, SessionUdpStatus, StorageRootAvailability,
-    StorageRootSnapshot, StorageSettingsSnapshot,
+    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
+    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, PortMappingFailureStage,
+    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, SessionUdpStatus,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
 };
 pub(crate) use convergence::{
     SettingsAttempt, SettingsConvergenceModel, SettingsDomain, SettingsDomainGeneration,
 };
 pub(crate) use persistence::{
     SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,
-    migrate_client_settings_to_v11, migrate_client_settings_to_v12, read_client_settings,
-    replace_client_settings,
+    migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
+    read_client_settings, replace_client_settings,
 };
 pub(crate) use runtime::{bounded_utf8, classify_listener_bind_failure};
 

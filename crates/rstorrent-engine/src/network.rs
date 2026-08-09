@@ -1,16 +1,60 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
 pub enum PeerEncryptionPolicy {
     Disabled,
     #[default]
     Allow,
     Prefer,
     Required,
+}
+
+#[derive(Clone, Debug)]
+pub struct PeerEncryptionPolicyHandle {
+    value: Arc<AtomicU8>,
+}
+
+impl PeerEncryptionPolicyHandle {
+    #[must_use]
+    pub fn new(policy: PeerEncryptionPolicy) -> Self {
+        Self {
+            value: Arc::new(AtomicU8::new(policy as u8)),
+        }
+    }
+
+    #[must_use]
+    pub fn load(&self) -> PeerEncryptionPolicy {
+        match self.value.load(Ordering::Acquire) {
+            0 => PeerEncryptionPolicy::Disabled,
+            1 => PeerEncryptionPolicy::Allow,
+            2 => PeerEncryptionPolicy::Prefer,
+            3 => PeerEncryptionPolicy::Required,
+            _ => unreachable!("encryption policy handle stores only closed enum values"),
+        }
+    }
+
+    pub fn replace(&self, policy: PeerEncryptionPolicy) -> PeerEncryptionPolicy {
+        match self.value.swap(policy as u8, Ordering::AcqRel) {
+            0 => PeerEncryptionPolicy::Disabled,
+            1 => PeerEncryptionPolicy::Allow,
+            2 => PeerEncryptionPolicy::Prefer,
+            3 => PeerEncryptionPolicy::Required,
+            _ => unreachable!("encryption policy handle stores only closed enum values"),
+        }
+    }
+}
+
+impl Default for PeerEncryptionPolicyHandle {
+    fn default() -> Self {
+        Self::new(PeerEncryptionPolicy::default())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,7 +145,21 @@ pub(crate) fn is_valid_outbound_address(address: SocketAddr) -> bool {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
-    use super::{NetworkPolicy, is_valid_outbound_address};
+    use super::{
+        NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle, is_valid_outbound_address,
+    };
+
+    #[test]
+    fn encryption_policy_handle_replaces_only_future_samples() {
+        let policy = PeerEncryptionPolicyHandle::new(PeerEncryptionPolicy::Allow);
+        let captured = policy.load();
+        assert_eq!(
+            policy.replace(PeerEncryptionPolicy::Required),
+            PeerEncryptionPolicy::Allow
+        );
+        assert_eq!(captured, PeerEncryptionPolicy::Allow);
+        assert_eq!(policy.load(), PeerEncryptionPolicy::Required);
+    }
 
     #[test]
     fn policies_cover_valid_loopback_private_and_public_destinations() {

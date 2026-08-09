@@ -18,8 +18,8 @@ use rstorrent_session::{
     DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
     DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
     DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    EffectiveListenerSettings, ErrorCode, ErrorResponse, FileCatalogState, FileIndexRange,
-    FilePriority, FileSelectionIntent, FileSelectionView, FileView,
+    EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
+    FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, ListenerBindFailureReason, ListenerPolicy,
     ListenerStatus, MagnetExportResult, MagnetExportSource, OpenViewSetOptions, OpenViewSetRequest,
     OpenViewSetResponse, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
@@ -77,6 +77,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<Command>(&mut declarations)?;
     append::<ListenerPolicy>(&mut declarations)?;
     append::<PortMappingPolicy>(&mut declarations)?;
+    append::<EncryptionPolicy>(&mut declarations)?;
     append::<HttpsServerAuthenticationPolicy>(&mut declarations)?;
     append::<ClientSettings>(&mut declarations)?;
     append::<EffectiveListenerSettings>(&mut declarations)?;

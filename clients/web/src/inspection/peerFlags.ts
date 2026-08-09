@@ -41,7 +41,7 @@ export const PEER_FLAG_DEFINITIONS: Readonly<
   },
   encrypted: {
     glyph: "E",
-    label: "Encrypted",
+    label: "Encrypted or obfuscated",
     group: "Connection",
   },
   download_allowed: {

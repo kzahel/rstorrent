@@ -4,6 +4,7 @@ import type {
   AdvertisedPeerEndpointStatus,
   ClientSettings,
   ClientSettingsRuntimeView,
+  EncryptionPolicy,
   ListenerBindFailureReason,
   ListenerPolicy,
   PortMappingPolicy,
@@ -60,6 +61,9 @@ export function ConnectionSeedingSettingsSection({
   const [uploadSlots, setUploadSlots] = useState(
     String(configured.upload_slots),
   );
+  const [encryption, setEncryption] = useState<EncryptionPolicy>(
+    configured.encryption,
+  );
   const [pending, setPending] = useState(false);
   const [saveStatus, setSaveStatus] = useState<
     { readonly type: "success" | "error"; readonly message: string } | null
@@ -76,6 +80,7 @@ export function ConnectionSeedingSettingsSection({
     setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
+    setEncryption(configured.encryption);
   }, [
     configured.listener.type,
     isFixedListener(configured.listener)
@@ -85,6 +90,7 @@ export function ConnectionSeedingSettingsSection({
     configured.preferred_listen_port,
     configured.peer_connection_limit,
     configured.upload_slots,
+    configured.encryption,
   ]);
 
   const validation = useMemo(
@@ -96,6 +102,7 @@ export function ConnectionSeedingSettingsSection({
         portMapping,
         peerLimit,
         uploadSlots,
+        encryption,
         configured.tracker_https_server_authentication,
       ),
     [
@@ -106,6 +113,7 @@ export function ConnectionSeedingSettingsSection({
       portMapping,
       preferredPort,
       uploadSlots,
+      encryption,
     ],
   );
   const dirty =
@@ -128,6 +136,7 @@ export function ConnectionSeedingSettingsSection({
     setPreferredPort(String(configured.preferred_listen_port));
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
+    setEncryption(configured.encryption);
     setSaveStatus(null);
   };
 
@@ -241,6 +250,42 @@ export function ConnectionSeedingSettingsSection({
           disabled={!manageable || pending}
           onChange={(value) => updateDraft(() => setPeerLimit(value))}
         />
+
+        <div
+          className={styles.settingGroup}
+          role="group"
+          aria-labelledby="encryption-policy-heading"
+        >
+          <div className={styles.settingHeading}>
+            <strong id="encryption-policy-heading">
+              Protocol obfuscation (MSE/PE)
+            </strong>
+            <span>
+              Improves compatibility with peers that require MSE/PE. This is
+              protocol obfuscation, not privacy or security.
+            </span>
+          </div>
+          <div className={styles.options}>
+            {ENCRYPTION_OPTIONS.map((option) => (
+              <label className={styles.option} key={option.value}>
+                <input
+                  type="radio"
+                  name="encryption-policy"
+                  value={option.value}
+                  checked={encryption === option.value}
+                  disabled={!manageable || pending}
+                  onChange={() =>
+                    updateDraft(() => setEncryption(option.value))
+                  }
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
 
         <NumberField
           id="upload-slots"
@@ -452,6 +497,10 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         label="Upload slots"
         state={settings.upload_slots_application}
       />
+      <ApplicationState
+        label="Protocol obfuscation"
+        state={settings.encryption_application}
+      />
       {settings.effective_peer_connection_limit <
       settings.configured.peer_connection_limit ? (
         <span>
@@ -466,6 +515,9 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         </span>
       )}
       <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
+      <span>
+        Effective protocol obfuscation policy: {settings.effective_encryption}.
+      </span>
     </div>
   );
 }
@@ -599,6 +651,7 @@ function validateDraft(
   portMapping: PortMappingPolicy,
   peerLimit: string,
   uploadSlots: string,
+  encryption: EncryptionPolicy,
   trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
 ): DraftValidation {
   const preferred = parseBoundedInteger(
@@ -663,6 +716,7 @@ function validateDraft(
       port_mapping: portMapping,
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
+      encryption,
       tracker_https_server_authentication: trackerHttpsServerAuthentication,
     },
     preferredPortError: null,
@@ -694,10 +748,38 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
     left.preferred_listen_port === right.preferred_listen_port &&
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots &&
+    left.encryption === right.encryption &&
     left.tracker_https_server_authentication ===
       right.tracker_https_server_authentication
   );
 }
+
+const ENCRYPTION_OPTIONS: ReadonlyArray<{
+  readonly value: EncryptionPolicy;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  {
+    value: "disabled",
+    label: "Disabled",
+    description: "Use ordinary plaintext peer handshakes only.",
+  },
+  {
+    value: "allow",
+    label: "Allow",
+    description: "Accept MSE/PE while initiating ordinary connections.",
+  },
+  {
+    value: "prefer",
+    label: "Prefer",
+    description: "Try MSE/PE first and use a bounded plaintext fallback.",
+  },
+  {
+    value: "required",
+    label: "Required",
+    description: "Connect only when the peer negotiates MSE/PE.",
+  },
+];
 
 function isFixedListenerMode(mode: ListenerMode): boolean {
   return mode === "fixed";

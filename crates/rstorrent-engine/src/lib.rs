@@ -77,7 +77,9 @@ pub use metadata_seed::{
 };
 pub use metrics::{ByteMetric, ByteMetricSink};
 pub use mse::{MAX_MSE_DH_JOBS, MseDhWorkError, MseDhWorkOwner, MseDhWorkSnapshot};
-pub use network::{DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy};
+pub use network::{
+    DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
+};
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{
     DEFAULT_CONNECTION_LIMIT, DEFAULT_INCOMING_CONNECTION_SLACK, DEFAULT_LISTEN_BACKLOG,

@@ -166,6 +166,7 @@ describe("view-set reducer", () => {
       port_mapping: "disabled" as const,
       peer_connection_limit: 320,
       upload_slots: 12,
+      encryption: "allow" as const,
       tracker_https_server_authentication: "system_trust" as const,
     };
     state = reduceUpdateBatch(
@@ -185,6 +186,7 @@ describe("view-set reducer", () => {
               port_mapping_application: { type: "applying" },
               peer_connections_application: { type: "applying" },
               upload_slots_application: { type: "applying" },
+              encryption_application: { type: "applying" },
               tracker_https_authentication_application: { type: "applying" },
             },
           },

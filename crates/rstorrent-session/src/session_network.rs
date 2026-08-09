@@ -12,8 +12,8 @@ use rstorrent_engine::{
     ByteMetricSink, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
     DiscoveryAdvertisementService, IncomingPeerAcceptor, IncomingPeerError, IncomingPeerHandle,
     IncomingPeerRuntime, IncomingPeerServiceConfig, IncomingPeerServiceSnapshot, MseDhWorkOwner,
-    NetworkConfig, PeerBudget, SessionSocketConfig, SessionSocketError, SessionSocketSet,
-    SessionUdpError, SessionUdpHandle, SessionUdpService,
+    NetworkConfig, PeerBudget, PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError,
+    SessionSocketSet, SessionUdpError, SessionUdpHandle, SessionUdpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -29,9 +29,9 @@ use crate::reachability::{
 use crate::settings::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, EffectiveListenerSettings,
-    HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-    PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel, SettingsDomain,
-    SettingsDomainGeneration, classify_listener_bind_failure,
+    EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel,
+    SettingsDomain, SettingsDomainGeneration, classify_listener_bind_failure,
 };
 use crate::views::{DhtInspectionView, ViewHub};
 
@@ -162,6 +162,7 @@ pub(crate) struct SessionNetworkRuntime {
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
+    encryption: PeerEncryptionPolicyHandle,
     incoming_handle: IncomingPeerHandle,
     incoming_seeding: IncomingSeeding,
     session_udp_handle: SessionUdpHandle,
@@ -189,6 +190,7 @@ struct SessionNetworkOwner {
     advertised_endpoint: AdvertisedPeerEndpointSelector,
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
+    encryption: PeerEncryptionPolicyHandle,
     incoming_runtime: Option<IncomingPeerRuntime>,
     incoming_acceptor: Option<IncomingPeerAcceptor>,
     incoming_seeding: IncomingSeeding,
@@ -231,9 +233,10 @@ impl SessionNetworkRuntime {
         })?;
         let peer_budget = PeerBudget::new(peer_budget_config);
         let mse_dh = MseDhWorkOwner::new();
+        let encryption = PeerEncryptionPolicyHandle::new(settings.encryption.into_engine());
         let mut incoming_config = IncomingPeerServiceConfig::new(settings.incoming_bootstrap())
             .with_peer_budget(peer_budget.clone())
-            .with_encryption(network.encryption)
+            .with_encryption(settings.encryption.into_engine())
             .with_mse_dh(mse_dh.clone());
         incoming_config.upload_scheduler = settings.upload_scheduler_config();
         incoming_config.upload_read_jobs = upload_read_jobs;
@@ -389,6 +392,7 @@ impl SessionNetworkRuntime {
             advertised_endpoint: advertised_endpoint.clone(),
             peer_budget: peer_budget.clone(),
             mse_dh: mse_dh.clone(),
+            encryption: encryption.clone(),
             incoming_runtime,
             incoming_acceptor,
             incoming_seeding: incoming_seeding.clone(),
@@ -411,6 +415,7 @@ impl SessionNetworkRuntime {
             SettingsDomain::PortMapping,
             SettingsDomain::PeerConnections,
             SettingsDomain::UploadSlots,
+            SettingsDomain::Encryption,
         ] {
             assert!(convergence.apply(
                 initial_attempt.domain(domain),
@@ -430,6 +435,7 @@ impl SessionNetworkRuntime {
             advertised_endpoint,
             peer_budget,
             mse_dh,
+            encryption,
             incoming_handle,
             incoming_seeding,
             session_udp_handle,
@@ -619,6 +625,10 @@ impl SessionNetworkRuntime {
 
     pub(crate) fn mse_dh(&self) -> MseDhWorkOwner {
         self.mse_dh.clone()
+    }
+
+    pub(crate) fn encryption(&self) -> PeerEncryptionPolicyHandle {
+        self.encryption.clone()
     }
 
     pub(crate) fn incoming_seeding(&self) -> IncomingSeeding {
@@ -863,6 +873,21 @@ impl SessionNetworkOwner {
                 runtime.upload_slots_application = ClientSettingsApplicationState::Applied;
             });
         }
+
+        let encryption_generation = attempt.domain(SettingsDomain::Encryption);
+        self.encryption
+            .replace(attempt.settings.encryption.into_engine());
+        self.incoming_runtime
+            .as_ref()
+            .expect("incoming runtime exists during reconciliation")
+            .reconfigure_encryption(attempt.settings.encryption.into_engine());
+        self.effective_settings.encryption = attempt.settings.encryption;
+        publish_encryption(
+            convergence,
+            encryption_generation,
+            attempt.settings.encryption,
+            views,
+        );
 
         let transport_changed = self
             .reconcile_transport(&attempt, convergence, views, cancellation)
@@ -1439,6 +1464,25 @@ fn publish_mapping(
     let _ = views.update_client_settings_runtime_for(generation, |runtime| {
         runtime.effective_port_mapping = effective_policy;
         runtime.port_mapping_application = state;
+    });
+}
+
+fn publish_encryption(
+    convergence: &Arc<Mutex<SettingsConvergenceModel>>,
+    generation: SettingsDomainGeneration,
+    effective_policy: EncryptionPolicy,
+    views: &ViewHub,
+) {
+    let Some(state) = apply_state(
+        convergence,
+        generation,
+        ClientSettingsApplicationState::Applied,
+    ) else {
+        return;
+    };
+    let _ = views.update_client_settings_runtime_for(generation, |runtime| {
+        runtime.effective_encryption = effective_policy;
+        runtime.encryption_application = state;
     });
 }
 
