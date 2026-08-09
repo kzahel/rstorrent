@@ -539,7 +539,9 @@ test("peer flags expose a complete accessible legend without sorting", async ({
   await expect(legend).toBeFocused();
   await expect(legend.locator("dt code")).toHaveCount(16);
   await expect(legend.getByText("Incoming", { exact: true })).toBeVisible();
-  await expect(legend.getByText("Encrypted", { exact: true })).toBeVisible();
+  await expect(
+    legend.getByText("Encrypted or obfuscated", { exact: true }),
+  ).toBeVisible();
   await expect(
     legend.getByText("Peer flag legend", { exact: true }),
   ).toHaveCount(0);
