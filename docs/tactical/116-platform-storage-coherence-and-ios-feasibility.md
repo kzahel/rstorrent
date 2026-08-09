@@ -564,6 +564,25 @@ observation consumes no pool handle, and cancellation/open limits remain
 bounded. Root admission and common published reads intentionally follow in the
 next stages; no fast-resume decision consumes the new value.
 
+### Stage 4: common published-content reads
+
+Pure `PublishedArtifactLayout` geometry now owns the safe logical mapping from
+verified metainfo to a recognizable namespace and its files. Path and platform
+seeding construct `StorageFileReference` values from that same mapping, observe
+the namespace and each wanted file without materialization, and use the shared
+session pool for bounded positional reads. The session no longer rejects a
+complete torrent merely because its configured root is platform-backed.
+
+Initial and pre-read observations require the expected file/directory kind and
+exact file length. The acquired descriptor is checked again before reading.
+Any failed observation, open, descriptor check, or read atomically retracts all
+pieces touching that file; the failing peer closes rather than receiving stale
+bytes, and later peers take a fresh availability snapshot. Fake-platform tests
+cover multi-file and cross-file upload with a one-handle pool, path tests cover
+post-registration truncation, and a late platform observation is rejected
+after storage-generation invalidation. Root capability admission and physical
+SAF product evidence remain the next gate.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and

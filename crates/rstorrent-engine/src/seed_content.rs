@@ -1,30 +1,33 @@
-//! Conservative read-only access to verified published path content.
+//! Conservative read-only access to verified published logical content.
 
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::peer_wire::BlockRequest;
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 
+use crate::artifact_layout::{ArtifactLayoutError, PublicationShape, PublishedArtifactLayout};
 use crate::positional_io::read_exact_at;
 use crate::selective_storage::{
-    PublicationShape, SelectiveStorageError, torrent_storage_paths_for_metainfo,
+    PlatformStorageSpec, SelectiveStorageError, torrent_storage_paths_for_metainfo,
 };
 use crate::storage_file_pool::{
-    DEFAULT_STORAGE_FILE_LIMIT, StorageFileAccess, StorageFileKey, StorageFileLocator,
-    StorageFilePool, StorageFilePoolError, StorageFileReference, StorageFileRole,
+    DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageTarget, StorageFileAccess, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFileReference,
+    StorageFileRole, StorageObjectKind,
 };
 
 #[derive(Clone, Debug)]
 struct SeedFile {
-    path: PathBuf,
+    label: String,
     expected_length: u64,
     reference: StorageFileReference,
+    pieces: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -49,7 +52,7 @@ pub struct SeedContent {
     private: bool,
     layout: TorrentLayout,
     files: Vec<Option<SeedFile>>,
-    available: Vec<bool>,
+    available: Arc<[AtomicBool]>,
     metrics: Arc<ReadMetrics>,
 }
 
@@ -82,6 +85,116 @@ impl SeedContent {
         storage_id: &str,
     ) -> Result<Self, SeedContentError> {
         let layout = TorrentLayout::from_metainfo(metainfo);
+        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+            .map_err(SeedContentError::StoragePlan)?;
+        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+            .map_err(SeedContentError::ArtifactLayout)?;
+        let namespace_reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: storage_id.to_owned(),
+                namespace_generation: 1,
+                role: StorageFileRole::Namespace,
+            },
+            StorageFileLocator::Path(paths.output),
+        );
+        let references = artifact
+            .files
+            .iter()
+            .map(|file| {
+                let path = file
+                    .qualified_components
+                    .iter()
+                    .fold(storage_root.to_path_buf(), |path, part| path.join(part));
+                StorageFileReference::new(
+                    pool.clone(),
+                    StorageFileKey {
+                        storage_id: storage_id.to_owned(),
+                        namespace_generation: 1,
+                        role: StorageFileRole::Payload(file.file_index),
+                    },
+                    StorageFileLocator::Path(path),
+                )
+            })
+            .collect();
+        Self::open_with_references(
+            metainfo,
+            verified,
+            skipped,
+            layout,
+            artifact,
+            namespace_reference,
+            references,
+        )
+        .await
+    }
+
+    pub async fn open_published_with_platform(
+        spec: &PlatformStorageSpec,
+        metainfo: &Metainfo,
+        verified: &[bool],
+        skipped: &[usize],
+    ) -> Result<Self, SeedContentError> {
+        if !spec.published
+            || spec.publication_name != metainfo.name
+            || spec.publication_shape != PublicationShape::from_metainfo(metainfo)
+        {
+            return Err(SeedContentError::InvalidPlatformNamespace);
+        }
+        let layout = TorrentLayout::from_metainfo(metainfo);
+        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+            .map_err(SeedContentError::ArtifactLayout)?;
+        let target = |role, path| PlatformStorageTarget {
+            root_id: spec.root_id.clone(),
+            storage_id: spec.storage_id.clone(),
+            namespace_generation: spec.namespace_generation,
+            role,
+            path,
+        };
+        let reference = |role, path| {
+            StorageFileReference::new(
+                spec.pool.clone(),
+                StorageFileKey {
+                    storage_id: spec.storage_id.clone(),
+                    namespace_generation: spec.namespace_generation,
+                    role,
+                },
+                StorageFileLocator::Platform(target(role, path)),
+            )
+        };
+        let namespace_reference =
+            reference(StorageFileRole::Namespace, vec![artifact.namespace.clone()]);
+        let references = artifact
+            .files
+            .iter()
+            .map(|file| {
+                reference(
+                    StorageFileRole::Payload(file.file_index),
+                    file.qualified_components.clone(),
+                )
+            })
+            .collect();
+        Self::open_with_references(
+            metainfo,
+            verified,
+            skipped,
+            layout,
+            artifact,
+            namespace_reference,
+            references,
+        )
+        .await
+    }
+
+    async fn open_with_references(
+        metainfo: &Metainfo,
+        verified: &[bool],
+        skipped: &[usize],
+        layout: TorrentLayout,
+        artifact: PublishedArtifactLayout,
+        namespace_reference: StorageFileReference,
+        references: Vec<StorageFileReference>,
+    ) -> Result<Self, SeedContentError> {
         if verified.len() != layout.piece_count() {
             return Err(SeedContentError::InvalidHaveLength {
                 actual: verified.len(),
@@ -89,70 +202,77 @@ impl SeedContent {
             });
         }
         let selection = FileSelection::new(&layout, skipped).map_err(SeedContentError::Layout)?;
-        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
-            .map_err(SeedContentError::StoragePlan)?;
-        let artifact = inspect_path(&paths.output, "inspect published artifact").await?;
-        let valid_artifact = match paths.publication_shape {
-            PublicationShape::File => artifact.is_file(),
-            PublicationShape::Tree => artifact.is_dir(),
+        let namespace =
+            namespace_reference
+                .observe()
+                .await
+                .map_err(|source| SeedContentError::Storage {
+                    artifact: "published namespace".to_owned(),
+                    source,
+                })?;
+        let expected_namespace_kind = match artifact.shape {
+            PublicationShape::File => StorageObjectKind::File,
+            PublicationShape::Tree => StorageObjectKind::Directory,
         };
-        if !valid_artifact || artifact.file_type().is_symlink() {
-            return Err(SeedContentError::UnexpectedFileType(paths.output));
+        if !namespace.exists || namespace.kind != Some(expected_namespace_kind) {
+            return Err(SeedContentError::UnexpectedArtifact(
+                "published namespace".to_owned(),
+            ));
         }
 
         let mut files = Vec::with_capacity(layout.files().len());
-        for (index, file) in layout.files().iter().enumerate() {
-            if file.padding || !selection.is_wanted(index) {
+        for ((file, logical), reference) in
+            layout.files().iter().zip(&artifact.files).zip(references)
+        {
+            if file.padding || !selection.is_wanted(logical.file_index) {
                 files.push(None);
                 continue;
             }
-            let path = published_payload_path(
-                paths.publication_shape,
-                &paths.output,
-                &file.path,
-                index,
-                layout.files().len(),
-            )?;
-            match tokio::fs::symlink_metadata(&path).await {
-                Ok(metadata)
-                    if metadata.is_file()
-                        && !metadata.file_type().is_symlink()
-                        && metadata.len() == file.length =>
-                {
-                    files.push(Some(SeedFile {
-                        reference: StorageFileReference::new(
-                            pool.clone(),
-                            StorageFileKey {
-                                storage_id: storage_id.to_owned(),
-                                namespace_generation: 1,
-                                role: StorageFileRole::Payload(index),
-                            },
-                            StorageFileLocator::Path(path.clone()),
-                        ),
-                        path,
-                        expected_length: file.length,
-                    }));
-                }
-                Ok(_) | Err(_) => files.push(None),
+            let label = format!("payload file {}", logical.file_index);
+            let observation = reference.observe().await;
+            let readable = observation.is_ok_and(|observation| {
+                observation.exists
+                    && observation.kind == Some(StorageObjectKind::File)
+                    && observation.length == Some(file.length)
+            });
+            if !readable {
+                files.push(None);
+                continue;
             }
+            let pieces = layout
+                .file_piece_range(logical.file_index)
+                .map_err(SeedContentError::Layout)?
+                .into_iter()
+                .flatten()
+                .map(|piece| {
+                    usize::try_from(piece).map_err(|_| SeedContentError::ArithmeticOverflow)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            files.push(Some(SeedFile {
+                label,
+                expected_length: file.length,
+                reference,
+                pieces,
+            }));
         }
 
         let mut available = Vec::with_capacity(layout.piece_count());
         for (piece, verified) in verified.iter().copied().enumerate() {
-            if !verified {
-                available.push(false);
-                continue;
-            }
-            let piece = u32::try_from(piece).map_err(|_| SeedContentError::ArithmeticOverflow)?;
-            let length = layout
-                .piece_length_at(piece)
-                .map_err(SeedContentError::Layout)?;
-            let readable = layout
-                .file_segments(piece, 0, length)
-                .map_err(SeedContentError::Layout)?
-                .iter()
-                .all(|segment| segment.padding || files[segment.file_index].is_some());
-            available.push(readable);
+            let readable = if verified {
+                let piece_index =
+                    u32::try_from(piece).map_err(|_| SeedContentError::ArithmeticOverflow)?;
+                let length = layout
+                    .piece_length_at(piece_index)
+                    .map_err(SeedContentError::Layout)?;
+                layout
+                    .file_segments(piece_index, 0, length)
+                    .map_err(SeedContentError::Layout)?
+                    .iter()
+                    .all(|segment| segment.padding || files[segment.file_index].is_some())
+            } else {
+                false
+            };
+            available.push(AtomicBool::new(readable));
         }
 
         Ok(Self {
@@ -160,13 +280,16 @@ impl SeedContent {
             private: metainfo.private,
             layout,
             files,
-            available,
+            available: available.into(),
             metrics: Arc::new(ReadMetrics::default()),
         })
     }
 
-    pub fn availability(&self) -> &[bool] {
-        &self.available
+    pub fn availability(&self) -> Vec<bool> {
+        self.available
+            .iter()
+            .map(|available| available.load(Ordering::Acquire))
+            .collect()
     }
 
     pub fn info_hash(&self) -> [u8; 20] {
@@ -201,7 +324,12 @@ impl SeedContent {
     pub async fn read_block(&self, request: BlockRequest) -> Result<Vec<u8>, SeedContentError> {
         let piece = usize::try_from(request.index)
             .map_err(|_| SeedContentError::InvalidRequest(request))?;
-        if !self.available.get(piece).copied().unwrap_or(false) || request.length == 0 {
+        if !self
+            .available
+            .get(piece)
+            .is_some_and(|available| available.load(Ordering::Acquire))
+            || request.length == 0
+        {
             return Err(SeedContentError::InvalidRequest(request));
         }
         let segments = self
@@ -215,38 +343,41 @@ impl SeedContent {
             if segment.padding {
                 continue;
             }
-            let (reference, path, expected_length) = self
+            let file = self
                 .files
                 .get(segment.file_index)
                 .and_then(Option::as_ref)
-                .map(|file| {
-                    (
-                        file.reference.clone(),
-                        file.path.clone(),
-                        file.expected_length,
-                    )
-                })
                 .ok_or(SeedContentError::UnavailablePiece(request.index))?;
-            let before = tokio::fs::symlink_metadata(&path).await.map_err(|source| {
-                SeedContentError::Io {
-                    operation: "inspect seed payload before read",
-                    path: path.clone(),
-                    source,
+            let reference = file.reference.clone();
+            let label = file.label.clone();
+            let expected_length = file.expected_length;
+            let observation = match reference.observe().await {
+                Ok(observation) => observation,
+                Err(source) => {
+                    self.invalidate_file(segment.file_index);
+                    return Err(SeedContentError::Storage {
+                        artifact: label,
+                        source,
+                    });
                 }
-            })?;
-            if !before.is_file()
-                || before.file_type().is_symlink()
-                || before.len() != expected_length
+            };
+            if !observation.exists
+                || observation.kind != Some(StorageObjectKind::File)
+                || observation.length != Some(expected_length)
             {
-                return Err(SeedContentError::UnexpectedFileType(path));
+                self.invalidate_file(segment.file_index);
+                return Err(SeedContentError::UnexpectedArtifact(label));
             }
-            let handle = reference
-                .open(StorageFileAccess::ReadExisting)
-                .await
-                .map_err(|source| SeedContentError::FilePool {
-                    path: path.clone(),
-                    source,
-                })?;
+            let handle = match reference.open(StorageFileAccess::ReadExisting).await {
+                Ok(handle) => handle,
+                Err(source) => {
+                    self.invalidate_file(segment.file_index);
+                    return Err(SeedContentError::Storage {
+                        artifact: label,
+                        source,
+                    });
+                }
+            };
             let _lease =
                 CounterGuard::new(&metrics.current_file_leases, &metrics.file_lease_high_water);
             let segment_block = tokio::task::spawn_blocking(move || {
@@ -255,24 +386,35 @@ impl SeedContent {
                     .metadata()
                     .map_err(|source| SeedContentError::Io {
                         operation: "inspect open seed payload",
-                        path: path.clone(),
+                        artifact: label.clone(),
                         source,
                     })?;
                 if !opened.is_file() || opened.len() != expected_length {
-                    return Err(SeedContentError::UnexpectedFileType(path.clone()));
+                    return Err(SeedContentError::UnexpectedArtifact(label.clone()));
                 }
                 let mut bytes = vec![0; segment.length];
                 read_exact_at(handle.file(), &mut bytes, segment.file_offset).map_err(
                     |source| SeedContentError::Io {
                         operation: "read seed payload",
-                        path,
+                        artifact: label,
                         source,
                     },
                 )?;
                 Ok(bytes)
             })
             .await
-            .map_err(|error| SeedContentError::TaskJoin(error.to_string()))??;
+            .map_err(|error| SeedContentError::TaskJoin(error.to_string()));
+            let segment_block = match segment_block {
+                Ok(Ok(block)) => block,
+                Ok(Err(error)) => {
+                    self.invalidate_file(segment.file_index);
+                    return Err(error);
+                }
+                Err(error) => {
+                    self.invalidate_file(segment.file_index);
+                    return Err(error);
+                }
+            };
             let end = segment
                 .block_offset
                 .checked_add(segment.length)
@@ -280,6 +422,16 @@ impl SeedContent {
             block[segment.block_offset..end].copy_from_slice(&segment_block);
         }
         Ok(block)
+    }
+
+    fn invalidate_file(&self, file_index: usize) {
+        if let Some(Some(file)) = self.files.get(file_index) {
+            for piece in &file.pieces {
+                if let Some(available) = self.available.get(*piece) {
+                    available.store(false, Ordering::Release);
+                }
+            }
+        }
     }
 }
 
@@ -291,17 +443,19 @@ pub enum SeedContentError {
     },
     InvalidRequest(BlockRequest),
     UnavailablePiece(u32),
-    UnexpectedFileType(PathBuf),
+    UnexpectedArtifact(String),
+    InvalidPlatformNamespace,
     ArithmeticOverflow,
     Layout(LayoutError),
+    ArtifactLayout(ArtifactLayoutError),
     StoragePlan(SelectiveStorageError),
-    FilePool {
-        path: PathBuf,
+    Storage {
+        artifact: String,
         source: StorageFilePoolError,
     },
     Io {
         operation: &'static str,
-        path: PathBuf,
+        artifact: String,
         source: io::Error,
     },
     TaskJoin(String),
@@ -318,25 +472,28 @@ impl fmt::Display for SeedContentError {
             }
             Self::InvalidRequest(request) => write!(formatter, "invalid seed request {request:?}"),
             Self::UnavailablePiece(piece) => write!(formatter, "piece {piece} is not readable"),
-            Self::UnexpectedFileType(path) => {
+            Self::UnexpectedArtifact(artifact) => {
                 write!(
                     formatter,
-                    "seed payload has an unexpected type or length: {}",
-                    path.display()
+                    "seed payload has an unexpected type or length: {artifact}",
                 )
+            }
+            Self::InvalidPlatformNamespace => {
+                formatter.write_str("seed platform namespace does not match verified metadata")
             }
             Self::ArithmeticOverflow => formatter.write_str("seed content arithmetic overflow"),
             Self::Layout(error) => write!(formatter, "seed layout: {error}"),
+            Self::ArtifactLayout(error) => write!(formatter, "seed artifact layout: {error}"),
             Self::StoragePlan(error) => write!(formatter, "seed storage plan: {error}"),
-            Self::FilePool { path, source } => {
-                write!(formatter, "open seed payload {}: {source}", path.display())
+            Self::Storage { artifact, source } => {
+                write!(formatter, "access seed {artifact}: {source}")
             }
             Self::Io {
                 operation,
-                path,
+                artifact,
                 source,
             } => {
-                write!(formatter, "{operation} {}: {source}", path.display())
+                write!(formatter, "{operation} {artifact}: {source}")
             }
             Self::TaskJoin(error) => write!(formatter, "seed read task: {error}"),
         }
@@ -347,8 +504,9 @@ impl Error for SeedContentError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Layout(error) => Some(error),
+            Self::ArtifactLayout(error) => Some(error),
             Self::StoragePlan(error) => Some(error),
-            Self::FilePool { source, .. } => Some(source),
+            Self::Storage { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             _ => None,
         }
@@ -373,19 +531,6 @@ impl Drop for CounterGuard<'_> {
     }
 }
 
-async fn inspect_path(
-    path: &Path,
-    operation: &'static str,
-) -> Result<std::fs::Metadata, SeedContentError> {
-    tokio::fs::symlink_metadata(path)
-        .await
-        .map_err(|source| SeedContentError::Io {
-            operation,
-            path: path.to_path_buf(),
-            source,
-        })
-}
-
 fn hex(bytes: [u8; 20]) -> String {
     use std::fmt::Write as _;
 
@@ -396,29 +541,21 @@ fn hex(bytes: [u8; 20]) -> String {
     encoded
 }
 
-fn published_payload_path(
-    shape: PublicationShape,
-    root: &Path,
-    components: &[String],
-    file_index: usize,
-    file_count: usize,
-) -> Result<PathBuf, SeedContentError> {
-    match shape {
-        PublicationShape::File if file_index == 0 && file_count == 1 => Ok(root.to_path_buf()),
-        PublicationShape::File => Err(SeedContentError::ArithmeticOverflow),
-        PublicationShape::Tree => Ok(components
-            .iter()
-            .fold(root.to_path_buf(), |path, part| path.join(part))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
     use rstorrent_protocol::peer_wire::BlockRequest;
+
+    use crate::artifact_layout::PublicationShape;
+    use crate::selective_storage::PlatformStorageSpec;
+    use crate::storage_file_pool::{
+        PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageOperation,
+        StorageFileAccess, StorageObjectKind, StorageObservation, platform_storage_channel,
+    };
 
     use super::{SeedContent, SeedContentError, StorageFilePool};
 
@@ -608,6 +745,136 @@ mod tests {
                 .await,
             Err(SeedContentError::InvalidRequest(_))
         ));
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn failed_read_observation_retracts_all_affected_piece_availability() {
+        let root = root("retract");
+        tokio::fs::create_dir_all(&root).await.expect("create root");
+        tokio::fs::write(root.join("single.bin"), b"abcdefg")
+            .await
+            .expect("write payload");
+        let content = SeedContent::open_published(&root, &single(), &[true, true], &[])
+            .await
+            .expect("open seed content");
+        tokio::fs::write(root.join("single.bin"), b"short")
+            .await
+            .expect("truncate payload");
+        assert!(
+            content
+                .read_block(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 4,
+                })
+                .await
+                .is_err()
+        );
+        assert_eq!(content.availability(), [false, false]);
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn platform_content_uses_observation_and_shared_pool_for_upload_reads() {
+        let root = root("platform");
+        tokio::fs::create_dir_all(root.join("tree"))
+            .await
+            .expect("create tree");
+        tokio::fs::write(root.join("tree/a"), b"abc")
+            .await
+            .expect("write a");
+        tokio::fs::write(root.join("tree/b"), b"def")
+            .await
+            .expect("write b");
+        tokio::fs::write(root.join("tree/c"), b"gh")
+            .await
+            .expect("write c");
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(1, Some(client)).expect("pool");
+        let provider_root = root.clone();
+        let provider = tokio::spawn(async move {
+            while let Some(request) = broker.next_request().await {
+                let path = request
+                    .path
+                    .iter()
+                    .fold(provider_root.clone(), |path, part| path.join(part));
+                match request.operation {
+                    PlatformStorageOperation::Observe => {
+                        let observation = match std::fs::symlink_metadata(&path) {
+                            Ok(metadata) => StorageObservation::present(
+                                if metadata.is_file() {
+                                    StorageObjectKind::File
+                                } else if metadata.is_dir() {
+                                    StorageObjectKind::Directory
+                                } else {
+                                    StorageObjectKind::Other
+                                },
+                                metadata.is_file().then_some(metadata.len()),
+                                None,
+                            )
+                            .expect("provider observation"),
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                                StorageObservation::missing()
+                            }
+                            Err(error) => {
+                                broker.complete_error(
+                                    request.request_id,
+                                    PlatformStorageFailure::new(
+                                        PlatformStorageFailureKind::ProviderRefused,
+                                        error.to_string(),
+                                    ),
+                                );
+                                continue;
+                            }
+                        };
+                        broker.complete_observation(request.request_id, observation);
+                    }
+                    PlatformStorageOperation::Open => {
+                        assert_eq!(request.access, StorageFileAccess::ReadExisting);
+                        let file = OpenOptions::new().read(true).open(path).expect("open file");
+                        broker.complete_file(request.request_id, file);
+                    }
+                    PlatformStorageOperation::Delete => panic!("unexpected deletion"),
+                }
+            }
+        });
+        let content = SeedContent::open_published_with_platform(
+            &PlatformStorageSpec {
+                pool: pool.clone(),
+                root_id: "root".to_owned(),
+                storage_id: "platform-seed".to_owned(),
+                publication_name: "tree".to_owned(),
+                publication_shape: PublicationShape::Tree,
+                namespace_generation: 9,
+                managed: true,
+                published: true,
+            },
+            &multi(),
+            &[true, true, true],
+            &[],
+        )
+        .await
+        .expect("open platform content");
+        assert_eq!(content.availability(), [true, true, true]);
+        assert_eq!(
+            content
+                .read_block(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 4,
+                })
+                .await
+                .expect("platform cross-file read"),
+            b"abcd"
+        );
+        let snapshot = pool.snapshot();
+        assert_eq!(snapshot.limit, 1);
+        assert_eq!(snapshot.owned_high_water, 1);
+        assert_eq!(snapshot.platform_pending, 0);
+        drop(content);
+        pool.shutdown().await.expect("shutdown");
+        provider.abort();
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 }

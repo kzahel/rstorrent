@@ -26,6 +26,7 @@ pub struct StorageFileKey {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StorageFileRole {
+    Namespace,
     Payload(usize),
     Part,
 }
@@ -201,18 +202,7 @@ impl StorageFileReference {
     }
 
     pub async fn observe(&self) -> Result<StorageObservation, StorageFilePoolError> {
-        match &self.locator {
-            StorageFileLocator::Path(path) => observe_path(path.clone()).await,
-            StorageFileLocator::Platform(target) => {
-                self.pool
-                    .inner
-                    .platform
-                    .as_ref()
-                    .ok_or(StorageFilePoolError::PlatformUnavailable)?
-                    .observe(target)
-                    .await
-            }
-        }
+        self.pool.observe(self).await
     }
 }
 
@@ -833,6 +823,29 @@ impl StorageFilePool {
         };
         drop(replaced);
         Ok(handle)
+    }
+
+    async fn observe(
+        &self,
+        reference: &StorageFileReference,
+    ) -> Result<StorageObservation, StorageFilePoolError> {
+        let storage_version = self.storage_version(&reference.key.storage_id)?;
+        let observation = match &reference.locator {
+            StorageFileLocator::Path(path) => observe_path(path.clone()).await?,
+            StorageFileLocator::Platform(target) => {
+                self.inner
+                    .platform
+                    .as_ref()
+                    .ok_or(StorageFilePoolError::PlatformUnavailable)?
+                    .observe(target)
+                    .await?
+            }
+        };
+        let current_version = self.storage_version(&reference.key.storage_id)?;
+        if current_version != storage_version {
+            return Err(StorageFilePoolError::Invalidated);
+        }
+        Ok(observation)
     }
 
     pub fn snapshot(&self) -> StorageFilePoolSnapshot {
@@ -1478,6 +1491,42 @@ mod tests {
             expected
         );
         assert_eq!(pool.snapshot().current_owned, 0);
+        pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn invalidation_rejects_a_late_platform_observation() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 3,
+                role: StorageFileRole::Namespace,
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 3,
+                role: StorageFileRole::Namespace,
+                path: vec!["published".to_owned()],
+            }),
+        );
+        let observation = tokio::spawn(async move { reference.observe().await });
+        let request = broker.next_request().await.expect("observation request");
+        pool.invalidate_storage("torrent");
+        assert!(
+            broker.complete_observation(
+                request.request_id,
+                StorageObservation::present(StorageObjectKind::Directory, None, None)
+                    .expect("directory observation"),
+            )
+        );
+        assert!(matches!(
+            observation.await.expect("observation task"),
+            Err(super::StorageFilePoolError::Invalidated)
+        ));
         pool.shutdown().await.expect("shutdown");
     }
 

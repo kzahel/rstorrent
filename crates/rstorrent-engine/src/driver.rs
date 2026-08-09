@@ -41,6 +41,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
 use crate::metrics::ByteMetric;
 use crate::mse::MseDhWorkOwner;
@@ -62,10 +63,10 @@ use crate::peer_socket::{
 use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
 use crate::piece_picker::picker_seed;
 use crate::selective_storage::{
-    DescriptorStorage, PreparedFileHash, PublicationShape, ResumeArtifactState, ResumedStorage,
-    SelectiveStorage, SelectiveStorageError, VERIFICATION_CHUNK_LENGTH,
-    remove_selective_part_if_present, remove_selective_staging_if_present,
-    torrent_storage_paths_for_output_with_shape, validate_publication_name,
+    DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectiveStorage,
+    SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
+    remove_selective_staging_if_present, torrent_storage_paths_for_output_with_shape,
+    validate_publication_name,
 };
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,

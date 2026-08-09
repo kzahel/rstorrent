@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rstorrent_engine::{
-    IncomingPeerError, IncomingPeerHandle, SeedContent, SeedRegistration, SeedRegistrationToken,
-    StorageFilePool, TorrentPeerHandle,
+    IncomingPeerError, IncomingPeerHandle, PlatformStorageSpec, PublicationShape, SeedContent,
+    SeedRegistration, SeedRegistrationToken, StorageFilePool, TorrentPeerHandle,
 };
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo};
 
@@ -149,20 +149,39 @@ impl IncomingSeeding {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let StorageRootLocation::Path(root) = root.expect("eligible seed has a path root") else {
-            unreachable!("platform roots are rejected by eligibility")
-        };
         storage_file_pool.invalidate_storage(&resume.torrent_id);
-        let content = match SeedContent::open_published_with_pool(
-            root,
-            &metainfo,
-            have.pieces(),
-            &skipped,
-            storage_file_pool.clone(),
-            &resume.torrent_id,
-        )
-        .await
-        {
+        let opened = match root.expect("eligible seed has a configured root") {
+            StorageRootLocation::Path(root) => {
+                SeedContent::open_published_with_pool(
+                    root,
+                    &metainfo,
+                    have.pieces(),
+                    &skipped,
+                    storage_file_pool.clone(),
+                    &resume.torrent_id,
+                )
+                .await
+            }
+            StorageRootLocation::PlatformCapability => {
+                SeedContent::open_published_with_platform(
+                    &PlatformStorageSpec {
+                        pool: storage_file_pool.clone(),
+                        root_id: resume.storage_root.clone(),
+                        storage_id: resume.torrent_id.clone(),
+                        publication_name: metainfo.name.clone(),
+                        publication_shape: PublicationShape::from_metainfo(&metainfo),
+                        namespace_generation: 1,
+                        managed: true,
+                        published: true,
+                    },
+                    &metainfo,
+                    have.pieces(),
+                    &skipped,
+                )
+                .await
+            }
+        };
+        let content = match opened {
             Ok(content) => content,
             Err(error) => {
                 return Ok(SeedReconcileResult {
@@ -236,11 +255,8 @@ fn eligibility_reason(
 
 fn storage_root_eligibility_reason(root: Option<&StorageRootLocation>) -> Option<&'static str> {
     match root {
-        Some(StorageRootLocation::Path(_)) => None,
-        Some(StorageRootLocation::PlatformCapability) => {
-            Some("torrent storage root is not path backed")
-        }
-        None => Some("torrent storage root is not path backed"),
+        Some(StorageRootLocation::Path(_) | StorageRootLocation::PlatformCapability) => None,
+        None => Some("torrent storage root is unavailable"),
     }
 }
 
@@ -282,18 +298,15 @@ mod tests {
     use crate::store::StorageRootLocation;
 
     #[test]
-    fn current_seed_storage_eligibility_is_explicitly_path_only() {
+    fn seed_storage_eligibility_accepts_both_configured_backend_kinds() {
         let path = StorageRootLocation::Path(PathBuf::from("payload"));
         let platform = StorageRootLocation::PlatformCapability;
 
         assert_eq!(storage_root_eligibility_reason(Some(&path)), None);
-        assert_eq!(
-            storage_root_eligibility_reason(Some(&platform)),
-            Some("torrent storage root is not path backed")
-        );
+        assert_eq!(storage_root_eligibility_reason(Some(&platform)), None);
         assert_eq!(
             storage_root_eligibility_reason(None),
-            Some("torrent storage root is not path backed")
+            Some("torrent storage root is unavailable")
         );
     }
 }

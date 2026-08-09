@@ -154,7 +154,6 @@ pub struct SeedRegistration {
     raw_info: Arc<[u8]>,
     content: SeedContent,
     piece_lengths: Arc<[u32]>,
-    availability: Arc<[bool]>,
     torrent_peers: TorrentPeerHandle,
     private: bool,
 }
@@ -178,14 +177,12 @@ impl SeedRegistration {
         let piece_lengths = content
             .piece_lengths()
             .map_err(|_| IncomingPeerError::InvalidRegistration("invalid seed piece geometry"))?;
-        let availability = Arc::from(content.availability());
         let private = content.is_private();
         Ok(Self {
             info_hash,
             raw_info,
             content,
             piece_lengths: piece_lengths.into(),
-            availability,
             torrent_peers,
             private,
         })
@@ -2511,9 +2508,10 @@ async fn run_incoming_peer_loop(
     } else {
         NetworkPolicy::Online
     };
+    let availability: Arc<[bool]> = registration.content.availability().into();
     let mut upload = match UploadPeerState::from_shared(
         registration.piece_lengths.clone(),
-        registration.availability.clone(),
+        availability.clone(),
     ) {
         Ok(upload) => upload,
         Err(_) => return PeerTermination::Storage,
@@ -2523,7 +2521,7 @@ async fn run_incoming_peer_loop(
             std::net::IpAddr::V4(address) => match generate_allowed_fast_set(
                 registration.info_hash,
                 address,
-                registration.availability.len(),
+                availability.len(),
                 MAX_GENERATED_ALLOWED_FAST_PIECES,
             ) {
                 Ok(allowed) => allowed,
@@ -2748,7 +2746,7 @@ async fn run_incoming_peer_loop(
                 if validate_incoming_fast_message(
                     supports_fast,
                     &message,
-                    registration.availability.len(),
+                    availability.len(),
                     &mut fast_initial_availability,
                     &mut fast_suggestions,
                     &mut fast_allowed,

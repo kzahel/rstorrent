@@ -3,6 +3,7 @@
 //! Runtime ownership for the first verified-piece diagnostic.
 
 mod advertisement;
+mod artifact_layout;
 mod checkpoint;
 pub mod dht;
 mod driver;
@@ -42,6 +43,9 @@ pub use advertisement::{
     PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope, PeerAdvertisementFamilyEndpoint,
     TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,
     UNKNOWN_METADATA_LEFT_BYTES,
+};
+pub use artifact_layout::{
+    ArtifactLayoutError, LogicalPayloadArtifact, PublicationShape, PublishedArtifactLayout,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
@@ -103,12 +107,12 @@ pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
 pub use selective_storage::{
     DescriptorFile, DescriptorFileRole, DescriptorStorage, DescriptorStoragePlan,
     DescriptorStoragePlanFile, MaterializationReport, PlatformStorageSpec, PreparedFileHash,
-    PublicationShape, ResumeArtifactState, ResumedStorage, SelectionReconcileReport,
-    SelectiveStorage, SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths,
-    plan_descriptor_storage, remove_selective_part_if_present, remove_selective_staging_if_present,
-    selective_part_path, selective_staging_path, torrent_storage_paths,
-    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
-    validate_publication_name, verify_prepared_descriptors, verify_prepared_platform_files,
+    ResumeArtifactState, ResumedStorage, SelectionReconcileReport, SelectiveStorage,
+    SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths, plan_descriptor_storage,
+    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+    selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
+    torrent_storage_paths_with_shape, validate_publication_name, verify_prepared_descriptors,
+    verify_prepared_platform_files,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

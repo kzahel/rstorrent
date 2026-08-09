@@ -7,7 +7,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use rstorrent_protocol::metainfo::{Metainfo, MetainfoMode};
+use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::{
     FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
@@ -15,6 +15,7 @@ use sha1::{Digest, Sha1};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
+use crate::artifact_layout::PublicationShape;
 use crate::checkpoint::DurabilityTarget;
 use crate::part_file::{
     PartFile, PartFileCheckpointReference, PartFileError, PartFileIdentity, PartFileSpan,
@@ -98,21 +99,6 @@ pub struct TorrentStoragePaths {
     pub staging: PathBuf,
     /// Hidden, full-info-hash-owned selective part file.
     pub part: PathBuf,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PublicationShape {
-    File,
-    Tree,
-}
-
-impl PublicationShape {
-    pub fn from_metainfo(metainfo: &Metainfo) -> Self {
-        match metainfo.mode {
-            MetainfoMode::SingleFile => Self::File,
-            MetainfoMode::MultiFile => Self::Tree,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3754,6 +3740,7 @@ fn platform_storage_reference(
     components: Vec<String>,
 ) -> StorageFileReference {
     let path = match role {
+        StorageFileRole::Namespace => vec![spec.publication_name.clone()],
         StorageFileRole::Payload(_) => {
             let namespace = if spec.published {
                 spec.publication_name.clone()

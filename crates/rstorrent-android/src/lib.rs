@@ -420,6 +420,7 @@ impl AndroidApplicationClient {
     pub async fn next_saf_storage_request(&self) -> Option<SafStorageRequest> {
         self.platform_storage.next_request().await.map(|request| {
             let (role, file_index) = match request.role {
+                StorageFileRole::Namespace => (SafDynamicFileRole::Namespace, 0),
                 StorageFileRole::Payload(file_index) => (
                     SafDynamicFileRole::Payload,
                     u32::try_from(file_index).unwrap_or(u32::MAX),
@@ -699,6 +700,7 @@ pub struct SafStorage {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
 pub enum SafDynamicFileRole {
+    Namespace,
     Payload,
     Part,
 }
