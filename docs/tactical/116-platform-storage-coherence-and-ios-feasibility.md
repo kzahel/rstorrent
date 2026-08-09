@@ -662,6 +662,42 @@ repeat. Both dynamic upload runs transferred and independently verified
 133,304 bytes. Stable device identifiers and raw provider identity are not
 retained in repository evidence.
 
+### Stage 8: final-seam physical iOS rerun
+
+The reconciled harness passes its three host tests, both Rust Apple targets,
+the unsigned simulator Xcode build, and a development-signed physical build.
+The final build installed and ran on the paired physical iPhone SE (3rd
+generation) running iOS 26.6 without changing signing or account state.
+
+The current seam reproduced the app-owned and coordinated-bookmark results:
+
+- the 65,536-byte sparse fixture retained exact SHA-1
+  `48b6fdf2fd3b77c14cc54f54891dc6aed1eeec3a`, rejected no-replace collision,
+  reopened and truncated to 40,960 bytes, peaked at one of eight Rust file
+  leases, returned cached and owned handles to zero, and removed its exact
+  workspace;
+- initial coordinated access to the app-owned `PickerRoot` needed no security
+  scope, while the forced relaunch resolved a non-stale bookmark, acquired and
+  balanced its security scope, coordinated the same Rust operation, and again
+  removed the workspace;
+- direct Rust TCP and UDP each echoed exactly 30 bytes through the controlled
+  in-process loopback endpoint;
+- an explicitly armed force-close fact was observed true before termination
+  and false with recovery true after relaunch;
+- a newly submitted finite continued-processing task registered, ran while
+  the application reported the background phase, and completed; and
+- an ordinary UIKit background assertion armed in the foreground reached its
+  expiration handler after another application became active.
+
+The negative boundary from Stage 2 is preserved rather than relabeled: the
+system document picker could not be automated on this device, so selection of
+a separate **On My iPhone** directory and external File Provider access remain
+unproven. The final result proves app-owned Documents plus restored,
+security-scoped and coordinated access to the app-owned picker fixture. It
+does not establish iCloud, offloaded, third-party, or external local-provider
+support. No stable device identifier, bookmark bytes, or path is retained in
+repository evidence.
+
 ## Staged Implementation And Intermediate Gates
 
 1. **Freeze current behavior.** Add task-free comparison fixtures for path and
