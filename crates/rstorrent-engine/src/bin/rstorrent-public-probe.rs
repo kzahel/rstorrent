@@ -1,18 +1,21 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fmt;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rstorrent_engine::dht::{DhtConfig, DhtService};
+use rstorrent_engine::dht::{DhtConfig, DhtObservation, DhtService};
 use rstorrent_engine::{
-    DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadDiagnosticSnapshot,
-    DownloadError, DownloadReport, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig,
-    NetworkPolicy, download_magnet_with_control,
+    AddressFamily, DownloadActivityEvent, DownloadActivitySink, DownloadControl,
+    DownloadDiagnosticSnapshot, DownloadError, DownloadReport, DownloadResourceLimits,
+    MagnetDownloadConfig, NetworkConfig, NetworkPolicy, SessionUdpService,
+    download_magnet_with_control, select_global_ipv6,
 };
 use serde::Serialize;
+use tokio::net::UdpSocket;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const DEFAULT_CLEANUP_SECONDS: u64 = 10;
@@ -21,6 +24,7 @@ const MAX_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 const MAX_CLEANUP_SECONDS: u64 = 60;
 const UTILITY_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_UTILITY_SAMPLES: usize = 1024;
+const DHT_HEALTHY_ROUTING_NODES: u16 = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -619,6 +623,89 @@ struct ContentPeerDiagnostics {
 }
 
 #[derive(Debug, Serialize)]
+struct DhtFamilyEvidence {
+    family: &'static str,
+    local_address: String,
+    observed_external_address: Option<String>,
+    lifecycle: String,
+    routing_nodes: u16,
+    time_to_first_valid_response_seconds: Option<f64>,
+    time_to_routing_threshold_seconds: Option<f64>,
+    queries_sent: u64,
+    responses_received: u64,
+    discovered_peers: u64,
+    datagram_bytes_sent: u64,
+    datagram_bytes_received: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct DhtEvidence {
+    healthy_routing_threshold: u16,
+    ipv6_startup_error: Option<String>,
+    families: Vec<DhtFamilyEvidence>,
+}
+
+#[derive(Debug, Default)]
+struct DhtEvidenceTracker {
+    ipv6_startup_error: Option<String>,
+    first_response: BTreeMap<AddressFamily, Duration>,
+    routing_threshold: BTreeMap<AddressFamily, Duration>,
+}
+
+impl DhtEvidenceTracker {
+    fn sample(&mut self, observation: &DhtObservation, elapsed: Duration) {
+        for family in &observation.families {
+            if family.stats.responses_received > 0 {
+                self.first_response.entry(family.family).or_insert(elapsed);
+            }
+            if family.routing_nodes >= DHT_HEALTHY_ROUTING_NODES {
+                self.routing_threshold
+                    .entry(family.family)
+                    .or_insert(elapsed);
+            }
+        }
+    }
+
+    fn finish(mut self, observation: &DhtObservation, elapsed: Duration) -> DhtEvidence {
+        self.sample(observation, elapsed);
+        let families = observation
+            .families
+            .iter()
+            .map(|family| DhtFamilyEvidence {
+                family: match family.family {
+                    AddressFamily::Ipv4 => "ipv4",
+                    AddressFamily::Ipv6 => "ipv6",
+                },
+                local_address: family.local_address.to_string(),
+                observed_external_address: family
+                    .observed_external_address
+                    .map(|address| address.to_string()),
+                lifecycle: format!("{:?}", family.lifecycle).to_ascii_lowercase(),
+                routing_nodes: family.routing_nodes,
+                time_to_first_valid_response_seconds: self
+                    .first_response
+                    .get(&family.family)
+                    .map(Duration::as_secs_f64),
+                time_to_routing_threshold_seconds: self
+                    .routing_threshold
+                    .get(&family.family)
+                    .map(Duration::as_secs_f64),
+                queries_sent: family.stats.queries_sent,
+                responses_received: family.stats.responses_received,
+                discovered_peers: family.stats.discovered_peers,
+                datagram_bytes_sent: family.stats.datagram_bytes_sent,
+                datagram_bytes_received: family.stats.datagram_bytes_received,
+            })
+            .collect();
+        DhtEvidence {
+            healthy_routing_threshold: DHT_HEALTHY_ROUTING_NODES,
+            ipv6_startup_error: self.ipv6_startup_error,
+            families,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct ProbeResult {
     schema_version: u32,
     implementation: &'static str,
@@ -633,6 +720,7 @@ struct ProbeResult {
     cleanup_succeeded: bool,
     terminal_detail: Option<String>,
     capabilities: Capabilities,
+    dht_evidence: Option<DhtEvidence>,
     diagnostics: Diagnostics,
 }
 
@@ -668,6 +756,49 @@ async fn main() -> ExitCode {
     }
 }
 
+struct LiveDhtRuntime {
+    service: DhtService,
+    udp: SessionUdpService,
+    evidence: DhtEvidenceTracker,
+}
+
+async fn start_live_dht() -> Result<LiveDhtRuntime, String> {
+    let ipv4 = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
+        .await
+        .map_err(|error| format!("bind IPv4 DHT socket: {error}"))?;
+    let (mut udp, transport) = SessionUdpService::start(ipv4)
+        .map_err(|error| format!("start session UDP owner: {error}"))?;
+    let mut evidence = DhtEvidenceTracker::default();
+    match select_global_ipv6().await {
+        Ok(address) => {
+            let ipv6 = match UdpSocket::bind(SocketAddr::from((address, 0))).await {
+                Ok(socket) => socket,
+                Err(error) => {
+                    let _ = udp.shutdown().await;
+                    return Err(format!("bind selected IPv6 DHT socket {address}: {error}"));
+                }
+            };
+            if let Err(error) = udp.replace_socket(ipv6).await {
+                let _ = udp.shutdown().await;
+                return Err(format!("start IPv6 session UDP generation: {error}"));
+            }
+        }
+        Err(error) => evidence.ipv6_startup_error = Some(error.to_string()),
+    }
+    let config = DhtConfig::for_network(NetworkPolicy::Online);
+    match DhtService::start_with_transport(config, transport).await {
+        Ok(service) => Ok(LiveDhtRuntime {
+            service,
+            udp,
+            evidence,
+        }),
+        Err(error) => {
+            let _ = udp.shutdown().await;
+            Err(error.to_string())
+        }
+    }
+}
+
 async fn run(config: Config) -> ProbeResult {
     let started = Instant::now();
     let control = DownloadControl::new();
@@ -676,8 +807,8 @@ async fn run(config: Config) -> ProbeResult {
     let mut utility_timeline = UtilityTimeline::default();
 
     let mut dht = if config.discovery.enables_dht() {
-        match DhtService::start(DhtConfig::for_network(NetworkPolicy::Online)).await {
-            Ok(service) => Some(service),
+        match start_live_dht().await {
+            Ok(runtime) => Some(runtime),
             Err(error) => {
                 return result(
                     &config,
@@ -685,6 +816,7 @@ async fn run(config: Config) -> ProbeResult {
                     &sink,
                     &control.diagnostic_snapshot(),
                     &utility_timeline,
+                    None,
                     TerminalState {
                         outcome: "error",
                         integrity_verified: false,
@@ -711,7 +843,7 @@ async fn run(config: Config) -> ProbeResult {
         resource_limits,
         skip_files: Vec::new(),
         materialize_files: Vec::new(),
-        dht: dht.as_ref().map(DhtService::handle),
+        dht: dht.as_ref().map(|runtime| runtime.service.handle()),
     };
     let task_control = control.clone();
     let mut task =
@@ -728,6 +860,10 @@ async fn run(config: Config) -> ProbeResult {
 
     loop {
         let elapsed = started.elapsed();
+        if let Some(runtime) = dht.as_mut() {
+            let observations = runtime.service.subscribe_observations();
+            runtime.evidence.sample(&observations.borrow(), elapsed);
+        }
         if sink.reached(Target::Metadata)
             && (utility_timeline.samples.is_empty() || elapsed >= next_utility_sample)
         {
@@ -764,12 +900,23 @@ async fn run(config: Config) -> ProbeResult {
             }
         }
     }
-    if let Some(service) = dht.take()
-        && tokio::time::timeout(config.cleanup_grace, service.shutdown())
+    let dht_evidence = dht.as_mut().map(|runtime| {
+        let observations = runtime.service.subscribe_observations();
+        std::mem::take(&mut runtime.evidence).finish(&observations.borrow(), started.elapsed())
+    });
+    if let Some(runtime) = dht.take() {
+        if tokio::time::timeout(config.cleanup_grace, runtime.service.shutdown())
             .await
             .map_or(true, |result| result.is_err())
-    {
-        cleanup_succeeded = false;
+        {
+            cleanup_succeeded = false;
+        }
+        if tokio::time::timeout(config.cleanup_grace, runtime.udp.shutdown())
+            .await
+            .map_or(true, |result| result.is_err())
+        {
+            cleanup_succeeded = false;
+        }
     }
 
     let terminal = classify_terminal(
@@ -793,6 +940,7 @@ async fn run(config: Config) -> ProbeResult {
         &sink,
         &control.diagnostic_snapshot(),
         &utility_timeline,
+        dht_evidence,
         terminal,
     )
 }
@@ -867,6 +1015,7 @@ fn result(
     sink: &ProbeSink,
     diagnostics: &DownloadDiagnosticSnapshot,
     utility_timeline: &UtilityTimeline,
+    dht_evidence: Option<DhtEvidence>,
     terminal: TerminalState,
 ) -> ProbeResult {
     let observation = sink.snapshot();
@@ -894,6 +1043,7 @@ fn result(
             web_seed: false,
             websocket_trackers: false,
         },
+        dht_evidence,
         diagnostics,
     }
 }
