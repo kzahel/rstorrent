@@ -1,17 +1,22 @@
 # Code Organization And Refactoring
 
 Status: Living guidance and repository snapshot, refreshed on 2026-08-09 at
-source commit `f8f2671` after completed Tacticals
+source commit `4f0ba8d` after completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md),
 [`080`](../tactical/080-session-view-subsystem-boundaries.md), and the
 feature-driven ownership work through completed
-[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md). The crate graph
-remains appropriate. Current internal pressure is highest in the application
-root and its test topology, the session store, and the role-specific peer
-bootstrap paths exposed by MSE; the larger dual-family DHT actor is a concrete
-cohesion watch point, while web semantic validation and selective-storage
-internals remain lower-timed candidates. No standalone refactor is selected by
-this topic.
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md), plus closed
+evidence-limited
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md).
+The crate graph remains appropriate. Current general pressure is highest in
+the application root and its test topology, the session store, and the role-
+specific peer bootstrap paths exposed by MSE. Planned Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) makes the
+store schema/migration seam the best-timed structural preparation and will
+itself replace the application's single-active-torrent core. Tactical `113`'s
+larger UPnP and reachability modules remain cohesive under their existing
+protocol and lifecycle owners. No standalone refactor is selected by this
+topic.
 
 Topic: `code-organization-and-refactoring`
 
@@ -205,6 +210,31 @@ production owner with a 1,033-line inline test module, which warrants an
 explicit cohesion review if the next DHT behavior introduces independently
 changing policy or fixtures; size alone still does not identify that seam.
 
+Closed Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+then exercised the port-mapping and reachability boundaries with a second,
+independent gateway mechanism. One bounded root-device discovery now produces
+separate `WANIPConnection:2` and `WANIPv6FirewallControl:1` clients, while one
+reachability coordinator owns an IPv4 mapping slot and an IPv6 pinhole slot
+under the same generation fence, task, and joined cleanup. Deterministic and
+scripted-gateway evidence passed; the available physical gateway returned a
+typed `606` to `AddPinhole`, so positive capability remains unknown on that
+hardware. That limitation does not reveal a source boundary: the protocol
+client and lifecycle coordinator failed independently and observably without a
+second coordinator, generic gateway transport, or new crate.
+
+Planned Tactical
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is now
+the authoritative, not-started **Now**. It deliberately changes two areas
+already under refactoring pressure: schema 16 gains durable queue and settings
+facts, and `ApplicationService` replaces its single active slot with one
+session admission owner and an active-runtime map. It also moves memory,
+storage/hash, and outbound-connection authority above individual torrents.
+Those are feature-owned ownership changes, not permission for a prerequisite
+application rewrite. A same-boundary schema/migration extraction can reduce
+collision before the new migration; application test categorization should be
+limited to fixture families Tactical `114` will actually extend.
+
 ## Source-Organization Guidance
 
 These are review prompts, not mechanical rules:
@@ -241,40 +271,45 @@ public facade becomes deliberate. Shorter files alone are not the outcome.
 
 ## Snapshot Method
 
-The following snapshot uses the source tree at `f8f2671` on 2026-08-09, 137
-commits after the prior `6ffaeff` snapshot and 16 commits after the preceding
-`0b25152` refresh. Production and test counts are
-approximate physical lines. For Rust files with one trailing `#[cfg(test)]`
-module, the marker separates the two; child test files are counted separately.
-Files with interspersed test-only helpers are intentionally less exact.
-Touches are path appearances across the most recent 200 repository commits and
-are only convergence evidence. Moves and mechanical extractions inflate churn,
-while a new file can have low touch count despite substantial ownership.
+The following snapshot uses the source tree at `4f0ba8d` on 2026-08-09, ten
+commits after the `f8f2671` refresh. This shorter-than-usual interval is a
+campaign transition: Tactical `113` closed and Tactical `114` became the
+authoritative **Now**, directly changing two leading candidates. Production
+and test counts are approximate physical lines. For Rust files with one
+trailing `#[cfg(test)]` module, the marker separates the two; child test files
+are counted separately. Files with interspersed test-only helpers are
+intentionally less exact. Touches are path appearances across the most recent
+200 repository commits and are only convergence evidence. Moves and mechanical
+extractions inflate churn, while a new file can have low touch count despite
+substantial ownership.
 
 | Boundary | Approximate production lines | Approximate test lines | Touches in 200 commits | Current assessment |
 | --- | ---: | ---: | ---: | --- |
-| Engine driver facade plus `control` and `storage_pipeline` | about 10,700 across three owners | 8,459 child-test lines | 25 on the facade | Tactical `079` still supplies useful owners. `DownloadControl` has grown around checker and disk/resource observation, while direct-engine discovery remains a conditional facade seam. No umbrella split is justified. |
+| Engine driver facade plus `control` and `storage_pipeline` | about 10,775 across three owners | 8,575 child-test lines | 25 on the facade | Tactical `079` still supplies useful owners. `DownloadControl` has grown around checker and disk/resource observation, while direct-engine discovery remains a conditional facade seam. No umbrella split is justified. |
 | `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Shared immutable artifact geometry remains a concrete one-way-dependency seam, but current feature churn is low and no active tactical changes storage shape. |
 | `SwarmState` | about 3,331 | about 1,766 | 9 | `piece_picker` owns independently changing activation policy. Retain the remaining deterministic transition owner until another policy separates. |
-| Incoming and outgoing peer bootstrap | about 4,466 across `incoming.rs` and `peer_socket.rs` before their test modules | about 1,986 | 22 incoming, 8 outgoing | Strong new engine source-shape candidate after MSE. Pre-stream handshake/policy/accounting can become role-specific private children while listener/admission/upload and peer-set/task owners remain in place. Do not unify the two roles behind a generic async runner. |
+| Incoming and outgoing peer bootstrap | about 4,507 across `incoming.rs` and `peer_socket.rs` before their test modules | about 2,031 | 18 incoming, 8 outgoing | Strong engine source-shape candidate after MSE. Pre-stream handshake/policy/accounting can become role-specific private children while listener/admission/upload and peer-set/task owners remain in place. Do not unify the two roles behind a generic async runner. |
 | DHT actor | about 3,044 | about 1,033 | 6 | Tactical `112` retained one actor around two independently bounded family nodes, one command route, and one observation owner. The growth is material, but no duplicated lifecycle or cross-family state leak appeared. Review again when a DHT policy changes independently; do not split by family or file size alone. |
-| Session view subsystem | 7,352 across the facade and eight child owners | 2,473 across six child files | 9 on `hub.rs` | The Tactical `080` shape remains healthy. New ETA behavior landed in its own pure child without restoring bidirectional knowledge. |
-| `ApplicationService` | about 4,583 | about 5,819 inline | 50 | Strongest general convergence and navigation pressure. The lifecycle owner remains legitimate, but callback adapters and unrelated fixture families have concrete private seams. |
-| `SessionNetworkRuntime` | 2,192 | application-level fixtures live in `application.rs` | 13 | Tactical `112` reused one reconciler for independent family sockets, DHT, endpoint state, and cancellation without a second task or channel. It remains cohesive; Tactical `113` adds pinhole state to the separate reachability coordinator rather than motivating a transport split. |
-| `SessionStore` | about 5,485 | about 3,192 | 24 | Strong persistence candidate. Schema 16, complete DDL, historical data migrations, settings migrations, and independently changing mutations/decoders remain under one connection owner. |
-| Gateway HTTP, application WebSocket, and first-run web authentication | about 4,306 across four owners | about 2,572 | 6 on `lib.rs` | The transport split remains useful, and authentication landed in focused policy/HTTP modules. Large integration tests have navigation pressure, but the recent owner shape should settle. |
-| Web `LiveApplication` | 1,610 | 1,171 in its test file | 13 | Connection/view intent and pure mapping/transition behavior remain separable; no reconnection or store rewrite is implied. |
-| Web semantic validation | 2,276 | 888 in its test file | 13 | Strongest web-only candidate. Connection frames, settings, DHT, torrent/file/tracker/peer/swarm views, diagnostics, pieces, and disk semantics still share one hand-authored module. |
-| Web `VirtualTable` | 1,332 | 613 in its test file | 3 | Action policy is outside it; pure sorting/configuration/range selection remain extractable, but current churn is low. |
-| Android diagnostic plus product services | 1,756 across two Kotlin services | focused product reducer tests elsewhere | 1 legacy, 3 product | The 794-line legacy and 962-line product paths remain simultaneously packaged. Resolving them is product graduation, not file-size cleanup. |
+| Session view subsystem | 7,470 across the facade and eight child owners | 2,509 across six child files | 7 on `hub.rs` | The Tactical `080` shape remains healthy. New ETA behavior landed in its own pure child without restoring bidirectional knowledge. |
+| `ApplicationService` | about 4,596 | about 5,819 inline | 48 | Strongest general convergence and navigation pressure. The lifecycle owner remains legitimate, but callback adapters and unrelated fixture families have concrete private seams. Tactical `114` owns replacement of the single-active-torrent core, so do not pre-empt it with an umbrella extraction. |
+| `SessionNetworkRuntime` | 2,303 | application-level fixtures live in `application.rs` | 15 | Tactical `112` reused one reconciler for independent family sockets, DHT, endpoint state, and cancellation without a second task or channel. Tactical `113` kept pinhole state in the separate reachability coordinator; the network owner remains cohesive. |
+| UPnP protocol plus session reachability | about 1,865 engine protocol and 1,650 session coordinator | about 887 and 828 respectively | 4 protocol, 6 coordinator | Tactical `113` shared bounded root discovery while retaining independent service clients and mechanism slots. The typed physical `606` was safely isolated and observable. Revisit only if a third mechanism or independently changing URL/transport policy appears. |
+| `SessionStore` | about 5,485 | about 3,192 | 21 | Strong persistence candidate. Schema 16, complete DDL, historical data migrations, settings migrations, and independently changing mutations/decoders remain under one connection owner. Tactical `114` makes schema/migration extraction the best-timed preparatory seam before queue schema 17. |
+| Gateway HTTP, application WebSocket, and first-run web authentication | about 4,306 across four owners | about 2,572 | 5 on `lib.rs` | The transport split remains useful, and authentication landed in focused policy/HTTP modules. Large integration tests have navigation pressure, but the recent owner shape should settle. |
+| Web `LiveApplication` | 1,617 | 1,204 in its test file | 12 | Connection/view intent and pure mapping/transition behavior remain separable; no reconnection or store rewrite is implied. |
+| Web semantic validation | 2,478 | 961 in its test file | 15 | Strongest web-only candidate. Connection frames, settings, DHT, torrent/file/tracker/peer/swarm views, diagnostics, pieces, and disk semantics still share one hand-authored module. |
+| Web `VirtualTable` | 1,332 | 613 in its test file | 2 | Action policy is outside it; pure sorting/configuration/range selection remain extractable, but current churn is low. |
+| Android diagnostic plus product services | 1,870 across two Kotlin services | focused product reducer tests elsewhere | 1 legacy, 4 product | The 794-line legacy and 1,076-line product paths remain simultaneously packaged. Resolving them is product graduation, not file-size cleanup. |
 
 The snapshot is a map, not a ranked size queue. The application and store
 remain strongest because they combine sustained growth with distinct helper
-and fixture families. MSE creates a new peer-bootstrap candidate from a
-specific before/after responsibility split, not from line count alone.
-`SelectiveStorage` remains concrete but moves down on timing because only two
-of the last 200 commits touched it. The session-network, view, gateway-auth,
-and DHT owners have now passed their dual-family feature test and should remain
+and fixture families; the store is now better timed because Tactical `114`
+must add queue facts, while the tactical itself owns the application's
+admission rewrite. MSE creates the peer-bootstrap candidate from a specific
+before/after responsibility split, not from line count alone.
+`SelectiveStorage` remains concrete but lower-timed because only two of the
+last 200 commits touched it. The session-network, reachability, view, gateway-
+auth, and DHT owners have passed their latest feature tests and should remain
 intact unless later work exposes an independently changing policy, dependency,
 or lifecycle defect.
 
@@ -330,7 +365,7 @@ interfaces and error behavior. Durable view-state construction is a related
 pure mapping seam but should move only if it produces a one-way dependency,
 not merely to increase the extracted line count.
 
-The approximately 5,673-line inline test module is independent evidence for
+The approximately 5,819-line inline test module is independent evidence for
 the same boundary. It now contains distinct HTTP/HTTPS tracker fixtures,
 session-network/settings generations, DHT lifetime, command/view delivery,
 recheck and resume, selection-independent checking, file-priority lifecycle,
@@ -341,10 +376,15 @@ cases belong in a named application-test child because they deliberately
 exercise `ApplicationService`; they should not be rewritten as white-box tests
 of the network owner.
 
-This is the strongest current standalone source-shape story. It must not move
-store, torrent-runtime, network, or view ownership into the callback modules,
-and it must not combine removal, platform-storage, and command dispatch into
-one broad rewrite.
+This remains the strongest general standalone source-shape story, but it is no
+longer the best-timed preparation for the authoritative queue. Tactical `114`
+must replace the single-active-torrent fields and start/reconcile paths in this
+same production file. Do not extract an admission owner speculatively ahead of
+that feature. Categorizing unchanged tests is useful only if the first bounded
+move isolates fixture families the tactical will extend; callback extraction
+can remain an independent later slice. Neither may move store, torrent-runtime,
+network, or view ownership into the callback modules or combine removal,
+platform-storage, and command dispatch into one broad rewrite.
 
 ### 2. Session Store Schema And Domain Internals
 
@@ -361,10 +401,12 @@ storage-root readers and command mutations. Move schema constants, migration-
 only observations, and migration functions to a private child with exact
 version, transaction, rollback, corruption, filesystem-fact, and ephemeral-
 profile tests. Do not introduce a migration framework or make migrations own
-the connection. Tactical `112` has now consumed schema 16 and planned Tactical
-`114` adds queue facts, making this the most strategically timed standalone
-persistence extraction if the authoritative feature queue is explicitly
-paused for structural work.
+the connection. Tactical `112` consumed schema 16, Tactical `113` added no
+migration, and planned Tactical `114` adds queue facts and settings in schema
+17. This is therefore the best-timed structural preparation: land a behavior-
+preserving private extraction as the first logical slice before adding the new
+schema, whether recorded inside Tactical `114` once authorized or selected as
+one explicitly bounded prerequisite tactical.
 
 Later store stories should remain separate unless a feature proves they
 change together:
@@ -407,7 +449,7 @@ prerequisite.
 ### 4. Web Semantic Boundaries
 
 The web candidates are independent and should not be bundled automatically.
-The strongest is `validation.ts`: 2,276 lines and 13 recent touches now place
+The strongest is `validation.ts`: 2,478 lines and 15 recent touches now place
 API connection frames, settings, DHT, torrent/file/tracker/peer/swarm views,
 diagnostics, pieces, and disk pipelines behind one hand-authored semantic
 validator. Split those domains into private modules behind the same public
@@ -418,7 +460,7 @@ framework change is implied.
 
 `LiveApplication` has a second clear seam: its class owns client connection,
 commands, desired views, and lifecycle through the first 592 lines, while the
-rest of the now 1,610-line file maps and transitions generated view values into
+rest of the now 1,617-line file maps and transitions generated view values into
 product models. Move that pure mapping layer only when the next projection
 changes it or when a standalone web refactor is selected; do not change store
 or reconnection semantics at the same time.
@@ -426,7 +468,7 @@ or reconnection semantics at the same time.
 `VirtualTable` is lower priority. Tactical `085` has removed feature action
 policy, leaving a bounded opportunity to extract pure sorting, persisted
 configuration, and range-selection algorithms while React retains focus,
-measurement, resize, virtualization, and rendering. Only three of the last 200
+measurement, resize, virtualization, and rendering. Only two of the last 200
 commits touched it; do not adopt a data grid or generic state framework merely
 to reduce the component.
 
@@ -458,7 +500,7 @@ default engine cleanup while dual-stack transport is active.
 
 ### 6. Direct-Engine Discovery Compatibility Boundary
 
-The driver facade is now 6,379 physical lines including interspersed test
+The driver facade is now 6,453 physical lines including interspersed test
 support and received 25 touches in the current window. Its private
 `TrackerManager`, direct DHT retry path, content
 discovery tasks, and metadata coordinator are now separable from the
@@ -479,8 +521,8 @@ session advertisement owner a dependency of the download driver.
 
 The Android application still lives under
 `experiments/android-engine-bootstrap`. The 794-line legacy `EngineService`
-has one touch in the current 200-commit window, while the 962-line
-`ProductEngineService` has three and remains the active Compose/application
+has one touch in the current 200-commit window, while the 1,076-line
+`ProductEngineService` has four and remains the active Compose/application
 path; both remain in the manifest, and `MainActivity` can still invoke both.
 Tactical `098` initializes platform trust before either service constructs
 native network owners, and Tactical `111`'s successful physical product-MSE
@@ -495,28 +537,33 @@ mix that decision into an engine, TLS, or storage refactor.
 
 ## Watch List And Deliberate Non-Work
 
-- **Session network and dual-stack DHT:** Tactical `097` created one cohesive
-  runtime owner, and later settings reused its reconciler without adding a
-  second task or channel. Tactical `112` successfully exercised its transport-
-  generation and single-DHT-actor boundaries with a second family. Do not
-  split transport, mapping, DHT, discovery, or settings reconciliation by
-  family. Revisit the DHT actor only when new behavior owns an independent
-  policy or cannot be tested without unrelated runtime setup; Tactical `113`
-  belongs to the already separate reachability coordinator.
-- **Download control and future session admission:** `DownloadControl` now
+- **Session network, reachability, and dual-stack DHT:** Tactical `097` created
+  one cohesive runtime owner, and later settings reused its reconciler without
+  adding a second task or channel. Tactical `112` exercised its transport-
+  generation and single-DHT-actor boundaries with a second family. Tactical
+  `113` then kept two gateway mechanisms in the already separate reachability
+  coordinator while sharing bounded root discovery in the protocol client.
+  Do not split transport, mapping, pinhole, DHT, discovery, or settings
+  reconciliation by family. The physical `606` records an unsupported gateway
+  action, not an ownership defect. Revisit the DHT actor only when new behavior
+  owns an independent policy or cannot be tested without unrelated runtime
+  setup; revisit UPnP/reachability if a third mechanism or independently
+  changing control-transport policy appears.
+- **Download control and session admission:** `DownloadControl` now
   spans cancellation, checker state, peer/metadata diagnostics, storage
-  pressure, and resource accounting. Planned Tactical `114` explicitly moves
-  memory, disk/hash, and connection authority above individual torrents.
-  Let that feature identify the retained per-download observation boundary;
-  do not pre-invent a generic resource manager or split coherent counters from
-  the transitions that update them.
+  pressure, and resource accounting. Authoritative, not-started Tactical `114`
+  explicitly moves memory, disk/hash, and connection authority above
+  individual torrents and replaces the application's single active slot. Let
+  that feature identify the retained per-download observation boundary and
+  admission owner; do not pre-invent a generic resource manager or split
+  coherent counters from the transitions that update them.
 - **Swarm state:** its scheduling, request generations, piece bookkeeping, and
   storage completion remain one deterministic invariant set after the
   independently changing activation policy moved to `piece_picker`. Consider
   another extraction only when a policy changes independently or tests
   require unrelated setup.
 - **Session views:** Tactical `080` remains healthy after subsequent settings,
-  DHT, tracker, ETA, and product-view additions. The 2,090-line hub is still
+  DHT, tracker, ETA, and product-view additions. The 2,121-line hub is still
   one coordinator, not a size-driven candidate; new ETA behavior already owns
   an independent pure child.
 - **Gateway:** HTTP routes, the multiplexed application WebSocket, and first-
@@ -533,25 +580,30 @@ mix that decision into an engine, TLS, or storage refactor.
 
 ## Near-Term Recommendation
 
-Do not open a repository-wide umbrella refactor or delay authoritative
-Tactical `113` for a speculative network or DHT split. Tactical `112` already
-proved family independence through the current `SessionNetworkRuntime`,
-socket, UDP, incoming, peer-connect, and DHT owners. Tactical `113` has a
-different concrete seam: shared bounded gateway discovery feeding independent
-IPv4-mapping and IPv6-firewall clients inside the existing reachability
-coordinator. Let that feature own the small protocol-boundary refactor already
-specified by its Gate 1.
+Do not open a repository-wide umbrella refactor. Tactical `113` is closed with
+positive physical capability unknown on the available hardware, and its
+implementation validates the existing UPnP/reachability shape: shared bounded
+discovery, independent service clients and mechanism slots, one coordinator,
+and typed failure. No follow-on network, DHT, gateway-transport, or reachability
+split is warranted by that result.
 
-If the authoritative queue is explicitly paused for one standalone structural
-tactical, the strongest general story remains application callback adapters
-plus categorized tests. The most strategically timed bounded alternative is
-the `SessionStore` schema/migration extraction because schema 16 is landed and
-planned queue facts are next. Before Tactical `114`, revisit the application
-boundary because that feature replaces its single-active-torrent core. DHT
-actor extraction is not promoted above those candidates: its second family
+Tactical `114` is the authoritative, not-started **Now** and directly owns the
+next large application/resource boundary. If it is selected for implementation,
+make a behavior-preserving private `SessionStore` schema/migration extraction
+its first logical commit before adding queue schema 17. This keeps one
+connection and transaction authority while isolating the exact code that the
+new durable queue facts must change. Then add the pure scheduler and admission
+owner through Tactical `114`; do not pre-extract a speculative application
+coordinator. Categorize only the application fixture families the tactical
+needs when that creates a reviewable, low-collision slice.
+
+If the feature queue is instead explicitly paused for one unrelated standalone
+structural tactical, application callback adapters plus categorized tests
+remain the strongest general story. Peer bootstrap is the strongest engine-
+specific story. DHT actor extraction is not promoted: its second family
 increased size but did not reveal a second owner. Web validation and immutable
 storage geometry remain independent lower-timed candidates. Do not combine
-any of these merely to amortize validation.
+these stories merely to amortize validation.
 
 ## Maintenance Contract
 
@@ -574,6 +626,16 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-09:** Refreshed the repository snapshot at source commit
+  `4f0ba8d`, ten commits after `f8f2671`, after Tactical `113` closed evidence-
+  limited and Tactical `114` became the authoritative, not-started **Now**.
+  Shared UPnP root discovery, independent IPv4/IPv6 service clients, and one
+  two-slot reachability coordinator handled the physical gateway's typed `606`
+  without exposing a new source, task, or crate boundary. Application callback
+  and test topology remains the strongest general standalone candidate, but
+  Tactical `114` owns its admission rewrite. Because that tactical must add
+  queue facts to schema 16, a behavior-preserving store schema/migration
+  extraction is now the best-timed first structural slice.
 - **2026-08-09:** Refreshed the repository snapshot at source commit
   `f8f2671`, 16 commits after `0b25152` and after Tactical `112` completed.
   Dual-stack transport preserved one session-network reconciler and one UDP
