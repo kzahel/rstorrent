@@ -69,6 +69,7 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_encryption: settings.encryption,
+            effective_ipv6_enabled: settings.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -78,6 +79,7 @@ impl ClientSettingsRuntimeView {
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
             encryption_application: ClientSettingsApplicationState::Applied,
+            ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
@@ -96,6 +98,7 @@ impl ClientSettingsRuntimeView {
         self.peer_connections_application = ClientSettingsApplicationState::Applying;
         self.upload_slots_application = ClientSettingsApplicationState::Applying;
         self.encryption_application = ClientSettingsApplicationState::Applying;
+        self.ipv6_application = ClientSettingsApplicationState::Applying;
         self.tracker_https_authentication_application = ClientSettingsApplicationState::Applying;
     }
 
@@ -123,6 +126,7 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit,
             effective_upload_slots: active.upload_slots,
             effective_encryption: active.encryption,
+            effective_ipv6_enabled: active.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(
                 active.tracker_https_server_authentication,
             ),
@@ -141,6 +145,7 @@ impl ClientSettingsRuntimeView {
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
             encryption_application: ClientSettingsApplicationState::Applied,
+            ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status,
             session_udp_status,

@@ -1,7 +1,7 @@
 # Tactical 112: Dual-Stack Session Transport And IPv6 DHT Participation
 
 Status: Authoritative **Now**, implementation in progress on 2026-08-09.
-Gates 1 and 2 are complete. The plan was source-reconciled after Tactical `111`
+Gates 1 through 3 are complete. The plan was source-reconciled after Tactical `111`
 graduated; the two-tactical split, IPv6 bind-address strategy, and settings
 shape and default were accepted in product discussion on 2026-08-08.
 
@@ -771,3 +771,38 @@ Validation:
   rapid_client_settings_changes_converge_only_to_latest_generation --lib`
   (1 passed); and
 - `git diff --check`.
+
+### Gate 3: One actor with independent family nodes
+
+Completed on 2026-08-09. The one DHT actor now reconciles one `DhtNode` for
+each family present in the session UDP transport. Each node independently owns
+its BEP 42 identity, routing table, token secrets, bootstrap state, refresh
+timers, query-rate windows, and external-address votes. Transactions retain
+both their logical owner family and wire family, and the active transaction
+and lookup ceilings are enforced per logical family. Removing one UDP family
+retires only that node and its family-bound work; restoring the same bound
+address restores its identity without restarting the actor.
+
+Product lookups fan out to every active family and merge useful terminal
+results while the stored-peer table remains keyed by `(info_hash, family)`.
+Native-family queries omit `want`; controlled cross-family queries request the
+logical node's own family. Incoming queries without `want` receive only their
+wire-family table, while explicit `n4`, `n6`, or both requests receive exactly
+the requested `nodes` keys. Responses never emit hybrid peer values.
+
+The persisted snapshot is version 2 and stores bounded address-keyed identity
+records plus both routing samples. Version 1 remains accepted as a legacy IPv4
+identity hint while IPv6 starts with a fresh address-derived identity. Session
+schema version 16 adds the bounded identity table and the default-enabled
+`ipv6_enabled` field; transport enforcement and the product control remain
+Gate 5 work.
+
+Validation:
+
+- `cargo test -p rstorrent-protocol dht --lib` (8 passed);
+- `cargo test -p rstorrent-engine dht --lib` (29 passed, 2 ignored live tests);
+- `cargo test -p rstorrent-session
+  dht_snapshot_round_trips_and_rejects_corrupt_rows --lib` (1 passed);
+- `cargo test -p rstorrent-session settings::tests --lib` (11 passed before
+  the additional schema-15 migration assertion); and
+- `cargo check --workspace`.

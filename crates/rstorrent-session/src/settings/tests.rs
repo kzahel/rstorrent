@@ -185,6 +185,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         peer_connection_limit: 500,
         upload_slots: 1,
         encryption: EncryptionPolicy::Required,
+        ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
     };
     let view = ClientSettingsRuntimeView {
@@ -197,6 +198,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         effective_peer_connection_limit: 120,
         effective_upload_slots: 8,
         effective_encryption: Default::default(),
+        effective_ipv6_enabled: true,
         effective_tracker_https_server_authentication: Some(
             HttpsServerAuthenticationPolicy::SystemTrust,
         ),
@@ -205,6 +207,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         peer_connections_application: ClientSettingsApplicationState::Applied,
         upload_slots_application: ClientSettingsApplicationState::Applied,
         encryption_application: ClientSettingsApplicationState::Applied,
+        ipv6_application: ClientSettingsApplicationState::Applying,
         tracker_https_authentication_application: ClientSettingsApplicationState::Applying,
         listener_status: ListenerStatus::Listening {
             address: "127.0.0.1".to_owned(),
@@ -247,7 +250,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
 }
 
 #[test]
-fn version_fourteen_settings_migrate_to_allow_and_reject_unknown_values() {
+fn version_fourteen_settings_migrate_to_allow_and_ipv6_enabled() {
     let mut connection = Connection::open_in_memory().unwrap();
     connection
         .execute_batch(
@@ -268,11 +271,13 @@ fn version_fourteen_settings_migrate_to_allow_and_reject_unknown_values() {
         .unwrap();
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v15(&transaction).unwrap();
+    super::migrate_client_settings_to_v16(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap().encryption,
         EncryptionPolicy::Allow
     );
+    assert!(read_client_settings(&connection).unwrap().ipv6_enabled);
 
     connection
         .execute_batch(
@@ -285,6 +290,36 @@ fn version_fourteen_settings_migrate_to_allow_and_reject_unknown_values() {
         Err(SettingsPersistenceError::Corrupt(message))
             if message.contains("encryption policy")
     ));
+}
+
+#[test]
+fn version_fifteen_settings_preserve_encryption_and_enable_ipv6() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE client_settings (
+                singleton INTEGER PRIMARY KEY,
+                listener_mode TEXT NOT NULL,
+                listener_port INTEGER,
+                preferred_listen_port INTEGER NOT NULL,
+                port_mapping_mode TEXT NOT NULL,
+                peer_connection_limit INTEGER NOT NULL,
+                upload_slots INTEGER NOT NULL,
+                encryption TEXT NOT NULL,
+                tracker_https_server_authentication TEXT NOT NULL
+             );
+             INSERT INTO client_settings VALUES
+                (1, 'automatic_loopback', NULL, 6881, 'disabled', 321, 3,
+                 'required', 'system_trust');",
+        )
+        .unwrap();
+    let transaction = connection.transaction().unwrap();
+    super::migrate_client_settings_to_v16(&transaction).unwrap();
+    transaction.commit().unwrap();
+
+    let settings = read_client_settings(&connection).unwrap();
+    assert_eq!(settings.encryption, EncryptionPolicy::Required);
+    assert!(settings.ipv6_enabled);
 }
 
 #[test]
@@ -341,6 +376,7 @@ fn typed_persistence_round_trips_one_atomic_group() {
         peer_connection_limit: 1,
         upload_slots: 0,
         encryption: Default::default(),
+        ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
     };
     assert!(replace_client_settings(&transaction, &configured).unwrap());
@@ -379,6 +415,7 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
             peer_connection_limit: 321,
             upload_slots: 3,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     );
@@ -414,6 +451,7 @@ fn version_ten_settings_migrate_with_the_preferred_port_default() {
             peer_connection_limit: 444,
             upload_slots: 5,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     );

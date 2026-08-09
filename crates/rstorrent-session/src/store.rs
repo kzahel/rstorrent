@@ -1,9 +1,10 @@
 use std::error::Error;
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rstorrent_engine::dht::DhtSnapshot;
+use rstorrent_engine::dht::{DhtIdentity, DhtSnapshot};
 use rstorrent_engine::{
     PreparedFileHash, PublicationShape, plan_descriptor_storage,
     torrent_storage_paths_for_metainfo, validate_publication_name,
@@ -38,10 +39,10 @@ use crate::settings::{
     ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot, create_client_settings, migrate_client_settings_to_v10,
     migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
-    read_client_settings, replace_client_settings,
+    migrate_client_settings_to_v16, read_client_settings, replace_client_settings,
 };
 
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -67,6 +68,19 @@ const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         PRIMARY KEY (family, sample_order),
         UNIQUE (family, node_id),
         UNIQUE (family, address, port)
+     ) WITHOUT ROWID;
+     CREATE TABLE dht_identities (
+        family INTEGER NOT NULL CHECK (family IN (4, 6)),
+        identity_order INTEGER NOT NULL CHECK (
+            identity_order >= 0 AND identity_order < 8
+        ),
+        address BLOB NOT NULL CHECK (
+            (family = 4 AND length(address) = 4) OR
+            (family = 6 AND length(address) = 16)
+        ),
+        node_id BLOB NOT NULL CHECK (length(node_id) = 20),
+        PRIMARY KEY (family, identity_order),
+        UNIQUE (family, address)
      ) WITHOUT ROWID;";
 const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
         info_hash BLOB PRIMARY KEY
@@ -676,9 +690,62 @@ impl SessionStore {
                 nodes_v6.push(contact);
             }
         }
+        let mut identity_statement = self.connection.prepare(
+            "SELECT family, address, node_id
+             FROM dht_identities ORDER BY family, identity_order",
+        )?;
+        let identity_rows = identity_statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        let mut identities_v4 = Vec::new();
+        let mut identities_v6 = Vec::new();
+        for row in identity_rows {
+            let (family, address, identity_node_id) = row?;
+            let node_id = NodeId(identity_node_id.try_into().map_err(|_| {
+                StoreError::DurableState("invalid persisted DHT identity node ID".to_owned())
+            })?);
+            let identity = match family {
+                4 => DhtIdentity {
+                    address: IpAddr::V4(Ipv4Addr::from(<[u8; 4]>::try_from(address).map_err(
+                        |_| {
+                            StoreError::DurableState(
+                                "invalid persisted DHT identity IPv4 address".to_owned(),
+                            )
+                        },
+                    )?)),
+                    node_id,
+                },
+                6 => DhtIdentity {
+                    address: IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(address).map_err(
+                        |_| {
+                            StoreError::DurableState(
+                                "invalid persisted DHT identity IPv6 address".to_owned(),
+                            )
+                        },
+                    )?)),
+                    node_id,
+                },
+                _ => {
+                    return Err(StoreError::DurableState(
+                        "invalid persisted DHT identity family".to_owned(),
+                    ));
+                }
+            };
+            if family == 4 {
+                identities_v4.push(identity);
+            } else {
+                identities_v6.push(identity);
+            }
+        }
         DhtSnapshot {
             version,
-            node_id,
+            legacy_node_id: (version == 1).then_some(node_id),
+            identities_v4,
+            identities_v6,
             nodes_v4,
             nodes_v6,
         }
@@ -692,13 +759,51 @@ impl SessionStore {
             .validate()
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM dht_identities", [])?;
         transaction.execute("DELETE FROM dht_nodes", [])?;
         transaction.execute("DELETE FROM dht_state", [])?;
         transaction.execute(
             "INSERT INTO dht_state(singleton, format_version, node_id)
              VALUES (1, ?1, ?2)",
-            params![i64::from(snapshot.version), snapshot.node_id.0.as_slice()],
+            params![
+                i64::from(snapshot.version),
+                snapshot
+                    .legacy_node_id
+                    .or_else(|| snapshot
+                        .identities_v4
+                        .first()
+                        .map(|identity| identity.node_id))
+                    .or_else(|| snapshot
+                        .identities_v6
+                        .first()
+                        .map(|identity| identity.node_id))
+                    .unwrap_or(NodeId([1; 20]))
+                    .0
+                    .as_slice()
+            ],
         )?;
+        for (family, identities) in [
+            (4_i64, snapshot.identities_v4.clone()),
+            (6_i64, snapshot.identities_v6.clone()),
+        ] {
+            for (order, identity) in identities.into_iter().enumerate() {
+                let address = match identity.address {
+                    IpAddr::V4(address) => address.octets().to_vec(),
+                    IpAddr::V6(address) => address.octets().to_vec(),
+                };
+                transaction.execute(
+                    "INSERT INTO dht_identities(
+                        family, identity_order, address, node_id
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        family,
+                        i64::try_from(order).expect("DHT identity order is bounded"),
+                        address,
+                        identity.node_id.0.as_slice(),
+                    ],
+                )?;
+            }
+        }
         for (family, nodes) in [(4_i64, snapshot.nodes_v4), (6_i64, snapshot.nodes_v6)] {
             for (order, node) in nodes.into_iter().enumerate() {
                 let address = match node.address.ip {
@@ -2560,6 +2665,9 @@ fn migrate(
     if (1..=14).contains(&version) {
         migrate_client_settings_to_v15_store(connection)?;
     }
+    if (1..=15).contains(&version) {
+        migrate_dual_stack_state_to_v16(connection)?;
+    }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
         [],
@@ -3173,6 +3281,29 @@ fn migrate_client_settings_to_v15_store(connection: &mut Connection) -> Result<(
     let transaction = connection.transaction()?;
     migrate_client_settings_to_v15(&transaction)?;
     transaction.pragma_update(None, "user_version", 15)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn migrate_dual_stack_state_to_v16(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection.transaction()?;
+    migrate_client_settings_to_v16(&transaction)?;
+    transaction.execute_batch(
+        "CREATE TABLE dht_identities (
+            family INTEGER NOT NULL CHECK (family IN (4, 6)),
+            identity_order INTEGER NOT NULL CHECK (
+                identity_order >= 0 AND identity_order < 8
+            ),
+            address BLOB NOT NULL CHECK (
+                (family = 4 AND length(address) = 4) OR
+                (family = 6 AND length(address) = 16)
+            ),
+            node_id BLOB NOT NULL CHECK (length(node_id) = 20),
+            PRIMARY KEY (family, identity_order),
+            UNIQUE (family, address)
+         ) WITHOUT ROWID;",
+    )?;
+    transaction.pragma_update(None, "user_version", 16)?;
     transaction.commit()?;
     Ok(())
 }
@@ -5355,11 +5486,12 @@ fn internal_message(message: &str) -> (ErrorCode, String) {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_engine::PreparedFileHash;
-    use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtSnapshot};
+    use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtIdentity, DhtSnapshot};
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
     use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet};
     use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
@@ -6916,7 +7048,15 @@ mod tests {
         assert_eq!(store.load_dht_snapshot().expect("empty state"), None);
         let snapshot = DhtSnapshot {
             version: DHT_SNAPSHOT_VERSION,
-            node_id: NodeId([1; 20]),
+            legacy_node_id: None,
+            identities_v4: vec![DhtIdentity {
+                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                node_id: NodeId([1; 20]),
+            }],
+            identities_v6: vec![DhtIdentity {
+                address: IpAddr::V6(Ipv6Addr::LOCALHOST),
+                node_id: NodeId([6; 20]),
+            }],
             nodes_v4: vec![NodeContact {
                 id: NodeId([2; 20]),
                 address: DhtEndpoint::new(DhtIp::V4([127, 0, 0, 1]), 6881),
@@ -8320,6 +8460,7 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 3,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
         };
         let request = RequestEnvelope {

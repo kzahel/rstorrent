@@ -20,6 +20,8 @@ pub const GOOD_NODE_AGE_SECONDS: u64 = 15 * 60;
 pub const MAX_NODE_FAILURES: u8 = 2;
 
 const CLIENT_VERSION: &[u8; 4] = b"RS01";
+const BEP42_V4_MASK: [u8; 4] = [0x03, 0x0f, 0x3f, 0xff];
+const BEP42_V6_MASK: [u8; 8] = [0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f, 0xff];
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeId(pub [u8; NODE_ID_LENGTH]);
@@ -837,9 +839,9 @@ fn bep42_crc(address: DhtIp, r: u8) -> u32 {
         DhtIp::V6(address) => address[..8].to_vec(),
     };
     let mask: &[u8] = if bytes.len() == 4 {
-        &[0x03, 0x0f, 0x3f, 0xff]
+        &BEP42_V4_MASK
     } else {
-        &[0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f, 0xff]
+        &BEP42_V6_MASK
     };
     for (byte, mask) in bytes.iter_mut().zip(mask) {
         *byte &= mask;
@@ -1251,6 +1253,21 @@ mod tests {
             assert_eq!(generated.0[19], last);
             assert!(verify_bep42_id(generated, DhtIp::V4(address)));
         }
+    }
+
+    #[test]
+    fn bep42_ipv6_mask_matches_pinned_libtorrent() {
+        assert_eq!(
+            BEP42_V6_MASK,
+            [0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f, 0xff]
+        );
+        let address = DhtIp::V6([
+            0x20, 1, 0x0d, 0xb8, 0xab, 0xcd, 0xef, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        ]);
+        let mut random = [0x55; 20];
+        random[19] = 6;
+        let generated = generate_bep42_id(address, random);
+        assert!(verify_bep42_id(generated, address));
     }
 
     #[test]

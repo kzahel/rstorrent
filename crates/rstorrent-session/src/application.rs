@@ -6988,6 +6988,7 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 3,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
         };
         service
@@ -9478,6 +9479,7 @@ mod tests {
                 peer_connection_limit: 1,
                 upload_slots: 1,
                 encryption: Default::default(),
+                ipv6_enabled: true,
                 tracker_https_server_authentication: Default::default(),
             },
         );
@@ -9659,6 +9661,7 @@ mod tests {
             peer_connection_limit: 1,
             upload_slots: 1,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
         };
         first
@@ -10111,6 +10114,7 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 0,
             encryption: Default::default(),
+            ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
         };
         let response = conflicted

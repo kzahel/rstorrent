@@ -102,6 +102,7 @@ pub struct ClientSettings {
     #[schemars(range(min = 0, max = 50))]
     pub upload_slots: u16,
     pub encryption: EncryptionPolicy,
+    pub ipv6_enabled: bool,
     pub tracker_https_server_authentication: HttpsServerAuthenticationPolicy,
 }
 
@@ -116,6 +117,7 @@ impl Default for ClientSettings {
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
                 .expect("engine upload-slot default fits the settings contract"),
             encryption: EncryptionPolicy::Allow,
+            ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
         }
     }
@@ -404,6 +406,7 @@ pub struct ClientSettingsRuntimeView {
     pub effective_peer_connection_limit: u32,
     pub effective_upload_slots: u16,
     pub effective_encryption: EncryptionPolicy,
+    pub effective_ipv6_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_tracker_https_server_authentication: Option<HttpsServerAuthenticationPolicy>,
     pub transport_application: ClientSettingsApplicationState,
@@ -411,6 +414,7 @@ pub struct ClientSettingsRuntimeView {
     pub peer_connections_application: ClientSettingsApplicationState,
     pub upload_slots_application: ClientSettingsApplicationState,
     pub encryption_application: ClientSettingsApplicationState,
+    pub ipv6_application: ClientSettingsApplicationState,
     pub tracker_https_authentication_application: ClientSettingsApplicationState,
     pub listener_status: ListenerStatus,
     pub session_udp_status: SessionUdpStatus,
@@ -427,6 +431,7 @@ impl Default for ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_encryption: settings.encryption,
+            effective_ipv6_enabled: settings.ipv6_enabled,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -436,6 +441,7 @@ impl Default for ClientSettingsRuntimeView {
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
             encryption_application: ClientSettingsApplicationState::Applied,
+            ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
@@ -457,6 +463,7 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_encryption: settings.encryption,
+            effective_ipv6_enabled: false,
             effective_tracker_https_server_authentication: Some(
                 settings.tracker_https_server_authentication,
             ),
@@ -466,6 +473,7 @@ impl ClientSettingsRuntimeView {
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
             encryption_application: ClientSettingsApplicationState::Applied,
+            ipv6_application: ClientSettingsApplicationState::Applying,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
