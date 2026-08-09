@@ -8,8 +8,10 @@ controlled IPv6 DHT-only interoperability, bounded public dual-family
 metadata, Android cross-build, and API 34 AVD policy/restart gates passed on
 2026-08-09. Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) is
-the single authoritative **Now**, planned and not started. The completed maximum-
-throughput storage campaign remains recorded in
+the single authoritative **Now**. Its protocol client, coordinated runtime,
+product projection, and physical harness are implemented; graduation awaits
+the opt-in off-LAN gateway mutation and incoming-transfer proof. The completed
+maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
 gate.
@@ -318,9 +320,9 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `112` graduated; Tactical `113` is the active
-planned IPv6 firewall-pinhole/incoming-reachability slice and has not started
-implementation**.
+Campaign state: **Tactical `112` graduated; Tactical `113` is implemented
+through its deterministic, scripted-gateway, product-contract, web, and
+physical-harness gates but awaits its opt-in live gateway evidence**.
 
 Latest graduated tactical:
 [`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).
@@ -334,17 +336,19 @@ profile pass. The named API 37 Pixel 7a subsequently passed the same default,
 disable, forced-restart persistence, degraded re-enable, and cleanup assertions
 on its current network; no incoming IPv6 reachability is claimed.
 
-Current milestone: execute Tactical
+Current milestone: finish Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
-through its three independently committable gates. Its source dossier and
-read-only gateway evidence are already reconciled; the slice must keep IPv4
-mapping and IPv6 pinhole state independent under the existing coordinator.
+through its final physical evidence and graduation step. Commits `6e4bb80`,
+`51c3644`, and `845f388` implement independent IPv4 mapping and IPv6 pinhole
+slots under the existing coordinator, bounded service/lease/uncertainty
+behavior, generated product state, and an identity-free physical harness.
 
-Next executable action: implement Tactical `113` Gate 1, separating the
-existing bounded `upnp:rootdevice` discovery result into independent IPv4-
-mapping and IPv6-firewall service clients, then add the specified codec, fault,
-action-inventory, ambiguous-create, and scripted lifecycle tests without a
-live gateway mutation.
+Next executable action: supply the already-authorized off-LAN SSH target
+through `RSTORRENT_OFF_LAN_SSH_TARGET`, run
+`tests/interop/ipv6_pinhole_seeding.py`, and inspect any failure without
+retaining network identities. On success, record its exact bounded evidence,
+reconcile the owning topics, and graduate Tactical `113` before advancing the
+single **Now**.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

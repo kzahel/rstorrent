@@ -73,6 +73,19 @@ DHT advertisement may now carry the listener-backed `GlobalUnicast` endpoint,
 but no pinhole, gateway permission, or observed incoming IPv6 reachability is
 implied. Tactical `113` owns that next evidence boundary.
 
+Active Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+now implements that mechanism boundary without promoting the evidence claim.
+The existing generation-fenced reachability coordinator owns an independent
+finite-lease `WANIPv6FirewallControl:1` TCP-pinhole slot beside the IPv4
+mapping slot, shares one root-device discovery, and orders both cleanup paths
+before listener shutdown. `GlobalUnicast`, gateway-reported `Unfiltered`, and
+accepted `Pinholed` are distinct advertisement evidence; none is an observed
+incoming connection. Deterministic and scripted-gateway lifecycle,
+independence, uncertainty, and zero-owner tests pass. The identity-free
+physical harness is committed, but its opt-in off-LAN transfer and gateway
+cleanup proof remains to run before Tactical `113` graduates.
+
 ## Purpose And Scope
 
 This topic owns the vertical product story from a locally bound BitTorrent
@@ -754,8 +767,10 @@ case through controlled hash-verified transfers and Android product evidence.
 Tactical
 [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) now completes
 dual-stack listener allocation, per-family endpoint selection, IPv6 source
-binding, DHT participation, and live outbound evidence. IPv6 pinholes and
-off-network incoming IPv6 reachability remain Tactical `113`.
+binding, DHT participation, and live outbound evidence. Tactical `113` now
+implements the independent IPv6 firewall-pinhole owner and its physical gate;
+off-network incoming IPv6 reachability remains unclaimed until that opt-in gate
+passes.
 Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 now completes live convergence for listener, preferred port, UPnP mapping,

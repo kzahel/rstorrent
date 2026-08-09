@@ -535,12 +535,15 @@ that scope and its cleanup or compatibility rules explicitly.
   gates every IPv6 path behind one persisted `ipv6_enabled` setting defaulting
   to enabled. Claims no IPv6 incoming reachability.
 - [`113-ipv6-firewall-pinhole-and-incoming-reachability.md`](113-ipv6-firewall-pinhole-and-incoming-reachability.md):
-  planned; adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1` pinhole control
+  active **Now**; bounded UPnP IGD v2 `WANIPv6FirewallControl:1` pinhole control
   beside the existing IPv4 mapping under one reachability coordinator,
   distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
-  incoming evidence, and proves an off-LAN IPv6 peer hash-verifying payload
-  through it. The pinned oracle implements no pinhole support, so every
-  deterministic test is independently authored.
+  incoming evidence, and stages an off-LAN IPv6 peer hash-verifying proof.
+  Protocol, coordinator/product, and physical-harness commits pass their
+  deterministic, scripted, generated-contract, and web gates; live gateway
+  mutation and incoming-transfer evidence remain before graduation. The pinned
+  oracle implements no pinhole support, so every deterministic test is
+  independently authored.
 - [`114-session-wide-concurrent-torrent-admission.md`](114-session-wide-concurrent-torrent-admission.md):
   planned **Next** after the dual-stack/reachability sequence; replaces the
   single-active-torrent slot with bounded session-wide download/checking

@@ -77,6 +77,21 @@ document metadata, history, and each BEP's copyright section.
 Where deployed clients disagree with a specification, record the observed
 compatibility behavior rather than silently replacing the documented contract.
 
+Tactical
+[`113`](tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) uses
+the UPnP Forum's
+[`WANIPv6FirewallControl:1 Service — Standardized DCP, version 1.00, December
+10, 2010`](https://upnp.org/specs/gw/UPnP-gw-WANIPv6FirewallControl-v1-Service.pdf)
+as its normative pinhole source, especially sections 2.4.2--2.4.10,
+2.6.1--2.6.9, 3.4, and the section 4 service description. Shared SSDP, device
+description, URL, HTTP, SOAP, and Boolean behavior continues to follow the Open
+Connectivity Foundation's
+[`UPnP Device Architecture 2.0`, April
+17, 2020](https://openconnectivity.org/upnp-specs/UPnP-arch-DeviceArchitecture-v2.0-20200417.pdf).
+Neither document is vendored. The implementation and independently authored
+tests use the public wire behavior; no specification source or fixture was
+copied.
+
 ## License Posture
 
 This inventory was checked against the managed revisions on 2026-07-29. It

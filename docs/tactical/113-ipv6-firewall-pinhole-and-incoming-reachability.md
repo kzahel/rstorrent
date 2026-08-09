@@ -1,10 +1,14 @@
 # Tactical 113: IPv6 Firewall Pinhole And Incoming Reachability
 
-Status: Authoritative **Now**, planned on 2026-08-08 and source-reconciled on
-2026-08-09. Not started. The split from Tactical `112` and the decision to
-write this slice
-against read-only gateway evidence, deferring any mutating gateway action to
-implementation time, were accepted in product discussion on 2026-08-08.
+Status: Authoritative **Now**, planned on 2026-08-08, source-reconciled on
+2026-08-09, and implementation-complete through Gates 1 and 2 plus the Gate 3
+physical harness on 2026-08-09. Deterministic, scripted-gateway, generated-
+contract, and web evidence pass. The opt-in off-LAN gateway mutation and
+transfer proof remains to run, so this tactical is not yet graduated and no
+physical IPv6 incoming-reachability claim is made. The split from Tactical
+`112` and the decision to write this slice against read-only gateway evidence,
+deferring any mutating gateway action to implementation time, were accepted in
+product discussion on 2026-08-08.
 
 Topics: `incoming-reachability-and-seeding`, `protocol-support`,
 `dht-discovery`, `tracker-discovery`, `performance-and-live-evidence`,
@@ -546,6 +550,36 @@ Each gate is independently committable and leaves the workspace green.
    finite pinhole, transfer and hash-verify payload from the off-LAN peer,
    query the packet count, delete, prove `704`, and repeat the failed dial.
    Record bounded evidence and update every owning topic before graduation.
+
+## Implementation Evidence
+
+Gates 1 and 2 and the Gate 3 harness landed as independently reviewable
+commits:
+
+- `6e4bb80` adds the bounded `WANIPv6FirewallControl:1` client behind the
+  existing root-device discovery, including typed status, action inventory,
+  numeric protocol, lease, fault, ambiguous-create, renewal, delete, and
+  packet-count behavior.
+- `51c3644` adds the independent IPv6 mechanism slot to the existing
+  generation-fenced reachability coordinator, per-family advertisement
+  evidence, the generated application contract, and the shared web status
+  projection. Deterministic and scripted tests exercise both mechanisms
+  active, either mechanism failing independently, finite uncertainty, and
+  terminal cleanup.
+- `845f388` adds the opt-in `ipv6_pinhole_seeding.py` physical gate and the
+  doc-hidden, in-memory packet diagnostic it requires. The gate stages one
+  IPv6 listener, proves a pre-pinhole dial failure, enables the ordinary live
+  settings path, hash-verifies exactly 4,195,035 incoming payload bytes from an
+  off-LAN peer, requires a positive packet count, deletes while the listener
+  remains active, requires typed `704`, repeats the failed dial, and asserts
+  terminal zero ownership. It emits no address, gateway identity, control URL,
+  pinhole ID, or SSH target.
+
+The ordinary Rust workspace baseline, generated contract drift check, web
+typecheck, and web tests pass at this checkpoint. The physical gate's no-opt-in
+path exits with the expected structured skip because
+`RSTORRENT_OFF_LAN_SSH_TARGET` is not configured in the current shell. That
+skip is harness validation only; it does not satisfy the stopping condition.
 
 ## Validation Matrix
 

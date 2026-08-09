@@ -152,6 +152,17 @@ from configured intent or a port. The existing DHT view keeps its kind and
 bounds while each active family supplies an independent node observation. No
 view-contract version, lease, queue, cadence, task, or client-side address
 policy is added.
+Active Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+adds a sibling `ipv6_pinhole_status` to that complete client-settings value
+without widening or reinterpreting `port_mapping_status`. The closed status
+distinguishes policy-disabled, listener-ineligible, discovery and service/
+action availability, gateway-unfiltered, creating, active finite lease,
+renewal failure, cleanup failure, generic failure, and stopping. It carries
+only the selected IPv6 address, listener port, lease timing, and bounded fault
+detail appropriate to the phase; the gateway-assigned pinhole ID and control
+URL never cross the application boundary. The view owns no socket, lease,
+retry, discovery, or cleanup work.
 
 ## Purpose And Scope
 
@@ -1023,6 +1034,15 @@ The API 34 AVD reports configured enabled plus effective disabled as a typed
 degradation when no eligible global-unicast address exists. The named API 37
 Pixel 7a subsequently repeated the same default, disable, forced-restart,
 degraded re-enable, and cleanup assertions on its current network.
+
+Tactical `113` preserves complete replacement while projecting the two gateway
+mechanisms independently. Rust projection tests, generated TypeScript/schema/
+validators, and React fixtures cover simultaneous success/failure and the
+distinction between a gateway-accepted pinhole and an observed incoming peer.
+The doc-hidden physical diagnostic reports only a packet count or bounded
+fault for the currently in-memory active/deleted pinhole; production does not
+call it, and it exposes neither pinhole ID nor gateway identity. Physical
+off-LAN evidence remains pending.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

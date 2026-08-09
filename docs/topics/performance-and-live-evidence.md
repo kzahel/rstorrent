@@ -1280,6 +1280,25 @@ one `find_node`, three `get_peers`, two `announce_peer`, and eight query forms.
 Neither controlled loopback nor outbound public evidence claims an
 off-network incoming IPv6 TCP path; Tactical `113` owns that gate.
 
+## IPv6 Firewall-Pinhole Evidence Gate
+
+Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+adds an opt-in, identity-free physical gate rather than treating a successful
+SOAP response as reachability evidence. It preserves one listener while
+checking a pre-pinhole failed off-LAN dial, one finite pinhole created through
+the ordinary live settings path, a hash-verified exact 4,195,035-byte incoming
+transfer, positive gateway packet count, deletion, typed `704`, a post-delete
+failed dial, and terminal zero task/mapping/pinhole ownership. The ordinary
+production path performs no packet polling; the two diagnostics exist only in
+the retained test process and expose no gateway-assigned ID.
+
+The harness and deterministic/scripted resource assertions are implemented.
+The current environment lacks `RSTORRENT_OFF_LAN_SSH_TARGET`, so the harness's
+structured no-opt-in skip passes but the physical gate has not run. No timing,
+throughput, resource high-water, or incoming-reachability result is recorded
+until that authorized gateway mutation and off-LAN transfer complete.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

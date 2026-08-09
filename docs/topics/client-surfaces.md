@@ -60,6 +60,14 @@ and named API 37 Pixel 7a, but deliberately adds no Compose settings screen.
 The DHT inspection surface renders both
 families within its existing bounded view rather than adding a second page or
 client-owned inference.
+Active Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+adds no setting. Browser and Tauri render the existing IPv4 mapping status and
+the sibling IPv6 firewall-pinhole status independently, including service
+absence, gateway-reported unfiltered state, finite lease, renewal, and cleanup
+failure. Product wording says that an accepted pinhole is gateway evidence,
+not an observed incoming peer. Android receives the additive generated binding
+but deliberately gains no Compose surface or physical pinhole gate.
 Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an
@@ -468,9 +476,9 @@ future server.
   Android network binding and race analysis.
 - Android has no Compose connection/seeding settings screen. Tactical `084`
   deliberately stops at generated contract and build/test coverage there;
-  Tacticals `111`, `112`, and `115` follow the same boundary for MSE/PE policy,
-  IPv6 policy, and exact peer detail. Mobile restart UX and connectivity
-  policy require their own product slice.
+  Tacticals `111`, `112`, `113`, and `115` follow the same boundary for MSE/PE
+  policy, IPv6 policy and pinhole status, and exact peer detail. Mobile restart
+  UX and connectivity policy require their own product slice.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

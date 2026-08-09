@@ -373,6 +373,23 @@ uv run --project tests/interop --locked \
   python tests/interop/ipv6_dht.py
 ```
 
+The opt-in IPv6 firewall-pinhole gate requires the existing off-LAN verifier
+SSH alias or destination. It proves the negative control, creates one finite
+`WANIPv6FirewallControl:1` TCP pinhole through the ordinary live settings
+path, hash-verifies exact incoming payload, checks a positive packet count,
+deletes the pinhole while the listener remains active, requires typed `704`,
+and repeats the failed dial:
+
+```bash
+RSTORRENT_OFF_LAN_SSH_TARGET=YOUR_TARGET \
+  uv run --project tests/interop --locked \
+  python tests/interop/ipv6_pinhole_seeding.py
+```
+
+The harness never prints or persists the SSH target, listener address,
+gateway identity, control URL, or pinhole ID. Without the environment value it
+reports a structured skip and performs no build or gateway mutation.
+
 The opt-in public metadata-only profile starts one session UDP owner with both
 available families and records per-family DHT endpoints, routing thresholds,
 queries, responses, peer values, and datagram bytes. Public outcomes vary and

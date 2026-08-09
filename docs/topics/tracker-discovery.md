@@ -36,6 +36,13 @@ advertised endpoint and transport source family-selected. An eligible IPv6
 operation binds the probe-selected global-unicast source and advertises that
 family's real TCP listener port; an ineligible or disabled family retains
 port `1`. This changes no tracker schedule, fan-out, or operation bound.
+Active Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+refines that producer-owned IPv6 endpoint with `GlobalUnicast`, `Unfiltered`,
+or `Pinholed` evidence while preserving the same listener-backed wire port in
+all three cases. Tracker owners consume only the selected endpoint and do not
+own or infer gateway state. Scripted coverage passes; off-LAN incoming IPv6
+evidence remains pending.
 
 ## Scope
 
@@ -366,12 +373,14 @@ unconnectable compatibility sentinel rather than an endpoint.
 WebSocket transport, proxies, non-Basic authentication, BEP 41 URL data,
 scrape, custom roots/pins, client certificates, and a public-tracker
 reliability claim remain absent. IPv6 tracker connectivity, outbound peers,
-and a listener-backed family endpoint are usable. There is still no IPv6
-firewall-pinhole or observed incoming-reachability claim, and one tracker row
-still selects one operation family rather than simultaneously announcing each
-publishable local address. Full BEP 7 multi-address announcing is therefore
-absent. The headless public-torrent comparator remains useful changing-network
-evidence but cannot replace controlled protocol and libtorrent tests.
+and a listener-backed family endpoint are usable. An IPv6 firewall-pinhole
+mechanism now exists and is covered by scripted-gateway evidence, but its
+physical gate has not yet run and there is still no observed off-LAN incoming-
+reachability claim. One tracker row still selects one operation family rather
+than simultaneously announcing each publishable local address. Full BEP 7
+multi-address announcing is therefore absent. The headless public-torrent
+comparator remains useful changing-network evidence but cannot replace
+controlled protocol and libtorrent tests.
 
 Metadata-only tracker activation now follows the owned metadata task rather
 than content-running intent, including bounded terminal deactivation. A

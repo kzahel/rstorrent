@@ -25,6 +25,13 @@ identities, routing, tokens, transactions, lookups, peer values, bootstrap,
 and persisted samples. Controlled pinned-libtorrent IPv6 DHT discovery and a
 bounded public dual-family metadata run pass; incoming IPv6 reachability is
 not claimed.
+Active Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+refines the existing listener-backed IPv6 advertisement input with
+`GlobalUnicast`, `Unfiltered`, or `Pinholed` evidence. The DHT actor retains no
+gateway or lease authority and announces the same actual listener port under
+each eligible scope. Scripted coverage passes; no off-LAN incoming IPv6 claim
+is made before the physical gate runs.
 
 ## Why DHT Was Front-Loaded
 
@@ -309,7 +316,8 @@ The completed DHT foundation does not imply:
 - DHT scrape, mutable/immutable items, or BEP 45 multi-address announce;
 - BEP 5 `PORT` messages, foreign-family saved bootstrap endpoints, or the BEP
   32 cross-family bootstrap optimization;
-- IPv6 firewall pinholes or an incoming-IPv6 reachability claim;
+- UDP pinholes or an incoming-IPv6 reachability claim from the implemented but
+  not yet physically proven TCP firewall-pinhole path;
 - a product settings or log-window redesign;
 - a remote daemon or socket control plane; or
 - speed-ratio gates that fail CI on normal public-swarm variance.
