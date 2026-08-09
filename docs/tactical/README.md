@@ -559,11 +559,12 @@ that scope and its cleanup or compatibility rules explicitly.
   HTTP tracker MSE capability announcement from live policy, and exposes the
   exact peer method through the existing quiet `E` presentation.
 - [`116-platform-storage-coherence-and-ios-feasibility.md`](116-platform-storage-coherence-and-ios-feasibility.md):
-  authoritative **Now**, planned and not started after Tactical `114`; closes
-  path/Android SAF storage lifecycle fractures, makes Android a same-tactical
-  engine parity gate, and requires a bounded physical-iPhone storage,
-  networking, and lifecycle probe before fast resume or later engine feature
-  breadth.
+  complete prerequisite storage shoring; path and supported Android SAF now
+  share observations, root health, published reads, explicit namespace
+  transitions, and one dynamic product architecture. Full AVD/physical
+  Android matrices and a bounded physical-iPhone storage, networking, and
+  lifecycle feasibility harness pass without adding fast resume or an iOS
+  product claim.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
