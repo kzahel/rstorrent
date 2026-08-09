@@ -42,10 +42,10 @@ the explicit port-`1` sentinel otherwise, adds token-authenticated explicit-
 port DHT self-announcement, and moves discovery scheduling into the long-lived
 torrent/session lifetime. Completed Tactical
 [`095`](../tactical/095-bounded-http-https-tracker-transport.md) applies the
-same truth to HTTP and HTTPS: IPv4 tracker requests may advertise the eligible
-IPv4 endpoint, while every IPv6 tracker request uses port `1`. Returned
-`peers6` can drive outbound IPv6 TCP transfers, but no IPv6 listener,
-reachable endpoint, mapping, or full BEP 7 support is implied.
+same truth to HTTP and HTTPS. At that checkpoint, IPv4 tracker requests could
+advertise the eligible IPv4 endpoint while every IPv6 request used port `1`;
+returned `peers6` could drive outbound IPv6 TCP transfers. Tactical `112`
+supersedes that family-port limitation below.
 
 Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
@@ -63,6 +63,15 @@ UDP on all IPv4 interfaces. The shared product UI exposes only Automatic or
 Fixed port selection. Disabled, loopback, and preferred-candidate controls
 remain internal facilities for tests and headless tooling, not normal client
 settings.
+
+Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) adds an
+independent TCP/UDP pair bound to one probe-selected eligible global-unicast
+IPv6 address beside the IPv4 pair. Each family owns its actual listener and
+advertised port; a failed family leaves its sibling serving. IPv6 tracker and
+DHT advertisement may now carry the listener-backed `GlobalUnicast` endpoint,
+but no pinhole, gateway permission, or observed incoming IPv6 reachability is
+implied. Tactical `113` owns that next evidence boundary.
 
 ## Purpose And Scope
 
@@ -168,24 +177,28 @@ endpoint:
   address-in-use retries across TCP then UDP, requests system-selected ports
   on exhaustion, and never wraps `65535`; fixed listening binds the configured
   TCP and UDP numeric port atomically or reports failure;
-- one application-generation socket set hands its TCP listener to incoming
-  peers and its UDP socket to a single bounded receiver with a 64-datagram DHT
-  route; DHT sends from that same socket, and disabled or failed TCP retains
-  independently bound ephemeral DHT UDP service;
+- one application-generation socket set attempts an independent TCP/UDP pair
+  per enabled family, hands each TCP listener to incoming peers, and hands
+  both UDP sockets to one bounded receiver with a 64-datagram DHT route; DHT
+  sends through the matching family socket, one-family failure retains its
+  sibling, and disabled or failed TCP retains independently bound ephemeral
+  DHT UDP service;
 - runtime state and diagnostics separately expose configured preferred port,
   actual TCP, actual UDP plus coordination state, and mapped external TCP;
   controlled loopback and eligible local-network peers observed the reported
   TCP listener and exact DHT UDP source, with joined terminal ownership;
 - UDP, HTTP, and HTTPS tracker announces carry exact current counters plus the
-  selected mapped or listener TCP port for incoming-routable IPv4 requests and
-  port `1` otherwise;
-- tracker address-family selection happens before query construction. An
-  IPv6-literal or AAAA-only tracker therefore receives port `1` even when the
-  same session owns an eligible IPv4 listener; compact `peers6` remains useful
-  for outbound IPv6 dialing without being reachability evidence;
-- the IPv4 DHT uses the session UDP transport but does not treat that endpoint
-  as a TCP peer listener; eligible verified public seeds explicitly announce
-  the independently selected TCP port; and
+  endpoint selected for their connection family: mapped or listener TCP for
+  eligible IPv4, listener-backed `GlobalUnicast` TCP for eligible IPv6, and
+  port `1` when that family has no publishable listener;
+- tracker address-family selection happens before query construction and
+  source binding. An IPv6-literal or AAAA-only tracker therefore receives only
+  the IPv6 family's port and uses the probe-selected IPv6 source; it never
+  borrows an IPv4 endpoint. Compact `peers6` remains independently useful for
+  outbound dialing;
+- each DHT node uses its family session UDP transport but does not treat that
+  endpoint as a TCP peer listener; eligible verified public seeds explicitly
+  announce the independently selected same-family TCP port; and
 - PCP, NAT-PMP, IGD v1/WANPPP, IPv6 pinholes, and UDP mappings are absent.
 
 The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
@@ -738,8 +751,11 @@ evidence. Tactical
 [`095`](../tactical/095-bounded-http-https-tracker-transport.md) now extends the
 same port selector and ordering to HTTP/HTTPS and proves the outbound-only IPv6
 case through controlled hash-verified transfers and Android product evidence.
-Dual-stack listen sockets, per-family reachable endpoints, IPv6 pinholes and
-physical IPv6 reachability remain a separate future campaign slice.
+Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) now completes
+dual-stack listener allocation, per-family endpoint selection, IPv6 source
+binding, DHT participation, and live outbound evidence. IPv6 pinholes and
+off-network incoming IPv6 reachability remain Tactical `113`.
 Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 now completes live convergence for listener, preferred port, UPnP mapping,

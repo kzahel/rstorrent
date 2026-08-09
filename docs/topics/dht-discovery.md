@@ -10,7 +10,7 @@ Tactical 089 moved application DHT traffic behind the bounded session UDP
 receive owner and separately reports its actual endpoint. Completed Tactical
 [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) adds
 verified-public explicit-TCP-port self-announcement under the long-lived
-torrent/session scheduler. IPv6 socket operation remains absent.
+torrent/session scheduler.
 Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 made that UDP transport generation-replaceable while retaining one DHT
@@ -18,6 +18,13 @@ actor, node identity, routing state, command route, and observation owner. The
 application settings reconciler now performs candidate-first coordinated
 TCP/UDP replacement; controlled exchange preserves DHT identity and routing
 state and uses the replacement UDP source afterward.
+Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) makes that one
+actor and UDP owner dual-stack. Independent IPv4 and IPv6 nodes own their
+identities, routing, tokens, transactions, lookups, peer values, bootstrap,
+and persisted samples. Controlled pinned-libtorrent IPv6 DHT discovery and a
+bounded public dual-family metadata run pass; incoming IPv6 reachability is
+not claimed.
 
 ## Why DHT Was Front-Loaded
 
@@ -43,7 +50,8 @@ remains active proof infrastructure rather than a competing product feature.
 The application service now owns one DHT actor for desktop and Android. It
 starts with the product network policy, races scheduled trackers where present,
 feeds results into `PeerSource::Dht`, retries transient empty traversals, and
-persists only the node identity plus a bounded responsive sample on shutdown.
+persists only bounded address-keyed identities plus responsive samples on
+shutdown.
 Loopback and offline policies use the same owner and every datagram mutation
 and send is policy checked.
 
@@ -51,12 +59,13 @@ Protocol state includes bounded KRPC for `ping`, `find_node`, `get_peers`, and
 `announce_peer`; compact IPv4/IPv6 values and separate routing tables; alpha-3
 lookup; K=8 fixed-distance buckets and replacement caches; BEP 42 validation;
 and BEP 43 read-only parsing/admission behavior. The application runtime
-receives through one session-owned IPv4 UDP socket and a bounded 64-datagram
-DHT route; DHT sends through the same socket. The standalone engine constructor
-composes that same owner for focused tests. DHT stages restored contacts before
-public routers, periodically rebootstraps or refreshes, rotates current/previous
-token secrets, bounds its peer store and source-rate state, and reclaims
-dropped lookup waiters.
+receives through one session-owned UDP service with independently replaceable
+IPv4 and IPv6 socket generations and a bounded 64-datagram DHT route; DHT sends
+through the matching family socket. The standalone engine constructor composes
+that same owner for focused tests. DHT stages native-family restored contacts
+before public routers, periodically rebootstraps or refreshes, rotates
+current/previous token secrets, bounds each family's peer store and source-rate
+state, and reclaims dropped lookup waiters.
 
 One session discovery/advertisement task now owns repeated application lookup
 and eligible self-announcement across download completion. It registers
@@ -119,6 +128,18 @@ after joined cancellation and mapping deletion. The one-torrent scheduler
 records command-queue and DHT-operation high water `1` and terminates with
 zero tasks, registrations, tracker operations, and DHT operations.
 
+Tactical `112` adds independent BEP 32 runtime participation without adding a
+second actor, command route, observation owner, or product scheduler. The
+controlled IPv6-loopback oracle completed a direct IPv6 download and a DHT-
+only libtorrent download discovered through RSTorrent's IPv6 announcement,
+then exercised incoming `ping`, all `want` forms of `find_node`, `get_peers`,
+and `announce_peer`. One outbound-only public Big Buck Bunny run reached 18
+IPv4 and 40 IPv6 routing nodes. The IPv6 leg received 41 valid responses and
+reached K=8 in 1.218 seconds but returned no peer value in that sample; the
+merged dual-family lookup acquired and verified metadata in 107.553 seconds.
+That result is live participation evidence, not a claim that IPv6 supplied
+the winning peer or accepted an incoming TCP connection.
+
 ## Scope And Protocol Baseline
 
 The initial capability is a session-level BEP 5 participant with bounded,
@@ -126,7 +147,8 @@ testable state. It includes:
 
 - strict bencoded KRPC request, response, and error handling;
 - transaction correlation and endpoint validation;
-- IPv4 routing buckets and explicit good, questionable, and bad node state;
+- independent IPv4 and IPv6 routing buckets and explicit good, questionable,
+  and bad node state;
 - bounded iterative `find_node` and `get_peers` traversals;
 - token handling sufficient to respond correctly to ordinary queries;
 - incoming `ping`, `find_node`, `get_peers`, and `announce_peer` handling;
@@ -136,10 +158,9 @@ testable state. It includes:
 - BEP 42-aware node identity behavior; and
 - BEP 27 private-torrent gating before decentralized discovery is enabled.
 
-The internal model must allow independent IPv4 and IPv6 routing tables as
-specified by BEP 32, even if IPv4 interoperability is the first landed slice.
-The tactical that defers IPv6 runtime support must name the exact boundary and
-must not make IPv4-specific assumptions part of protocol state.
+The internal model and runtime now retain independent IPv4 and IPv6 routing
+tables as specified by BEP 32. Family-local state must remain independent even
+though product lookups fan out through one command and merge useful results.
 
 Normative starting points are [BEP 5](https://www.bittorrent.org/beps/bep_0005.html),
 [BEP 27](https://www.bittorrent.org/beps/bep_0027.html),
@@ -187,7 +208,7 @@ A clean or recoverable shutdown persists only bounded durable hints:
 
 - the node identity material needed by the selected BEP 42 policy;
 - a bounded, diverse sample of recently responsive IPv4 nodes;
-- an independently bounded IPv6 sample once IPv6 DHT is enabled;
+- an independently bounded IPv6 sample;
 - snapshot schema/version and age information needed to reject stale or
   incompatible state; and
 - only additional fields proven necessary by the tactical's restart tests.
@@ -286,6 +307,9 @@ The completed DHT foundation does not imply:
 - `announce_peer` before verified public, incoming-routable eligibility;
 - BEP 11 PEX, BEP 14 LSD, uTP, NAT traversal, or hole punching;
 - DHT scrape, mutable/immutable items, or BEP 45 multi-address announce;
+- BEP 5 `PORT` messages, foreign-family saved bootstrap endpoints, or the BEP
+  32 cross-family bootstrap optimization;
+- IPv6 firewall pinholes or an incoming-IPv6 reachability claim;
 - a product settings or log-window redesign;
 - a remote daemon or socket control plane; or
 - speed-ratio gates that fail CI on normal public-swarm variance.
@@ -294,13 +318,14 @@ These deferrals do not permit a disposable lookup client, an unbounded routing
 table, or a runtime that cannot be stopped and resumed cleanly.
 
 Completed Tactical [`065`](../tactical/065-dht-observatory.md) adds a read-only
-product inspection surface without changing these protocol deferrals. It
-projects bounded aggregate counters, all 160 IPv4 XOR-distance bucket
-occupancies with oldest-response age, and at most 16 active lookup summaries
-with closest-responded prefix depth and last-improvement age. The static visual
-shows prefix depths `0..=31` directly and preserves every deeper bucket in an
-explicit aggregate tail; it does not treat statistically unlikely depths as
-unreachable. The first slice explicitly does not expose raw routing-node
+product inspection surface without changing these protocol deferrals.
+Tactical `112` keeps its existing bounds independently per active family. It
+projects socket counters, lifecycle and identity facts, all 160 XOR-distance
+bucket occupancies with oldest-response age, and at most 16 active lookup
+summaries per family with closest-responded prefix depth and last-improvement
+age. The static visual shows prefix depths `0..=31` directly and preserves
+every deeper bucket in an explicit aggregate tail; it does not treat
+statistically unlikely depths as unreachable. It exposes no raw routing-node
 endpoints or DHT controls and does not change the Partial protocol-support
 claim.
 

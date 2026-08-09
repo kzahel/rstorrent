@@ -51,6 +51,15 @@ browser/Tauri peer table uses it only in the existing `E` cell's tooltip and
 accessible name. Android receives the additive binding but still gains no
 Compose settings or peer-detail work.
 Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) adds one
+default-enabled IPv6 control and configured/effective/application state to the
+same generated settings contract. Browser and Tauri share the control and
+typed degradation presentation. Android compiles and persists the value and
+its retained product harness proves policy/restart behavior, but deliberately
+adds no Compose settings screen. The DHT inspection surface renders both
+families within its existing bounded view rather than adding a second page or
+client-owned inference.
+Completed Tactical
 [`098`](../tactical/098-authenticated-https-tracker-platform-trust.md) adds a
 default-secure tracker HTTPS field to that same contract without rendering an
 ordinary React or Compose control. The React draft, equality, refresh, and
@@ -444,8 +453,8 @@ future server.
   media policy, and file-selection presentation remain product gaps.
 - The current UI proves one controlled torrent. General multi-torrent
   scheduling and complete product presentation remain absent. Peers, Files,
-  Trackers, Pieces, and global Disk are live; Swarm, Logs, Speed, and DHT
-  remain truthful scaffolds or later feeds.
+  Trackers, Pieces, global Disk, Swarm, Logs, Speed, and dual-family DHT are
+  live; broader product workflows and content presentation remain incomplete.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,
@@ -458,9 +467,9 @@ future server.
   Android network binding and race analysis.
 - Android has no Compose connection/seeding settings screen. Tactical `084`
   deliberately stops at generated contract and build/test coverage there;
-  Tacticals `111` and `115` follow the same boundary for MSE/PE policy and
-  exact peer detail. Mobile restart UX and connectivity policy require their
-  own product slice.
+  Tacticals `111`, `112`, and `115` follow the same boundary for MSE/PE policy,
+  IPv6 policy, and exact peer detail. Mobile restart UX and connectivity
+  policy require their own product slice.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

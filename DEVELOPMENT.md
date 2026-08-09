@@ -364,6 +364,28 @@ uv run --project tests/interop --locked \
   python tests/interop/dht_magnet.py
 ```
 
+The dual-stack profile adds direct IPv6 TCP transfer, a DHT-only
+pinned-libtorrent leecher that discovers RSTorrent through its IPv6 node, and
+incoming BEP 32 `want`, `nodes6`, peer-value, token, and announcement probes:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/ipv6_dht.py
+```
+
+The opt-in public metadata-only profile starts one session UDP owner with both
+available families and records per-family DHT endpoints, routing thresholds,
+queries, responses, peer values, and datagram bytes. Public outcomes vary and
+do not claim incoming IPv6 reachability:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/public_compare.py \
+  --torrent big-buck-bunny --profile dht --owner rstorrent \
+  --target metadata --runs 1 --timeout-seconds 150 \
+  --cleanup-seconds 10 --output /tmp/rstorrent-public-ipv6.json
+```
+
 The advertisement profile independently discovers a completed RSTorrent seed
 through either a controlled UDP tracker or DHT and hash-verifies both
 libtorrent downloads without an explicit peer hint:

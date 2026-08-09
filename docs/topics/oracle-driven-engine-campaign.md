@@ -3,10 +3,12 @@
 Topic: `oracle-driven-engine-campaign`
 
 Status: Tactical
-[`111`](../tactical/111-mse-peer-stream-encryption.md) graduated after its
-API 37 physical Pixel 7a product gate passed on 2026-08-09. Tactical
-[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) is the single
-authoritative **Now**, planned and not started. The completed maximum-
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) graduated after
+controlled IPv6 DHT-only interoperability, bounded public dual-family
+metadata, Android cross-build, and API 34 AVD policy/restart gates passed on
+2026-08-09. Tactical
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md) is
+the single authoritative **Now**, planned and not started. The completed maximum-
 throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -316,27 +318,31 @@ reason to stop.
 
 ## Current Checkpoint
 
-Campaign state: **Tactical `111` graduated; Tactical `112` is the active
-planned dual-stack/IPv6-DHT slice and has not started implementation**.
+Campaign state: **Tactical `112` graduated; Tactical `113` is the active
+planned IPv6 firewall-pinhole/incoming-reachability slice and has not started
+implementation**.
 
 Latest graduated tactical:
-[`111-mse-peer-stream-encryption.md`](../tactical/111-mse-peer-stream-encryption.md).
-Its final API 37 physical Pixel 7a run at `0b25152` completed five forced-RC4
-oracle sessions, exact verified publication, a three-job DH high-water under
-the four-job ceiling, terminal `active=waiting=tracked=0`, bounded storage and
-descriptors, and exact cleanup. The balanced paired result remains
-RSTorrent `0.779873` versus pinned libtorrent `0.758292` RC4/plain retention;
-the explicit cost clears the 75% floor and does not justify more RC4 work.
+[`112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md).
+Its final controlled pinned-libtorrent IPv6 profile completed direct and DHT-
+only exact transfers plus incoming BEP 32 queries. The bounded public product
+run reached 18 IPv4 and 40 IPv6 routing nodes; the IPv6 node reached K=8 in
+1.218 seconds and received 41 valid responses while the merged lookup acquired
+and verified metadata in 107.553 seconds. IPv6 returned no peer value in that
+one live sample. Both Android ABIs and the API 34 AVD family-policy/restart
+profile pass; no incoming IPv6 reachability is claimed.
 
 Current milestone: execute Tactical
-[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) through its six
-independently committable gates without claiming IPv6 incoming reachability.
-Its source dossier and owner map have been reconciled after Tactical `111`;
-the crate graph remains unchanged.
+[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+through its three independently committable gates. Its source dossier and
+read-only gateway evidence are already reconciled; the slice must keep IPv4
+mapping and IPv6 pinhole state independent under the existing coordinator.
 
-Next executable action: implement Tactical `112` Gate 1, family-parameterised
-session socket allocation and probe-selected eligible global-unicast IPv6
-binding, with independent per-family failure and terminal ownership evidence.
+Next executable action: implement Tactical `113` Gate 1, separating the
+existing bounded `upnp:rootdevice` discovery result into independent IPv4-
+mapping and IPv6-firewall service clients, then add the specified codec, fault,
+action-inventory, ambiguous-create, and scripted lifecycle tests without a
+live gateway mutation.
 
 A separate trusting fast-resume option remains a later candidate, with
 conservative checking still the default and Force recheck still the full

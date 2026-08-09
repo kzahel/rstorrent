@@ -88,6 +88,17 @@ rollback, ephemeral lifetime, and reopen, while an unknown durable value fails
 profile open. Encryption has its own live convergence domain, but effective
 policy and negotiated peer methods remain non-durable runtime facts.
 
+Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) advances the
+same singleton to schema version 16 with one checked `ipv6_enabled` boolean.
+Fresh and schema-15 profiles default to enabled without changing the stored
+encryption value; explicit disable survives no-op, replay, forced process
+restart, and reopen. Configured family intent is durable, while the selected
+IPv6 address, listener and UDP endpoints, effective availability, DHT
+identities/routing observations, tracker source, and active connection state
+remain runtime facts. The DHT snapshot's bounded address-keyed identities and
+per-family bootstrap samples retain their own version-2 blob contract.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database
@@ -744,8 +755,16 @@ fresh DDL carry the identical closed-value check; typed decode independently
 rejects corrupt values. Live `A -> B -> A` replacement is generation-fenced,
 an in-flight handshake retains its captured policy, and no listener or torrent
 restart is needed. Generated TypeScript, JSON Schema, UniFFI, and Kotlin
-consumers plus the shared React control pass; the outstanding physical-device
-evidence does not change the implemented persistence claim.
+consumers plus the shared React control and physical product profile pass.
+
+[`../tactical/112-dual-stack-transport-and-ipv6-dht.md`](../tactical/112-dual-stack-transport-and-ipv6-dht.md)
+adds schema version `16` to that row and command. Exact fresh, migration,
+constraint, corrupt-row, receipt replay, no-op, rollback, ephemeral-lifetime,
+and durable reopen tests pass. A live enable-disable-enable cycle is
+generation-fenced, including connection cancellation before `Applied`. An API
+34 arm64 AVD observed the default, applied disable, forced-restart persistence,
+and expected degraded re-enable when no eligible global-unicast address was
+available; that environment observation does not rewrite configured intent.
 
 This evidence does not broaden into a general multi-torrent scheduler, stable
 public wire protocol, UI settings catalog, remote listener,

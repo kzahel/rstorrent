@@ -30,6 +30,12 @@ legacy HTTP `supportcrypto=1` capability hint whenever the effective policy
 accepts incoming MSE. `disabled` omits it, UDP trackers remain unchanged, and
 a live policy change requests one corrective update through the existing
 advertisement owner rather than replacing a torrent registration.
+Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) makes the
+advertised endpoint and transport source family-selected. An eligible IPv6
+operation binds the probe-selected global-unicast source and advertises that
+family's real TCP listener port; an ineligible or disabled family retains
+port `1`. This changes no tracker schedule, fan-out, or operation bound.
 
 ## Scope
 
@@ -359,18 +365,19 @@ unconnectable compatibility sentinel rather than an endpoint.
 
 WebSocket transport, proxies, non-Basic authentication, BEP 41 URL data,
 scrape, custom roots/pins, client certificates, and a public-tracker
-reliability claim remain absent. IPv6 tracker connectivity and outbound IPv6
-peers are usable,
-but the listener, mapping, and advertised reachable endpoint remain IPv4-only;
-full BEP 7 multi-address announcing is therefore absent. The headless public-
-torrent comparator remains useful changing-network evidence but cannot
-replace controlled protocol and libtorrent tests.
+reliability claim remain absent. IPv6 tracker connectivity, outbound peers,
+and a listener-backed family endpoint are usable. There is still no IPv6
+firewall-pinhole or observed incoming-reachability claim, and one tracker row
+still selects one operation family rather than simultaneously announcing each
+publishable local address. Full BEP 7 multi-address announcing is therefore
+absent. The headless public-torrent comparator remains useful changing-network
+evidence but cannot replace controlled protocol and libtorrent tests.
 
 Metadata-only tracker activation now follows the owned metadata task rather
 than content-running intent, including bounded terminal deactivation. A
-public IPv6-family announce remains useful supporting evidence when a native
-routed host is available, but the controlled AAAA-only path remains the
-support gate. Web-seed authentication must reuse the policy enum only through
+Tactical `112` supplies native-routed source/port evidence and the controlled
+AAAA-only path remains the deterministic support gate. Web-seed authentication
+must reuse the policy enum only through
 its own separately persisted field and transport owner.
 
 Tactical `081` parses and persists every valid unique

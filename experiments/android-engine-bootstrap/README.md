@@ -47,6 +47,8 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target pixel7a --runs 1 --profile product-mse
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --runs 1 --profile product-ipv6-policy
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -83,3 +85,10 @@ oracle connections as RC4, checks the session-wide four-job DH ceiling and
 complete drain, and removes device and host artifacts. The deterministic Rust
 owner test proves exact `4 active + 1 waiting` saturation; the device profile
 asserts the scheduler-independent `1..=4` production high-water bound.
+
+The `product-ipv6-policy` profile uses the ordinary product settings owner. It
+checks the fresh default, applies disable, force-stops and restarts the
+process, verifies disabled persistence, and re-enables IPv6. A device without
+an eligible global-unicast address must report typed `Degraded` state with
+effective IPv6 disabled while IPv4 remains usable; that is an expected
+environment outcome rather than an application error.

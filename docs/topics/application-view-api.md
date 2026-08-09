@@ -143,6 +143,15 @@ same observation. The flag remains the compact semantic fact; the method is
 quiet detail, and typed handshake failures remain diagnostics. No view kind,
 contract-version bump, lease, queue, cadence, task, or client-side inference
 is added.
+Completed Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) extends the same
+complete client-settings value with configured/effective IPv6 policy and its
+independent applying/applied/degraded state. Per-family transport and
+advertisement facts remain producer-owned; clients do not infer availability
+from configured intent or a port. The existing DHT view keeps its kind and
+bounds while each active family supplies an independent node observation. No
+view-contract version, lease, queue, cadence, task, or client-side address
+policy is added.
 
 ## Purpose And Scope
 
@@ -1003,6 +1012,15 @@ optional exact method. Rust projection tests cover plaintext-payload and RC4;
 generated TypeScript/schema/validators and UniFFI lowering pass. Older
 producers may omit the field, in which case clients retain the generic flag
 meaning.
+
+Tactical `112` preserves complete-replacement settings and the existing DHT
+view path while adding one closed family dimension. Generated TypeScript,
+JSON Schema, semantic validators, React fixtures, and UniFFI/Kotlin lowering
+pass. Live enable-disable-enable proves the settings view cannot report
+`Applied` before IPv6 sockets, DHT work, candidates, and plaintext or MSE peer
+generations have terminated; IPv4 observations survive the same transition.
+The API 34 AVD reports configured enabled plus effective disabled as a typed
+degradation when no eligible global-unicast address exists.
 
 Tactical `040` now supplies actual torrent lifecycle evidence in addition to
 the earlier synthetic `removed` diffs. Archive, removal stage, and managed-data

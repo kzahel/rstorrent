@@ -1,7 +1,8 @@
 # Tactical 113: IPv6 Firewall Pinhole And Incoming Reachability
 
-Status: Planned on 2026-08-08 and source-reconciled on 2026-08-09. Not
-started. The split from Tactical `112` and the decision to write this slice
+Status: Authoritative **Now**, planned on 2026-08-08 and source-reconciled on
+2026-08-09. Not started. The split from Tactical `112` and the decision to
+write this slice
 against read-only gateway evidence, deferring any mutating gateway action to
 implementation time, were accepted in product discussion on 2026-08-08.
 

@@ -1,9 +1,9 @@
 # Tactical 112: Dual-Stack Session Transport And IPv6 DHT Participation
 
-Status: Authoritative **Now**, implementation in progress on 2026-08-09.
-Gates 1 through 3 are complete. The plan was source-reconciled after Tactical `111`
-graduated; the two-tactical split, IPv6 bind-address strategy, and settings
-shape and default were accepted in product discussion on 2026-08-08.
+Status: Completed on 2026-08-09. All six gates and the stopping condition are
+satisfied. The plan was source-reconciled after Tactical `111` graduated; the
+two-tactical split, IPv6 bind-address strategy, and settings shape and default
+were accepted in product discussion on 2026-08-08.
 
 Topics: `dht-discovery`, `incoming-reachability-and-seeding`,
 `tracker-discovery`, `protocol-support`, `client-persistence`,
@@ -806,3 +806,107 @@ Validation:
 - `cargo test -p rstorrent-session settings::tests --lib` (11 passed before
   the additional schema-15 migration assertion); and
 - `cargo check --workspace`.
+
+### Gate 4: Per-family reachable ports
+
+Completed on 2026-08-09. Advertised endpoint state is now keyed by address
+family. IPv4 and IPv6 listener generations independently publish their actual
+TCP port or the existing port-`1` sentinel, and stopping or losing one family
+does not change its sibling. The selected global-unicast IPv6 address carries
+the deliberately narrow `GlobalUnicast` scope: it proves a bound listener,
+not gateway permission or observed incoming reachability.
+
+HTTP/HTTPS and UDP tracker operations select the advertisement only after
+selecting the destination family. IPv6 operations bind their source socket to
+the same selected IPv6 address, and DHT self-announcement selects the port for
+the logical node family. Controlled IPv4 and IPv6 tracker cases observe the
+expected source address and exact family port; either absent listener produces
+`1` without borrowing the sibling's value.
+
+Validation:
+
+- focused engine tracker and advertisement tests;
+- focused session advertised-endpoint tests; and
+- family-selected HTTP and UDP tracker integration cases.
+
+### Gate 5: Family policy and product surface
+
+Completed on 2026-08-09. Schema version 16 adds one checked, default-enabled
+`ipv6_enabled` value to the existing atomic client-settings row. Migration
+from schema 15 preserves encryption policy and enables IPv6. The configured
+value remains durable intent; the effective value reflects whether an
+eligible global-unicast address produced a serving family. An unavailable or
+ineligible address is a typed transport degradation and leaves IPv4 serving.
+
+The existing session-network reconciler applies enable/disable/enable live.
+Disabling removes the IPv6 acceptor, UDP receiver, DHT node, tracker
+eligibility, every IPv6 peer-source candidate, and active plaintext or MSE
+IPv6 connection before reporting `Applied`; it neither restarts nor cancels
+the IPv4 sibling. A final dial gate closes the race between earlier candidate
+admission and policy convergence. Generated TypeScript/schema and UniFFI
+Kotlin bindings carry configured/effective/application state, and the shared
+React Settings surface exposes the control without adding a Compose screen.
+
+An API 34 arm64 AVD product-policy run observed the fresh default enabled,
+applied disable, disabled state after forced process restart, and an expected
+`Degraded` re-enable with `effective=false` because the AVD had no eligible
+global-unicast IPv6 address. It then removed its application and artifacts.
+
+Validation:
+
+- focused settings migration, persistence, convergence, source-filter, dial-
+  gate, plaintext-cancellation, and MSE-cancellation tests;
+- `npm run generate --prefix clients/web` with no generated drift;
+- `npm run typecheck --prefix clients/web`;
+- `npm run test --prefix clients/web`;
+- `experiments/android-engine-bootstrap/build.sh` for `x86_64` and
+  `arm64-v8a`; and
+- `python3 experiments/android-engine-bootstrap/run_bootstrap.py --target avd
+  --profile product-ipv6-policy --no-build`.
+
+### Gate 6: Observability and recorded evidence
+
+Completed on 2026-08-09. The bounded DHT observation now reports independent
+IPv4 and IPv6 lifecycle, identity, routing, transaction, lookup, rejection,
+and datagram facts while retaining one actor, command route, observation
+owner, and UDP owner. Transport diagnostics separately retain configured and
+effective family state and typed bind/address-selection degradation.
+
+The controlled pinned-libtorrent `2.0.13.0` IPv6-loopback profile passed:
+
+```text
+ipv6_direct_download=verified ipv6_dht_discovery=verified
+payload_hashes=verified find_node_queries=1 get_peers_queries=3
+announce_peer_queries=2 incoming_bep32_queries=8
+```
+
+The DHT-only libtorrent leecher discovered the RSTorrent announcement through
+the IPv6 node and hash-verified the exact payload. The direct IPv6 TCP control
+completed in 0.739 seconds. Incoming `ping`, `find_node` with absent, `n4`,
+`n6`, and dual `want`, `get_peers`, and `announce_peer` exercised the same
+runtime node.
+
+One bounded outbound-only public Big Buck Bunny metadata run then completed
+through the ordinary dual-family product lookup in 107.553 seconds. IPv4
+bound an ephemeral wildcard endpoint, observed a public external address,
+reached 18 routing nodes, received its first valid response and eight-node
+threshold at 0.621 seconds, issued 189 queries, received 149 responses,
+discovered 72 peers, and sent/received 19,191/48,719 datagram bytes. IPv6 bound
+the probe-selected temporary global-unicast address on an ephemeral port,
+observed that same address externally, reached 40 routing nodes, received its
+first valid response at 0.621 seconds and eight-node threshold at 1.218
+seconds, issued 60 queries, received 41 responses, discovered no peer value in
+this run, and sent/received
+7,308/17,293 datagram bytes. The merged lookup acquired and hash-verified the
+21,307-byte info dictionary; no payload file was requested. This proves live
+IPv6 DHT participation and dual-family product progress, not that the IPv6
+leg supplied the winning peer or that incoming IPv6 is reachable.
+
+The final repository baseline passed workspace formatting, clippy with
+warnings denied, all Rust workspace tests, generated-contract drift,
+TypeScript typecheck and unit tests, the full Playwright suite, both Android
+ABIs, the API 34 AVD policy profile, the pre-existing IPv4 DHT harness, and
+the new controlled IPv6 DHT harness. The refactor audit retained the single
+DHT actor and session-network reconciler; their post-slice size is recorded
+in `code-organization-and-refactoring.md` as a watch point rather than a new
+owner or prerequisite split.

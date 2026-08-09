@@ -1249,6 +1249,37 @@ storage ownership high-water 6 under the 40-handle limit, one pending storage
 request, exact publication, and cleanup. This is physical resource and product
 evidence, not a mobile throughput comparison.
 
+## Dual-Stack DHT Evidence: 2026-08-09
+
+Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) extends the
+headless public probe with one session UDP owner and independent IPv4/IPv6 DHT
+nodes. Its per-family report records lifecycle, local and externally observed
+address, routing-node count, time to first valid response, time to K=8, query
+and response counts, peer values, and datagram bytes. This is participation and
+stall-localization evidence; it is not a latency comparison between families.
+
+One bounded metadata-only Big Buck Bunny run completed in 107.553 seconds and
+verified the exact 21,307-byte info dictionary for 276,445,467 payload bytes,
+1,055 pieces, and three files. It issued two metadata requests, accepted two
+blocks, had zero metadata hash failures, created no payload file, and cleaned
+up.
+
+| Family | Local endpoint | Externally observed address | Nodes | First response | K=8 | Queries / responses | Peer values | Datagram bytes sent / received |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| IPv4 | ephemeral wildcard | public address, not retained | 18 | 0.621 s | 0.621 s | 189 / 149 | 72 | 19,191 / 48,719 |
+| IPv6 | selected global address, ephemeral port | matched selected address; value not retained | 40 | 0.621 s | 1.218 s | 60 / 41 | 0 | 7,308 / 17,293 |
+
+The IPv6 node demonstrably bootstrapped and participated, while the useful
+peer result in this sample came from the merged lookup rather than from an
+IPv6 peer value. Controlled pinned-libtorrent `2.0.13.0` evidence supplies the
+stronger IPv6 discovery gate: a DHT-only IPv6-loopback leecher discovered the
+RSTorrent announcement and hash-verified exact payload. A separate direct
+IPv6 transfer completed in 0.739 seconds, and incoming BEP 32 probes observed
+one `find_node`, three `get_peers`, two `announce_peer`, and eight query forms.
+Neither controlled loopback nor outbound public evidence claims an
+off-network incoming IPv6 TCP path; Tactical `113` owns that gate.
+
 ## Maintenance Contract
 
 Feature tacticals add measurements only when their owner can report them

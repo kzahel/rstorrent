@@ -196,30 +196,31 @@ HTTP tracker capability announcement, and exposes exact method detail through
 the existing quiet `E` presentation. Its 29-case controlled matrix passes; it
 adds no setting, Android Compose work, uTP support, or broader protocol claim.
 
+Tactical
+[`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) is complete.
+One session transport generation now owns an independent TCP/UDP pair per
+enabled family; one DHT actor owns separate IPv4/IPv6 nodes and persisted
+state; tracker and DHT advertisement select the same-family listener port; and
+one default-enabled persisted policy gates all IPv6 ingress, discovery, and
+dials. Controlled IPv6 DHT-only libtorrent discovery/download, a public
+dual-family metadata run, web/Tauri contract coverage, both Android ABIs, and
+an API 34 AVD degradation/restart profile pass. No IPv6 pinhole or incoming-
+reachability claim is made.
+
 ## Current Queue
 
 ### Now
 
-- Tactical
-  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) is the single
-  authoritative **Now**. It gives the session one coordinated TCP/UDP socket
-  pair per address family, adds a BEP 32 IPv6 DHT node with its own BEP 42
-  identity and routing table, makes the reachable peer port a per-family fact
-  so BEP 7 announces stop sending port `1` on IPv6, and gates every IPv6 path
-  behind one persisted `ipv6_enabled` setting defaulting to enabled. It is
-  planned and not started, and claims no IPv6 incoming reachability. Tactical
-  [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md) is the
-  latest completed bounded checkpoint; Tactical `111` remains the graduated
-  MSE capability record.
+- Planned Tactical
+  [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
+  is the single authoritative **Now**. It adds bounded UPnP IGD v2
+  `WANIPv6FirewallControl:1` pinhole control beside the existing IPv4 mapping,
+  distinguishes listener, unfiltered-gateway, installed-pinhole, and observed
+  incoming evidence, and proves an off-LAN IPv6 peer hash-verifying payload
+  through it. Completed Tactical `112` is its hard transport prerequisite.
 
 ### Next
 
-- Planned Tactical
-  [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
-  depends on `112` and adds bounded UPnP IGD v2 `WANIPv6FirewallControl:1`
-  pinhole control beside the existing IPv4 mapping, distinguishes listener,
-  unfiltered-gateway, installed-pinhole, and observed incoming evidence, and
-  proves an off-LAN IPv6 peer hash-verifying payload through it.
 - Planned Tactical
   [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md)
   follows the dual-stack/reachability sequence and replaces the one-active-
@@ -283,7 +284,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
 | Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. | [`tracker-discovery`](tracker-discovery.md) |
 | HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | Bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, last-successful connection-family projection, controlled libtorrent discovery, and official Ubuntu HTTPS metadata smokes pass. HTTPS defaults to desktop/Android platform chain and requested-name validation; one hidden typed compatibility value is explicitly encrypted but unauthenticated. Controlled authenticated tracker-to-libtorrent transfer and macOS/Windows/Linux/AVD trust evidence pass. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
-| DHT | Partial | deterministic, runtime, interop, live | A bounded IPv4 participant supports lookup, incoming queries, private gating, revalidated warm restart, repeated public metadata acquisition, and verified-public self-announcement of the selected explicit TCP port to K=8 token-bearing nodes. One session scheduler survives download completion; controlled DHT-only and mapped off-LAN seed discovery pass. IPv6 UDP operation remains absent. | [`dht-discovery`](dht-discovery.md) |
+| DHT | Partial | deterministic, runtime, interop, live | One bounded actor owns independent IPv4/IPv6 identities, routing, tokens, transactions, traversals, peer values, native-family bootstrap, warm state, incoming queries, private gating, merged product lookups, and family-port self-announcement. One session scheduler survives download completion; controlled DHT-only discovery passes in both families, mapped off-LAN IPv4 seed discovery passes, and a native public IPv6 node reached 40 routing nodes and 41 valid responses during successful merged metadata acquisition. Foreign-family bootstrap optimization, BEP 5 `PORT`, and incoming IPv6 reachability remain absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Implemented | deterministic, runtime, interop | Verified-public BEP 11 uses bounded directional BEP 10 negotiation, 16-KiB/50-contact messages, 50-per-source and 200-per-torrent admission, a 4,096-event shared timeline, exact provenance/privacy cleanup, and the ordinary registry/dial owner. A controlled complementary two-hop pinned-libtorrent run captures one addition, an oracle-observed RSTorrent drop, and exact 16-MiB completion; underpopulated recent-peer exemptions, BEP 40, and durable PEX state remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
 
@@ -298,7 +299,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Multiple simultaneous live peers | Implemented | deterministic, runtime, interop, live | Thirty established and thirty half-open attempts remain separate outbound torrent-local defaults beneath one shared session budget whose ordinary default is 200 after descriptor clamping and whose incoming-only slack is ten. Exact saturation, cancellation, mixed-direction release, and simultaneous incoming evidence pass. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
-| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One joined IPv4 listener has a five-entry backlog, eight pending handshake slots, 1,024 generation-fenced registrations, and bounded multi-peer ownership under the shared effective-plus-ten-slack budget. Ordinary automatic/fixed modes bind TCP and coordinated UDP on all IPv4 interfaces; product settings expose only Automatic or an exact Fixed port. Disabled, loopback, and preferred-candidate controls remain internal test/headless facilities. Explicit UPnP enablement, 1--2,000 peers, and 0--50 slots persist atomically and apply live in durable and ephemeral profiles. Automatic TCP/UDP binding shares ten retries before system fallback, while fixed binding is exact and atomic; actual endpoints remain runtime facts. Tacticals [`086`](../tactical/086-long-lived-torrent-peer-runtime.md), [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md), [`089`](../tactical/089-coordinated-session-listen-sockets.md), and [`102`](../tactical/102-ordinary-incoming-listener-settings.md) prove retained incoming ownership, exact mapped off-LAN seeding, coordinated transport, and the corrected product boundary. Tactical [`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) proves tracker-only, DHT-only, and mapped wire-port discovery through that listener with joined terminal cleanup. Completed Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) proves live candidate-first rebind, finite mapping cleanup, deterministic admission, and slot convergence without replacing stable peers, DHT, or discovery. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
+| Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. IPv6 binding and outbound operation are proven, but a gateway pinhole and off-network incoming IPv6 transfer remain Tactical `113`. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion
