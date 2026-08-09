@@ -210,6 +210,30 @@ mod tests {
             .collect()
     }
 
+    fn numbered_hash(value: u32) -> [u8; 20] {
+        let mut info_hash = [0; 20];
+        info_hash[..4].copy_from_slice(&value.to_be_bytes());
+        info_hash
+    }
+
+    fn numbered_positions(connection: &Connection) -> Vec<u32> {
+        let mut statement = connection
+            .prepare(
+                "SELECT info_hash FROM torrents
+                 WHERE download_queue_position IS NOT NULL
+                 ORDER BY download_queue_position, info_hash",
+            )
+            .expect("query");
+        statement
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .expect("rows")
+            .map(|row| {
+                let info_hash = row.expect("row");
+                u32::from_be_bytes(info_hash[..4].try_into().expect("four-byte prefix"))
+            })
+            .collect()
+    }
+
     #[test]
     fn append_and_edge_moves_preserve_a_total_order() {
         let mut connection = database();
@@ -257,5 +281,67 @@ mod tests {
         assert!(append(&transaction, &hash(3)).expect("append"));
         transaction.commit().expect("commit");
         assert_eq!(positions(&connection), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn thousand_entry_queue_matches_model_across_moves_and_rollbacks() {
+        const ENTRY_COUNT: u32 = 1_000;
+        const MOVE_COUNT: u32 = 2_000;
+
+        let mut connection = database();
+        let mut model = Vec::with_capacity(ENTRY_COUNT as usize);
+        for value in 0..ENTRY_COUNT {
+            let info_hash = numbered_hash(value);
+            connection
+                .execute(
+                    "INSERT INTO torrents(info_hash) VALUES (?1)",
+                    [info_hash.as_slice()],
+                )
+                .expect("insert");
+            let transaction = connection.transaction().expect("transaction");
+            assert!(append(&transaction, &info_hash).expect("append"));
+            transaction.commit().expect("commit");
+            model.push(value);
+        }
+        assert_eq!(numbered_positions(&connection), model);
+
+        for step in 0..MOVE_COUNT {
+            let value = (step.wrapping_mul(7_919).wrapping_add(17)) % ENTRY_COUNT;
+            let edge = if step % 2 == 0 {
+                QueueEdge::Top
+            } else {
+                QueueEdge::Bottom
+            };
+            let model_index = model
+                .iter()
+                .position(|candidate| *candidate == value)
+                .expect("model value");
+            model.remove(model_index);
+            match edge {
+                QueueEdge::Top => model.insert(0, value),
+                QueueEdge::Bottom => model.push(value),
+            }
+
+            let transaction = connection.transaction().expect("transaction");
+            move_to_edge(&transaction, &numbered_hash(value), edge).expect("move");
+            transaction.commit().expect("commit");
+
+            if step % 100 == 99 {
+                assert_eq!(numbered_positions(&connection), model);
+
+                let rolled_back_value = (value + 1) % ENTRY_COUNT;
+                let transaction = connection.transaction().expect("transaction");
+                move_to_edge(
+                    &transaction,
+                    &numbered_hash(rolled_back_value),
+                    QueueEdge::Top,
+                )
+                .expect("uncommitted move");
+                drop(transaction);
+                assert_eq!(numbered_positions(&connection), model);
+            }
+        }
+
+        assert_eq!(numbered_positions(&connection), model);
     }
 }
