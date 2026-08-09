@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_CONNECTION_LIMIT: usize = 200;
@@ -98,7 +99,7 @@ pub enum PeerBudgetPhase {
     Established,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct PeerBudgetSnapshot {
     pub configured_limit: usize,
     pub effective_limit: usize,

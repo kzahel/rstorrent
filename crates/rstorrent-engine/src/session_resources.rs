@@ -9,11 +9,12 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use serde::Serialize;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 
 use crate::driver::DownloadResourceLimits;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct SessionDownloadResourceSnapshot {
     pub outstanding_request_bytes: usize,
     pub outstanding_request_high_water: usize,
@@ -30,6 +31,7 @@ pub struct SessionDownloadResourceSnapshot {
     pub active_tracker_operations: usize,
     pub active_tracker_operations_high_water: usize,
     pub registered_generations: usize,
+    pub registered_generations_high_water: usize,
     pub outbound_turns_granted: usize,
     pub request_waiters: usize,
     pub request_waiters_high_water: usize,
@@ -40,7 +42,7 @@ pub struct SessionDownloadResourceSnapshot {
     pub storage_roots: Vec<SessionStorageRootResourceSnapshot>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct SessionStorageRootResourceSnapshot {
     pub root_id: String,
     pub active_writes: usize,
@@ -77,6 +79,7 @@ struct SessionDownloadResourcesInner {
     active_tracker_operations: Arc<AtomicUsize>,
     active_tracker_operations_high_water: AtomicUsize,
     registrations: Mutex<BTreeMap<String, Weak<TorrentResourceUsage>>>,
+    registered_generations_high_water: AtomicUsize,
     dial_admission: FairDialAdmission,
     outbound_turns_granted: AtomicUsize,
 }
@@ -112,7 +115,7 @@ struct FairDialState {
 
 #[derive(Debug)]
 struct TorrentResourceUsage {
-    owner: Weak<SessionDownloadResourcesInner>,
+    owner: Arc<SessionDownloadResourcesInner>,
     key: String,
     storage_root: String,
     outstanding_request_bytes: AtomicUsize,
@@ -598,6 +601,7 @@ impl SessionDownloadResources {
                 active_tracker_operations: Arc::new(AtomicUsize::new(0)),
                 active_tracker_operations_high_water: AtomicUsize::new(0),
                 registrations: Mutex::new(BTreeMap::new()),
+                registered_generations_high_water: AtomicUsize::new(0),
                 dial_admission: FairDialAdmission::default(),
                 outbound_turns_granted: AtomicUsize::new(0),
             }),
@@ -612,7 +616,7 @@ impl SessionDownloadResources {
     ) -> SessionTorrentResources {
         let key = format!("{torrent_id}:{generation}");
         let usage = Arc::new(TorrentResourceUsage {
-            owner: Arc::downgrade(&self.inner),
+            owner: self.inner.clone(),
             key: key.clone(),
             storage_root: storage_root.to_owned(),
             outstanding_request_bytes: AtomicUsize::new(0),
@@ -620,11 +624,16 @@ impl SessionDownloadResources {
             active_piece_bytes: AtomicUsize::new(0),
             active_pieces: AtomicUsize::new(0),
         });
-        self.inner
+        let mut registrations = self
+            .inner
             .registrations
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(key, Arc::downgrade(&usage));
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        registrations.retain(|_, registration| registration.strong_count() != 0);
+        registrations.insert(key, Arc::downgrade(&usage));
+        self.inner
+            .registered_generations_high_water
+            .fetch_max(registrations.len(), Ordering::AcqRel);
         SessionTorrentResources { usage }
     }
 
@@ -679,6 +688,7 @@ impl SessionDownloadResources {
                 &self.inner.active_tracker_operations_high_water,
             ),
             registered_generations,
+            registered_generations_high_water: load(&self.inner.registered_generations_high_water),
             outbound_turns_granted: load(&self.inner.outbound_turns_granted),
             request_waiters,
             request_waiters_high_water,
@@ -693,10 +703,7 @@ impl SessionDownloadResources {
 
 impl SessionTorrentResources {
     fn owner(&self) -> Arc<SessionDownloadResourcesInner> {
-        self.usage
-            .owner
-            .upgrade()
-            .expect("session resources outlive torrent registrations")
+        self.usage.owner.clone()
     }
 
     pub(crate) fn try_reserve_request_bytes(
@@ -900,9 +907,7 @@ impl SessionTorrentResources {
 
 impl Drop for TorrentResourceUsage {
     fn drop(&mut self) {
-        let Some(owner) = self.owner.upgrade() else {
-            return;
-        };
+        let owner = &self.owner;
         let request = self.outstanding_request_bytes.swap(0, Ordering::AcqRel);
         let payload = self.buffered_payload_bytes.swap(0, Ordering::AcqRel);
         let active_bytes = self.active_piece_bytes.swap(0, Ordering::AcqRel);
@@ -1080,6 +1085,31 @@ mod tests {
         assert_eq!(snapshot.buffered_payload_bytes, 0);
         assert_eq!(snapshot.active_piece_bytes, 0);
         assert_eq!(snapshot.active_pieces, 0);
+    }
+
+    #[test]
+    fn generation_registration_keeps_resource_owner_alive_during_unwind_drop_order() {
+        let registration = {
+            let resources = resources();
+            resources.register("late-drop", 1, "root")
+        };
+        registration
+            .try_reserve_request_bytes(16)
+            .expect("late request reservation")
+            .commit();
+        registration.release_request_bytes(16);
+        drop(registration);
+    }
+
+    #[test]
+    fn generation_high_water_ignores_expired_registrations_between_snapshots() {
+        let resources = resources();
+        for generation in 1..=3 {
+            drop(resources.register("sequential", generation, "root"));
+        }
+        let snapshot = resources.snapshot();
+        assert_eq!(snapshot.registered_generations, 0);
+        assert_eq!(snapshot.registered_generations_high_water, 1);
     }
 
     #[test]

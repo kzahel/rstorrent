@@ -11,9 +11,17 @@ use rstorrent_session::{
     ErrorCode, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope,
     application_error_response,
 };
+use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 const MAX_ARGUMENTS: usize = 32;
+
+#[derive(Serialize)]
+struct DiagnosticResourceReport {
+    download: rstorrent_engine::SessionDownloadResourceSnapshot,
+    peer_budget: rstorrent_engine::PeerBudgetSnapshot,
+    storage_files: rstorrent_engine::StorageFilePoolSnapshot,
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -24,13 +32,14 @@ async fn main() {
 }
 
 async fn run() -> Result<(), DiagnosticError> {
-    let config = parse_arguments(env::args_os().skip(1))?;
+    let (config, resource_report) = parse_arguments(env::args_os().skip(1))?;
     let service = Arc::new(tokio::sync::Mutex::new(
         ApplicationService::open(config).await?,
     ));
     ApplicationService::ensure_maintenance_owner(&service).await;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut output = BufWriter::new(tokio::io::stdout());
+    let mut peer_budget_before_shutdown = None;
     while let Some(line) = lines
         .next_line()
         .await
@@ -70,6 +79,9 @@ async fn run() -> Result<(), DiagnosticError> {
         let shutdown = matches!(request.command, Command::Shutdown);
         let request_id = request.request_id.clone();
         let mut service_guard = service.lock().await;
+        if shutdown {
+            peer_budget_before_shutdown = Some(service_guard.peer_budget_snapshot());
+        }
         let response = match service_guard.dispatch(request).await {
             Ok(response) => response,
             Err(error) => application_error_response(
@@ -84,7 +96,22 @@ async fn run() -> Result<(), DiagnosticError> {
             break;
         }
     }
+    let resources = {
+        let service = service.lock().await;
+        DiagnosticResourceReport {
+            download: service.session_download_resource_snapshot(),
+            peer_budget: peer_budget_before_shutdown
+                .unwrap_or_else(|| service.peer_budget_snapshot()),
+            storage_files: service.storage_file_pool_snapshot(),
+        }
+    };
     service.lock().await.shutdown().await?;
+    if let Some(path) = resource_report {
+        let bytes = serde_json::to_vec_pretty(&resources).map_err(DiagnosticError::Serialize)?;
+        tokio::fs::write(path, bytes)
+            .await
+            .map_err(DiagnosticError::WriteReport)?;
+    }
     Ok(())
 }
 
@@ -103,7 +130,7 @@ async fn write_response(
 
 fn parse_arguments(
     arguments: impl Iterator<Item = std::ffi::OsString>,
-) -> Result<ApplicationConfig, DiagnosticError> {
+) -> Result<(ApplicationConfig, Option<PathBuf>), DiagnosticError> {
     let arguments = arguments.collect::<Vec<_>>();
     if arguments.len() > MAX_ARGUMENTS {
         return Err(DiagnosticError::Arguments(
@@ -113,6 +140,7 @@ fn parse_arguments(
     let mut profile_root = None;
     let mut ephemeral = false;
     let mut profile_id = "default".to_owned();
+    let mut resource_report = None;
     let mut storage_roots = Vec::new();
     let mut timeout = Duration::from_secs(120);
     let mut download_resource_limits = DownloadResourceLimits::DESKTOP;
@@ -153,6 +181,13 @@ fn parse_arguments(
                         DiagnosticError::Arguments("profile ID is not UTF-8".to_owned())
                     })?
                     .to_owned();
+            }
+            "--resource-report" => {
+                set_once(
+                    &mut resource_report,
+                    PathBuf::from(value),
+                    "--resource-report",
+                )?;
             }
             "--storage-root" => {
                 let value = value.to_str().ok_or_else(|| {
@@ -276,7 +311,7 @@ fn parse_arguments(
     config.publication_delay_stage_for_testing = publication_delay_stage;
     config.publication_delay_for_testing = publication_delay;
     config.publication_stage_trace_for_testing = trace_publication_stages;
-    Ok(config)
+    Ok((config, resource_report))
 }
 
 fn parse_storage_concurrency(
@@ -322,6 +357,7 @@ enum DiagnosticError {
     Application(rstorrent_session::ApplicationError),
     ReadInput(std::io::Error),
     WriteOutput(std::io::Error),
+    WriteReport(std::io::Error),
     Serialize(serde_json::Error),
 }
 
@@ -332,6 +368,7 @@ impl fmt::Display for DiagnosticError {
             Self::Application(error) => write!(formatter, "{error}"),
             Self::ReadInput(error) => write!(formatter, "read diagnostic input: {error}"),
             Self::WriteOutput(error) => write!(formatter, "write diagnostic output: {error}"),
+            Self::WriteReport(error) => write!(formatter, "write resource report: {error}"),
             Self::Serialize(error) => write!(formatter, "serialize diagnostic output: {error}"),
         }
     }
@@ -341,7 +378,9 @@ impl Error for DiagnosticError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Application(error) => Some(error),
-            Self::ReadInput(error) | Self::WriteOutput(error) => Some(error),
+            Self::ReadInput(error) | Self::WriteOutput(error) | Self::WriteReport(error) => {
+                Some(error)
+            }
             Self::Serialize(error) => Some(error),
             Self::Arguments(_) => None,
         }
@@ -367,7 +406,7 @@ mod tests {
 
     #[test]
     fn parses_profile_and_storage_root() {
-        let config = parse_arguments(
+        let (config, report) = parse_arguments(
             [
                 "--profile-root",
                 "/tmp/profile",
@@ -377,11 +416,14 @@ mod tests {
                 "downloads=/tmp/payload",
                 "--timeout-seconds",
                 "9",
+                "--resource-report",
+                "/tmp/resources.json",
             ]
             .into_iter()
             .map(OsString::from),
         )
         .expect("parse diagnostic arguments");
+        assert_eq!(report, Some(PathBuf::from("/tmp/resources.json")));
         assert_eq!(
             config.persistence,
             ApplicationPersistence::Durable {
@@ -406,12 +448,13 @@ mod tests {
 
     #[test]
     fn parses_ephemeral_without_a_profile_root_and_rejects_conflict() {
-        let config = parse_arguments(
+        let (config, report) = parse_arguments(
             ["--ephemeral", "--storage-root", "downloads=/tmp/payload"]
                 .into_iter()
                 .map(OsString::from),
         )
         .expect("parse ephemeral diagnostic arguments");
+        assert!(report.is_none());
         assert_eq!(config.persistence, ApplicationPersistence::Ephemeral);
 
         assert!(
@@ -432,7 +475,7 @@ mod tests {
 
     #[test]
     fn parses_publication_fault_gate() {
-        let config = parse_arguments(
+        let (config, report) = parse_arguments(
             [
                 "--profile-root",
                 "/tmp/profile",
@@ -449,6 +492,7 @@ mod tests {
             .map(OsString::from),
         )
         .expect("parse publication gate");
+        assert!(report.is_none());
         assert_eq!(
             config.publication_delay_stage_for_testing,
             Some(PathPublicationStage::NamespaceDurable)

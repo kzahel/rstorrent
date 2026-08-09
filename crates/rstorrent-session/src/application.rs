@@ -1133,6 +1133,10 @@ impl ApplicationService {
         self.session_download_resources.snapshot()
     }
 
+    pub fn peer_budget_snapshot(&self) -> rstorrent_engine::PeerBudgetSnapshot {
+        self.session_network().peer_budget().snapshot()
+    }
+
     pub async fn ensure_maintenance_owner(service: &Arc<tokio::sync::Mutex<Self>>) {
         let (wake, cancellation) = {
             let mut service = service.lock().await;
@@ -1895,6 +1899,7 @@ impl ApplicationService {
                 }
                 Ok(Err(_)) | Err(_) => {}
             }
+            active.control.release_session_resources();
             if let Err(error) = self
                 .views
                 .deactivate_eta_generation(&torrent_id, eta_generation)
@@ -2680,6 +2685,7 @@ impl ApplicationService {
             Err(error) if error.is_cancelled() => Ok(()),
             Err(error) => Err(ApplicationError::Join(error.to_string())),
         };
+        active.control.release_session_resources();
         let eta_result = self
             .views
             .deactivate_eta_generation(torrent_id, eta_generation)
@@ -2714,6 +2720,7 @@ impl ApplicationService {
                 Err(error) if error.is_cancelled() => Ok(()),
                 Err(error) => Err(ApplicationError::Join(error.to_string())),
             };
+            active.control.release_session_resources();
             let eta_result = self
                 .views
                 .deactivate_eta_generation(&torrent_id, eta_generation)
@@ -5804,6 +5811,188 @@ mod tests {
                 message => panic!("unexpected content message: {message:?}"),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn three_payload_downloads_progress_and_completion_promotes_the_fourth() {
+        let root = test_root("automatic-admission-three-payloads");
+        let configuration = config(&root);
+        let limits = configuration.download_resource_limits;
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                active_downloads: 3,
+                ..ClientSettings::default()
+            },
+        );
+        let fixtures = [
+            ("small.bin", vec![0x11; 4 * 1024]),
+            ("large-a.bin", vec![0x22; 128 * 1024]),
+            ("large-b.bin", vec![0x33; 96 * 1024]),
+            ("promoted.bin", vec![0x44; 64 * 1024]),
+        ];
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        let mut torrent_ids = Vec::new();
+        let mut request_started = Vec::new();
+        let mut payload_releases = Vec::new();
+        let mut peer_tasks = Vec::new();
+        for (index, (name, payload)) in fixtures.iter().enumerate() {
+            let raw_info = single_file_info(name, payload, payload.len());
+            let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+            let torrent_id = super::encode_info_hash(info_hash);
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind controlled content peer");
+            let peer = listener.local_addr().expect("controlled peer address");
+            let (started_sender, started_receiver) = tokio::sync::oneshot::channel();
+            let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+            peer_tasks.push(tokio::spawn(serve_single_piece_peer(
+                listener,
+                info_hash,
+                payload.clone(),
+                started_sender,
+                release_receiver,
+            )));
+            request_started.push(started_receiver);
+            payload_releases.push(Some(release_sender));
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("add-controlled-payload-{index}"),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
+                        storage_root: "downloads".to_owned(),
+                        start_content: true,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("add controlled payload torrent");
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record controlled metadata");
+            torrent_ids.push(torrent_id);
+        }
+        drop(store);
+
+        let service = Arc::new(tokio::sync::Mutex::new(
+            ApplicationService::open(configuration)
+                .await
+                .expect("open controlled application"),
+        ));
+        ApplicationService::ensure_maintenance_owner(&service).await;
+        for started in &mut request_started[..3] {
+            tokio::time::timeout(Duration::from_secs(3), started)
+                .await
+                .expect("admitted payload request deadline")
+                .expect("admitted payload peer remains connected");
+        }
+        let mut expected_active = torrent_ids[..3].to_vec();
+        expected_active.sort_unstable();
+        assert_eq!(service.lock().await.active_download_ids(), expected_active);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut request_started[3],)
+                .await
+                .is_err(),
+            "the fourth payload owner must remain queued"
+        );
+
+        payload_releases[0]
+            .take()
+            .expect("small payload release")
+            .send(())
+            .expect("release small payload");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let promoted = {
+                    let service = service.lock().await;
+                    let complete = service
+                        .store_mut()
+                        .expect("store")
+                        .load_resume(&torrent_ids[0])
+                        .expect("small resume")
+                        .state
+                        == TorrentState::Complete;
+                    complete
+                        && service
+                            .active_download_ids()
+                            .iter()
+                            .any(|torrent_id| torrent_id == &torrent_ids[3])
+                };
+                if promoted {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("small completion did not promote the fourth payload");
+        tokio::time::timeout(Duration::from_secs(3), &mut request_started[3])
+            .await
+            .expect("promoted payload request deadline")
+            .expect("promoted payload peer remains connected");
+
+        for release in payload_releases.iter_mut().skip(1) {
+            release
+                .take()
+                .expect("payload release")
+                .send(())
+                .expect("release controlled payload");
+        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let complete = {
+                    let service = service.lock().await;
+                    torrent_ids.iter().all(|torrent_id| {
+                        service
+                            .store_mut()
+                            .expect("store")
+                            .load_resume(torrent_id)
+                            .expect("controlled resume")
+                            .state
+                            == TorrentState::Complete
+                    }) && service.active_download_ids().is_empty()
+                };
+                if complete {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("controlled payloads did not converge");
+        for task in peer_tasks {
+            task.await.expect("controlled peer task");
+        }
+
+        let resources = service.lock().await.session_download_resource_snapshot();
+        assert_eq!(resources.registered_generations, 0);
+        assert_eq!(resources.registered_generations_high_water, 3);
+        assert_eq!(resources.outstanding_request_bytes, 0);
+        assert_eq!(resources.buffered_payload_bytes, 0);
+        assert_eq!(resources.active_piece_bytes, 0);
+        assert_eq!(resources.active_pieces, 0);
+        assert!(resources.outstanding_request_high_water <= limits.max_outstanding_request_bytes);
+        assert!(resources.buffered_payload_high_water <= limits.max_buffered_payload_bytes);
+        assert!(resources.active_piece_bytes_high_water <= limits.max_active_piece_bytes);
+        assert!(resources.active_pieces_high_water <= limits.max_active_pieces);
+        for (name, payload) in &fixtures {
+            assert_eq!(
+                fs::read(root.join("payload").join(name)).expect("read published payload"),
+                *payload
+            );
+        }
+
+        service.lock().await.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     async fn read_http_request<S>(stream: &mut S) -> String

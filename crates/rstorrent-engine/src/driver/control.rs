@@ -825,6 +825,16 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(resources);
     }
 
+    /// Release this generation's session accounting after its owner has joined
+    /// every task that can still use it.
+    pub fn release_session_resources(&self) {
+        self.inner
+            .session_resources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+    }
+
     pub(super) fn session_resources(&self) -> Option<SessionTorrentResources> {
         self.inner
             .session_resources
