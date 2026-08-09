@@ -411,9 +411,9 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--size-mib", type=int, default=32)
+    parser.add_argument("--size-mib", type=int, default=128)
     parser.add_argument("--piece-size-kib", type=int, default=1024)
-    parser.add_argument("--runs", type=int, choices=range(1, 6), default=3)
+    parser.add_argument("--runs", type=int, choices=range(1, 8), default=5)
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--no-build", action="store_true")
@@ -458,7 +458,18 @@ def main() -> int:
                 root,
                 arguments.timeout_seconds,
             )
-            for run in range(1, arguments.runs + 1):
+        for run in range(1, arguments.runs + 1):
+            single_cases = cases[:2]
+            if run % 2 == 0:
+                single_cases = list(reversed(single_cases))
+            concurrent_cases = cases[2:]
+            offset = (run - 1) % len(concurrent_cases)
+            recorded_cases = [
+                *single_cases,
+                *concurrent_cases[offset:],
+                *concurrent_cases[:offset],
+            ]
+            for count, limit in recorded_cases:
                 result = run_case(
                     binary,
                     fixtures,
@@ -481,8 +492,6 @@ def main() -> int:
             "single_regression_pass": one_three >= 0.95 * one_limit,
             "two_aggregate_pass": two >= 0.90 * one_limit,
         }
-        if not gates["single_regression_pass"] or not gates["two_aggregate_pass"]:
-            raise ScenarioFailure(f"multi-torrent throughput gate failed: {gates}")
         report = {
             "schema_version": 1,
             "scenario": "session-wide-concurrent-torrent-throughput",
@@ -507,6 +516,8 @@ def main() -> int:
         if arguments.output is not None:
             arguments.output.write_text(encoded)
         print(encoded, end="")
+        if not gates["single_regression_pass"] or not gates["two_aggregate_pass"]:
+            raise ScenarioFailure(f"multi-torrent throughput gate failed: {gates}")
     return 0
 
 
