@@ -26,6 +26,10 @@ configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
 Windows remains unimplemented, and Android already proves one
 user-selected persisted SAF root but not general multi-root management.
+Eventual iOS root behavior is accepted in shape but unimplemented; Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+must test app-owned and user-selected local-provider roots on a physical
+device before a complete iOS product is planned.
 
 ## Scope
 
@@ -264,6 +268,21 @@ The existing one-root Android product is a valid initial presentation limit.
 General multi-root Settings parity with desktop may land later, but it must not
 change the shared root identity and per-torrent binding semantics.
 
+### Eventual iOS and iPadOS
+
+The eventual native iOS product uses the same stable root ID and per-torrent
+binding semantics. The platform adapter, not SQLite or Rust domain state, owns
+an app-container URL or user-selected directory bookmark, security-scope
+lifetime, File Provider coordination, stale-bookmark repair, and permission
+failure. An unresolved bookmark leaves the torrent waiting for repair; it
+must never redirect an established root to app-private Documents merely
+because the display name or path is unavailable.
+
+Tactical `116` first tests the app-owned Documents directory and an explicitly
+selected local **On My iPhone** directory on a physical device. iCloud,
+offloaded items, third-party File Providers, general root-management UI, and a
+support claim remain out of scope until separate evidence exists.
+
 ## User-Visible Publication Layout
 
 A chosen root is intended to contain recognizable content rather than a
@@ -343,6 +362,9 @@ source, fixture, or asset is imported by this topic.
 - A torrent refers to a stable root ID, never an ambient path or descriptor.
 - Platform locator loss becomes an actionable unavailable state, not silent
   remapping or false corruption.
+- Android SAF and eventual Apple bookmarks/URLs remain platform-owned
+  capabilities; neither is serialized as a portable locator or interpreted by
+  another backend.
 - Presentations cannot grant native filesystem authority by sending strings.
 - Root removal, repair, publication, and later relocation never silently move,
   overwrite, merge, or trust content.
@@ -367,3 +389,7 @@ resume slice, and Tactical 063 completes the current metadata-only/live-
 selection flow.
 Later intake work should add `.torrent` sources or pre-metadata cancellation
 without moving file selection out of the Files tab.
+Planned Tactical `116` now precedes storage-facing feature work: it adds
+backend-neutral observations and root-health semantics, closes SAF published
+reads, and records physical iOS root feasibility without implementing fast
+resume or a complete iOS client.

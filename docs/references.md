@@ -154,7 +154,11 @@ existing torrent behavior and platform lessons. High-value areas include:
 - `android/io-core/`: SAF random-access storage, file-descriptor lifetime, and
   Android socket lessons;
 - `android/app/`: foreground service, notification, Doze, lifecycle, storage
-  root, and Chromebook UX lessons; and
+  root, and Chromebook UX lessons;
+- `ios/`: the native SwiftUI/JavaScriptCore product's directory bookmarks,
+  direct TCP/UDP, positioned file I/O, and foreground/background lifecycle;
+  its documented Android/iOS runtime gaps are failure history rather than an
+  architecture to reproduce; and
 - `docs/topics/` and `docs/contracts/`: current evidence and explicitly
   documented platform failures.
 
@@ -185,6 +189,32 @@ adapter follows UniFFI's documented
 model so application-contract types originate in `rstorrent-session` while
 the exported client object remains in `rstorrent-android`. These are SDK/API
 references; no documentation sample source was imported.
+
+## Apple iOS Platform References
+
+Planned Tactical
+[`116`](tactical/116-platform-storage-coherence-and-ios-feasibility.md) uses
+Apple's official platform documentation as the normative SDK boundary:
+
+- [Providing access to directories](https://developer.apple.com/documentation/uikit/providing-access-to-directories)
+  defines user-selected recursive directory access, security-scoped URLs,
+  bookmark restoration, permission revocation, and coordinated access;
+- [`UIDocumentPickerViewController`](https://developer.apple.com/documentation/uikit/uidocumentpickerviewcontroller)
+  defines external-document selection and its security-scope/file-coordination
+  obligations;
+- [`NSFileCoordinator`](https://developer.apple.com/documentation/foundation/nsfilecoordinator)
+  is the coordination primitive whose correct relationship to bounded direct
+  Rust descriptor I/O must be established on-device;
+- [Extending your app's background execution time](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)
+  defines the brief, expiring completion window around ordinary background
+  transition; and
+- [Performing long-running tasks on iOS and iPadOS](https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados)
+  defines iOS 26 user-initiated continued processing, progress, expiration,
+  cancellation, and force-close limits.
+
+These references establish obligations and candidate APIs, not RSTorrent iOS
+feasibility or support. Tactical `116` requires a physical-device matrix and
+imports no Apple sample source, fixture, asset, entitlement, or project file.
 
 ## TLS Platform Trust References
 

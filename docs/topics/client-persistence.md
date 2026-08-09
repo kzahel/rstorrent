@@ -99,6 +99,13 @@ identities/routing observations, tracker source, and active connection state
 remain runtime facts. The DHT snapshot's bounded address-keyed identities and
 per-family bootstrap samples retain their own version-2 blob contract.
 
+Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+now owns the prerequisite cross-platform storage-observation envelope, early
+capability health, SAF published reads, and physical iOS persistence/lifecycle
+probe. It does not authorize a trusting resume decision; conservative restart
+and full Force recheck remain current behavior.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database
@@ -592,6 +599,9 @@ successful mutation unreadable after upgrade.
   and shared-memory behavior.
 - Android SAF URIs and persisted grants are platform locators, never SQLite
   file locations and never open descriptor numbers.
+- Eventual iOS app-container URLs, security-scoped bookmarks, File Provider
+  identities, and coordination leases are likewise platform locators/runtime
+  capabilities, never portable SQLite paths or open descriptor numbers.
 - File sizes, timestamps, sparse allocation, case sensitivity, and identity
   tokens are platform-specific restart evidence, not universal content proof.
 - Newer applications migrate older schemas transactionally. An older
@@ -620,7 +630,10 @@ successful mutation unreadable after upgrade.
   post-commit boundary safely retains all 256. Broader filesystem failure
   profiles remain open.
 - The exact clean-shutdown, storage-generation, and file-observation evidence
-  required before a later fast-resume path may skip hashing.
+  required before a later fast-resume path may skip hashing. Tactical `116`
+  must first make those observations coherent for path and supported Android
+  SAF storage; it deliberately leaves the trust decision to the following
+  tactical.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
 - Tactical

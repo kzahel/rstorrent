@@ -19,6 +19,12 @@ libtorrent-scale v1 metainfo: Android consumes compact selection and paged
 file catalogs, derives the same deterministic safe operational paths, and
 keeps provider requests, documents, and descriptors lazy. It does not add an
 Android `.torrent` picker or document-intent intake.
+Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+is now the prerequisite shoring slice: it adds platform observations and early
+root health, reuses the shared logical published-content owner for SAF upload,
+converges namespace outcomes, and makes applicable Android behavior a
+non-deferrable completion gate for future engine tacticals.
 
 ## Scope
 
@@ -45,9 +51,11 @@ It complements:
 - [`application-control.md`](application-control.md), which keeps platform
   capabilities and descriptor values out of portable presentation commands.
 
-This topic does not implement SAF-backed seeding, general Android multi-root
-UI, cloud document providers, torrent relocation, a general virtual
-filesystem, or a second Android storage engine.
+This topic does not implement general Android multi-root UI, cloud document
+providers, torrent relocation, a general virtual filesystem, or a second
+Android storage engine. SAF-backed seeding and bounded file observations are
+planned specifically in Tactical `116` rather than implied by this topic
+alone.
 
 ## Current State
 
@@ -394,13 +402,17 @@ bridge; after acquisition, payload I/O remains in Rust.
 - Tactical `078` seeds path-backed storage only. Future SAF upload reads must
   use this same shared pool rather than adding a separate seeding descriptor
   cache.
+- The broker response currently carries only an opened file or deletion
+  success. `ProductSafDocuments` looks up document ID and display name but
+  does not return kind, length, modification, or opaque identity observations
+  to Rust; root availability is therefore learned late at operation time.
 
 ## Recommended Next Work
 
-Do not extend the legacy fixed-manifest proof APIs. The next storage work may
-add the remaining provider-latency/result observability or repeat the dynamic
-repair/removal/live-selection profiles on AVD and hardware when that evidence
-has product value. The larger functional dependency is SAF-backed seeding: it
-must use this pool for upload reads and must not introduce another descriptor
-cache. General root management, cloud/removable provider support, and an
-exposed advanced file-pool setting still require their own product decisions.
+Do not extend the legacy fixed-manifest proof APIs. Execute planned Tactical
+`116` after Tactical `114`: add typed observations/root health, make
+SAF-backed seeding use this pool, converge lifecycle outcomes, isolate or
+remove descriptor-manifest production backing, and repeat the complete
+dynamic AVD/physical matrix. General root management, cloud/removable provider
+support, and an exposed advanced file-pool setting still require their own
+product decisions.

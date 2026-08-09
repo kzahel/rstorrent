@@ -13,10 +13,15 @@ and completed
 crate graph remains appropriate. Tactical `114` extracted pure admission,
 durable queue, newest-schema, and session-resource owners while retaining the
 application lifecycle and SQLite transaction authorities. Current general
-pressure remains highest in the application callback/test topology,
-historical store internals, and role-specific peer bootstrap paths exposed by
-MSE. Tactical `113`'s larger UPnP and reachability modules remain cohesive.
-No standalone refactor is selected by this topic.
+pressure remains highest in the application callback/test topology, historical
+store internals, and role-specific peer bootstrap paths exposed by MSE.
+Tactical `113`'s larger UPnP and reachability modules remain cohesive. No
+standalone refactor is selected by this topic. Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+then selects the storage-specific artifact-geometry/logical-file seam already
+identified here, because path upload, Android SAF observations and upload,
+namespace transitions, and a physical iOS probe now provide concrete
+multi-platform pressure rather than a size-only reason to refactor.
 
 Topic: `code-organization-and-refactoring`
 
@@ -273,7 +278,7 @@ public facade becomes deliberate. Shorter files alone are not the outcome.
 The following snapshot uses the source tree at `c545e91` on 2026-08-09, 12
 commits after the `4f0ba8d` refresh. This shorter-than-usual interval records
 Tactical `114`'s material application, persistence, and resource-owner changes
-after completion. Production
+before Tactical `116` begins its selected storage boundary. Production
 and test counts are approximate physical lines. For Rust files with one
 trailing `#[cfg(test)]` module, the marker separates the two; child test files
 are counted separately. Files with interspersed test-only helpers are
@@ -285,7 +290,7 @@ substantial ownership.
 | Boundary | Approximate production lines | Approximate test lines | Touches in 200 commits | Current assessment |
 | --- | ---: | ---: | ---: | --- |
 | Engine driver facade plus `control`, `storage_pipeline`, and session resources | about 11,492 across four owners | 8,575 child-test lines plus about 663 inline storage/resource tests | 23 on the facade, 4 on session resources | Tactical `079` still supplies useful owners. Tactical `114` adds one cohesive task-free session authority while `DownloadControl` retains torrent-local checker and observation state. No umbrella split is justified. |
-| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Shared immutable artifact geometry remains a concrete one-way-dependency seam, but current feature churn is low and no active tactical changes storage shape. |
+| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Shared immutable artifact geometry remains a concrete one-way-dependency seam. Planned Tactical `116` selects it after `114` because path upload, SAF observation/upload, and physical-iOS evidence now provide behavior pressure despite low recent churn. |
 | `SwarmState` | about 3,331 | about 1,766 | 9 | `piece_picker` owns independently changing activation policy. Retain the remaining deterministic transition owner until another policy separates. |
 | Incoming and outgoing peer bootstrap | about 4,507 across `incoming.rs` and `peer_socket.rs` before their test modules | about 2,031 | 18 incoming, 8 outgoing | Strong engine source-shape candidate after MSE. Pre-stream handshake/policy/accounting can become role-specific private children while listener/admission/upload and peer-set/task owners remain in place. Do not unify the two roles behind a generic async runner. |
 | DHT actor | about 3,044 | about 1,033 | 6 | Tactical `112` retained one actor around two independently bounded family nodes, one command route, and one observation owner. The growth is material, but no duplicated lifecycle or cross-family state leak appeared. Review again when a DHT policy changes independently; do not split by family or file size alone. |
@@ -492,9 +497,12 @@ these already-visible private seams:
 
 Keep `SelectiveStorage` as the state-transition coordinator. Do not turn the
 children into services, make upload depend on write-side state, or split all
-five concerns mechanically in one pass. This remains the leading storage-
-specific engine candidate when engine work next changes storage, not the
-default engine cleanup while dual-stack transport is active.
+five concerns mechanically in one pass. Planned Tactical `116` now selects
+this as a feature-driven storage boundary after Tactical `114`. It must also
+move verified upload reads onto the common logical-file/pool owner, add
+platform observations without a generic VFS, and isolate or remove production
+descriptor-manifest backing. Keep the extraction no larger than those tested
+path, SAF, and physical-iOS needs.
 
 ### 6. Direct-Engine Discovery Compatibility Boundary
 
@@ -591,13 +599,22 @@ lifecycle owner and active-generation map. That outcome resolves the immediate
 single-slot and resource-multiplier seams; it does not justify a follow-up
 admission service, store repository layer, or broad application test move.
 
+Planned Tactical `116` is now the authoritative **Now** and the selected
+storage shoring work. Let
+its common published-read, observation, root-health, namespace-transition,
+Android parity, and physical-iOS cases drive the previously identified
+artifact-geometry extraction. Do not implement fast resume before that seam is
+proven, and do not turn three concrete adapters into a general filesystem
+framework.
+
 If the feature queue is instead explicitly paused for one unrelated standalone
 structural tactical, application callback adapters plus categorized tests
 remain the strongest general story. Peer bootstrap is the strongest engine-
 specific story. DHT actor extraction is not promoted: its second family
-increased size but did not reveal a second owner. Web validation and immutable
-storage geometry remain independent lower-timed candidates. Do not combine
-these stories merely to amortize validation.
+increased size but did not reveal a second owner. Web validation remains an
+independent lower-timed candidate; immutable storage geometry now belongs to
+Tactical `116` and should not be split into an overlapping standalone change.
+Do not combine these stories merely to amortize validation.
 
 ## Maintenance Contract
 
@@ -627,7 +644,7 @@ lifecycle, or navigation problem remains.
   active-generation map and joined maintenance lifecycle; `SessionStore`
   retains one connection and historical migrations. The implementation did
   not justify a new crate, generic resource service, or umbrella application
-  refactor.
+  refactor. Tactical `116` is now the selected feature-driven storage seam.
 - **2026-08-09:** Refreshed the repository snapshot at source commit
   `4f0ba8d`, ten commits after `f8f2671`, after Tactical `113` closed evidence-
   limited and Tactical `114` became the authoritative, not-started **Now**.

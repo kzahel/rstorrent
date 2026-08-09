@@ -69,6 +69,12 @@ settings and actions through the generated contract. Android consumes the
 same additive contract and a physical Pixel 7a proves configured three/
 effective two plus promotion, while Compose deliberately gains no new control
 in this tactical.
+Maintainer direction on 2026-08-09 accepts iOS as an eventual first-party
+in-process product. Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+adds only a minimal physical-device feasibility harness around the real Rust
+storage and direct-networking seams; it does not add a fourth supported UI
+surface or select the eventual native presentation toolkit.
 Active Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 adds no setting. Browser and Tauri render the existing IPv4 mapping status and
@@ -148,6 +154,13 @@ RSTorrent has three initial user-interface surfaces:
 - a Tauri desktop application embedding the same web application; and
 - an Android Compose application adapted from the existing JSTorrent Android
   product.
+
+An eventual iOS client is accepted as a first-party native product using the
+same in-process Rust engine and typed application semantics. It is not one of
+the currently implemented surfaces. Its presentation toolkit, minimum OS,
+distribution, background policy, and UI reuse strategy wait for a dedicated
+product tactical after Tactical `116` records physical storage, direct TCP/UDP,
+and lifecycle feasibility.
 
 Desktop product content is web UI. Native desktop code is limited to the
 application shell and operating-system integration such as process and window
@@ -496,6 +509,9 @@ future server.
   compatibility/debug use and remains visibly unauthenticated in tracker
   rows; custom roots, pins, and certificate-management UI are absent.
 - No HTTP playback server exists.
+- No RSTorrent iOS product exists. Current evidence is limited to local
+  toolchain/device availability; Tactical `116` requires a minimal physical
+  probe and explicitly stops before product UI, packaging, or support claims.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed

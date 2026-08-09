@@ -21,7 +21,9 @@ Android clients. Exact support claims and their evidence live in the
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. ChromeOS deployment
-  and extension integration remain planned rather than released. See
+  and extension integration remain planned rather than released. iOS is an
+  accepted eventual in-process product, with physical feasibility planned
+  before a complete client. See
   [client and platform readiness](docs/topics/client-surfaces.md).
 
 ## What RSTorrent Is
@@ -31,8 +33,11 @@ RSTorrent has one reusable Rust engine behind a typed application service:
 ```text
 Desktop client ─┐
 Android client ─┼──> application service ──> Rust torrent engine
+iOS client* ────┤
 CLI and tests ──┘
 ```
+
+`*` Eventual; not currently implemented.
 
 The engine runs in-process in first-party clients and owns peer networking,
 discovery, protocol state, hashing, scheduling, persistence, and hot-path file
@@ -59,10 +64,11 @@ to graduate this work into the next generation of **JSTorrent**: replace the
 current engine and related internals while retaining the JSTorrent product
 name and providing a deliberate transition for existing installations.
 
-Desktop, Android, and ChromeOS are intended to use the same first-party Rust
-engine. A future JSTorrent browser extension may attach as a control and
-presentation surface, while networking, hashing, scheduling, persistence, and
-payload I/O remain in the native engine. The rollout, backend choices,
+Desktop, Android, ChromeOS, and an eventual iOS client are intended to use the
+same first-party Rust engine. A future JSTorrent browser extension may attach
+as a control and presentation surface, while networking, hashing, scheduling,
+persistence, and payload I/O remain in the native engine. The rollout, backend
+choices,
 coexistence, and user-state import direction are recorded in the
 [product deployment and migration plan](docs/topics/product-surfaces-and-migration.md)
 and [long-term product vision](docs/vision.md).

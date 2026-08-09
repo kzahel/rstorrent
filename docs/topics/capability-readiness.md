@@ -225,19 +225,21 @@ resource cleanup.
 
 ### Now
 
-- Platform-storage coherence and cross-platform feasibility is the single
-  authoritative **Now** after completed Tactical `114`. The bounded work must
-  close path and platform-capability read/observation seams, retain Android as
-  a same-tactical engine gate, and establish physical iOS storage/network/
-  lifecycle feasibility without claiming a complete iOS product. It is
-  planned and not started; queue status alone is not implementation
-  authorization.
+- Active prerequisite Tactical
+  [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+  is the single authoritative **Now** after completed Tactical `114`. It closes
+  the path/SAF published-read, observation, root-health, namespace-transition,
+  and legacy descriptor seams; makes Android a same-tactical engine parity
+  gate; and requires an actual-device iOS storage/network/lifecycle feasibility
+  result without claiming a complete iOS product. Implementation is authorized
+  and in progress.
 
 ### Next
 
-- A separate later tactical may add an explicit faster, more trusting resume
-  option while keeping conservative behavior as the default and Force recheck
-  as a full validation pass.
+- After Tactical `116`, a separate tactical may add an explicit faster, more
+  trusting resume option while keeping conservative behavior as the default
+  and Force recheck as a full validation pass. Unsupported or mismatched
+  platform observations fall back to the common checker.
 
 ### Later
 
@@ -335,7 +337,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop, web | Lazy part creation, retained lowered destinations, route-epoch promotion/demotion, exact verified-span export, uncertain boundary-piece invalidation, and empty-part cleanup pass; BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live, physical | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent session totals, root/torrent fairness, explicit generation joins, and the shared 40-handle pool. Controlled multi-torrent/root isolation and physical Android concurrency pass; broader provider/root profiles remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
-| Android SAF storage and publication | Implemented | deterministic, runtime, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool; the current API 34 rename-death run re-enters published full recheck at 40 owned handles and one pending request. General root management, cloud/removable policy, migration, and a current physical dynamic-provider rerun remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
+| Android SAF storage and publication | Implemented | deterministic, runtime, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool; the current API 34 rename-death run re-enters published full recheck at 40 owned handles and one pending request. Platform observations, early grant health, and SAF-backed upload remain absent and are prerequisite Tactical `116`; general root management, cloud/removable policy, migration, and a current physical dynamic-provider rerun remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
 | Durable have state and conservative recheck | Implemented | deterministic, persistence, runtime, interop, web, AVD, physical | Schema 14 stores one payload fact and generation-fenced verification evidence. Full checks scan every readable logical piece independently of selection; absence/mismatch remain checker outcomes, selection alone requests no new generation, pause retains one in-process cursor, stale completions are rejected, and malformed torrent-local state cannot abort profile open. | [`client-persistence`](client-persistence.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |
 
@@ -350,6 +352,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
+| Eventual iOS native client | Absent | none | A paired physical device and current Xcode toolchain are available as preflight observations, but no RSTorrent iOS target, build, storage, direct-networking, lifecycle, or product evidence exists. Tactical `116` requires a bounded physical feasibility result; a complete client and support claim remain separate. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |

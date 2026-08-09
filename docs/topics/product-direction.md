@@ -9,6 +9,10 @@ proven on the AVD, Chromebook, Pixel 7a, and Moto. Desktop and Android product
 clients now select explicit online tracker and peer networking while
 controlled tools retain loopback-only policy. Active magnets retain supervised
 scheduled UDP tracker discovery with bounded retry and reannounce behavior.
+Maintainer direction on 2026-08-09 additionally makes Android a
+non-deferrable engine parity gate and accepts iOS as an eventual first-party
+in-process product, beginning with the bounded physical-device feasibility in
+Tactical [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
 
 ## Scope
 
@@ -76,6 +80,14 @@ foreground-service lifecycle, and Storage Access Framework document creation.
 The preferred storage seam is to give Rust usable file descriptors or another
 bulk-I/O capability rather than copying piece payloads through callbacks.
 
+On an eventual iOS product, Swift may own native presentation, directory
+selection, bookmarks and security-scope lifetime, File Provider coordination,
+background-task integration, and other Apple lifecycle work. Rust still owns
+peer networking, hashing, scheduling, persistence, and payload I/O. Tactical
+`116` must determine on a physical device whether coordinated external-root
+access can lend a bounded direct-I/O capability safely; payload callbacks
+through Swift are not the fallback if it cannot.
+
 ### Generated Kotlin boundary
 
 Use UniFFI as the default Rust/Kotlin binding generator. Expose a narrow typed
@@ -95,13 +107,19 @@ Handwritten JNI is a narrow escape hatch for a concrete Android capability
 that UniFFI cannot express safely. It is not a parallel application API or a
 payload path.
 
+The eventual Rust/Swift binding technology is deliberately unselected.
+Tactical `116` may use the smallest bridge required for the physical probe,
+but that experiment does not establish the full product API, UI toolkit, or a
+second application contract.
+
 ### In-process by default
 
-Desktop and Android clients should normally load the engine into their own
-process and communicate through a typed application API. A test driver or later
-remote-control feature must not force the product itself into a daemon
-architecture. A future extension control channel carries commands, snapshots,
-and events rather than proxying peer sockets, filesystems, or piece payloads.
+Desktop, Android, and the eventual iOS client should normally load the engine
+into their own process and communicate through a typed application API. A test
+driver or later remote-control feature must not force the product itself into
+a daemon architecture. A future extension control channel carries commands,
+snapshots, and events rather than proxying peer sockets, filesystems, or piece
+payloads.
 
 The accepted
 [`http-file-serving-and-streaming`](http-file-serving-and-streaming.md)
@@ -116,6 +134,30 @@ to expose payload on a peer, LAN, mapped, or public listener.
 Android/ChromeOS and desktop are the initial product surfaces. Desktop is the
 fastest bring-up and diagnostic environment. Android/ChromeOS supplies the
 primary product pressure and must receive physical-device validation.
+
+iOS is now accepted as an eventual first-party native surface around the same
+Rust engine and typed application service. It is not part of the initial
+release sequence, but platform constraints that can change engine ownership
+or storage/lifecycle seams should be tested early on a physical device rather
+than discovered after path and Android behavior harden. Tactical `116` owns
+the first bounded storage, direct-networking, and lifecycle feasibility probe;
+it does not authorize a complete iOS client or distribution path.
+
+### Android engine parity gate
+
+Android/ChromeOS Android must not become a downstream engine port. For every
+applicable engine or application capability, the same tactical owns Android
+semantic behavior, generated bindings, cross-build, and platform evidence
+proportional to the change. Missing Android adaptation blocks completion and
+cannot be left as an unspecified follow-up. A behavior may be marked
+inapplicable only with an explicit reason tied to the actual Android product
+path.
+
+This gate concerns engine and application correctness, lifecycle, restart,
+resource bounds, and diagnostics. It does not require Compose to reproduce
+desktop inspection density or expose every advanced setting. It also does not
+permit a Kotlin payload path, checker, scheduler, cache, or second torrent
+runtime to manufacture parity.
 
 ### Detailed desktop inspection and platform presentation split
 
@@ -324,7 +366,9 @@ testing evidence justifies it.
 - Chrome extension or Chrome native-messaging integration.
 - Android companion HTTP/WebSocket service.
 - A generic socket or filesystem daemon.
-- iOS during initial bring-up.
+- A complete iOS product during initial bring-up. Tactical `116` deliberately
+  front-loads bounded physical-device feasibility without changing this
+  release-sequencing non-goal.
 - Search plugins, streaming playback, or remote administration in the first
   useful client.
 - Exact JSTorrent API, UI, persistence, or feature parity.

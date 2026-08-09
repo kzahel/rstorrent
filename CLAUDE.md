@@ -45,11 +45,20 @@ a living topic records an accepted replacement:
   state, and hot-path data movement.
 - Product clients are first-party and normally run the engine in-process.
 - Platform adapters may own operating-system integration such as Android
-  activities, lifecycle, permissions, notifications, and SAF document access.
+  activities, lifecycle, permissions, notifications, and SAF document access,
+  or eventual Apple UI lifecycle, security scopes, and file coordination.
 - Do not introduce a native host, companion server, REST/WebSocket socket
   proxy, or separate IO daemon without an explicit architectural decision.
-- Android/ChromeOS and desktop are the initial product surfaces. An extension,
-  iOS client, remote daemon, and additional platforms are not implied work.
+- Android/ChromeOS and desktop are the initial product surfaces. iOS is an
+  accepted eventual first-party in-process product; bounded physical-device
+  feasibility work may be explicitly authorized before the complete client.
+  An extension, complete iOS port, remote daemon, and additional platforms are
+  not implied work outside their owning tactical.
+- Android/ChromeOS Android is a first-party engine parity gate. An applicable
+  engine or application capability is not complete until its Android semantics,
+  generated boundary/build, and proportional platform evidence land in the
+  same tactical, or the tactical proves why the behavior is inapplicable.
+  Android presentation parity remains a separate per-feature decision.
 - Unqualified `UI` and `web UI` mean the shared mature React product
   application in `clients/web`, whether browser-hosted or embedded by Tauri.
   The retired direct-DOM proof is not a current surface. Refer to the Android

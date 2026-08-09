@@ -26,6 +26,13 @@ desktop or Android totals; root/torrent-fair execution lets a healthy root
 advance beside a blocked one, while the session file pool remains the final
 40-handle authority. The controlled 1/2/3/4/8 sweep and physical Pixel result
 are recorded in `performance-and-live-evidence.md`.
+Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+will close the remaining path/platform published-read and observation seams
+after Tactical `114` establishes session authority. Its physical iOS track
+tests whether the same narrow logical-file capability survives Apple security
+scope, coordination, and lifecycle constraints; it does not add another
+payload runtime or fast-resume policy.
 
 ## Purpose And Scope
 
@@ -567,6 +574,14 @@ in-flight ownership remain in Rust. Descriptor count is bounded by the shared
 pool rather than validated metainfo size or a startup manifest. The detailed
 capability, cancellation, part-file, and provider lifecycle is owned by
 [`android-saf-storage.md`](android-saf-storage.md).
+
+An eventual iOS adapter follows the same ownership direction only where
+physical evidence permits: Swift owns security-scoped root access and File
+Provider coordination, while Rust owns bounded positional payload operations
+and the common handle/resource accounting. Tactical `116` must prove the
+coordination window on-device; successful uncoordinated POSIX calls do not
+establish an external-root contract, and payload callbacks through Swift are
+not an accepted fallback.
 
 The hash path should stop duplicating each wanted-file handle for every piece
 once handles are safely shareable for positional access;

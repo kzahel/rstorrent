@@ -148,7 +148,9 @@ endpoint:
   loopback sockets consume those limits;
 - eligible complete, published, desired-running path-backed torrents register
   at completion and application open, and unregister before lifecycle or
-  storage-authority changes;
+  storage-authority changes; platform-capability roots are still rejected,
+  leaving Android SAF complete torrents unable to seed until planned Tactical
+  `116` moves upload reads onto the common logical storage owner;
 - every peer starts choked; one session coordinator grants at most eight
   upload slots, including one automatically derived optimistic slot, using
   pinned libtorrent's fixed-slot, 15/30-second, and complete-seed round-robin
@@ -790,3 +792,9 @@ scale test retains 500 complete registrations beside three active downloads;
 ten interested peers receive exactly seven regular and one optimistic grant,
 stay beneath the 200-peer and 40-handle ceilings, and drain download-resource
 ownership at shutdown. No seed-rank or durable seeding-goal policy is implied.
+Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+is the prerequisite storage closure after Tactical `114`: SAF published
+content must register through this existing long-lived peer/upload owner and
+reuse the session file pool, read admission, exact accounting, and joined
+unregistration. It adds no second seeding runtime or new reachability policy.

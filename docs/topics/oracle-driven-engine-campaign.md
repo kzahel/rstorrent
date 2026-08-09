@@ -14,9 +14,9 @@ capability is unknown on the current hardware and the tactical is not
 graduated. Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is
 complete after deterministic, controlled pinned-libtorrent, browser, scale,
-performance, and physical Pixel evidence. Platform-storage coherence and
-cross-platform feasibility is the single authoritative **Now**, planned and
-not started. The completed
+performance, and physical Pixel evidence. Planned Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md) is
+the single authoritative **Now**. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -328,8 +328,8 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tactical `114` graduated; platform-storage coherence and cross-platform
-feasibility is the planned, not-started authoritative Now**.
+Tactical `114` graduated; Tactical `116` is the planned, not-started
+authoritative Now**.
 
 Latest graduated tactical:
 [`114-session-wide-concurrent-torrent-admission.md`](../tactical/114-session-wide-concurrent-torrent-admission.md).
@@ -343,27 +343,26 @@ scales remain bounded, and the physical Pixel 7a proves configured three/
 effective two with promotion and exact publication.
 
 Latest closed tactical:
-[`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md).
-Commits `6e4bb80`, `51c3644`, and `845f388` implement independent IPv4 mapping
-and IPv6 pinhole slots under the existing coordinator, bounded service/lease/
-uncertainty behavior, generated product state, and an identity-free physical
-harness. The live negative control passes; `AddPinhole` returns `606` on the
-available gateway. The accepted closure records positive physical capability
-as unknown on current hardware without graduation or control-transport scope.
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md). Commit
+`d3ec497` records its completed deterministic, controlled-performance,
+browser, scale, and physical Android evidence.
 
-Current milestone: platform-storage coherence and cross-platform feasibility
-is the single authoritative **Now**, planned and not started after graduated
+Current milestone: Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md) is
+the single authoritative **Now**, authorized and in progress after graduated
 Tactical `114`.
 
-Next executable action: await implementation authorization for the platform-
-storage tactical. Once authorized, revalidate its accepted boundary against
-the graduated session-resource owners before changing code. Tactical `113`
-needs no further action unless different gateway hardware becomes available
-or a separate control-transport investigation is explicitly authorized.
+Next executable action: freeze the current path, SAF, observation, root-health,
+and upload behavior against the graduated session-resource owners, then run the
+front-loaded physical iOS feasibility spike before extracting the common
+logical-artifact seam. Tactical `113` needs no further action unless different
+gateway hardware becomes available or a separate control-transport
+investigation is explicitly authorized.
 
-A separate trusting fast-resume option remains a later candidate, with
-conservative checking still the default and Force recheck still the full
-validation pass.
+A separate trusting fast-resume option follows Tactical `116`, whose common
+path/SAF observations and physical iOS feasibility establish the prerequisite
+storage seam. Conservative checking remains the default and Force recheck
+remains the full validation pass.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,

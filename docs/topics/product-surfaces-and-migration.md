@@ -8,14 +8,19 @@ discussion on 2026-08-02. This topic records graduation direction, not an
 authorization to implement the extension, Crostini packaging, production
 remote control, or migration in the current engine tactical. Exact transports,
 security boundaries, rollout policy, and imported fields remain to be designed
-and validated in bounded tacticals.
+and validated in bounded tacticals. Maintainer direction on 2026-08-09 accepts
+iOS as an eventual first-party in-process backend; Tactical
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
+front-loads only the physical storage/network/lifecycle feasibility that can
+shape the common engine boundary.
 
 ## Scope
 
 This topic owns the product shape that separates a native engine host from the
 UI used to control it, the resulting desktop and ChromeOS configurations,
-launch and handoff requirements, backend-visible state ownership, and the
-initial migration posture from current JSTorrent installations.
+the eventual iOS backend shape, launch and handoff requirements,
+backend-visible state ownership, and the initial migration posture from
+current JSTorrent installations.
 
 It complements:
 
@@ -78,6 +83,7 @@ The likely successor has these useful compositions:
 | ChromeOS | Rust application service in Crostini | Browser extension | Owns a Linux profile and roots |
 | ChromeOS | Rust application service in the Android app | Browser extension | Shares the Android profile |
 | ChromeOS or Android | Same Android application service | Android Compose | Shares the Android backend and profile |
+| iOS/iPadOS (eventual) | Rust application service in the native app | Native platform UI, toolkit to be selected later | Owns an iOS profile and capability-backed roots |
 
 ChromeOS therefore has **two backends and three presentation
 configurations**:
@@ -89,6 +95,14 @@ configurations**:
 The second and third configurations are two views of the same Android backend.
 The Crostini configuration is a different backend with different state and
 storage.
+
+The eventual iOS application is another native backend, not a remote
+presentation of desktop or Android. It runs the first-party Rust engine
+in-process and owns its own profile, root capabilities, networking, and
+lifecycle. An Apple bookmark or File Provider identity cannot be shared with
+Android SAF or a desktop path, and matching filenames do not imply shared
+verified state. Tactical `116` tests this shape on a physical device without
+choosing the final UI toolkit, release channel, minimum OS, or migration path.
 
 ## Desktop Extension And Embedded UI
 
@@ -435,6 +449,10 @@ fixture, or wire contract from either sibling project.
   backend launches and recovery from stale or incompatible installations.
 - Physical ChromeOS TCP and UDP torrent behavior and representative Android
   versus Crostini resource and throughput measurements.
+- The eventual iOS product's UI toolkit, minimum OS, background policy,
+  packaging/distribution, migration source, and supported app-owned versus
+  external File Provider roots. Tactical `116` supplies feasibility evidence,
+  not these product decisions.
 
 ## Recommended Next Work
 

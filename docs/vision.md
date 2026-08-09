@@ -26,7 +26,7 @@ valuable:
 
 - simple installation and operation for people who do not want to administer a
   torrent daemon;
-- first-class desktop, Android, and ChromeOS experiences;
+- first-class desktop, Android, ChromeOS, and eventual iOS experiences;
 - excellent browser and web integration;
 - useful automation and integration surfaces;
 - understandable diagnostics and support behavior; and
@@ -43,6 +43,7 @@ Native clients should normally run the engine in-process:
 ```text
 Desktop UI ─────────── in-process adapter ─┐
 Android UI ─────────── in-process adapter ─┼──> typed application service
+iOS UI ─────────────── in-process adapter ─┤              │
 CLI and automation ─── in-process adapter ─┤              │
 Browser extension ── authenticated control ┘              ▼
                                                   Rust torrent engine
@@ -78,7 +79,8 @@ A likely progression is:
 1. Build and validate the engine under the RSTorrent working name.
 2. Ship an explicitly experimental native client to learn from real use.
 3. Establish reliable desktop and Android/ChromeOS products around the same
-   engine.
+   engine, while front-loading physical iOS storage and lifecycle constraints
+   that could otherwise fracture that engine.
 4. Design migration and the browser-extension control boundary from proven
    application contracts.
 5. Graduate the implementation into the JSTorrent product and brand when it is
@@ -102,6 +104,8 @@ works. Graduation should be supported by evidence that includes:
 - bounded resource use and measured hot-path performance;
 - actionable diagnostics and support tooling;
 - physical Android/ChromeOS lifecycle and storage validation;
+- physical iOS storage, direct-networking, and lifecycle feasibility before a
+  complete iOS product is planned;
 - stable application contracts used by more than one first-party client;
 - a reviewed migration path for user settings, torrent state, and content;
 - a secured and lifecycle-aware extension control channel, if the extension is
