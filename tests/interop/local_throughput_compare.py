@@ -229,7 +229,9 @@ def parse_rstorrent_diagnostic(output: str, fixture: Fixture) -> dict[str, str]:
     return values
 
 
-def configure_seed_encryption(session: lt.session, encryption: str | None) -> None:
+def configure_libtorrent_encryption(
+    session: lt.session, encryption: str | None
+) -> None:
     if encryption is None:
         return
     if encryption == "disabled":
@@ -372,11 +374,16 @@ def run_libtorrent(
     peer_port: int,
     output_root: Path,
     timeout_seconds: int,
+    encryption: str | None,
+    seed_handle: lt.torrent_handle,
 ) -> tuple[float, dict[str, Any]]:
     output_root.mkdir(parents=True)
     session = create_session()
+    configure_libtorrent_encryption(session, encryption)
     handle: lt.torrent_handle | None = None
     last_status: Any | None = None
+    downloader_methods: set[str] = set()
+    seed_methods: set[str] = set()
     started = time.monotonic()
     try:
         parameters = lt.add_torrent_params()
@@ -391,6 +398,12 @@ def run_libtorrent(
         handle.connect_peer(("127.0.0.1", peer_port))
         deadline = started + timeout_seconds
         while True:
+            downloader_method = oracle_mse_method(handle)
+            if downloader_method is not None:
+                downloader_methods.add(downloader_method)
+            seed_method = oracle_mse_method(seed_handle)
+            if seed_method is not None:
+                seed_methods.add(seed_method)
             status = handle.status()
             last_status = status
             error = status.errc
@@ -403,7 +416,7 @@ def run_libtorrent(
                     f"libtorrent exceeded {timeout_seconds} seconds at "
                     f"{status.total_wanted_done}/{fixture.size_bytes} bytes"
                 )
-            time.sleep(POLL_SECONDS)
+            time.sleep(0.005 if encryption is not None else POLL_SECONDS)
         transfer_seconds = time.monotonic() - started
     finally:
         if handle is not None and handle.is_valid():
@@ -414,6 +427,18 @@ def run_libtorrent(
         gc.collect()
     if last_status is None:
         raise ScenarioFailure("libtorrent returned no terminal status")
+    if encryption == "required" and (
+        downloader_methods != {"rc4"} or seed_methods != {"rc4"}
+    ):
+        raise ScenarioFailure(
+            "libtorrent forced-RC4 pair did not expose RC4 on both sides: "
+            f"downloader={sorted(downloader_methods)} seed={sorted(seed_methods)}"
+        )
+    if encryption == "disabled" and (downloader_methods or seed_methods):
+        raise ScenarioFailure(
+            "libtorrent ordinary-plain pair unexpectedly exposed MSE: "
+            f"downloader={sorted(downloader_methods)} seed={sorted(seed_methods)}"
+        )
     return transfer_seconds, {
         "payload_download_bytes": int(last_status.total_payload_download),
         "redundant_bytes": int(last_status.total_redundant_bytes),
@@ -426,6 +451,7 @@ def run_libtorrent(
         "hash_service_seconds": None,
         "hash_active_high_water": None,
         "payload_high_water": None,
+        "oracle_mse_method": next(iter(downloader_methods), None),
     }
 
 
@@ -447,13 +473,13 @@ def run_transfer(
     info = lt.torrent_info(str(torrent_path))
     alerts: list[str] = []
     seed_session = create_session()
-    configure_seed_encryption(seed_session, encryption)
+    configure_libtorrent_encryption(seed_session, encryption)
     seed_handle: lt.torrent_handle | None = None
     cleanup_succeeded = False
     case_label = (
         f"rstorrent-{encryption or 'default'}-w{write_concurrency}-h{hash_concurrency}"
         if implementation == "rstorrent"
-        else implementation
+        else f"libtorrent-{encryption or 'default'}"
     )
     output_root = case_root / case_label
     output_path = output_root / PAYLOAD_NAME
@@ -495,6 +521,8 @@ def run_transfer(
                 peer_port,
                 output_root,
                 timeout_seconds,
+                encryption,
+                seed_handle,
             )
             version = lt.version
         else:
@@ -702,16 +730,16 @@ def parse_arguments(repository: Path) -> argparse.Namespace:
         "--encryption-pair",
         action="store_true",
         help=(
-            "compare matched RSTorrent ordinary-plain and forced-RC4 runs "
-            "instead of comparing RSTorrent with libtorrent"
+            "compare matched ordinary-plain and forced-RC4 runs for both "
+            "RSTorrent and libtorrent"
         ),
     )
     parser.add_argument(
         "--minimum-rc4-plain-ratio",
         type=positive_float,
         help=(
-            "minimum median within-pair RC4/plain throughput ratio in "
-            "--encryption-pair mode (default: 0.75)"
+            "minimum RSTorrent median within-pair RC4/plain throughput ratio "
+            "in --encryption-pair mode (default: 0.75)"
         ),
     )
     parser.add_argument(
@@ -937,17 +965,29 @@ def summarize_results(results: list[TransferResult]) -> list[dict[str, Any]]:
 
 
 def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, Any]]:
-    groups: dict[tuple[int, int, int, int], dict[int, dict[str, TransferResult]]] = {}
+    groups: dict[
+        tuple[str, int, int, int | None, int | None],
+        dict[int, dict[str, TransferResult]],
+    ] = {}
     for result in results:
-        if result.implementation != "rstorrent":
-            raise ScenarioFailure("encryption pairs may contain only RSTorrent runs")
-        if result.write_concurrency is None or result.hash_concurrency is None:
+        if result.implementation not in {"rstorrent", "libtorrent"}:
+            raise ScenarioFailure(
+                f"unexpected encryption-pair implementation {result.implementation!r}"
+            )
+        if result.implementation == "rstorrent" and (
+            result.write_concurrency is None or result.hash_concurrency is None
+        ):
             raise ScenarioFailure("encryption pair is missing storage concurrency")
+        if result.implementation == "libtorrent" and (
+            result.write_concurrency is not None or result.hash_concurrency is not None
+        ):
+            raise ScenarioFailure("libtorrent encryption pair has RSTorrent limits")
         if result.encryption not in {"disabled", "required"}:
             raise ScenarioFailure(
                 f"unexpected encryption-pair policy {result.encryption!r}"
             )
         key = (
+            result.implementation,
             result.size_bytes,
             result.piece_size,
             result.write_concurrency,
@@ -962,7 +1002,13 @@ def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, 
 
     summaries: list[dict[str, Any]] = []
     for key, runs in sorted(groups.items()):
-        size_bytes, piece_size, write_concurrency, hash_concurrency = key
+        (
+            implementation,
+            size_bytes,
+            piece_size,
+            write_concurrency,
+            hash_concurrency,
+        ) = key
         pairs: list[dict[str, Any]] = []
         for run, pair in sorted(runs.items()):
             if set(pair) != {"disabled", "required"}:
@@ -996,6 +1042,7 @@ def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, 
         median_ratio = statistics.median(ratios)
         summaries.append(
             {
+                "implementation": implementation,
                 "size_bytes": size_bytes,
                 "piece_size": piece_size,
                 "pairs": len(pairs),
@@ -1028,6 +1075,47 @@ def summarize_encryption_pairs(results: list[TransferResult]) -> list[dict[str, 
     return summaries
 
 
+def compare_encryption_implementations(
+    summaries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    libtorrent = {
+        (summary["size_bytes"], summary["piece_size"]): summary
+        for summary in summaries
+        if summary["implementation"] == "libtorrent"
+    }
+    comparisons: list[dict[str, Any]] = []
+    for summary in summaries:
+        if summary["implementation"] != "rstorrent":
+            continue
+        key = (summary["size_bytes"], summary["piece_size"])
+        oracle = libtorrent.get(key)
+        if oracle is None:
+            raise ScenarioFailure(
+                "RSTorrent encryption pair has no matching libtorrent pair: "
+                f"size={key[0]} piece={key[1]}"
+            )
+        rstorrent_ratio = summary["median_paired_rc4_plain_ratio"]
+        libtorrent_ratio = oracle["median_paired_rc4_plain_ratio"]
+        comparisons.append(
+            {
+                "size_bytes": summary["size_bytes"],
+                "piece_size": summary["piece_size"],
+                "write_concurrency": summary["write_concurrency"],
+                "hash_concurrency": summary["hash_concurrency"],
+                "rstorrent_median_paired_rc4_plain_ratio": rstorrent_ratio,
+                "libtorrent_median_paired_rc4_plain_ratio": libtorrent_ratio,
+                "rstorrent_retention_advantage_percentage_points": (
+                    rstorrent_ratio - libtorrent_ratio
+                )
+                * 100.0,
+                "rstorrent_relative_rc4_retention": (
+                    rstorrent_ratio / libtorrent_ratio
+                ),
+            }
+        )
+    return comparisons
+
+
 def main() -> int:
     repository = Path(__file__).resolve().parents[2]
     arguments = parse_arguments(repository)
@@ -1040,7 +1128,7 @@ def main() -> int:
     )
     if applicability_failures:
         report = {
-            "schema_version": 5,
+            "schema_version": 6,
             "scenario": "controlled-single-file-loopback-throughput",
             "status": "not_applicable",
             "environment": hardware_environment,
@@ -1052,6 +1140,7 @@ def main() -> int:
             "applicability_failures": applicability_failures,
             "results": [],
             "summaries": [],
+            "encryption_comparisons": [],
             "gate": {"passed": False, "failures": []},
         }
         rendered = json.dumps(report, indent=2, sort_keys=True)
@@ -1128,7 +1217,12 @@ def main() -> int:
                     for piece_size, selected_cases in size_workloads.items():
                         for run in range(1, arguments.runs + 1):
                             if arguments.encryption_pair:
-                                client_cases = [
+                                encryption_order = (
+                                    ("disabled", "required")
+                                    if case_ordinal % 2 == 0
+                                    else ("required", "disabled")
+                                )
+                                rstorrent_cases = [
                                     (
                                         "rstorrent",
                                         case["write_concurrency"],
@@ -1137,7 +1231,19 @@ def main() -> int:
                                         encryption,
                                     )
                                     for case in selected_cases
-                                    for encryption in ("disabled", "required")
+                                    for encryption in encryption_order
+                                ]
+                                libtorrent_cases = [
+                                    ("libtorrent", 0, 0, None, encryption)
+                                    for encryption in encryption_order
+                                ]
+                                groups = [rstorrent_cases, libtorrent_cases]
+                                if case_ordinal % 4 >= 2:
+                                    groups.reverse()
+                                owner_order = [
+                                    client_case
+                                    for group in groups
+                                    for client_case in group
                                 ]
                             else:
                                 client_cases = [
@@ -1151,10 +1257,10 @@ def main() -> int:
                                     for case in selected_cases
                                 ]
                                 client_cases.append(("libtorrent", 0, 0, None, None))
-                            rotation = case_ordinal % len(client_cases)
-                            owner_order = (
-                                client_cases[rotation:] + client_cases[:rotation]
-                            )
+                                rotation = case_ordinal % len(client_cases)
+                                owner_order = (
+                                    client_cases[rotation:] + client_cases[:rotation]
+                                )
                             case_root = owned_root / (
                                 f"case-{size_bytes}-{piece_size}-{run}"
                             )
@@ -1196,11 +1302,17 @@ def main() -> int:
         if arguments.encryption_pair
         else summarize_results(results)
     )
+    encryption_comparisons = (
+        compare_encryption_implementations(summaries)
+        if arguments.encryption_pair
+        else []
+    )
     gate_failures: list[str] = []
     if arguments.encryption_pair:
         for summary in summaries:
             if (
-                summary["median_paired_rc4_plain_ratio"]
+                summary["implementation"] == "rstorrent"
+                and summary["median_paired_rc4_plain_ratio"]
                 < arguments.minimum_rc4_plain_ratio
             ):
                 gate_failures.append(
@@ -1254,7 +1366,7 @@ def main() -> int:
                 )
 
     report = {
-        "schema_version": 5,
+        "schema_version": 6,
         "scenario": (
             "controlled-mse-paired-loopback-throughput"
             if arguments.encryption_pair
@@ -1286,7 +1398,11 @@ def main() -> int:
                 for write_limit, hash_limit in arguments.storage_points
             ],
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
-            "client_order": "rotating-by-case",
+            "client_order": (
+                "alternating-mode-and-implementation-by-case"
+                if arguments.encryption_pair
+                else "rotating-by-case"
+            ),
             "encryption_pair": arguments.encryption_pair,
             "minimum_rc4_plain_ratio": arguments.minimum_rc4_plain_ratio,
             "throughput_cases": arguments.throughput_cases,
@@ -1298,6 +1414,7 @@ def main() -> int:
         "elapsed_seconds": time.monotonic() - started,
         "results": [asdict(result) for result in results],
         "summaries": summaries,
+        "encryption_comparisons": encryption_comparisons,
         "gate": {
             "passed": not gate_failures,
             "failures": gate_failures,
