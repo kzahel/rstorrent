@@ -395,6 +395,25 @@ pub enum ClientSettingsApplicationState {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum TransportAddressFamily {
+    Ipv4,
+    Ipv6,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct TransportFamilyRuntimeView {
+    pub family: TransportAddressFamily,
+    pub configured: bool,
+    pub tcp_endpoint: Option<String>,
+    pub udp_endpoint: Option<String>,
+    pub advertised_endpoint: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
@@ -420,6 +439,7 @@ pub struct ClientSettingsRuntimeView {
     pub session_udp_status: SessionUdpStatus,
     pub port_mapping_status: PortMappingStatus,
     pub advertised_peer_endpoint: AdvertisedPeerEndpointStatus,
+    pub transport_families: Vec<TransportFamilyRuntimeView>,
 }
 
 impl Default for ClientSettingsRuntimeView {
@@ -447,6 +467,7 @@ impl Default for ClientSettingsRuntimeView {
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
+            transport_families: Vec::new(),
         }
     }
 }
@@ -479,6 +500,7 @@ impl ClientSettingsRuntimeView {
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
+            transport_families: Vec::new(),
         }
     }
 }

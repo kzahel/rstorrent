@@ -522,6 +522,7 @@ impl IncomingPeerAttachmentGuard {
                         now,
                         verified_public,
                         network_policy: policy,
+                        address_families: self.peers.address_family_policy(),
                         self_endpoints: &[self_endpoint],
                     },
                     &mut state.registry,
@@ -1128,19 +1129,31 @@ fn validate_supplied_listener(
     bootstrap: IncomingTcpBootstrap,
     address: SocketAddr,
 ) -> Result<(), IncomingPeerError> {
-    let SocketAddr::V4(address) = address else {
-        return Err(IncomingPeerError::InvalidSuppliedListener);
-    };
-    let valid = match bootstrap {
-        IncomingTcpBootstrap::Disabled => false,
-        IncomingTcpBootstrap::AutomaticLoopback => address.ip().is_loopback(),
-        IncomingTcpBootstrap::FixedLoopback(port) => {
-            address.ip().is_loopback() && address.port() == port
-        }
-        IncomingTcpBootstrap::AutomaticLocalNetwork => address.ip().is_unspecified(),
-        IncomingTcpBootstrap::FixedLocalNetwork(port) => {
-            address.ip().is_unspecified() && address.port() == port
-        }
+    let valid = match address {
+        SocketAddr::V4(address) => match bootstrap {
+            IncomingTcpBootstrap::Disabled => false,
+            IncomingTcpBootstrap::AutomaticLoopback => address.ip().is_loopback(),
+            IncomingTcpBootstrap::FixedLoopback(port) => {
+                address.ip().is_loopback() && address.port() == port
+            }
+            IncomingTcpBootstrap::AutomaticLocalNetwork => address.ip().is_unspecified(),
+            IncomingTcpBootstrap::FixedLocalNetwork(port) => {
+                address.ip().is_unspecified() && address.port() == port
+            }
+        },
+        SocketAddr::V6(address) => match bootstrap {
+            IncomingTcpBootstrap::Disabled => false,
+            IncomingTcpBootstrap::AutomaticLoopback => address.ip().is_loopback(),
+            IncomingTcpBootstrap::FixedLoopback(port) => {
+                address.ip().is_loopback() && address.port() == port
+            }
+            IncomingTcpBootstrap::AutomaticLocalNetwork => {
+                crate::session_socket::eligible_global_ipv6(*address.ip())
+            }
+            IncomingTcpBootstrap::FixedLocalNetwork(port) => {
+                crate::session_socket::eligible_global_ipv6(*address.ip()) && address.port() == port
+            }
+        },
     };
     if valid {
         Ok(())

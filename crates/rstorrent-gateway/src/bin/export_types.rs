@@ -14,10 +14,11 @@ use rstorrent_session::{
     ApplicationCall, ApplicationCallResult, CapabilityStatus, CatalogPageRequest, CatalogPageView,
     CheckingPhaseView, CheckingProgressView, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, Command, CommandResult, DeliveryMode,
-    DeliveryPolicy, DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtLookupView,
-    DhtNetworkPolicyView, DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter,
-    DiagnosticProfile, DiagnosticRetention, DiagnosticSeverity, DiagnosticSubject, DiagnosticValue,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
+    DeliveryPolicy, DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView,
+    DhtInspectionView, DhtLifecycleView, DhtLookupView, DhtNetworkPolicyView, DiagnosticCategory,
+    DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile, DiagnosticRetention,
+    DiagnosticSeverity, DiagnosticSubject, DiagnosticValue, DiskCheckpointStageView,
+    DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
     EffectiveListenerSettings, EncryptionPolicy, ErrorCode, ErrorResponse, FileCatalogState,
     FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, ListenerBindFailureReason, ListenerPolicy,
@@ -34,9 +35,9 @@ use rstorrent_session::{
     SwarmPeerView, TorrentEtaView, TorrentSnapshot, TorrentState, TorrentView,
     TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
     TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
-    TrackerTransportView, TrackerView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy,
-    ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
-    ViewUpdatePayload,
+    TrackerTransportView, TrackerView, TransportAddressFamily, TransportFamilyRuntimeView,
+    UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector,
+    ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -93,6 +94,8 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<AdvertisedPeerEndpointUnavailableReason>(&mut declarations)?;
     append::<AdvertisedPeerEndpointStatus>(&mut declarations)?;
     append::<SessionUdpStatus>(&mut declarations)?;
+    append::<TransportAddressFamily>(&mut declarations)?;
+    append::<TransportFamilyRuntimeView>(&mut declarations)?;
     append::<ClientSettingsRuntimeView>(&mut declarations)?;
     append_value(
         &mut declarations,
@@ -159,8 +162,10 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<DiskPieceView>(&mut declarations)?;
     append::<DhtLifecycleView>(&mut declarations)?;
     append::<DhtNetworkPolicyView>(&mut declarations)?;
+    append::<DhtAddressFamilyView>(&mut declarations)?;
     append::<DhtBucketView>(&mut declarations)?;
     append::<DhtLookupView>(&mut declarations)?;
+    append::<DhtFamilyInspectionView>(&mut declarations)?;
     append::<DhtInspectionView>(&mut declarations)?;
     append::<SpeedMetric>(&mut declarations)?;
     append::<SpeedRange>(&mut declarations)?;

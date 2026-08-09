@@ -13,7 +13,7 @@ use rstorrent_protocol::extension::{
     ExtensionAdvertisement, PexContact, PexEndpoint, PexFlags, PexMessage,
     encode_extension_handshake as encode_recognized_extension_handshake, encode_pex_message,
 };
-use rstorrent_protocol::magnet::Magnet;
+use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
     encode_metadata_reject, parse_metadata_message,
@@ -46,10 +46,10 @@ use super::{
     PreparedContentWrite, QueuedContentStorageCommand, ResumableMagnetDownloadConfig,
     ResumeArtifactState, ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager,
     UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-    announce_udp_tracker_address, atomic_saturating_add, atomic_saturating_increment,
-    build_content_plan_window, coalesce_content_writes, collect_content_write_batch,
-    content_dial_slot_available, content_storage_job_limit, download_magnet,
-    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    announce_udp_tracker, announce_udp_tracker_address, atomic_saturating_add,
+    atomic_saturating_increment, build_content_plan_window, coalesce_content_writes,
+    collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
+    download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
     download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
     execute_content_storage_verification, execute_content_storage_writes,
     full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
@@ -72,7 +72,7 @@ impl TestMetainfoParse for Metainfo {
 }
 use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
 use crate::dht::{BootstrapNode, DhtConfig, DhtService};
-use crate::network::{NetworkConfig, NetworkPolicy};
+use crate::network::{AddressFamilyPolicy, NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
     PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource,

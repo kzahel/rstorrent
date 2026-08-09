@@ -11,6 +11,7 @@ use rstorrent_protocol::extension::{
     PexMessage, encode_pex_message, parse_pex_message,
 };
 
+use crate::network::AddressFamilyPolicy;
 use crate::network::NetworkPolicy;
 use crate::peer::{PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryError, PeerSource};
 use crate::swarm::ConnectionId;
@@ -53,6 +54,7 @@ pub(crate) struct PexReceiveContext<'a> {
     pub(crate) now: Duration,
     pub(crate) verified_public: bool,
     pub(crate) network_policy: NetworkPolicy,
+    pub(crate) address_families: AddressFamilyPolicy,
     pub(crate) self_endpoints: &'a [SocketAddr],
 }
 
@@ -138,6 +140,35 @@ impl Default for PexState {
 }
 
 impl PexState {
+    pub(crate) fn remove_disallowed(
+        &mut self,
+        policy: AddressFamilyPolicy,
+        registry: &mut PeerRegistry,
+    ) -> usize {
+        let endpoints = self
+            .endpoint_sources
+            .keys()
+            .copied()
+            .filter(|endpoint| !policy.permits(endpoint.address().ip()))
+            .collect::<Vec<_>>();
+        for endpoint in &endpoints {
+            if let Some(sources) = self.endpoint_sources.remove(endpoint) {
+                for source in sources {
+                    if let Some(state) = self.sources.get_mut(&source) {
+                        state.contacts.retain(|_, contact| contact != endpoint);
+                    }
+                }
+            }
+            let _ = registry.remove_endpoint_source(*endpoint, PeerSource::PeerExchange);
+            if self.live.remove(endpoint).is_some() {
+                self.push_event(*endpoint, PexTimelineKind::Dropped);
+            }
+        }
+        self.timeline
+            .retain(|event| policy.permits(event.endpoint.address().ip()));
+        endpoints.len()
+    }
+
     pub(crate) fn receive(
         &mut self,
         source: ConnectionId,
@@ -150,6 +181,7 @@ impl PexState {
             now,
             verified_public,
             network_policy,
+            address_families,
             self_endpoints,
         } = context;
         if !verified_public {
@@ -216,6 +248,7 @@ impl PexState {
                 source_endpoint,
                 source_listen_endpoint,
                 network_policy,
+                address_families,
                 self_endpoints,
             ) || self.sources.get(&source).is_some_and(|state| {
                 state.contacts.contains_key(&address.ip())
@@ -485,11 +518,13 @@ fn pex_address_allowed(
     source: SocketAddr,
     source_listen_endpoint: Option<SocketAddr>,
     policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     self_endpoints: &[SocketAddr],
 ) -> bool {
     if self_endpoints.contains(&candidate)
         || source_listen_endpoint == Some(candidate)
         || !policy.allows(candidate)
+        || !address_families.permits(candidate.ip())
     {
         return false;
     }
@@ -585,6 +620,7 @@ mod tests {
                         now: Duration::ZERO,
                         verified_public: false,
                         network_policy: NetworkPolicy::Online,
+                        address_families: AddressFamilyPolicy::dual_stack(),
                         self_endpoints: &[],
                     },
                     &mut registry,
@@ -602,6 +638,7 @@ mod tests {
                         now: Duration::ZERO,
                         verified_public: true,
                         network_policy: NetworkPolicy::Online,
+                        address_families: AddressFamilyPolicy::dual_stack(),
                         self_endpoints: &[],
                     },
                     &mut registry,
@@ -620,6 +657,7 @@ mod tests {
                             now: Duration::from_secs(strike.into()),
                             verified_public: true,
                             network_policy: NetworkPolicy::Online,
+                            address_families: AddressFamilyPolicy::dual_stack(),
                             self_endpoints: &[],
                         },
                         &mut registry,
@@ -640,6 +678,7 @@ mod tests {
                     now: PEX_INTERVAL,
                     verified_public: true,
                     network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::dual_stack(),
                     self_endpoints: &[],
                 },
                 &mut registry,
@@ -671,6 +710,7 @@ mod tests {
                     now: Duration::ZERO,
                     verified_public: true,
                     network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::dual_stack(),
                     self_endpoints: &[contacts[3]],
                 },
                 &mut registry,
@@ -686,6 +726,44 @@ mod tests {
             }
         );
         assert_eq!(state.source_contacts(connection(1)), 1);
+    }
+
+    #[test]
+    fn inbound_ipv4_only_policy_filters_added6_before_bookkeeping() {
+        let mut state = PexState::default();
+        let mut registry = registry();
+        let ipv4 = "203.0.113.9:6881".parse().expect("IPv4 peer");
+        let ipv6 = "[2606:4700:4700::1111]:6881".parse().expect("IPv6 peer");
+        let disposition = state
+            .receive(
+                connection(1),
+                &payload(&[ipv4, ipv6], &[]),
+                PexReceiveContext {
+                    source_endpoint: "198.51.100.4:5000".parse().expect("source"),
+                    now: Duration::ZERO,
+                    verified_public: true,
+                    network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::ipv4_only(),
+                    self_endpoints: &[],
+                },
+                &mut registry,
+            )
+            .expect("receive PEX");
+        assert_eq!(
+            disposition,
+            PexReceiveDisposition::Applied {
+                added: 1,
+                dropped: 0,
+                filtered: 1,
+                truncated: 0,
+            }
+        );
+        assert_eq!(state.source_contacts(connection(1)), 1);
+        assert!(
+            registry
+                .find_endpoint(PeerEndpoint::new(ipv6).expect("IPv6 endpoint"))
+                .is_none()
+        );
     }
 
     #[test]
@@ -709,6 +787,7 @@ mod tests {
                     now: Duration::ZERO,
                     verified_public: true,
                     network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::dual_stack(),
                     self_endpoints: &[],
                 },
                 &mut registry,
@@ -749,6 +828,7 @@ mod tests {
                             now,
                             verified_public: true,
                             network_policy: NetworkPolicy::Online,
+                            address_families: AddressFamilyPolicy::dual_stack(),
                             self_endpoints: &[],
                         },
                         &mut registry,

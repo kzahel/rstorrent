@@ -226,6 +226,7 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
             scope: AdvertisedPeerEndpointScope::Loopback,
             incoming_observed: false,
         },
+        transport_families: Vec::new(),
     };
     assert_eq!(view.configured, configured);
     assert_eq!(

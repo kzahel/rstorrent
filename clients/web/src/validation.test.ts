@@ -115,6 +115,7 @@ describe("client settings validation", () => {
         peer_connection_limit: 200,
         upload_slots: 8,
         encryption: "allow",
+        ipv6_enabled: true,
         tracker_https_server_authentication: "system_trust",
       });
     }
@@ -414,13 +415,13 @@ describe("DHT view validation", () => {
   it("accepts exact bounded state and rejects reordered or inconsistent buckets", () => {
     const batch = dhtBatch();
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
-    batch.updates[0]!.snapshot.inspection.buckets_v4[159]!.bucket_index = 158;
+    batch.updates[0]!.snapshot.inspection.families[0]!.buckets[159]!.bucket_index = 158;
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /exact engine index order/,
     );
 
     const inconsistent = dhtBatch();
-    inconsistent.updates[0]!.snapshot.inspection.routing_nodes_v4 = 2;
+    inconsistent.updates[0]!.snapshot.inspection.families[0]!.routing_nodes = 2;
     expect(() => decodeUpdateBatch(JSON.stringify(inconsistent))).toThrow(
       /aggregates do not match/,
     );
@@ -529,25 +530,52 @@ function dhtBatch() {
         inspection: {
           lifecycle: "participating" as const,
           network_policy: "loopback_only" as const,
-          local_node_id: "0".repeat(40),
           captured_millis: "1000",
-          routing_nodes_v4: 1,
-          occupied_buckets_v4: 1,
-          deepest_shared_prefix_bits_v4: 0,
           active_transactions: 1,
           active_lookups: 1,
           queries_sent: "1",
           responses_received: "1",
           queries_received: "0",
           malformed_received: "0",
+          family_mismatched: "0",
           rate_limited: "0",
           discovered_peers: "0",
           bootstrap_attempts: "1",
           routing_refreshes: "0",
           datagram_bytes_sent: "42",
           datagram_bytes_received: "84",
-          buckets_v4: buckets,
+          announces_sent: "0",
+          announces_succeeded: "0",
+          announces_failed: "0",
+          families: [{
+            family: "ipv4" as const,
+            lifecycle: "participating" as const,
+            local_node_id: "0".repeat(40),
+            local_address: "127.0.0.1:6881",
+            observed_external_address: null,
+            routing_nodes: 1,
+            occupied_buckets: 1,
+            deepest_shared_prefix_bits: 0,
+            active_transactions: 1,
+            active_lookups: 1,
+            queries_sent: "1",
+            responses_received: "1",
+            queries_received: "0",
+            malformed_received: "0",
+            family_mismatched: "0",
+            rate_limited: "0",
+            discovered_peers: "0",
+            bootstrap_attempts: "1",
+            routing_refreshes: "0",
+            datagram_bytes_sent: "42",
+            datagram_bytes_received: "84",
+            announces_sent: "0",
+            announces_succeeded: "0",
+            announces_failed: "0",
+            buckets,
+          }],
           lookups: [{
+            family: "ipv4" as const,
             lookup_id: "1",
             target_id: "1".repeat(40),
             age_millis: "500",

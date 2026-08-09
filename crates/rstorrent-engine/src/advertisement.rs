@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
-use crate::dht::{DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
+use crate::dht::{DhtAnnouncePorts, DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
 use crate::driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadError,
     UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
@@ -20,9 +20,11 @@ use crate::driver::{
 };
 use crate::http_tracker::{
     HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerError,
-    HttpTrackerResponse, TrackerRetryDirective, announce_http_tracker,
+    HttpTrackerResponse, TrackerRetryDirective, announce_http_tracker_with_address_families,
 };
-use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicy};
+use crate::network::{
+    AddressFamily, AddressFamilyPolicy, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
+};
 use crate::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use crate::torrent_peer::TorrentPeerHandle;
 use crate::tracker::{
@@ -45,14 +47,32 @@ type HttpTrackerClientFactory =
 pub enum PeerAdvertisementEndpointScope {
     Loopback,
     LocalNetwork,
+    GlobalUnicast,
     Mapped,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerAdvertisementFamilyEndpoint {
+    pub endpoint: Option<SocketAddr>,
+    pub source_address: Option<IpAddr>,
+    pub scope: Option<PeerAdvertisementEndpointScope>,
+}
+
+impl PeerAdvertisementFamilyEndpoint {
+    pub const fn outbound_only() -> Self {
+        Self {
+            endpoint: None,
+            source_address: None,
+            scope: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PeerAdvertisementEndpoint {
     pub generation: u64,
-    pub endpoint: Option<SocketAddrV4>,
-    pub scope: Option<PeerAdvertisementEndpointScope>,
+    pub ipv4: PeerAdvertisementFamilyEndpoint,
+    pub ipv6: PeerAdvertisementFamilyEndpoint,
     pub stopping: bool,
 }
 
@@ -60,8 +80,8 @@ impl PeerAdvertisementEndpoint {
     pub const fn outbound_only(generation: u64) -> Self {
         Self {
             generation,
-            endpoint: None,
-            scope: None,
+            ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: false,
         }
     }
@@ -69,9 +89,17 @@ impl PeerAdvertisementEndpoint {
     pub const fn stopping(generation: u64) -> Self {
         Self {
             generation,
-            endpoint: None,
-            scope: None,
+            ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn family(self, family: AddressFamily) -> PeerAdvertisementFamilyEndpoint {
+        match family {
+            AddressFamily::Ipv4 => self.ipv4,
+            AddressFamily::Ipv6 => self.ipv6,
         }
     }
 }
@@ -188,6 +216,21 @@ pub struct DiscoveryAdvertisementHandle {
 }
 
 impl DiscoveryAdvertisementHandle {
+    pub async fn replace_address_family_policy(
+        &self,
+        policy: AddressFamilyPolicy,
+    ) -> Result<(), DiscoveryAdvertisementError> {
+        let (sender, receiver) = oneshot::channel();
+        self.send(Command::ReplaceAddressFamilyPolicy {
+            policy,
+            response: sender,
+        })
+        .await?;
+        receiver
+            .await
+            .map_err(|_| DiscoveryAdvertisementError::OwnerStopped)?
+    }
+
     pub async fn replace_encryption_policy(
         &self,
         policy: PeerEncryptionPolicy,
@@ -313,6 +356,14 @@ impl DiscoveryAdvertisementService {
                     Some(error.to_string()),
                 ),
             };
+        let initial_endpoint = *endpoint.borrow();
+        let http_clients = http_clients
+            .with_source_addresses(
+                network.policy,
+                initial_endpoint.ipv4.source_address,
+                initial_endpoint.ipv6.source_address,
+            )
+            .map_err(|error| DiscoveryAdvertisementError::HttpClient(error.to_string()))?;
         let (sender, receiver) = mpsc::channel(DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY);
         let queued = Arc::new(AtomicU64::new(0));
         let queue_high_water = Arc::new(AtomicU64::new(0));
@@ -394,6 +445,7 @@ pub enum DiscoveryAdvertisementError {
     Entropy(String),
     Join(String),
     HttpClient(String),
+    Convergence(String),
 }
 
 impl fmt::Display for DiscoveryAdvertisementError {
@@ -404,6 +456,9 @@ impl fmt::Display for DiscoveryAdvertisementError {
             Self::Join(detail) => write!(formatter, "discovery advertisement owner join: {detail}"),
             Self::HttpClient(detail) => {
                 write!(formatter, "HTTP tracker client construction: {detail}")
+            }
+            Self::Convergence(detail) => {
+                write!(formatter, "address-family convergence: {detail}")
             }
         }
     }
@@ -425,6 +480,10 @@ enum Command {
     },
     ReplaceEncryptionPolicy {
         policy: PeerEncryptionPolicy,
+        response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
+    },
+    ReplaceAddressFamilyPolicy {
+        policy: AddressFamilyPolicy,
         response: oneshot::Sender<Result<(), DiscoveryAdvertisementError>>,
     },
     Shutdown(oneshot::Sender<Result<(), DiscoveryAdvertisementError>>),
@@ -579,7 +638,7 @@ struct DhtOperationResult {
     registration_generation: u64,
     dht_epoch: u64,
     endpoint_generation: u64,
-    announce_port: Option<u16>,
+    announce_ports: Option<DhtAnnouncePorts>,
     result: Result<DhtOperationSuccess, DhtError>,
 }
 
@@ -666,6 +725,12 @@ async fn run_service(
                 queued.fetch_sub(1, Ordering::AcqRel);
                 match command {
                     Command::Upsert(registration) => {
+                        registration
+                            .peers
+                            .enforce_address_families(network.address_families)
+                            .map_err(|error| {
+                                DiscoveryAdvertisementError::Convergence(error.to_string())
+                            })?;
                         let effect = apply_registration(
                             &mut entries,
                             registration,
@@ -703,7 +768,13 @@ async fn run_service(
                         if fence_unauthenticated {
                             http_clients = Arc::new(http_clients.without_https());
                         }
-                        match http_client_factory(network.policy, authentication) {
+                        match http_client_factory(network.policy, authentication).and_then(|clients| {
+                            clients.with_source_addresses(
+                                network.policy,
+                                endpoint.ipv4.source_address,
+                                endpoint.ipv6.source_address,
+                            )
+                        }) {
                             Ok(clients) => {
                                 http_clients = Arc::new(clients);
                                 desired_https_authentication = authentication;
@@ -740,6 +811,48 @@ async fn run_service(
                         }
                         let _ = response.send(Ok(()));
                     }
+                    Command::ReplaceAddressFamilyPolicy { policy, response } => {
+                        if network.address_families != policy {
+                            network.address_families = policy;
+                            operations.abort_all();
+                            while operations.join_next().await.is_some() {}
+                            dht_operations.abort_all();
+                            while dht_operations.join_next().await.is_some() {}
+                            for info_hash in entries.keys().copied().collect::<Vec<_>>() {
+                                let _ = dht.cancel_lookup(info_hash).await;
+                            }
+                            for entry in entries.values_mut() {
+                                entry.schedule.cancel_inflight();
+                                entry.schedule.request_update();
+                                entry.token_caches.clear();
+                                entry.dht_epoch = entry.dht_epoch.saturating_add(1);
+                                entry.dht_inflight = false;
+                                entry.next_dht_action = Instant::now();
+                            }
+                        }
+                        let deadline = Instant::now() + Duration::from_secs(5);
+                        let result = loop {
+                            let mut converged = true;
+                            for entry in entries.values() {
+                                if entry.registration.peers.enforce_address_families(policy).is_err()
+                                    || !entry.registration.peers.address_families_converged(policy)
+                                {
+                                    converged = false;
+                                }
+                            }
+                            if converged {
+                                break Ok(());
+                            }
+                            if Instant::now() >= deadline {
+                                break Err(DiscoveryAdvertisementError::Convergence(
+                                    "peer owners did not retire disallowed connections within 5 seconds"
+                                        .to_owned(),
+                                ));
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        };
+                        let _ = response.send(result);
+                    }
                     Command::Shutdown(response) => {
                         shutting_down = true;
                         shutdown_response = Some(response);
@@ -753,18 +866,26 @@ async fn run_service(
             changed = endpoint_receiver.changed() => {
                 if changed.is_ok() {
                     endpoint = *endpoint_receiver.borrow_and_update();
+                    if let Ok(rebound) = http_clients.with_source_addresses(
+                        network.policy,
+                        endpoint.ipv4.source_address,
+                        endpoint.ipv6.source_address,
+                    ) {
+                        http_clients = Arc::new(rebound);
+                    }
                     for entry in entries.values_mut() {
                         if entry.registration.incoming_registered
                             && entry.last_endpoint_generation != endpoint.generation
                             && entry.removal.is_none()
                         {
+                            entry.token_caches.clear();
                             entry.schedule.request_update();
                         }
                     }
                     let corrected = entries
                         .iter_mut()
                         .filter_map(|(info_hash, entry)| {
-                            dht_announce_port(network.policy, endpoint, &entry.registration)?;
+                            dht_announce_ports(network.policy, endpoint, &entry.registration)?;
                             if entry.last_dht_endpoint_generation == endpoint.generation {
                                 return None;
                             }
@@ -1007,7 +1128,7 @@ fn fill_tracker_operations(
                         });
                     entry.emit_snapshot(true);
                     let counters = entry.registration.counters.snapshot();
-                    let port = tracker_port(
+                    let ports = tracker_ports(
                         network.policy,
                         endpoint,
                         entry.registration.incoming_registered,
@@ -1036,6 +1157,7 @@ fn fill_tracker_operations(
                                     response = announce_udp_tracker(
                                         &url,
                                         network.policy,
+                                        network.address_families,
                                         &mut token_cache,
                                         UdpTrackerAnnounce {
                                             info_hash,
@@ -1046,12 +1168,15 @@ fn fill_tracker_operations(
                                             uploaded: counters.uploaded,
                                             event,
                                             num_want,
-                                            port,
+                                            port: ports.ipv4,
+                                            ipv6_port: ports.ipv6,
                                         },
                                         UdpTrackerExchange {
                                             timing: UdpTrackerTiming::PRODUCTION,
                                             control: &control,
                                             tracker_label: &tracker,
+                                            source_ipv4: endpoint.ipv4.source_address,
+                                            source_ipv6: endpoint.ipv6.source_address,
                                         },
                                     ) => response
                                         .map(|result| {
@@ -1098,7 +1223,8 @@ fn fill_tracker_operations(
                                 let announce = HttpTrackerAnnounce {
                                     info_hash,
                                     peer_id: network.peer_id,
-                                    port,
+                                    port: ports.ipv4,
+                                    ipv6_port: ports.ipv6,
                                     uploaded: counters.uploaded,
                                     downloaded: counters.downloaded,
                                     left: counters.left,
@@ -1122,10 +1248,11 @@ fn fill_tracker_operations(
                                             result: Err(TrackerOperationFailure::Cancelled),
                                         };
                                     }
-                                    response = announce_http_tracker(
+                                    response = announce_http_tracker_with_address_families(
                                         &clients,
                                         &url,
                                         network.policy,
+                                        network.address_families,
                                         false,
                                         &announce,
                                         timeout,
@@ -1242,7 +1369,7 @@ fn fill_dht_operations(
             continue;
         }
 
-        let announce_port = dht_announce_port(policy, endpoint, &entry.registration);
+        let announce_ports = dht_announce_ports(policy, endpoint, &entry.registration);
         let info_hash = entry.registration.info_hash;
         let registration_generation = entry.registration.generation;
         let dht_epoch = entry.dht_epoch;
@@ -1251,9 +1378,9 @@ fn fill_dht_operations(
         entry.dht_inflight = true;
         entry.control.emit(DownloadActivityEvent::DhtLookupStarted);
         operations.spawn(async move {
-            let result = match announce_port {
-                Some(port) => operation_dht
-                    .lookup_and_announce(info_hash, port)
+            let result = match announce_ports {
+                Some(ports) => operation_dht
+                    .lookup_and_announce_ports(info_hash, ports)
                     .await
                     .map(DhtOperationSuccess::Announce),
                 None => operation_dht
@@ -1266,7 +1393,7 @@ fn fill_dht_operations(
                 registration_generation,
                 dht_epoch,
                 endpoint_generation,
-                announce_port,
+                announce_ports,
                 result,
             }
         });
@@ -1289,9 +1416,10 @@ fn apply_dht_result(
         return;
     }
     entry.dht_inflight = false;
-    if operation.announce_port.is_some()
+    if operation.announce_ports.is_some()
         && (operation.endpoint_generation != endpoint.generation
-            || operation.announce_port != dht_announce_port(policy, endpoint, &entry.registration))
+            || operation.announce_ports
+                != dht_announce_ports(policy, endpoint, &entry.registration))
     {
         entry.next_dht_action = Instant::now();
         return;
@@ -1308,8 +1436,9 @@ fn apply_dht_result(
                         .control
                         .emit(DownloadActivityEvent::DhtAnnounceCompleted {
                             port: operation
-                                .announce_port
-                                .expect("announce result retains its explicit port"),
+                                .announce_ports
+                                .expect("announce result retains its explicit ports")
+                                .ipv4,
                             token_nodes: report.token_nodes,
                             announces_sent: report.announces_sent,
                             announces_succeeded: report.announces_succeeded,
@@ -1353,11 +1482,11 @@ fn apply_dht_result(
     }
 }
 
-fn dht_announce_port(
+fn dht_announce_ports(
     policy: NetworkPolicy,
     endpoint: PeerAdvertisementEndpoint,
     registration: &DiscoveryAdvertisementRegistration,
-) -> Option<u16> {
+) -> Option<DhtAnnouncePorts> {
     if !registration.desired_running
         || !registration.complete
         || !registration.incoming_registered
@@ -1366,21 +1495,10 @@ fn dht_announce_port(
     {
         return None;
     }
-    match (endpoint.endpoint, endpoint.scope) {
-        (
-            Some(endpoint),
-            Some(
-                PeerAdvertisementEndpointScope::Mapped
-                | PeerAdvertisementEndpointScope::LocalNetwork,
-            ),
-        ) => Some(endpoint.port()),
-        (Some(endpoint), Some(PeerAdvertisementEndpointScope::Loopback))
-            if policy == NetworkPolicy::LoopbackOnly =>
-        {
-            Some(endpoint.port())
-        }
-        _ => None,
-    }
+    Some(DhtAnnouncePorts {
+        ipv4: family_port(policy, endpoint.ipv4),
+        ipv6: family_port(policy, endpoint.ipv6),
+    })
 }
 
 fn apply_tracker_result(
@@ -1501,20 +1619,37 @@ impl TorrentEntry {
     }
 }
 
-fn tracker_port(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TrackerPorts {
+    ipv4: u16,
+    ipv6: u16,
+}
+
+fn tracker_ports(
     policy: NetworkPolicy,
     endpoint: PeerAdvertisementEndpoint,
     incoming_registered: bool,
-) -> u16 {
+) -> TrackerPorts {
     if !incoming_registered || endpoint.stopping {
-        return OUTBOUND_ONLY_TRACKER_PORT;
+        return TrackerPorts {
+            ipv4: OUTBOUND_ONLY_TRACKER_PORT,
+            ipv6: OUTBOUND_ONLY_TRACKER_PORT,
+        };
     }
+    TrackerPorts {
+        ipv4: family_port(policy, endpoint.ipv4),
+        ipv6: family_port(policy, endpoint.ipv6),
+    }
+}
+
+fn family_port(policy: NetworkPolicy, endpoint: PeerAdvertisementFamilyEndpoint) -> u16 {
     match (endpoint.endpoint, endpoint.scope) {
         (
             Some(endpoint),
             Some(
                 PeerAdvertisementEndpointScope::Mapped
-                | PeerAdvertisementEndpointScope::LocalNetwork,
+                | PeerAdvertisementEndpointScope::LocalNetwork
+                | PeerAdvertisementEndpointScope::GlobalUnicast,
             ),
         ) => endpoint.port(),
         (Some(endpoint), Some(PeerAdvertisementEndpointScope::Loopback))
@@ -1567,7 +1702,7 @@ mod tests {
     use super::*;
     use crate::peer::PeerRegistrySnapshot;
     use crate::{PeerConnectionObservation, TorrentPeerActivitySink};
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, SocketAddrV4};
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1590,6 +1725,24 @@ mod tests {
         }
 
         fn record_peer_registry(&self, _active: bool, _snapshot: PeerRegistrySnapshot) {}
+    }
+
+    fn ipv4_endpoint(
+        generation: u64,
+        address: &str,
+        scope: PeerAdvertisementEndpointScope,
+    ) -> PeerAdvertisementEndpoint {
+        let endpoint = address.parse::<SocketAddr>().expect("endpoint");
+        PeerAdvertisementEndpoint {
+            generation,
+            ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(endpoint),
+                source_address: Some(endpoint.ip()),
+                scope: Some(scope),
+            },
+            ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            stopping: false,
+        }
     }
 
     #[derive(Debug, Default)]
@@ -1694,66 +1847,122 @@ mod tests {
 
     #[test]
     fn tracker_port_requires_matching_incoming_authority() {
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 4,
-            endpoint: Some("192.168.1.2:42000".parse().expect("endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::LocalNetwork),
-            stopping: false,
-        };
-        assert_eq!(tracker_port(NetworkPolicy::Online, endpoint, false), 1);
-        assert_eq!(tracker_port(NetworkPolicy::Online, endpoint, true), 42_000);
+        let endpoint = ipv4_endpoint(
+            4,
+            "192.168.1.2:42000",
+            PeerAdvertisementEndpointScope::LocalNetwork,
+        );
         assert_eq!(
-            tracker_port(
+            tracker_ports(NetworkPolicy::Online, endpoint, false),
+            TrackerPorts { ipv4: 1, ipv6: 1 }
+        );
+        assert_eq!(
+            tracker_ports(NetworkPolicy::Online, endpoint, true),
+            TrackerPorts {
+                ipv4: 42_000,
+                ipv6: 1,
+            }
+        );
+        assert_eq!(
+            tracker_ports(
                 NetworkPolicy::Online,
                 PeerAdvertisementEndpoint::stopping(5),
                 true,
             ),
-            1
+            TrackerPorts { ipv4: 1, ipv6: 1 }
         );
     }
 
     #[test]
     fn loopback_listener_does_not_leak_into_online_advertisement() {
+        let endpoint = ipv4_endpoint(
+            2,
+            "127.0.0.1:43000",
+            PeerAdvertisementEndpointScope::Loopback,
+        );
+        assert_eq!(
+            tracker_ports(NetworkPolicy::Online, endpoint, true),
+            TrackerPorts { ipv4: 1, ipv6: 1 }
+        );
+        assert_eq!(
+            tracker_ports(NetworkPolicy::LoopbackOnly, endpoint, true),
+            TrackerPorts {
+                ipv4: 43_000,
+                ipv6: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn tracker_ports_select_each_family_independently() {
         let endpoint = PeerAdvertisementEndpoint {
-            generation: 2,
-            endpoint: Some("127.0.0.1:43000".parse().expect("endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            generation: 3,
+            ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("192.168.1.2:42000".parse().unwrap()),
+                source_address: Some("192.168.1.2".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::LocalNetwork),
+            },
+            ipv6: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("[2001:4860:4860::8888]:43000".parse().unwrap()),
+                source_address: Some("2001:4860:4860::8888".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::GlobalUnicast),
+            },
             stopping: false,
         };
-        assert_eq!(tracker_port(NetworkPolicy::Online, endpoint, true), 1);
         assert_eq!(
-            tracker_port(NetworkPolicy::LoopbackOnly, endpoint, true),
-            43_000
+            tracker_ports(NetworkPolicy::Online, endpoint, true),
+            TrackerPorts {
+                ipv4: 42_000,
+                ipv6: 43_000,
+            }
+        );
+        assert_eq!(
+            dht_announce_ports(
+                NetworkPolicy::Online,
+                endpoint,
+                &DiscoveryAdvertisementRegistration {
+                    complete: true,
+                    incoming_registered: true,
+                    privacy: TorrentPrivacy::Public,
+                    ..test_registration(1, 41_001)
+                },
+            ),
+            Some(DhtAnnouncePorts {
+                ipv4: 42_000,
+                ipv6: 43_000,
+            })
         );
     }
 
     #[test]
     fn dht_announcement_requires_verified_public_routable_seed() {
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 2,
-            endpoint: Some("127.0.0.1:43000".parse().expect("endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::Loopback),
-            stopping: false,
-        };
+        let endpoint = ipv4_endpoint(
+            2,
+            "127.0.0.1:43000",
+            PeerAdvertisementEndpointScope::Loopback,
+        );
         let mut registration = test_registration(1, 41001);
         assert_eq!(
-            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
             None
         );
         registration.complete = true;
         registration.incoming_registered = true;
         registration.privacy = TorrentPrivacy::Public;
         assert_eq!(
-            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
-            Some(43_000)
+            dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            Some(DhtAnnouncePorts {
+                ipv4: 43_000,
+                ipv6: 1,
+            })
         );
         assert_eq!(
-            dht_announce_port(NetworkPolicy::Online, endpoint, &registration),
-            None
+            dht_announce_ports(NetworkPolicy::Online, endpoint, &registration),
+            Some(DhtAnnouncePorts { ipv4: 1, ipv6: 1 })
         );
         registration.privacy = TorrentPrivacy::Private;
         assert_eq!(
-            dht_announce_port(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
             None
         );
     }
@@ -1963,12 +2172,11 @@ mod tests {
             }
         });
 
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 1,
-            endpoint: Some("127.0.0.1:48001".parse().expect("listener endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::Loopback),
-            stopping: false,
-        };
+        let endpoint = ipv4_endpoint(
+            1,
+            "127.0.0.1:48001",
+            PeerAdvertisementEndpointScope::Loopback,
+        );
         let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
         let network = NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -2060,6 +2268,80 @@ mod tests {
         assert_eq!(terminal.tracker_operations, 0);
         assert_eq!(terminal.tracker_operations_high_water, 1);
         assert_eq!(terminal.tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn ipv6_http_tracker_observes_selected_source_and_family_port() {
+        let tracker = TcpListener::bind("[::1]:0")
+            .await
+            .expect("bind IPv6 HTTP tracker");
+        let tracker_address = tracker.local_addr().expect("IPv6 tracker address");
+        let (observed_sender, mut observed_receiver) = mpsc::channel(2);
+        let tracker_task = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut stream, remote) = tracker.accept().await.expect("accept IPv6 announce");
+                let request = read_http_tracker_request(&mut stream).await;
+                observed_sender
+                    .send((remote, request))
+                    .await
+                    .expect("record IPv6 announce");
+                stream
+                    .write_all(empty_http_tracker_response())
+                    .await
+                    .expect("write IPv6 tracker response");
+                stream.shutdown().await.expect("close IPv6 response");
+            }
+        });
+
+        let listener_port = 48_006;
+        let endpoint = PeerAdvertisementEndpoint {
+            generation: 1,
+            ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            ipv6: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(format!("[::1]:{listener_port}").parse().unwrap()),
+                source_address: Some("::1".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            },
+            stopping: false,
+        };
+        let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        let mut dht_config = crate::dht::DhtConfig::for_network(NetworkPolicy::Offline);
+        dht_config.bootstrap_nodes.clear();
+        let dht = crate::dht::DhtService::start(dht_config)
+            .await
+            .expect("start offline DHT");
+        let service =
+            DiscoveryAdvertisementService::start(network, endpoint_receiver, dht.handle());
+        let activity = Arc::new(RecordingActivity::default());
+        let tracker_url = format!("http://{tracker_address}/announce");
+        let mut registration = http_registration([14; 20], tracker_url, activity.clone());
+        registration.incoming_registered = true;
+        service
+            .handle()
+            .upsert(registration)
+            .await
+            .expect("register IPv6 tracker");
+        activity.wait_for_successes(1).await;
+        let (remote, started) = observed_receiver
+            .recv()
+            .await
+            .expect("started IPv6 announce");
+        assert_eq!(remote.ip(), "::1".parse::<IpAddr>().unwrap());
+        assert!(started.contains(&format!("&port={listener_port}&")));
+
+        service.shutdown().await.expect("shutdown service");
+        let (_remote, stopped) = observed_receiver
+            .recv()
+            .await
+            .expect("stopped IPv6 announce");
+        assert!(stopped.contains("event=stopped"));
+        dht.shutdown().await.expect("shutdown DHT");
+        tracker_task.await.expect("IPv6 tracker task");
     }
 
     #[tokio::test]
@@ -2239,12 +2521,7 @@ mod tests {
             }
         });
 
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 1,
-            endpoint: None,
-            scope: None,
-            stopping: false,
-        };
+        let endpoint = PeerAdvertisementEndpoint::outbound_only(1);
         let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
         let network = NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -2408,12 +2685,7 @@ mod tests {
             }
         });
 
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 1,
-            endpoint: None,
-            scope: None,
-            stopping: false,
-        };
+        let endpoint = PeerAdvertisementEndpoint::outbound_only(1);
         let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
         let network = NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -2542,8 +2814,12 @@ mod tests {
 
         let endpoint = PeerAdvertisementEndpoint {
             generation: 1,
-            endpoint: Some("203.0.113.9:48001".parse().expect("mapped endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("203.0.113.9:48001".parse().expect("mapped endpoint")),
+                source_address: Some(Ipv4Addr::LOCALHOST.into()),
+                scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            },
+            ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: false,
         };
         let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
@@ -2671,12 +2947,11 @@ mod tests {
         })
         .await
         .expect("start DHT client");
-        let endpoint = PeerAdvertisementEndpoint {
-            generation: 7,
-            endpoint: Some("127.0.0.1:55001".parse().expect("peer endpoint")),
-            scope: Some(PeerAdvertisementEndpointScope::Loopback),
-            stopping: false,
-        };
+        let endpoint = ipv4_endpoint(
+            7,
+            "127.0.0.1:55001",
+            PeerAdvertisementEndpointScope::Loopback,
+        );
         let (endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
         let network = NetworkConfig::new(
             NetworkPolicy::LoopbackOnly,
@@ -2709,11 +2984,11 @@ mod tests {
             (55_001, 1, 1, 1, 0)
         );
         endpoint_sender
-            .send(PeerAdvertisementEndpoint {
-                generation: 8,
-                endpoint: Some("127.0.0.1:55002".parse().expect("corrected endpoint")),
-                ..endpoint
-            })
+            .send(ipv4_endpoint(
+                8,
+                "127.0.0.1:55002",
+                PeerAdvertisementEndpointScope::Loopback,
+            ))
             .expect("publish corrected endpoint");
         assert_eq!(
             activity.wait_for_dht_announces(2).await,

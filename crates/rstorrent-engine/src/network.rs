@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 
 pub const DEFAULT_PEER_ID: [u8; 20] = *b"-RS0001-000000000000";
@@ -68,6 +68,46 @@ impl AddressFamilyPolicy {
 impl Default for AddressFamilyPolicy {
     fn default() -> Self {
         Self::dual_stack()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AddressFamilyPolicyHandle {
+    ipv6_enabled: Arc<AtomicBool>,
+}
+
+impl AddressFamilyPolicyHandle {
+    #[must_use]
+    pub fn new(policy: AddressFamilyPolicy) -> Self {
+        Self {
+            ipv6_enabled: Arc::new(AtomicBool::new(policy.ipv6_enabled())),
+        }
+    }
+
+    #[must_use]
+    pub fn load(&self) -> AddressFamilyPolicy {
+        if self.ipv6_enabled.load(Ordering::Acquire) {
+            AddressFamilyPolicy::dual_stack()
+        } else {
+            AddressFamilyPolicy::ipv4_only()
+        }
+    }
+
+    pub fn replace(&self, policy: AddressFamilyPolicy) -> AddressFamilyPolicy {
+        if self
+            .ipv6_enabled
+            .swap(policy.ipv6_enabled(), Ordering::AcqRel)
+        {
+            AddressFamilyPolicy::dual_stack()
+        } else {
+            AddressFamilyPolicy::ipv4_only()
+        }
+    }
+}
+
+impl Default for AddressFamilyPolicyHandle {
+    fn default() -> Self {
+        Self::new(AddressFamilyPolicy::default())
     }
 }
 

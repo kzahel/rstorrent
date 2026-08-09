@@ -64,6 +64,7 @@ export function ConnectionSeedingSettingsSection({
   const [encryption, setEncryption] = useState<EncryptionPolicy>(
     configured.encryption,
   );
+  const [ipv6Enabled, setIpv6Enabled] = useState(configured.ipv6_enabled);
   const [pending, setPending] = useState(false);
   const [saveStatus, setSaveStatus] = useState<
     { readonly type: "success" | "error"; readonly message: string } | null
@@ -81,6 +82,7 @@ export function ConnectionSeedingSettingsSection({
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setEncryption(configured.encryption);
+    setIpv6Enabled(configured.ipv6_enabled);
   }, [
     configured.listener.type,
     isFixedListener(configured.listener)
@@ -91,6 +93,7 @@ export function ConnectionSeedingSettingsSection({
     configured.peer_connection_limit,
     configured.upload_slots,
     configured.encryption,
+    configured.ipv6_enabled,
   ]);
 
   const validation = useMemo(
@@ -103,6 +106,7 @@ export function ConnectionSeedingSettingsSection({
         peerLimit,
         uploadSlots,
         encryption,
+        ipv6Enabled,
         configured.tracker_https_server_authentication,
       ),
     [
@@ -114,6 +118,7 @@ export function ConnectionSeedingSettingsSection({
       preferredPort,
       uploadSlots,
       encryption,
+      ipv6Enabled,
     ],
   );
   const dirty =
@@ -137,6 +142,7 @@ export function ConnectionSeedingSettingsSection({
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setEncryption(configured.encryption);
+    setIpv6Enabled(configured.ipv6_enabled);
     setSaveStatus(null);
   };
 
@@ -171,7 +177,7 @@ export function ConnectionSeedingSettingsSection({
         </p>
       ) : null}
       <p className={styles.sectionIntroduction}>
-        Incoming peer connections are enabled on all IPv4 network interfaces.
+        Incoming peer connections use IPv4 and, when available, IPv6.
         Automatic port selection is recommended; choose a fixed port only when
         your network requires one.
       </p>
@@ -218,6 +224,24 @@ export function ConnectionSeedingSettingsSection({
             />
           ) : null}
         </div>
+
+        <label className={styles.option}>
+          <input
+            type="checkbox"
+            checked={ipv6Enabled}
+            disabled={!manageable || pending}
+            onChange={(event) =>
+              updateDraft(() => setIpv6Enabled(event.currentTarget.checked))
+            }
+          />
+          <span>
+            <strong>Enable IPv6</strong>
+            <small>
+              Use IPv6 for DHT, trackers, peer connections, and the incoming
+              listener when this device has an eligible address.
+            </small>
+          </span>
+        </label>
 
         <label className={styles.option}>
           <input
@@ -484,6 +508,16 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       </span>
       <PortMappingRuntime status={settings.port_mapping_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
+      {settings.transport_families.map((family) => (
+        <span key={family.family}>
+          {family.family === "ipv4" ? "IPv4" : "IPv6"}: {family.configured ? "configured" : "disabled"}
+          {family.tcp_endpoint === null ? "" : ` · TCP ${family.tcp_endpoint}`}
+          {family.udp_endpoint === null ? "" : ` · UDP ${family.udp_endpoint}`}
+          {family.advertised_endpoint === null
+            ? " · outbound-only advertisement"
+            : ` · advertises ${family.advertised_endpoint}`}
+        </span>
+      ))}
       <ApplicationState label="Transport" state={settings.transport_application} />
       <ApplicationState
         label="Port mapping"
@@ -517,6 +551,9 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
       <span>
         Effective protocol obfuscation policy: {settings.effective_encryption}.
+      </span>
+      <span>
+        Effective IPv6 policy: {settings.effective_ipv6_enabled ? "enabled" : "disabled"}.
       </span>
     </div>
   );
@@ -652,6 +689,7 @@ function validateDraft(
   peerLimit: string,
   uploadSlots: string,
   encryption: EncryptionPolicy,
+  ipv6Enabled: boolean,
   trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
 ): DraftValidation {
   const preferred = parseBoundedInteger(
@@ -717,6 +755,7 @@ function validateDraft(
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
       encryption,
+      ipv6_enabled: ipv6Enabled,
       tracker_https_server_authentication: trackerHttpsServerAuthentication,
     },
     preferredPortError: null,
@@ -749,6 +788,7 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots &&
     left.encryption === right.encryption &&
+    left.ipv6_enabled === right.ipv6_enabled &&
     left.tracker_https_server_authentication ===
       right.tracker_https_server_authentication
   );

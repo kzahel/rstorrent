@@ -1317,6 +1317,9 @@
         "encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
         },
+        "ipv6_enabled": {
+          "type": "boolean"
+        },
         "listener": {
           "$ref": "#/$defs/ListenerPolicy"
         },
@@ -1352,6 +1355,7 @@
         "peer_connection_limit",
         "upload_slots",
         "encryption",
+        "ipv6_enabled",
         "tracker_https_server_authentication"
       ],
       "type": "object"
@@ -1433,6 +1437,9 @@
         "effective_encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
         },
+        "effective_ipv6_enabled": {
+          "type": "boolean"
+        },
         "effective_listener": {
           "anyOf": [
             {
@@ -1470,6 +1477,9 @@
         "encryption_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         },
+        "ipv6_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
         "listener_status": {
           "$ref": "#/$defs/ListenerStatus"
         },
@@ -1491,6 +1501,12 @@
         "transport_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         },
+        "transport_families": {
+          "items": {
+            "$ref": "#/$defs/TransportFamilyRuntimeView"
+          },
+          "type": "array"
+        },
         "upload_slots_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         }
@@ -1501,16 +1517,19 @@
         "effective_peer_connection_limit",
         "effective_upload_slots",
         "effective_encryption",
+        "effective_ipv6_enabled",
         "transport_application",
         "port_mapping_application",
         "peer_connections_application",
         "upload_slots_application",
         "encryption_application",
+        "ipv6_application",
         "tracker_https_authentication_application",
         "listener_status",
         "session_udp_status",
         "port_mapping_status",
-        "advertised_peer_endpoint"
+        "advertised_peer_endpoint",
+        "transport_families"
       ],
       "type": "object"
     },
@@ -1880,6 +1899,13 @@
       ],
       "type": "string"
     },
+    "DhtAddressFamilyView": {
+      "enum": [
+        "ipv4",
+        "ipv6"
+      ],
+      "type": "string"
+    },
     "DhtBucketView": {
       "properties": {
         "bucket_index": {
@@ -1921,7 +1947,7 @@
       ],
       "type": "object"
     },
-    "DhtInspectionView": {
+    "DhtFamilyInspectionView": {
       "properties": {
         "active_lookups": {
           "format": "uint32",
@@ -1933,17 +1959,23 @@
           "minimum": 0,
           "type": "integer"
         },
+        "announces_failed": {
+          "type": "string"
+        },
+        "announces_sent": {
+          "type": "string"
+        },
+        "announces_succeeded": {
+          "type": "string"
+        },
         "bootstrap_attempts": {
           "type": "string"
         },
-        "buckets_v4": {
+        "buckets": {
           "items": {
             "$ref": "#/$defs/DhtBucketView"
           },
           "type": "array"
-        },
-        "captured_millis": {
-          "type": "string"
         },
         "datagram_bytes_received": {
           "type": "string"
@@ -1951,7 +1983,7 @@
         "datagram_bytes_sent": {
           "type": "string"
         },
-        "deepest_shared_prefix_bits_v4": {
+        "deepest_shared_prefix_bits": {
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
@@ -1963,25 +1995,31 @@
         "discovered_peers": {
           "type": "string"
         },
+        "family": {
+          "$ref": "#/$defs/DhtAddressFamilyView"
+        },
+        "family_mismatched": {
+          "type": "string"
+        },
         "lifecycle": {
           "$ref": "#/$defs/DhtLifecycleView"
+        },
+        "local_address": {
+          "type": "string"
         },
         "local_node_id": {
           "type": "string"
         },
-        "lookups": {
-          "items": {
-            "$ref": "#/$defs/DhtLookupView"
-          },
-          "type": "array"
-        },
         "malformed_received": {
           "type": "string"
         },
-        "network_policy": {
-          "$ref": "#/$defs/DhtNetworkPolicyView"
+        "observed_external_address": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "occupied_buckets_v4": {
+        "occupied_buckets": {
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
@@ -1999,7 +2037,7 @@
         "responses_received": {
           "type": "string"
         },
-        "routing_nodes_v4": {
+        "routing_nodes": {
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
@@ -2010,25 +2048,129 @@
         }
       },
       "required": [
+        "family",
         "lifecycle",
-        "network_policy",
         "local_node_id",
-        "captured_millis",
-        "routing_nodes_v4",
-        "occupied_buckets_v4",
+        "local_address",
+        "routing_nodes",
+        "occupied_buckets",
         "active_transactions",
         "active_lookups",
         "queries_sent",
         "responses_received",
         "queries_received",
         "malformed_received",
+        "family_mismatched",
         "rate_limited",
         "discovered_peers",
         "bootstrap_attempts",
         "routing_refreshes",
         "datagram_bytes_sent",
         "datagram_bytes_received",
-        "buckets_v4",
+        "announces_sent",
+        "announces_succeeded",
+        "announces_failed",
+        "buckets"
+      ],
+      "type": "object"
+    },
+    "DhtInspectionView": {
+      "properties": {
+        "active_lookups": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "active_transactions": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "announces_failed": {
+          "type": "string"
+        },
+        "announces_sent": {
+          "type": "string"
+        },
+        "announces_succeeded": {
+          "type": "string"
+        },
+        "bootstrap_attempts": {
+          "type": "string"
+        },
+        "captured_millis": {
+          "type": "string"
+        },
+        "datagram_bytes_received": {
+          "type": "string"
+        },
+        "datagram_bytes_sent": {
+          "type": "string"
+        },
+        "discovered_peers": {
+          "type": "string"
+        },
+        "families": {
+          "items": {
+            "$ref": "#/$defs/DhtFamilyInspectionView"
+          },
+          "type": "array"
+        },
+        "family_mismatched": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/DhtLifecycleView"
+        },
+        "lookups": {
+          "items": {
+            "$ref": "#/$defs/DhtLookupView"
+          },
+          "type": "array"
+        },
+        "malformed_received": {
+          "type": "string"
+        },
+        "network_policy": {
+          "$ref": "#/$defs/DhtNetworkPolicyView"
+        },
+        "queries_received": {
+          "type": "string"
+        },
+        "queries_sent": {
+          "type": "string"
+        },
+        "rate_limited": {
+          "type": "string"
+        },
+        "responses_received": {
+          "type": "string"
+        },
+        "routing_refreshes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lifecycle",
+        "network_policy",
+        "captured_millis",
+        "active_transactions",
+        "active_lookups",
+        "queries_sent",
+        "responses_received",
+        "queries_received",
+        "malformed_received",
+        "family_mismatched",
+        "rate_limited",
+        "discovered_peers",
+        "bootstrap_attempts",
+        "routing_refreshes",
+        "datagram_bytes_sent",
+        "datagram_bytes_received",
+        "announces_sent",
+        "announces_succeeded",
+        "announces_failed",
+        "families",
         "lookups"
       ],
       "type": "object"
@@ -2071,6 +2213,9 @@
           "minimum": 0,
           "type": "integer"
         },
+        "family": {
+          "$ref": "#/$defs/DhtAddressFamilyView"
+        },
         "in_flight_candidates": {
           "format": "uint16",
           "maximum": 65535,
@@ -2103,6 +2248,7 @@
         }
       },
       "required": [
+        "family",
         "lookup_id",
         "target_id",
         "age_millis",
@@ -4066,6 +4212,7 @@
           "$ref": "#/$defs/ClientSettings",
           "default": {
             "encryption": "allow",
+            "ipv6_enabled": true,
             "listener": {
               "type": "disabled"
             },
@@ -5071,6 +5218,47 @@
       ],
       "type": "object"
     },
+    "TransportAddressFamily": {
+      "enum": [
+        "ipv4",
+        "ipv6"
+      ],
+      "type": "string"
+    },
+    "TransportFamilyRuntimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "advertised_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "family": {
+          "$ref": "#/$defs/TransportAddressFamily"
+        },
+        "tcp_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "udp_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "family",
+        "configured"
+      ],
+      "type": "object"
+    },
     "UpdateBatch": {
       "properties": {
         "api_version": {
@@ -5576,6 +5764,7 @@
                 },
                 "configured": {
                   "encryption": "allow",
+                  "ipv6_enabled": true,
                   "listener": {
                     "type": "disabled"
                   },
@@ -5586,6 +5775,7 @@
                   "upload_slots": 8
                 },
                 "effective_encryption": "allow",
+                "effective_ipv6_enabled": true,
                 "effective_listener": {
                   "listener": {
                     "type": "disabled"
@@ -5597,6 +5787,9 @@
                 "effective_tracker_https_server_authentication": "system_trust",
                 "effective_upload_slots": 8,
                 "encryption_application": {
+                  "type": "applied"
+                },
+                "ipv6_application": {
                   "type": "applied"
                 },
                 "listener_status": {
@@ -5620,6 +5813,7 @@
                 "transport_application": {
                   "type": "applied"
                 },
+                "transport_families": [],
                 "upload_slots_application": {
                   "type": "applied"
                 }

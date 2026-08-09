@@ -17,7 +17,7 @@ use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::net::lookup_host;
 
-use crate::network::NetworkPolicy;
+use crate::network::{AddressFamilyPolicy, NetworkPolicy};
 use crate::peer::PeerEndpoint;
 use crate::tracker::{TrackerConnectionFamily as AddressFamily, TrackerHttpsAuthentication};
 
@@ -50,6 +50,7 @@ pub(crate) struct HttpTrackerAnnounce {
     pub info_hash: [u8; 20],
     pub peer_id: [u8; 20],
     pub port: u16,
+    pub ipv6_port: u16,
     pub uploaded: u64,
     pub downloaded: u64,
     pub left: u64,
@@ -276,6 +277,32 @@ impl HttpTrackerClients {
         }
     }
 
+    pub(crate) fn with_source_addresses(
+        &self,
+        policy: NetworkPolicy,
+        ipv4: Option<IpAddr>,
+        ipv6: Option<IpAddr>,
+    ) -> Result<Self, HttpTrackerError> {
+        let authentication = self
+            .https_authentication
+            .unwrap_or(TrackerHttpsAuthentication::Disabled);
+        Ok(Self {
+            ipv4: build_client_with_source(
+                policy,
+                AddressFamily::Ipv4,
+                authentication,
+                ipv4.filter(IpAddr::is_ipv4),
+            )?,
+            ipv6: build_client_with_source(
+                policy,
+                AddressFamily::Ipv6,
+                authentication,
+                ipv6.filter(IpAddr::is_ipv6),
+            )?,
+            https_authentication: self.https_authentication,
+        })
+    }
+
     #[cfg(test)]
     fn new_with_extra_root(
         policy: NetworkPolicy,
@@ -312,7 +339,20 @@ fn build_client(
     family: AddressFamily,
     https_authentication: TrackerHttpsAuthentication,
 ) -> Result<reqwest::Client, HttpTrackerError> {
-    configured_client_builder(policy, family, https_authentication)
+    build_client_with_source(policy, family, https_authentication, None)
+}
+
+fn build_client_with_source(
+    policy: NetworkPolicy,
+    family: AddressFamily,
+    https_authentication: TrackerHttpsAuthentication,
+    source_address: Option<IpAddr>,
+) -> Result<reqwest::Client, HttpTrackerError> {
+    let mut builder = configured_client_builder(policy, family, https_authentication);
+    if let Some(source_address) = source_address {
+        builder = builder.local_address(source_address);
+    }
+    builder
         .build()
         .map_err(|error| redacted_reqwest_build_error(error, https_authentication))
 }
@@ -355,10 +395,32 @@ pub fn install_test_platform_root(pem: &[u8]) -> Result<(), String> {
         .map_err(|_| "test platform root is already installed".to_owned())
 }
 
+#[cfg(test)]
 pub(crate) async fn announce_http_tracker(
     clients: &HttpTrackerClients,
     base_url: &str,
     policy: NetworkPolicy,
+    prefer_ipv6: bool,
+    announce: &HttpTrackerAnnounce,
+    timeout: Duration,
+) -> Result<HttpTrackerResponse, HttpTrackerError> {
+    announce_http_tracker_with_address_families(
+        clients,
+        base_url,
+        policy,
+        AddressFamilyPolicy::dual_stack(),
+        prefer_ipv6,
+        announce,
+        timeout,
+    )
+    .await
+}
+
+pub(crate) async fn announce_http_tracker_with_address_families(
+    clients: &HttpTrackerClients,
+    base_url: &str,
+    policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     prefer_ipv6: bool,
     announce: &HttpTrackerAnnounce,
     timeout: Duration,
@@ -376,7 +438,14 @@ pub(crate) async fn announce_http_tracker(
     }
     tokio::time::timeout(
         timeout,
-        announce_http_tracker_inner(clients, base_url, announce, policy, prefer_ipv6),
+        announce_http_tracker_inner(
+            clients,
+            base_url,
+            announce,
+            policy,
+            address_families,
+            prefer_ipv6,
+        ),
     )
     .await
     .map_err(|_| HttpTrackerError::Timeout)?
@@ -387,19 +456,29 @@ async fn announce_http_tracker_inner(
     base_url: &str,
     announce: &HttpTrackerAnnounce,
     policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     prefer_ipv6: bool,
 ) -> Result<HttpTrackerResponse, HttpTrackerError> {
     let base = url::Url::parse(base_url).map_err(|_| HttpTrackerError::InvalidUrl)?;
-    let families = resolve_url_families(&base, policy, prefer_ipv6).await?;
+    let families = resolve_url_families(&base, policy, address_families, prefer_ipv6).await?;
     let mut last_error = None;
     for family in families {
         let mut family_announce = announce.clone();
         if family == AddressFamily::Ipv6 {
-            family_announce.port = 1;
+            family_announce.port = family_announce.ipv6_port;
         }
         let target = build_announce_target(base_url, &family_announce)?;
         let url = url::Url::parse(&target.url).map_err(|_| HttpTrackerError::InvalidUrl)?;
-        match request_family(clients.get(family), url, target.auth, policy, family).await {
+        match request_family(
+            clients.get(family),
+            url,
+            target.auth,
+            policy,
+            address_families,
+            family,
+        )
+        .await
+        {
             Ok(HttpTrackerResponse::Success(mut success)) => {
                 success.connection_family = Some(family);
                 success.peers = resolve_peer_addresses(success.peers, policy).await;
@@ -415,6 +494,7 @@ async fn announce_http_tracker_inner(
 async fn resolve_url_families(
     url: &url::Url,
     policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     prefer_ipv6: bool,
 ) -> Result<Vec<AddressFamily>, HttpTrackerError> {
     let host = url.host().ok_or(HttpTrackerError::InvalidUrl)?;
@@ -428,7 +508,8 @@ async fn resolve_url_families(
             has_v4 = policy.allows(SocketAddr::new(IpAddr::V4(address), port));
         }
         url::Host::Ipv6(address) => {
-            has_v6 = policy.allows(SocketAddr::new(IpAddr::V6(address), port));
+            has_v6 = address_families.ipv6_enabled()
+                && policy.allows(SocketAddr::new(IpAddr::V6(address), port));
         }
         url::Host::Domain(host) => {
             let resolved = lookup_host((host, port))
@@ -436,7 +517,9 @@ async fn resolve_url_families(
                 .map_err(|_| HttpTrackerError::ResolutionFailed)?;
             let mut v4 = 0_usize;
             let mut v6 = 0_usize;
-            for address in resolved.filter(|address| policy.allows(*address)) {
+            for address in resolved
+                .filter(|address| address_families.permits(address.ip()) && policy.allows(*address))
+            {
                 if address.is_ipv4() && v4 < MAX_HTTP_TRACKER_RESOLVED_ADDRESSES {
                     has_v4 = true;
                     v4 += 1;
@@ -470,6 +553,7 @@ async fn request_family(
     mut url: url::Url,
     mut auth: Option<HttpBasicAuth>,
     policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     family: AddressFamily,
 ) -> Result<HttpTrackerResponse, HttpTrackerError> {
     let mut visited = HashSet::new();
@@ -477,7 +561,7 @@ async fn request_family(
         if !visited.insert(url.to_string()) {
             return Err(HttpTrackerError::Redirect("redirect loop".to_owned()));
         }
-        ensure_url_family(&url, policy, family).await?;
+        ensure_url_family(&url, policy, address_families, family).await?;
         let mut request = client.get(url.clone()).header(ACCEPT_ENCODING, "gzip");
         if let Some(auth) = auth.as_ref() {
             let mut credentials = Vec::with_capacity(auth.username.len() + auth.password.len() + 1);
@@ -534,9 +618,11 @@ async fn request_family(
 async fn ensure_url_family(
     url: &url::Url,
     policy: NetworkPolicy,
+    address_families: AddressFamilyPolicy,
     family: AddressFamily,
 ) -> Result<(), HttpTrackerError> {
-    let families = resolve_url_families(url, policy, family == AddressFamily::Ipv6).await?;
+    let families =
+        resolve_url_families(url, policy, address_families, family == AddressFamily::Ipv6).await?;
     if families.contains(&family) {
         Ok(())
     } else {
@@ -1652,6 +1738,7 @@ mod tests {
             info_hash: std::array::from_fn(|index| u8::try_from(index).expect("hash byte")),
             peer_id: std::array::from_fn(|index| u8::try_from(index + 20).expect("peer ID byte")),
             port: 1,
+            ipv6_port: 1,
             uploaded: 2,
             downloaded: 3,
             left: 4,
@@ -2639,5 +2726,18 @@ mod tests {
             assert!(error.to_string().contains(expected), "{error}");
             task.await.expect("server");
         }
+    }
+
+    #[tokio::test]
+    async fn ipv4_only_policy_rejects_an_ipv6_tracker_url() {
+        let url = url::Url::parse("http://[::1]:8080/announce").expect("IPv6 URL");
+        let result = resolve_url_families(
+            &url,
+            NetworkPolicy::LoopbackOnly,
+            AddressFamilyPolicy::ipv4_only(),
+            false,
+        )
+        .await;
+        assert!(matches!(result, Err(HttpTrackerError::NoPermittedAddress)));
     }
 }

@@ -6,7 +6,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use crate::network::is_valid_outbound_address;
+use crate::network::{AddressFamilyPolicy, is_valid_outbound_address};
 use crate::swarm::ConnectionId;
 
 pub const DEFAULT_MAX_PEER_RECORDS: usize = 1_000;
@@ -421,11 +421,22 @@ impl PeerSelector {
         registry: &PeerRegistry,
         context: PeerSelectionContext,
     ) -> Option<DialCandidate> {
+        self.select_with_address_families(registry, context, AddressFamilyPolicy::dual_stack())
+    }
+
+    pub fn select_with_address_families(
+        self,
+        registry: &PeerRegistry,
+        context: PeerSelectionContext,
+        address_families: AddressFamilyPolicy,
+    ) -> Option<DialCandidate> {
         registry
             .records
             .iter()
             .filter(|record| {
-                self.eligibility(record, context, registry.config) == DialEligibility::Eligible
+                address_families.permits(record.endpoint.address().ip())
+                    && self.eligibility(record, context, registry.config)
+                        == DialEligibility::Eligible
             })
             .min_by(|left, right| compare_dial_candidates(left, right))
             .map(|record| DialCandidate {
@@ -579,6 +590,22 @@ impl PeerRegistry {
         self.records
             .retain(|record| !record.sources.is_empty() || record.phase != PeerPhase::Idle);
         before - self.records.len()
+    }
+
+    pub(crate) fn remove_idle_disallowed(&mut self, policy: AddressFamilyPolicy) -> usize {
+        let before = self.records.len();
+        self.records.retain(|record| {
+            policy.permits(record.endpoint.address().ip())
+                || record.phase != PeerPhase::Idle
+                || record.incoming_connections != 0
+        });
+        before - self.records.len()
+    }
+
+    pub(crate) fn has_disallowed(&self, policy: AddressFamilyPolicy) -> bool {
+        self.records
+            .iter()
+            .any(|record| !policy.permits(record.endpoint.address().ip()))
     }
 
     /// Remove one discovery source from one endpoint and discard a now-

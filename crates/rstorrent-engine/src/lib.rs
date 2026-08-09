@@ -38,8 +38,8 @@ pub use advertisement::{
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
     DiscoveryAdvertisementRegistration, DiscoveryAdvertisementService, MAX_TRACKER_OPERATIONS,
     OUTBOUND_ONLY_TRACKER_PORT, PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope,
-    TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot, TrackerCounters,
-    UNKNOWN_METADATA_LEFT_BYTES,
+    PeerAdvertisementFamilyEndpoint, TRACKER_STOP_TIMEOUT, TorrentPrivacy, TrackerCounterSnapshot,
+    TrackerCounters, UNKNOWN_METADATA_LEFT_BYTES,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
@@ -81,8 +81,8 @@ pub use mse::{
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink,
 };
 pub use network::{
-    AddressFamily, AddressFamilyPolicy, DEFAULT_PEER_ID, NetworkConfig, NetworkPolicy,
-    PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
+    AddressFamily, AddressFamilyPolicy, AddressFamilyPolicyHandle, DEFAULT_PEER_ID, NetworkConfig,
+    NetworkPolicy, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
 };
 pub use part_file::{PartFile, PartFileError, PartFileIdentity};
 pub use peer_budget::{

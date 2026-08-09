@@ -13,9 +13,10 @@ use rstorrent_engine::{
     DiscoveryAdvertisementHandle, DiscoveryAdvertisementService, IncomingPeerAcceptor,
     IncomingPeerError, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
-    MseHandshakeSink, NetworkConfig, PeerBudget, PeerEncryptionPolicy, PeerEncryptionPolicyHandle,
-    SessionSocketConfig, SessionSocketError, SessionSocketFamilyState, SessionSocketSet,
-    SessionUdpError, SessionUdpHandle, SessionUdpService,
+    MseHandshakeSink, NetworkConfig, PeerAdvertisementEndpoint, PeerBudget, PeerEncryptionPolicy,
+    PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,
+    SessionSocketFamilyState, SessionSocketSet, SessionUdpError, SessionUdpHandle,
+    SessionUdpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -35,7 +36,8 @@ use crate::settings::{
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, EffectiveListenerSettings,
     EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy,
     ListenerStatus, PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel,
-    SettingsDomain, SettingsDomainGeneration, classify_listener_bind_failure,
+    SettingsDomain, SettingsDomainGeneration, TransportAddressFamily, TransportFamilyRuntimeView,
+    classify_listener_bind_failure,
 };
 use crate::views::{DhtInspectionView, ViewHub};
 
@@ -290,6 +292,7 @@ struct SessionNetworkOwner {
     encryption: PeerEncryptionPolicyHandle,
     incoming_runtime: Option<IncomingPeerRuntime>,
     incoming_acceptor: Option<IncomingPeerAcceptor>,
+    incoming_ipv6_acceptor: Option<IncomingPeerAcceptor>,
     incoming_seeding: IncomingSeeding,
     session_udp: Option<SessionUdpService>,
     dht: Option<DhtService>,
@@ -306,7 +309,7 @@ impl SessionNetworkRuntime {
     pub(crate) async fn start(config: SessionNetworkConfig) -> Result<Self, SessionNetworkError> {
         let SessionNetworkConfig {
             settings,
-            network,
+            mut network,
             mut dht,
             initial_dht_snapshot,
             byte_metric_sink,
@@ -318,6 +321,12 @@ impl SessionNetworkRuntime {
             incoming_inactivity_timeout,
             peer_budget_max_open_files_for_testing,
         } = config;
+        let address_families = if settings.ipv6_enabled {
+            AddressFamilyPolicy::dual_stack()
+        } else {
+            AddressFamilyPolicy::ipv4_only()
+        };
+        network = network.with_address_families(address_families);
         let mut peer_budget_config = settings.peer_budget_config();
         if let Some(maximum) = peer_budget_max_open_files_for_testing {
             peer_budget_config.max_open_files = maximum;
@@ -356,7 +365,7 @@ impl SessionNetworkRuntime {
             settings.preferred_listen_port,
             dht.bind_address,
         )
-        .with_address_families(network.address_families);
+        .with_address_families(address_families);
         let mut listener_failure = None;
         let socket_set = SessionSocketSet::bind(socket_config).await?;
         let (ipv4, ipv6) = socket_set.into_families();
@@ -395,10 +404,12 @@ impl SessionNetworkRuntime {
         let udp_address = ipv4.udp_address();
         let coordinated_with_tcp = ipv4.ports_match();
         let (tcp_listener, udp_socket) = ipv4.into_parts();
+        let (ipv6_listener, ipv6_udp) = ipv6.into_bound().map_or((None, None), |ipv6| {
+            let (listener, udp) = ipv6.into_parts();
+            (listener, Some(udp))
+        });
         let (mut session_udp, dht_transport) = SessionUdpService::start(udp_socket)?;
-        if let Some(ipv6) = ipv6.into_bound() {
-            let (ipv6_listener, ipv6_udp) = ipv6.into_parts();
-            drop(ipv6_listener);
+        if let Some(ipv6_udp) = ipv6_udp {
             session_udp.replace_socket(ipv6_udp).await?;
         }
         let session_udp_handle = session_udp.handle();
@@ -409,6 +420,16 @@ impl SessionNetworkRuntime {
                 let _ = session_udp.shutdown().await;
                 return Err(error.into());
             }
+        };
+        let incoming_ipv6_acceptor = match ipv6_listener {
+            Some(listener) => incoming_runtime
+                .start_acceptor(
+                    settings.incoming_bootstrap(),
+                    listener,
+                    incoming_handshake_timeout,
+                )
+                .ok(),
+            None => None,
         };
         let (incoming_acceptor, listener_status) = match tcp_listener {
             Some(listener) => match incoming_runtime.start_acceptor(
@@ -444,11 +465,15 @@ impl SessionNetworkRuntime {
         };
         let mut incoming_runtime = Some(incoming_runtime);
         let mut incoming_acceptor = incoming_acceptor;
+        let mut incoming_ipv6_acceptor = incoming_ipv6_acceptor;
         let mut session_udp = Some(session_udp);
         let dht = match DhtService::start_with_transport(dht, dht_transport).await {
             Ok(dht) => dht,
             Err(error) => {
                 if let Some(acceptor) = incoming_acceptor.take() {
+                    let _ = acceptor.shutdown().await;
+                }
+                if let Some(acceptor) = incoming_ipv6_acceptor.take() {
                     let _ = acceptor.shutdown().await;
                 }
                 if let Some(runtime) = incoming_runtime.take() {
@@ -461,6 +486,12 @@ impl SessionNetworkRuntime {
             }
         };
         let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
+        advertised_endpoint.replace_ipv6_listener(incoming_ipv6_acceptor.as_ref().and_then(
+            |acceptor| match acceptor.listen_address() {
+                std::net::SocketAddr::V6(address) => Some(address),
+                std::net::SocketAddr::V4(_) => None,
+            },
+        ));
         let discovery_advertisement =
             DiscoveryAdvertisementService::start_with_https_authentication(
                 network,
@@ -490,7 +521,9 @@ impl SessionNetworkRuntime {
             .as_ref()
             .expect("incoming runtime exists after startup")
             .handle();
-        let listener_active = Arc::new(AtomicBool::new(incoming_acceptor.is_some()));
+        let listener_active = Arc::new(AtomicBool::new(
+            incoming_acceptor.is_some() || incoming_ipv6_acceptor.is_some(),
+        ));
         let effective_listener = if matches!(
             listener_status,
             ListenerStatus::Disabled | ListenerStatus::Listening { .. }
@@ -505,7 +538,7 @@ impl SessionNetworkRuntime {
             listener_status: listener_status.clone(),
             session_udp_status: session_udp_status.clone(),
             dht_bind_address,
-            address_families: network.address_families,
+            address_families,
             incoming_handshake_timeout,
             advertised_endpoint: advertised_endpoint.clone(),
             peer_budget: peer_budget.clone(),
@@ -513,6 +546,7 @@ impl SessionNetworkRuntime {
             encryption: encryption.clone(),
             incoming_runtime,
             incoming_acceptor,
+            incoming_ipv6_acceptor,
             incoming_seeding: incoming_seeding.clone(),
             session_udp,
             dht: Some(dht),
@@ -601,6 +635,18 @@ impl SessionNetworkRuntime {
             self.listener_status.clone(),
             session_udp_status,
             self.advertised_endpoint.status(Instant::now()),
+        );
+        let advertised = *self.advertised_endpoint.subscribe_wire().borrow();
+        view.transport_families = transport_family_runtime_views(
+            if self.settings.ipv6_enabled {
+                AddressFamilyPolicy::dual_stack()
+            } else {
+                AddressFamilyPolicy::ipv4_only()
+            },
+            &self.listener_status,
+            advertised.ipv6.endpoint,
+            &self.session_udp_handle,
+            advertised,
         );
         view.effective_tracker_https_server_authentication =
             self.initial_tracker_https_authentication;
@@ -899,6 +945,27 @@ async fn run_session_network(
 }
 
 impl SessionNetworkOwner {
+    fn transport_family_views(&self) -> Vec<TransportFamilyRuntimeView> {
+        let advertised = *self.advertised_endpoint.subscribe_wire().borrow();
+        let udp = self
+            .session_udp
+            .as_ref()
+            .expect("session UDP exists while projecting transport")
+            .handle();
+        transport_family_runtime_views(
+            self.address_families,
+            &self.listener_status,
+            self.incoming_ipv6_acceptor.as_ref().and_then(|acceptor| {
+                acceptor
+                    .listen_address()
+                    .is_ipv6()
+                    .then(|| acceptor.listen_address())
+            }),
+            &udp,
+            advertised,
+        )
+    }
+
     fn record_reachability_shutdown(
         &mut self,
         result: Result<ReachabilityGenerationShutdown, String>,
@@ -1068,14 +1135,21 @@ impl SessionNetworkOwner {
     ) -> bool {
         let generation = attempt.domain(SettingsDomain::Transport);
         let desired = EffectiveListenerSettings::from_settings(&attempt.settings);
-        if !transport_rebind_required(
+        let desired_address_families = if attempt.settings.ipv6_enabled {
+            AddressFamilyPolicy::dual_stack()
+        } else {
+            AddressFamilyPolicy::ipv4_only()
+        };
+        let transport_rebind_required = transport_rebind_required(
             self.effective_listener.as_ref(),
             &desired,
             &self.listener_status,
-        ) {
+        );
+        if self.address_families == desired_address_families && !transport_rebind_required {
             self.effective_listener = Some(desired.clone());
             self.effective_settings.listener = desired.listener;
             self.effective_settings.preferred_listen_port = desired.preferred_listen_port;
+            self.effective_settings.ipv6_enabled = attempt.settings.ipv6_enabled;
             publish_transport(
                 convergence,
                 generation,
@@ -1083,9 +1157,23 @@ impl SessionNetworkOwner {
                 self.listener_status.clone(),
                 self.session_udp_status.clone(),
                 self.advertised_endpoint.status(Instant::now()),
+                self.address_families.ipv6_enabled(),
                 ClientSettingsApplicationState::Applied,
                 views,
             );
+            return false;
+        }
+        if self.address_families != desired_address_families && !transport_rebind_required {
+            self.reconcile_address_families_only(
+                attempt,
+                generation,
+                desired,
+                desired_address_families,
+                convergence,
+                views,
+                cancellation,
+            )
+            .await;
             return false;
         }
 
@@ -1095,7 +1183,7 @@ impl SessionNetworkOwner {
                 attempt.settings.preferred_listen_port,
                 self.dht_bind_address,
             )
-            .with_address_families(self.address_families),
+            .with_address_families(desired_address_families),
         )
         .await;
         let candidate = match candidate {
@@ -1108,6 +1196,7 @@ impl SessionNetworkOwner {
                     self.listener_status.clone(),
                     self.session_udp_status.clone(),
                     self.advertised_endpoint.status(Instant::now()),
+                    self.address_families.ipv6_enabled(),
                     ClientSettingsApplicationState::Degraded {
                         reason: ClientSettingsDegradedReason::TransportBindFailed,
                         detail: error.to_string(),
@@ -1132,6 +1221,7 @@ impl SessionNetworkOwner {
                     self.listener_status.clone(),
                     self.session_udp_status.clone(),
                     self.advertised_endpoint.status(Instant::now()),
+                    self.address_families.ipv6_enabled(),
                     ClientSettingsApplicationState::Degraded {
                         reason: ClientSettingsDegradedReason::TransportBindFailed,
                         detail: error.to_string(),
@@ -1148,6 +1238,7 @@ impl SessionNetworkOwner {
                     self.listener_status.clone(),
                     self.session_udp_status.clone(),
                     self.advertised_endpoint.status(Instant::now()),
+                    self.address_families.ipv6_enabled(),
                     ClientSettingsApplicationState::Degraded {
                         reason: ClientSettingsDegradedReason::TransportBindFailed,
                         detail: "IPv4 session sockets cannot be disabled".to_owned(),
@@ -1161,8 +1252,17 @@ impl SessionNetworkOwner {
         let udp_address = ipv4.udp_address();
         let coordinated_with_tcp = ipv4.ports_match();
         let (tcp_listener, udp_socket) = ipv4.into_parts();
+        let (ipv6_listener, ipv6_udp, mut ipv6_error) = match ipv6 {
+            SessionSocketFamilyState::Bound(sockets) => {
+                let (listener, udp) = sockets.into_parts();
+                (listener, Some(udp), None)
+            }
+            SessionSocketFamilyState::Disabled => (None, None, None),
+            SessionSocketFamilyState::Unavailable(error) => (None, None, Some(error.to_string())),
+        };
         self.advertised_endpoint
             .replace_listener(&ListenerStatus::Disabled);
+        self.advertised_endpoint.replace_ipv6_listener(None);
         let _ = views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
         if let Some(reachability) = self.reachability.take() {
             self.record_reachability_shutdown(reachability.shutdown_generation().await);
@@ -1170,6 +1270,11 @@ impl SessionNetworkOwner {
         if cancellation.is_cancelled() || !is_current(convergence, generation) {
             self.advertised_endpoint
                 .replace_listener(&self.listener_status);
+            self.advertised_endpoint.replace_ipv6_listener(
+                self.incoming_ipv6_acceptor
+                    .as_ref()
+                    .and_then(ipv6_acceptor_address),
+            );
             let _ =
                 views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
             self.reachability = Some(ReachabilityCoordinator::start(
@@ -1182,6 +1287,24 @@ impl SessionNetworkOwner {
             return false;
         }
 
+        let candidate_ipv6_acceptor = match ipv6_listener {
+            Some(listener) => match self
+                .incoming_runtime
+                .as_ref()
+                .expect("incoming runtime exists during IPv6 handover")
+                .start_acceptor(
+                    attempt.settings.incoming_bootstrap(),
+                    listener,
+                    self.incoming_handshake_timeout,
+                ) {
+                Ok(acceptor) => Some(acceptor),
+                Err(error) => {
+                    ipv6_error = Some(error.to_string());
+                    None
+                }
+            },
+            None => None,
+        };
         let candidate_acceptor = match tcp_listener {
             Some(listener) => match self
                 .incoming_runtime
@@ -1196,6 +1319,14 @@ impl SessionNetworkOwner {
                 Err(error) => {
                     self.advertised_endpoint
                         .replace_listener(&self.listener_status);
+                    self.advertised_endpoint.replace_ipv6_listener(
+                        self.incoming_ipv6_acceptor
+                            .as_ref()
+                            .and_then(ipv6_acceptor_address),
+                    );
+                    if let Some(acceptor) = candidate_ipv6_acceptor {
+                        let _ = acceptor.shutdown().await;
+                    }
                     let _ = views.set_advertised_peer_endpoint(
                         self.advertised_endpoint.status(Instant::now()),
                     );
@@ -1213,6 +1344,7 @@ impl SessionNetworkOwner {
                         self.listener_status.clone(),
                         self.session_udp_status.clone(),
                         self.advertised_endpoint.status(Instant::now()),
+                        self.address_families.ipv6_enabled(),
                         ClientSettingsApplicationState::Degraded {
                             reason: ClientSettingsDegradedReason::TransportHandoverFailed,
                             detail: error.to_string(),
@@ -1231,17 +1363,15 @@ impl SessionNetworkOwner {
             .expect("session UDP exists during handover")
             .replace_socket(udp_socket)
             .await;
-        let ipv6_udp_result = match ipv6 {
-            SessionSocketFamilyState::Bound(sockets) => {
-                let (ipv6_listener, ipv6_udp) = sockets.into_parts();
-                drop(ipv6_listener);
+        let ipv6_udp_result = match ipv6_udp {
+            Some(ipv6_udp) => {
                 self.session_udp
                     .as_mut()
                     .expect("session UDP exists during handover")
                     .replace_socket(ipv6_udp)
                     .await
             }
-            SessionSocketFamilyState::Disabled | SessionSocketFamilyState::Unavailable(_) => {
+            None => {
                 self.session_udp
                     .as_mut()
                     .expect("session UDP exists during handover")
@@ -1261,21 +1391,32 @@ impl SessionNetworkOwner {
             coordinated_with_tcp,
         };
         let previous_acceptor = std::mem::replace(&mut self.incoming_acceptor, candidate_acceptor);
-        if self.incoming_acceptor.is_none() {
+        let previous_ipv6_acceptor =
+            std::mem::replace(&mut self.incoming_ipv6_acceptor, candidate_ipv6_acceptor);
+        if self.incoming_acceptor.is_none() && self.incoming_ipv6_acceptor.is_none() {
             self.incoming_runtime
                 .as_ref()
                 .expect("incoming runtime exists during listener disable")
                 .disable_listener();
         }
-        self.listener_active
-            .store(self.incoming_acceptor.is_some(), Ordering::Release);
+        self.listener_active.store(
+            self.incoming_acceptor.is_some() || self.incoming_ipv6_acceptor.is_some(),
+            Ordering::Release,
+        );
         self.listener_status = listener_status;
         self.session_udp_status = session_udp_status;
         self.effective_listener = Some(desired.clone());
         self.effective_settings.listener = desired.listener;
         self.effective_settings.preferred_listen_port = desired.preferred_listen_port;
+        self.effective_settings.ipv6_enabled = attempt.settings.ipv6_enabled;
+        self.address_families = desired_address_families;
         self.advertised_endpoint
             .replace_listener(&self.listener_status);
+        self.advertised_endpoint.replace_ipv6_listener(
+            self.incoming_ipv6_acceptor
+                .as_ref()
+                .and_then(ipv6_acceptor_address),
+        );
         if let Some(acceptor) = previous_acceptor
             && let Err(error) = acceptor.shutdown().await
         {
@@ -1287,6 +1428,7 @@ impl SessionNetworkOwner {
                 self.listener_status.clone(),
                 self.session_udp_status.clone(),
                 self.advertised_endpoint.status(Instant::now()),
+                self.address_families.ipv6_enabled(),
                 ClientSettingsApplicationState::Degraded {
                     reason: ClientSettingsDegradedReason::TransportHandoverFailed,
                     detail,
@@ -1295,11 +1437,239 @@ impl SessionNetworkOwner {
             );
             return true;
         }
-        let state = match (udp_result, ipv6_udp_result) {
-            (Ok(()), Ok(())) => ClientSettingsApplicationState::Applied,
-            (Err(error), _) | (_, Err(error)) => ClientSettingsApplicationState::Degraded {
+        if let Some(acceptor) = previous_ipv6_acceptor
+            && let Err(error) = acceptor.shutdown().await
+        {
+            ipv6_error = Some(format!("retire previous IPv6 incoming acceptor: {error}"));
+        }
+        let dht_result = self
+            .dht
+            .as_ref()
+            .expect("DHT exists during transport handover")
+            .handle()
+            .reconcile_transport()
+            .await;
+        let address_family_result = self
+            .discovery_advertisement
+            .as_ref()
+            .expect("discovery advertisement exists during transport handover")
+            .handle()
+            .replace_address_family_policy(desired_address_families)
+            .await;
+        let state = match (
+            udp_result,
+            ipv6_udp_result,
+            ipv6_error,
+            dht_result,
+            address_family_result,
+        ) {
+            (Ok(()), Ok(()), None, Ok(()), Ok(())) => ClientSettingsApplicationState::Applied,
+            (_, _, Some(detail), _, _) => ClientSettingsApplicationState::Degraded {
                 reason: ClientSettingsDegradedReason::TransportHandoverFailed,
-                detail: format!("retire previous UDP generation: {error}"),
+                detail,
+            },
+            (Err(error), _, None, _, _) | (_, Err(error), None, _, _) => {
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                    detail: format!("retire previous UDP generation: {error}"),
+                }
+            }
+            (Ok(()), Ok(()), None, Err(error), _) => ClientSettingsApplicationState::Degraded {
+                reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                detail: format!("reconcile DHT address families: {error}"),
+            },
+            (Ok(()), Ok(()), None, Ok(()), Err(error)) => {
+                ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                    detail: format!("apply address-family policy: {error}"),
+                }
+            }
+        };
+        publish_transport(
+            convergence,
+            generation,
+            Some(desired),
+            self.listener_status.clone(),
+            self.session_udp_status.clone(),
+            self.advertised_endpoint.status(Instant::now()),
+            desired_address_families.ipv6_enabled(),
+            state,
+            views,
+        );
+        let transport_families = self.transport_family_views();
+        let _ = views.update_client_settings_runtime_for(generation, |runtime| {
+            runtime.transport_families = transport_families;
+        });
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn reconcile_address_families_only(
+        &mut self,
+        attempt: &SettingsAttempt,
+        generation: SettingsDomainGeneration,
+        desired: EffectiveListenerSettings,
+        desired_address_families: AddressFamilyPolicy,
+        convergence: &Arc<Mutex<SettingsConvergenceModel>>,
+        views: &ViewHub,
+        cancellation: &CancellationToken,
+    ) {
+        let mut retirement_error = None;
+        if desired_address_families.ipv6_enabled() {
+            let sockets = SessionSocketFamilySet::bind(
+                SessionSocketConfig::new(
+                    attempt.settings.incoming_bootstrap(),
+                    attempt.settings.preferred_listen_port,
+                    self.dht_bind_address,
+                )
+                .with_address_families(desired_address_families),
+                AddressFamily::Ipv6,
+            )
+            .await;
+            let sockets = match sockets {
+                Ok(sockets) => sockets,
+                Err(error) => {
+                    publish_transport(
+                        convergence,
+                        generation,
+                        self.effective_listener.clone(),
+                        self.listener_status.clone(),
+                        self.session_udp_status.clone(),
+                        self.advertised_endpoint.status(Instant::now()),
+                        self.address_families.ipv6_enabled(),
+                        ClientSettingsApplicationState::Degraded {
+                            reason: ClientSettingsDegradedReason::TransportBindFailed,
+                            detail: error.to_string(),
+                        },
+                        views,
+                    );
+                    return;
+                }
+            };
+            let (listener, udp) = sockets.into_parts();
+            let candidate_acceptor = match listener {
+                Some(listener) => match self
+                    .incoming_runtime
+                    .as_ref()
+                    .expect("incoming runtime exists during IPv6 handover")
+                    .start_acceptor(
+                        attempt.settings.incoming_bootstrap(),
+                        listener,
+                        self.incoming_handshake_timeout,
+                    ) {
+                    Ok(acceptor) => Some(acceptor),
+                    Err(error) => {
+                        publish_transport(
+                            convergence,
+                            generation,
+                            self.effective_listener.clone(),
+                            self.listener_status.clone(),
+                            self.session_udp_status.clone(),
+                            self.advertised_endpoint.status(Instant::now()),
+                            self.address_families.ipv6_enabled(),
+                            ClientSettingsApplicationState::Degraded {
+                                reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                                detail: error.to_string(),
+                            },
+                            views,
+                        );
+                        return;
+                    }
+                },
+                None => None,
+            };
+            if cancellation.is_cancelled() || !is_current(convergence, generation) {
+                if let Some(acceptor) = candidate_acceptor {
+                    let _ = acceptor.shutdown().await;
+                }
+                return;
+            }
+            if let Err(error) = self
+                .session_udp
+                .as_mut()
+                .expect("session UDP exists during IPv6 handover")
+                .replace_socket(udp)
+                .await
+            {
+                if let Some(acceptor) = candidate_acceptor {
+                    let _ = acceptor.shutdown().await;
+                }
+                publish_transport(
+                    convergence,
+                    generation,
+                    self.effective_listener.clone(),
+                    self.listener_status.clone(),
+                    self.session_udp_status.clone(),
+                    self.advertised_endpoint.status(Instant::now()),
+                    self.address_families.ipv6_enabled(),
+                    ClientSettingsApplicationState::Degraded {
+                        reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                        detail: format!("replace IPv6 UDP generation: {error}"),
+                    },
+                    views,
+                );
+                return;
+            }
+            let previous = std::mem::replace(&mut self.incoming_ipv6_acceptor, candidate_acceptor);
+            if let Some(previous) = previous
+                && let Err(error) = previous.shutdown().await
+            {
+                retirement_error = Some(format!("retire previous IPv6 acceptor: {error}"));
+            }
+        } else {
+            self.advertised_endpoint.replace_ipv6_listener(None);
+            let _ =
+                views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
+            if let Some(previous) = self.incoming_ipv6_acceptor.take()
+                && let Err(error) = previous.shutdown().await
+            {
+                retirement_error = Some(format!("retire IPv6 acceptor: {error}"));
+            }
+            if let Err(error) = self
+                .session_udp
+                .as_mut()
+                .expect("session UDP exists during IPv6 handover")
+                .remove_family(AddressFamily::Ipv6)
+                .await
+            {
+                retirement_error = Some(format!("retire IPv6 UDP generation: {error}"));
+            }
+        }
+
+        self.address_families = desired_address_families;
+        self.effective_settings.ipv6_enabled = desired_address_families.ipv6_enabled();
+        self.advertised_endpoint.replace_ipv6_listener(
+            self.incoming_ipv6_acceptor
+                .as_ref()
+                .and_then(ipv6_acceptor_address),
+        );
+        let dht_result = self
+            .dht
+            .as_ref()
+            .expect("DHT exists during IPv6 handover")
+            .handle()
+            .reconcile_transport()
+            .await;
+        let address_family_result = self
+            .discovery_advertisement
+            .as_ref()
+            .expect("discovery advertisement exists during IPv6 handover")
+            .handle()
+            .replace_address_family_policy(desired_address_families)
+            .await;
+        let state = match (retirement_error, dht_result, address_family_result) {
+            (None, Ok(()), Ok(())) => ClientSettingsApplicationState::Applied,
+            (Some(detail), _, _) => ClientSettingsApplicationState::Degraded {
+                reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                detail,
+            },
+            (None, Err(error), _) => ClientSettingsApplicationState::Degraded {
+                reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                detail: format!("reconcile DHT address families: {error}"),
+            },
+            (None, Ok(()), Err(error)) => ClientSettingsApplicationState::Degraded {
+                reason: ClientSettingsDegradedReason::TransportHandoverFailed,
+                detail: format!("apply address-family policy: {error}"),
             },
         };
         publish_transport(
@@ -1309,10 +1679,14 @@ impl SessionNetworkOwner {
             self.listener_status.clone(),
             self.session_udp_status.clone(),
             self.advertised_endpoint.status(Instant::now()),
+            desired_address_families.ipv6_enabled(),
             state,
             views,
         );
-        true
+        let transport_families = self.transport_family_views();
+        let _ = views.update_client_settings_runtime_for(generation, |runtime| {
+            runtime.transport_families = transport_families;
+        });
     }
 
     async fn reconcile_mapping(
@@ -1491,6 +1865,11 @@ impl SessionNetworkOwner {
         {
             remember_error(&mut join_error, format!("incoming acceptor: {error}"));
         }
+        if let Some(acceptor) = self.incoming_ipv6_acceptor.take()
+            && let Err(error) = acceptor.shutdown().await
+        {
+            remember_error(&mut join_error, format!("IPv6 incoming acceptor: {error}"));
+        }
         self.listener_active.store(false, Ordering::Release);
         if let Some(runtime) = self.incoming_runtime.take() {
             match runtime.shutdown().await {
@@ -1598,6 +1977,57 @@ fn transport_rebind_required(
     ) && effective.preferred_listen_port != desired.preferred_listen_port
 }
 
+fn ipv6_acceptor_address(acceptor: &IncomingPeerAcceptor) -> Option<std::net::SocketAddrV6> {
+    match acceptor.listen_address() {
+        std::net::SocketAddr::V6(address) => Some(address),
+        std::net::SocketAddr::V4(_) => None,
+    }
+}
+
+fn transport_family_runtime_views(
+    policy: AddressFamilyPolicy,
+    ipv4_listener: &ListenerStatus,
+    ipv6_listener: Option<std::net::SocketAddr>,
+    udp: &SessionUdpHandle,
+    advertised: PeerAdvertisementEndpoint,
+) -> Vec<TransportFamilyRuntimeView> {
+    let ipv4_tcp = match ipv4_listener {
+        ListenerStatus::Listening { address, port } => Some(format!("{address}:{port}")),
+        ListenerStatus::Disabled | ListenerStatus::BindFailed { .. } => None,
+    };
+    [
+        (
+            TransportAddressFamily::Ipv4,
+            AddressFamily::Ipv4,
+            true,
+            ipv4_tcp,
+            advertised.ipv4.endpoint,
+        ),
+        (
+            TransportAddressFamily::Ipv6,
+            AddressFamily::Ipv6,
+            policy.ipv6_enabled(),
+            ipv6_listener.map(|address| address.to_string()),
+            advertised.ipv6.endpoint,
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(family, engine_family, configured, tcp_endpoint, advertised_endpoint)| {
+            TransportFamilyRuntimeView {
+                family,
+                configured,
+                tcp_endpoint,
+                udp_endpoint: udp
+                    .local_address_for(engine_family)
+                    .map(|address| address.to_string()),
+                advertised_endpoint: advertised_endpoint.map(|address| address.to_string()),
+            }
+        },
+    )
+    .collect()
+}
+
 fn is_current(
     convergence: &Arc<Mutex<SettingsConvergenceModel>>,
     generation: SettingsDomainGeneration,
@@ -1648,6 +2078,7 @@ fn publish_transport(
     listener_status: ListenerStatus,
     session_udp_status: SessionUdpStatus,
     advertised_endpoint: AdvertisedPeerEndpointStatus,
+    effective_ipv6_enabled: bool,
     state: ClientSettingsApplicationState,
     views: &ViewHub,
 ) {
@@ -1660,6 +2091,8 @@ fn publish_transport(
         runtime.session_udp_status = session_udp_status;
         runtime.advertised_peer_endpoint = advertised_endpoint;
         runtime.transport_application = state;
+        runtime.effective_ipv6_enabled = effective_ipv6_enabled;
+        runtime.ipv6_application = runtime.transport_application.clone();
     });
 }
 

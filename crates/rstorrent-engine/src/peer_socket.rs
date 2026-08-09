@@ -28,7 +28,7 @@ use crate::mse::{
     MseDhWorkOwner, MseHandshakeAccounting, MseHandshakeFailure, MseHandshakeOutcome,
     MseHandshakeSink, record_mse_handshake,
 };
-use crate::network::{NetworkConfig, PeerEncryptionPolicy};
+use crate::network::{AddressFamilyPolicy, NetworkConfig, PeerEncryptionPolicy};
 use crate::peer::{DialAttempt, DialAttemptId, MseEndpointState, PeerFailure};
 use crate::peer_budget::{PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetRejection};
 use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
@@ -198,6 +198,12 @@ async fn connect_with_progress(
     } = resources;
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
+        return Err(PeerSocketError::NetworkPolicyDenied {
+            address,
+            policy: network.policy,
+        });
+    }
+    if !network.address_families.permits(address.ip()) {
         return Err(PeerSocketError::NetworkPolicyDenied {
             address,
             policy: network.policy,
@@ -963,6 +969,23 @@ impl PeerSocketSet {
 
     pub(crate) fn connection_attempts(&self) -> Vec<DialAttempt> {
         self.tasks.values().map(PeerSocketTask::attempt).collect()
+    }
+
+    pub(crate) fn cancel_disallowed(&self, policy: AddressFamilyPolicy) -> usize {
+        let mut cancelled = 0;
+        for (attempt, cancellation) in self.pending_attempts.values() {
+            if !policy.permits(attempt.endpoint().address().ip()) {
+                cancellation.cancel();
+                cancelled += 1;
+            }
+        }
+        for task in self.tasks.values() {
+            if !policy.permits(task.attempt().endpoint().address().ip()) {
+                task.cancel();
+                cancelled += 1;
+            }
+        }
+        cancelled
     }
 
     pub(crate) fn contains(&self, id: ConnectionId) -> bool {

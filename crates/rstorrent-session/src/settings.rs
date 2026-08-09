@@ -17,7 +17,8 @@ pub use contract::{
     EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
     ListenerBindFailureReason, ListenerPolicy, ListenerStatus, PortMappingFailureStage,
     PortMappingMechanism, PortMappingPolicy, PortMappingStatus, SessionUdpStatus,
-    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, TransportAddressFamily,
+    TransportFamilyRuntimeView,
 };
 pub(crate) use convergence::{
     SettingsAttempt, SettingsConvergenceModel, SettingsDomain, SettingsDomainGeneration,

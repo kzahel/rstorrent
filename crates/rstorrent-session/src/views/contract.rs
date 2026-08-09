@@ -574,6 +574,14 @@ pub enum DhtNetworkPolicyView {
     Online,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DhtAddressFamilyView {
+    Ipv4,
+    Ipv6,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DhtBucketView {
@@ -587,6 +595,7 @@ pub struct DhtBucketView {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DhtLookupView {
+    pub family: DhtAddressFamilyView,
     pub lookup_id: String,
     pub target_id: String,
     pub age_millis: String,
@@ -602,27 +611,57 @@ pub struct DhtLookupView {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct DhtInspectionView {
+pub struct DhtFamilyInspectionView {
+    pub family: DhtAddressFamilyView,
     pub lifecycle: DhtLifecycleView,
-    pub network_policy: DhtNetworkPolicyView,
     pub local_node_id: String,
-    pub captured_millis: String,
-    pub routing_nodes_v4: u16,
-    pub occupied_buckets_v4: u16,
-    pub deepest_shared_prefix_bits_v4: Option<u16>,
+    pub local_address: String,
+    pub observed_external_address: Option<String>,
+    pub routing_nodes: u16,
+    pub occupied_buckets: u16,
+    pub deepest_shared_prefix_bits: Option<u16>,
     pub active_transactions: u32,
     pub active_lookups: u32,
     pub queries_sent: String,
     pub responses_received: String,
     pub queries_received: String,
     pub malformed_received: String,
+    pub family_mismatched: String,
     pub rate_limited: String,
     pub discovered_peers: String,
     pub bootstrap_attempts: String,
     pub routing_refreshes: String,
     pub datagram_bytes_sent: String,
     pub datagram_bytes_received: String,
-    pub buckets_v4: Vec<DhtBucketView>,
+    pub announces_sent: String,
+    pub announces_succeeded: String,
+    pub announces_failed: String,
+    pub buckets: Vec<DhtBucketView>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DhtInspectionView {
+    pub lifecycle: DhtLifecycleView,
+    pub network_policy: DhtNetworkPolicyView,
+    pub captured_millis: String,
+    pub active_transactions: u32,
+    pub active_lookups: u32,
+    pub queries_sent: String,
+    pub responses_received: String,
+    pub queries_received: String,
+    pub malformed_received: String,
+    pub family_mismatched: String,
+    pub rate_limited: String,
+    pub discovered_peers: String,
+    pub bootstrap_attempts: String,
+    pub routing_refreshes: String,
+    pub datagram_bytes_sent: String,
+    pub datagram_bytes_received: String,
+    pub announces_sent: String,
+    pub announces_succeeded: String,
+    pub announces_failed: String,
+    pub families: Vec<DhtFamilyInspectionView>,
     pub lookups: Vec<DhtLookupView>,
 }
 

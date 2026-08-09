@@ -263,7 +263,7 @@ describe("LiveApplication", () => {
       delivery: { min_interval_millis: 500 },
     });
     expect(snapshots.at(-1)?.dht?.lifecycle).toBe("participating");
-    expect(snapshots.at(-1)?.dht?.buckets_v4).toHaveLength(160);
+    expect(snapshots.at(-1)?.dht?.families[0]?.buckets).toHaveLength(160);
     expect(snapshots.at(-1)?.viewStatus.dht).toEqual({ status: "ready" });
     await application.close();
   });
@@ -340,6 +340,7 @@ describe("LiveApplication", () => {
       peer_connection_limit: 2_000,
       upload_slots: 0,
       encryption: "allow" as const,
+      ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
     };
 
@@ -968,30 +969,56 @@ function dhtInspection(): DhtInspectionView {
   return {
     lifecycle: "participating",
     network_policy: "loopback_only",
-    local_node_id: TORRENT_ID,
     captured_millis: "1300",
-    routing_nodes_v4: 0,
-    occupied_buckets_v4: 0,
-    deepest_shared_prefix_bits_v4: null,
     active_transactions: 0,
     active_lookups: 0,
     queries_sent: "0",
     responses_received: "0",
     queries_received: "0",
     malformed_received: "0",
+    family_mismatched: "0",
     rate_limited: "0",
     discovered_peers: "0",
     bootstrap_attempts: "1",
     routing_refreshes: "0",
     datagram_bytes_sent: "0",
     datagram_bytes_received: "0",
-    buckets_v4: Array.from({ length: 160 }, (_, bucket_index) => ({
-      bucket_index,
-      good_nodes: 0,
-      questionable_nodes: 0,
-      replacement_candidates: 0,
-      oldest_live_response_age_millis: null,
-    })),
+    announces_sent: "0",
+    announces_succeeded: "0",
+    announces_failed: "0",
+    families: [{
+      family: "ipv4",
+      lifecycle: "participating",
+      local_node_id: TORRENT_ID,
+      local_address: "127.0.0.1:6881",
+      observed_external_address: null,
+      routing_nodes: 0,
+      occupied_buckets: 0,
+      deepest_shared_prefix_bits: null,
+      active_transactions: 0,
+      active_lookups: 0,
+      queries_sent: "0",
+      responses_received: "0",
+      queries_received: "0",
+      malformed_received: "0",
+      family_mismatched: "0",
+      rate_limited: "0",
+      discovered_peers: "0",
+      bootstrap_attempts: "1",
+      routing_refreshes: "0",
+      datagram_bytes_sent: "0",
+      datagram_bytes_received: "0",
+      announces_sent: "0",
+      announces_succeeded: "0",
+      announces_failed: "0",
+      buckets: Array.from({ length: 160 }, (_, bucket_index) => ({
+        bucket_index,
+        good_nodes: 0,
+        questionable_nodes: 0,
+        replacement_candidates: 0,
+        oldest_live_response_age_millis: null,
+      })),
+    }],
     lookups: [],
   };
 }

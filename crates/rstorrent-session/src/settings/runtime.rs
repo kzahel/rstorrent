@@ -85,6 +85,7 @@ impl ClientSettingsRuntimeView {
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
+            transport_families: Vec::new(),
         }
     }
 
@@ -151,6 +152,7 @@ impl ClientSettingsRuntimeView {
             session_udp_status,
             port_mapping_status,
             advertised_peer_endpoint,
+            transport_families: Vec::new(),
         }
     }
 

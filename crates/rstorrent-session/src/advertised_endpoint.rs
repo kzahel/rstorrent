@@ -1,12 +1,14 @@
 //! Task-free selection of the TCP endpoint used in tracker and DHT messages.
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 
-use rstorrent_engine::{PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope};
+use rstorrent_engine::{
+    PeerAdvertisementEndpoint, PeerAdvertisementEndpointScope, PeerAdvertisementFamilyEndpoint,
+};
 
 use crate::settings::{
     AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
@@ -78,6 +80,7 @@ impl AdvertisedPeerEndpointState {
 struct SelectorState {
     endpoint: AdvertisedPeerEndpointState,
     local_endpoint: Option<(SocketAddrV4, EndpointScope)>,
+    ipv6_local_endpoint: Option<SocketAddrV6>,
     incoming_observed: bool,
     latest_mapping_generation: u64,
 }
@@ -92,15 +95,17 @@ pub(crate) struct AdvertisedPeerEndpointSelector {
 impl AdvertisedPeerEndpointSelector {
     pub(crate) fn new(listener_status: &ListenerStatus) -> Self {
         let (local_endpoint, endpoint) = initial_endpoint(listener_status);
-        let (sender, _) = watch::channel(endpoint.clone());
-        let (wire_sender, _) = watch::channel(project_wire_endpoint(&endpoint));
+        let state = SelectorState {
+            endpoint,
+            local_endpoint,
+            ipv6_local_endpoint: None,
+            incoming_observed: false,
+            latest_mapping_generation: 0,
+        };
+        let (sender, _) = watch::channel(state.endpoint.clone());
+        let (wire_sender, _) = watch::channel(project_wire_endpoint(&state));
         Self {
-            state: Arc::new(Mutex::new(SelectorState {
-                endpoint,
-                local_endpoint,
-                incoming_observed: false,
-                latest_mapping_generation: 0,
-            })),
+            state: Arc::new(Mutex::new(state)),
             sender,
             wire_sender,
         }
@@ -166,7 +171,7 @@ impl AdvertisedPeerEndpointSelector {
             valid_until,
             renewal_health: RenewalHealth::Healthy,
         };
-        self.publish(&state.endpoint);
+        self.publish(&state);
         endpoint_changed
     }
 
@@ -210,7 +215,7 @@ impl AdvertisedPeerEndpointSelector {
             return false;
         }
         state.endpoint = next;
-        self.publish(&state.endpoint);
+        self.publish(&state);
         true
     }
 
@@ -230,7 +235,7 @@ impl AdvertisedPeerEndpointSelector {
             local_endpoint,
             scope,
         };
-        self.publish(&state.endpoint);
+        self.publish(&state);
         true
     }
 
@@ -251,7 +256,21 @@ impl AdvertisedPeerEndpointSelector {
         state.incoming_observed = false;
         state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
         state.endpoint = with_generation(endpoint, generation);
-        self.publish(&state.endpoint);
+        self.publish(&state);
+        true
+    }
+
+    pub(crate) fn replace_ipv6_listener(&self, endpoint: Option<SocketAddrV6>) -> bool {
+        let mut state = self.selector_state();
+        if matches!(state.endpoint, AdvertisedPeerEndpointState::Stopping { .. })
+            || state.ipv6_local_endpoint == endpoint
+        {
+            return false;
+        }
+        state.ipv6_local_endpoint = endpoint;
+        let generation = next_generation(state.endpoint.generation());
+        state.endpoint = replace_generation(state.endpoint.clone(), generation);
+        self.publish(&state);
         true
     }
 
@@ -266,14 +285,13 @@ impl AdvertisedPeerEndpointSelector {
             generation: next_generation(state.endpoint.generation()),
             last_endpoint,
         };
-        self.publish(&state.endpoint);
+        self.publish(&state);
         true
     }
 
-    fn publish(&self, endpoint: &AdvertisedPeerEndpointState) {
-        self.sender.send_replace(endpoint.clone());
-        self.wire_sender
-            .send_replace(project_wire_endpoint(endpoint));
+    fn publish(&self, state: &SelectorState) {
+        self.sender.send_replace(state.endpoint.clone());
+        self.wire_sender.send_replace(project_wire_endpoint(state));
     }
 
     fn selector_state(&self) -> MutexGuard<'_, SelectorState> {
@@ -283,32 +301,56 @@ impl AdvertisedPeerEndpointSelector {
     }
 }
 
-fn project_wire_endpoint(endpoint: &AdvertisedPeerEndpointState) -> PeerAdvertisementEndpoint {
-    match endpoint {
-        AdvertisedPeerEndpointState::OutboundOnly { generation, .. } => {
-            PeerAdvertisementEndpoint::outbound_only(*generation)
-        }
+fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
+    let ipv6 = state.ipv6_local_endpoint.map_or_else(
+        PeerAdvertisementFamilyEndpoint::outbound_only,
+        |endpoint| PeerAdvertisementFamilyEndpoint {
+            endpoint: Some(SocketAddr::V6(endpoint)),
+            source_address: Some((*endpoint.ip()).into()),
+            scope: Some(if endpoint.ip().is_loopback() {
+                PeerAdvertisementEndpointScope::Loopback
+            } else {
+                PeerAdvertisementEndpointScope::GlobalUnicast
+            }),
+        },
+    );
+    match &state.endpoint {
+        AdvertisedPeerEndpointState::OutboundOnly { generation, .. } => PeerAdvertisementEndpoint {
+            generation: *generation,
+            ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            ipv6,
+            stopping: false,
+        },
         AdvertisedPeerEndpointState::Local {
             generation,
             local_endpoint,
             scope,
         } => PeerAdvertisementEndpoint {
             generation: *generation,
-            endpoint: Some(*local_endpoint),
-            scope: Some(match scope {
-                EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
-                EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
-            }),
+            ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(SocketAddr::V4(*local_endpoint)),
+                source_address: Some((*local_endpoint.ip()).into()),
+                scope: Some(match scope {
+                    EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
+                    EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
+                }),
+            },
+            ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Mapped {
             generation,
+            local_endpoint,
             external_endpoint,
             ..
         } => PeerAdvertisementEndpoint {
             generation: *generation,
-            endpoint: Some(*external_endpoint),
-            scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(SocketAddr::V4(*external_endpoint)),
+                source_address: Some((*local_endpoint.ip()).into()),
+                scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            },
+            ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Stopping { generation, .. } => {
@@ -386,6 +428,47 @@ fn with_generation(
         AdvertisedPeerEndpointState::Mapped { .. }
         | AdvertisedPeerEndpointState::Stopping { .. } => {
             unreachable!("initial listener projection cannot be mapped or stopping")
+        }
+    }
+}
+
+fn replace_generation(
+    endpoint: AdvertisedPeerEndpointState,
+    generation: u64,
+) -> AdvertisedPeerEndpointState {
+    match endpoint {
+        AdvertisedPeerEndpointState::OutboundOnly { reason, .. } => {
+            AdvertisedPeerEndpointState::OutboundOnly { generation, reason }
+        }
+        AdvertisedPeerEndpointState::Local {
+            local_endpoint,
+            scope,
+            ..
+        } => AdvertisedPeerEndpointState::Local {
+            generation,
+            local_endpoint,
+            scope,
+        },
+        AdvertisedPeerEndpointState::Mapped {
+            local_endpoint,
+            external_endpoint,
+            mapping_generation,
+            valid_until,
+            renewal_health,
+            ..
+        } => AdvertisedPeerEndpointState::Mapped {
+            generation,
+            local_endpoint,
+            external_endpoint,
+            mapping_generation,
+            valid_until,
+            renewal_health,
+        },
+        AdvertisedPeerEndpointState::Stopping { last_endpoint, .. } => {
+            AdvertisedPeerEndpointState::Stopping {
+                generation,
+                last_endpoint,
+            }
         }
     }
 }
@@ -493,6 +576,30 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn ipv6_listener_is_projected_without_overwriting_ipv4() {
+        let selector = local_selector();
+        let before = selector.subscribe_wire().borrow().generation;
+        let ipv6 = "[2001:4860:4860::8888]:42006".parse().unwrap();
+        assert!(selector.replace_ipv6_listener(Some(ipv6)));
+        let wire = *selector.subscribe_wire().borrow();
+        assert!(wire.generation > before);
+        assert_eq!(
+            wire.ipv4.endpoint,
+            Some("192.168.50.12:41234".parse().unwrap())
+        );
+        assert_eq!(wire.ipv6.endpoint, Some(SocketAddr::V6(ipv6)));
+        assert_eq!(
+            wire.ipv6.scope,
+            Some(PeerAdvertisementEndpointScope::GlobalUnicast)
+        );
+        assert!(selector.replace_ipv6_listener(None));
+        assert_eq!(
+            selector.subscribe_wire().borrow().ipv6,
+            PeerAdvertisementFamilyEndpoint::outbound_only()
+        );
     }
 
     #[test]

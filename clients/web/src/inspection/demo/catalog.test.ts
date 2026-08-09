@@ -64,25 +64,34 @@ describe("DHT observatory demo", () => {
     expect(offline.dht).toMatchObject({
       lifecycle: "offline",
       network_policy: "offline",
-      routing_nodes_v4: 0,
+    });
+    expect(offline.dht?.families.find((family) => family.family === "ipv4")).toMatchObject({
+      routing_nodes: 0,
     });
     expect(dhtAt(4_000).dht?.lifecycle).toBe("bootstrap_empty");
     expect(dhtAt(8_000).dht).toMatchObject({
       lifecycle: "participating",
-      routing_nodes_v4: 14,
-      occupied_buckets_v4: 4,
-      deepest_shared_prefix_bits_v4: 24,
+    });
+    expect(
+      dhtAt(8_000).dht?.families.find((family) => family.family === "ipv4"),
+    ).toMatchObject({
+      routing_nodes: 14,
+      occupied_buckets: 4,
+      deepest_shared_prefix_bits: 24,
     });
 
     const active = dhtAt(30_000).dht;
     expect(active).toMatchObject({
-      routing_nodes_v4: 171,
-      occupied_buckets_v4: 25,
-      deepest_shared_prefix_bits_v4: 24,
       active_lookups: 1,
     });
-    expect(active?.buckets_v4).toHaveLength(160);
-    expect(active?.buckets_v4.map((bucket) => bucket.bucket_index)).toEqual(
+    const activeIpv4 = active?.families.find((family) => family.family === "ipv4");
+    expect(activeIpv4).toMatchObject({
+      routing_nodes: 171,
+      occupied_buckets: 25,
+      deepest_shared_prefix_bits: 24,
+    });
+    expect(activeIpv4?.buckets).toHaveLength(160);
+    expect(activeIpv4?.buckets.map((bucket) => bucket.bucket_index)).toEqual(
       Array.from({ length: 160 }, (_, index) => index),
     );
     expect(active?.lookups[0]).toMatchObject({
@@ -95,18 +104,22 @@ describe("DHT observatory demo", () => {
       rate_limited: "17",
       active_lookups: 0,
     });
-    expect(dhtAt(50_000).dht).toMatchObject({
-      routing_nodes_v4: 172,
-      occupied_buckets_v4: 26,
-      deepest_shared_prefix_bits_v4: 39,
+    expect(
+      dhtAt(50_000).dht?.families.find((family) => family.family === "ipv4"),
+    ).toMatchObject({
+      routing_nodes: 172,
+      occupied_buckets: 26,
+      deepest_shared_prefix_bits: 39,
     });
     expect(dhtAt(62_000).viewStatus.dht.status).toBe("stale");
     expect(dhtAt(68_000).dht).toMatchObject({
       lifecycle: "inactive",
-      routing_nodes_v4: 0,
       active_transactions: 0,
       active_lookups: 0,
     });
+    expect(
+      dhtAt(68_000).dht?.families.find((family) => family.family === "ipv4"),
+    ).toMatchObject({ routing_nodes: 0 });
   });
 });
 

@@ -306,6 +306,17 @@ impl SessionSocketSet {
 }
 
 impl SessionSocketFamilySet {
+    pub async fn bind(
+        config: SessionSocketConfig,
+        family: AddressFamily,
+    ) -> Result<Self, SessionSocketError> {
+        config.validate()?;
+        match family {
+            AddressFamily::Ipv4 => bind_ipv4(config).await,
+            AddressFamily::Ipv6 => bind_ipv6(config).await,
+        }
+    }
+
     #[must_use]
     pub const fn family(&self) -> AddressFamily {
         self.family
@@ -478,7 +489,7 @@ async fn probe_ipv6_source(
     }
 }
 
-fn eligible_global_ipv6(address: Ipv6Addr) -> bool {
+pub(crate) fn eligible_global_ipv6(address: Ipv6Addr) -> bool {
     let octets = address.octets();
     let global_unicast = octets[0] & 0xe0 == 0x20;
     let documentation = octets[..4] == [0x20, 0x01, 0x0d, 0xb8];

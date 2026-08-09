@@ -344,6 +344,7 @@ function buildDhtInspection(
   const lookups = lookupActive
     ? [
         {
+          family: "ipv4" as const,
           lookup_id: "41",
           target_id: "6f8d9fa18b1c2d3e4f5061728394a5b6c7d8e9f0",
           age_millis: String(lookupAge),
@@ -360,33 +361,106 @@ function buildDhtInspection(
         },
       ]
     : [];
-  return {
-    lifecycle: inactive
+  const lifecycle = inactive
       ? "inactive"
       : offline
         ? "offline"
       : bootstrap
         ? "bootstrap_empty"
-        : "participating",
+        : "participating";
+  const queriesSent = String(Math.floor(elapsedMs / 700) + (bootstrap ? 0 : 31));
+  const responsesReceived = String(
+    Math.floor(elapsedMs / 1_050) + (bootstrap ? 0 : 24),
+  );
+  const queriesReceived = String(Math.floor(elapsedMs / 1_800));
+  const discoveredPeers = lookupActive && lookupAge >= 15_000 ? "12" : "0";
+  const bootstrapAttempts = bootstrap ? "1" : "2";
+  const routingRefreshes = elapsedMs >= 30_000 ? "1" : "0";
+  const datagramBytesSent = String(Math.floor(elapsedMs * 1.7));
+  const datagramBytesReceived = String(Math.floor(elapsedMs * 2.4) + malformed * 11);
+  const emptyIpv6Buckets = Array.from({ length: 160 }, (_, bucket_index) => ({
+    bucket_index,
+    good_nodes: 0,
+    questionable_nodes: 0,
+    replacement_candidates: 0,
+    oldest_live_response_age_millis: null as string | null,
+  }));
+  return {
+    lifecycle,
     network_policy: offline ? "offline" : "loopback_only",
-    local_node_id: "4a8c1284e76d095b3f2101ccd09a7e5b621de340",
     captured_millis: String(1_700_000_000_000 + elapsedMs),
-    routing_nodes_v4: routingNodes,
-    occupied_buckets_v4: occupied.length,
-    deepest_shared_prefix_bits_v4: deepest,
     active_transactions: lookupActive ? 3 : 0,
     active_lookups: lookups.length,
-    queries_sent: String(Math.floor(elapsedMs / 700) + (bootstrap ? 0 : 31)),
-    responses_received: String(Math.floor(elapsedMs / 1_050) + (bootstrap ? 0 : 24)),
-    queries_received: String(Math.floor(elapsedMs / 1_800)),
+    queries_sent: queriesSent,
+    responses_received: responsesReceived,
+    queries_received: queriesReceived,
     malformed_received: String(malformed),
+    family_mismatched: "0",
     rate_limited: String(rateLimited),
-    discovered_peers: lookupActive && lookupAge >= 15_000 ? "12" : "0",
-    bootstrap_attempts: bootstrap ? "1" : "2",
-    routing_refreshes: elapsedMs >= 30_000 ? "1" : "0",
-    datagram_bytes_sent: String(Math.floor(elapsedMs * 1.7)),
-    datagram_bytes_received: String(Math.floor(elapsedMs * 2.4) + malformed * 11),
-    buckets_v4: buckets,
+    discovered_peers: discoveredPeers,
+    bootstrap_attempts: bootstrapAttempts,
+    routing_refreshes: routingRefreshes,
+    datagram_bytes_sent: datagramBytesSent,
+    datagram_bytes_received: datagramBytesReceived,
+    announces_sent: "0",
+    announces_succeeded: "0",
+    announces_failed: "0",
+    families: [
+      {
+        family: "ipv4",
+        lifecycle,
+        local_node_id: "4a8c1284e76d095b3f2101ccd09a7e5b621de340",
+        local_address: "127.0.0.1:6881",
+        observed_external_address: null,
+        routing_nodes: routingNodes,
+        occupied_buckets: occupied.length,
+        deepest_shared_prefix_bits: deepest,
+        active_transactions: lookupActive ? 3 : 0,
+        active_lookups: lookups.length,
+        queries_sent: queriesSent,
+        responses_received: responsesReceived,
+        queries_received: queriesReceived,
+        malformed_received: String(malformed),
+        family_mismatched: "0",
+        rate_limited: String(rateLimited),
+        discovered_peers: discoveredPeers,
+        bootstrap_attempts: bootstrapAttempts,
+        routing_refreshes: routingRefreshes,
+        datagram_bytes_sent: datagramBytesSent,
+        datagram_bytes_received: datagramBytesReceived,
+        announces_sent: "0",
+        announces_succeeded: "0",
+        announces_failed: "0",
+        buckets,
+      },
+      {
+        family: "ipv6",
+        lifecycle: inactive ? "inactive" : offline ? "offline" : "bootstrap_empty",
+        local_node_id: "85c2f1a7093b4d6e8f102132435465768798a9ba",
+        local_address: "[::1]:6881",
+        observed_external_address: null,
+        routing_nodes: 0,
+        occupied_buckets: 0,
+        deepest_shared_prefix_bits: null,
+        active_transactions: 0,
+        active_lookups: 0,
+        queries_sent: "0",
+        responses_received: "0",
+        queries_received: "0",
+        malformed_received: "0",
+        family_mismatched: "0",
+        rate_limited: "0",
+        discovered_peers: "0",
+        bootstrap_attempts: "0",
+        routing_refreshes: "0",
+        datagram_bytes_sent: "0",
+        datagram_bytes_received: "0",
+        announces_sent: "0",
+        announces_succeeded: "0",
+        announces_failed: "0",
+        buckets: emptyIpv6Buckets,
+      },
+    ],
     lookups,
   };
 }

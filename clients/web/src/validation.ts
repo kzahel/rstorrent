@@ -53,7 +53,8 @@ const MAX_ACTIVE_PIECES = 16_384;
 const DHT_BUCKETS = 160;
 const DHT_BUCKET_CAPACITY = 8;
 const MAX_DHT_TRANSACTIONS = 256;
-const MAX_DHT_LOOKUPS = 16;
+const MAX_DHT_LOOKUPS_PER_FAMILY = 16;
+const MAX_DHT_LOOKUPS = MAX_DHT_LOOKUPS_PER_FAMILY * 2;
 const MAX_DHT_LOOKUP_CANDIDATES = 256;
 const MAX_DHT_LOOKUP_PEERS = 200;
 const MAX_DIAGNOSTIC_EVENTS = 2_048;
@@ -470,33 +471,12 @@ function validateDhtInspection(value: unknown): void {
     "loopback_only",
     "online",
   ]);
-  torrentId(string(inspection.local_node_id, "DHT local node ID"));
   decimal(inspection.captured_millis, "DHT capture time");
-  const routingNodes = boundedInteger(
-    inspection.routing_nodes_v4,
-    "DHT routing nodes",
-    0,
-    DHT_BUCKETS * DHT_BUCKET_CAPACITY,
-  );
-  const occupiedBuckets = boundedInteger(
-    inspection.occupied_buckets_v4,
-    "DHT occupied buckets",
-    0,
-    DHT_BUCKETS,
-  );
-  const deepest = inspection.deepest_shared_prefix_bits_v4 === null
-    ? null
-    : boundedInteger(
-        inspection.deepest_shared_prefix_bits_v4,
-        "DHT deepest shared prefix",
-        0,
-        159,
-      );
-  boundedInteger(
+  const activeTransactions = boundedInteger(
     inspection.active_transactions,
     "DHT active transactions",
     0,
-    MAX_DHT_TRANSACTIONS,
+    MAX_DHT_TRANSACTIONS * 2,
   );
   const activeLookups = boundedInteger(
     inspection.active_lookups,
@@ -509,67 +489,161 @@ function validateDhtInspection(value: unknown): void {
     ["responses_received", "responses received"],
     ["queries_received", "queries received"],
     ["malformed_received", "malformed datagrams"],
+    ["family_mismatched", "family-mismatched datagrams"],
     ["rate_limited", "rate-limited datagrams"],
     ["discovered_peers", "discovered peers"],
     ["bootstrap_attempts", "bootstrap attempts"],
     ["routing_refreshes", "routing refreshes"],
     ["datagram_bytes_sent", "datagram bytes sent"],
     ["datagram_bytes_received", "datagram bytes received"],
+    ["announces_sent", "announces sent"],
+    ["announces_succeeded", "announces succeeded"],
+    ["announces_failed", "announces failed"],
   ] as const) {
     decimal(inspection[field], `DHT ${label}`);
   }
 
-  const buckets = array(inspection.buckets_v4, "DHT IPv4 buckets");
-  if (buckets.length !== DHT_BUCKETS) {
-    throw new ContractError("DHT inspection must contain exactly 160 buckets");
+  const families = array(inspection.families, "DHT address families");
+  if (families.length > 2) {
+    throw new ContractError("DHT inspection contains too many address families");
   }
-  let countedNodes = 0;
-  let countedOccupied = 0;
-  let countedDeepest: number | null = null;
-  buckets.forEach((value, index) => {
-    const bucket = asRecord(value, "DHT bucket");
-    if (boundedInteger(bucket.bucket_index, "DHT bucket index", 0, 159) !== index) {
-      throw new ContractError("DHT buckets are not in exact engine index order");
+  const familyNames = new Set<string>();
+  let countedActiveTransactions = 0;
+  let countedActiveLookups = 0;
+  const familyLookupCounts = new Map<string, number>();
+  for (const value of families) {
+    const family = asRecord(value, "DHT address family");
+    const familyName = oneOf(family.family, "DHT address family", ["ipv4", "ipv6"]);
+    if (familyNames.has(familyName)) {
+      throw new ContractError("DHT address families must be unique");
     }
-    const good = boundedInteger(
-      bucket.good_nodes,
-      "DHT good nodes",
+    familyNames.add(familyName);
+    oneOf(family.lifecycle, "DHT family lifecycle", [
+      "offline",
+      "bootstrap_empty",
+      "participating",
+      "inactive",
+    ]);
+    torrentId(string(family.local_node_id, "DHT local node ID"));
+    boundedString(family.local_address, "DHT local address", 64);
+    if (family.observed_external_address !== null) {
+      boundedString(
+        family.observed_external_address,
+        "DHT observed external address",
+        64,
+      );
+    }
+    const routingNodes = boundedInteger(
+      family.routing_nodes,
+      "DHT routing nodes",
       0,
-      DHT_BUCKET_CAPACITY,
+      DHT_BUCKETS * DHT_BUCKET_CAPACITY,
     );
-    const questionable = boundedInteger(
-      bucket.questionable_nodes,
-      "DHT questionable nodes",
+    const occupiedBuckets = boundedInteger(
+      family.occupied_buckets,
+      "DHT occupied buckets",
       0,
-      DHT_BUCKET_CAPACITY,
+      DHT_BUCKETS,
     );
-    boundedInteger(
-      bucket.replacement_candidates,
-      "DHT replacement candidates",
+    const deepest = family.deepest_shared_prefix_bits === null
+      ? null
+      : boundedInteger(
+          family.deepest_shared_prefix_bits,
+          "DHT deepest shared prefix",
+          0,
+          159,
+        );
+    countedActiveTransactions += boundedInteger(
+      family.active_transactions,
+      "DHT family active transactions",
       0,
-      DHT_BUCKET_CAPACITY,
+      MAX_DHT_TRANSACTIONS,
     );
-    if (good + questionable > DHT_BUCKET_CAPACITY) {
-      throw new ContractError("DHT live bucket occupancy exceeds K=8");
+    const familyActiveLookups = boundedInteger(
+      family.active_lookups,
+      "DHT family active lookups",
+      0,
+      MAX_DHT_LOOKUPS_PER_FAMILY,
+    );
+    countedActiveLookups += familyActiveLookups;
+    familyLookupCounts.set(familyName, familyActiveLookups);
+    for (const [field, label] of [
+      ["queries_sent", "queries sent"],
+      ["responses_received", "responses received"],
+      ["queries_received", "queries received"],
+      ["malformed_received", "malformed datagrams"],
+      ["family_mismatched", "family-mismatched datagrams"],
+      ["rate_limited", "rate-limited datagrams"],
+      ["discovered_peers", "discovered peers"],
+      ["bootstrap_attempts", "bootstrap attempts"],
+      ["routing_refreshes", "routing refreshes"],
+      ["datagram_bytes_sent", "datagram bytes sent"],
+      ["datagram_bytes_received", "datagram bytes received"],
+      ["announces_sent", "announces sent"],
+      ["announces_succeeded", "announces succeeded"],
+      ["announces_failed", "announces failed"],
+    ] as const) {
+      decimal(family[field], `DHT ${familyName} ${label}`);
     }
-    const live = good + questionable;
-    if ((bucket.oldest_live_response_age_millis === null) !== (live === 0)) {
-      throw new ContractError("DHT bucket freshness does not match live occupancy");
+
+    const buckets = array(family.buckets, `DHT ${familyName} buckets`);
+    if (buckets.length !== DHT_BUCKETS) {
+      throw new ContractError("DHT family must contain exactly 160 buckets");
     }
-    if (bucket.oldest_live_response_age_millis !== null) {
-      decimal(bucket.oldest_live_response_age_millis, "DHT oldest response age");
+    let countedNodes = 0;
+    let countedOccupied = 0;
+    let countedDeepest: number | null = null;
+    buckets.forEach((bucketValue, index) => {
+      const bucket = asRecord(bucketValue, "DHT bucket");
+      if (boundedInteger(bucket.bucket_index, "DHT bucket index", 0, 159) !== index) {
+        throw new ContractError("DHT buckets are not in exact engine index order");
+      }
+      const good = boundedInteger(
+        bucket.good_nodes,
+        "DHT good nodes",
+        0,
+        DHT_BUCKET_CAPACITY,
+      );
+      const questionable = boundedInteger(
+        bucket.questionable_nodes,
+        "DHT questionable nodes",
+        0,
+        DHT_BUCKET_CAPACITY,
+      );
+      boundedInteger(
+        bucket.replacement_candidates,
+        "DHT replacement candidates",
+        0,
+        DHT_BUCKET_CAPACITY,
+      );
+      if (good + questionable > DHT_BUCKET_CAPACITY) {
+        throw new ContractError("DHT live bucket occupancy exceeds K=8");
+      }
+      const live = good + questionable;
+      if ((bucket.oldest_live_response_age_millis === null) !== (live === 0)) {
+        throw new ContractError("DHT bucket freshness does not match live occupancy");
+      }
+      if (bucket.oldest_live_response_age_millis !== null) {
+        decimal(bucket.oldest_live_response_age_millis, "DHT oldest response age");
+      }
+      countedNodes += live;
+      if (live > 0) {
+        countedOccupied += 1;
+        countedDeepest = Math.max(countedDeepest ?? 0, 159 - index);
+      }
+    });
+    if (countedNodes !== routingNodes || countedOccupied !== occupiedBuckets) {
+      throw new ContractError("DHT routing aggregates do not match bucket occupancy");
     }
-    countedNodes += live;
-    if (live > 0) {
-      countedOccupied += 1;
-      countedDeepest = Math.max(countedDeepest ?? 0, 159 - index);
+    if (countedDeepest !== deepest) {
+      throw new ContractError("DHT deepest prefix does not match bucket occupancy");
     }
-  });
-  if (countedNodes !== routingNodes || countedOccupied !== occupiedBuckets) {
-    throw new ContractError("DHT routing aggregates do not match bucket occupancy");
   }
-  if (countedDeepest !== deepest) {
-    throw new ContractError("DHT deepest prefix does not match bucket occupancy");
+  if (countedActiveTransactions !== activeTransactions) {
+    throw new ContractError("DHT family transaction gauges do not match the aggregate");
+  }
+  if (countedActiveLookups !== activeLookups) {
+    throw new ContractError("DHT family lookup gauges do not match the aggregate");
   }
 
   const lookups = array(inspection.lookups, "DHT lookups");
@@ -577,13 +651,20 @@ function validateDhtInspection(value: unknown): void {
     throw new ContractError("DHT lookup rows do not match the active lookup gauge");
   }
   const lookupIds = new Set<string>();
+  const countedLookupsByFamily = new Map<string, number>();
   for (const value of lookups) {
     const lookup = asRecord(value, "DHT lookup");
-    const lookupId = decimal(lookup.lookup_id, "DHT lookup ID");
-    if (lookupIds.has(lookupId)) {
-      throw new ContractError("DHT lookup IDs must be unique");
+    const family = oneOf(lookup.family, "DHT lookup address family", ["ipv4", "ipv6"]);
+    if (!familyNames.has(family)) {
+      throw new ContractError("DHT lookup references an inactive address family");
     }
-    lookupIds.add(lookupId);
+    const lookupId = decimal(lookup.lookup_id, "DHT lookup ID");
+    const familyLookupId = `${family}:${lookupId}`;
+    if (lookupIds.has(familyLookupId)) {
+      throw new ContractError("DHT lookup IDs must be unique within an address family");
+    }
+    lookupIds.add(familyLookupId);
+    countedLookupsByFamily.set(family, (countedLookupsByFamily.get(family) ?? 0) + 1);
     torrentId(string(lookup.target_id, "DHT lookup target ID"));
     decimal(lookup.age_millis, "DHT lookup age");
     decimal(lookup.deadline_in_millis, "DHT lookup deadline");
@@ -623,6 +704,11 @@ function validateDhtInspection(value: unknown): void {
         lookup.last_convergence_improvement_age_millis,
         "DHT convergence improvement age",
       );
+    }
+  }
+  for (const family of familyNames) {
+    if ((countedLookupsByFamily.get(family) ?? 0) !== familyLookupCounts.get(family)) {
+      throw new ContractError("DHT lookup rows do not match the family lookup gauge");
     }
   }
 }
@@ -1046,6 +1132,8 @@ function validateClientSettings(value: unknown): void {
     2_000,
   );
   boundedInteger(settings.upload_slots, "upload slots", 0, 50);
+  oneOf(settings.encryption, "encryption policy", ["allow", "prefer", "require"]);
+  boolean(settings.ipv6_enabled, "IPv6 enabled");
   oneOf(
     settings.tracker_https_server_authentication,
     "tracker HTTPS server authentication policy",
@@ -1092,6 +1180,12 @@ function validateClientSettingsRuntime(value: unknown): void {
     2_000,
   );
   boundedInteger(runtime.effective_upload_slots, "effective upload slots", 0, 50);
+  oneOf(runtime.effective_encryption, "effective encryption policy", [
+    "allow",
+    "prefer",
+    "require",
+  ]);
+  boolean(runtime.effective_ipv6_enabled, "effective IPv6 enabled");
   if (
     runtime.effective_tracker_https_server_authentication !== undefined &&
     runtime.effective_tracker_https_server_authentication !== null
@@ -1107,11 +1201,41 @@ function validateClientSettingsRuntime(value: unknown): void {
     [runtime.port_mapping_application, "port mapping application"],
     [runtime.peer_connections_application, "peer connections application"],
     [runtime.upload_slots_application, "upload slots application"],
+    [runtime.encryption_application, "encryption application"],
+    [runtime.ipv6_application, "IPv6 application"],
     [
       runtime.tracker_https_authentication_application,
       "tracker HTTPS authentication application",
     ],
   ].forEach(([value, label]) => validateSettingsApplicationState(value, String(label)));
+
+  const transportFamilies = array(
+    runtime.transport_families,
+    "transport address families",
+  );
+  if (transportFamilies.length > 2) {
+    throw new ContractError("transport runtime contains too many address families");
+  }
+  const transportFamilyNames = new Set<string>();
+  for (const value of transportFamilies) {
+    const family = asRecord(value, "transport address family");
+    const familyName = oneOf(family.family, "transport address family", [
+      "ipv4",
+      "ipv6",
+    ]);
+    if (transportFamilyNames.has(familyName)) {
+      throw new ContractError("transport address families must be unique");
+    }
+    transportFamilyNames.add(familyName);
+    boolean(family.configured, "transport family configured state");
+    optionalString(family.tcp_endpoint, "transport TCP endpoint", 64);
+    optionalString(family.udp_endpoint, "transport UDP endpoint", 64);
+    optionalString(
+      family.advertised_endpoint,
+      "transport advertised endpoint",
+      64,
+    );
+  }
 
   const status = asRecord(runtime.listener_status, "listener status");
   const statusType = oneOf(status.type, "listener status type", [

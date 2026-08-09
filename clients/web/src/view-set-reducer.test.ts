@@ -46,30 +46,56 @@ function dhtInspection(captured: string): DhtInspectionView {
   return {
     lifecycle: "participating",
     network_policy: "loopback_only",
-    local_node_id: torrentId,
     captured_millis: captured,
-    routing_nodes_v4: 0,
-    occupied_buckets_v4: 0,
-    deepest_shared_prefix_bits_v4: null,
     active_transactions: 0,
     active_lookups: 0,
     queries_sent: "0",
     responses_received: "0",
     queries_received: "0",
     malformed_received: "0",
+    family_mismatched: "0",
     rate_limited: "0",
     discovered_peers: "0",
     bootstrap_attempts: "0",
     routing_refreshes: "0",
     datagram_bytes_sent: "0",
     datagram_bytes_received: "0",
-    buckets_v4: Array.from({ length: 160 }, (_, bucket_index) => ({
-      bucket_index,
-      good_nodes: 0,
-      questionable_nodes: 0,
-      replacement_candidates: 0,
-      oldest_live_response_age_millis: null,
-    })),
+    announces_sent: "0",
+    announces_succeeded: "0",
+    announces_failed: "0",
+    families: [{
+      family: "ipv4",
+      lifecycle: "participating",
+      local_node_id: torrentId,
+      local_address: "127.0.0.1:6881",
+      observed_external_address: null,
+      routing_nodes: 0,
+      occupied_buckets: 0,
+      deepest_shared_prefix_bits: null,
+      active_transactions: 0,
+      active_lookups: 0,
+      queries_sent: "0",
+      responses_received: "0",
+      queries_received: "0",
+      malformed_received: "0",
+      family_mismatched: "0",
+      rate_limited: "0",
+      discovered_peers: "0",
+      bootstrap_attempts: "0",
+      routing_refreshes: "0",
+      datagram_bytes_sent: "0",
+      datagram_bytes_received: "0",
+      announces_sent: "0",
+      announces_succeeded: "0",
+      announces_failed: "0",
+      buckets: Array.from({ length: 160 }, (_, bucket_index) => ({
+        bucket_index,
+        good_nodes: 0,
+        questionable_nodes: 0,
+        replacement_candidates: 0,
+        oldest_live_response_age_millis: null,
+      })),
+    }],
     lookups: [],
   };
 }
@@ -167,6 +193,7 @@ describe("view-set reducer", () => {
       peer_connection_limit: 320,
       upload_slots: 12,
       encryption: "allow" as const,
+      ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
     };
     state = reduceUpdateBatch(
@@ -350,8 +377,8 @@ describe("view-set reducer", () => {
     expect(view?.type).toBe("session_dht");
     if (view?.type !== "session_dht") throw new Error("missing DHT view");
     expect(view.inspection.captured_millis).toBe("2");
-    expect(view.inspection.buckets_v4).toHaveLength(160);
-    expect(view.inspection.buckets_v4[0]?.bucket_index).toBe(0);
+    expect(view.inspection.families[0]?.buckets).toHaveLength(160);
+    expect(view.inspection.families[0]?.buckets[0]?.bucket_index).toBe(0);
   });
 
   it("applies compact verified changes and keyed active piece retries", () => {

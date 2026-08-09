@@ -27,13 +27,14 @@ use super::eta::TorrentEtaModel;
 use super::ranges::{insert_range, range_cardinality, remove_range};
 use super::{
     ActivePiece, ActivePieceStageView, CapabilityStatus, CheckingPhaseView, CheckingProgressView,
-    DhtBucketView, DhtInspectionView, DhtLifecycleView, DhtNetworkPolicyView,
-    DiskCheckpointStageView, DiskPieceStageView, DiskPieceView, DiskPipelineView, DiskPressureView,
-    IndexRange, PeerDirection, PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView,
-    PeerLifecycle, PeerMseMethodView, PeerRequestPhase, PeerRole, PeerSourceView,
-    PeerTransportKind, PeerView, ProgressAction, ProgressAssessment, ProgressDisposition,
-    ProgressInputs, ProgressPhase, ProgressReason, SubscriptionError, SwarmCatalogState,
-    SwarmCountsView, SwarmPeerState, SwarmPeerView, TorrentEtaView, TorrentView,
+    DhtAddressFamilyView, DhtBucketView, DhtFamilyInspectionView, DhtInspectionView,
+    DhtLifecycleView, DhtNetworkPolicyView, DiskCheckpointStageView, DiskPieceStageView,
+    DiskPieceView, DiskPipelineView, DiskPressureView, IndexRange, PeerDirection,
+    PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
+    PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressAction,
+    ProgressAssessment, ProgressDisposition, ProgressInputs, ProgressPhase, ProgressReason,
+    SubscriptionError, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
+    TorrentEtaView, TorrentView,
 };
 
 impl DhtInspectionView {
@@ -41,34 +42,71 @@ impl DhtInspectionView {
         Self {
             lifecycle: DhtLifecycleView::Inactive,
             network_policy: DhtNetworkPolicyView::Offline,
-            local_node_id: "0000000000000000000000000000000000000000".to_owned(),
             captured_millis: "0".to_owned(),
-            routing_nodes_v4: 0,
-            occupied_buckets_v4: 0,
-            deepest_shared_prefix_bits_v4: None,
             active_transactions: 0,
             active_lookups: 0,
             queries_sent: "0".to_owned(),
             responses_received: "0".to_owned(),
             queries_received: "0".to_owned(),
             malformed_received: "0".to_owned(),
+            family_mismatched: "0".to_owned(),
             rate_limited: "0".to_owned(),
             discovered_peers: "0".to_owned(),
             bootstrap_attempts: "0".to_owned(),
             routing_refreshes: "0".to_owned(),
             datagram_bytes_sent: "0".to_owned(),
             datagram_bytes_received: "0".to_owned(),
-            buckets_v4: (0..160)
-                .map(|bucket_index| DhtBucketView {
-                    bucket_index,
-                    good_nodes: 0,
-                    questionable_nodes: 0,
-                    replacement_candidates: 0,
-                    oldest_live_response_age_millis: None,
-                })
+            announces_sent: "0".to_owned(),
+            announces_succeeded: "0".to_owned(),
+            announces_failed: "0".to_owned(),
+            families: [DhtAddressFamilyView::Ipv4, DhtAddressFamilyView::Ipv6]
+                .into_iter()
+                .map(inactive_dht_family)
                 .collect(),
             lookups: Vec::new(),
         }
+    }
+}
+
+fn inactive_dht_family(family: DhtAddressFamilyView) -> DhtFamilyInspectionView {
+    DhtFamilyInspectionView {
+        family,
+        lifecycle: DhtLifecycleView::Inactive,
+        local_node_id: "0000000000000000000000000000000000000000".to_owned(),
+        local_address: match family {
+            DhtAddressFamilyView::Ipv4 => "0.0.0.0:0",
+            DhtAddressFamilyView::Ipv6 => "[::]:0",
+        }
+        .to_owned(),
+        observed_external_address: None,
+        routing_nodes: 0,
+        occupied_buckets: 0,
+        deepest_shared_prefix_bits: None,
+        active_transactions: 0,
+        active_lookups: 0,
+        queries_sent: "0".to_owned(),
+        responses_received: "0".to_owned(),
+        queries_received: "0".to_owned(),
+        malformed_received: "0".to_owned(),
+        family_mismatched: "0".to_owned(),
+        rate_limited: "0".to_owned(),
+        discovered_peers: "0".to_owned(),
+        bootstrap_attempts: "0".to_owned(),
+        routing_refreshes: "0".to_owned(),
+        datagram_bytes_sent: "0".to_owned(),
+        datagram_bytes_received: "0".to_owned(),
+        announces_sent: "0".to_owned(),
+        announces_succeeded: "0".to_owned(),
+        announces_failed: "0".to_owned(),
+        buckets: (0..160)
+            .map(|bucket_index| DhtBucketView {
+                bucket_index,
+                good_nodes: 0,
+                questionable_nodes: 0,
+                replacement_candidates: 0,
+                oldest_live_response_age_millis: None,
+            })
+            .collect(),
     }
 }
 

@@ -376,7 +376,13 @@ async fn dht_view_replaces_and_coalesces_one_complete_observation() {
     else {
         panic!("expected DHT snapshot");
     };
-    assert_eq!(inspection.buckets_v4.len(), 160);
+    assert_eq!(inspection.families.len(), 2);
+    assert!(
+        inspection
+            .families
+            .iter()
+            .all(|family| family.buckets.len() == 160)
+    );
 
     let mut first = DhtInspectionView::inactive();
     first.captured_millis = "1".to_owned();
@@ -399,7 +405,13 @@ async fn dht_view_replaces_and_coalesces_one_complete_observation() {
     };
     assert_eq!(inspection.captured_millis, "2");
     assert_eq!(inspection.queries_sent, "11");
-    assert_eq!(inspection.buckets_v4.len(), 160);
+    assert_eq!(inspection.families.len(), 2);
+    assert!(
+        inspection
+            .families
+            .iter()
+            .all(|family| family.buckets.len() == 160)
+    );
 }
 
 #[test]

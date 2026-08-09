@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -518,6 +518,7 @@ fn map_torrent_peer_error(error: TorrentPeerError) -> DownloadError {
         TorrentPeerError::Registry(error) => DownloadError::PeerRegistry(error),
         TorrentPeerError::Runtime(error) => DownloadError::PeerRuntime(error),
         TorrentPeerError::Pex(error) => DownloadError::Pex(error),
+        TorrentPeerError::AddressFamilyDenied(_) => DownloadError::NoUsablePeer,
         TorrentPeerError::ConnectionIdentifierOverflow => {
             DownloadError::PeerRegistry(PeerRegistryError::IdentifierOverflow("peer connection"))
         }
@@ -1126,6 +1127,7 @@ pub(crate) struct UdpTrackerAnnounce {
     pub(crate) event: AnnounceEvent,
     pub(crate) num_want: i32,
     pub(crate) port: u16,
+    pub(crate) ipv6_port: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1133,6 +1135,8 @@ pub(crate) struct UdpTrackerExchange<'a> {
     pub(crate) timing: UdpTrackerTiming,
     pub(crate) control: &'a DownloadControl,
     pub(crate) tracker_label: &'a str,
+    pub(crate) source_ipv4: Option<IpAddr>,
+    pub(crate) source_ipv6: Option<IpAddr>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1600,6 +1604,7 @@ async fn run_active_tracker_manager(
                         let result = announce_udp_tracker(
                             &url,
                             network.policy,
+                            network.address_families,
                             &mut token_cache,
                             UdpTrackerAnnounce {
                                 info_hash,
@@ -1611,11 +1616,14 @@ async fn run_active_tracker_manager(
                                 event,
                                 num_want: MAX_COMPACT_PEERS as i32,
                                 port: 1,
+                                ipv6_port: 1,
                             },
                             UdpTrackerExchange {
                                 timing: UdpTrackerTiming::PRODUCTION,
                                 control: &operation_control,
                                 tracker_label: &tracker,
+                                source_ipv4: None,
+                                source_ipv6: None,
                             },
                         )
                         .await;
@@ -1849,6 +1857,7 @@ impl MetadataPeerResult {
 #[derive(Debug)]
 enum MetadataSupervisorEvent {
     Cancelled,
+    PolicyCheck,
     Discovery(Result<(), DownloadError>),
     Socket(Result<PeerSetEvent, PeerSetError>),
     Worker(Box<Option<Result<MetadataPeerResult, tokio::task::JoinError>>>),
@@ -1965,6 +1974,11 @@ impl TorrentPeerCoordinator {
                 TorrentPeerHandle::new(Arc::new(control.clone())).map_err(map_torrent_peer_error)?
             }
         };
+        if owns_peer_sink {
+            peers
+                .enforce_address_families(network.address_families)
+                .map_err(map_torrent_peer_error)?;
+        }
         Ok(Self {
             peers,
             owns_peer_sink,
@@ -2000,7 +2014,9 @@ impl TorrentPeerCoordinator {
     }
 
     fn connection_network(&self) -> NetworkConfig {
-        self.network.with_encryption(self.encryption.load())
+        self.network
+            .with_encryption(self.encryption.load())
+            .with_address_families(self.peers.address_family_policy())
     }
 
     fn transport_connected(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
@@ -2223,6 +2239,7 @@ impl TorrentPeerCoordinator {
                         now,
                         verified_public,
                         network_policy: self.network.policy,
+                        address_families: self.peers.address_family_policy(),
                         self_endpoints: &[],
                     },
                     &mut state.registry,
@@ -2440,6 +2457,9 @@ impl TorrentPeerCoordinator {
                 policy: self.network.policy,
             });
         }
+        if !self.peers.address_family_policy().permits(address.ip()) {
+            return Err(DownloadError::NoUsablePeer);
+        }
         let endpoint = PeerEndpoint::new(address).map_err(DownloadError::PeerRegistry)?;
         let now = self.elapsed();
         self.peers
@@ -2466,8 +2486,11 @@ impl TorrentPeerCoordinator {
     }
 
     fn select_candidate(&self, context: PeerSelectionContext) -> Option<DialCandidate> {
-        self.peers
-            .with_state(|state| self.selector.select(&state.registry, context))
+        let address_families = self.peers.address_family_policy();
+        self.peers.with_state(|state| {
+            self.selector
+                .select_with_address_families(&state.registry, context, address_families)
+        })
     }
 
     fn registry_snapshot(&self) -> crate::peer::PeerRegistrySnapshot {
@@ -2678,11 +2701,22 @@ impl TorrentPeerCoordinator {
         debug_assert!(self.connection.is_none());
         let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone());
         let mut workers = JoinSet::new();
-        let mut worker_cancellations = BTreeMap::new();
+        let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
+            BTreeMap::new();
         let mut discovery_failed_while_active = false;
         let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(info_hash)));
 
         loop {
+            let address_families = self.peers.address_family_policy();
+            sockets.cancel_disallowed(address_families);
+            for (attempt, cancellation) in worker_cancellations.values() {
+                if !address_families.permits(attempt.endpoint().address().ip()) {
+                    cancellation.cancel();
+                }
+            }
+            self.peers
+                .enforce_address_families(address_families)
+                .map_err(map_torrent_peer_error)?;
             while sockets.pending_len() + workers.len() < MAX_METADATA_PEERS {
                 let context = PeerSelectionContext {
                     now: self.elapsed(),
@@ -2723,6 +2757,7 @@ impl TorrentPeerCoordinator {
                         return Err(DownloadError::Cancelled);
                     }
                     result = self.receive_discovery_peers(info_hash) => result?,
+                    _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {},
                 }
                 discovery_failed_while_active = false;
                 continue;
@@ -2739,6 +2774,9 @@ impl TorrentPeerCoordinator {
                 }
                 result = self.receive_discovery_peers(info_hash), if can_discover => {
                     MetadataSupervisorEvent::Discovery(result)
+                }
+                _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                    MetadataSupervisorEvent::PolicyCheck
                 }
                 event = sockets.next_event() => MetadataSupervisorEvent::Socket(event),
                 joined = workers.join_next(), if !workers.is_empty() => {
@@ -2766,6 +2804,7 @@ impl TorrentPeerCoordinator {
                     .await?;
                     return Err(DownloadError::Cancelled);
                 }
+                MetadataSupervisorEvent::PolicyCheck => {}
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
                     attempt,
                     result,
@@ -3120,6 +3159,7 @@ async fn resolve_host(
 pub(crate) async fn announce_udp_tracker(
     tracker: &UdpTrackerUrl,
     network_policy: NetworkPolicy,
+    address_families: crate::network::AddressFamilyPolicy,
     token_cache: &mut UdpTrackerTokenCache,
     announce: UdpTrackerAnnounce,
     exchange: UdpTrackerExchange<'_>,
@@ -3131,7 +3171,7 @@ pub(crate) async fn announce_udp_tracker(
     let mut last_error = None;
     let mut found_allowed = false;
     for address in addresses {
-        if !network_policy.allows(address) {
+        if !address_families.permits(address.ip()) || !network_policy.allows(address) {
             continue;
         }
         found_allowed = true;
@@ -3152,12 +3192,25 @@ pub(crate) async fn announce_udp_tracker(
 async fn announce_udp_tracker_address(
     address: SocketAddr,
     token_cache: &mut UdpTrackerTokenCache,
-    announce: UdpTrackerAnnounce,
+    mut announce: UdpTrackerAnnounce,
     exchange: UdpTrackerExchange<'_>,
 ) -> Result<UdpTrackerAnnounceResult, DownloadError> {
     let bind_address = match address {
-        SocketAddr::V4(_) => SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
-        SocketAddr::V6(_) => SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)),
+        SocketAddr::V4(_) => exchange
+            .source_ipv4
+            .filter(IpAddr::is_ipv4)
+            .map_or(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), |source| {
+                SocketAddr::new(source, 0)
+            }),
+        SocketAddr::V6(_) => {
+            announce.port = announce.ipv6_port;
+            exchange
+                .source_ipv6
+                .filter(IpAddr::is_ipv6)
+                .map_or(SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)), |source| {
+                    SocketAddr::new(source, 0)
+                })
+        }
     };
     let socket = UdpSocket::bind(bind_address)
         .await
@@ -4945,6 +4998,9 @@ async fn next_content_supervisor_event(
                 event = discovery.next_event(), if discovery.is_active() => {
                     Ok(ContentSupervisorEvent::Discovery(event))
                 }
+                _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                    Ok(ContentSupervisorEvent::Deadline)
+                }
             },
             ContentSupervisorOwner::Peer | ContentSupervisorOwner::Discovery => tokio::select! {
                 biased;
@@ -4954,6 +5010,9 @@ async fn next_content_supervisor_event(
                 }
                 completion = storage.next_completion() => {
                     completion.map(ContentSupervisorEvent::Storage)
+                }
+                _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                    Ok(ContentSupervisorEvent::Deadline)
                 }
             },
         };
@@ -4975,6 +5034,9 @@ async fn next_content_supervisor_event(
             _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
                 Ok(ContentSupervisorEvent::Deadline)
             }
+            _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
         },
         ContentSupervisorOwner::Peer => tokio::select! {
             biased;
@@ -4991,6 +5053,9 @@ async fn next_content_supervisor_event(
             _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
                 Ok(ContentSupervisorEvent::Deadline)
             }
+            _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
         },
         ContentSupervisorOwner::Discovery => tokio::select! {
             biased;
@@ -5005,6 +5070,9 @@ async fn next_content_supervisor_event(
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
             _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
+                Ok(ContentSupervisorEvent::Deadline)
+            }
+            _ = tokio::time::sleep(CONTENT_SWARM_MAINTENANCE_INTERVAL) => {
                 Ok(ContentSupervisorEvent::Deadline)
             }
         },
@@ -5074,6 +5142,12 @@ async fn run_selective_swarm_loop(
     }
 
     loop {
+        let address_families = peers.peers.address_family_policy();
+        sockets.cancel_disallowed(address_families);
+        peers
+            .peers
+            .enforce_address_families(address_families)
+            .map_err(map_torrent_peer_error)?;
         let now = peers.elapsed();
         let storage_ready = download.flush_pending_storage()?;
         let storage_backpressured = download.storage_is_backpressured();

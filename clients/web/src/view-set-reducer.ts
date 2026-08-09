@@ -314,7 +314,10 @@ function cloneDhtInspection(
 ): Extract<ViewSnapshot, { type: "session_dht" }>["inspection"] {
   return {
     ...inspection,
-    buckets_v4: inspection.buckets_v4.map((bucket) => ({ ...bucket })),
+    families: inspection.families.map((family) => ({
+      ...family,
+      buckets: family.buckets.map((bucket) => ({ ...bucket })),
+    })),
     lookups: inspection.lookups.map((lookup) => ({ ...lookup })),
   };
 }

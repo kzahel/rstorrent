@@ -773,7 +773,10 @@ function mapViewState(
         ? rows.reduce((total, row) => total + row.downloadRate, 0)
         : speedDownloadRate,
       uploadRate: speedUploadRate,
-      dhtNodes: dht?.inspection.routing_nodes_v4 ?? null,
+      dhtNodes: dht?.inspection.families.reduce(
+        (total, family) => total + family.routing_nodes,
+        0,
+      ) ?? null,
       knownPeers: null,
     },
     demo: null,

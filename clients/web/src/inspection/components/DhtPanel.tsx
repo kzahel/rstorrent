@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { DhtBucketView, DhtInspectionView } from "../../api";
+import type {
+  DhtAddressFamilyView,
+  DhtBucketView,
+  DhtFamilyInspectionView,
+  DhtInspectionView,
+} from "../../api";
 import { useInspectionStore } from "../context";
 import { formatExactBytes, formatTime } from "../format";
 import type { DhtVisualizationMode } from "../dht-preferences";
@@ -17,6 +22,7 @@ export function DhtPanel() {
   );
   const setMode = useInspectionStore((state) => state.setDhtVisualizationMode);
   const dataUnits = useInspectionStore((state) => state.presentation.dataUnits);
+  const [selectedFamily, setSelectedFamily] = useState<DhtAddressFamilyView>("ipv4");
 
   if (status.status === "unsupported" || status.status === "unavailable") {
     return <div className={styles.message}>{status.reason}</div>;
@@ -24,16 +30,37 @@ export function DhtPanel() {
   if (inspection === null) {
     return <div className={styles.message}>Preparing DHT observation…</div>;
   }
+  const family = inspection.families.find(
+    (candidate) => candidate.family === selectedFamily,
+  ) ?? inspection.families[0];
+  if (family === undefined) {
+    return <div className={styles.message}>No DHT address family is active.</div>;
+  }
 
   return (
     <div className={styles.panel} aria-label="Session DHT observatory">
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Session · Mainline IPv4</p>
+          <p className={styles.eyebrow}>Session · Mainline IPv4 + IPv6</p>
           <h2>DHT observatory</h2>
           <p className={styles.subtitle}>
             Routing-space coverage, node freshness, and live lookup convergence.
           </p>
+        </div>
+        <div className={styles.modeControl} aria-label="DHT address family">
+          <span>Network</span>
+          <div>
+            {inspection.families.map((candidate) => (
+              <button
+                key={candidate.family}
+                type="button"
+                aria-pressed={family.family === candidate.family}
+                onClick={() => setSelectedFamily(candidate.family)}
+              >
+                {familyLabel(candidate.family)}
+              </button>
+            ))}
+          </div>
         </div>
         <div className={styles.modeControl} aria-label="Routing visualization">
           <span>Encoding</span>
@@ -56,27 +83,29 @@ export function DhtPanel() {
         </div>
       </header>
 
-      <StatusFacts inspection={inspection} stale={status.status === "stale"} />
-      <RoutingDistribution inspection={inspection} mode={mode} />
+      <StatusFacts inspection={inspection} family={family} stale={status.status === "stale"} />
+      <RoutingDistribution inspection={inspection} family={family} mode={mode} />
       <OperationalFacts inspection={inspection} dataUnits={dataUnits} />
       <LookupTable inspection={inspection} />
-      <ExactBucketTable inspection={inspection} />
+      <ExactBucketTable family={family} />
     </div>
   );
 }
 
 function StatusFacts({
   inspection,
+  family,
   stale,
 }: {
   readonly inspection: DhtInspectionView;
+  readonly family: DhtFamilyInspectionView;
   readonly stale: boolean;
 }) {
   const questionable = sum(
-    inspection.buckets_v4,
+    family.buckets,
     (bucket) => bucket.questionable_nodes,
   );
-  const aging = inspection.buckets_v4.filter((bucket) => {
+  const aging = family.buckets.filter((bucket) => {
     const age = decimalNumber(bucket.oldest_live_response_age_millis);
     return bucket.questionable_nodes === 0 && age >= 12 * 60 * 1_000;
   }).length;
@@ -90,15 +119,15 @@ function StatusFacts({
       />
       <Fact
         label="Routing nodes"
-        value={inspection.routing_nodes_v4.toLocaleString()}
-        detail={`${inspection.occupied_buckets_v4} occupied bands`}
+        value={family.routing_nodes.toLocaleString()}
+        detail={`${family.occupied_buckets} occupied bands · ${familyLabel(family.family)}`}
       />
       <Fact
         label="Deepest prefix"
         value={
-          inspection.deepest_shared_prefix_bits_v4 === null
+          family.deepest_shared_prefix_bits === null
             ? "—"
-            : `${inspection.deepest_shared_prefix_bits_v4} bits`
+            : `${family.deepest_shared_prefix_bits} bits`
         }
         detail="Shared with local ID"
       />
@@ -139,17 +168,19 @@ function Fact({
 
 function RoutingDistribution({
   inspection,
+  family,
   mode,
 }: {
   readonly inspection: DhtInspectionView;
+  readonly family: DhtFamilyInspectionView;
   readonly mode: DhtVisualizationMode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const tail = useMemo(
-    () => summarizeTail(inspection.buckets_v4),
-    [inspection],
+    () => summarizeTail(family.buckets),
+    [family],
   );
   const description =
     mode === "normalized"
@@ -169,14 +200,14 @@ function RoutingDistribution({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    drawRouting(canvas, inspection, mode, width);
-  }, [inspection, mode, width]);
+    drawRouting(canvas, family, mode, width);
+  }, [family, mode, width]);
 
   return (
     <section className={styles.routing} aria-labelledby="dht-routing-title">
       <div className={styles.sectionHeading}>
         <div>
-          <h3 id="dht-routing-title">Routing-space distribution</h3>
+          <h3 id="dht-routing-title">{familyLabel(family.family)} routing-space distribution</h3>
           <p>
             Live nodes rise above the baseline; replacements mirror below it.
           </p>
@@ -211,7 +242,7 @@ function RoutingDistribution({
 
 function drawRouting(
   canvas: HTMLCanvasElement,
-  inspection: DhtInspectionView,
+  family: DhtFamilyInspectionView,
   mode: DhtVisualizationMode,
   cssWidth: number,
 ) {
@@ -271,7 +302,7 @@ function drawRouting(
     const plotRight = cssWidth - right - tailWidth - gap;
     const columnWidth = (plotRight - left) / 32;
     for (let depth = 0; depth < 32; depth += 1) {
-      const bucket = inspection.buckets_v4[159 - depth]!;
+      const bucket = family.buckets[159 - depth]!;
       drawBucket(context, bucket, left + depth * columnWidth, columnWidth, {
         baseline,
         liveHeight,
@@ -294,7 +325,7 @@ function drawRouting(
     context.fillText("shared prefix depth", left, 292);
     drawTail(
       context,
-      summarizeTail(inspection.buckets_v4),
+      summarizeTail(family.buckets),
       plotRight + gap,
       tailWidth,
       baseline,
@@ -305,7 +336,7 @@ function drawRouting(
     for (let index = 0; index < 160; index += 1) {
       drawBucket(
         context,
-        inspection.buckets_v4[index]!,
+        family.buckets[index]!,
         left + index * columnWidth,
         columnWidth,
         {
@@ -499,6 +530,7 @@ function OperationalFacts({
         />
         <Metric label="Peers discovered" value={inspection.discovered_peers} />
         <Metric label="Malformed" value={inspection.malformed_received} />
+        <Metric label="Family mismatches" value={inspection.family_mismatched} />
         <Metric label="Rate limited" value={inspection.rate_limited} />
         <Metric
           label="Bootstrap attempts"
@@ -507,6 +539,10 @@ function OperationalFacts({
         <Metric
           label="Routing refreshes"
           value={inspection.routing_refreshes}
+        />
+        <Metric
+          label="Announcements"
+          value={`${inspection.announces_succeeded} succeeded · ${inspection.announces_failed} failed`}
         />
       </dl>
       <p>
@@ -547,7 +583,7 @@ function LookupTable({
             only.
           </p>
         </div>
-        <span>{inspection.lookups.length} of 16</span>
+        <span>{inspection.lookups.length} of 32 combined</span>
       </div>
       {inspection.lookups.length === 0 ? (
         <div className={styles.quiet}>No lookup is active.</div>
@@ -556,6 +592,7 @@ function LookupTable({
           <table>
             <thead>
               <tr>
+                <th>Family</th>
                 <th>Target</th>
                 <th>Convergence</th>
                 <th>Candidates</th>
@@ -565,7 +602,8 @@ function LookupTable({
             </thead>
             <tbody>
               {inspection.lookups.map((lookup) => (
-                <tr key={lookup.lookup_id}>
+                <tr key={`${lookup.family}-${lookup.lookup_id}`}>
+                  <td>{familyLabel(lookup.family)}</td>
                   <td>
                     <code title={lookup.target_id}>
                       {abbreviateId(lookup.target_id)}
@@ -642,13 +680,13 @@ function CandidateBar({
 }
 
 function ExactBucketTable({
-  inspection,
+  family,
 }: {
-  readonly inspection: DhtInspectionView;
+  readonly family: DhtFamilyInspectionView;
 }) {
   return (
     <table className={styles.srOnly}>
-      <caption>Exact DHT routing bucket observations</caption>
+      <caption>Exact {familyLabel(family.family)} DHT routing bucket observations</caption>
       <thead>
         <tr>
           <th>Shared prefix depth</th>
@@ -660,7 +698,7 @@ function ExactBucketTable({
         </tr>
       </thead>
       <tbody>
-        {inspection.buckets_v4.map((bucket) => (
+        {family.buckets.map((bucket) => (
           <tr key={bucket.bucket_index}>
             <td>{159 - bucket.bucket_index}</td>
             <td>{bucket.bucket_index}</td>
@@ -724,6 +762,10 @@ function policyLabel(policy: DhtInspectionView["network_policy"]): string {
     case "online":
       return "Online policy";
   }
+}
+
+function familyLabel(family: DhtAddressFamilyView): string {
+  return family === "ipv4" ? "IPv4" : "IPv6";
 }
 
 function abbreviateId(id: string): string {

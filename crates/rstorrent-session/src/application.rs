@@ -4820,21 +4820,31 @@ mod tests {
         inspection
     }
 
+    fn dht_ipv4_node_id(inspection: &crate::DhtInspectionView) -> &str {
+        inspection
+            .families
+            .iter()
+            .find(|family| family.family == crate::DhtAddressFamilyView::Ipv4)
+            .map(|family| family.local_node_id.as_str())
+            .expect("IPv4 DHT family")
+    }
+
     async fn wait_for_client_settings(
         service: &ApplicationService,
         predicate: impl Fn(&crate::ClientSettingsRuntimeView) -> bool,
     ) -> crate::ClientSettingsRuntimeView {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let runtime = client_settings_runtime(service).await;
-                if predicate(&runtime) {
-                    break runtime;
-                }
-                tokio::task::yield_now().await;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let runtime = client_settings_runtime(service).await;
+            if predicate(&runtime) {
+                return runtime;
             }
-        })
-        .await
-        .expect("client settings convergence deadline")
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "client settings convergence deadline; last runtime: {runtime:#?}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     async fn torrent_peer_views(service: &ApplicationService, torrent_id: &str) -> Vec<PeerView> {
@@ -6392,7 +6402,20 @@ mod tests {
             .await
             .expect("connect observed TCP endpoint");
         drop(tcp);
-        let dht_node_id = dht_runtime(&application).await.local_node_id;
+        let advertised = *application
+            .session_network()
+            .advertised_endpoint()
+            .subscribe_wire()
+            .borrow();
+        assert_eq!(
+            advertised.ipv6.endpoint,
+            Some(SocketAddr::from((Ipv6Addr::LOCALHOST, preferred_port)))
+        );
+        TcpStream::connect((Ipv6Addr::LOCALHOST, preferred_port))
+            .await
+            .expect("IPv6 TCP endpoint accepts");
+        let dht_before = dht_runtime(&application).await;
+        let dht_node_id = dht_ipv4_node_id(&dht_before).to_owned();
         let replacement_port = available_port_on(Ipv4Addr::LOCALHOST)
             .await
             .expect("find replacement coordinated port");
@@ -6431,7 +6454,10 @@ mod tests {
                 ..
             } if port == replacement_port
         ));
-        assert_eq!(dht_runtime(&application).await.local_node_id, dht_node_id);
+        assert_eq!(
+            dht_ipv4_node_id(&dht_runtime(&application).await),
+            dht_node_id
+        );
         assert_eq!(
             application
                 .session_network()
@@ -6448,6 +6474,9 @@ mod tests {
         TcpStream::connect((Ipv4Addr::LOCALHOST, replacement_port))
             .await
             .expect("new TCP endpoint accepts after handover");
+        TcpStream::connect((Ipv6Addr::LOCALHOST, replacement_port))
+            .await
+            .expect("new IPv6 TCP endpoint accepts after handover");
         assert!(
             TcpStream::connect((Ipv4Addr::LOCALHOST, tcp_port))
                 .await
@@ -6460,6 +6489,71 @@ mod tests {
                 .task_high_water,
             3
         );
+        let ipv4_only = ClientSettings {
+            ipv6_enabled: false,
+            ..replacement.clone()
+        };
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "disable-ipv6-session-sockets".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: ipv4_only.clone(),
+                },
+            })
+            .await
+            .expect("disable IPv6");
+        let disabled = wait_for_client_settings(&application, |runtime| {
+            runtime.configured == ipv4_only
+                && !runtime.effective_ipv6_enabled
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert!(!disabled.effective_ipv6_enabled);
+        assert_eq!(
+            application
+                .session_network()
+                .session_udp_local_address_for(rstorrent_engine::AddressFamily::Ipv6),
+            None
+        );
+        assert_eq!(
+            application.session_network().session_udp_snapshot().tasks,
+            1
+        );
+        assert!(
+            TcpStream::connect((Ipv6Addr::LOCALHOST, replacement_port))
+                .await
+                .is_err()
+        );
+        TcpStream::connect((Ipv4Addr::LOCALHOST, replacement_port))
+            .await
+            .expect("IPv4 remains serving while IPv6 is disabled");
+
+        application
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "reenable-ipv6-session-sockets".to_owned(),
+                expected_revision: None,
+                command: Command::SetClientSettings {
+                    settings: replacement.clone(),
+                },
+            })
+            .await
+            .expect("re-enable IPv6");
+        wait_for_client_settings(&application, |runtime| {
+            runtime.configured == replacement
+                && runtime.effective_ipv6_enabled
+                && runtime.transport_application == crate::ClientSettingsApplicationState::Applied
+        })
+        .await;
+        assert_eq!(
+            application.session_network().session_udp_snapshot().tasks,
+            2
+        );
+        TcpStream::connect((Ipv6Addr::LOCALHOST, replacement_port))
+            .await
+            .expect("IPv6 listener returns after re-enable");
         application.shutdown().await.expect("joined shutdown");
         assert!(application.session_network.is_none());
         drop(application);
@@ -6487,7 +6581,8 @@ mod tests {
         let mut application = ApplicationService::open(config(&root))
             .await
             .expect("open rapid-settings application");
-        let dht_node_id = dht_runtime(&application).await.local_node_id;
+        let dht_before = dht_runtime(&application).await;
+        let dht_node_id = dht_ipv4_node_id(&dht_before).to_owned();
         let attempts = [
             ClientSettings {
                 listener: ListenerPolicy::FixedLoopback { port: ports[0] },
@@ -6551,7 +6646,10 @@ mod tests {
             client_settings_runtime(&application).await.configured,
             final_settings
         );
-        assert_eq!(dht_runtime(&application).await.local_node_id, dht_node_id);
+        assert_eq!(
+            dht_ipv4_node_id(&dht_runtime(&application).await),
+            dht_node_id
+        );
         assert!(
             TcpStream::connect((Ipv4Addr::LOCALHOST, ports[0]))
                 .await

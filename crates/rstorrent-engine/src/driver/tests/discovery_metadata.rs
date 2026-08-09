@@ -1,5 +1,6 @@
 use super::*;
 use crate::{PeerBudget, TrackerConnectionFamily};
+use std::net::{IpAddr, Ipv6Addr};
 
 #[tokio::test]
 async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
@@ -875,11 +876,14 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
             event: AnnounceEvent::Started,
             num_want: 200,
             port: announced_port,
+            ipv6_port: announced_port,
         },
         UdpTrackerExchange {
             timing,
             control: &control,
             tracker_label: "udp://127.0.0.1",
+            source_ipv4: None,
+            source_ipv6: None,
         },
     )
     .await
@@ -899,6 +903,7 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
             event: AnnounceEvent::None,
             num_want: 200,
             port: announced_port,
+            ipv6_port: announced_port,
         },
         UdpTrackerExchange {
             timing: UdpTrackerTiming {
@@ -907,6 +912,8 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
             },
             control: &control,
             tracker_label: "udp://127.0.0.1",
+            source_ipv4: None,
+            source_ipv6: None,
         },
     )
     .await
@@ -928,6 +935,115 @@ async fn udp_tracker_retransmits_reuses_token_and_cancels_cleanly() {
     assert_eq!(retransmissions, 2);
 
     assert_tracker_wait_cancels_without_socket_leaks().await;
+}
+
+#[tokio::test]
+async fn ipv6_udp_tracker_uses_selected_source_and_family_port() {
+    let tracker = UdpSocket::bind("[::1]:0")
+        .await
+        .expect("bind IPv6 UDP tracker");
+    let tracker_address = tracker.local_addr().expect("IPv6 tracker address");
+    let server = tokio::spawn(async move {
+        let mut packet = [0_u8; 256];
+        let (connect_length, source) = tracker.recv_from(&mut packet).await.unwrap();
+        assert_eq!(connect_length, 16);
+        let connect_transaction = u32::from_be_bytes(packet[12..16].try_into().unwrap());
+        let mut connect_response = Vec::with_capacity(16);
+        connect_response.extend_from_slice(&0_u32.to_be_bytes());
+        connect_response.extend_from_slice(&connect_transaction.to_be_bytes());
+        connect_response.extend_from_slice(&0x1020_3040_5060_7080_u64.to_be_bytes());
+        tracker.send_to(&connect_response, source).await.unwrap();
+
+        let (announce_length, announce_source) = tracker.recv_from(&mut packet).await.unwrap();
+        assert_eq!(announce_length, 98);
+        let announce_transaction = u32::from_be_bytes(packet[12..16].try_into().unwrap());
+        let announced_port = u16::from_be_bytes(packet[96..98].try_into().unwrap());
+        let mut announce_response = Vec::with_capacity(20);
+        announce_response.extend_from_slice(&1_u32.to_be_bytes());
+        announce_response.extend_from_slice(&announce_transaction.to_be_bytes());
+        announce_response.extend_from_slice(&900_u32.to_be_bytes());
+        announce_response.extend_from_slice(&0_u32.to_be_bytes());
+        announce_response.extend_from_slice(&0_u32.to_be_bytes());
+        tracker
+            .send_to(&announce_response, announce_source)
+            .await
+            .unwrap();
+        (announce_source, announced_port)
+    });
+
+    let control = DownloadControl::new();
+    let mut tokens = UdpTrackerTokenCache::default();
+    let result = announce_udp_tracker_address(
+        tracker_address,
+        &mut tokens,
+        UdpTrackerAnnounce {
+            info_hash: [8; 20],
+            peer_id: CLIENT_PEER_ID,
+            key: 2,
+            downloaded: 0,
+            left: 1,
+            uploaded: 0,
+            event: AnnounceEvent::Started,
+            num_want: 0,
+            port: 41_004,
+            ipv6_port: 41_006,
+        },
+        UdpTrackerExchange {
+            timing: UdpTrackerTiming {
+                retransmit_after: Duration::from_millis(100),
+                completion_timeout: Duration::from_secs(1),
+            },
+            control: &control,
+            tracker_label: "udp://[::1]",
+            source_ipv4: None,
+            source_ipv6: Some(Ipv6Addr::LOCALHOST.into()),
+        },
+    )
+    .await
+    .expect("IPv6 UDP announce");
+    assert_eq!(result.connection_family, TrackerConnectionFamily::Ipv6);
+    let (source, port) = server.await.expect("IPv6 tracker task");
+    assert_eq!(source.ip(), IpAddr::V6(Ipv6Addr::LOCALHOST));
+    assert_eq!(port, 41_006);
+}
+
+#[tokio::test]
+async fn ipv4_only_policy_rejects_an_ipv6_udp_tracker_before_io() {
+    let control = DownloadControl::new();
+    let mut tokens = UdpTrackerTokenCache::default();
+    let result = announce_udp_tracker(
+        &UdpTrackerUrl {
+            host: "::1".to_owned(),
+            port: 49_001,
+        },
+        NetworkPolicy::LoopbackOnly,
+        AddressFamilyPolicy::ipv4_only(),
+        &mut tokens,
+        UdpTrackerAnnounce {
+            info_hash: [9; 20],
+            peer_id: CLIENT_PEER_ID,
+            key: 3,
+            downloaded: 0,
+            left: 1,
+            uploaded: 0,
+            event: AnnounceEvent::Started,
+            num_want: 0,
+            port: 41_004,
+            ipv6_port: 41_006,
+        },
+        UdpTrackerExchange {
+            timing: UdpTrackerTiming {
+                retransmit_after: Duration::from_millis(20),
+                completion_timeout: Duration::from_millis(100),
+            },
+            control: &control,
+            tracker_label: "udp://[::1]",
+            source_ipv4: None,
+            source_ipv6: None,
+        },
+    )
+    .await;
+    assert!(matches!(result, Err(DownloadError::NoUsableTrackerAddress)));
 }
 
 #[tokio::test]

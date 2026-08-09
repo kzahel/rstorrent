@@ -32,6 +32,39 @@ pub const MAX_LOOKUP_CANDIDATES: usize = 256;
 pub const MAX_LOOKUP_PEERS: usize = 200;
 pub const MAX_PEER_STORE_HASHES: usize = 256;
 pub const MAX_PEERS_PER_HASH: usize = 100;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DhtAnnouncePorts {
+    pub ipv4: u16,
+    pub ipv6: u16,
+}
+
+impl DhtAnnouncePorts {
+    #[must_use]
+    pub const fn same(port: u16) -> Self {
+        Self {
+            ipv4: port,
+            ipv6: port,
+        }
+    }
+
+    #[must_use]
+    pub const fn for_family(self, family: AddressFamily) -> u16 {
+        match family {
+            AddressFamily::Ipv4 => self.ipv4,
+            AddressFamily::Ipv6 => self.ipv6,
+        }
+    }
+
+    fn validate(self) -> Result<Self, DhtError> {
+        if self.ipv4 == 0 || self.ipv6 == 0 {
+            return Err(DhtError::Configuration(
+                "DHT peer announcement requires nonzero TCP ports",
+            ));
+        }
+        Ok(self)
+    }
+}
 pub const MAX_RATE_SOURCES: usize = 1024;
 pub const MAX_QUERIES_PER_SOURCE_MINUTE: u16 = 30;
 pub const MAX_GLOBAL_QUERIES_PER_SECOND: u16 = 250;
@@ -210,6 +243,7 @@ impl DhtConfig {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DhtStats {
     pub routing_nodes_v4: u32,
+    pub routing_nodes_v6: u32,
     pub active_transactions: u32,
     pub active_lookups: u32,
     pub queries_sent: u64,
@@ -247,6 +281,7 @@ pub enum DhtLifecycle {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DhtLookupObservation {
+    pub family: AddressFamily,
     pub lookup_id: u64,
     pub target: NodeId,
     pub age_millis: u64,
@@ -261,37 +296,60 @@ pub struct DhtLookupObservation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DhtObservation {
+pub struct DhtFamilyObservation {
+    pub family: AddressFamily,
     pub lifecycle: DhtLifecycle,
-    pub network_policy: NetworkPolicy,
     pub local_node_id: NodeId,
-    pub captured_millis: u64,
-    pub routing_nodes_v4: u16,
-    pub occupied_buckets_v4: u16,
-    pub deepest_shared_prefix_bits_v4: Option<u16>,
+    pub local_address: SocketAddr,
+    pub observed_external_address: Option<IpAddr>,
+    pub routing_nodes: u16,
+    pub occupied_buckets: u16,
+    pub deepest_shared_prefix_bits: Option<u16>,
     pub stats: DhtStats,
-    pub buckets_v4: Vec<RoutingBucketInspection>,
+    pub buckets: Vec<RoutingBucketInspection>,
     pub lookups: Vec<DhtLookupObservation>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DhtObservation {
+    pub lifecycle: DhtLifecycle,
+    pub network_policy: NetworkPolicy,
+    pub captured_millis: u64,
+    pub stats: DhtStats,
+    pub families: Vec<DhtFamilyObservation>,
+}
+
 impl DhtObservation {
-    fn initial(network_policy: NetworkPolicy, local_node_id: NodeId) -> Self {
-        let routing = RoutingTable::new(local_node_id).inspection(0);
+    fn initial(network_policy: NetworkPolicy, nodes: &BTreeMap<AddressFamily, DhtNode>) -> Self {
+        let lifecycle = if matches!(network_policy, NetworkPolicy::Offline) {
+            DhtLifecycle::Offline
+        } else {
+            DhtLifecycle::BootstrapEmpty
+        };
         Self {
-            lifecycle: if matches!(network_policy, NetworkPolicy::Offline) {
-                DhtLifecycle::Offline
-            } else {
-                DhtLifecycle::BootstrapEmpty
-            },
+            lifecycle,
             network_policy,
-            local_node_id,
             captured_millis: 0,
-            routing_nodes_v4: routing.routing_nodes,
-            occupied_buckets_v4: routing.occupied_buckets,
-            deepest_shared_prefix_bits_v4: routing.deepest_shared_prefix_bits,
             stats: DhtStats::default(),
-            buckets_v4: routing.buckets,
-            lookups: Vec::new(),
+            families: nodes
+                .iter()
+                .map(|(&family, node)| {
+                    let routing = node.routing.inspection(0);
+                    DhtFamilyObservation {
+                        family,
+                        lifecycle,
+                        local_node_id: node.node_id,
+                        local_address: node.local_address,
+                        observed_external_address: node.observed_external_address,
+                        routing_nodes: routing.routing_nodes,
+                        occupied_buckets: routing.occupied_buckets,
+                        deepest_shared_prefix_bits: routing.deepest_shared_prefix_bits,
+                        stats: DhtStats::default(),
+                        buckets: routing.buckets,
+                        lookups: Vec::new(),
+                    }
+                })
+                .collect(),
         }
     }
 }
@@ -356,16 +414,21 @@ impl DhtHandle {
         info_hash: [u8; 20],
         port: u16,
     ) -> Result<DhtAnnounceResult, DhtError> {
-        if port == 0 {
-            return Err(DhtError::Configuration(
-                "DHT peer announcement requires a nonzero TCP port",
-            ));
-        }
+        self.lookup_and_announce_ports(info_hash, DhtAnnouncePorts::same(port))
+            .await
+    }
+
+    pub async fn lookup_and_announce_ports(
+        &self,
+        info_hash: [u8; 20],
+        ports: DhtAnnouncePorts,
+    ) -> Result<DhtAnnounceResult, DhtError> {
+        let ports = ports.validate()?;
         let (sender, receiver) = oneshot::channel();
         self.sender
             .send(Command::LookupAndAnnounce {
                 info_hash: NodeId(info_hash),
-                port,
+                ports,
                 result: sender,
             })
             .await
@@ -387,6 +450,15 @@ impl DhtHandle {
             .await
             .map_err(|_| DhtError::ActorStopped)?;
         receiver.await.map_err(|_| DhtError::ActorStopped)
+    }
+
+    pub async fn reconcile_transport(&self) -> Result<(), DhtError> {
+        let (sender, receiver) = oneshot::channel();
+        self.sender
+            .send(Command::ReconcileTransport(sender))
+            .await
+            .map_err(|_| DhtError::ActorStopped)?;
+        receiver.await.map_err(|_| DhtError::ActorStopped)?
     }
 }
 
@@ -482,16 +554,14 @@ impl DhtService {
             identity_hints.insert(family, node.identities.clone());
             nodes.insert(family, node);
         }
-        let node_id = nodes
-            .get(&AddressFamily::Ipv4)
-            .or_else(|| nodes.values().next())
-            .map(|node| node.node_id)
-            .ok_or(DhtError::Configuration(
+        if nodes.is_empty() {
+            return Err(DhtError::Configuration(
                 "DHT transport has no active family",
-            ))?;
+            ));
+        }
         let (sender, receiver) = mpsc::channel(DHT_COMMAND_QUEUE);
         let (observation_sender, observations) =
-            watch::channel(DhtObservation::initial(config.network_policy, node_id));
+            watch::channel(DhtObservation::initial(config.network_policy, &nodes));
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let actor = Actor::new(
@@ -589,11 +659,12 @@ enum Command {
     },
     LookupAndAnnounce {
         info_hash: NodeId,
-        port: u16,
+        ports: DhtAnnouncePorts,
         result: oneshot::Sender<Result<DhtAnnounceResult, DhtError>>,
     },
     CancelLookup(NodeId),
     Stats(oneshot::Sender<DhtStats>),
+    ReconcileTransport(oneshot::Sender<Result<(), DhtError>>),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -635,7 +706,7 @@ struct Lookup {
 
 #[derive(Debug)]
 struct Announcement {
-    port: u16,
+    ports: DhtAnnouncePorts,
     result: oneshot::Sender<Result<DhtAnnounceResult, DhtError>>,
 }
 
@@ -823,6 +894,7 @@ impl Lookup {
                 .count() as u16
         };
         DhtLookupObservation {
+            family: self.family,
             lookup_id: self.id,
             target: self.target,
             age_millis: duration_millis(now.saturating_duration_since(self.started_at)),
@@ -1090,6 +1162,7 @@ struct DhtNode {
     global_rate: RateWindow,
     tokens: Tokens,
     external_votes: ExternalAddressVotes,
+    observed_external_address: Option<IpAddr>,
 }
 
 impl DhtNode {
@@ -1138,6 +1211,7 @@ impl DhtNode {
             },
             tokens: Tokens::new(now)?,
             external_votes: ExternalAddressVotes::default(),
+            observed_external_address: None,
         })
     }
 
@@ -1172,6 +1246,7 @@ struct Actor {
     commands: mpsc::Receiver<Command>,
     cancellation: CancellationToken,
     stats: DhtStats,
+    family_stats: BTreeMap<AddressFamily, DhtStats>,
     observations: watch::Sender<DhtObservation>,
     last_observation: Instant,
     next_lookup_id: u64,
@@ -1190,6 +1265,11 @@ impl Actor {
         observations: watch::Sender<DhtObservation>,
     ) -> Result<Self, DhtError> {
         let now = Instant::now();
+        let family_stats = nodes
+            .keys()
+            .copied()
+            .map(|family| (family, DhtStats::default()))
+            .collect();
         Ok(Self {
             config,
             transport,
@@ -1204,10 +1284,16 @@ impl Actor {
             commands,
             cancellation,
             stats: DhtStats::default(),
+            family_stats,
             observations,
             last_observation: now,
             next_lookup_id: 1,
         })
+    }
+
+    fn record_stats(&mut self, family: AddressFamily, update: impl Fn(&mut DhtStats)) {
+        update(&mut self.stats);
+        update(self.family_stats.entry(family).or_default());
     }
 
     async fn run(mut self) -> Result<DhtSnapshot, DhtError> {
@@ -1251,23 +1337,28 @@ impl Actor {
                             if AddressFamily::of(source.ip()) != wire_family
                                 || !self.nodes.contains_key(&wire_family)
                             {
-                                self.stats.family_mismatched =
-                                    self.stats.family_mismatched.saturating_add(1);
+                                self.record_stats(wire_family, |stats| {
+                                    stats.family_mismatched =
+                                        stats.family_mismatched.saturating_add(1);
+                                });
                                 continue;
                             }
                             let length = bytes.len();
-                            self.stats.datagram_bytes_received = self
-                                .stats
-                                .datagram_bytes_received
-                                .saturating_add(length as u64);
+                            self.record_stats(wire_family, |stats| {
+                                stats.datagram_bytes_received = stats
+                                    .datagram_bytes_received
+                                    .saturating_add(length as u64);
+                            });
                             if let Some(sink) = &self.config.byte_metric_sink {
                                 sink.record(ByteMetric::DhtReceived, length as u64);
                             }
                             if length <= MAX_DATAGRAM_SIZE {
                                 self.handle_datagram(&bytes, source, wire_family).await?;
                             } else {
-                                self.stats.malformed_received =
-                                    self.stats.malformed_received.saturating_add(1);
+                                self.record_stats(wire_family, |stats| {
+                                    stats.malformed_received =
+                                        stats.malformed_received.saturating_add(1);
+                                });
                             }
                         }
                         Err(error) => return Err(DhtError::Io(error.to_string())),
@@ -1330,7 +1421,9 @@ impl Actor {
         node.bootstrap_queried.clear();
         node.last_bootstrap = Instant::now();
         let target = node.node_id;
-        self.stats.bootstrap_attempts = self.stats.bootstrap_attempts.saturating_add(1);
+        self.record_stats(family, |stats| {
+            stats.bootstrap_attempts = stats.bootstrap_attempts.saturating_add(1);
+        });
         for endpoint in endpoints {
             if self.transaction_count(family) == MAX_ACTIVE_TRANSACTIONS {
                 break;
@@ -1376,7 +1469,9 @@ impl Actor {
         let node = self.nodes.get_mut(&family).expect("refresh family remains");
         node.bootstrap_queried.clear();
         node.last_refresh = Instant::now();
-        self.stats.routing_refreshes = self.stats.routing_refreshes.saturating_add(1);
+        self.record_stats(family, |stats| {
+            stats.routing_refreshes = stats.routing_refreshes.saturating_add(1);
+        });
         for contact in contacts.into_iter().take(ALPHA) {
             let endpoint = socket_endpoint(contact.address);
             self.nodes
@@ -1416,7 +1511,7 @@ impl Actor {
             }
             Command::LookupAndAnnounce {
                 info_hash,
-                port,
+                ports,
                 result,
             } => {
                 if matches!(self.config.network_policy, NetworkPolicy::Offline) {
@@ -1428,11 +1523,11 @@ impl Actor {
                         let _ = result.send(Err(DhtError::LookupCapacity));
                         return Ok(());
                     }
-                    group.announcement = Some(Announcement { port, result });
+                    group.announcement = Some(Announcement { ports, result });
                     let families = group.pending.iter().copied().collect::<Vec<_>>();
                     for family in &families {
                         if let Some(lookup) = self.lookups.get_mut(&(info_hash, *family)) {
-                            lookup.announce_port = Some(port);
+                            lookup.announce_port = Some(ports.for_family(*family));
                         }
                     }
                     for family in families {
@@ -1442,7 +1537,7 @@ impl Actor {
                 }
                 self.start_lookup_group(
                     info_hash,
-                    LookupGroup::with_announcement(Announcement { port, result }),
+                    LookupGroup::with_announcement(Announcement { ports, result }),
                 )
                 .await?;
             }
@@ -1458,9 +1553,22 @@ impl Actor {
                     .unwrap_or(0)
                     .try_into()
                     .unwrap_or(u32::MAX);
+                stats.routing_nodes_v6 = self
+                    .nodes
+                    .get(&AddressFamily::Ipv6)
+                    .map(|node| node.routing.len())
+                    .unwrap_or(0)
+                    .try_into()
+                    .unwrap_or(u32::MAX);
                 stats.active_transactions = self.transactions.len().try_into().unwrap_or(u32::MAX);
                 stats.active_lookups = self.lookups.len().try_into().unwrap_or(u32::MAX);
                 let _ = sender.send(stats);
+            }
+            Command::ReconcileTransport(sender) => {
+                let result = self.reconcile_transport_families(Instant::now()).await;
+                let _ = sender.send(result.clone());
+                result?;
+                self.publish_observation(None);
             }
             Command::Shutdown(_) => unreachable!("shutdown handled by run loop"),
         }
@@ -1472,10 +1580,6 @@ impl Actor {
         info_hash: NodeId,
         mut group: LookupGroup,
     ) -> Result<(), DhtError> {
-        let announce_port = group
-            .announcement
-            .as_ref()
-            .map(|announcement| announcement.port);
         let families = self.nodes.keys().copied().collect::<Vec<_>>();
         let now = Instant::now();
         for family in families {
@@ -1492,7 +1596,10 @@ impl Actor {
                 now + self.config.lookup_timeout,
                 now,
             );
-            lookup.announce_port = announce_port;
+            lookup.announce_port = group
+                .announcement
+                .as_ref()
+                .map(|announcement| announcement.ports.for_family(family));
             self.next_lookup_id = self.next_lookup_id.checked_add(1).unwrap_or(1);
             self.lookups.insert((info_hash, family), lookup);
             group.pending.insert(family);
@@ -1660,14 +1767,18 @@ impl Actor {
                 .await
             {
                 Ok(()) => {
-                    self.stats.announces_sent = self.stats.announces_sent.saturating_add(1);
+                    self.record_stats(family, |stats| {
+                        stats.announces_sent = stats.announces_sent.saturating_add(1);
+                    });
                     if let Some(lookup) = self.lookups.get_mut(&key) {
                         lookup.announce_pending.insert(responder.address);
                         lookup.announce_sent = lookup.announce_sent.saturating_add(1);
                     }
                 }
                 Err(_) => {
-                    self.stats.announces_failed = self.stats.announces_failed.saturating_add(1);
+                    self.record_stats(family, |stats| {
+                        stats.announces_failed = stats.announces_failed.saturating_add(1);
+                    });
                     if let Some(lookup) = self.lookups.get_mut(&key) {
                         lookup.announce_failed = lookup.announce_failed.saturating_add(1);
                     }
@@ -1711,7 +1822,9 @@ impl Actor {
         if let Some(sink) = &self.config.byte_metric_sink {
             sink.record(ByteMetric::DhtSent, sent as u64);
         }
-        self.stats.datagram_bytes_sent = self.stats.datagram_bytes_sent.saturating_add(sent as u64);
+        self.record_stats(wire_family, |stats| {
+            stats.datagram_bytes_sent = stats.datagram_bytes_sent.saturating_add(sent as u64);
+        });
         self.transactions.insert(
             (transaction_id, endpoint),
             Transaction {
@@ -1723,7 +1836,9 @@ impl Actor {
                 deadline: Instant::now() + self.config.query_timeout,
             },
         );
-        self.stats.queries_sent = self.stats.queries_sent.saturating_add(1);
+        self.record_stats(logical_family, |stats| {
+            stats.queries_sent = stats.queries_sent.saturating_add(1);
+        });
         Ok(())
     }
 
@@ -1767,7 +1882,9 @@ impl Actor {
         let message = match decode_message(bytes) {
             Ok(message) => message,
             Err(_) => {
-                self.stats.malformed_received = self.stats.malformed_received.saturating_add(1);
+                self.record_stats(wire_family, |stats| {
+                    stats.malformed_received = stats.malformed_received.saturating_add(1);
+                });
                 return Ok(());
             }
         };
@@ -1851,7 +1968,9 @@ impl Actor {
                     .heard_about(*node, self.started.elapsed().as_secs());
             }
         }
-        self.stats.responses_received = self.stats.responses_received.saturating_add(1);
+        self.record_stats(transaction.logical_family, |stats| {
+            stats.responses_received = stats.responses_received.saturating_add(1);
+        });
         match transaction.owner {
             TransactionOwner::Bootstrap { family, target } => {
                 let returned = match family {
@@ -1925,8 +2044,9 @@ impl Actor {
                     && lookup.announce_pending.remove(&source)
                 {
                     lookup.announce_succeeded = lookup.announce_succeeded.saturating_add(1);
-                    self.stats.announces_succeeded =
-                        self.stats.announces_succeeded.saturating_add(1);
+                    self.record_stats(family, |stats| {
+                        stats.announces_succeeded = stats.announces_succeeded.saturating_add(1);
+                    });
                 }
                 self.finish_announcement_if_complete(key);
             }
@@ -1959,7 +2079,9 @@ impl Actor {
         source: SocketAddr,
         wire_family: AddressFamily,
     ) -> Result<(), DhtError> {
-        self.stats.queries_received = self.stats.queries_received.saturating_add(1);
+        self.record_stats(wire_family, |stats| {
+            stats.queries_received = stats.queries_received.saturating_add(1);
+        });
         if self.config.read_only || !self.allow_query(wire_family, source.ip()) {
             return Ok(());
         }
@@ -2064,8 +2186,9 @@ impl Actor {
         if let Ok(bytes) = result
             && let Ok(sent) = self.transport.send_to(&bytes, source).await
         {
-            self.stats.datagram_bytes_sent =
-                self.stats.datagram_bytes_sent.saturating_add(sent as u64);
+            self.record_stats(wire_family, |stats| {
+                stats.datagram_bytes_sent = stats.datagram_bytes_sent.saturating_add(sent as u64);
+            });
             if let Some(sink) = &self.config.byte_metric_sink {
                 sink.record(ByteMetric::DhtSent, sent as u64);
             }
@@ -2115,6 +2238,8 @@ impl Actor {
         }
         if node.global_rate.count >= MAX_GLOBAL_QUERIES_PER_SECOND {
             self.stats.rate_limited = self.stats.rate_limited.saturating_add(1);
+            let stats = self.family_stats.entry(family).or_default();
+            stats.rate_limited = stats.rate_limited.saturating_add(1);
             return false;
         }
         node.global_rate.count += 1;
@@ -2141,6 +2266,8 @@ impl Actor {
         }
         if rate.count >= MAX_QUERIES_PER_SOURCE_MINUTE {
             self.stats.rate_limited = self.stats.rate_limited.saturating_add(1);
+            let stats = self.family_stats.entry(family).or_default();
+            stats.rate_limited = stats.rate_limited.saturating_add(1);
             return false;
         }
         rate.count += 1;
@@ -2279,6 +2406,10 @@ impl Actor {
                         .saturating_add(failed.try_into().unwrap_or(u8::MAX));
                     self.stats.announces_failed = self
                         .stats
+                        .announces_failed
+                        .saturating_add(failed.try_into().unwrap_or(u64::MAX));
+                    let stats = self.family_stats.entry(family).or_default();
+                    stats.announces_failed = stats
                         .announces_failed
                         .saturating_add(failed.try_into().unwrap_or(u64::MAX));
                 }
@@ -2471,6 +2602,8 @@ impl Actor {
                 {
                     lookup.announce_failed = lookup.announce_failed.saturating_add(1);
                     self.stats.announces_failed = self.stats.announces_failed.saturating_add(1);
+                    let stats = self.family_stats.entry(family).or_default();
+                    stats.announces_failed = stats.announces_failed.saturating_add(1);
                 }
                 self.finish_announcement_if_complete(key);
             }
@@ -2504,6 +2637,9 @@ impl Actor {
             return;
         };
         let outcome = lookup.finish(result);
+        let discovered = outcome.peers.len().try_into().unwrap_or(u64::MAX);
+        let family_stats = self.family_stats.entry(family).or_default();
+        family_stats.discovered_peers = family_stats.discovered_peers.saturating_add(discovered);
         let Some(group) = self.lookup_groups.get_mut(&info_hash) else {
             return;
         };
@@ -2555,40 +2691,95 @@ impl Actor {
     fn publish_observation(&mut self, lifecycle: Option<DhtLifecycle>) {
         let now = Instant::now();
         let elapsed = self.started.elapsed();
-        let ipv4 = self
+        let mut stats = self.stats;
+        stats.routing_nodes_v4 = self
             .nodes
             .get(&AddressFamily::Ipv4)
-            .expect("DHT retains its IPv4 node");
-        let routing = ipv4.routing.inspection(elapsed.as_secs());
-        let mut stats = self.stats;
-        stats.routing_nodes_v4 = u32::from(routing.routing_nodes);
+            .map(|node| node.routing.len())
+            .unwrap_or(0)
+            .try_into()
+            .unwrap_or(u32::MAX);
+        stats.routing_nodes_v6 = self
+            .nodes
+            .get(&AddressFamily::Ipv6)
+            .map(|node| node.routing.len())
+            .unwrap_or(0)
+            .try_into()
+            .unwrap_or(u32::MAX);
         stats.active_transactions = self.transactions.len().try_into().unwrap_or(u32::MAX);
         stats.active_lookups = self.lookups.len().try_into().unwrap_or(u32::MAX);
-        let mut lookups = self
-            .lookups
-            .values()
-            .map(|lookup| lookup.observation(now))
-            .collect::<Vec<_>>();
-        lookups.sort_by_key(|lookup| lookup.lookup_id);
-        self.observations.send_replace(DhtObservation {
-            lifecycle: lifecycle.unwrap_or({
-                if matches!(self.config.network_policy, NetworkPolicy::Offline) {
-                    DhtLifecycle::Offline
-                } else if routing.routing_nodes == 0 {
-                    DhtLifecycle::BootstrapEmpty
-                } else {
-                    DhtLifecycle::Participating
+        let default_lifecycle = if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+            DhtLifecycle::Offline
+        } else if self.nodes.values().all(|node| node.routing.is_empty()) {
+            DhtLifecycle::BootstrapEmpty
+        } else {
+            DhtLifecycle::Participating
+        };
+        let aggregate_lifecycle = lifecycle.unwrap_or(default_lifecycle);
+        let families = self
+            .nodes
+            .iter()
+            .map(|(&family, node)| {
+                let routing = node.routing.inspection(elapsed.as_secs());
+                let mut family_stats = self.family_stats.get(&family).copied().unwrap_or_default();
+                match family {
+                    AddressFamily::Ipv4 => {
+                        family_stats.routing_nodes_v4 = u32::from(routing.routing_nodes);
+                    }
+                    AddressFamily::Ipv6 => {
+                        family_stats.routing_nodes_v6 = u32::from(routing.routing_nodes);
+                    }
                 }
-            }),
+                family_stats.active_transactions = self
+                    .transactions
+                    .values()
+                    .filter(|transaction| transaction.logical_family == family)
+                    .count()
+                    .try_into()
+                    .unwrap_or(u32::MAX);
+                family_stats.active_lookups = self
+                    .lookups
+                    .values()
+                    .filter(|lookup| lookup.family == family)
+                    .count()
+                    .try_into()
+                    .unwrap_or(u32::MAX);
+                let mut lookups = self
+                    .lookups
+                    .values()
+                    .filter(|lookup| lookup.family == family)
+                    .map(|lookup| lookup.observation(now))
+                    .collect::<Vec<_>>();
+                lookups.sort_by_key(|lookup| lookup.lookup_id);
+                DhtFamilyObservation {
+                    family,
+                    lifecycle: lifecycle.unwrap_or({
+                        if matches!(self.config.network_policy, NetworkPolicy::Offline) {
+                            DhtLifecycle::Offline
+                        } else if routing.routing_nodes == 0 {
+                            DhtLifecycle::BootstrapEmpty
+                        } else {
+                            DhtLifecycle::Participating
+                        }
+                    }),
+                    local_node_id: node.node_id,
+                    local_address: node.local_address,
+                    observed_external_address: node.observed_external_address,
+                    routing_nodes: routing.routing_nodes,
+                    occupied_buckets: routing.occupied_buckets,
+                    deepest_shared_prefix_bits: routing.deepest_shared_prefix_bits,
+                    stats: family_stats,
+                    buckets: routing.buckets,
+                    lookups,
+                }
+            })
+            .collect();
+        self.observations.send_replace(DhtObservation {
+            lifecycle: aggregate_lifecycle,
             network_policy: self.config.network_policy,
-            local_node_id: ipv4.node_id,
             captured_millis: duration_millis(elapsed),
-            routing_nodes_v4: routing.routing_nodes,
-            occupied_buckets_v4: routing.occupied_buckets,
-            deepest_shared_prefix_bits_v4: routing.deepest_shared_prefix_bits,
             stats,
-            buckets_v4: routing.buckets,
-            lookups,
+            families,
         });
         self.last_observation = now;
     }
@@ -2612,6 +2803,7 @@ impl Actor {
             .nodes
             .get_mut(&family)
             .expect("response family has a DHT node");
+        node.observed_external_address = Some(observed_address.ip());
         if verify_bep42_id(node.node_id, observed.ip) {
             node.remember_identity(observed_address.ip(), node.node_id);
             self.identity_hints.insert(family, node.identities.clone());
@@ -2854,6 +3046,17 @@ fn deduplicate_contacts(contacts: &mut Vec<NodeContact>) {
 mod tests {
     use super::*;
 
+    fn family_observation(
+        observation: &DhtObservation,
+        family: AddressFamily,
+    ) -> &DhtFamilyObservation {
+        observation
+            .families
+            .iter()
+            .find(|observation| observation.family == family)
+            .expect("address-family observation")
+    }
+
     #[test]
     fn external_address_votes_are_distinct_bounded_and_consumed() {
         let mut votes = ExternalAddressVotes::default();
@@ -3042,9 +3245,15 @@ mod tests {
             .expect("replace session UDP generation");
         assert_ne!(before_address, replacement_address);
         assert_eq!(dht.local_address(), replacement_address);
+        dht.handle()
+            .reconcile_transport()
+            .await
+            .expect("reconcile replacement");
         let after = dht.subscribe_observations().borrow().clone();
-        assert_eq!(after.local_node_id, before.local_node_id);
-        assert_eq!(after.routing_nodes_v4, before.routing_nodes_v4);
+        let before_v4 = family_observation(&before, AddressFamily::Ipv4);
+        let after_v4 = family_observation(&after, AddressFamily::Ipv4);
+        assert_eq!(after_v4.local_node_id, before_v4.local_node_id);
+        assert_eq!(after_v4.routing_nodes, before_v4.routing_nodes);
         assert_eq!(
             dht.handle()
                 .stats()
@@ -3055,7 +3264,7 @@ mod tests {
         );
 
         let snapshot = dht.shutdown().await.expect("shutdown DHT");
-        assert_eq!(snapshot.identities_v4[0].node_id, before.local_node_id);
+        assert_eq!(snapshot.identities_v4[0].node_id, before_v4.local_node_id);
         let terminal = udp.shutdown().await.expect("shutdown session UDP");
         assert_eq!(terminal.tasks, 0);
     }
@@ -3294,6 +3503,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn product_announcement_uses_each_familys_port() {
+        let (server_udp, server, server_v4, server_v6) =
+            dual_stack_dht(loopback_config(Vec::new())).await;
+        let (client_udp, client, _, _) = dual_stack_dht(loopback_config(vec![
+            BootstrapNode::Address(server_v4),
+            BootstrapNode::Address(server_v6),
+        ]))
+        .await;
+        let info_hash = NodeId([14; 20]);
+        let report = client
+            .handle()
+            .lookup_and_announce_ports(
+                info_hash.0,
+                DhtAnnouncePorts {
+                    ipv4: 44_444,
+                    ipv6: 46_666,
+                },
+            )
+            .await
+            .expect("dual-family announcement");
+        assert_eq!(report.announces_succeeded, 2);
+
+        let query = encode_query(
+            b"gp",
+            NodeId([8; 20]),
+            &Query::GetPeers {
+                info_hash,
+                want: Vec::new(),
+            },
+            true,
+        )
+        .unwrap();
+        let ipv4_probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let Message::Response(ipv4) = exchange(&ipv4_probe, server_v4, &query).await else {
+            panic!("IPv4 get_peers response expected");
+        };
+        assert_eq!(ipv4.peers.len(), 1);
+        assert_eq!(socket_endpoint(ipv4.peers[0]).port(), 44_444);
+
+        let ipv6_probe = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+        let Message::Response(ipv6) = exchange(&ipv6_probe, server_v6, &query).await else {
+            panic!("IPv6 get_peers response expected");
+        };
+        assert_eq!(ipv6.peers.len(), 1);
+        assert_eq!(socket_endpoint(ipv6.peers[0]).port(), 46_666);
+
+        client.shutdown().await.unwrap();
+        client_udp.shutdown().await.unwrap();
+        server.shutdown().await.unwrap();
+        server_udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn ipv6_node_retires_and_restores_by_bound_address() {
         let (mut udp, dht, _, first_address) = dual_stack_dht(loopback_config(Vec::new())).await;
         let remote = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
@@ -3476,7 +3738,12 @@ mod tests {
         let service = DhtService::start(config).await.expect("start DHT");
         let service_address = service.local_address();
         let mut observations = service.subscribe_observations();
-        assert_eq!(observations.borrow().buckets_v4.len(), 160);
+        assert_eq!(
+            family_observation(&observations.borrow(), AddressFamily::Ipv4)
+                .buckets
+                .len(),
+            160
+        );
         observations.borrow_and_update();
 
         let handle = service.handle();
@@ -3509,7 +3776,10 @@ mod tests {
             loop {
                 observations.changed().await.expect("active observation");
                 let observation = observations.borrow_and_update().clone();
-                if !observation.lookups.is_empty()
+                if observation
+                    .families
+                    .iter()
+                    .any(|family| !family.lookups.is_empty())
                     && observation.stats.malformed_received == 1
                     && observation.stats.rate_limited == 1
                     && observation.stats.datagram_bytes_sent > 0
@@ -3526,7 +3796,14 @@ mod tests {
             active.stats.queries_received,
             u64::from(MAX_QUERIES_PER_SOURCE_MINUTE) + 1
         );
-        assert_eq!(active.lookups.len(), 1);
+        assert_eq!(
+            active
+                .families
+                .iter()
+                .map(|family| family.lookups.len())
+                .sum::<usize>(),
+            1
+        );
         assert!(active.stats.active_transactions <= MAX_ACTIVE_TRANSACTIONS as u32);
 
         service.shutdown().await.expect("shutdown");
@@ -3541,7 +3818,12 @@ mod tests {
         };
         assert_eq!(terminal.lifecycle, DhtLifecycle::Inactive);
         assert_eq!(terminal.stats.active_transactions, 0);
-        assert!(terminal.lookups.is_empty());
+        assert!(
+            terminal
+                .families
+                .iter()
+                .all(|family| family.lookups.is_empty())
+        );
         assert_eq!(lookup.await.expect("lookup task"), Err(DhtError::Cancelled));
     }
 

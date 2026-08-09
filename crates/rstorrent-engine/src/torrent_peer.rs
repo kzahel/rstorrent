@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use rstorrent_protocol::mse::MseMethod;
 use tokio_util::sync::CancellationToken;
 
+use crate::network::{AddressFamilyPolicy, AddressFamilyPolicyHandle};
 use crate::peer::{
     DialAttempt, DialCandidate, DialEligibility, PeerFailure, PeerObservation, PeerRecordId,
     PeerRegistry, PeerRegistryConfig, PeerRegistryCounts, PeerRegistryError, PeerRegistrySnapshot,
@@ -51,6 +52,7 @@ pub enum TorrentPeerError {
     Registry(PeerRegistryError),
     Runtime(PeerRuntimeError),
     Pex(PexError),
+    AddressFamilyDenied(SocketAddr),
     ConnectionIdentifierOverflow,
 }
 
@@ -60,6 +62,9 @@ impl fmt::Display for TorrentPeerError {
             Self::Registry(error) => write!(formatter, "peer registry: {error}"),
             Self::Runtime(error) => write!(formatter, "peer runtime: {error}"),
             Self::Pex(error) => write!(formatter, "peer exchange: {error}"),
+            Self::AddressFamilyDenied(address) => {
+                write!(formatter, "peer address family is disabled: {address}")
+            }
             Self::ConnectionIdentifierOverflow => {
                 formatter.write_str("peer connection identifier overflow")
             }
@@ -73,7 +78,7 @@ impl Error for TorrentPeerError {
             Self::Registry(error) => Some(error),
             Self::Runtime(error) => Some(error),
             Self::Pex(error) => Some(error),
-            Self::ConnectionIdentifierOverflow => None,
+            Self::AddressFamilyDenied(_) | Self::ConnectionIdentifierOverflow => None,
         }
     }
 }
@@ -325,6 +330,7 @@ struct TorrentPeerHandleInner {
     started_at: Instant,
     state: Mutex<TorrentPeerState>,
     connection_cancellations: Mutex<BTreeMap<ConnectionId, CancellationToken>>,
+    address_families: AddressFamilyPolicyHandle,
     sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
 }
 
@@ -347,6 +353,7 @@ impl TorrentPeerHandle {
                 started_at: Instant::now(),
                 state: Mutex::new(TorrentPeerState::new(config)?),
                 connection_cancellations: Mutex::new(BTreeMap::new()),
+                address_families: AddressFamilyPolicyHandle::default(),
                 sink: Mutex::new(sink),
             }),
         })
@@ -383,6 +390,9 @@ impl TorrentPeerHandle {
         role: PeerConnectionRole,
         mse_method: Option<MseMethod>,
     ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        if !self.address_family_policy().permits(remote_endpoint.ip()) {
+            return Err(TorrentPeerError::AddressFamilyDenied(remote_endpoint));
+        }
         let now = self.elapsed();
         let attachment = self.with_state(|state| {
             state.begin_incoming(TorrentIncomingStart {
@@ -460,6 +470,10 @@ impl TorrentPeerHandle {
         &self,
         observation: PeerObservation,
     ) -> Result<(), TorrentPeerError> {
+        let address = observation.endpoint().address();
+        if !self.address_family_policy().permits(address.ip()) {
+            return Err(TorrentPeerError::AddressFamilyDenied(address));
+        }
         let now = self.elapsed();
         self.with_state(|state| state.registry.observe(observation, now))?;
         self.publish(true, true)
@@ -469,6 +483,53 @@ impl TorrentPeerHandle {
         let removed = self.with_state(|state| state.registry.remove_source(source));
         self.publish(true, true)?;
         Ok(removed)
+    }
+
+    pub fn enforce_address_families(
+        &self,
+        policy: AddressFamilyPolicy,
+    ) -> Result<usize, TorrentPeerError> {
+        self.inner.address_families.replace(policy);
+        let connections = self.with_state(|state| {
+            state.pex.remove_disallowed(policy, &mut state.registry);
+            state.registry.remove_idle_disallowed(policy);
+            state
+                .runtime
+                .snapshot()
+                .into_iter()
+                .filter(|peer| !policy.permits(peer.endpoint.ip()))
+                .map(|peer| peer.connection_id)
+                .collect::<Vec<_>>()
+        });
+        let cancellations = self
+            .inner
+            .connection_cancellations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for connection in &connections {
+            if let Some(cancellation) = cancellations.get(connection) {
+                cancellation.cancel();
+            }
+        }
+        drop(cancellations);
+        self.publish(true, true)?;
+        Ok(connections.len())
+    }
+
+    pub fn address_families_converged(&self, policy: AddressFamilyPolicy) -> bool {
+        self.with_state(|state| {
+            !state.registry.has_disallowed(policy)
+                && state
+                    .runtime
+                    .snapshot()
+                    .iter()
+                    .all(|peer| policy.permits(peer.endpoint.ip()))
+        })
+    }
+
+    #[must_use]
+    pub fn address_family_policy(&self) -> AddressFamilyPolicy {
+        self.inner.address_families.load()
     }
 
     pub fn registry_snapshot(&self, active: bool) -> PeerRegistrySnapshot {
@@ -657,6 +718,7 @@ mod tests {
     use super::{
         TorrentIncomingStart, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
     };
+    use crate::AddressFamilyPolicy;
     use crate::peer::{
         PeerEndpoint, PeerObservation, PeerSelectionContext, PeerSelector, PeerSource,
     };
@@ -724,6 +786,75 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let handle = TorrentPeerHandle::new(sink.clone()).expect("handle");
         (handle, sink)
+    }
+
+    #[test]
+    fn ipv4_only_policy_rejects_every_ipv6_peer_source() {
+        let (handle, _) = handle();
+        handle
+            .enforce_address_families(AddressFamilyPolicy::ipv4_only())
+            .expect("apply IPv4-only policy");
+        let sources = [
+            PeerSource::Tracker,
+            PeerSource::PeerExchange,
+            PeerSource::Dht,
+            PeerSource::LocalDiscovery,
+            PeerSource::Incoming,
+            PeerSource::Manual,
+            PeerSource::MagnetHint,
+            PeerSource::Cache,
+        ];
+        for (index, source) in sources.into_iter().enumerate() {
+            let endpoint = PeerEndpoint::new(
+                format!("[2606:4700:4700::{:x}]:6881", index + 1)
+                    .parse()
+                    .expect("IPv6 address"),
+            )
+            .expect("eligible peer endpoint");
+            assert!(matches!(
+                handle.observe_discovered_peer(PeerObservation::dialable(endpoint, source)),
+                Err(TorrentPeerError::AddressFamilyDenied(_))
+            ));
+        }
+        assert!(handle.registry_snapshot(true).records.is_empty());
+    }
+
+    #[test]
+    fn disabling_ipv6_cancels_an_active_connection_before_convergence() {
+        let (handle, _) = handle();
+        let attachment = handle
+            .begin_incoming(
+                "[2606:4700:4700::1111]:51413".parse().expect("remote"),
+                "[2606:4700:4700::2222]:6881".parse().expect("local"),
+                *b"-LTTEST-000000000000",
+                true,
+                PeerConnectionRole::Content,
+            )
+            .expect("incoming IPv6 peer");
+        handle
+            .incoming_handshake_completed(attachment, *b"-RS0001-LOCALPEER001")
+            .expect("complete IPv6 handshake");
+        let cancellation = CancellationToken::new();
+        handle.register_connection_cancellation(attachment.connection_id(), cancellation.clone());
+
+        assert_eq!(
+            handle
+                .enforce_address_families(AddressFamilyPolicy::ipv4_only())
+                .expect("disable IPv6"),
+            1
+        );
+        assert!(cancellation.is_cancelled());
+        assert!(!handle.address_families_converged(AddressFamilyPolicy::ipv4_only()));
+        handle
+            .begin_incoming_disconnect(attachment, None)
+            .expect("begin IPv6 peer retirement");
+        handle
+            .remove_incoming(attachment, None)
+            .expect("retire IPv6 peer");
+        handle
+            .enforce_address_families(AddressFamilyPolicy::ipv4_only())
+            .expect("remove retired IPv6 candidate");
+        assert!(handle.address_families_converged(AddressFamilyPolicy::ipv4_only()));
     }
 
     #[test]

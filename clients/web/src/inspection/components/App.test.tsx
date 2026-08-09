@@ -1721,9 +1721,7 @@ describe("inspection application", () => {
     });
     expect(connectionTab).toBeVisible();
     await user.click(connectionTab);
-    expect(
-      within(dialog).getByText(/all IPv4 network interfaces/i),
-    ).toBeVisible();
+    expect(within(dialog).getByText(/use IPv4 and, when available, IPv6/i)).toBeVisible();
     expect(
       within(dialog).getByRole("radio", { name: /^Automatic port/ }),
     ).toBeChecked();
@@ -1772,6 +1770,9 @@ describe("inspection application", () => {
         name: /Map incoming TCP with UPnP/,
       }),
     );
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Enable IPv6/ }),
+    );
     expect(
       within(dialog).getByText(/keeps interested peers choked/i),
     ).toBeVisible();
@@ -1792,6 +1793,7 @@ describe("inspection application", () => {
           peer_connection_limit: 2000,
           upload_slots: 0,
           encryption: "prefer",
+          ipv6_enabled: false,
           tracker_https_server_authentication: "disabled",
         },
       }),
@@ -1814,6 +1816,7 @@ describe("inspection application", () => {
         peer_connection_limit: 2000,
         upload_slots: 0,
         encryption: "prefer",
+        ipv6_enabled: false,
         tracker_https_server_authentication: "system_trust",
       },
       effective_encryption: "prefer",
@@ -1855,6 +1858,7 @@ describe("inspection application", () => {
       peer_connection_limit: 200,
       upload_slots: 8,
       encryption: "allow" as const,
+      ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
     };
     const application = new RecordingLiveApplication({
@@ -1871,6 +1875,7 @@ describe("inspection application", () => {
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
           effective_encryption: "allow",
+          effective_ipv6_enabled: true,
           effective_tracker_https_server_authentication: "system_trust",
           transport_application: {
             type: "degraded",
@@ -1881,6 +1886,7 @@ describe("inspection application", () => {
           peer_connections_application: { type: "applied" },
           upload_slots_application: { type: "applied" },
           encryption_application: { type: "applied" },
+          ipv6_application: { type: "applied" },
           tracker_https_authentication_application: { type: "applied" },
           listener_status: {
             type: "bind_failed",
@@ -1899,6 +1905,7 @@ describe("inspection application", () => {
             generation: "1",
             reason: "listener_bind_failed",
           },
+          transport_families: [],
         },
       },
     });
