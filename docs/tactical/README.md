@@ -581,7 +581,11 @@ that scope and its cleanup or compatibility rules explicitly.
 - [`121-deterministic-utp-loss-congestion-and-mtu.md`](121-deterministic-utp-loss-congestion-and-mtu.md):
   complete runtime-free uTP receive-credit, packetization, recovery, RFC 6817
   congestion/pacing, path-MTU, and deterministic impaired-link tactical;
-  awaiting the required review before shared-UDP/runtime work.
+  its required review accepted Stage 3 recommendation A.
+- [`125-shared-udp-utp-runtime-and-loopback-interop.md`](125-shared-udp-utp-runtime-and-loopback-interop.md):
+  active bounded shared-UDP classification, supervised uTP runtime, ordered
+  peer-stream, generation replacement, and forced-uTP pinned-libtorrent
+  loopback interoperability tactical in both roles.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

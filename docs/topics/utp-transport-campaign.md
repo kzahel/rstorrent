@@ -5,10 +5,12 @@ Topic: `utp-transport-campaign`
 Status: Stage 0 Tactical
 [`118`](../tactical/118-utp-implementation-decision-spike.md) and Stage 1
 Tactical [`119`](../tactical/119-deterministic-utp-transport-core.md) are
-complete. Human review selected recommendation A, and deterministic Stage 2
-Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md)
-has reached its stopping condition. The required pre-runtime human review is
-active. uTP remains **Unsupported** and no runtime transport or dependency is
+complete. Human review selected recommendation A for deterministic Stage 2
+Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md),
+then selected Stage 3 recommendation A at its stopping condition. Active
+Tactical [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
+owns bounded shared-UDP/runtime and two-role loopback interoperability. uTP
+remains **Unsupported** and no product transport policy or dependency is
 accepted.
 
 ## Scope And Ownership
@@ -411,12 +413,12 @@ accepted tactical.
 
 ## Restart Checkpoint
 
-Campaign state: **Stage 0 Tactical `118` and deterministic Stage 1 Tactical
-`119` complete; deterministic Stage 2 Tactical `121` complete at its required
-human checkpoint; no uTP runtime accepted**.
+Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
+`119`, and deterministic Stage 2 Tactical `121` complete; human review
+accepted Stage 3 recommendation A; Tactical `125` is active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is to
-stop for the Stage 2 human decision above. Recommendation A is the first slice
-that can establish a real RSTorrent uTP runtime and independent loopback
-interoperability, but it does not begin before that review.
+[`capability-readiness.md`](capability-readiness.md). The next executable
+action is Tactical `125`'s staged session-UDP classification and supervised
+runtime work. Stop again after its forced-uTP pinned-libtorrent transfers in
+both roles; no WAN, product policy, dependency, or support claim is implied.

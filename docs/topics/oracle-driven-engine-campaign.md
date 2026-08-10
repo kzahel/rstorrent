@@ -344,8 +344,8 @@ Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
-Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 2
-human review is the current decision checkpoint**.
+Tactical `124` completed incomplete-torrent duplex correctness; human review
+accepted uTP Stage 3 recommendation A and Tactical `125` is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -373,15 +373,17 @@ truthful active-route tracker/DHT advertisement, failure retraction, and
 joined lifecycle/publication fencing pass. Controlled RSTorrent and pinned-
 libtorrent ordinary/Fast/MSE interoperability plus API 34 SAF partial restart,
 provider repair, duplex exchange, resource, and cleanup gates pass.
-Tactical `121`'s completed runtime-free state is now at its Stage 2 human
-review; no uTP runtime work is implied.
+Tactical `121`'s completed runtime-free state is the input to active Tactical
+`125`; its separately accepted scope owns bounded shared-UDP/runtime and
+two-role loopback interoperability without implying WAN or product policy.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: obtain the Stage 2 human decision recorded in
-[`utp-transport-campaign.md`](utp-transport-campaign.md); do not infer uTP
-runtime authorization from this checkpoint.
+Next executable action: execute Tactical `125`'s staged session-UDP
+classification, supervised runtime, ordered peer-stream, and forced-uTP
+pinned-libtorrent loopback gates. Stop after the two-role verdict; do not infer
+WAN, dependency, product-policy, MSE-over-uTP, or support-claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

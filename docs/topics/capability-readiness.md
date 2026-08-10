@@ -291,11 +291,14 @@ added.
 
 ### Now
 
-- The uTP Stage 2 human-review checkpoint in Tactical
-  [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) is the
-  single authoritative decision point. Every runtime-free threshold passes;
-  no shared-UDP/runtime integration is authorized until that review accepts a
-  separately bounded Stage 3 tactical.
+- Tactical
+  [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) is
+  the single authoritative implementation slice. Human review accepted Stage
+  3 recommendation A: bounded shared-UDP classification, supervised runtime
+  ownership, one ordered peer-stream boundary, socket-generation fencing, and
+  forced-uTP pinned-libtorrent loopback transfers in both roles. It excludes
+  WAN, product policy, dependencies, mapping/pinhole work, MSE over uTP, and a
+  support claim.
 
 ### Next
 
@@ -319,8 +322,9 @@ listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
 the live gateway returned typed `606` to `AddPinhole`.
 The uTP topic records the adaptive campaign. Tacticals `118`, `119`, and `121`
-are complete, and the Stage 2 result is waiting at its required pre-runtime
-human checkpoint; uTP remains unsupported.
+are complete, human review accepted Stage 3 recommendation A, and Tactical
+`125` owns the first bounded runtime plus independent loopback exchange; uTP
+remains unsupported.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
