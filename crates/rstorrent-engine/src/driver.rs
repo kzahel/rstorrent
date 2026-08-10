@@ -41,7 +41,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
-use crate::active_seed_content::ActiveSeedContent;
+use crate::active_seed_content::{ActiveSeedContent, ActiveUploadFailureSignal};
 use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
 use crate::incoming::{
@@ -4027,6 +4027,7 @@ struct ContentSwarmDownload<'a> {
     completed_storage: Option<ContentStorage>,
     availability: PieceAvailability,
     active_content: ActiveSeedContent,
+    active_upload_failure: ActiveUploadFailureSignal,
     active_registration: Option<(IncomingPeerHandle, SeedRegistrationToken)>,
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
@@ -4194,12 +4195,14 @@ impl<'a> ContentSwarmDownload<'a> {
             availability.clone(),
             storage_pipeline.active_upload_planner(),
         );
+        let active_upload_failure = active_content.failure_signal();
         Ok(Self {
             state,
             storage_pipeline: Some(storage_pipeline),
             completed_storage: None,
             availability,
             active_content,
+            active_upload_failure,
             active_registration: None,
             outgoing_uploads: BTreeMap::new(),
             incoming_content: BTreeMap::new(),
@@ -5475,8 +5478,27 @@ struct ContentSupervisorWait<'a> {
     storage_backpressured: bool,
     until_expiry: Option<Duration>,
     cancellation: &'a CancellationToken,
+    active_upload_failure: &'a ActiveUploadFailureSignal,
     selection_updates: &'a mut watch::Receiver<Option<FileSelectionUpdate>>,
     priority: ContentSupervisorOwner,
+}
+
+async fn content_shutdown(
+    cancellation: &CancellationToken,
+    active_upload_failure: &ActiveUploadFailureSignal,
+) -> DownloadError {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => DownloadError::Cancelled,
+        _ = active_upload_failure.cancelled() => {
+            active_upload_failure.take_failure().map_or_else(
+                || DownloadError::StorageTask(
+                    "active upload storage route failed".to_owned()
+                ),
+                |(_, error)| DownloadError::SelectiveStorage(error),
+            )
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5518,6 +5540,7 @@ async fn next_content_supervisor_event(
         storage_backpressured,
         until_expiry,
         cancellation,
+        active_upload_failure,
         selection_updates,
         priority,
     } = wait;
@@ -5539,7 +5562,7 @@ async fn next_content_supervisor_event(
         return match priority {
             ContentSupervisorOwner::Storage => tokio::select! {
                 biased;
-                _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+                error = content_shutdown(cancellation, active_upload_failure) => Err(error),
                 completion = storage.next_completion() => {
                     completion.map(ContentSupervisorEvent::Storage)
                 }
@@ -5552,7 +5575,7 @@ async fn next_content_supervisor_event(
             },
             ContentSupervisorOwner::Peer | ContentSupervisorOwner::Discovery => tokio::select! {
                 biased;
-                _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+                error = content_shutdown(cancellation, active_upload_failure) => Err(error),
                 event = discovery.next_event(), if discovery.is_active() => {
                     Ok(ContentSupervisorEvent::Discovery(event))
                 }
@@ -5569,7 +5592,7 @@ async fn next_content_supervisor_event(
     match priority {
         ContentSupervisorOwner::Storage => tokio::select! {
             biased;
-            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            error = content_shutdown(cancellation, active_upload_failure) => Err(error),
             completion = storage.next_completion() => {
                 completion.map(ContentSupervisorEvent::Storage)
             }
@@ -5593,7 +5616,7 @@ async fn next_content_supervisor_event(
         },
         ContentSupervisorOwner::Peer => tokio::select! {
             biased;
-            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            error = content_shutdown(cancellation, active_upload_failure) => Err(error),
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
@@ -5617,7 +5640,7 @@ async fn next_content_supervisor_event(
         },
         ContentSupervisorOwner::Discovery => tokio::select! {
             biased;
-            _ = cancellation.cancelled() => Err(DownloadError::Cancelled),
+            error = content_shutdown(cancellation, active_upload_failure) => Err(error),
             event = discovery.next_event(), if discovery.is_active() => {
                 Ok(ContentSupervisorEvent::Discovery(event))
             }
@@ -5861,6 +5884,7 @@ async fn run_selective_swarm_loop(
         let until_expiry =
             (!storage_backpressured).then(|| next_maintenance_at.saturating_sub(peers.elapsed()));
         let cancellation = peers.control.cancellation_token();
+        let active_upload_failure = download.active_upload_failure.clone();
         let event = {
             let storage = download.storage_pipeline_mut()?;
             next_content_supervisor_event(
@@ -5872,6 +5896,7 @@ async fn run_selective_swarm_loop(
                     storage_backpressured,
                     until_expiry,
                     cancellation: &cancellation,
+                    active_upload_failure: &active_upload_failure,
                     selection_updates: &mut selection_updates,
                     priority: next_owner,
                 },
@@ -6234,11 +6259,11 @@ async fn download_content_swarm<'a>(
     };
     let failure = result.as_ref().err().and_then(content_peer_failure);
     peers.peers.remove_incoming_content_route(incoming_route);
+    let registration_cleanup = download.unregister_active_route().await;
     let discovery_cleanup = discovery.shutdown().await;
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
     download.shutdown_incoming_content(&peers.peers);
-    let registration_cleanup = download.unregister_active_route().await;
     download.shutdown_outgoing_uploads().await;
     let connection_cleanup = match (discovery_cleanup, peer_cleanup) {
         (Ok(()), Ok(())) => Ok(()),

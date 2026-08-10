@@ -102,8 +102,10 @@ currently readable route epoch used by active storage. Outgoing and accepted
 loopback peers have each exchanged complementary pieces in both directions
 before completion; request admission and read serialization revalidate the
 availability epoch, and incoming contributors share the existing integrity
-reputation. Lifecycle/adversarial, controlled interoperability, and Android
-evidence remain open in that tactical.
+reputation. A current-epoch upload observation/read failure now clears the
+advertised epoch before stopping the generation, while pause, force recheck,
+archive, removal, and publication prove joined route replacement. Controlled
+interoperability and Android evidence remain open in that tactical.
 
 ## Scope
 

@@ -288,9 +288,10 @@ added.
   selective-storage upload reads, initiated-socket duplex upload, and
   accepted-socket duplex transfer have landed in bounded checkpoints. Tracker
   and public DHT advertisement now follow the actual active incoming route
-  independently of completion. Lifecycle/adversarial fences, controlled
-  interoperability, Android parity, and final evidence reconciliation remain
-  before completion.
+  independently of completion. Active read failure now retracts its route, and
+  pause/recheck/archive/removal/publication fences close old connection
+  generations. Controlled interoperability, Android parity, and final evidence
+  reconciliation remain before completion.
 
 ### Next
 

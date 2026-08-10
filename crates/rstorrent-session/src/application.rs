@@ -5674,11 +5674,107 @@ mod tests {
         connect_application_seed_with_extensions(service, info_hash, peer_id, false).await
     }
 
+    async fn connect_application_active(
+        service: &ApplicationService,
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
+    ) -> tokio::net::TcpStream {
+        let address = service
+            .incoming_peer_snapshot()
+            .expect("incoming service enabled")
+            .listen_address;
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect application active route");
+        stream
+            .write_all(&encode_handshake(info_hash, peer_id))
+            .await
+            .expect("send active-route handshake");
+        let mut handshake = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut handshake)
+            .await
+            .expect("read active-route handshake");
+        decode_handshake(&handshake, info_hash).expect("valid active-route handshake");
+        stream
+    }
+
+    async fn wait_for_active_route(service: &ApplicationService, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snapshot = service
+                    .incoming_peer_snapshot()
+                    .expect("incoming service remains active");
+                if snapshot.registrations == expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("active route registration did not converge");
+    }
+
+    async fn wait_for_incoming_established(service: &ApplicationService, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snapshot = service
+                    .incoming_peer_snapshot()
+                    .expect("incoming service remains active");
+                if snapshot.established == expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("incoming peer count did not converge");
+    }
+
+    async fn wait_for_incoming_close(stream: &mut tokio::net::TcpStream, label: &str) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut tail = [0; 128];
+            loop {
+                if stream
+                    .read(&mut tail)
+                    .await
+                    .expect("observe active incoming close")
+                    == 0
+                {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{label} did not join the active incoming peer"));
+    }
+
     async fn connect_application_seed_with_extensions(
         service: &ApplicationService,
         info_hash: [u8; 20],
         peer_id: [u8; 20],
         supports_extensions: bool,
+    ) -> (
+        tokio::net::TcpStream,
+        FrameDecoder,
+        std::collections::VecDeque<PeerMessage>,
+    ) {
+        connect_application_seed_with_expected_availability(
+            service,
+            info_hash,
+            peer_id,
+            supports_extensions,
+            vec![0b1100_0000],
+        )
+        .await
+    }
+
+    async fn connect_application_seed_with_expected_availability(
+        service: &ApplicationService,
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
+        supports_extensions: bool,
+        expected_bitfield: Vec<u8>,
     ) -> (
         tokio::net::TcpStream,
         FrameDecoder,
@@ -5711,7 +5807,7 @@ mod tests {
         let mut pending = std::collections::VecDeque::new();
         assert_eq!(
             read_peer_message(&mut stream, &mut decoder, &mut pending).await,
-            PeerMessage::Bitfield(vec![0b1100_0000])
+            PeerMessage::Bitfield(expected_bitfield)
         );
         if supports_extensions {
             assert!(matches!(
@@ -6947,6 +7043,12 @@ mod tests {
         })
         .await;
         assert!(service.active_download().is_some());
+        let active_control = service
+            .active_download()
+            .expect("active tracker transfer")
+            .1
+            .control
+            .clone();
         let live_port_parameter = format!("&port={live_port}&");
         let routed_announce = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -7015,6 +7117,57 @@ mod tests {
             }
         };
         assert_eq!(snapshot.torrents[0].verified_piece_count, 1);
+        assert!(!active_control.incoming_content_routable());
+        assert!(service.active_download().is_none());
+        wait_for_active_route(&service, 1).await;
+        let (mut published_peer, mut published_decoder, mut published_pending) =
+            connect_application_seed_with_expected_availability(
+                &service,
+                info_hash,
+                *b"-RS-PUBLICATION-0000",
+                false,
+                vec![0b1000_0000],
+            )
+            .await;
+        published_peer
+            .write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
+            .await
+            .expect("send publication interest");
+        assert_eq!(
+            read_peer_message(
+                &mut published_peer,
+                &mut published_decoder,
+                &mut published_pending,
+            )
+            .await,
+            PeerMessage::Unchoke
+        );
+        published_peer
+            .write_all(
+                &encode_message(&PeerMessage::Request(
+                    rstorrent_protocol::peer_wire::BlockRequest {
+                        index: 0,
+                        begin: 0,
+                        length: u32::try_from(payload.len()).expect("published request length"),
+                    },
+                ))
+                .expect("encode published request"),
+            )
+            .await
+            .expect("request published payload");
+        assert_eq!(
+            read_peer_message(
+                &mut published_peer,
+                &mut published_decoder,
+                &mut published_pending,
+            )
+            .await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: payload.clone(),
+            }
+        );
         let summary = service
             .subscribe(SubscriptionSpec {
                 selector: crate::ViewSelector::Torrent {
@@ -7059,6 +7212,7 @@ mod tests {
             }
         );
 
+        drop(published_peer);
         service.shutdown().await.expect("shutdown application");
         drop(service);
         peer_task.await.expect("IPv6 peer task");
@@ -9356,6 +9510,13 @@ mod tests {
     async fn pause_joins_content_peer_before_view_set_removal() {
         let root = test_root("pause-peer-cleanup");
         let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                ..ClientSettings::default()
+            },
+        );
         let payload = b"view";
         let mut raw_info =
             b"d5:filesld6:lengthi4e4:pathl4:testeee4:name4:root12:piece lengthi4e6:pieces20:"
@@ -9368,27 +9529,40 @@ mod tests {
             .await
             .expect("bind paused content peer");
         let address = listener.local_addr().expect("content peer address");
+        let (closed_sender, mut closed_receiver) = tokio::sync::mpsc::unbounded_channel();
         let peer_task = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.expect("accept content peer");
-            let mut handshake = [0; HANDSHAKE_LENGTH];
-            stream
-                .read_exact(&mut handshake)
-                .await
-                .expect("read content handshake");
-            decode_handshake(&handshake, info_hash).expect("content handshake identity");
-            stream
-                .write_all(&encode_handshake(info_hash, *b"-RS-APP-PAUSE-000000"))
-                .await
-                .expect("send content handshake");
-            stream
-                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0x80])).expect("bitfield"))
-                .await
-                .expect("send content bitfield");
-            let mut buffer = [0; 128];
-            loop {
-                if stream.read(&mut buffer).await.expect("wait for pause") == 0 {
-                    break;
+            for generation in 0..4 {
+                let (mut stream, _) = listener.accept().await.expect("accept content peer");
+                let mut handshake = [0; HANDSHAKE_LENGTH];
+                stream
+                    .read_exact(&mut handshake)
+                    .await
+                    .expect("read content handshake");
+                decode_handshake(&handshake, info_hash).expect("content handshake identity");
+                stream
+                    .write_all(&encode_handshake(info_hash, *b"-RS-APP-PAUSE-000000"))
+                    .await
+                    .expect("send content handshake");
+                stream
+                    .write_all(
+                        &encode_message(&PeerMessage::Bitfield(vec![0x80])).expect("bitfield"),
+                    )
+                    .await
+                    .expect("send content bitfield");
+                let mut buffer = [0; 128];
+                loop {
+                    if stream
+                        .read(&mut buffer)
+                        .await
+                        .expect("wait for lifecycle fence")
+                        == 0
+                    {
+                        break;
+                    }
                 }
+                closed_sender
+                    .send(generation)
+                    .expect("report closed content generation");
             }
         });
 
@@ -9421,6 +9595,17 @@ mod tests {
         let mut service = ApplicationService::open(configuration)
             .await
             .expect("open content service");
+        wait_for_active_route(&service, 1).await;
+        let active_control = service
+            .active_download()
+            .expect("active content generation")
+            .1
+            .control
+            .clone();
+        assert!(active_control.incoming_content_routable());
+        let mut incoming_peer =
+            connect_application_active(&service, info_hash, *b"-RS-ACTIVE-PAUSE-000").await;
+        wait_for_incoming_established(&service, 1).await;
         let owner = ViewSetOwner::trusted("pause-peer-owner");
         let opened = service
             .open_view_set(
@@ -9511,10 +9696,19 @@ mod tests {
             panic!("pause should succeed");
         };
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
-        tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
-            .await
-            .expect("content peer did not close before pause receipt")
-            .expect("content peer task");
+        wait_for_incoming_close(&mut incoming_peer, "pause").await;
+        assert!(!active_control.incoming_content_routable());
+        let incoming_terminal = service
+            .incoming_peer_snapshot()
+            .expect("incoming listener remains active");
+        assert_eq!(incoming_terminal.registrations, 0);
+        assert_eq!(incoming_terminal.established, 0);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), closed_receiver.recv())
+                .await
+                .expect("content peer did not close before pause receipt"),
+            Some(0)
+        );
 
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             let mut removed = false;
@@ -9555,6 +9749,129 @@ mod tests {
         })
         .await
         .expect("pause did not publish terminal peer views");
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "resume-content-lifecycle".to_owned(),
+                expected_revision: None,
+                command: Command::Resume {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("resume active content");
+        wait_for_active_route(&service, 1).await;
+        let recheck_control = service
+            .active_download()
+            .expect("resumed content generation")
+            .1
+            .control
+            .clone();
+        assert!(recheck_control.incoming_content_routable());
+        let mut recheck_peer =
+            connect_application_active(&service, info_hash, *b"-RS-ACTIVE-RECHECK-0").await;
+        wait_for_incoming_established(&service, 1).await;
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "force-recheck-active-content".to_owned(),
+                expected_revision: None,
+                command: Command::ForceRecheck {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("force recheck active content");
+        wait_for_incoming_close(&mut recheck_peer, "force recheck").await;
+        assert!(!recheck_control.incoming_content_routable());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), closed_receiver.recv())
+                .await
+                .expect("rechecked content peer did not close"),
+            Some(1)
+        );
+
+        wait_for_active_route(&service, 1).await;
+        let archive_control = service
+            .active_download()
+            .expect("rechecked content generation")
+            .1
+            .control
+            .clone();
+        assert!(archive_control.incoming_content_routable());
+        let mut archive_peer =
+            connect_application_active(&service, info_hash, *b"-RS-ACTIVE-ARCHIVE-0").await;
+        wait_for_incoming_established(&service, 1).await;
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "archive-active-content".to_owned(),
+                expected_revision: None,
+                command: Command::Archive {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("archive active content");
+        wait_for_incoming_close(&mut archive_peer, "archive").await;
+        assert!(!archive_control.incoming_content_routable());
+        wait_for_active_route(&service, 0).await;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), closed_receiver.recv())
+                .await
+                .expect("archived content peer did not close"),
+            Some(2)
+        );
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "restore-active-content".to_owned(),
+                expected_revision: None,
+                command: Command::RestoreArchive {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("restore active content");
+        wait_for_active_route(&service, 1).await;
+        let removal_control = service
+            .active_download()
+            .expect("restored content generation")
+            .1
+            .control
+            .clone();
+        assert!(removal_control.incoming_content_routable());
+        let mut removal_peer =
+            connect_application_active(&service, info_hash, *b"-RS-ACTIVE-REMOVE-00").await;
+        wait_for_incoming_established(&service, 1).await;
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "remove-active-content".to_owned(),
+                expected_revision: None,
+                command: Command::RemoveTorrent {
+                    torrent_id: torrent_id.clone(),
+                    data: RemovalDataPolicy::Keep,
+                },
+            })
+            .await
+            .expect("remove active content");
+        wait_for_incoming_close(&mut removal_peer, "removal").await;
+        assert!(!removal_control.incoming_content_routable());
+        wait_for_active_route(&service, 0).await;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), closed_receiver.recv())
+                .await
+                .expect("removed content peer did not close"),
+            Some(3)
+        );
+        tokio::time::timeout(Duration::from_secs(1), peer_task)
+            .await
+            .expect("content lifecycle generations did not join")
+            .expect("content lifecycle peer task");
+        assert!(!service.torrent_runtimes.contains_key(&torrent_id));
 
         service.shutdown().await.expect("shutdown");
         drop(service);

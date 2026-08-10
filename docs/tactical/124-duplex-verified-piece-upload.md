@@ -8,8 +8,9 @@ generation-stamped active selective-storage read plans across staging,
 retained, part-file, cross-file, and padding routes. Outgoing and accepted TCP
 content sockets now both carry duplex payload through the same swarm and
 upload owners. Tracker/DHT advertisement now follows actual active-route
-routability independently from completion. Lifecycle/adversarial,
-interoperability, and Android gates remain in progress. This
+routability independently from completion. Read-failure retraction and the
+pause/recheck/archive/removal/publication lifecycle fences have landed.
+Controlled interoperability and Android gates remain in progress. This
 very-high-priority correctness repair ranks ahead of finite bandwidth controls
 and seeding-goal policy.
 
@@ -736,6 +737,39 @@ cargo test -p rstorrent-engine \
 cargo test -p rstorrent-session \
   http_tracker_only_peers6_completes_hash_verified_application_transfer
 cargo clippy -p rstorrent-engine -p rstorrent-session -- -D warnings
+```
+
+### Lifecycle, read-failure, and publication fences
+
+- An active upload plan or execution failure that still belongs to the current
+  readable epoch atomically replaces it with an empty epoch before returning
+  the failed read. Every informed connection therefore observes an epoch
+  replacement and closes; no later request can reserve the stale route.
+- The first failure retains its typed `SelectiveStorageError` for the content
+  supervisor. The driver stops the torrent generation and the application can
+  continue using its established awaiting-storage versus repair policy rather
+  than collapsing the condition into an untyped peer failure.
+- Content cleanup now removes the active listener registration before joining
+  outgoing sockets. Pause, force recheck, archive, and removal each prove that
+  an accepted active socket closes before the command receipt returns, the old
+  control reports non-routable, the outgoing generation joins, and the
+  listener registry either reaches zero or contains only the new generation.
+- Completion proves the explicit namespace fence: the old active control is
+  non-routable and absent before the published registration serves the exact
+  hash-verified payload through a fresh connection. No staging/published
+  socket generation is shared.
+
+Validation at this checkpoint:
+
+```text
+cargo test -p rstorrent-engine \
+  active_upload_read_failure_retracts_route_and_stops_generation --lib
+cargo test -p rstorrent-engine \
+  incoming::tests::active_incomplete_registration_serves_verified_piece_and_later_have --lib
+cargo test -p rstorrent-session \
+  pause_joins_content_peer_before_view_set_removal --lib
+cargo test -p rstorrent-session \
+  http_tracker_only_peers6_completes_hash_verified_application_transfer --lib
 ```
 
 ### Live active route and outgoing duplex upload

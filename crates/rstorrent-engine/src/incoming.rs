@@ -4519,11 +4519,14 @@ mod tests {
             .await
             .expect("create active root");
         let output = root.join("seed.bin");
+        let staging =
+            crate::selective_storage::selective_staging_path(&output).expect("active staging path");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("active selection");
-        let mut storage = SelectiveStorage::create(output, &metainfo, layout.clone(), selection)
-            .await
-            .expect("create active storage");
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection)
+                .await
+                .expect("create active storage");
         storage
             .write_block(0, 0, b"abcd".to_vec())
             .await
@@ -4556,6 +4559,7 @@ mod tests {
             availability.clone(),
             plans,
         );
+        let failure = content.failure_signal();
         let torrent_peers = TorrentPeerHandle::new(Arc::new(TestPeerActivity::default()))
             .expect("active peer state");
         let registration =
@@ -4615,6 +4619,43 @@ mod tests {
             next_message(&mut stream, &mut decoder, &mut queued).await,
             PeerMessage::Have(1)
         );
+
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&staging)
+            .await
+            .expect("open active payload for truncation");
+        send(
+            &mut stream,
+            &PeerMessage::Request(BlockRequest {
+                index: 0,
+                begin: 0,
+                length: 4,
+            }),
+        )
+        .await;
+        timeout(Duration::from_secs(2), failure.cancelled())
+            .await
+            .expect("active upload failure signal");
+        let retracted = availability.snapshot();
+        assert_eq!(retracted.epoch, route_epoch + 1);
+        assert_eq!(retracted.available_count, 0);
+        let (piece, error) = failure
+            .take_failure()
+            .expect("active upload failure detail");
+        assert_eq!(piece, 0);
+        assert!(error.to_string().contains("length"));
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if service.snapshot().established == 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("failed active route peers joined");
 
         assert!(handle.unregister(token).await.expect("unregister active"));
         drop(handle);

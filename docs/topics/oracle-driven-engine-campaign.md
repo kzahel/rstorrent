@@ -368,9 +368,10 @@ claim.
 Current milestone: complete Tactical `124`'s verified-piece upload during
 download. Compact availability/read authority, active initiated/accepted TCP
 duplex transfer, and truthful active-route tracker/DHT advertisement have
-landed. Lifecycle/adversarial fencing, controlled RSTorrent and pinned-
-libtorrent interoperability, Android parity, and final evidence reconciliation
-remain. Tactical `121`'s completed runtime-free state remains ready for its
+landed. Active-read failure and pause/recheck/archive/removal/publication
+fencing have also landed. Controlled RSTorrent and pinned-libtorrent
+interoperability, Android parity, and final evidence reconciliation remain.
+Tactical `121`'s completed runtime-free state remains ready for its
 Stage 2 human review afterward; no uTP runtime work is implied.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a

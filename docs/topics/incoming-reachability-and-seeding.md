@@ -28,8 +28,10 @@ existing bounded upload owner, and carry payload in both directions over
 initiated and accepted TCP sockets before completion. Discovery now consumes
 an actual active-route `incoming_routable` fact: trackers correct to the
 eligible listener port with nonzero `left`, while verified-public DHT announces
-only on families with a real TCP endpoint. Controlled pinned-libtorrent,
-lifecycle/adversarial, and Android gates remain before Tactical `124`
+only on families with a real TCP endpoint. Typed active-read failure retracts
+the advertised epoch and route, and serialized pause/recheck/archive/removal
+plus publication handoff close old listener generations before returning.
+Controlled pinned-libtorrent and Android gates remain before Tactical `124`
 completion.
 
 Tactical

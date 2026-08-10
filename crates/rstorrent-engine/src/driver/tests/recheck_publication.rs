@@ -1020,6 +1020,179 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
 }
 
 #[tokio::test]
+async fn active_upload_read_failure_retracts_route_and_stops_generation() {
+    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+        .map(|index| ((index * 67 + index / 31) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("read-failure metainfo");
+    let root = test_path("active-upload-read-failure");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create read-failure storage root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("read-failure paths");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).expect("read-failure selection");
+    let mut storage =
+        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout, selection)
+            .await
+            .expect("create read-failure staging");
+    storage
+        .write_block(0, 0, payload[..MIN_PAYLOAD_ALLOWANCE].to_vec())
+        .await
+        .expect("stage verified read-failure piece");
+    storage
+        .sync_piece(0)
+        .await
+        .expect("sync verified read-failure piece");
+    drop(storage);
+
+    let idle_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind read-failure idle peer");
+    let idle_address = idle_listener.local_addr().expect("idle peer address");
+    let idle_task = tokio::spawn(serve_permanently_choked_peer(
+        idle_listener,
+        metainfo.info_hash,
+        vec![0],
+    ));
+    let peer_budget = PeerBudget::system_default();
+    let mse_dh = crate::MseDhWorkOwner::new();
+    let service = IncomingPeerService::bind(
+        IncomingPeerServiceConfig::new(IncomingTcpBootstrap::AutomaticLoopback)
+            .with_peer_budget(peer_budget.clone())
+            .with_mse_dh(mse_dh.clone()),
+    )
+    .await
+    .expect("bind read-failure incoming service")
+    .expect("read-failure service enabled");
+    let control = DownloadControl::new();
+    control.set_incoming_peer_handle(service.handle());
+    let torrent_peers =
+        TorrentPeerHandle::new(Arc::new(control.clone())).expect("read-failure peer state");
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let download_task = tokio::spawn(resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(3)),
+            peer_budget,
+            mse_dh,
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: Some(torrent_peers),
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![true, false],
+            artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
+            download_missing: true,
+            dht: None,
+            udp_trackers: None,
+        },
+        checkpoints,
+        control.clone(),
+    ));
+
+    timeout(Duration::from_secs(3), async {
+        loop {
+            if service.snapshot().registrations == 1 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("active read-failure registration");
+    assert!(control.incoming_content_routable());
+
+    let mut stream = TcpStream::connect(service.listen_address())
+        .await
+        .expect("connect read-failure requester");
+    stream
+        .write_all(&encode_handshake(metainfo.info_hash, [73; 20]))
+        .await
+        .expect("send read-failure handshake");
+    let mut handshake = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake)
+        .await
+        .expect("read read-failure handshake");
+    decode_handshake(&handshake, metainfo.info_hash).expect("valid read-failure handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+    loop {
+        if next_peer_message(&mut peer)
+            .await
+            .expect("read initial active message")
+            == PeerMessage::Bitfield(vec![0b1000_0000])
+        {
+            break;
+        }
+    }
+    send_message(&mut peer, &PeerMessage::Interested)
+        .await
+        .expect("express read-failure interest");
+    loop {
+        if next_peer_message(&mut peer)
+            .await
+            .expect("read active unchoke")
+            == PeerMessage::Unchoke
+        {
+            break;
+        }
+    }
+    tokio::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&paths.staging)
+        .await
+        .expect("truncate active staging payload");
+    send_message(
+        &mut peer,
+        &PeerMessage::Request(rstorrent_protocol::peer_wire::BlockRequest {
+            index: 0,
+            begin: 0,
+            length: u32::try_from(MIN_PAYLOAD_ALLOWANCE).expect("request length"),
+        }),
+    )
+    .await
+    .expect("request truncated active piece");
+
+    let error = timeout(Duration::from_secs(5), download_task)
+        .await
+        .expect("read-failure generation stopped")
+        .expect("join read-failure generation")
+        .expect_err("active upload failure must stop the generation");
+    assert!(matches!(
+        error,
+        DownloadError::SelectiveStorage(SelectiveStorageError::UnexpectedFileLength {
+            file_index: 0,
+            actual: 0,
+            ..
+        })
+    ));
+    assert!(!control.incoming_content_routable());
+    assert_eq!(service.snapshot().registrations, 0);
+    drop(peer);
+    timeout(Duration::from_secs(2), idle_task)
+        .await
+        .expect("idle read-failure peer joined")
+        .expect("idle read-failure peer task");
+    let terminal = service
+        .shutdown()
+        .await
+        .expect("shutdown read-failure service");
+    assert_eq!(terminal.registrations, 0);
+    assert_eq!(terminal.established, 0);
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove read-failure fixture");
+}
+
+#[tokio::test]
 async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
     let payload = (0..(8 * MIN_PAYLOAD_ALLOWANCE))
         .map(|index| ((index * 37 + index / 19) & 0xff) as u8)

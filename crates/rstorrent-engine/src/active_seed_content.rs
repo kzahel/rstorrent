@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use rstorrent_protocol::peer_wire::BlockRequest;
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use crate::piece_availability::PieceAvailability;
 use crate::selective_storage::{SelectiveStorageError, SelectiveUploadReadPlan};
@@ -20,12 +21,66 @@ pub(crate) struct ActiveUploadPlanRequest {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ActiveUploadFailureSignal {
+    inner: Arc<ActiveUploadFailureState>,
+}
+
+#[derive(Debug)]
+struct ActiveUploadFailureState {
+    cancellation: CancellationToken,
+    failure: Mutex<Option<ActiveUploadFailure>>,
+}
+
+#[derive(Debug)]
+struct ActiveUploadFailure {
+    piece: u32,
+    error: SelectiveStorageError,
+}
+
+impl ActiveUploadFailureSignal {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(ActiveUploadFailureState {
+                cancellation: CancellationToken::new(),
+                failure: Mutex::new(None),
+            }),
+        }
+    }
+
+    fn report(&self, piece: u32, error: SelectiveStorageError) {
+        let mut failure = self
+            .inner
+            .failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if failure.is_none() {
+            *failure = Some(ActiveUploadFailure { piece, error });
+            self.inner.cancellation.cancel();
+        }
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        self.inner.cancellation.cancelled().await;
+    }
+
+    pub(crate) fn take_failure(&self) -> Option<(u32, SelectiveStorageError)> {
+        self.inner
+            .failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+            .map(|failure| (failure.piece, failure.error))
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ActiveSeedContent {
     info_hash: [u8; 20],
     private: bool,
     piece_lengths: Arc<[u32]>,
     availability: PieceAvailability,
     planner: Arc<Mutex<mpsc::Sender<ActiveUploadPlanRequest>>>,
+    failure: ActiveUploadFailureSignal,
 }
 
 impl ActiveSeedContent {
@@ -42,6 +97,7 @@ impl ActiveSeedContent {
             piece_lengths: piece_lengths.into(),
             availability,
             planner: Arc::new(Mutex::new(planner)),
+            failure: ActiveUploadFailureSignal::new(),
         }
     }
 
@@ -59,6 +115,10 @@ impl ActiveSeedContent {
 
     pub(crate) fn availability(&self) -> PieceAvailability {
         self.availability.clone()
+    }
+
+    pub(crate) fn failure_signal(&self) -> ActiveUploadFailureSignal {
+        self.failure.clone()
     }
 
     pub(crate) fn replace_planner(&self, planner: mpsc::Sender<ActiveUploadPlanRequest>) {
@@ -92,14 +152,47 @@ impl ActiveSeedContent {
             })
             .await
             .map_err(|_| ActiveSeedContentError::Closed)?;
-        let plan = completion
+        let plan = match completion
             .await
-            .map_err(|_| ActiveSeedContentError::Closed)??;
+            .map_err(|_| ActiveSeedContentError::Closed)?
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                return Err(self.classify_storage_failure(request.index, snapshot.epoch, error));
+            }
+        };
         let before_read = self.availability.snapshot();
         if before_read.epoch != snapshot.epoch || !before_read.is_available(piece) {
             return Err(ActiveSeedContentError::Unavailable);
         }
-        plan.execute().await.map_err(Into::into)
+        match plan.execute().await {
+            Ok(block) => Ok(block),
+            Err(error) => Err(self.classify_storage_failure(request.index, snapshot.epoch, error)),
+        }
+    }
+
+    fn classify_storage_failure(
+        &self,
+        piece: u32,
+        expected_epoch: u64,
+        error: SelectiveStorageError,
+    ) -> ActiveSeedContentError {
+        let piece_index = usize::try_from(piece).ok();
+        let current = self.availability.snapshot();
+        if current.epoch != expected_epoch
+            || !piece_index.is_some_and(|piece| current.is_available(piece))
+        {
+            return ActiveSeedContentError::Unavailable;
+        }
+        let detail: Arc<str> = error.to_string().into();
+        if self
+            .availability
+            .invalidate_epoch(expected_epoch)
+            .unwrap_or(true)
+        {
+            self.failure.report(piece, error);
+        }
+        ActiveSeedContentError::Storage(detail)
     }
 }
 
@@ -107,7 +200,7 @@ impl ActiveSeedContent {
 pub(crate) enum ActiveSeedContentError {
     Closed,
     Unavailable,
-    Storage(SelectiveStorageError),
+    Storage(Arc<str>),
 }
 
 impl fmt::Display for ActiveSeedContentError {
@@ -120,17 +213,4 @@ impl fmt::Display for ActiveSeedContentError {
     }
 }
 
-impl Error for ActiveSeedContentError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Storage(error) => Some(error),
-            Self::Closed | Self::Unavailable => None,
-        }
-    }
-}
-
-impl From<SelectiveStorageError> for ActiveSeedContentError {
-    fn from(error: SelectiveStorageError) -> Self {
-        Self::Storage(error)
-    }
-}
+impl Error for ActiveSeedContentError {}

@@ -189,6 +189,22 @@ impl PieceAvailability {
         Ok(())
     }
 
+    pub fn invalidate_epoch(&self, epoch: u64) -> Result<bool, &'static str> {
+        let mut state = self.state();
+        if state.epoch != epoch {
+            return Ok(false);
+        }
+        state.epoch = state
+            .epoch
+            .checked_add(1)
+            .ok_or("availability storage epoch overflow")?;
+        state.revision = next_revision(state.revision)?;
+        state.available_count = 0;
+        state.bits.fill(0);
+        state.changes.clear();
+        Ok(true)
+    }
+
     pub fn drain(&self, cursor: AvailabilityCursor) -> AvailabilityDrain {
         let state = self.state();
         if cursor.epoch != state.epoch {
@@ -341,6 +357,21 @@ mod tests {
         assert_eq!(snapshot.epoch, 2);
         assert!(!snapshot.is_available(0));
         assert!(snapshot.is_available(1));
+    }
+
+    #[test]
+    fn invalidation_withdraws_every_piece_and_fences_the_old_epoch() {
+        let availability = PieceAvailability::new(4, &[true, false, true]).expect("availability");
+        let cursor = availability.snapshot().cursor();
+        assert!(availability.invalidate_epoch(4).expect("invalidate"));
+        assert!(!availability.invalidate_epoch(4).expect("stale invalidate"));
+        let AvailabilityDrain::EpochChanged(snapshot) = availability.drain(cursor) else {
+            panic!("expected invalidated epoch");
+        };
+        assert_eq!(snapshot.epoch, 5);
+        assert_eq!(snapshot.available_count, 0);
+        assert_eq!(snapshot.bitfield(), &[0]);
+        assert!(!availability.is_available(0, 4));
     }
 
     #[test]
