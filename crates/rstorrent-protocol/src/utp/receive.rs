@@ -7,7 +7,8 @@ use std::fmt;
 use super::{MAX_UTP_PAYLOAD_SIZE, PacketType, SequenceNumber, SequenceRelation};
 
 pub const MAX_REORDER_PACKETS: usize = 64;
-pub const MAX_REORDER_BYTES: usize = 1024 * 1024;
+pub const MAX_RECEIVE_BYTES: usize = 1024 * 1024;
+pub const MAX_REORDER_BYTES: usize = MAX_RECEIVE_BYTES;
 pub const MAX_REORDER_DISTANCE: u16 = MAX_REORDER_PACKETS as u16 + 1;
 const GENERATED_SACK_BYTES: usize = MAX_REORDER_PACKETS.div_ceil(8);
 
@@ -61,6 +62,7 @@ pub struct ReceiveOutcome {
     pub selective_ack: Option<SelectiveAckBits>,
     pub eof_reached: bool,
     pub fin_payload_compatibility: bool,
+    pub advertised_window_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +70,9 @@ pub struct ReceiveSnapshot {
     pub acknowledgement_number: SequenceNumber,
     pub queued_packets: usize,
     pub queued_bytes: usize,
+    pub delivered_unconsumed_bytes: usize,
+    pub total_buffered_bytes: usize,
+    pub advertised_window_bytes: usize,
     pub packet_high_water: usize,
     pub byte_high_water: usize,
     pub fin_sequence: Option<SequenceNumber>,
@@ -92,9 +97,13 @@ pub enum ReceiveError {
         count: usize,
         maximum: usize,
     },
-    ReorderByteLimit {
+    ReceiveWindowLimit {
         bytes: usize,
         maximum: usize,
+    },
+    ConsumeBeyondDelivered {
+        bytes: usize,
+        available: usize,
     },
 }
 
@@ -124,12 +133,16 @@ impl fmt::Display for ReceiveError {
                     "uTP reorder packet count {count} exceeds {maximum}"
                 )
             }
-            Self::ReorderByteLimit { bytes, maximum } => {
+            Self::ReceiveWindowLimit { bytes, maximum } => {
                 write!(
                     formatter,
-                    "uTP reorder payload bytes {bytes} exceeds {maximum}"
+                    "uTP receive payload bytes {bytes} exceeds window {maximum}"
                 )
             }
+            Self::ConsumeBeyondDelivered { bytes, available } => write!(
+                formatter,
+                "cannot consume {bytes} uTP receive bytes when only {available} are delivered"
+            ),
         }
     }
 }
@@ -167,6 +180,7 @@ pub struct ReceiveState {
     acknowledgement_number: SequenceNumber,
     reorder: BTreeMap<SequenceNumber, StoredPacket>,
     reorder_bytes: usize,
+    delivered_unconsumed_bytes: usize,
     packet_high_water: usize,
     byte_high_water: usize,
     fin_sequence: Option<SequenceNumber>,
@@ -182,6 +196,7 @@ impl ReceiveState {
             acknowledgement_number,
             reorder: BTreeMap::new(),
             reorder_bytes: 0,
+            delivered_unconsumed_bytes: 0,
             packet_high_water: 0,
             byte_high_water: 0,
             fin_sequence: None,
@@ -193,10 +208,14 @@ impl ReceiveState {
 
     #[must_use]
     pub fn snapshot(&self) -> ReceiveSnapshot {
+        let total_buffered_bytes = self.total_buffered_bytes();
         ReceiveSnapshot {
             acknowledgement_number: self.acknowledgement_number,
             queued_packets: self.reorder.len(),
             queued_bytes: self.reorder_bytes,
+            delivered_unconsumed_bytes: self.delivered_unconsumed_bytes,
+            total_buffered_bytes,
+            advertised_window_bytes: MAX_RECEIVE_BYTES - total_buffered_bytes,
             packet_high_water: self.packet_high_water,
             byte_high_water: self.byte_high_water,
             fin_sequence: self.fin_sequence,
@@ -209,6 +228,25 @@ impl ReceiveState {
     #[must_use]
     pub fn selective_ack(&self) -> Option<SelectiveAckBits> {
         self.sack()
+    }
+
+    #[must_use]
+    pub fn advertised_window_bytes(&self) -> usize {
+        MAX_RECEIVE_BYTES - self.total_buffered_bytes()
+    }
+
+    pub fn consume_delivered(&mut self, bytes: usize) -> Result<usize, ReceiveError> {
+        if self.terminal {
+            return Err(ReceiveError::Terminal);
+        }
+        if bytes > self.delivered_unconsumed_bytes {
+            return Err(ReceiveError::ConsumeBeyondDelivered {
+                bytes,
+                available: self.delivered_unconsumed_bytes,
+            });
+        }
+        self.delivered_unconsumed_bytes -= bytes;
+        Ok(self.advertised_window_bytes())
     }
 
     pub fn receive(
@@ -278,6 +316,20 @@ impl ReceiveState {
             return Ok(self.empty_outcome(ReceiveDisposition::ConflictingFin));
         }
 
+        let next_total_bytes = self
+            .total_buffered_bytes()
+            .checked_add(payload.len())
+            .ok_or(ReceiveError::ReceiveWindowLimit {
+                bytes: usize::MAX,
+                maximum: MAX_RECEIVE_BYTES,
+            })?;
+        if next_total_bytes > MAX_RECEIVE_BYTES {
+            return Err(ReceiveError::ReceiveWindowLimit {
+                bytes: next_total_bytes,
+                maximum: MAX_RECEIVE_BYTES,
+            });
+        }
+
         if distance == 1 {
             if stored_type == StoredPacketType::Fin {
                 self.fin_sequence = Some(sequence_number);
@@ -292,6 +344,7 @@ impl ReceiveState {
                 &mut delivered,
             );
             self.flush_contiguous(&mut delivered);
+            self.byte_high_water = self.byte_high_water.max(next_total_bytes);
             let fin_payload_compatibility = delivered.iter().any(|payload| payload.carried_by_fin);
             return Ok(self.outcome(
                 ReceiveDisposition::Delivered,
@@ -307,18 +360,7 @@ impl ReceiveState {
                 maximum: MAX_REORDER_PACKETS,
             });
         }
-        let next_bytes = self.reorder_bytes.checked_add(payload.len()).ok_or(
-            ReceiveError::ReorderByteLimit {
-                bytes: usize::MAX,
-                maximum: MAX_REORDER_BYTES,
-            },
-        )?;
-        if next_bytes > MAX_REORDER_BYTES {
-            return Err(ReceiveError::ReorderByteLimit {
-                bytes: next_bytes,
-                maximum: MAX_REORDER_BYTES,
-            });
-        }
+        let next_bytes = self.reorder_bytes + payload.len();
 
         if stored_type == StoredPacketType::Fin {
             self.fin_sequence = Some(sequence_number);
@@ -332,13 +374,14 @@ impl ReceiveState {
         );
         self.reorder_bytes = next_bytes;
         self.packet_high_water = self.packet_high_water.max(next_count);
-        self.byte_high_water = self.byte_high_water.max(next_bytes);
+        self.byte_high_water = self.byte_high_water.max(next_total_bytes);
         Ok(self.outcome(ReceiveDisposition::Buffered, Vec::new(), false))
     }
 
     pub fn reset(&mut self) {
         self.reorder.clear();
         self.reorder_bytes = 0;
+        self.delivered_unconsumed_bytes = 0;
         self.fin_sequence = None;
         self.eof_reached = false;
         self.terminal = true;
@@ -398,6 +441,9 @@ impl ReceiveState {
             }
         }
         if !packet.payload.is_empty() {
+            self.delivered_unconsumed_bytes = self
+                .delivered_unconsumed_bytes
+                .saturating_add(packet.payload.len());
             delivered.push(ReceivedPayload {
                 sequence_number,
                 bytes: packet.payload,
@@ -452,14 +498,19 @@ impl ReceiveState {
             selective_ack: self.sack(),
             eof_reached: self.eof_reached,
             fin_payload_compatibility,
+            advertised_window_bytes: self.advertised_window_bytes(),
         }
+    }
+
+    fn total_buffered_bytes(&self) -> usize {
+        self.reorder_bytes + self.delivered_unconsumed_bytes
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_REORDER_BYTES, MAX_REORDER_DISTANCE, MAX_REORDER_PACKETS, ReceiveDisposition,
+        MAX_RECEIVE_BYTES, MAX_REORDER_DISTANCE, MAX_REORDER_PACKETS, ReceiveDisposition,
         ReceiveError, ReceiveState,
     };
     use crate::utp::{MAX_UTP_PAYLOAD_SIZE, PacketType, SequenceNumber};
@@ -482,6 +533,8 @@ mod tests {
         assert_eq!(wrapped.delivered[0].bytes, b"b");
         assert_eq!(wrapped.acknowledgement_number, sequence(0));
         assert_eq!(receive.snapshot().queued_bytes, 0);
+        assert_eq!(receive.snapshot().delivered_unconsumed_bytes, 2);
+        assert_eq!(receive.consume_delivered(2), Ok(MAX_RECEIVE_BYTES));
     }
 
     #[test]
@@ -596,9 +649,9 @@ mod tests {
         assert_eq!(snapshot.queued_bytes, payload.len() * 16);
         assert!(matches!(
             receive.receive(PacketType::Data, sequence(18), &payload),
-            Err(ReceiveError::ReorderByteLimit {
+            Err(ReceiveError::ReceiveWindowLimit {
                 bytes,
-                maximum: MAX_REORDER_BYTES
+                maximum: MAX_RECEIVE_BYTES
             }) if bytes == payload.len() * 17
         ));
         assert_eq!(receive.snapshot(), snapshot);
@@ -609,6 +662,51 @@ mod tests {
             Err(ReceiveError::PayloadTooLarge { .. })
         ));
         assert_eq!(receive.snapshot(), snapshot);
+    }
+
+    #[test]
+    fn delivered_and_reordered_bytes_share_one_exact_receive_window() {
+        let mut receive = ReceiveState::new(sequence(0));
+        let delivered = vec![1; 65_000];
+        for current in 1..=16 {
+            receive
+                .receive(PacketType::Data, sequence(current), &delivered)
+                .expect("fill delivered window");
+        }
+        let snapshot = receive.snapshot();
+        assert_eq!(snapshot.delivered_unconsumed_bytes, 1_040_000);
+        assert_eq!(snapshot.advertised_window_bytes, 8_576);
+        assert_eq!(snapshot.byte_high_water, 1_040_000);
+
+        receive
+            .receive(PacketType::Data, sequence(18), &[2; 8_576])
+            .expect("fill remaining window out of order");
+        let full = receive.snapshot();
+        assert_eq!(full.total_buffered_bytes, MAX_RECEIVE_BYTES);
+        assert_eq!(full.advertised_window_bytes, 0);
+        assert_eq!(full.byte_high_water, MAX_RECEIVE_BYTES);
+        assert!(matches!(
+            receive.receive(PacketType::Data, sequence(19), b"x"),
+            Err(ReceiveError::ReceiveWindowLimit {
+                bytes,
+                maximum: MAX_RECEIVE_BYTES
+            }) if bytes == MAX_RECEIVE_BYTES + 1
+        ));
+        assert_eq!(receive.snapshot(), full);
+
+        assert!(matches!(
+            receive.consume_delivered(1_040_001),
+            Err(ReceiveError::ConsumeBeyondDelivered {
+                bytes: 1_040_001,
+                available: 1_040_000
+            })
+        ));
+        assert_eq!(receive.snapshot(), full);
+        assert_eq!(receive.consume_delivered(576), Ok(576));
+        assert_eq!(
+            receive.snapshot().total_buffered_bytes,
+            MAX_RECEIVE_BYTES - 576
+        );
     }
 
     #[test]
@@ -719,6 +817,7 @@ mod tests {
         assert!(snapshot.terminal);
         assert_eq!(snapshot.queued_packets, 0);
         assert_eq!(snapshot.queued_bytes, 0);
+        assert_eq!(snapshot.delivered_unconsumed_bytes, 0);
         assert_eq!(
             receive.receive(PacketType::Data, sequence(1), b"late"),
             Err(ReceiveError::Terminal)

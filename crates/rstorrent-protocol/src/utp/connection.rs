@@ -4,8 +4,9 @@ use std::error::Error;
 use std::fmt;
 
 use super::{
-    AckOutcome, DecodedPacket, PacketType, ReceiveError, ReceiveOutcome, ReceiveSnapshot,
-    ReceiveState, SelectiveAckBits, SendError, SendSnapshot, SendState, SequenceNumber,
+    AckOutcome, DecodedPacket, MAX_RECEIVE_BYTES, PacketType, ReceiveError, ReceiveOutcome,
+    ReceiveSnapshot, ReceiveState, SelectiveAckBits, SendError, SendSnapshot, SendState,
+    SequenceNumber,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +62,7 @@ pub struct OutboundPacketIntent {
     pub sequence_number: SequenceNumber,
     pub acknowledgement_number: SequenceNumber,
     pub selective_ack: Option<SelectiveAckBits>,
+    pub window_size: u32,
     pub payload_bytes: usize,
 }
 
@@ -215,6 +217,7 @@ impl ConnectionState {
                 sequence_number: packet.sequence_number,
                 acknowledgement_number: SequenceNumber::new(0),
                 selective_ack: None,
+                window_size: MAX_RECEIVE_BYTES as u32,
                 payload_bytes: 0,
             })
     }
@@ -237,6 +240,7 @@ impl ConnectionState {
             sequence_number: self.send.snapshot().next_sequence_number,
             acknowledgement_number: receive_snapshot.acknowledgement_number,
             selective_ack: receive.selective_ack(),
+            window_size: receive_snapshot.advertised_window_bytes as u32,
             payload_bytes: 0,
         })
     }
@@ -285,6 +289,14 @@ impl ConnectionState {
     #[must_use]
     pub fn payload_for_retransmission(&self, sequence_number: SequenceNumber) -> Option<&[u8]> {
         self.send.payload_for_retransmission(sequence_number)
+    }
+
+    pub fn consume_received(&mut self, bytes: usize) -> Result<usize, ConnectionError> {
+        let receive = self.receive.as_mut().ok_or(ConnectionError::InvalidPhase {
+            phase: self.phase,
+            operation: "consume received payload",
+        })?;
+        Ok(receive.consume_delivered(bytes)?)
     }
 
     pub fn incoming(
@@ -444,6 +456,7 @@ impl ConnectionState {
             sequence_number,
             acknowledgement_number: receive_snapshot.acknowledgement_number,
             selective_ack: receive.selective_ack(),
+            window_size: receive_snapshot.advertised_window_bytes as u32,
             payload_bytes,
         })
     }
@@ -565,6 +578,7 @@ mod tests {
                 sequence_number: SequenceNumber::new(10),
                 acknowledgement_number: SequenceNumber::new(0),
                 selective_ack: None,
+                window_size: MAX_RECEIVE_BYTES as u32,
                 payload_bytes: 0,
             }
         );
@@ -629,6 +643,15 @@ mod tests {
         assert_eq!(reply.packet_type, PacketType::State);
         assert_eq!(reply.connection_id, 41);
         assert_eq!(reply.acknowledgement_number, SequenceNumber::new(77));
+        assert_eq!(reply.window_size, (MAX_RECEIVE_BYTES - 5) as u32);
+        assert_eq!(initiator.consume_received(5), Ok(MAX_RECEIVE_BYTES));
+        assert_eq!(
+            initiator
+                .state_intent()
+                .expect("reopened window")
+                .window_size,
+            MAX_RECEIVE_BYTES as u32
+        );
     }
 
     #[test]
@@ -694,7 +717,7 @@ mod tests {
         assert!(matches!(
             connection.incoming(decoded(&rejected), 1),
             Err(ConnectionError::Receive(
-                ReceiveError::ReorderByteLimit { .. }
+                ReceiveError::ReceiveWindowLimit { .. }
             ))
         ));
         assert_eq!(connection.snapshot(), before);

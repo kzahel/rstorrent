@@ -19,8 +19,9 @@ pub use packet::{
     decode_packet, encode_packet,
 };
 pub use receive::{
-    MAX_REORDER_BYTES, MAX_REORDER_DISTANCE, MAX_REORDER_PACKETS, ReceiveDisposition, ReceiveError,
-    ReceiveOutcome, ReceiveSnapshot, ReceiveState, ReceivedPayload, SelectiveAckBits,
+    MAX_RECEIVE_BYTES, MAX_REORDER_BYTES, MAX_REORDER_DISTANCE, MAX_REORDER_PACKETS,
+    ReceiveDisposition, ReceiveError, ReceiveOutcome, ReceiveSnapshot, ReceiveState,
+    ReceivedPayload, SelectiveAckBits,
 };
 pub use send::{
     AckDisposition, AckOutcome, INITIAL_RTO_MICROS, MAX_RTO_MICROS, MAX_SENT_BYTES,
