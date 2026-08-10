@@ -4,16 +4,24 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from utp_remote_seed import eligible_public_ipv4, parse_mapping_entries
 from utp_rstorrent_wan import (
     WanFailure,
     aborted_remote_summary,
+    audit_local_mapping,
     bounded_diagnostics,
+    eligible_local_seed_endpoint,
     eligible_public_endpoint,
+    redacted_rstorrent,
+    validate_mapping_intent,
+    validate_remote_leecher_complete,
+    validate_remote_leecher_ready,
     verify_direct_route,
 )
 
@@ -121,6 +129,112 @@ class UtpWanContractTests(unittest.TestCase):
             summary,
             "remote abort evidence: utp_in=7, utp_out=2, "
             "utp_peers=1, payload_sent=missing, mapping_deleted=True",
+        )
+
+    def test_local_seed_mapping_and_remote_leecher_contracts(self) -> None:
+        intent = {
+            "event": "mapping-intent",
+            "role": "wan-seed",
+            "local_port": 42000,
+            "external_port": 42000,
+            "protocol": "UDP",
+        }
+        self.assertEqual(validate_mapping_intent(intent, 42000), 42000)
+        ready = {
+            "event": "ready",
+            "role": "wan-seed",
+            "external_address": "8.8.8.8",
+            "external_port": 42000,
+            "mapping": {
+                "protocol": "UDP",
+                "transport": "UPnP",
+                "lease_seconds": 3600,
+            },
+        }
+        self.assertEqual(
+            eligible_local_seed_endpoint(ready, 42000), ("8.8.8.8", 42000)
+        )
+        validate_remote_leecher_ready(
+            {
+                "event": "ready",
+                "role": "remote-leecher",
+                "pid": 123,
+                "listen_port": 43000,
+                "libtorrent_version": "2.0.13.0",
+                "route_class": "ordinary-internet",
+            },
+            123,
+        )
+        validate_remote_leecher_complete(
+            {
+                "event": "complete",
+                "role": "remote-leecher",
+                "peer_high_water": 1,
+                "payload": {
+                    "bytes": 2 * 1024 * 1024 + 731,
+                    "pieces": 33,
+                    "sha1": "a" * 40,
+                },
+                "libtorrent_stats": {
+                    "peer.num_tcp_peers": 0,
+                    "utp.utp_packets_in": 1,
+                    "utp.utp_packets_out": 1,
+                    "net.recv_payload_bytes": 2 * 1024 * 1024 + 731,
+                },
+                "diagnostics": [],
+            },
+            "a" * 40,
+        )
+
+    def test_mapping_audit_requires_verified_absence(self) -> None:
+        complete = subprocess.CompletedProcess(
+            ["rstorrent-utp-interop"],
+            0,
+            stdout=json.dumps(
+                {
+                    "event": "mapping-audit",
+                    "role": "wan-mapping-audit",
+                    "owned_mapping_found": True,
+                    "owned_mapping_deleted": True,
+                    "foreign_mapping_preserved": False,
+                    "owned_mapping_absent": True,
+                }
+            ),
+            stderr="",
+        )
+        with patch("utp_rstorrent_wan.subprocess.run", return_value=complete):
+            event = audit_local_mapping(Path("role"), 42000, 42000)
+        self.assertTrue(event["owned_mapping_deleted"])
+
+        foreign = subprocess.CompletedProcess(
+            ["rstorrent-utp-interop"],
+            0,
+            stdout=json.dumps(
+                {
+                    "event": "mapping-audit",
+                    "role": "wan-mapping-audit",
+                    "owned_mapping_found": False,
+                    "owned_mapping_deleted": False,
+                    "foreign_mapping_preserved": True,
+                    "owned_mapping_absent": True,
+                }
+            ),
+            stderr="",
+        )
+        with patch("utp_rstorrent_wan.subprocess.run", return_value=foreign):
+            with self.assertRaises(WanFailure):
+                audit_local_mapping(Path("role"), 42000, 42000)
+
+    def test_rstorrent_seed_redaction_removes_peer_endpoints(self) -> None:
+        event = {
+            "event": "complete",
+            "role": "wan-seed",
+            "peer_evidence": {"endpoints": ["104.20.30.40:45000"]},
+        }
+        redacted = redacted_rstorrent(event)
+        self.assertEqual(
+            redacted["peer_evidence"]["endpoints"],
+            ["<public-ip>:<transient-port>"],
         )
 
 

@@ -5,12 +5,15 @@ use std::env;
 use std::error::Error;
 use std::ffi::OsString;
 use std::io::Write as _;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
+use rstorrent_engine::port_mapping::upnp::{
+    UpnpDiscoveryConfig, UpnpMapping, UpnpStage, UpnpTransport, discover_igd_v2,
+};
 use rstorrent_engine::{
     AddressFamilyPolicy, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig, NetworkPolicy,
@@ -25,25 +28,44 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 const PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
 const PIECE_BYTES: u32 = 64 * 1024;
 const LOOPBACK_ROLE_TIMEOUT: Duration = Duration::from_secs(30);
-const WAN_ROLE_TIMEOUT: Duration = Duration::from_secs(120);
+const WAN_ROLE_TIMEOUT: Duration = Duration::from_secs(180);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(5);
 const LEECHER_PEER_ID: [u8; 20] = *b"-RSUTPL-000000000000";
 const SEED_PEER_ID: [u8; 20] = *b"-RSUTPS-000000000000";
+const MAPPING_DESCRIPTION: &str = "RSTorrent";
 const USAGE: &str = "\
 Usage:
   rstorrent-utp-interop leecher --metainfo PATH --peer 127.0.0.1:PORT --output PATH
   rstorrent-utp-interop wan-leecher --metainfo PATH --peer PUBLIC_IPV4:PORT --output PATH
-  rstorrent-utp-interop seed --metainfo PATH --storage-root PATH";
+  rstorrent-utp-interop seed --metainfo PATH --storage-root PATH
+  rstorrent-utp-interop wan-seed --metainfo PATH --storage-root PATH
+  rstorrent-utp-interop wan-mapping-audit --local-port PORT --external-port PORT";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LeecherScope {
     Loopback,
     Wan,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SeedScope {
+    Loopback,
+    Wan,
+}
+
+impl SeedScope {
+    const fn role(self) -> &'static str {
+        match self {
+            Self::Loopback => "seed",
+            Self::Wan => "wan-seed",
+        }
+    }
 }
 
 impl LeecherScope {
@@ -78,8 +100,13 @@ enum Arguments {
         output: PathBuf,
     },
     Seed {
+        scope: SeedScope,
         metainfo: PathBuf,
         storage_root: PathBuf,
+    },
+    MappingAudit {
+        local_port: u16,
+        external_port: u16,
     },
 }
 
@@ -94,7 +121,15 @@ impl Arguments {
                 scope: LeecherScope::Loopback,
                 ..
             }
-            | Self::Seed { .. } => LOOPBACK_ROLE_TIMEOUT,
+            | Self::Seed {
+                scope: SeedScope::Loopback,
+                ..
+            }
+            | Self::MappingAudit { .. } => LOOPBACK_ROLE_TIMEOUT,
+            Self::Seed {
+                scope: SeedScope::Wan,
+                ..
+            } => WAN_ROLE_TIMEOUT,
         }
     }
 
@@ -110,6 +145,8 @@ impl Arguments {
         let mut peer = None;
         let mut output = None;
         let mut storage_root = None;
+        let mut local_port = None;
+        let mut external_port = None;
         let mut index = 0;
         while index < values.len() {
             let flag = values[index]
@@ -135,15 +172,21 @@ impl Arguments {
                 "--storage-root" => {
                     set_once(&mut storage_root, PathBuf::from(value), flag)?;
                 }
+                "--local-port" => {
+                    set_once(&mut local_port, parse_port(value, flag)?, flag)?;
+                }
+                "--external-port" => {
+                    set_once(&mut external_port, parse_port(value, flag)?, flag)?;
+                }
                 _ => return Err(format!("unknown argument {flag}")),
             }
         }
-        let metainfo = metainfo.ok_or_else(|| "--metainfo is required".to_owned())?;
         match role {
             "leecher" | "wan-leecher" => {
-                if storage_root.is_some() {
-                    return Err(format!("{role} does not accept --storage-root"));
+                if storage_root.is_some() || local_port.is_some() || external_port.is_some() {
+                    return Err(format!("{role} received a role-specific argument"));
                 }
+                let metainfo = metainfo.ok_or_else(|| "--metainfo is required".to_owned())?;
                 let peer = peer.ok_or_else(|| format!("{role} requires --peer"))?;
                 let scope = if role == "leecher" {
                     LeecherScope::Loopback
@@ -176,19 +219,56 @@ impl Arguments {
                     output: output.ok_or_else(|| format!("{role} requires --output"))?,
                 })
             }
-            "seed" => {
-                if peer.is_some() || output.is_some() {
-                    return Err("seed does not accept --peer or --output".to_owned());
+            "seed" | "wan-seed" => {
+                if peer.is_some()
+                    || output.is_some()
+                    || local_port.is_some()
+                    || external_port.is_some()
+                {
+                    return Err(format!("{role} received a role-specific argument"));
                 }
                 Ok(Self::Seed {
-                    metainfo,
+                    scope: if role == "seed" {
+                        SeedScope::Loopback
+                    } else {
+                        SeedScope::Wan
+                    },
+                    metainfo: metainfo.ok_or_else(|| "--metainfo is required".to_owned())?,
                     storage_root: storage_root
-                        .ok_or_else(|| "seed requires --storage-root".to_owned())?,
+                        .ok_or_else(|| format!("{role} requires --storage-root"))?,
+                })
+            }
+            "wan-mapping-audit" => {
+                if metainfo.is_some()
+                    || peer.is_some()
+                    || output.is_some()
+                    || storage_root.is_some()
+                {
+                    return Err("wan-mapping-audit received a role-specific argument".to_owned());
+                }
+                Ok(Self::MappingAudit {
+                    local_port: local_port
+                        .ok_or_else(|| "wan-mapping-audit requires --local-port".to_owned())?,
+                    external_port: external_port
+                        .ok_or_else(|| "wan-mapping-audit requires --external-port".to_owned())?,
                 })
             }
             _ => Err(format!("unknown role {role}")),
         }
     }
+}
+
+fn parse_port(value: &OsString, flag: &str) -> Result<u16, String> {
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("{flag} must be valid UTF-8"))?;
+    let port = value
+        .parse::<u16>()
+        .map_err(|_| format!("{flag} must be a nonzero port"))?;
+    if port == 0 {
+        return Err(format!("{flag} must be a nonzero port"));
+    }
+    Ok(port)
 }
 
 fn set_once<T>(target: &mut Option<T>, value: T, flag: &str) -> Result<(), String> {
@@ -300,9 +380,14 @@ async fn run(arguments: Arguments) -> Result<(), Box<dyn Error>> {
             output,
         } => run_leecher(scope, &metainfo, peer, &output).await,
         Arguments::Seed {
+            scope,
             metainfo,
             storage_root,
-        } => run_seed(&metainfo, &storage_root).await,
+        } => run_seed(scope, &metainfo, &storage_root).await,
+        Arguments::MappingAudit {
+            local_port,
+            external_port,
+        } => run_mapping_audit(local_port, external_port).await,
     }
 }
 
@@ -360,9 +445,30 @@ async fn run_leecher(
     Ok(())
 }
 
-async fn run_seed(metainfo_path: &Path, storage_root: &Path) -> Result<(), Box<dyn Error>> {
+struct SeedEvidence {
+    live_incoming: IncomingPeerServiceSnapshot,
+    peers: PeerEvidence,
+    live_utp: UtpServiceSnapshot,
+    live_udp: SessionUdpSnapshot,
+}
+
+struct SeedMapping {
+    gateway: rstorrent_engine::port_mapping::upnp::UpnpGateway,
+    mapping: UpnpMapping,
+    cancellation: CancellationToken,
+}
+
+async fn run_seed(
+    scope: SeedScope,
+    metainfo_path: &Path,
+    storage_root: &Path,
+) -> Result<(), Box<dyn Error>> {
     let (metainfo, raw_info) = read_fixture(metainfo_path).await?;
-    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let bind_address = match scope {
+        SeedScope::Loopback => Ipv4Addr::LOCALHOST,
+        SeedScope::Wan => select_local_network_ipv4().await?,
+    };
+    let socket = UdpSocket::bind((bind_address, 0)).await?;
     let (mut udp, dht) = SessionUdpService::start(socket)?;
     let mut utp = UtpService::start(&mut udp)?;
     let mut incoming_config = IncomingPeerServiceConfig::new(IncomingTcpBootstrap::Disabled)
@@ -382,51 +488,237 @@ async fn run_seed(metainfo_path: &Path, storage_root: &Path) -> Result<(), Box<d
     let token = incoming
         .register(SeedRegistration::new(raw_info, content, torrent_peers)?)
         .await?;
-    write_json(json!({
-        "event": "ready",
-        "role": "seed",
-        "listen": udp.local_address().to_string(),
-    }))?;
-
-    let stream = utp
-        .accept()
-        .await
-        .ok_or("uTP service stopped before accepting a stream")?;
-    incoming.admit_utp(stream, HANDSHAKE_TIMEOUT).await?;
-    wait_for_stop().await?;
-    let live_incoming = incoming.snapshot();
-    let peers = peer_sink.snapshot();
-    validate_seed_evidence(&live_incoming, &peers)?;
-    let live_utp = utp.snapshot();
-    let live_udp = udp.snapshot();
-
-    if !incoming.unregister(token).await? {
-        return Err("seed registration disappeared before shutdown".into());
+    let local_endpoint = match udp.local_address() {
+        SocketAddr::V4(endpoint) => endpoint,
+        SocketAddr::V6(_) => return Err("uTP WAN seed requires an IPv4 UDP socket".into()),
+    };
+    let mut mapping_owner = None;
+    if scope == SeedScope::Wan {
+        write_json(json!({
+            "event": "bound",
+            "role": scope.role(),
+            "listen": local_endpoint.to_string(),
+        }))?;
+        let cancellation = CancellationToken::new();
+        let gateway =
+            discover_igd_v2(UpnpDiscoveryConfig::new(bind_address)?, &cancellation).await?;
+        let existing = gateway
+            .query_mapping(
+                local_endpoint.port(),
+                UpnpTransport::Udp,
+                UpnpStage::Add,
+                &cancellation,
+            )
+            .await?;
+        if existing.is_some() {
+            return Err("exact diagnostic UDP external port is already occupied".into());
+        }
+        write_json(json!({
+            "event": "mapping-intent",
+            "role": scope.role(),
+            "local_port": local_endpoint.port(),
+            "external_port": local_endpoint.port(),
+            "protocol": "UDP",
+        }))?;
+        let mapping = gateway
+            .create_exact_mapping(
+                UpnpTransport::Udp,
+                local_endpoint.port(),
+                local_endpoint.port(),
+                &cancellation,
+            )
+            .await?;
+        write_json(json!({
+            "event": "ready",
+            "role": scope.role(),
+            "listen": local_endpoint.to_string(),
+            "external_address": mapping.external_address.to_string(),
+            "external_port": mapping.external_port,
+            "mapping": {
+                "protocol": mapping.transport.as_str(),
+                "transport": "UPnP",
+                "lease_seconds": mapping.lease_seconds,
+            },
+        }))?;
+        mapping_owner = Some(SeedMapping {
+            gateway,
+            mapping,
+            cancellation,
+        });
+    } else {
+        write_json(json!({
+            "event": "ready",
+            "role": scope.role(),
+            "listen": local_endpoint.to_string(),
+        }))?;
     }
-    let terminal_incoming = incoming_runtime.shutdown().await?;
-    let terminal_utp = utp.shutdown().await?;
+
+    let transfer_result: Result<SeedEvidence, Box<dyn Error>> = async {
+        let stream = utp
+            .accept()
+            .await
+            .ok_or("uTP service stopped before accepting a stream")?;
+        incoming.admit_utp(stream, HANDSHAKE_TIMEOUT).await?;
+        wait_for_stop().await?;
+        let live_incoming = incoming.snapshot();
+        let peers = peer_sink.snapshot();
+        validate_seed_evidence(scope, &live_incoming, &peers)?;
+        Ok(SeedEvidence {
+            live_incoming,
+            peers,
+            live_utp: utp.snapshot(),
+            live_udp: udp.snapshot(),
+        })
+    }
+    .await;
+
+    let mut failures = Vec::new();
+    let evidence = match transfer_result {
+        Ok(evidence) => Some(evidence),
+        Err(error) => {
+            failures.push(error.to_string());
+            None
+        }
+    };
+    match incoming.unregister(token).await {
+        Ok(true) => {}
+        Ok(false) => failures.push("seed registration disappeared before shutdown".to_owned()),
+        Err(error) => failures.push(format!("unregister seed: {error}")),
+    }
+    let terminal_incoming = match incoming_runtime.shutdown().await {
+        Ok(snapshot) => Some(snapshot),
+        Err(error) => {
+            failures.push(format!("shutdown incoming owner: {error}"));
+            None
+        }
+    };
+    let terminal_utp = match utp.shutdown().await {
+        Ok(snapshot) => Some(snapshot),
+        Err(error) => {
+            failures.push(format!("shutdown uTP owner: {error}"));
+            None
+        }
+    };
+    let mapping_deleted = if let Some(owner) = mapping_owner {
+        match owner
+            .gateway
+            .delete_mapping(&owner.mapping, &owner.cancellation)
+            .await
+        {
+            Ok(()) => true,
+            Err(error) => {
+                failures.push(format!("delete exact UDP mapping: {error}"));
+                false
+            }
+        }
+    } else {
+        false
+    };
     drop(dht);
-    let terminal_udp = udp.shutdown().await?;
-    validate_terminal(&terminal_utp, &terminal_udp)?;
-    if terminal_incoming.pending != 0 || terminal_incoming.established != 0 {
-        return Err("incoming peer ownership was nonzero after shutdown".into());
+    let terminal_udp = match udp.shutdown().await {
+        Ok(snapshot) => Some(snapshot),
+        Err(error) => {
+            failures.push(format!("shutdown session UDP owner: {error}"));
+            None
+        }
+    };
+    if let (Some(terminal_utp), Some(terminal_udp)) = (&terminal_utp, &terminal_udp)
+        && let Err(error) = validate_terminal(terminal_utp, terminal_udp)
+    {
+        failures.push(error.to_string());
     }
+    if let Some(terminal_incoming) = &terminal_incoming
+        && (terminal_incoming.pending != 0 || terminal_incoming.established != 0)
+    {
+        failures.push("incoming peer ownership was nonzero after shutdown".to_owned());
+    }
+    if !failures.is_empty() {
+        return Err(failures.join("; ").into());
+    }
+    let evidence = evidence.ok_or("seed completed without transfer evidence")?;
+    let terminal_incoming = terminal_incoming.ok_or("incoming terminal snapshot is missing")?;
+    let terminal_utp = terminal_utp.ok_or("uTP terminal snapshot is missing")?;
+    let terminal_udp = terminal_udp.ok_or("UDP terminal snapshot is missing")?;
     write_json(json!({
         "event": "complete",
-        "role": "seed",
+        "role": scope.role(),
+        "mapping_deleted": mapping_deleted,
         "payload": {
             "bytes": metainfo.total_length,
             "pieces": metainfo.piece_count(),
         },
-        "peer_evidence": peer_evidence_json(&peers),
+        "peer_evidence": peer_evidence_json(&evidence.peers),
         "resources": {
-            "live_incoming": incoming_json(&live_incoming),
-            "live_udp": udp_json(live_udp),
-            "live_utp": utp_json(live_utp),
+            "live_incoming": incoming_json(&evidence.live_incoming),
+            "live_udp": udp_json(evidence.live_udp),
+            "live_utp": utp_json(evidence.live_utp),
             "terminal_incoming": incoming_json(&terminal_incoming),
             "terminal_udp": udp_json(terminal_udp),
             "terminal_utp": utp_json(terminal_utp),
         },
+    }))?;
+    Ok(())
+}
+
+async fn select_local_network_ipv4() -> Result<Ipv4Addr, Box<dyn Error>> {
+    let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await?;
+    probe
+        .connect(SocketAddrV4::new(Ipv4Addr::new(239, 255, 255, 250), 1_900))
+        .await?;
+    let address = match probe.local_addr()? {
+        SocketAddr::V4(endpoint) => *endpoint.ip(),
+        SocketAddr::V6(_) => return Err("ordinary local route selected IPv6".into()),
+    };
+    if address.is_unspecified()
+        || address.is_loopback()
+        || address.is_multicast()
+        || address.is_broadcast()
+    {
+        return Err("ordinary local route selected an ineligible IPv4 address".into());
+    }
+    Ok(address)
+}
+
+async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Box<dyn Error>> {
+    let local_address = select_local_network_ipv4().await?;
+    let cancellation = CancellationToken::new();
+    let gateway = discover_igd_v2(UpnpDiscoveryConfig::new(local_address)?, &cancellation).await?;
+    let entry = gateway
+        .query_mapping(
+            external_port,
+            UpnpTransport::Udp,
+            UpnpStage::Delete,
+            &cancellation,
+        )
+        .await?;
+    let owned = entry.as_ref().is_some_and(|entry| {
+        entry.internal_client == local_address
+            && entry.internal_port == local_port
+            && entry.enabled
+            && entry.description == MAPPING_DESCRIPTION
+            && entry.lease_seconds > 0
+            && entry.lease_seconds <= 3_600
+    });
+    let foreign = entry.is_some() && !owned;
+    let mut deleted = false;
+    if let Some(entry) = entry.filter(|_| owned) {
+        let mapping = UpnpMapping {
+            local_endpoint: SocketAddrV4::new(local_address, local_port),
+            external_address: gateway.external_address(&cancellation).await?,
+            external_port,
+            lease_seconds: entry.lease_seconds,
+            transport: UpnpTransport::Udp,
+        };
+        gateway.delete_mapping(&mapping, &cancellation).await?;
+        deleted = true;
+    }
+    write_json(json!({
+        "event": "mapping-audit",
+        "role": "wan-mapping-audit",
+        "owned_mapping_found": owned,
+        "owned_mapping_deleted": deleted,
+        "foreign_mapping_preserved": foreign,
+        "owned_mapping_absent": !owned || deleted,
     }))?;
     Ok(())
 }
@@ -482,6 +774,7 @@ async fn wait_for_stop() -> Result<(), Box<dyn Error>> {
 }
 
 fn validate_seed_evidence(
+    scope: SeedScope,
     incoming: &IncomingPeerServiceSnapshot,
     peers: &PeerEvidence,
 ) -> Result<(), Box<dyn Error>> {
@@ -495,7 +788,17 @@ fn validate_seed_evidence(
     if peers.connection_high_water != 1 || peers.utp_high_water != 1 || peers.tcp_high_water != 0 {
         return Err(format!("unexpected peer transport evidence: {peers:?}").into());
     }
-    if peers.endpoints.len() != 1 || peers.endpoints.iter().any(|peer| !peer.ip().is_loopback()) {
+    let endpoint_is_eligible = |peer: &SocketAddr| match (scope, peer) {
+        (SeedScope::Loopback, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
+        (SeedScope::Wan, SocketAddr::V4(endpoint)) => eligible_public_ipv4(*endpoint.ip()),
+        (_, SocketAddr::V6(_)) => false,
+    };
+    if peers.endpoints.len() != 1
+        || peers
+            .endpoints
+            .iter()
+            .any(|peer| !endpoint_is_eligible(peer))
+    {
         return Err(format!("unexpected peer endpoints: {:?}", peers.endpoints).into());
     }
     Ok(())
@@ -631,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    fn arguments_are_role_specific_and_loopback_only() {
+    fn arguments_are_role_specific_and_network_scoped() {
         assert!(matches!(
             Arguments::parse(strings(&[
                 "leecher",
@@ -654,6 +957,45 @@ mod tests {
             ])),
             Ok(Arguments::Seed { .. })
         ));
+        let wan_seed = Arguments::parse(strings(&[
+            "wan-seed",
+            "--metainfo",
+            "fixture.torrent",
+            "--storage-root",
+            "seed",
+        ]))
+        .unwrap();
+        assert_eq!(wan_seed.timeout(), WAN_ROLE_TIMEOUT);
+        assert!(matches!(
+            &wan_seed,
+            Arguments::Seed {
+                scope: SeedScope::Wan,
+                ..
+            }
+        ));
+        assert!(matches!(
+            Arguments::parse(strings(&[
+                "wan-mapping-audit",
+                "--local-port",
+                "42000",
+                "--external-port",
+                "42000",
+            ])),
+            Ok(Arguments::MappingAudit {
+                local_port: 42_000,
+                external_port: 42_000,
+            })
+        ));
+        assert!(
+            Arguments::parse(strings(&[
+                "wan-mapping-audit",
+                "--local-port",
+                "0",
+                "--external-port",
+                "42000",
+            ]))
+            .is_err()
+        );
         assert!(
             Arguments::parse(strings(&[
                 "leecher",

@@ -379,8 +379,45 @@ impl UpnpGateway {
                 "mapping requires a nonzero local port",
             ));
         }
-        let external_address = self.external_address(cancellation).await?;
         let candidates = mapping_candidates(local_port)?;
+        self.create_mapping_from_candidates(transport, local_port, candidates, cancellation)
+            .await
+    }
+
+    /// Creates one mapping at an exact external port.
+    ///
+    /// Diagnostic owners use this when crash cleanup must be able to derive
+    /// the only possible external entry before an add response is observed.
+    pub async fn create_exact_mapping(
+        &self,
+        transport: UpnpTransport,
+        local_port: u16,
+        external_port: u16,
+        cancellation: &CancellationToken,
+    ) -> Result<UpnpMapping, UpnpError> {
+        if local_port == 0 || external_port == 0 {
+            return Err(UpnpError::new(
+                UpnpStage::Add,
+                "exact mapping requires nonzero local and external ports",
+            ));
+        }
+        self.create_mapping_from_candidates(
+            transport,
+            local_port,
+            vec![external_port],
+            cancellation,
+        )
+        .await
+    }
+
+    async fn create_mapping_from_candidates(
+        &self,
+        transport: UpnpTransport,
+        local_port: u16,
+        candidates: Vec<u16>,
+        cancellation: &CancellationToken,
+    ) -> Result<UpnpMapping, UpnpError> {
+        let external_address = self.external_address(cancellation).await?;
         let mut last_conflict = None;
         for external_port in candidates {
             let existing = self
@@ -2155,6 +2192,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exact_mapping_uses_only_the_requested_external_port() {
+        let (config, transcript, udp_task, http_task) =
+            scripted_gateway(ScriptedAddBehavior::ExactPort).await;
+        let cancellation = CancellationToken::new();
+        let gateway = discover_igd_v2(config, &cancellation)
+            .await
+            .expect("discover scripted gateway");
+        let mapping = gateway
+            .create_exact_mapping(UpnpTransport::Udp, 42_000, 42_001, &cancellation)
+            .await
+            .expect("create exact mapping");
+        assert_eq!(mapping.local_endpoint.port(), 42_000);
+        assert_eq!(mapping.external_port, 42_001);
+        assert_eq!(mapping.transport, UpnpTransport::Udp);
+        gateway
+            .delete_mapping(&mapping, &cancellation)
+            .await
+            .expect("delete exact mapping");
+        udp_task.await.expect("join SSDP task");
+        http_task.await.expect("join HTTP task");
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GetExternalIPAddress",
+                "GetSpecificPortMappingEntry",
+                "AddPortMapping",
+                "GetSpecificPortMappingEntry",
+                "DeletePortMapping",
+                "GetSpecificPortMappingEntry",
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn permanent_lease_fault_is_a_typed_hard_stop() {
         let (config, _, udp_task, http_task) =
             scripted_gateway(ScriptedAddBehavior::PermanentLeaseFault).await;
@@ -2627,6 +2700,7 @@ mod tests {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum ScriptedAddBehavior {
         Normal,
+        ExactPort,
         PermanentLeaseFault,
         DropAfterApply,
     }
@@ -2648,6 +2722,7 @@ mod tests {
         };
         let response_count = match add_behavior {
             ScriptedAddBehavior::Normal => 10,
+            ScriptedAddBehavior::ExactPort => 8,
             ScriptedAddBehavior::PermanentLeaseFault => 5,
             ScriptedAddBehavior::DropAfterApply => 8,
         };
@@ -2679,6 +2754,14 @@ mod tests {
                     )
                 } else {
                     let action = soap_action(&request);
+                    if add_behavior == ScriptedAddBehavior::ExactPort
+                        && matches!(
+                            action,
+                            "GetSpecificPortMappingEntry" | "AddPortMapping" | "DeletePortMapping"
+                        )
+                    {
+                        assert!(request.contains("<NewExternalPort>42001</NewExternalPort>"));
+                    }
                     let (status, body, drop_response) = match action {
                         "GetExternalIPAddress" => (
                             "200 OK",
@@ -2716,6 +2799,7 @@ mod tests {
                                 request
                                     .contains("<NewInternalClient>127.0.0.1</NewInternalClient>")
                             );
+                            assert!(request.contains("<NewInternalPort>42000</NewInternalPort>"));
                             mapped = true;
                             (
                                 "200 OK",
