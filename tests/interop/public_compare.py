@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from public_compare_contract import (
@@ -55,7 +55,7 @@ TARGETS = (
 PROFILES = CANONICAL_PROFILES + tuple(PROFILE_ALIASES)
 OWNERS = ("both", "rstorrent", "libtorrent")
 INPUT_MODES = ("metainfo", "magnet")
-SUITES = ("smoke", "standard", "large", "product", "encryption", "breadth")
+SUITES = ("quick", "smoke", "standard", "large", "product", "encryption", "breadth")
 MILESTONE_KEYS = {
     "metadata": "metadata_verified",
     "first-piece": "first_piece_verified",
@@ -164,6 +164,19 @@ def milestone_seconds(result: dict[str, Any], target: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) and value >= 0 else None
 
 
+def active_transfer_seconds(result: dict[str, Any], target: str) -> float | None:
+    started = result.get("milestones", {}).get("first_payload_byte")
+    finished = milestone_seconds(result, target)
+    if (
+        not isinstance(started, (int, float))
+        or started < 0
+        or finished is None
+        or finished < started
+    ):
+        return None
+    return finished - float(started)
+
+
 def summarize(
     runs: list[dict[str, Any]], target: str, owner: str = "both"
 ) -> dict[str, Any]:
@@ -193,8 +206,13 @@ def summarize(
     )
     classifications = {name: sum(run["classification"] == name for run in runs) for name in names}
     ratios: list[float] = []
+    active_ratios: list[float] = []
     rst_times: list[float] = []
     lib_times: list[float] = []
+    rst_active_times: list[float] = []
+    lib_active_times: list[float] = []
+    rst_discovery_times: list[float] = []
+    lib_discovery_times: list[float] = []
     for run in runs:
         if run["classification"] != "both_reached":
             continue
@@ -205,6 +223,22 @@ def summarize(
         rst_times.append(rst)
         lib_times.append(lib)
         ratios.append(rst / lib)
+        rst_active = active_transfer_seconds(run["implementations"]["rstorrent"], target)
+        lib_active = active_transfer_seconds(run["implementations"]["libtorrent"], target)
+        if rst_active is not None and lib_active is not None and lib_active > 0:
+            rst_active_times.append(rst_active)
+            lib_active_times.append(lib_active)
+            active_ratios.append(rst_active / lib_active)
+        rst_discovery = run["implementations"]["rstorrent"].get("milestones", {}).get(
+            "first_payload_byte"
+        )
+        lib_discovery = run["implementations"]["libtorrent"].get("milestones", {}).get(
+            "first_payload_byte"
+        )
+        if isinstance(rst_discovery, (int, float)) and rst_discovery >= 0:
+            rst_discovery_times.append(float(rst_discovery))
+        if isinstance(lib_discovery, (int, float)) and lib_discovery >= 0:
+            lib_discovery_times.append(float(lib_discovery))
     return {
         "attempts": len(runs),
         "classifications": classifications,
@@ -212,7 +246,36 @@ def summarize(
         "rstorrent_seconds": distribution(rst_times),
         "libtorrent_seconds": distribution(lib_times),
         "rstorrent_over_libtorrent": distribution(ratios),
+        "active_transfer_samples": len(active_ratios),
+        "rstorrent_active_transfer_seconds": distribution(rst_active_times),
+        "libtorrent_active_transfer_seconds": distribution(lib_active_times),
+        "rstorrent_over_libtorrent_active_transfer": distribution(active_ratios),
+        "rstorrent_discovery_seconds": distribution(rst_discovery_times),
+        "libtorrent_discovery_seconds": distribution(lib_discovery_times),
     }
+
+
+def write_report_atomic(path: Path, report: dict[str, Any]) -> None:
+    validate_retained_report(report)
+    rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as destination:
+            temporary_path = Path(destination.name)
+            destination.write(rendered)
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def build_probe(repository: Path) -> Path:
@@ -343,16 +406,26 @@ def run_owner_process(
         except OSError as error:
             return harness_failure(implementation, 0.0, f"start worker: {type(error).__name__}")
         deadline = started + outer_timeout_seconds
-        while process.poll() is None and time.monotonic() < deadline:
-            rss, cpu = sample_process(process.pid)
-            samples += 1
-            if rss is None:
-                gaps += 1
-            else:
-                peak_rss = max(peak_rss, rss)
-            if cpu is not None:
-                last_cpu = cpu
-            time.sleep(PROCESS_SAMPLE_SECONDS)
+        try:
+            while process.poll() is None and time.monotonic() < deadline:
+                rss, cpu = sample_process(process.pid)
+                samples += 1
+                if rss is None:
+                    gaps += 1
+                else:
+                    peak_rss = max(peak_rss, rss)
+                if cpu is not None:
+                    last_cpu = cpu
+                time.sleep(PROCESS_SAMPLE_SECONDS)
+        except KeyboardInterrupt:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=OUTER_GRACE_SECONDS)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=OUTER_GRACE_SECONDS)
+            raise
         if process.poll() is None:
             forced_termination = True
             process.terminate()
@@ -679,7 +752,28 @@ def fetch_catalog_metainfo(entry: dict[str, Any], destination: Path) -> Any:
 def suite_scenarios(catalog: dict[str, Any], suite: str) -> list[dict[str, Any]]:
     small = select_role(catalog, "small-primary")
     medium = select_role(catalog, "medium-distro") if suite == "standard" else None
-    large = select_role(catalog, "large-distro") if suite in ("large", "product") else None
+    large = (
+        select_role(catalog, "large-distro")
+        if suite in ("quick", "large", "product")
+        else None
+    )
+    if suite == "quick":
+        return [
+            {
+                "torrent": small,
+                "profile": "matched-plain-30",
+                "target": "complete",
+                "runs": 1,
+                "timeout_seconds": 120,
+            },
+            {
+                "torrent": large,
+                "profile": "matched-plain-30",
+                "target": "10-percent",
+                "runs": 1,
+                "timeout_seconds": 120,
+            },
+        ]
     if suite == "smoke":
         return [{"torrent": small, "profile": "matched-plain-30", "target": "complete", "runs": 1}]
     if suite == "standard":
@@ -750,18 +844,52 @@ def run_one_scenario(
     binary: Path,
     owned_root: Path,
     metainfo_path: Path | None,
+    cohort: dict[str, Any],
+    checkpoint: Callable[[], None],
 ) -> dict[str, Any]:
     torrent = scenario["torrent"]
     profile = normalize_profile(scenario["profile"])
     target = scenario["target"]
     runs = scenario["runs"]
-    timeout_seconds = args.timeout_seconds or torrent["limits"]["owner_timeout_seconds"]
+    timeout_seconds = (
+        args.timeout_seconds
+        or scenario.get("timeout_seconds")
+        or torrent["limits"]["owner_timeout_seconds"]
+    )
     wire_ceiling = torrent["limits"]["wire_payload_ceiling_bytes"]
     rst_magnet, lib_magnet = scenario_magnets(torrent, profile)
-    runs_report: list[dict[str, Any]] = []
+    cohort.update(
+        {
+            "torrent": {
+                "slug": torrent["slug"],
+                "name": torrent["name"],
+                "info_hash": torrent["info_hash"],
+                "roles": torrent["roles"],
+                "expected": torrent["expected"],
+                "source": torrent["source"],
+            },
+            "profile": profile,
+            "profile_sha256": comparison_profile(profile)["sha256"],
+            "target": target,
+            "input_mode": args.input_mode,
+            "owner_timeout_seconds": timeout_seconds,
+            "runs": [],
+            "summary": summarize([], target, args.owner),
+        }
+    )
+    runs_report = cohort["runs"]
+    checkpoint()
     for ordinal in range(runs):
         implementations: dict[str, Any] = {}
         order = selected_implementations(ordinal, args.owner)
+        run_report = {
+            "ordinal": ordinal,
+            "order": order,
+            "classification": "in_progress",
+            "implementations": implementations,
+        }
+        runs_report.append(run_report)
+        checkpoint()
         for implementation in order:
             output_root = owned_root / torrent["slug"] / f"pair-{ordinal}" / implementation
             output_root.parent.mkdir(parents=True, exist_ok=True)
@@ -799,35 +927,16 @@ def run_one_scenario(
             implementations[implementation] = result
             resolved = validate_output_ancestry(owned_root, output_root)
             shutil.rmtree(resolved, ignore_errors=True)
+            checkpoint()
         classification = (
             classify_pair(implementations["rstorrent"], implementations["libtorrent"])
             if args.owner == "both"
             else classify_owner(implementations[args.owner])
         )
-        runs_report.append(
-            {
-                "ordinal": ordinal,
-                "order": order,
-                "classification": classification,
-                "implementations": implementations,
-            }
-        )
-    return {
-        "torrent": {
-            "slug": torrent["slug"],
-            "name": torrent["name"],
-            "info_hash": torrent["info_hash"],
-            "roles": torrent["roles"],
-            "expected": torrent["expected"],
-            "source": torrent["source"],
-        },
-        "profile": profile,
-        "profile_sha256": comparison_profile(profile)["sha256"],
-        "target": target,
-        "input_mode": args.input_mode,
-        "runs": runs_report,
-        "summary": summarize(runs_report, target, args.owner),
-    }
+        run_report["classification"] = classification
+        cohort["summary"] = summarize(runs_report, target, args.owner)
+        checkpoint()
+    return cohort
 
 
 def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
@@ -867,21 +976,10 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         binary = build_probe(repository)
     elif args.owner != "libtorrent" and not binary.is_file():
         raise HarnessError(f"--no-build probe does not exist at {binary}")
-    started = time.time()
-    cohorts: list[dict[str, Any]] = []
-    with tempfile.TemporaryDirectory(prefix="rstorrent-public-compare-") as temporary:
-        owned_root = Path(temporary).resolve()
-        for scenario in scenarios:
-            metainfo_path: Path | None = None
-            if args.input_mode == "metainfo":
-                metainfo_path = owned_root / f"{scenario['torrent']['slug']}.torrent"
-                fetch_catalog_metainfo(scenario["torrent"], metainfo_path)
-            cohorts.append(
-                run_one_scenario(scenario, args, binary, owned_root, metainfo_path)
-            )
     report = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at_unix_seconds": started,
+        "status": "running",
+        "generated_at_unix_seconds": time.time(),
         "environment": environment_snapshot(repository, binary if binary.is_file() else None),
         "config": {
             "suite": args.suite,
@@ -893,9 +991,50 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             "order": "ABBA" if args.owner == "both" else "single-owner",
         },
         "catalog_schema_version": catalog["schema_version"],
-        "cohorts": cohorts,
+        "cohorts": [],
     }
-    validate_retained_report(report)
+    output_path = args.output.resolve()
+
+    def checkpoint() -> None:
+        report["checkpointed_at_unix_seconds"] = time.time()
+        write_report_atomic(output_path, report)
+
+    checkpoint()
+    try:
+        with tempfile.TemporaryDirectory(prefix="rstorrent-public-compare-") as temporary:
+            owned_root = Path(temporary).resolve()
+            for scenario in scenarios:
+                metainfo_path: Path | None = None
+                if args.input_mode == "metainfo":
+                    metainfo_path = owned_root / f"{scenario['torrent']['slug']}.torrent"
+                    fetch_catalog_metainfo(scenario["torrent"], metainfo_path)
+                cohort: dict[str, Any] = {}
+                report["cohorts"].append(cohort)
+                checkpoint()
+                completed = run_one_scenario(
+                    scenario,
+                    args,
+                    binary,
+                    owned_root,
+                    metainfo_path,
+                    cohort,
+                    checkpoint,
+                )
+                if completed is not cohort:
+                    raise HarnessError("scenario checkpoint identity changed")
+                checkpoint()
+    except KeyboardInterrupt:
+        report["status"] = "interrupted"
+        checkpoint()
+        raise
+    except (HarnessError, ContractError, OSError) as error:
+        report["status"] = "failed"
+        report["terminal_detail"] = f"{type(error).__name__}: {error}"
+        checkpoint()
+        raise
+    report["status"] = "complete"
+    report["completed_at_unix_seconds"] = time.time()
+    checkpoint()
     return report
 
 
@@ -914,13 +1053,15 @@ def main(arguments: list[str]) -> int:
     try:
         report = inspect_candidate(args) if args.inspect_candidate else run_campaign(args)
         validate_retained_report(report)
+    except KeyboardInterrupt:
+        print("interrupted; last completed owner checkpoint retained", file=sys.stderr)
+        return 130
     except (HarnessError, ContractError, OSError) as error:
         print(f"harness error: {error}", file=sys.stderr)
         return 2
     rendered = json.dumps(report, indent=2, sort_keys=True)
     if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered + "\n", encoding="utf-8")
+        write_report_atomic(args.output, report)
     if not args.quiet:
         print(rendered)
     return 0

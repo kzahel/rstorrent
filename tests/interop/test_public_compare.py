@@ -8,18 +8,23 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from public_compare import (
     HarnessError,
+    active_transfer_seconds,
     classify_owner,
     classify_pair,
     distribution,
     implementation_order,
     load_catalog,
+    run_one_scenario,
     run_owner_process,
     scenario_magnets,
     selected_implementations,
+    suite_scenarios,
     summarize,
+    write_report_atomic,
 )
 from public_compare_libtorrent_worker import (
     DHT_BOOTSTRAP_NODES,
@@ -129,8 +134,20 @@ class PublicCompareTests(unittest.TestCase):
             {
                 "classification": "both_reached",
                 "implementations": {
-                    "rstorrent": outcome("milestone_reached", 4.0),
-                    "libtorrent": outcome("milestone_reached", 2.0),
+                    "rstorrent": {
+                        "outcome": "milestone_reached",
+                        "milestones": {
+                            "metadata_verified": 4.0,
+                            "first_payload_byte": 1.0,
+                        },
+                    },
+                    "libtorrent": {
+                        "outcome": "milestone_reached",
+                        "milestones": {
+                            "metadata_verified": 2.0,
+                            "first_payload_byte": 0.5,
+                        },
+                    },
                 },
             },
             {
@@ -144,6 +161,12 @@ class PublicCompareTests(unittest.TestCase):
         summary = summarize(runs, "metadata")
         self.assertEqual(summary["comparable_samples"], 1)
         self.assertEqual(summary["rstorrent_over_libtorrent"]["median"], 2.0)
+        self.assertEqual(summary["active_transfer_samples"], 1)
+        self.assertEqual(
+            summary["rstorrent_over_libtorrent_active_transfer"]["median"], 2.0
+        )
+        self.assertEqual(summary["rstorrent_discovery_seconds"]["median"], 1.0)
+        self.assertEqual(summary["libtorrent_discovery_seconds"]["median"], 0.5)
         self.assertEqual(summary["classifications"]["reference_only"], 1)
 
         owner_runs = [
@@ -160,6 +183,83 @@ class PublicCompareTests(unittest.TestCase):
         self.assertEqual(owner_summary["owner"], "rstorrent")
         self.assertEqual(owner_summary["classifications"]["owner_reached"], 1)
         self.assertEqual(owner_summary["owner_seconds"]["median"], 4.0)
+
+        active_result = outcome("milestone_reached", 6.0)
+        active_result["milestones"]["first_payload_byte"] = 2.0
+        self.assertEqual(active_transfer_seconds(active_result, "metadata"), 4.0)
+        active_result["milestones"]["first_payload_byte"] = 7.0
+        self.assertIsNone(active_transfer_seconds(active_result, "metadata"))
+
+    def test_quick_suite_is_two_short_pairs(self) -> None:
+        catalog = load_catalog(Path(__file__).parents[1] / "live" / "torrents.json")
+        scenarios = suite_scenarios(catalog, "quick")
+        self.assertEqual(
+            [(item["torrent"]["slug"], item["target"], item["runs"]) for item in scenarios],
+            [
+                ("big-buck-bunny", "complete", 1),
+                ("ubuntu-26.04-live-server-amd64", "10-percent", 1),
+            ],
+        )
+        self.assertEqual([item["timeout_seconds"] for item in scenarios], [120, 120])
+
+    def test_atomic_report_checkpoint_replaces_complete_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "report.json"
+            write_report_atomic(path, {"schema_version": 2, "status": "running"})
+            self.assertEqual(json.loads(path.read_text())["status"], "running")
+            write_report_atomic(path, {"schema_version": 2, "status": "complete"})
+            self.assertEqual(json.loads(path.read_text())["status"], "complete")
+            self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
+
+    def test_scenario_checkpoints_each_owner_before_pair_completion(self) -> None:
+        catalog = load_catalog(Path(__file__).parents[1] / "live" / "torrents.json")
+        scenario = {
+            "torrent": catalog["torrents"][0],
+            "profile": "matched-plain-30",
+            "target": "complete",
+            "runs": 1,
+            "timeout_seconds": 1,
+        }
+        args = SimpleNamespace(
+            timeout_seconds=None,
+            cleanup_seconds=1,
+            owner="both",
+            input_mode="metainfo",
+        )
+        snapshots: list[dict] = []
+        cohort: dict = {}
+
+        def result(*_args: object, **_kwargs: object) -> dict:
+            return {
+                "outcome": "milestone_reached",
+                "milestones": {"published": 2.0, "first_payload_byte": 1.0},
+            }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            with (
+                patch("public_compare.run_rstorrent", side_effect=result),
+                patch("public_compare.run_libtorrent", side_effect=result),
+                patch("public_compare.validate_catalog_observation"),
+            ):
+                run_one_scenario(
+                    scenario,
+                    args,
+                    Path("unused"),
+                    root,
+                    Path("unused.torrent"),
+                    cohort,
+                    lambda: snapshots.append(json.loads(json.dumps(cohort))),
+                )
+
+        implementations = [
+            set(snapshot["runs"][0]["implementations"])
+            for snapshot in snapshots
+            if snapshot.get("runs")
+        ]
+        self.assertIn({"rstorrent"}, implementations)
+        self.assertIn({"rstorrent", "libtorrent"}, implementations)
+        self.assertEqual(cohort["runs"][0]["classification"], "both_reached")
 
     def test_distribution_uses_nearest_rank_p90(self) -> None:
         self.assertEqual(distribution(list(range(1, 11)))["p90"], 9)

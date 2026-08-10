@@ -64,9 +64,10 @@ The tactical is complete only when all of the following are true:
 3. the release-mode workers pass controlled full-download comparisons for
    matched plaintext and forced RC4, with exact payload verification and no
    owned task, process, or artifact left behind;
-4. the baseline cohorts in [Required Live Evidence](#required-live-evidence)
-   are attempted under one retained hardware and filesystem profile, every
-   result is kept, and every failure is classified;
+4. the bounded quick comparison in
+   [Required Live Evidence](#required-live-evidence) is attempted under one
+   retained hardware and filesystem profile, each completed owner is
+   checkpointed immediately, and every failure is classified;
 5. no integrity, publication, cleanup, privacy, or resource-bound violation is
    present in retained evidence; and
 6. the tactical, owning topics, catalog provenance, and campaign checkpoint
@@ -262,6 +263,8 @@ require root or purge system caches.
 
 Named suites prevent an accidental large run:
 
+- `quick`: one 120-second direct-metainfo matched-plain complete pair for Big
+  Buck Bunny and one 120-second Ubuntu pair targeting 10% verified payload;
 - `smoke`: one direct-metainfo Big Buck Bunny matched-plain complete pair;
 - `standard`: four direct-metainfo matched-plain complete pairs for Big Buck
   Bunny and four for the refreshed medium-distro role;
@@ -277,11 +280,11 @@ Named suites prevent an accidental large run:
 - `diagnostic`: at most ten alternating pairs for one explicitly selected
   catalog/profile/target after a baseline identifies a gap.
 
-Only `smoke`, `standard`, `large`, `product`, and `encryption` are required to
-close this tactical. `breadth` is attempted when the current official payload
-and aggregate network ceilings fit the authorized invocation; otherwise each
-skipped role is recorded with the exact preflight reason. `diagnostic` is not
-run merely to accumulate samples and never includes an engine change.
+Only `quick` is required to close this tactical. The earlier `smoke` result is
+retained history; `standard`, `large`, `product`, `encryption`, and `breadth`
+remain explicit opt-in investigations and are not run for closure.
+`diagnostic` is not run merely to accumulate samples and never includes an
+engine change.
 
 ## Result And Measurement Contract
 
@@ -360,21 +363,23 @@ and compares every SHA-1 in the `pieces` string. It uses at most 1 MiB of
 payload buffer and does not call either engine's verification API. Integrity
 checking is outside the timed download interval. A nonterminal target retains
 the owner's hash-verified progress and exact metainfo identity but makes no
-independent full-payload integrity claim and contributes no speed ratio.
+independent full-payload integrity claim. It may contribute a target-time and
+active-transfer ratio only when both owners reach the same hash-verified
+milestone from the same metainfo and profile.
 
-A paired speed ratio exists only when both workers use the same validated
-input/profile/target, reach publication, pass independent verification, and
-clean up. Cohort output includes raw observations, paired ratios, completion
-counts, median, p90 only when the sample count makes it meaningful, median
-absolute deviation, and order-stratified summaries. It does not impute failed
-runs or compute a ratio from one owner's timeout.
+A paired ratio exists only when both workers use the same validated
+input/profile/target, reach the target, and clean up. Complete targets also
+require independent full-payload verification. Cohort output includes raw
+observations, process-start target time, discovery time, active-transfer time,
+paired ratios, completion counts, median, p90 only when the sample count makes
+it meaningful, and median absolute deviation. It does not impute failed runs
+or compute a ratio from one owner's timeout.
 
 Classification retains Tactical `015`'s functional outcomes and adds typed
 preflight, resource-bound, settings-mismatch, integrity, publication, cleanup,
 privacy, and worker-protocol failures. Public unavailability is evidence, not
-a harness failure. If pinned libtorrent completes fewer than three of four
-primary small/medium runs or neither large run, that catalog role is
-`reference_unhealthy` and no parity conclusion is drawn from it.
+a harness failure. A quick pair in which either owner misses the target is
+non-comparable and produces no parity conclusion.
 
 ## Exact Bounds, Safety, And Cleanup
 
@@ -384,8 +389,9 @@ or CI.
 
 - Metainfo input is at most 64 MiB, v1 payload at most 16 GiB, and one
   invocation at most 20 pairs.
-- The default owner deadline is 30 minutes; a catalog role may request up to
-  four hours for a large payload. Cleanup grace is 30 seconds.
+- The required `quick` suite gives each owner 120 seconds total and ten seconds
+  of cleanup grace. Legacy diagnostic suites retain explicit longer catalog
+  limits but are not closure work.
 - Per-owner wire payload is bounded by
   `max(expected_payload * 3 / 2, expected_payload + 256 MiB)`. Exceeding it
   cancels the worker and classifies `resource_bound`.
@@ -565,11 +571,11 @@ its first-party Rust hot path.
    including exact MSE method, payload hashes, resource high waters, and
    cleanup. Reconcile against the retained synthetic throughput baseline.
 5. Refresh official catalog candidates through the inspection command,
-   review/commit provenance, run `smoke`, then `standard`, then `large`, then
-   `product` and `encryption`. A failed earlier suite does not erase evidence;
-   it blocks only a larger suite when integrity, cleanup, privacy, or a hard
-   resource invariant is at risk.
-6. Aggregate and interpret the baseline without changing engine policy. Update
+   review/commit provenance, then run the bounded quick comparison. Persist
+   each owner result atomically before starting the next owner so interruption
+   loses no completed observation.
+6. Separate process-start/discovery time from active-transfer time and
+   interpret the result without changing engine policy. Update
    this tactical and the owning topics with actual commands, distributions,
    terminal classifications, resource high waters, and the narrowest
    source-first next slice.
@@ -618,25 +624,28 @@ its first-party Rust hot path.
 ### Required live evidence
 
 On one recorded clean host/filesystem profile, with no unrelated high-load
-work and ordinary uncontrolled caches:
+work and ordinary uncontrolled caches, run one `quick` invocation under
+`matched-plain-30`:
 
-1. run `smoke` and retain the complete pair;
-2. run `standard`: four complete ABBA pairs each for Big Buck Bunny and the
-   refreshed official medium-distro role under `matched-plain-30`;
-3. run `large`: two complete-attempt pairs for the refreshed official Ubuntu
-   large-distro role under `matched-plain-30`;
-4. run `product`: two complete-attempt pairs each for Big Buck Bunny and
-   Ubuntu under `product-default`; and
-5. run `encryption`: one bounded Big Buck Bunny first-piece pair under
-   `matched-rc4-30`, after the controlled full-download RC4 gate passes.
+1. one complete Big Buck Bunny pair; and
+2. one Ubuntu Server pair to 10% verified payload.
 
-`complete-attempt` means both workers receive their full declared deadline and
-all outcomes are retained; it does not assert that the public swarm completes.
-Do not proceed from a suite that exposes an integrity, cleanup, privacy, or
-hard-bound defect until that harness defect is fixed and the affected suite is
-rerun. Ordinary timeout, reference unavailability, or a measured RSTorrent gap
-does not authorize tuning in this tactical and does not invalidate healthy
-earlier observations.
+Each owner receives at most 120 seconds total. A zero-payload or incomplete
+owner is classified at that boundary rather than extended or retried. The
+report is atomically replaced after each owner and pair, so an interrupt keeps
+all completed observations. When both owners reach the target, report
+process-start milestone time, time to first payload, and active-transfer time
+from first payload to the target separately. When either owner does not reach
+the target, report discovery/availability evidence and no throughput ratio.
+
+This quick comparison is intentionally an informative A/B smoke, not a
+statistical public-swarm campaign. Additional pairs or product-default,
+encryption, DHT, and catalog-breadth runs are explicit follow-ups, not closure
+requirements. The controlled full-download plaintext and RC4 gates remain the
+stable same-peer throughput evidence. Do not proceed from a result that
+exposes an integrity, cleanup, privacy, or hard-bound defect; ordinary public
+unavailability remains a valid fast classification and does not authorize
+engine tuning in this tactical.
 
 ## Implementation Progress
 
@@ -753,9 +762,7 @@ a fresh five-redirect counter on each of two bounded attempts, and refuses
 identity or reviewed-geometry drift before a payload worker starts.
 
 No payload was downloaded and no third-party metainfo was retained. The next
-checkpoint is the required public `smoke` suite, followed by `standard`,
-`large`, `product`, and `encryption` when no integrity, cleanup, privacy, or
-hard-bound defect is observed.
+checkpoint at that time was the required public `smoke` suite.
 
 ### Public smoke: 2026-08-10
 
@@ -779,7 +786,28 @@ general throughput comparison.
 The report passed retained-artifact privacy validation and was summarized
 here before its 1,109,517-byte raw JSON and all payload artifacts were removed.
 No integrity, cleanup, privacy, or hard-bound defect blocks the required
-`standard` suite.
+follow-up comparison.
+
+### Live-method correction: 2026-08-10
+
+The initial four-pair Big Buck Bunny plus four-pair Debian `standard` suite
+was manually interrupted after about 2.5 hours. Sequential workers with
+30-minute all-purpose deadlines spent most of that time at zero payload, and
+the old orchestrator wrote JSON only after the entire suite. The run therefore
+produced no retained structured evidence and is not used for an owner or
+performance claim. Ctrl-C terminated the exact active worker, the temporary
+root was removed, no report or payload remained, and no repository state
+changed.
+
+Maintainer review rejected that methodology as too slow and indirect for the
+desired client comparison. Tactical `122` now distinguishes discovery wall
+time from active-transfer time, checkpoints every completed owner atomically,
+and makes one 120-second Big Buck Bunny complete pair plus one 120-second
+Ubuntu 10% pair the required public comparison. Zero-payload timeouts are
+classified immediately; they do not trigger repeated 30-minute attempts.
+Controlled same-peer plaintext and RC4 results remain the causal throughput
+authority, while public pairs answer whether each client can find peers and
+deliver useful real-swarm payload promptly.
 
 ## Non-Goals And Next Boundary
 

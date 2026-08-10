@@ -8,8 +8,8 @@ cleanup, and classification JSON without opening a product surface. Its first
 controlled and public full-download baselines are recorded below.
 Tactical `122` is extending that foundation with direct-metainfo inputs,
 matched encryption/connection profiles, independent piece verification,
-process resources, and balanced real-torrent cohorts. Public-swarm speed
-remains a measured baseline, not a CI pass threshold.
+process resources, and a bounded quick real-torrent comparison. Public-swarm
+speed remains a measured baseline, not a CI pass threshold.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo
@@ -44,6 +44,17 @@ plaintext payload streams, stayed within process and wire bounds, joined, and
 cleaned up. The 0.039 publication-time ratio is therefore dominated by one
 reference discovery delay and is retained as a paired public observation, not
 a stable throughput or regression claim.
+
+An attempted repeated `standard` cohort then showed that 30-minute
+all-purpose owner deadlines and final-only report writing are unsuitable for
+an interactive client comparison. It was interrupted after about 2.5 hours,
+cleaned completely, and produced no retained structured result; process
+turnover observed while it ran is not performance evidence. The corrected
+contract checkpoints each completed owner atomically, limits the required
+public pair to 120 seconds per owner, and reports discovery time separately
+from active-transfer time. The required public work is now one Big Buck Bunny
+complete pair and one Ubuntu 10% pair under matched settings, not a multi-hour
+cohort.
 
 ## Purpose
 
