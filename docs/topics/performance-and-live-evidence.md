@@ -35,6 +35,16 @@ pinned by the outer hash but intentionally represented as `null`; its
 `dht-only` profile disables web seeds and the report does not need to retain
 hundreds of third-party URLs. No payload or metainfo artifact is committed.
 
+The first catalog-backed public smoke completed exact Big Buck Bunny
+publication for both matched-plaintext owners from clean commit `6b94a5a`.
+RSTorrent published in 16.438 seconds; libtorrent published in 417.640 seconds
+after waiting 406.738 seconds for its first candidate. Both independently
+verified all 1,055 pieces and 276,445,467 logical bytes, used only TCP
+plaintext payload streams, stayed within process and wire bounds, joined, and
+cleaned up. The 0.039 publication-time ratio is therefore dominated by one
+reference discovery delay and is retained as a paired public observation, not
+a stable throughput or regression claim.
+
 ## Purpose
 
 Real swarms expose discovery, scheduling, timeout, completion, CPU, memory, and

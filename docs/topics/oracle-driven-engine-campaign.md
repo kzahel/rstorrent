@@ -396,12 +396,14 @@ plaintext and forced-RC4 controls pass for both owners with exact independent
 verification, actual payload-method evidence, process resources, bounded wire
 payload, and joined cleanup. Its reviewed nine-entry public catalog now pins
 the official WebTorrent, Debian, Ubuntu, Arch Linux, and Linux Mint metainfo
-identities and geometry. Run the bounded public suites in order: `smoke`,
-`standard`, `large`, `product`, and `encryption`; retain every classification
-and stop escalation only for integrity, cleanup, privacy, or hard-bound
-defects. Keep uTP paused; do not install a remote oracle, change remote network
-state, contact another host, or infer product-policy, MSE-over-uTP, reverse-
-incoming, or support-claim authority.
+identities and geometry. Its first matched public smoke passes exact Big Buck
+Bunny publication, independent verification, resources, and cleanup for both
+owners; delayed reference discovery produced a 16.438/417.640-second paired
+observation. Run `standard`, then `large`, `product`, and `encryption`; retain
+every classification and stop escalation only for integrity, cleanup,
+privacy, or hard-bound defects. Keep uTP paused; do not install a remote
+oracle, change remote network state, contact another host, or infer product-
+policy, MSE-over-uTP, reverse-incoming, or support-claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

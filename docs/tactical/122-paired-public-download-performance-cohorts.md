@@ -757,6 +757,30 @@ checkpoint is the required public `smoke` suite, followed by `standard`,
 `large`, `product`, and `encryption` when no integrity, cleanup, privacy, or
 hard-bound defect is observed.
 
+### Public smoke: 2026-08-10
+
+The opt-in `smoke` suite ran from clean commit `6b94a5a` on the retained Apple
+M4 Pro/macOS 26.5.2/APFS host with ordinary uncontrolled caches. The command
+authorized 2 GiB of network payload against a calculated 1,089,761,846-byte
+worst case and used the exact direct-metainfo Big Buck Bunny input under
+`matched-plain-30`, RSTorrent first.
+
+Both owners reached complete publication, independently verified all 1,055
+pieces and 276,445,467 logical bytes, used TCP plaintext streams with no uTP
+payload contributor, stopped without forced termination, and cleaned their
+output roots. RSTorrent published in 16.438 seconds with 22,003,712-byte peak
+RSS and 2.06 CPU seconds. Libtorrent published in 417.640 seconds with
+319,668,224-byte peak RSS and 11.33 CPU seconds. Its first candidate did not
+arrive until 406.738 seconds; after discovery, its complete payload took about
+10.9 seconds. The one-pair publication ratio is 0.039, but the delayed
+reference discovery makes this a paired public observation rather than a
+general throughput comparison.
+
+The report passed retained-artifact privacy validation and was summarized
+here before its 1,109,517-byte raw JSON and all payload artifacts were removed.
+No integrity, cleanup, privacy, or hard-bound defect blocks the required
+`standard` suite.
+
 ## Non-Goals And Next Boundary
 
 - No engine optimization, picker/scheduler retuning, new protocol capability,
