@@ -29,12 +29,13 @@ restart, complete recheck, publication, upload, removal, grant repair,
 cancellation, exact cleanup, and bounded-resource assertions. Applicable
 Android behavior is now a non-deferrable completion gate for future engine
 tacticals.
-Planned Tactical
+Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) consumes that
 common observation seam for the first accepted trusting policy. Supported
-local SAF resumes will follow the same per-torrent structural decision as path
-storage, without requiring an opaque provider token; the feature remains
-unimplemented and ordinary partial restart is still conservative today.
+local SAF resumes follow the same per-torrent structural decision as path
+storage, without requiring an opaque provider token. Matching ordinary resume
+trusts only committed bits with zero payload hashing; publication recovery and
+explicit or pending Force verification remain full.
 
 ## Scope
 
@@ -88,8 +89,10 @@ facts that remain in force:
 - Grant loss and provider refusal are availability failures, not evidence that
   metadata or verified client state is corrupt.
 
-The product path now restores only durable root identity, selection, storage
-phase, metadata, and conservative verified state. `ApplicationService` owns
+The product path restores only durable root identity, selection, storage
+phase, metadata, and historical verified state. Ordinary eligible resume now
+admits that committed bitmap only after exact bounded structural observations;
+it does not claim a fresh hash pass. `ApplicationService` owns
 one pool whose permits count actual Rust-owned handles, including evicted
 handles still retained by immutable jobs. Kotlin resolves one exact document
 per cache miss using four bounded provider workers and closes the borrowed PFD
@@ -276,6 +279,12 @@ A crash on either side of the provider rename retains the durable two-phase
 state established by Tactical `009`. Dynamic acquisition changes how files are
 reopened, not what constitutes published success.
 
+Tactical `120` does not weaken this boundary. Pending provider publication is
+not an ordinary eligible resume: after namespace confirmation it enters the
+fresh common checker before completion. Only a coherent staging or already
+published ordinary resume may trust committed bits after exact observation.
+Force always uses the same complete checker.
+
 The final Tactical 073 API 34 no-window AVD run force-stopped during download,
 rechecked and repaired one corrupted piece, killed the process after provider
 rename, and restarted through `checking/published`, `recheck_started`, and
@@ -423,15 +432,24 @@ bridge; after acquisition, payload I/O remains in Rust.
   Provider identifiers and URIs remain in Kotlin. Root restore and repair
   exercise that observation before admitting torrent work, while later grant
   or provider failure transitions the root back to unavailable.
+- Tactical `120`'s API 34 no-window AVD retained two checkpoint claims, killed
+  the process after provider rename, restarted through fresh published checking,
+  matched the 256 KiB payload SHA-1, failed closed on revoked grant, joined
+  foreground shutdown, and removed the owned tree. A second reactive run
+  completed eight pieces and joined notification stop. These gates exposed
+  and closed broker receivers blocked during cancellation and four Kotlin
+  provider workers racing UniFFI client destruction; service shutdown now
+  wakes, joins, and only then closes those owners.
 
 ## Recommended Next Work
 
 Do not extend the diagnostic-only fixed-manifest APIs. General root
 management, cloud/removable provider support, relocation, and an exposed
-advanced file-pool setting still require their own product decisions. Planned
-Tactical `120` consumes exact existence, kind, and length as per-torrent fast-
-resume admission evidence for the supported local provider. It adds no
-persisted provider-token snapshot; absence of the optional opaque token alone
-does not force checking. Checker-readable disagreement falls back only that
-torrent, unavailable capability remains awaiting repair, and Force recheck
-always hashes.
+advanced file-pool setting still require their own product decisions.
+Completed Tactical `120` consumes exact existence, kind, and length as
+per-torrent fast-resume admission evidence for the supported local provider.
+It adds no persisted provider-token snapshot; absence of the optional opaque
+token alone does not force checking. Checker-readable disagreement falls back
+only that torrent, unavailable capability remains awaiting repair, and Force
+recheck always hashes. Additional provider classes still require their own
+capability and lifecycle evidence.

@@ -107,17 +107,17 @@ capability health, SAF published reads, and physical iOS persistence/lifecycle
 evidence without changing schema 17. Portable rows retain root identity,
 payload state, verification generations, and current storage generation;
 platform locators and runtime health remain adapter-owned. It does not
-by itself authorize a trusting resume decision: conservative restart and full
-Force recheck remain current behavior.
+by itself authorize a trusting resume decision; completed Tactical `120` now
+owns that separate policy, while full Force recheck remains current behavior.
 
-Planned Tactical
+Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) records the now-
-accepted decision for the next persistence-facing slice. Ordinary eligible
-resumes will trust the existing synchronized per-torrent have bitmap after
+implemented persistence-facing decision. Ordinary eligible resumes trust the
+existing synchronized per-torrent have bitmap after
 bounded structural storage validation, without a clean-shutdown prerequisite,
 global crash invalidation, product setting, or new observation table. A
-pending verification generation and Force recheck remain full. This policy is
-not implemented yet, so current ordinary partial restart remains conservative.
+pending verification generation and Force recheck remain full. The decision
+uses existing schema-17 facts and adds no persisted heuristic or resume field.
 
 ## Scope
 
@@ -350,27 +350,23 @@ defined.
 
 A persisted have-bit does not prove that current payload bytes are correct,
 and a false bit does not prove that usable bytes are absent. The managed
-restart path is deliberately conservative:
+restart path first validates durable identity, bitmap geometry, payload and
+verification generations, root health, namespace ownership, exact logical
+file kind/length observations, and part-file header/slot extents.
 
-1. validate database and encoding versions and torrent identity;
-2. hash and parse the stored raw info bytes;
-3. validate the bitfield shape and storage-root resolution;
-4. reconcile durable file/tree staging, publishing, or published ownership
-   with the physical artifact side and fail closed on ambiguous types;
-5. enter `checking`, remove the old bitmap from runtime authority, and hash
-   every physically readable logical piece through the ordinary fixed-buffer
-   mapping independently of current file selection, including persisted false
-   bits; and
-6. synchronize newly recovered staging targets as required, then atomically
-   replace the exact bitmap and leave checking only after every hash job joins.
+If those facts match for an ordinary eligible staging or published resume, the
+engine installs only the existing committed true bits without reading payload
+content, starting a SHA-1 job, or creating a verification generation. A false
+bit remains missing work even when bytes happen to be physically present.
+Clean shutdown is neither required nor recorded.
 
-This is the currently implemented durable resume with bounded recheck.
-Planned Tactical `120` replaces ordinary eligible admission, not these durable
-facts: committed have bits may skip payload hashes after write ordering,
-storage identity, namespace, exact logical-file observations, and part-file
-structure agree. Clean shutdown is not required. Checker-readable disagreement
-falls back for that torrent only, while malformed ownership remains repair-
-local and Force recheck always hashes.
+Checker-readable structural disagreement starts one full generation for that
+torrent only. The existing checker removes the old runtime bitmap, hashes
+every physically readable logical piece independently of selection,
+synchronizes newly recovered staging targets as required, and atomically
+replaces have state only after all jobs join. Unavailable roots remain awaiting
+storage; malformed or ambiguous ownership remains repair-local. Explicit or
+pending Force recheck always takes this complete checker path.
 
 The critical crash-ordering invariant is one-sided: durable storage and
 verification occur before the database may commit a have-bit. A crash between
@@ -644,12 +640,12 @@ successful mutation unreadable after upgrade.
   post-sync/pre-commit crashes retain zero false have bits; the observed
   post-commit boundary safely retains all 256. Broader filesystem failure
   profiles remain open.
-- Planned Tactical `120` owns the accepted per-torrent trust policy now that
+- Completed Tactical `120` owns the implemented per-torrent trust policy now that
   Tactical `116` makes storage generation, root health, logical artifact
   identity, and file observations coherent for path and supported Android SAF
   storage. It deliberately requires no clean-shutdown envelope, new schema
-  field, or persisted observation snapshot. Until it lands, ordinary partial
-  restart continues through the full checker.
+  field, or persisted observation snapshot. Its deliberate remaining risk is
+  same-length external mutation; Force is the explicit fresh-integrity path.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
 - Tactical
@@ -808,7 +804,18 @@ use the ordinary revision and receipt rules. Reopen, rollback, near-overflow
 renumbering, and a 1,000-entry/2,000-move reference model all preserve one
 total order. Runtime admission is reconstructed from these durable facts.
 
+Completed Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) keeps schema 17
+and makes existing synchronized have state the only positive resume authority.
+One task-free typed policy combines ordinary-versus-Full intent with common
+path/SAF structural observations. Its crash matrix retains zero bits before
+the SQLite boundary and all 256 bits after it; physically valid false bits are
+safe redownload work. Five hundred completed seeds restore at verification
+generation zero beside three active downloads, while an interrupted Force
+generation resumes as a complete check. Matching same-length mutation is
+deliberately outside ordinary detection and is caught by explicit Force.
+
 This evidence does not broaden into a stable public wire protocol, complete UI
 settings catalog, remote listener,
 profile-management UI, simultaneous profiles, unfinished-block resume, or
-hash-skipping fast resume.
+external-mutation detection during ordinary trusting resume.

@@ -1,7 +1,7 @@
 # Code Organization And Refactoring
 
 Status: Living guidance with its latest quantitative snapshot measured at
-source commit `c545e91`; direction was reconciled on 2026-08-10 at `caa32cf`
+source commit `c545e91`; direction was reconciled on 2026-08-10 at `c34b7be`
 after completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md),
 [`080`](../tactical/080-session-view-subsystem-boundaries.md), and the
@@ -19,13 +19,14 @@ application lifecycle and SQLite transaction authorities. Tactical `116`
 then extracted immutable artifact geometry, exact logical storage references
 and observations, shared published reads, and namespace transitions without a
 generic filesystem layer. Tactical `119` kept its dependency-free transport
-state inside the protocol crate. Current general pressure remains highest in
+state inside the protocol crate. Completed Tactical `120` then placed one
+task-free typed resume decision in the engine, reused common structural
+observations, and left the full checker and write-side coordinator intact.
+Current general pressure remains highest in
 the application callback/test topology, historical store internals, and role-
 specific peer bootstrap paths exposed by MSE. No standalone refactor is
-selected. Planned Tactical
-[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) consumes the
-proven storage seam and selects only a feature-driven task-free resume-
-admission policy plus structural validation boundary.
+selected. The completed storage slice does not justify a generic resume,
+storage, or recovery framework.
 
 Topic: `code-organization-and-refactoring`
 
@@ -284,7 +285,7 @@ The following quantitative snapshot uses the source tree at `c545e91` on
 commits after the `4f0ba8d` refresh. This shorter-than-usual interval records
 Tactical `114`'s material application, persistence, and resource-owner changes
 before Tactical `116` began its selected storage boundary. Later direction
-text records `116`'s completed seam and planned Tactical `120`; production
+text records `116`'s completed seam and completed Tactical `120`; production
 and test counts are approximate physical lines. For Rust files with one
 trailing `#[cfg(test)]` module, the marker separates the two; child test files
 are counted separately. Files with interspersed test-only helpers are
@@ -296,7 +297,7 @@ substantial ownership.
 | Boundary | Approximate production lines | Approximate test lines | Touches in 200 commits | Current assessment |
 | --- | ---: | ---: | ---: | --- |
 | Engine driver facade plus `control`, `storage_pipeline`, and session resources | about 11,492 across four owners | 8,575 child-test lines plus about 663 inline storage/resource tests | 23 on the facade, 4 on session resources | Tactical `079` still supplies useful owners. Tactical `114` adds one cohesive task-free session authority while `DownloadControl` retains torrent-local checker and observation state. No umbrella split is justified. |
-| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Tactical `116` extracted shared immutable artifact geometry, logical observations, namespace decisions, and published reads while retaining `SelectiveStorage` as the write-side transition owner. Planned Tactical `120` now selects only the unconditional-resume-check admission seam and required structural validation; no broader split is justified. |
+| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Tactical `116` extracted shared immutable artifact geometry, logical observations, namespace decisions, and published reads while retaining `SelectiveStorage` as the write-side transition owner. Tactical `120` then removed unconditional resume checking through one task-free typed policy and bounded structural validation. The write-side owner remains cohesive; no broader split is justified. |
 | `SwarmState` | about 3,331 | about 1,766 | 9 | `piece_picker` owns independently changing activation policy. Retain the remaining deterministic transition owner until another policy separates. |
 | Incoming and outgoing peer bootstrap | about 4,507 across `incoming.rs` and `peer_socket.rs` before their test modules | about 2,031 | 18 incoming, 8 outgoing | Strong engine source-shape candidate after MSE. Pre-stream handshake/policy/accounting can become role-specific private children while listener/admission/upload and peer-set/task owners remain in place. Do not unify the two roles behind a generic async runner. |
 | DHT actor | about 3,044 | about 1,033 | 6 | Tactical `112` retained one actor around two independently bounded family nodes, one command route, and one observation owner. The growth is material, but no duplicated lifecycle or cross-family state leak appeared. Review again when a DHT policy changes independently; do not split by family or file size alone. |
@@ -508,11 +509,12 @@ still assess these already-visible private seams when behavior demands it:
 
 Keep `SelectiveStorage` as the state-transition coordinator. Do not turn the
 children into services, make upload depend on write-side state, or split all
-five concerns mechanically in one pass. Planned Tactical `120` uses the
-completed seam to extract one task-free fast-resume admission decision and to
-deduplicate structural validation between resumed download and completed
-seeding. It must not grow into a generic resume framework, persistence layer,
-filesystem trait, or second checker.
+five concerns mechanically in one pass. Tactical `120` completed the bounded
+feature seam: `resume_validation.rs` owns the task-free intent/evidence/outcome
+decision, while concrete storage builds exact observations and the existing
+checker owns fallback. Resumed download and completed-seed admission share the
+decision without a generic resume framework, persistence layer, filesystem
+trait, or second checker. No further extraction is selected from that result.
 
 ### 6. Direct-Engine Discovery Compatibility Boundary
 
@@ -609,15 +611,15 @@ lifecycle owner and active-generation map. That outcome resolves the immediate
 single-slot and resource-multiplier seams; it does not justify a follow-up
 admission service, store repository layer, or broad application test move.
 
-Tactical `116` is complete and proves the common published-read, observation,
-root-health, namespace-transition, Android parity, and physical-iOS storage
-seams which fast resume required. Planned Tactical `120` is the selected next
-storage-facing feature slice, while the authoritative product queue separately
-retains the uTP Stage 1 human-review checkpoint as **Now**. Let `120` remove
-only the unconditional resume check behind a task-free per-torrent decision
-and bounded structural validation. Do not reopen artifact geometry, create a
-global recovery coordinator, or turn the concrete path/SAF adapters into a
-general filesystem framework.
+Tacticals `116` and `120` are complete. The latter used the common published-
+read, observation, root-health, and namespace seams to remove only the
+unconditional ordinary resume check. Cancellation work exposed one concrete
+Android lifecycle defect: broker receivers and provider workers now wake and
+join before the client closes. That repair adds no new layer or reusable
+service. The authoritative queue separately retains the uTP Stage 2 human-
+review checkpoint as **Now**. Do not reopen artifact geometry, create a global
+recovery coordinator, or turn concrete path/SAF adapters into a general
+filesystem framework.
 
 If the feature queue is instead explicitly paused for one unrelated standalone
 structural tactical, application callback adapters plus categorized tests
@@ -649,6 +651,14 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-10:** Completed Tactical `120`. One task-free
+  `resume_validation` module now owns closed intent/evidence/outcome policy;
+  concrete path/SAF storage owns bounded observations, and the existing
+  checker remains the sole full-verification owner. Completed-seed and resumed-
+  download admission share the policy. Android shutdown now joins the already-
+  owned provider workers rather than adding an adapter layer. This resolves
+  the selected unconditional-check seam without promoting a generic storage,
+  persistence, recovery, or resume abstraction.
 - **2026-08-10:** Reconciled direction at source commit `caa32cf` without
   rerunning the quantitative snapshot. Completed Tactical `116` resolved the
   selected immutable artifact-geometry, logical observation, shared published-

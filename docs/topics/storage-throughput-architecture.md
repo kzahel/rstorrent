@@ -34,7 +34,7 @@ authority. Its physical iOS track proves that the narrow Rust logical-file
 capability survives app-owned bookmark restoration, Apple security scope,
 coordination, and lifecycle constraints. It does not add another payload
 runtime, external File Provider support, or a fast-resume policy.
-Planned Tactical
+Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now owns that
 policy without changing the checkpoint order or hot-path owners: matching
 per-torrent structural evidence admits synchronized committed bits with zero
@@ -495,16 +495,17 @@ all epoch bits, encodes once and commits once.
 | After writes and hash pass, before payload sync | The piece may exist on disk but its have bit is absent; recheck or redownload is safe. |
 | After payload sync, before SQLite commit | Durable bytes may be ahead of durable metadata; this is a safe false negative. |
 | During the SQLite transaction | SQLite exposes either the old or committed epoch; no partial have update is trusted. |
-| After the epoch commit | Current ordinary partial restart rehashes managed pieces. Planned Tactical `120` instead trusts the committed claim after bounded per-torrent structural validation; Force recheck remains full. |
+| After the epoch commit | Ordinary eligible restart trusts the committed claim after bounded per-torrent structural validation; Force recheck remains full. |
 
-The current restart path rehashes every physically readable logical piece,
+The current full-check path rehashes every physically readable logical piece,
 including persisted false bits. The replacement bitmap is committed only after
 all bounded hash jobs join and newly recovered staging targets pass their
-durability barrier. Planned Tactical `120` changes ordinary eligible admission
-without requiring clean shutdown: synchronized committed bits may skip payload
+durability barrier. Tactical `120` changes only ordinary eligible admission
+without requiring clean shutdown: synchronized committed bits skip payload
 hashing only after managed namespace, file, part-slot, root, and generation
 evidence agrees. Physically present false-bit bytes may then be downloaded
-again rather than recovered by startup hashing.
+again rather than recovered by startup hashing. Explicit or pending Force and
+structural disagreement retain the complete checker.
 
 Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)
@@ -704,7 +705,7 @@ reports actionable without turning logs into application state.
 | Part-file payload | Mutable cursor behind the torrent owner | Slot map is locked; payload I/O is positional outside it | One slot coordinator plus concurrent positional slot payload workers |
 | Part-file metadata | Slot change is immediately synchronized | Dirty slot metadata flush is separate from payload writes | Dirty mapping generations join batched durability epochs |
 | Selection changes | Live path and dynamic-SAF Normal/Skip use a joined torrent-generation fence | Asynchronous fenced jobs export part data; wanted-to-skipped does not migrate existing files | Targeted file/range routing-generation fence if measured reconnection cost justifies it |
-| Durability/resume | All v1 shapes use bounded dirty epochs, one sync per captured destination, merged SQLite commits, and an all-wanted managed full recheck | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Measure only future hash-skipping policies against the retained full-check oracle |
+| Durability/resume | All v1 shapes use bounded dirty epochs, one sync per captured destination, merged SQLite commits, structural ordinary fast resume, and a retained selection-independent full checker | Resume snapshot persistence remains caller-owned rather than a per-piece SQL barrier | Keep Force and structural fallback full; measure future heuristics only against the retained oracle |
 | Aggregate scheduling | Torrent-local resource authority | Session disk pool, 1 MiB default queued-byte watermark and ten generic threads | Session/root capacity and fairness with measured backend-specific limits |
 
 The normative storage shape comes from pinned BEP sources:
@@ -993,3 +994,13 @@ show that page-cache rereads remain a material limit under the retained large
 matrix; it is not the default next implementation merely because libtorrent
 supports it. Session/root-aware fairness remains deferred until more than one
 active download can share the owner.
+
+Tactical `120` subsequently removes ordinary restart hashing when exact
+per-torrent structure matches, without changing write, hash, checkpoint,
+publication, or session-resource ownership. Five hundred completed seeds
+restore beside three active downloads with zero storage hashes and the shared
+40-handle ceiling intact. The current 128 MiB/512-piece checkpoint regression
+completed with a 32 MiB payload allowance, four write and four hash jobs, four
+post-metadata revisions, exact payload, and cleanup in 1.767 seconds. This
+single run guards resource and checkpoint shape; it is not compared against
+the historical performance cohorts as a new throughput claim.

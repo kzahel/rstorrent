@@ -24,8 +24,10 @@ runtime-free deterministic core. Tactical
 [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) completed
 the deterministic receive-credit, packetization, loss/congestion, pacing,
 MTU, and impaired-link stage. Its required pre-runtime Stage 2 human-review
-checkpoint is the single authoritative **Now**. The completed
-maximum-throughput storage campaign remains recorded in
+checkpoint is the single authoritative **Now**. Independent completed Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now installs
+per-torrent structural fast resume without changing that uTP checkpoint. The
+completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
 gate.
@@ -336,9 +338,9 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tacticals `114` and `116` graduated; uTP Tacticals `118`, `119`, and runtime-
-free deterministic Stage 2 Tactical `121` completed; required Stage 2 human
-review is active**.
+Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
+`118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
+required Stage 2 human review is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -374,16 +376,17 @@ to draft a bounded Stage 3 shared-UDP/runtime and loopback-interoperability
 tactical before changing code. Do not start runtime or external-network work
 from this checkpoint.
 
-Planned Tactical
-[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now records the
+Completed Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
 accepted trust policy against Tactical `116`'s common path/SAF observations.
 Eligible torrents use bounded per-torrent structural validation and trust
 only durably committed bits without payload hashing; there is no global crash
 invalidation, clean-shutdown prerequisite, or product setting. Readable
 content mismatches fall back to that torrent's common full checker, malformed
-ownership remains repair-local, and Force recheck remains full. The policy is
-planned rather than implemented and does not replace the current uTP Stage 2
-human-review checkpoint.
+ownership remains repair-local, and Force recheck remains full. Its crash,
+500-seed, controlled libtorrent, repository, Android cross-build, and two AVD
+gates pass. It does not replace the current uTP Stage 2 human-review
+checkpoint.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,
@@ -714,6 +717,18 @@ checkpoint deaths, three path-publication deaths with the seed unavailable,
 and exact cleanup. The API 34 product path passes provider-rename death and
 fresh published-piece recheck at the established 40-handle/one-pending-request
 high waters.
+
+Tactical `120` supersedes only `073`'s unconditional ordinary restart check.
+One task-free typed policy now accepts exact structural path/SAF evidence with
+zero payload reads or hashes, while the existing complete checker remains the
+sole fallback and Force owner. Pre-sync and post-sync/pre-commit death retain
+zero committed bits despite 256 physically valid pieces; post-commit retains
+all 256, and an unrelated completed seed remains at verification generation
+zero. Five hundred completed seeds restore beside three active downloads
+within the shared resource ceilings. The complete controlled oracle, bounded
+checkpoint profile, Android cross-build, SAF rename-death AVD, reactive AVD,
+workspace, and web gates pass. The accepted same-length mutation risk remains
+explicit and Force-detectable.
 
 Tacticals `086`--`098` subsequently completed the long-lived torrent peer
 runtime, incoming reachability and coordinated transport foundations,

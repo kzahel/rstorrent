@@ -1,9 +1,10 @@
 # Tactical 120: Per-Torrent Trusting Fast Resume
 
-Status: Planned on 2026-08-10. The trust policy and bounded implementation
-shape are accepted; implementation has not started. This planned slice does
-not supersede the uTP Stage 1 human-review checkpoint currently recorded as
-the authoritative **Now**.
+Status: Completed on 2026-08-10. Eligible torrents now use the accepted
+per-torrent trust policy, structural fallback remains torrent-local, and
+explicit or pending verification remains full. This completed slice does not
+supersede the uTP Stage 2 human-review checkpoint currently recorded as the
+authoritative **Now**.
 
 Topics: `download-correctness`, `client-persistence`,
 `code-organization-and-refactoring`, `android-saf-storage`,
@@ -443,7 +444,112 @@ surface.
 
 ## Execution Record
 
-Planned. Record implementation commits, exact validation commands, accepted
-and fallback counts, payload/hash zeros, crash outcomes, high-water marks,
-controlled oracle results, Android evidence, and deliberate deferrals here as
-the bounded stages land.
+Completed on 2026-08-10 without a schema, generated-contract, dependency,
+setting, or public protocol change.
+
+Implementation landed in these bounded slices:
+
+- `4dd89d1` fixed this trust contract and source-first plan;
+- `a674cb2` added the task-free typed policy, bounded structural evidence, and
+  accepted ordinary-resume path;
+- `d04139f` applied the same structural decision before completed-seed
+  registration;
+- `ff3e63e` added the exact crash, stable-neighbor, same-length mutation, and
+  interrupted-Force scenarios;
+- `7bc4dc3` made validation cancellation-safe and kept temporary platform
+  failures in awaiting-storage rather than repair;
+- `7e3b1d4` recorded bounded 500-seed admission and validation duration;
+- `4fde280` let durable path publication intent resume without being blocked
+  by platform-only publication admission;
+- `738ae6e` and `f6cc8ae` made platform broker shutdown drain queued work and
+  wake every idle provider receiver;
+- `9d109be` joined Android provider workers before destroying their UniFFI
+  client and refreshed the current Compose SAF lifecycle gate;
+- `b050684` aligned the general Android gate with durable verified-piece
+  progress; and
+- `c34b7be` repaired the checkpoint profiler's published-namespace lookup.
+
+`resume_validation.rs` is the one task-free decision owner. Session durable
+facts select `FastEligible` or `Full`; engine structural observations produce
+one closed accepted, full-check, awaiting-storage, or repair outcome. Path and
+platform storage use the same artifact layout, exact file kind/length checks,
+part-header/slot extent checks, and namespace ownership. Accepted validation
+does not open payload content, enqueue SHA-1, or manufacture a fresh
+verification generation. Full fallback reuses the existing checker. No
+generic storage trait, resume framework, recovery coordinator, or second hash
+path was introduced.
+
+The retained deterministic and runtime evidence is:
+
+- matching staging and published resumes admit their exact committed bitmaps
+  with zero payload bytes and zero hash jobs; missing, short, oversized,
+  wrong-kind, malformed part-header, duplicate/out-of-range slot, root-loss,
+  and cancellation cases produce their specified local outcomes;
+- explicit Force and a durable pending Force generation bypass trust. A Force
+  killed mid-check restarts and settles the same requested generation;
+- same-length external mutation is deliberately accepted by ordinary resume,
+  labeled only as historical verification, and then detected and cleared by
+  Force recheck;
+- 500 complete desired-running seeds restore beside three active downloads
+  with verification generations `0/0`, zero active storage hashes, 500
+  registrations, the shared file pool at or below 40 handles, zero platform
+  requests, and terminal zero download ownership;
+- pre-sync and post-sync/pre-commit death each retained revision `9`, zero
+  committed pieces, 256 physically valid false negatives, and redownloaded
+  exactly `67,108,864` bytes. Post-commit death retained revision `10`, all
+  256 bits, and downloaded zero restart payload. The stable completed neighbor
+  remained at generation `0` in every case; and
+- the ordinary restart/Force scenario retained 256 committed pieces, found
+  280 physically valid pieces after death, uploaded `16,777,216` restart
+  bytes for false negatives, deliberately accepted one same-length corrupt
+  claim ordinarily, then Force rechecked `262,144` bytes and completed
+  verification generation `1` with exact content and cleanup.
+
+The complete controlled oracle
+`tests/interop/unified_resume_recheck.py --phase all` passed against pinned
+libtorrent `2.0.13.0` with RSTorrent binary SHA-256
+`a6f4b71c236ebe303f52060062de3422b49508fd103fea42fecaaa31f16a2358`.
+It covered BEP 3 `length`, one-entry `files`, and cross-file shapes; durable
+publication intent, rename, and namespace-sync death; all three checkpoint
+death boundaries; exact fallback repair; exact final hashes; and cleanup.
+
+The bounded SQLite-backed checkpoint profile passed 128 MiB, 512 pieces, a
+32 MiB resident-payload allowance, four write and four hash jobs, exact SHA-1
+`9224038c2041d03f6f8eb46a7f618fc32cf34e67`, four post-metadata revisions,
+1.767 seconds transfer time, and cleanup. This is a one-run regression/resource
+observation, not a new throughput claim.
+
+Android validation passed both Rust ABIs, UniFFI generation, APK assembly,
+and JVM tests. The API 34 no-window AVD SAF gate retained two checkpoint
+claims, restarted after provider rename with `229,905` additional peer bytes,
+freshly rechecked the published content, matched SHA-1
+`363a09c4940de553b7f1f874bdb948aedd69f0f9`, failed closed on grant loss,
+exercised pause/resume and activity recreation/backgrounding, joined the
+foreground service, and cleaned its owned tree. A separate reactive-surface
+AVD run completed eight pieces, emitted 96 view updates, matched SHA-1
+`2c49ff134a7b68f0104e9f82ffea5c760d9a35b9`, and joined notification stop.
+The shutdown gate exposed and closed two real lifecycle leaks: blocked broker
+receivers and Kotlin workers racing client destruction. No physical Android
+run was performed because this tactical did not receive separate current-
+attachment authorization; no physical or additional-provider claim is made.
+
+Final repository validation passed:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+cargo test -p rstorrent-engine --lib       # 430 passed, 7 ignored
+cargo test -p rstorrent-session --lib      # 227 passed, 2 ignored
+npm run generate --prefix clients/web      # byte-identical
+npm run typecheck --prefix clients/web
+npm run test --prefix clients/web          # 239 passed, 2 skipped
+experiments/android-engine-bootstrap/build.sh
+python tests/interop/android_saf_session.py --avd jstorrent-tablet --headless
+python tests/interop/android_reactive_surface.py --avd jstorrent-tablet --headless
+```
+
+Public-swarm, visible desktop, cloud-provider, external iOS File Provider, and
+physical-device work remained out of scope. The deliberate same-length
+mutation risk and the full Force escape hatch are unchanged from the accepted
+contract.

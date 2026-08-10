@@ -265,6 +265,19 @@ This remains deterministic state only: peer execution is still TCP, and no
 RSTorrent uTP socket, task, ordered stream, interoperability exchange, WAN
 path, product behavior, or support claim exists.
 
+Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) is complete.
+Ordinary coherent path and supported local SAF resumes now validate exact
+per-torrent structure and trust only synchronized committed bits with zero
+payload reads or hashes. Structural disagreement invokes the unchanged full
+checker only for that torrent; unavailable or malformed ownership retains its
+existing recovery state. Force and pending verification remain full. Three
+checkpoint-death boundaries, a stable completed neighbor, 500 completed seeds
+beside three downloads, same-length mutation plus Force, the complete pinned-
+libtorrent oracle, both Android builds, and two API 34 AVD lifecycle gates
+pass. No schema, setting, provider, physical-device, or protocol claim was
+added.
+
 ## Current Queue
 
 ### Now
@@ -284,18 +297,8 @@ path, product behavior, or support claim exists.
   repair that lets incomplete torrents announce and upload each verified,
   currently readable piece over incoming and outgoing peers. It is the first
   recommended engine correctness slice after work already in flight, ahead of
-  fast resume and finite bandwidth/seeding-goal policy. Implementation has not
-  started and it does not replace the single authoritative **Now**.
-
-- Planned Tactical
-  [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) owns the accepted
-  per-torrent fast-resume slice. Eligible coherent path and supported local
-  SAF resumes will trust only durably committed bits after bounded structural
-  validation, with zero payload hashes or reads; checker-readable mismatches
-  fall back for that torrent only, while Force recheck remains full. This is
-  the normal eligible policy rather than a setting or conservative-by-default
-  option. Implementation has not started and does not supersede the current
-  uTP Stage 2 human-review **Now**.
+  finite bandwidth/seeding-goal policy. Implementation has not started and it
+  does not replace the single authoritative **Now**.
 
 ### Later
 
@@ -395,8 +398,8 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop, web | Lazy part creation, retained lowered destinations, route-epoch promotion/demotion, exact verified-span export, uncertain boundary-piece invalidation, and empty-part cleanup pass; BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live, physical | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent session totals, root/torrent fairness, explicit generation joins, and the shared 40-handle pool. Controlled multi-torrent/root isolation and physical Android concurrency pass; broader provider/root profiles remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
-| Android SAF storage and publication | Implemented | deterministic, runtime, interop, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool. Typed observations gate root health and published reads; fixed manifests are diagnostic-only. Complete API 34 AVD and physical Android 17/API 37 matrices pass download, selection, forced restart, conservative checking, Force recheck, publication, exact SAF-backed upload, removal, grant repair, joined cancellation, concurrent admission, and cleanup within an 11/40 pool and 3/16 pending-request high water. General root management, cloud/removable policy, migration, and relocation remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
-| Durable have state and conservative recheck | Implemented | deterministic, persistence, runtime, interop, web, AVD, physical | Schema 14 stores one payload fact and generation-fenced verification evidence. Full checks scan every readable logical piece independently of selection; absence/mismatch remain checker outcomes, selection alone requests no new generation, pause retains one in-process cursor, stale completions are rejected, and malformed torrent-local state cannot abort profile open. | [`client-persistence`](client-persistence.md) |
+| Android SAF storage and publication | Implemented | deterministic, runtime, interop, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool. Typed observations gate root health, trusting ordinary resume, and published reads; fixed manifests are diagnostic-only. The API 34 AVD covers the Tactical `120` trust and joined-shutdown policy. Earlier complete AVD and physical Android 17/API 37 matrices cover download, selection, conservative restart, Force recheck, publication, exact SAF-backed upload, removal, grant repair, cancellation, concurrent admission, and cleanup within an 11/40 pool and 3/16 pending-request high water. General root management, cloud/removable policy, migration, and relocation remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
+| Durable have state and per-torrent resume | Implemented | deterministic, persistence, runtime, interop, web, AVD, physical | Schema 14 stores one payload fact and generation-fenced verification evidence. Exact ordinary path/SAF structure admits only synchronized committed bits with zero payload reads/hashes; disagreement invokes the full selection-independent checker only for that torrent, malformed state cannot abort profile open, and Force always hashes. Same-length external mutation is deliberately outside ordinary detection. | [`client-persistence`](client-persistence.md), [`download-correctness`](download-correctness.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |
 
 ### Application And Product Surfaces

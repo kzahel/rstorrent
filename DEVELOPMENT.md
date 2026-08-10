@@ -347,12 +347,27 @@ uv run --project tests/interop --locked \
 
 The checkpoint crash matrix pauses the diagnostic child at the exact
 pre-sync, post-sync/pre-commit, and post-commit boundaries. It kills only that
-owned child, verifies SQLite have state, restarts, checks exact retained versus
-redownloaded payload, and removes every temporary artifact:
+owned child, verifies SQLite have state, distinguishes physically valid false
+negatives from committed trust, confirms that a stable completed neighbor does
+not enter checking, checks exact restart payload, and removes every temporary
+artifact:
 
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/session_checkpoint_crash.py --scenario all
+```
+
+The ordinary-resume/Force scenario also proves the intentional trust boundary:
+same-length external mutation can pass structural fast resume, while explicit
+Force performs a fresh full check and clears it. The unified oracle combines
+that behavior with BEP 3 topology, publication-death, and pinned-libtorrent
+comparison phases:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/session_resume.py --runs 1
+uv run --project tests/interop --locked \
+  python tests/interop/unified_resume_recheck.py --phase all
 ```
 
 The controlled DHT profile obtains peers from an independent KRPC router,
