@@ -457,3 +457,25 @@ peer-wire failures and both local-direction timeouts independently passed
 their mapping/process/directory cleanup paths. Further WAN evidence requires a
 later human-authorized attempt budget after controlled impairment/lifecycle
 work supplies a deterministic diagnosis target.
+
+### Real-socket impairment implementation
+
+The loopback impairment harness places a two-socket UDP relay between pinned
+libtorrent's outgoing-only leecher and the RSTorrent diagnostic seed. The
+relay learns exactly one client endpoint, shallowly recognizes only the fixed
+20-byte uTP header, and applies the predeclared profiles by packet/DATA
+ordinal. It retains the tactical's 10,000-decision, 16-MiB considered-byte,
+256-datagram/1-MiB queue, 180-second, and zero-terminal-queue bounds. No
+protocol/runtime state depends outward on the relay.
+
+The first clean diagnostic found a libtorrent-only self-connection candidate
+beside the established relay peer because the inherited loopback oracle
+setting allowed multiple connections from one IP. The candidate's remote and
+local endpoint were both the oracle's own listener and it carried no payload;
+RSTorrent and the relay each retained one peer/client. The impairment leecher
+now disables both incoming uTP and multiple-same-IP connections, neither of
+which is needed for its sole outgoing connection. The repaired clean case
+passes in 8.046 active seconds with exact hash/accounting, one uTP/zero TCP
+peers, 8,047 decisions, 2,263,555 considered/forwarded bytes, 3,991 DATA
+datagrams no larger than 548 bytes, queue high water 14 datagrams/1,738 bytes,
+zero relay or runtime drops/retransmissions, and terminal zero ownership.
