@@ -1,0 +1,1703 @@
+//! Bounded Tokio ownership for the runtime-independent uTP transport state.
+
+use std::collections::{BTreeMap, VecDeque};
+use std::error::Error;
+use std::fmt;
+use std::future::pending;
+use std::io;
+use std::net::SocketAddr;
+use std::panic::AssertUnwindSafe;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use std::time::Duration;
+
+use futures_util::FutureExt;
+use rstorrent_protocol::utp::{
+    ConnectionError, ConnectionPhase, DatagramSendResult, IncomingDisposition, MAX_UNSENT_BYTES,
+    PacketType, SendError, SequenceNumber, TimestampMicros, TransportError, TransportState,
+    UtpCodecError, decode_packet,
+};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::{Notify, mpsc, oneshot, watch};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{Instant, sleep_until};
+use tokio_util::sync::{CancellationToken, PollSender};
+
+use crate::network::AddressFamily;
+use crate::session_udp::{
+    SessionUdpError, SessionUdpGenerations, SessionUdpService, SessionUtpSendHandle,
+    SessionUtpTransport,
+};
+
+pub const MAX_UTP_CONNECTIONS: usize = 64;
+pub const MAX_INCOMING_UTP_HALF_OPEN: usize = 16;
+pub const UTP_INCOMING_STREAM_QUEUE: usize = 16;
+pub const UTP_CONNECTION_DATAGRAM_QUEUE: usize = 64;
+pub const MAX_UTP_APPLICATION_WRITE_BYTES: usize = 16 * 1024;
+pub const UTP_RUNTIME_DATAGRAM_BYTES: usize = 548;
+const UTP_SERVICE_COMMAND_QUEUE: usize = 16;
+const UTP_APPLICATION_WRITE_QUEUE: usize = 1;
+const UTP_APPLICATION_CONTROL_QUEUE: usize = 1;
+const UTP_STREAM_EVENT_QUEUE: usize = 64;
+const UTP_DELIVERY_CHUNK_BYTES: usize = 16 * 1024;
+const UTP_ENTROPY_DRAWS: usize = 16;
+const MAX_EMISSIONS_PER_TURN: usize = 64;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UtpServiceSnapshot {
+    pub active_connections: usize,
+    pub connection_high_water: usize,
+    pub incoming_half_open: usize,
+    pub incoming_half_open_high_water: usize,
+    pub incoming_stream_queue_high_water: usize,
+    pub connection_datagram_queue_high_water: usize,
+    pub malformed_datagrams: u64,
+    pub unknown_connection_datagrams: u64,
+    pub stale_generation_datagrams: u64,
+    pub connection_datagrams_dropped: u64,
+    pub datagrams_sent: u64,
+    pub datagram_bytes_sent: u64,
+    pub delivered_byte_high_water: usize,
+    pub unsent_byte_high_water: usize,
+    pub sent_byte_high_water: usize,
+    pub worker_panics: u64,
+}
+
+#[derive(Debug)]
+pub enum UtpRuntimeError {
+    Udp(SessionUdpError),
+    Protocol(TransportError),
+    Codec(UtpCodecError),
+    Entropy(String),
+    UnsupportedFamily(AddressFamily),
+    ConnectionLimit,
+    ConnectionIdCollision,
+    ServiceStopped,
+    TaskJoin(String),
+}
+
+impl fmt::Display for UtpRuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Udp(error) => write!(formatter, "uTP UDP transport: {error}"),
+            Self::Protocol(error) => write!(formatter, "uTP protocol: {error}"),
+            Self::Codec(error) => write!(formatter, "uTP codec: {error}"),
+            Self::Entropy(detail) => write!(formatter, "uTP entropy: {detail}"),
+            Self::UnsupportedFamily(family) => {
+                write!(formatter, "uTP runtime does not yet support {family}")
+            }
+            Self::ConnectionLimit => formatter.write_str("uTP connection limit reached"),
+            Self::ConnectionIdCollision => {
+                formatter.write_str("uTP connection ID entropy collision limit reached")
+            }
+            Self::ServiceStopped => formatter.write_str("uTP service stopped"),
+            Self::TaskJoin(detail) => write!(formatter, "uTP task join failed: {detail}"),
+        }
+    }
+}
+
+impl Error for UtpRuntimeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Udp(error) => Some(error),
+            Self::Protocol(error) => Some(error),
+            Self::Codec(error) => Some(error),
+            Self::Entropy(_)
+            | Self::UnsupportedFamily(_)
+            | Self::ConnectionLimit
+            | Self::ConnectionIdCollision
+            | Self::ServiceStopped
+            | Self::TaskJoin(_) => None,
+        }
+    }
+}
+
+impl From<SessionUdpError> for UtpRuntimeError {
+    fn from(error: SessionUdpError) -> Self {
+        Self::Udp(error)
+    }
+}
+
+impl From<TransportError> for UtpRuntimeError {
+    fn from(error: TransportError) -> Self {
+        Self::Protocol(error)
+    }
+}
+
+impl From<UtpCodecError> for UtpRuntimeError {
+    fn from(error: UtpCodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct UtpConnectionKey {
+    family: AddressFamily,
+    generation: u64,
+    remote: SocketAddr,
+    receive_connection_id: u16,
+}
+
+#[derive(Debug)]
+struct UtpRoute {
+    ingress: mpsc::Sender<Vec<u8>>,
+    cancellation: CancellationToken,
+}
+
+type WorkerPanic = Box<dyn std::any::Any + Send>;
+type WorkerJoinOutput = (UtpConnectionKey, Result<WorkerReport, WorkerPanic>);
+type WorkerSet = JoinSet<WorkerJoinOutput>;
+type WorkerJoin = Option<Result<WorkerJoinOutput, tokio::task::JoinError>>;
+
+#[derive(Debug)]
+enum UtpServiceCommand {
+    Connect {
+        target: SocketAddr,
+        response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct UtpHandle {
+    commands: mpsc::Sender<UtpServiceCommand>,
+    stats: Arc<UtpStats>,
+}
+
+impl UtpHandle {
+    pub async fn connect(&self, target: SocketAddr) -> Result<UtpStream, UtpRuntimeError> {
+        let (response, result) = oneshot::channel();
+        self.commands
+            .send(UtpServiceCommand::Connect { target, response })
+            .await
+            .map_err(|_| UtpRuntimeError::ServiceStopped)?;
+        result.await.map_err(|_| UtpRuntimeError::ServiceStopped)?
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> UtpServiceSnapshot {
+        self.stats.snapshot()
+    }
+}
+
+#[derive(Debug)]
+pub struct UtpService {
+    handle: UtpHandle,
+    incoming: mpsc::Receiver<UtpStream>,
+    cancellation: CancellationToken,
+    task: Option<JoinHandle<Result<UtpServiceSnapshot, UtpRuntimeError>>>,
+}
+
+impl UtpService {
+    pub fn start(udp: &mut SessionUdpService) -> Result<Self, UtpRuntimeError> {
+        let transport = udp.take_utp_transport()?;
+        let (commands, command_ingress) = mpsc::channel(UTP_SERVICE_COMMAND_QUEUE);
+        let (incoming_sender, incoming) = mpsc::channel(UTP_INCOMING_STREAM_QUEUE);
+        let stats = Arc::new(UtpStats::default());
+        let cancellation = CancellationToken::new();
+        let task = tokio::spawn(run_service(
+            transport,
+            command_ingress,
+            incoming_sender,
+            stats.clone(),
+            cancellation.clone(),
+        ));
+        Ok(Self {
+            handle: UtpHandle { commands, stats },
+            incoming,
+            cancellation,
+            task: Some(task),
+        })
+    }
+
+    #[must_use]
+    pub fn handle(&self) -> UtpHandle {
+        self.handle.clone()
+    }
+
+    pub async fn accept(&mut self) -> Option<UtpStream> {
+        self.incoming.recv().await
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> UtpServiceSnapshot {
+        self.handle.snapshot()
+    }
+
+    pub async fn shutdown(mut self) -> Result<UtpServiceSnapshot, UtpRuntimeError> {
+        self.cancellation.cancel();
+        self.task
+            .take()
+            .expect("uTP service task exists before shutdown")
+            .await
+            .map_err(|error| UtpRuntimeError::TaskJoin(error.to_string()))?
+    }
+}
+
+impl Drop for UtpService {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+#[derive(Debug)]
+enum UtpStreamControl {
+    Flush(oneshot::Sender<io::Result<()>>),
+    Shutdown(oneshot::Sender<io::Result<()>>),
+}
+
+#[derive(Debug)]
+enum UtpStreamEvent {
+    Data(Vec<u8>),
+    Eof,
+}
+
+#[derive(Clone, Debug)]
+struct UtpStreamTerminal {
+    kind: io::ErrorKind,
+    detail: String,
+}
+
+#[derive(Debug, Default)]
+struct UtpConsumption {
+    bytes: AtomicUsize,
+    notification: Notify,
+}
+
+impl UtpConsumption {
+    fn record(&self, bytes: usize) {
+        let _ = self
+            .bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                Some(current.saturating_add(bytes))
+            });
+        self.notification.notify_one();
+    }
+
+    fn take(&self) -> usize {
+        self.bytes.swap(0, Ordering::AcqRel)
+    }
+}
+
+#[derive(Debug)]
+pub struct UtpStream {
+    local_address: SocketAddr,
+    remote_address: SocketAddr,
+    write_sender: PollSender<Vec<u8>>,
+    control_sender: PollSender<UtpStreamControl>,
+    events: mpsc::Receiver<UtpStreamEvent>,
+    current_read: Option<(Vec<u8>, usize)>,
+    consumption: Arc<UtpConsumption>,
+    cancellation: CancellationToken,
+    terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
+    flush_response: Option<oneshot::Receiver<io::Result<()>>>,
+    shutdown_response: Option<oneshot::Receiver<io::Result<()>>>,
+    eof: bool,
+    write_closed: bool,
+}
+
+impl UtpStream {
+    #[must_use]
+    pub const fn local_addr(&self) -> SocketAddr {
+        self.local_address
+    }
+
+    #[must_use]
+    pub const fn peer_addr(&self) -> SocketAddr {
+        self.remote_address
+    }
+
+    fn terminal_error(&self) -> io::Error {
+        self.terminal
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .map_or_else(
+                || io::Error::new(io::ErrorKind::BrokenPipe, "uTP worker stopped"),
+                |terminal| io::Error::new(terminal.kind, terminal.detail.clone()),
+            )
+    }
+}
+
+impl AsyncRead for UtpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        destination: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let stream = self.get_mut();
+        if stream.eof || destination.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
+        loop {
+            if let Some((bytes, offset)) = &mut stream.current_read {
+                let copied = destination
+                    .remaining()
+                    .min(bytes.len().saturating_sub(*offset));
+                destination.put_slice(&bytes[*offset..*offset + copied]);
+                *offset += copied;
+                stream.consumption.record(copied);
+                if *offset == bytes.len() {
+                    stream.current_read = None;
+                }
+                return Poll::Ready(Ok(()));
+            }
+            match stream.events.poll_recv(cx) {
+                Poll::Ready(Some(UtpStreamEvent::Data(bytes))) => {
+                    stream.current_read = Some((bytes, 0));
+                }
+                Poll::Ready(Some(UtpStreamEvent::Eof)) => {
+                    stream.eof = true;
+                    return Poll::Ready(Ok(()));
+                }
+                Poll::Ready(None) => {
+                    let error = stream.terminal_error();
+                    if error.kind() == io::ErrorKind::UnexpectedEof {
+                        stream.eof = true;
+                        return Poll::Ready(Ok(()));
+                    }
+                    return Poll::Ready(Err(error));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+    }
+}
+
+impl AsyncWrite for UtpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        let stream = self.get_mut();
+        if stream.write_closed {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "uTP write half is closed",
+            )));
+        }
+        if bytes.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        match stream.write_sender.poll_reserve(cx) {
+            Poll::Ready(Ok(())) => {
+                let length = bytes.len().min(MAX_UTP_APPLICATION_WRITE_BYTES);
+                stream
+                    .write_sender
+                    .send_item(bytes[..length].to_vec())
+                    .map_err(|_| stream.terminal_error())?;
+                Poll::Ready(Ok(length))
+            }
+            Poll::Ready(Err(_)) => Poll::Ready(Err(stream.terminal_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        let stream = self.get_mut();
+        if stream.flush_response.is_none() {
+            match stream.control_sender.poll_reserve(cx) {
+                Poll::Ready(Ok(())) => {
+                    let (response, result) = oneshot::channel();
+                    stream
+                        .control_sender
+                        .send_item(UtpStreamControl::Flush(response))
+                        .map_err(|_| stream.terminal_error())?;
+                    stream.flush_response = Some(result);
+                }
+                Poll::Ready(Err(_)) => return Poll::Ready(Err(stream.terminal_error())),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+        match Pin::new(
+            stream
+                .flush_response
+                .as_mut()
+                .expect("flush response was installed"),
+        )
+        .poll(cx)
+        {
+            Poll::Ready(Ok(result)) => {
+                stream.flush_response = None;
+                Poll::Ready(result)
+            }
+            Poll::Ready(Err(_)) => Poll::Ready(Err(stream.terminal_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        let stream = self.get_mut();
+        stream.write_closed = true;
+        if stream.shutdown_response.is_none() {
+            match stream.control_sender.poll_reserve(cx) {
+                Poll::Ready(Ok(())) => {
+                    let (response, result) = oneshot::channel();
+                    stream
+                        .control_sender
+                        .send_item(UtpStreamControl::Shutdown(response))
+                        .map_err(|_| stream.terminal_error())?;
+                    stream.shutdown_response = Some(result);
+                }
+                Poll::Ready(Err(_)) => return Poll::Ready(Err(stream.terminal_error())),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+        match Pin::new(
+            stream
+                .shutdown_response
+                .as_mut()
+                .expect("shutdown response was installed"),
+        )
+        .poll(cx)
+        {
+            Poll::Ready(Ok(result)) => Poll::Ready(result),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(stream.terminal_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for UtpStream {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
+
+#[derive(Debug, Default)]
+struct UtpStats {
+    active_connections: AtomicUsize,
+    connection_high_water: AtomicUsize,
+    incoming_half_open: AtomicUsize,
+    incoming_half_open_high_water: AtomicUsize,
+    incoming_stream_queue_high_water: AtomicUsize,
+    connection_datagram_queue_high_water: AtomicUsize,
+    malformed_datagrams: AtomicU64,
+    unknown_connection_datagrams: AtomicU64,
+    stale_generation_datagrams: AtomicU64,
+    connection_datagrams_dropped: AtomicU64,
+    datagrams_sent: AtomicU64,
+    datagram_bytes_sent: AtomicU64,
+    delivered_byte_high_water: AtomicUsize,
+    unsent_byte_high_water: AtomicUsize,
+    sent_byte_high_water: AtomicUsize,
+    worker_panics: AtomicU64,
+}
+
+impl UtpStats {
+    fn snapshot(&self) -> UtpServiceSnapshot {
+        UtpServiceSnapshot {
+            active_connections: self.active_connections.load(Ordering::Relaxed),
+            connection_high_water: self.connection_high_water.load(Ordering::Relaxed),
+            incoming_half_open: self.incoming_half_open.load(Ordering::Relaxed),
+            incoming_half_open_high_water: self
+                .incoming_half_open_high_water
+                .load(Ordering::Relaxed),
+            incoming_stream_queue_high_water: self
+                .incoming_stream_queue_high_water
+                .load(Ordering::Relaxed),
+            connection_datagram_queue_high_water: self
+                .connection_datagram_queue_high_water
+                .load(Ordering::Relaxed),
+            malformed_datagrams: self.malformed_datagrams.load(Ordering::Relaxed),
+            unknown_connection_datagrams: self.unknown_connection_datagrams.load(Ordering::Relaxed),
+            stale_generation_datagrams: self.stale_generation_datagrams.load(Ordering::Relaxed),
+            connection_datagrams_dropped: self.connection_datagrams_dropped.load(Ordering::Relaxed),
+            datagrams_sent: self.datagrams_sent.load(Ordering::Relaxed),
+            datagram_bytes_sent: self.datagram_bytes_sent.load(Ordering::Relaxed),
+            delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
+            unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
+            sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
+            worker_panics: self.worker_panics.load(Ordering::Relaxed),
+        }
+    }
+
+    fn connection_started(&self, incoming: bool) {
+        let active = self
+            .active_connections
+            .fetch_add(1, Ordering::AcqRel)
+            .saturating_add(1);
+        self.connection_high_water
+            .fetch_max(active, Ordering::Relaxed);
+        if incoming {
+            let half_open = self
+                .incoming_half_open
+                .fetch_add(1, Ordering::AcqRel)
+                .saturating_add(1);
+            self.incoming_half_open_high_water
+                .fetch_max(half_open, Ordering::Relaxed);
+        }
+    }
+
+    fn connection_stopped(&self) {
+        self.active_connections.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    fn half_open_published(&self) {
+        self.incoming_half_open.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    fn record_worker_snapshot(&self, state: &TransportState) {
+        let snapshot = state.snapshot();
+        self.unsent_byte_high_water
+            .fetch_max(snapshot.transmit.byte_high_water, Ordering::Relaxed);
+        self.sent_byte_high_water
+            .fetch_max(snapshot.connection.send.byte_high_water, Ordering::Relaxed);
+        if let Some(receive) = snapshot.connection.receive {
+            self.delivered_byte_high_water
+                .fetch_max(receive.byte_high_water, Ordering::Relaxed);
+        }
+    }
+}
+
+fn saturating_increment(value: &AtomicU64, increment: u64) {
+    let _ = value.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(increment))
+    });
+}
+
+async fn run_service(
+    mut transport: SessionUtpTransport,
+    mut commands: mpsc::Receiver<UtpServiceCommand>,
+    incoming: mpsc::Sender<UtpStream>,
+    stats: Arc<UtpStats>,
+    cancellation: CancellationToken,
+) -> Result<UtpServiceSnapshot, UtpRuntimeError> {
+    let send = transport.send_handle();
+    let generations = transport.generation_changes();
+    let clock = UtpClock::new()?;
+    let mut routes = BTreeMap::new();
+    let mut workers = JoinSet::new();
+    let result: Result<(), UtpRuntimeError> = loop {
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => break Ok(()),
+            joined = workers.join_next(), if !workers.is_empty() => {
+                handle_worker_join(joined, &mut routes, &stats)?;
+            }
+            command = commands.recv() => match command {
+                Some(command) => handle_service_command(
+                    command,
+                    &transport,
+                    &send,
+                    &generations,
+                    &clock,
+                    &stats,
+                    &mut routes,
+                    &mut workers,
+                ),
+                None => break Ok(()),
+            },
+            received = transport.receive() => {
+                let (generation, bytes, remote, family) = received?;
+                handle_datagram(
+                    generation,
+                    family,
+                    remote,
+                    bytes,
+                    &transport,
+                    &send,
+                    &generations,
+                    &clock,
+                    &incoming,
+                    &stats,
+                    &mut routes,
+                    &mut workers,
+                );
+            }
+        }
+    };
+
+    for route in routes.values() {
+        route.cancellation.cancel();
+    }
+    while let Some(joined) = workers.join_next().await {
+        handle_worker_join(Some(joined), &mut routes, &stats)?;
+    }
+    result?;
+    Ok(stats.snapshot())
+}
+
+fn handle_worker_join(
+    joined: WorkerJoin,
+    routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
+    stats: &UtpStats,
+) -> Result<(), UtpRuntimeError> {
+    let Some(joined) = joined else {
+        return Ok(());
+    };
+    let (key, report) = joined.map_err(|error| UtpRuntimeError::TaskJoin(error.to_string()))?;
+    routes.remove(&key);
+    match report {
+        Ok(report) => {
+            let _ = report.terminal;
+        }
+        Err(_) => saturating_increment(&stats.worker_panics, 1),
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_service_command(
+    command: UtpServiceCommand,
+    transport: &SessionUtpTransport,
+    send: &SessionUtpSendHandle,
+    generations: &watch::Receiver<SessionUdpGenerations>,
+    clock: &UtpClock,
+    stats: &Arc<UtpStats>,
+    routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
+    workers: &mut WorkerSet,
+) {
+    match command {
+        UtpServiceCommand::Connect { target, response } => {
+            let result = prepare_outgoing(
+                target,
+                transport,
+                send,
+                generations,
+                clock,
+                stats,
+                routes,
+                workers,
+                response,
+            );
+            if let Err((error, response)) = result {
+                let _ = response.send(Err(error));
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_outgoing(
+    target: SocketAddr,
+    transport: &SessionUtpTransport,
+    send: &SessionUtpSendHandle,
+    generations: &watch::Receiver<SessionUdpGenerations>,
+    clock: &UtpClock,
+    stats: &Arc<UtpStats>,
+    routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
+    workers: &mut WorkerSet,
+    response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
+) -> Result<
+    (),
+    (
+        UtpRuntimeError,
+        oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
+    ),
+> {
+    let family = AddressFamily::of(target.ip());
+    if family != AddressFamily::Ipv4 {
+        return Err((UtpRuntimeError::UnsupportedFamily(family), response));
+    }
+    if routes.len() >= MAX_UTP_CONNECTIONS {
+        return Err((UtpRuntimeError::ConnectionLimit, response));
+    }
+    let Some(generation) = transport.generation_for(family) else {
+        return Err((
+            UtpRuntimeError::Udp(SessionUdpError::MissingFamily(family)),
+            response,
+        ));
+    };
+    let Some(local_address) = transport.local_address_for(family) else {
+        return Err((
+            UtpRuntimeError::Udp(SessionUdpError::MissingFamily(family)),
+            response,
+        ));
+    };
+    let receive_connection_id = match unique_connection_id(family, generation, target, routes) {
+        Ok(connection_id) => connection_id,
+        Err(error) => return Err((error, response)),
+    };
+    let initial_sequence = match random_u16() {
+        Ok(sequence) => SequenceNumber::new(sequence),
+        Err(error) => return Err((error, response)),
+    };
+    let state = match TransportState::initiate(
+        receive_connection_id,
+        initial_sequence,
+        clock.now_micros(),
+        UTP_RUNTIME_DATAGRAM_BYTES,
+        UTP_RUNTIME_DATAGRAM_BYTES,
+    ) {
+        Ok(state) => state,
+        Err(error) => return Err((error.into(), response)),
+    };
+    let key = UtpConnectionKey {
+        family,
+        generation,
+        remote: target,
+        receive_connection_id,
+    };
+    let (stream, channels) = stream_pair(local_address, target);
+    spawn_worker(
+        key,
+        state,
+        WorkerPublication::Outgoing { stream, response },
+        channels,
+        send.clone(),
+        generations.clone(),
+        clock.clone(),
+        stats.clone(),
+        routes,
+        workers,
+        false,
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_datagram(
+    generation: u64,
+    family: AddressFamily,
+    remote: SocketAddr,
+    bytes: Vec<u8>,
+    transport: &SessionUtpTransport,
+    send: &SessionUtpSendHandle,
+    generations: &watch::Receiver<SessionUdpGenerations>,
+    clock: &UtpClock,
+    incoming: &mpsc::Sender<UtpStream>,
+    stats: &Arc<UtpStats>,
+    routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
+    workers: &mut WorkerSet,
+) {
+    if family != AddressFamily::Ipv4 {
+        saturating_increment(&stats.unknown_connection_datagrams, 1);
+        return;
+    }
+    if transport.generation_for(family) != Some(generation) {
+        saturating_increment(&stats.stale_generation_datagrams, 1);
+        return;
+    }
+    let packet = match decode_packet(&bytes) {
+        Ok(packet) => packet,
+        Err(_) => {
+            saturating_increment(&stats.malformed_datagrams, 1);
+            return;
+        }
+    };
+    let receive_connection_id = if packet.header.packet_type == PacketType::Syn {
+        packet.header.connection_id.wrapping_add(1)
+    } else {
+        packet.header.connection_id
+    };
+    let key = UtpConnectionKey {
+        family,
+        generation,
+        remote,
+        receive_connection_id,
+    };
+    if let Some(route) = routes.get(&key) {
+        match route.ingress.try_send(bytes) {
+            Ok(()) => {
+                let queued = route
+                    .ingress
+                    .max_capacity()
+                    .saturating_sub(route.ingress.capacity());
+                stats
+                    .connection_datagram_queue_high_water
+                    .fetch_max(queued, Ordering::Relaxed);
+            }
+            Err(TrySendError::Full(_)) => {
+                saturating_increment(&stats.connection_datagrams_dropped, 1);
+            }
+            Err(TrySendError::Closed(_)) => {
+                saturating_increment(&stats.unknown_connection_datagrams, 1);
+            }
+        }
+        return;
+    }
+    if packet.header.packet_type != PacketType::Syn {
+        if packet.header.packet_type != PacketType::Reset {
+            saturating_increment(&stats.unknown_connection_datagrams, 1);
+        }
+        return;
+    }
+    if routes.len() >= MAX_UTP_CONNECTIONS
+        || stats.incoming_half_open.load(Ordering::Relaxed) >= MAX_INCOMING_UTP_HALF_OPEN
+    {
+        saturating_increment(&stats.connection_datagrams_dropped, 1);
+        return;
+    }
+    let permit = match incoming.clone().try_reserve_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            saturating_increment(&stats.connection_datagrams_dropped, 1);
+            return;
+        }
+    };
+    let initial_sequence = match random_u16() {
+        Ok(sequence) => SequenceNumber::new(sequence),
+        Err(_) => {
+            saturating_increment(&stats.connection_datagrams_dropped, 1);
+            return;
+        }
+    };
+    let state = match TransportState::accept_syn(
+        packet,
+        initial_sequence,
+        UTP_RUNTIME_DATAGRAM_BYTES,
+        UTP_RUNTIME_DATAGRAM_BYTES,
+    ) {
+        Ok(state) => state,
+        Err(_) => {
+            saturating_increment(&stats.malformed_datagrams, 1);
+            return;
+        }
+    };
+    let Some(local_address) = transport.local_address_for(family) else {
+        saturating_increment(&stats.stale_generation_datagrams, 1);
+        return;
+    };
+    let (stream, channels) = stream_pair(local_address, remote);
+    spawn_worker(
+        key,
+        state,
+        WorkerPublication::Incoming { stream, permit },
+        channels,
+        send.clone(),
+        generations.clone(),
+        clock.clone(),
+        stats.clone(),
+        routes,
+        workers,
+        true,
+    );
+}
+
+fn unique_connection_id(
+    family: AddressFamily,
+    generation: u64,
+    remote: SocketAddr,
+    routes: &BTreeMap<UtpConnectionKey, UtpRoute>,
+) -> Result<u16, UtpRuntimeError> {
+    for _ in 0..UTP_ENTROPY_DRAWS {
+        let receive_connection_id = random_u16()?;
+        let key = UtpConnectionKey {
+            family,
+            generation,
+            remote,
+            receive_connection_id,
+        };
+        if !routes.contains_key(&key) {
+            return Ok(receive_connection_id);
+        }
+    }
+    Err(UtpRuntimeError::ConnectionIdCollision)
+}
+
+fn random_u16() -> Result<u16, UtpRuntimeError> {
+    let mut bytes = [0; 2];
+    getrandom::fill(&mut bytes).map_err(|error| UtpRuntimeError::Entropy(error.to_string()))?;
+    Ok(u16::from_be_bytes(bytes))
+}
+
+#[derive(Debug)]
+struct WorkerChannels {
+    writes: mpsc::Receiver<Vec<u8>>,
+    controls: mpsc::Receiver<UtpStreamControl>,
+    events: mpsc::Sender<UtpStreamEvent>,
+    consumption: Arc<UtpConsumption>,
+    stream_cancellation: CancellationToken,
+    terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
+}
+
+fn stream_pair(
+    local_address: SocketAddr,
+    remote_address: SocketAddr,
+) -> (UtpStream, WorkerChannels) {
+    let (write_sender, writes) = mpsc::channel(UTP_APPLICATION_WRITE_QUEUE);
+    let (control_sender, controls) = mpsc::channel(UTP_APPLICATION_CONTROL_QUEUE);
+    let (event_sender, events) = mpsc::channel(UTP_STREAM_EVENT_QUEUE);
+    let consumption = Arc::new(UtpConsumption::default());
+    let cancellation = CancellationToken::new();
+    let terminal = Arc::new(Mutex::new(None));
+    (
+        UtpStream {
+            local_address,
+            remote_address,
+            write_sender: PollSender::new(write_sender),
+            control_sender: PollSender::new(control_sender),
+            events,
+            current_read: None,
+            consumption: consumption.clone(),
+            cancellation: cancellation.clone(),
+            terminal: terminal.clone(),
+            flush_response: None,
+            shutdown_response: None,
+            eof: false,
+            write_closed: false,
+        },
+        WorkerChannels {
+            writes,
+            controls,
+            events: event_sender,
+            consumption,
+            stream_cancellation: cancellation,
+            terminal,
+        },
+    )
+}
+
+#[derive(Debug)]
+enum WorkerPublication {
+    Outgoing {
+        stream: UtpStream,
+        response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
+    },
+    Incoming {
+        stream: UtpStream,
+        permit: mpsc::OwnedPermit<UtpStream>,
+    },
+    Published,
+}
+
+#[derive(Clone, Debug)]
+enum WorkerTerminal {
+    Graceful,
+    Reset,
+    RetryExhausted,
+    ConsumerDropped,
+    GenerationChanged,
+    ServiceCancelled,
+    Protocol(String),
+    Io(String),
+}
+
+impl WorkerTerminal {
+    fn stream_terminal(&self) -> UtpStreamTerminal {
+        let (kind, detail) = match self {
+            Self::Graceful => (
+                io::ErrorKind::UnexpectedEof,
+                "uTP stream reached EOF".into(),
+            ),
+            Self::Reset => (
+                io::ErrorKind::ConnectionReset,
+                "uTP peer reset the connection".into(),
+            ),
+            Self::RetryExhausted => (
+                io::ErrorKind::TimedOut,
+                "uTP retransmission limit was exhausted".into(),
+            ),
+            Self::ConsumerDropped => (
+                io::ErrorKind::ConnectionAborted,
+                "uTP stream consumer was dropped".into(),
+            ),
+            Self::GenerationChanged => (
+                io::ErrorKind::ConnectionAborted,
+                "uTP session socket generation changed".into(),
+            ),
+            Self::ServiceCancelled => (
+                io::ErrorKind::Interrupted,
+                "uTP service was cancelled".into(),
+            ),
+            Self::Protocol(detail) => (io::ErrorKind::InvalidData, detail.clone()),
+            Self::Io(detail) => (io::ErrorKind::Other, detail.clone()),
+        };
+        UtpStreamTerminal { kind, detail }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct WorkerReport {
+    terminal: WorkerTerminal,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_worker(
+    key: UtpConnectionKey,
+    state: TransportState,
+    publication: WorkerPublication,
+    channels: WorkerChannels,
+    send: SessionUtpSendHandle,
+    generations: watch::Receiver<SessionUdpGenerations>,
+    clock: UtpClock,
+    stats: Arc<UtpStats>,
+    routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
+    workers: &mut WorkerSet,
+    incoming: bool,
+) {
+    let (ingress, datagrams) = mpsc::channel(UTP_CONNECTION_DATAGRAM_QUEUE);
+    let cancellation = CancellationToken::new();
+    routes.insert(
+        key,
+        UtpRoute {
+            ingress,
+            cancellation: cancellation.clone(),
+        },
+    );
+    stats.connection_started(incoming);
+    let worker_stats = stats.clone();
+    let worker = UtpWorker {
+        key,
+        state,
+        datagrams,
+        publication,
+        writes: channels.writes,
+        controls: channels.controls,
+        events: channels.events,
+        pending_delivery: VecDeque::new(),
+        consumption: channels.consumption,
+        stream_cancellation: channels.stream_cancellation,
+        terminal: channels.terminal,
+        cancellation,
+        send,
+        generations,
+        clock,
+        stats,
+        pending_flush: None,
+        pending_shutdown: None,
+        remote_eof: false,
+        eof_sent: false,
+        incoming_half_open: incoming,
+    };
+    workers.spawn(async move {
+        let result = AssertUnwindSafe(worker.run()).catch_unwind().await;
+        worker_stats.connection_stopped();
+        (key, result)
+    });
+}
+
+#[derive(Debug)]
+struct UtpWorker {
+    key: UtpConnectionKey,
+    state: TransportState,
+    datagrams: mpsc::Receiver<Vec<u8>>,
+    publication: WorkerPublication,
+    writes: mpsc::Receiver<Vec<u8>>,
+    controls: mpsc::Receiver<UtpStreamControl>,
+    events: mpsc::Sender<UtpStreamEvent>,
+    pending_delivery: VecDeque<Vec<u8>>,
+    consumption: Arc<UtpConsumption>,
+    stream_cancellation: CancellationToken,
+    terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
+    cancellation: CancellationToken,
+    send: SessionUtpSendHandle,
+    generations: watch::Receiver<SessionUdpGenerations>,
+    clock: UtpClock,
+    stats: Arc<UtpStats>,
+    pending_flush: Option<oneshot::Sender<io::Result<()>>>,
+    pending_shutdown: Option<oneshot::Sender<io::Result<()>>>,
+    remote_eof: bool,
+    eof_sent: bool,
+    incoming_half_open: bool,
+}
+
+impl UtpWorker {
+    async fn run(mut self) -> WorkerReport {
+        let terminal = match self.run_loop().await {
+            Ok(terminal) => terminal,
+            Err(error) => classify_worker_error(error),
+        };
+        self.state.abort();
+        self.stats.record_worker_snapshot(&self.state);
+        if self.incoming_half_open {
+            self.stats.half_open_published();
+            self.incoming_half_open = false;
+        }
+        self.fail_pending_controls(&terminal);
+        *self
+            .terminal
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(terminal.stream_terminal());
+        WorkerReport { terminal }
+    }
+
+    async fn run_loop(&mut self) -> Result<WorkerTerminal, UtpRuntimeError> {
+        loop {
+            self.consume_application_bytes()?;
+            self.flush_delivery();
+            let sent_any = self.drain_emissions().await?;
+            self.maybe_publish(sent_any)?;
+            self.complete_flush_if_ready();
+            let snapshot = self.state.snapshot();
+            self.stats.record_worker_snapshot(&self.state);
+            if snapshot.connection.ready_to_close {
+                self.state.finish()?;
+                if let Some(response) = self.pending_shutdown.take() {
+                    let _ = response.send(Ok(()));
+                }
+                return Ok(WorkerTerminal::Graceful);
+            }
+            if snapshot.connection.phase == ConnectionPhase::Reset {
+                return Ok(WorkerTerminal::Reset);
+            }
+            let can_accept_write = !snapshot.close_requested
+                && snapshot.transmit.unsent_bytes
+                    <= MAX_UNSENT_BYTES.saturating_sub(MAX_UTP_APPLICATION_WRITE_BYTES);
+            let now_micros = self.clock.now_micros();
+            let deadline = self
+                .state
+                .next_wakeup_micros()
+                .filter(|micros| *micros > now_micros)
+                .map(|micros| self.clock.instant_at(micros));
+            tokio::select! {
+                biased;
+                _ = self.cancellation.cancelled() => return Ok(WorkerTerminal::ServiceCancelled),
+                _ = self.stream_cancellation.cancelled() => return Ok(WorkerTerminal::ConsumerDropped),
+                changed = self.generations.changed() => {
+                    if changed.is_err()
+                        || self.generations.borrow_and_update().generation_for(self.key.family)
+                            != Some(self.key.generation)
+                    {
+                        return Ok(WorkerTerminal::GenerationChanged);
+                    }
+                }
+                bytes = self.datagrams.recv() => match bytes {
+                    Some(bytes) => self.handle_incoming(&bytes)?,
+                    None => return Ok(WorkerTerminal::ServiceCancelled),
+                },
+                control = self.controls.recv() => match control {
+                    Some(control) => self.handle_control(control),
+                    None if self.writes.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
+                    None => {}
+                },
+                write = self.writes.recv(), if can_accept_write => match write {
+                    Some(bytes) => self.state.queue_data(&bytes)?,
+                    None if self.controls.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
+                    None => {}
+                },
+                _ = wait_for_deadline(deadline) => {}
+                _ = self.consumption.notification.notified() => {}
+            }
+        }
+    }
+
+    fn consume_application_bytes(&mut self) -> Result<(), UtpRuntimeError> {
+        let consumed = self.consumption.take();
+        if consumed > 0
+            && !matches!(
+                self.state.snapshot().connection.phase,
+                ConnectionPhase::Closed | ConnectionPhase::Reset
+            )
+        {
+            self.state
+                .consume_received(consumed, self.clock.now_micros())?;
+        }
+        Ok(())
+    }
+
+    fn handle_incoming(&mut self, bytes: &[u8]) -> Result<(), UtpRuntimeError> {
+        let packet = decode_packet(bytes)?;
+        let outcome =
+            self.state
+                .incoming(packet, self.clock.now_micros(), self.clock.timestamp())?;
+        if outcome.connection.disposition != IncomingDisposition::Accepted {
+            return Ok(());
+        }
+        if let Some(receive) = outcome.connection.receive {
+            for delivered in receive.delivered {
+                self.append_delivery(delivered.bytes);
+            }
+            if receive.eof_reached {
+                self.remote_eof = true;
+            }
+        }
+        Ok(())
+    }
+
+    fn append_delivery(&mut self, bytes: Vec<u8>) {
+        if bytes.is_empty() {
+            return;
+        }
+        if let Some(last) = self.pending_delivery.back_mut()
+            && last.len().saturating_add(bytes.len()) <= UTP_DELIVERY_CHUNK_BYTES
+        {
+            last.extend(bytes);
+        } else {
+            self.pending_delivery.push_back(bytes);
+        }
+    }
+
+    fn flush_delivery(&mut self) {
+        while let Some(bytes) = self.pending_delivery.pop_front() {
+            match self.events.try_send(UtpStreamEvent::Data(bytes)) {
+                Ok(()) => {}
+                Err(TrySendError::Full(UtpStreamEvent::Data(bytes))) => {
+                    self.pending_delivery.push_front(bytes);
+                    break;
+                }
+                Err(TrySendError::Closed(_)) => {
+                    self.stream_cancellation.cancel();
+                    return;
+                }
+                Err(TrySendError::Full(UtpStreamEvent::Eof)) => {
+                    unreachable!("flush sends only data")
+                }
+            }
+        }
+        if self.pending_delivery.is_empty() && self.remote_eof && !self.eof_sent {
+            match self.events.try_send(UtpStreamEvent::Eof) {
+                Ok(()) => self.eof_sent = true,
+                Err(TrySendError::Full(_)) => {}
+                Err(TrySendError::Closed(_)) => self.stream_cancellation.cancel(),
+            }
+        }
+    }
+
+    async fn drain_emissions(&mut self) -> Result<bool, UtpRuntimeError> {
+        let mut sent_any = false;
+        for _ in 0..MAX_EMISSIONS_PER_TURN {
+            let now_micros = self.clock.now_micros();
+            let Some(emission) = self
+                .state
+                .poll_transmit(now_micros, self.clock.timestamp())?
+            else {
+                return Ok(sent_any);
+            };
+            let sequence_number = emission.intent.sequence_number;
+            let bytes = emission.encode()?;
+            let send_result = match self
+                .send
+                .send_to(self.key.generation, &bytes, self.key.remote)
+                .await
+            {
+                Ok(length) if length == bytes.len() => {
+                    sent_any = true;
+                    saturating_increment(&self.stats.datagrams_sent, 1);
+                    saturating_increment(
+                        &self.stats.datagram_bytes_sent,
+                        u64::try_from(length).unwrap_or(u64::MAX),
+                    );
+                    DatagramSendResult::Sent
+                }
+                Ok(length) => {
+                    return Err(UtpRuntimeError::Udp(SessionUdpError::Io(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        format!("uTP datagram wrote {length} of {} bytes", bytes.len()),
+                    ))));
+                }
+                Err(SessionUdpError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => {
+                    DatagramSendResult::WouldBlock
+                }
+                Err(SessionUdpError::Io(error)) if is_message_too_large(&error) => {
+                    DatagramSendResult::MessageTooLarge
+                }
+                Err(error @ SessionUdpError::StaleGeneration { .. }) => {
+                    return Err(UtpRuntimeError::Udp(error));
+                }
+                Err(error) => return Err(UtpRuntimeError::Udp(error)),
+            };
+            self.state
+                .on_send_result(sequence_number, send_result, self.clock.now_micros())?;
+            if send_result == DatagramSendResult::WouldBlock {
+                return Ok(sent_any);
+            }
+        }
+        tokio::task::yield_now().await;
+        Ok(sent_any)
+    }
+
+    fn maybe_publish(&mut self, sent_any: bool) -> Result<(), UtpRuntimeError> {
+        let ready = match &self.publication {
+            WorkerPublication::Outgoing { .. } => {
+                self.state.snapshot().connection.phase != ConnectionPhase::SynSent
+            }
+            WorkerPublication::Incoming { .. } => sent_any,
+            WorkerPublication::Published => false,
+        };
+        if !ready {
+            return Ok(());
+        }
+        let publication = std::mem::replace(&mut self.publication, WorkerPublication::Published);
+        match publication {
+            WorkerPublication::Outgoing { stream, response } => {
+                response
+                    .send(Ok(stream))
+                    .map_err(|_| UtpRuntimeError::ServiceStopped)?;
+            }
+            WorkerPublication::Incoming { stream, permit } => {
+                let sender = permit.send(stream);
+                let queued = sender.max_capacity().saturating_sub(sender.capacity());
+                self.stats
+                    .incoming_stream_queue_high_water
+                    .fetch_max(queued, Ordering::Relaxed);
+                self.stats.half_open_published();
+                self.incoming_half_open = false;
+            }
+            WorkerPublication::Published => {}
+        }
+        Ok(())
+    }
+
+    fn handle_control(&mut self, control: UtpStreamControl) {
+        match control {
+            UtpStreamControl::Flush(response) => {
+                if self.pending_flush.replace(response).is_some() {
+                    unreachable!("one bounded stream control is outstanding")
+                }
+            }
+            UtpStreamControl::Shutdown(response) => {
+                self.state.request_close();
+                if self.pending_shutdown.replace(response).is_some() {
+                    unreachable!("one shutdown command is outstanding")
+                }
+            }
+        }
+    }
+
+    fn complete_flush_if_ready(&mut self) {
+        let snapshot = self.state.snapshot();
+        if snapshot.transmit.unsent_bytes == 0
+            && snapshot.connection.send.outstanding_bytes == 0
+            && let Some(response) = self.pending_flush.take()
+        {
+            let _ = response.send(Ok(()));
+        }
+    }
+
+    fn fail_pending_controls(&mut self, terminal: &WorkerTerminal) {
+        let stream_terminal = terminal.stream_terminal();
+        if let Some(response) = self.pending_flush.take() {
+            let _ = response.send(Err(io::Error::new(
+                stream_terminal.kind,
+                stream_terminal.detail.clone(),
+            )));
+        }
+        if let Some(response) = self.pending_shutdown.take() {
+            let result = if matches!(terminal, WorkerTerminal::Graceful) {
+                Ok(())
+            } else {
+                Err(io::Error::new(stream_terminal.kind, stream_terminal.detail))
+            };
+            let _ = response.send(result);
+        }
+    }
+}
+
+fn classify_worker_error(error: UtpRuntimeError) -> WorkerTerminal {
+    match error {
+        UtpRuntimeError::Protocol(TransportError::Connection(ConnectionError::Send(
+            SendError::TransmissionLimit { .. },
+        ))) => WorkerTerminal::RetryExhausted,
+        UtpRuntimeError::Udp(SessionUdpError::StaleGeneration { .. }) => {
+            WorkerTerminal::GenerationChanged
+        }
+        UtpRuntimeError::Protocol(error) => WorkerTerminal::Protocol(error.to_string()),
+        UtpRuntimeError::Codec(error) => WorkerTerminal::Protocol(error.to_string()),
+        error => WorkerTerminal::Io(error.to_string()),
+    }
+}
+
+fn is_message_too_large(error: &io::Error) -> bool {
+    error
+        .raw_os_error()
+        .is_some_and(|raw| rustix::io::Errno::from_raw_os_error(raw) == rustix::io::Errno::MSGSIZE)
+}
+
+async fn wait_for_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => sleep_until(deadline).await,
+        None => pending::<()>().await,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct UtpClock {
+    origin: Instant,
+    wire_offset: u32,
+}
+
+impl UtpClock {
+    fn new() -> Result<Self, UtpRuntimeError> {
+        let mut bytes = [0; 4];
+        getrandom::fill(&mut bytes).map_err(|error| UtpRuntimeError::Entropy(error.to_string()))?;
+        Ok(Self {
+            origin: Instant::now(),
+            wire_offset: u32::from_be_bytes(bytes),
+        })
+    }
+
+    fn now_micros(&self) -> u64 {
+        u64::try_from(self.origin.elapsed().as_micros()).unwrap_or(u64::MAX)
+    }
+
+    fn timestamp(&self) -> TimestampMicros {
+        TimestampMicros::new(self.wire_offset.wrapping_add(self.now_micros() as u32))
+    }
+
+    fn instant_at(&self, micros: u64) -> Instant {
+        self.origin
+            .checked_add(Duration::from_micros(micros))
+            .unwrap_or_else(Instant::now)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstorrent_protocol::utp::{
+        ExtensionToEncode, MAX_RECEIVE_BYTES, PacketToEncode, UtpHeader, encode_packet,
+    };
+    use std::net::Ipv4Addr;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::UdpSocket;
+    use tokio::time::timeout;
+
+    fn packet(
+        packet_type: PacketType,
+        connection_id: u16,
+        sequence_number: u16,
+        acknowledgement_number: u16,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        encode_packet(PacketToEncode {
+            header: UtpHeader {
+                packet_type,
+                connection_id,
+                timestamp: TimestampMicros::new(10),
+                timestamp_difference_micros: 1,
+                window_size: MAX_RECEIVE_BYTES as u32,
+                sequence_number: SequenceNumber::new(sequence_number),
+                acknowledgement_number: SequenceNumber::new(acknowledgement_number),
+            },
+            extensions: &[] as &[ExtensionToEncode<'_>],
+            payload,
+        })
+        .expect("encode uTP runtime fixture")
+    }
+
+    async fn service() -> (SessionUdpService, crate::SessionUdpTransport, UtpService) {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (mut udp, dht) = SessionUdpService::start(socket).unwrap();
+        let utp = UtpService::start(&mut udp).unwrap();
+        (udp, dht, utp)
+    }
+
+    async fn connected_pair() -> (
+        SessionUdpService,
+        crate::SessionUdpTransport,
+        UtpService,
+        UtpStream,
+        SessionUdpService,
+        crate::SessionUdpTransport,
+        UtpService,
+        UtpStream,
+    ) {
+        let (left_udp, left_dht, left_utp) = service().await;
+        let (right_udp, right_dht, mut right_utp) = service().await;
+        let right_address = right_udp.local_address();
+        let left_handle = left_utp.handle();
+        let (left_stream, right_stream) = timeout(Duration::from_secs(2), async {
+            tokio::join!(left_handle.connect(right_address), right_utp.accept())
+        })
+        .await
+        .expect("uTP connection timeout");
+        (
+            left_udp,
+            left_dht,
+            left_utp,
+            left_stream.expect("outgoing uTP stream"),
+            right_udp,
+            right_dht,
+            right_utp,
+            right_stream.expect("incoming uTP stream"),
+        )
+    }
+
+    async fn wait_for(mut predicate: impl FnMut() -> bool) {
+        timeout(Duration::from_secs(2), async {
+            while !predicate() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("condition timeout");
+    }
+
+    #[tokio::test]
+    async fn loopback_stream_is_ordered_duplex_and_closes_gracefully() {
+        let (left_udp, left_dht, left_utp, mut left, right_udp, right_dht, right_utp, mut right) =
+            connected_pair().await;
+        let left_payload = (0..65_731)
+            .map(|index| u8::try_from(index % 251).unwrap())
+            .collect::<Vec<_>>();
+        let right_payload = (0..31_337)
+            .map(|index| u8::try_from(index % 239).unwrap())
+            .collect::<Vec<_>>();
+        let exchange = timeout(Duration::from_secs(5), async {
+            let left_exchange = async {
+                left.write_all(&left_payload).await.unwrap();
+                let mut received = vec![0; right_payload.len()];
+                left.read_exact(&mut received).await.unwrap();
+                assert_eq!(received, right_payload);
+            };
+            let right_exchange = async {
+                right.write_all(&right_payload).await.unwrap();
+                let mut received = vec![0; left_payload.len()];
+                right.read_exact(&mut received).await.unwrap();
+                assert_eq!(received, left_payload);
+            };
+            tokio::join!(left_exchange, right_exchange);
+            let (left_close, right_close) = tokio::join!(left.shutdown(), right.shutdown());
+            left_close.unwrap();
+            right_close.unwrap();
+        })
+        .await;
+        exchange.expect("duplex uTP exchange timeout");
+        assert_eq!(left.read(&mut [0; 1]).await.unwrap(), 0);
+        assert_eq!(right.read(&mut [0; 1]).await.unwrap(), 0);
+        drop(left);
+        drop(right);
+        let left_terminal = left_utp.shutdown().await.unwrap();
+        let right_terminal = right_utp.shutdown().await.unwrap();
+        assert_eq!(left_terminal.active_connections, 0);
+        assert_eq!(right_terminal.active_connections, 0);
+        drop(left_dht);
+        drop(right_dht);
+        left_udp.shutdown().await.unwrap();
+        right_udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn malformed_and_unknown_packets_do_not_create_connections() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let mut malformed = packet(PacketType::State, 40, 10, 9, &[]);
+        malformed[1] = 1;
+        remote
+            .send_to(&malformed, udp.local_address())
+            .await
+            .unwrap();
+        remote
+            .send_to(
+                &packet(PacketType::State, 41, 10, 9, &[]),
+                udp.local_address(),
+            )
+            .await
+            .unwrap();
+
+        wait_for(|| {
+            let snapshot = utp.snapshot();
+            snapshot.malformed_datagrams == 1 && snapshot.unknown_connection_datagrams == 1
+        })
+        .await;
+        assert_eq!(utp.snapshot().active_connections, 0);
+        utp.shutdown().await.unwrap();
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn established_remote_reset_surfaces_as_connection_reset() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let remote_address = remote.local_addr().unwrap();
+        let local_address = udp.local_address();
+        let handle = utp.handle();
+        let connect = tokio::spawn(async move { handle.connect(remote_address).await });
+        let mut bytes = [0; UTP_RUNTIME_DATAGRAM_BYTES];
+        let (length, source) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(source, local_address);
+        let syn = decode_packet(&bytes[..length]).unwrap();
+        assert_eq!(syn.header.packet_type, PacketType::Syn);
+        remote
+            .send_to(
+                &packet(
+                    PacketType::State,
+                    syn.header.connection_id,
+                    900,
+                    syn.header.sequence_number.get(),
+                    &[],
+                ),
+                local_address,
+            )
+            .await
+            .unwrap();
+        let mut stream = timeout(Duration::from_secs(1), connect)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        remote
+            .send_to(
+                &packet(
+                    PacketType::Reset,
+                    syn.header.connection_id,
+                    901,
+                    syn.header.sequence_number.get(),
+                    &[],
+                ),
+                local_address,
+            )
+            .await
+            .unwrap();
+        let error = timeout(Duration::from_secs(1), stream.read(&mut [0; 1]))
+            .await
+            .unwrap()
+            .expect_err("RESET must fail stream read");
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+        drop(stream);
+        utp.shutdown().await.unwrap();
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn socket_replacement_cancels_only_the_old_generation() {
+        let (mut left_udp, left_dht, left_utp, mut left, right_udp, right_dht, right_utp, right) =
+            connected_pair().await;
+        let replacement = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        left_udp.replace_socket(replacement).await.unwrap();
+        let error = timeout(Duration::from_secs(1), left.read(&mut [0; 1]))
+            .await
+            .unwrap()
+            .expect_err("generation replacement must terminate stream");
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionAborted);
+        wait_for(|| left_utp.snapshot().active_connections == 0).await;
+        assert_eq!(right_utp.snapshot().active_connections, 1);
+        drop(left);
+        drop(right);
+        left_utp.shutdown().await.unwrap();
+        right_utp.shutdown().await.unwrap();
+        drop(left_dht);
+        drop(right_dht);
+        left_udp.shutdown().await.unwrap();
+        right_udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn incoming_stream_queue_saturation_drops_new_syns() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        for index in 0..=UTP_INCOMING_STREAM_QUEUE {
+            remote
+                .send_to(
+                    &packet(
+                        PacketType::Syn,
+                        u16::try_from(100 + index).unwrap(),
+                        u16::try_from(200 + index).unwrap(),
+                        0,
+                        &[],
+                    ),
+                    udp.local_address(),
+                )
+                .await
+                .unwrap();
+        }
+        wait_for(|| {
+            let snapshot = utp.snapshot();
+            snapshot.active_connections == UTP_INCOMING_STREAM_QUEUE
+                && snapshot.connection_datagrams_dropped >= 1
+        })
+        .await;
+        let snapshot = utp.snapshot();
+        assert_eq!(
+            snapshot.incoming_stream_queue_high_water,
+            UTP_INCOMING_STREAM_QUEUE
+        );
+        assert!(snapshot.connection_high_water <= MAX_UTP_CONNECTIONS);
+        utp.shutdown().await.unwrap();
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+}

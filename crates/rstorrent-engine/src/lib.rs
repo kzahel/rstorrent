@@ -38,6 +38,7 @@ mod torrent_peer;
 mod tracker;
 mod upload;
 mod upload_scheduler;
+mod utp_runtime;
 
 pub use advertisement::{
     DHT_ANNOUNCE_INTERVAL, DHT_LOOKUP_INTERVAL, DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY,
@@ -150,8 +151,8 @@ pub use session_socket::{
     select_global_ipv6,
 };
 pub use session_udp::{
-    SESSION_UDP_DHT_QUEUE, SessionUdpError, SessionUdpHandle, SessionUdpService,
-    SessionUdpSnapshot, SessionUdpTransport,
+    SESSION_UDP_DHT_QUEUE, SESSION_UDP_UTP_DATAGRAM_BYTES, SESSION_UDP_UTP_QUEUE, SessionUdpError,
+    SessionUdpHandle, SessionUdpService, SessionUdpSnapshot, SessionUdpTransport,
 };
 pub use storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, MAX_STORAGE_OBSERVATION_TOKEN_BYTES,
@@ -179,4 +180,9 @@ pub use upload_scheduler::{
     DEFAULT_OPTIMISTIC_UNCHOKE_INTERVAL, DEFAULT_SEEDING_PIECE_QUOTA, DEFAULT_UNCHOKE_INTERVAL,
     DEFAULT_UNCHOKE_SLOTS, UploadDecision, UploadGrant, UploadPeerId, UploadScheduler,
     UploadSchedulerConfig, UploadSchedulerPeer, UploadSchedulerSnapshot,
+};
+pub use utp_runtime::{
+    MAX_INCOMING_UTP_HALF_OPEN, MAX_UTP_APPLICATION_WRITE_BYTES, MAX_UTP_CONNECTIONS,
+    UTP_CONNECTION_DATAGRAM_QUEUE, UTP_INCOMING_STREAM_QUEUE, UTP_RUNTIME_DATAGRAM_BYTES,
+    UtpHandle, UtpRuntimeError, UtpService, UtpServiceSnapshot, UtpStream,
 };

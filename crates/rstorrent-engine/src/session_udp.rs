@@ -9,15 +9,19 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use rstorrent_protocol::dht::MAX_DATAGRAM_SIZE;
+use rstorrent_protocol::utp::{IPV4_UDP_PAYLOAD_CEILING, UTP_HEADER_SIZE, UTP_VERSION};
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::network::AddressFamily;
 
 pub const SESSION_UDP_DHT_QUEUE: usize = 64;
-const SESSION_UDP_RECEIVE_BYTES: usize = MAX_DATAGRAM_SIZE + 1;
+pub const SESSION_UDP_UTP_QUEUE: usize = 256;
+pub const SESSION_UDP_UTP_DATAGRAM_BYTES: usize = IPV4_UDP_PAYLOAD_CEILING;
+const SESSION_UDP_DHT_RECEIVE_BYTES: usize = MAX_DATAGRAM_SIZE + 1;
+const SESSION_UDP_RECEIVE_BYTES: usize = SESSION_UDP_UTP_DATAGRAM_BYTES + 1;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SessionUdpSnapshot {
@@ -28,12 +32,24 @@ pub struct SessionUdpSnapshot {
     pub datagrams_received: u64,
     pub datagram_bytes_received: u64,
     pub datagrams_dropped: u64,
+    pub dht_datagrams_dropped: u64,
+    pub utp_queued: usize,
+    pub utp_queue_high_water: usize,
+    pub utp_datagrams_classified: u64,
+    pub utp_datagram_bytes_classified: u64,
+    pub utp_datagrams_dropped: u64,
 }
 
 #[derive(Debug)]
 pub enum SessionUdpError {
     Io(io::Error),
     MissingFamily(AddressFamily),
+    StaleGeneration {
+        family: AddressFamily,
+        requested: u64,
+        current: Option<u64>,
+    },
+    UtpTransportTaken,
     TaskJoin(String),
 }
 
@@ -44,6 +60,15 @@ impl fmt::Display for SessionUdpError {
             Self::MissingFamily(family) => {
                 write!(formatter, "session UDP {family} family is unavailable")
             }
+            Self::StaleGeneration {
+                family,
+                requested,
+                current,
+            } => write!(
+                formatter,
+                "session UDP {family} generation {requested} is stale; current generation is {current:?}"
+            ),
+            Self::UtpTransportTaken => write!(formatter, "session uTP transport was already taken"),
             Self::TaskJoin(error) => write!(formatter, "session UDP task join failed: {error}"),
         }
     }
@@ -53,7 +78,10 @@ impl Error for SessionUdpError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::MissingFamily(_) | Self::TaskJoin(_) => None,
+            Self::MissingFamily(_)
+            | Self::StaleGeneration { .. }
+            | Self::UtpTransportTaken
+            | Self::TaskJoin(_) => None,
         }
     }
 }
@@ -72,11 +100,50 @@ pub(crate) enum SessionUdpIngress {
 }
 
 #[derive(Debug)]
+pub(crate) enum SessionUtpIngress {
+    Datagram {
+        generation: u64,
+        family: AddressFamily,
+        source: SocketAddr,
+        bytes: Vec<u8>,
+    },
+    Failed {
+        generation: u64,
+        family: AddressFamily,
+        detail: String,
+    },
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SessionUdpGenerations {
+    families: BTreeMap<AddressFamily, u64>,
+}
+
+impl SessionUdpGenerations {
+    pub(crate) fn generation_for(&self, family: AddressFamily) -> Option<u64> {
+        self.families.get(&family).copied()
+    }
+}
+
+#[derive(Debug)]
 pub struct SessionUdpTransport {
     current: Arc<RwLock<SessionUdpCurrent>>,
     ingress: mpsc::Receiver<SessionUdpIngress>,
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
     stats: Arc<SessionUdpStats>,
+}
+
+#[derive(Debug)]
+pub(crate) struct SessionUtpTransport {
+    current: Arc<RwLock<SessionUdpCurrent>>,
+    ingress: mpsc::Receiver<SessionUtpIngress>,
+    generation_changes: watch::Receiver<SessionUdpGenerations>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SessionUtpSendHandle {
+    current: Arc<RwLock<SessionUdpCurrent>>,
 }
 
 #[derive(Debug)]
@@ -95,6 +162,7 @@ struct SessionUdpFamilyCurrent {
 pub struct SessionUdpHandle {
     current: Arc<RwLock<SessionUdpCurrent>>,
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
     stats: Arc<SessionUdpStats>,
 }
 
@@ -142,7 +210,8 @@ impl SessionUdpHandle {
     }
 
     pub fn snapshot(&self) -> SessionUdpSnapshot {
-        self.stats.snapshot(&self.ingress_sender)
+        self.stats
+            .snapshot(&self.ingress_sender, &self.utp_ingress_sender)
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -182,6 +251,7 @@ impl SessionUdpTransport {
         SessionUdpHandle {
             current: self.current.clone(),
             ingress_sender: self.ingress_sender.clone(),
+            utp_ingress_sender: self.utp_ingress_sender.clone(),
             stats: self.stats.clone(),
         }
     }
@@ -230,30 +300,134 @@ impl SessionUdpTransport {
     }
 }
 
+impl SessionUtpTransport {
+    pub(crate) fn local_address_for(&self, family: AddressFamily) -> Option<SocketAddr> {
+        self.current_guard()
+            .families
+            .get(&family)
+            .map(|entry| entry.local_address)
+    }
+
+    pub(crate) fn generation_for(&self, family: AddressFamily) -> Option<u64> {
+        self.current_guard()
+            .families
+            .get(&family)
+            .map(|entry| entry.generation)
+    }
+
+    pub(crate) fn generation_changes(&self) -> watch::Receiver<SessionUdpGenerations> {
+        self.generation_changes.clone()
+    }
+
+    pub(crate) fn send_handle(&self) -> SessionUtpSendHandle {
+        SessionUtpSendHandle {
+            current: self.current.clone(),
+        }
+    }
+
+    pub(crate) async fn receive(
+        &mut self,
+    ) -> Result<(u64, Vec<u8>, SocketAddr, AddressFamily), SessionUdpError> {
+        match self.ingress.recv().await {
+            Some(SessionUtpIngress::Datagram {
+                generation,
+                family,
+                source,
+                bytes,
+            }) => Ok((generation, bytes, source, family)),
+            Some(SessionUtpIngress::Failed {
+                generation,
+                family,
+                detail,
+            }) => Err(SessionUdpError::Io(io::Error::other(format!(
+                "{family} generation {generation} receive failed: {detail}"
+            )))),
+            None => Err(SessionUdpError::Io(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "session uTP ingress stopped",
+            ))),
+        }
+    }
+
+    fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl SessionUtpSendHandle {
+    pub(crate) async fn send_to(
+        &self,
+        generation: u64,
+        bytes: &[u8],
+        target: SocketAddr,
+    ) -> Result<usize, SessionUdpError> {
+        let family = AddressFamily::of(target.ip());
+        let socket = {
+            let current = self.current_guard();
+            let Some(entry) = current.families.get(&family) else {
+                return Err(SessionUdpError::MissingFamily(family));
+            };
+            if entry.generation != generation {
+                return Err(SessionUdpError::StaleGeneration {
+                    family,
+                    requested: generation,
+                    current: Some(entry.generation),
+                });
+            }
+            entry.socket.clone()
+        };
+        socket
+            .send_to(bytes, target)
+            .await
+            .map_err(SessionUdpError::Io)
+    }
+
+    fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 #[derive(Debug, Default)]
 struct SessionUdpStats {
     tasks: AtomicUsize,
     task_high_water: AtomicUsize,
     queue_high_water: AtomicUsize,
+    utp_queue_high_water: AtomicUsize,
     datagrams_received: AtomicU64,
     datagram_bytes_received: AtomicU64,
     datagrams_dropped: AtomicU64,
+    dht_datagrams_dropped: AtomicU64,
+    utp_datagrams_classified: AtomicU64,
+    utp_datagram_bytes_classified: AtomicU64,
+    utp_datagrams_dropped: AtomicU64,
 }
 
 impl SessionUdpStats {
-    fn snapshot(&self, sender: &mpsc::Sender<SessionUdpIngress>) -> SessionUdpSnapshot {
+    fn snapshot(
+        &self,
+        dht_sender: &mpsc::Sender<SessionUdpIngress>,
+        utp_sender: &mpsc::Sender<SessionUtpIngress>,
+    ) -> SessionUdpSnapshot {
         SessionUdpSnapshot {
             tasks: self.tasks.load(Ordering::Relaxed),
             task_high_water: self.task_high_water.load(Ordering::Relaxed),
-            queued: if sender.is_closed() {
-                0
-            } else {
-                sender.max_capacity().saturating_sub(sender.capacity())
-            },
+            queued: queued(dht_sender),
             queue_high_water: self.queue_high_water.load(Ordering::Relaxed),
             datagrams_received: self.datagrams_received.load(Ordering::Relaxed),
             datagram_bytes_received: self.datagram_bytes_received.load(Ordering::Relaxed),
             datagrams_dropped: self.datagrams_dropped.load(Ordering::Relaxed),
+            dht_datagrams_dropped: self.dht_datagrams_dropped.load(Ordering::Relaxed),
+            utp_queued: queued(utp_sender),
+            utp_queue_high_water: self.utp_queue_high_water.load(Ordering::Relaxed),
+            utp_datagrams_classified: self.utp_datagrams_classified.load(Ordering::Relaxed),
+            utp_datagram_bytes_classified: self
+                .utp_datagram_bytes_classified
+                .load(Ordering::Relaxed),
+            utp_datagrams_dropped: self.utp_datagrams_dropped.load(Ordering::Relaxed),
         }
     }
 
@@ -267,6 +441,32 @@ impl SessionUdpStats {
 
     fn record_drop(&self) {
         saturating_add(&self.datagrams_dropped, 1);
+    }
+
+    fn record_dht_drop(&self) {
+        self.record_drop();
+        saturating_add(&self.dht_datagrams_dropped, 1);
+    }
+
+    fn record_utp_datagram(&self, bytes: usize) {
+        saturating_add(&self.utp_datagrams_classified, 1);
+        saturating_add(
+            &self.utp_datagram_bytes_classified,
+            u64::try_from(bytes).unwrap_or(u64::MAX),
+        );
+    }
+
+    fn record_utp_drop(&self) {
+        self.record_drop();
+        saturating_add(&self.utp_datagrams_dropped, 1);
+    }
+}
+
+fn queued<T>(sender: &mpsc::Sender<T>) -> usize {
+    if sender.is_closed() {
+        0
+    } else {
+        sender.max_capacity().saturating_sub(sender.capacity())
     }
 }
 
@@ -282,6 +482,9 @@ pub struct SessionUdpService {
     active: BTreeMap<AddressFamily, SessionUdpGeneration>,
     next_generation: u64,
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    utp_ingress: Option<mpsc::Receiver<SessionUtpIngress>>,
+    utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
+    generation_sender: watch::Sender<SessionUdpGenerations>,
     stats: Arc<SessionUdpStats>,
 }
 
@@ -317,6 +520,7 @@ impl SessionUdpService {
         let family = AddressFamily::of(local_address.ip());
         let socket = Arc::new(socket);
         let (ingress_sender, ingress) = mpsc::channel(SESSION_UDP_DHT_QUEUE);
+        let (utp_ingress_sender, utp_ingress) = mpsc::channel(SESSION_UDP_UTP_QUEUE);
         let stats = Arc::new(SessionUdpStats::default());
         let generation = 1;
         let current = Arc::new(RwLock::new(SessionUdpCurrent {
@@ -329,13 +533,24 @@ impl SessionUdpService {
                 },
             )]),
         }));
+        let (generation_sender, _) = watch::channel(SessionUdpGenerations {
+            families: BTreeMap::from([(family, generation)]),
+        });
         let active = BTreeMap::from([(
             family,
-            start_generation(family, socket, ingress_sender.clone(), stats.clone()),
+            start_generation(
+                generation,
+                family,
+                socket,
+                ingress_sender.clone(),
+                utp_ingress_sender.clone(),
+                stats.clone(),
+            ),
         )]);
         let handle = SessionUdpHandle {
             current: current.clone(),
             ingress_sender: ingress_sender.clone(),
+            utp_ingress_sender: utp_ingress_sender.clone(),
             stats: stats.clone(),
         };
         Ok((
@@ -344,12 +559,16 @@ impl SessionUdpService {
                 active,
                 next_generation: 2,
                 ingress_sender: ingress_sender.clone(),
+                utp_ingress: Some(utp_ingress),
+                utp_ingress_sender: utp_ingress_sender.clone(),
+                generation_sender,
                 stats: stats.clone(),
             },
             SessionUdpTransport {
                 current,
                 ingress,
                 ingress_sender,
+                utp_ingress_sender,
                 stats,
             },
         ))
@@ -376,7 +595,20 @@ impl SessionUdpService {
     }
 
     pub fn snapshot(&self) -> SessionUdpSnapshot {
-        self.stats.snapshot(&self.ingress_sender)
+        self.stats
+            .snapshot(&self.ingress_sender, &self.utp_ingress_sender)
+    }
+
+    pub(crate) fn take_utp_transport(&mut self) -> Result<SessionUtpTransport, SessionUdpError> {
+        let ingress = self
+            .utp_ingress
+            .take()
+            .ok_or(SessionUdpError::UtpTransportTaken)?;
+        Ok(SessionUtpTransport {
+            current: self.handle.current.clone(),
+            ingress,
+            generation_changes: self.generation_sender.subscribe(),
+        })
     }
 
     pub async fn replace_socket(&mut self, socket: UdpSocket) -> Result<(), SessionUdpError> {
@@ -388,9 +620,11 @@ impl SessionUdpService {
         })?;
         let socket = Arc::new(socket);
         let candidate = start_generation(
+            generation,
             family,
             socket.clone(),
             self.ingress_sender.clone(),
+            self.utp_ingress_sender.clone(),
             self.stats.clone(),
         );
         {
@@ -404,6 +638,7 @@ impl SessionUdpService {
                 },
             );
         }
+        self.publish_generations();
         let previous = self.active.insert(family, candidate);
         match previous {
             Some(previous) => previous.shutdown().await,
@@ -413,6 +648,7 @@ impl SessionUdpService {
 
     pub async fn remove_family(&mut self, family: AddressFamily) -> Result<(), SessionUdpError> {
         self.current_guard().families.remove(&family);
+        self.publish_generations();
         match self.active.remove(&family) {
             Some(previous) => previous.shutdown().await,
             None => Ok(()),
@@ -433,6 +669,18 @@ impl SessionUdpService {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    fn publish_generations(&self) {
+        let families = self
+            .handle
+            .current_guard()
+            .families
+            .iter()
+            .map(|(family, entry)| (*family, entry.generation))
+            .collect();
+        self.generation_sender
+            .send_replace(SessionUdpGenerations { families });
+    }
 }
 
 impl Drop for SessionUdpService {
@@ -442,18 +690,22 @@ impl Drop for SessionUdpService {
 }
 
 fn start_generation(
+    generation: u64,
     family: AddressFamily,
     socket: Arc<UdpSocket>,
     ingress_sender: mpsc::Sender<SessionUdpIngress>,
+    utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
     stats: Arc<SessionUdpStats>,
 ) -> SessionUdpGeneration {
     let cancellation = CancellationToken::new();
     let tasks = stats.tasks.fetch_add(1, Ordering::AcqRel).saturating_add(1);
     stats.task_high_water.fetch_max(tasks, Ordering::AcqRel);
     let task = tokio::spawn(run_receive_loop(
+        generation,
         family,
         socket,
         ingress_sender,
+        utp_ingress_sender,
         stats,
         cancellation.clone(),
     ));
@@ -464,9 +716,11 @@ fn start_generation(
 }
 
 async fn run_receive_loop(
+    generation: u64,
     family: AddressFamily,
     socket: Arc<UdpSocket>,
-    ingress: mpsc::Sender<SessionUdpIngress>,
+    dht_ingress: mpsc::Sender<SessionUdpIngress>,
+    utp_ingress: mpsc::Sender<SessionUtpIngress>,
     stats: Arc<SessionUdpStats>,
     cancellation: CancellationToken,
 ) -> Result<(), SessionUdpError> {
@@ -483,24 +737,48 @@ async fn run_receive_loop(
                             stats.record_drop();
                             continue;
                         }
-                        if !dispatch_dht(
-                            &ingress,
-                            &stats,
-                            SessionUdpIngress::Datagram {
+                        if looks_like_utp(&bytes[..length]) {
+                            stats.record_utp_datagram(length);
+                            dispatch_utp(
+                                &utp_ingress,
+                                &stats,
+                                SessionUtpIngress::Datagram {
+                                    generation,
+                                    family,
+                                    source,
+                                    bytes: bytes[..length].to_vec(),
+                                },
+                            );
+                        } else {
+                            dispatch_dht(
+                                &dht_ingress,
+                                &stats,
+                                SessionUdpIngress::Datagram {
                                 family,
                                 source,
-                                bytes: bytes[..length].to_vec(),
-                            },
-                        ) {
-                            break Ok(());
+                                bytes: bytes[..length.min(SESSION_UDP_DHT_RECEIVE_BYTES)].to_vec(),
+                                },
+                            );
                         }
                     }
                     Err(error) => {
                         let detail = error.to_string();
                         let _ = dispatch_dht(
-                            &ingress,
+                            &dht_ingress,
                             &stats,
-                            SessionUdpIngress::Failed { family, detail },
+                            SessionUdpIngress::Failed {
+                                family,
+                                detail: detail.clone(),
+                            },
+                        );
+                        let _ = dispatch_utp(
+                            &utp_ingress,
+                            &stats,
+                            SessionUtpIngress::Failed {
+                                generation,
+                                family,
+                                detail,
+                            },
                         );
                         break Err(SessionUdpError::Io(error));
                     }
@@ -510,6 +788,10 @@ async fn run_receive_loop(
     };
     stats.tasks.fetch_sub(1, Ordering::AcqRel);
     result
+}
+
+fn looks_like_utp(bytes: &[u8]) -> bool {
+    bytes.len() >= UTP_HEADER_SIZE && bytes[0] & 0x0f == UTP_VERSION && bytes[0] >> 4 <= 4
 }
 
 fn dispatch_dht(
@@ -524,7 +806,28 @@ fn dispatch_dht(
             true
         }
         Err(mpsc::error::TrySendError::Full(_)) => {
-            stats.record_drop();
+            stats.record_dht_drop();
+            true
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => false,
+    }
+}
+
+fn dispatch_utp(
+    ingress: &mpsc::Sender<SessionUtpIngress>,
+    stats: &SessionUdpStats,
+    datagram: SessionUtpIngress,
+) -> bool {
+    match ingress.try_send(datagram) {
+        Ok(()) => {
+            let queued = ingress.max_capacity().saturating_sub(ingress.capacity());
+            stats
+                .utp_queue_high_water
+                .fetch_max(queued, Ordering::Relaxed);
+            true
+        }
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            stats.record_utp_drop();
             true
         }
         Err(mpsc::error::TrySendError::Closed(_)) => false,
@@ -595,6 +898,107 @@ mod tests {
         assert_eq!(terminal.task_high_water, 1);
         assert_eq!(terminal.datagrams_received, 1);
         assert_eq!(terminal.datagrams_dropped, 0);
+    }
+
+    #[tokio::test]
+    async fn one_socket_routes_dht_and_utp_to_independent_consumers() {
+        let (mut service, mut dht) = service().await;
+        let mut utp = service.take_utp_transport().unwrap();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let remote_address = remote.local_addr().unwrap();
+        let local_address = dht.local_address();
+        let mut utp_packet = vec![0; UTP_HEADER_SIZE];
+        utp_packet[0] = UTP_VERSION;
+
+        remote.send_to(b"d1:q4:pinge", local_address).await.unwrap();
+        remote.send_to(&utp_packet, local_address).await.unwrap();
+
+        let (dht_bytes, dht_source, dht_family) = timeout(Duration::from_secs(1), dht.receive())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(dht_bytes, b"d1:q4:pinge");
+        assert_eq!(dht_source, remote_address);
+        assert_eq!(dht_family, AddressFamily::Ipv4);
+
+        let (generation, utp_bytes, utp_source, utp_family) =
+            timeout(Duration::from_secs(1), utp.receive())
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(generation, 1);
+        assert_eq!(utp_bytes, utp_packet);
+        assert_eq!(utp_source, remote_address);
+        assert_eq!(utp_family, AddressFamily::Ipv4);
+        assert_eq!(service.snapshot().utp_datagrams_classified, 1);
+    }
+
+    #[tokio::test]
+    async fn shallow_classifier_keeps_malformed_utp_off_the_dht_route() {
+        let (mut service, mut dht) = service().await;
+        let mut utp = service.take_utp_transport().unwrap();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let mut malformed = vec![0; UTP_HEADER_SIZE];
+        malformed[0] = (2 << 4) | UTP_VERSION;
+        malformed[1] = 1;
+        remote
+            .send_to(&malformed, dht.local_address())
+            .await
+            .unwrap();
+
+        let (_, received, _, _) = timeout(Duration::from_secs(1), utp.receive())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(received, malformed);
+        assert!(
+            timeout(Duration::from_millis(25), dht.receive())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn utp_send_rejects_a_replaced_socket_generation() {
+        let (mut service, _dht) = service().await;
+        let utp = service.take_utp_transport().unwrap();
+        let mut changes = utp.generation_changes();
+        let first_generation = utp.generation_for(AddressFamily::Ipv4).unwrap();
+        let first_address = utp.local_address_for(AddressFamily::Ipv4).unwrap();
+        let replacement = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let replacement_address = replacement.local_addr().unwrap();
+        service.replace_socket(replacement).await.unwrap();
+
+        timeout(Duration::from_secs(1), changes.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            changes
+                .borrow_and_update()
+                .generation_for(AddressFamily::Ipv4),
+            Some(2)
+        );
+        assert_eq!(
+            utp.local_address_for(AddressFamily::Ipv4),
+            Some(replacement_address)
+        );
+        assert_ne!(first_address, replacement_address);
+        let target = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        assert!(matches!(
+            utp.send_handle()
+                .send_to(first_generation, b"stale", target)
+                .await,
+            Err(SessionUdpError::StaleGeneration {
+                family: AddressFamily::Ipv4,
+                requested: 1,
+                current: Some(2),
+            })
+        ));
     }
 
     #[tokio::test]
@@ -717,14 +1121,34 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(received.len(), SESSION_UDP_RECEIVE_BYTES);
+        assert_eq!(received.len(), SESSION_UDP_DHT_RECEIVE_BYTES);
         drop(transport);
+        service.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oversize_utp_input_is_bounded_to_the_utp_malformed_sentinel() {
+        let (mut service, dht) = service().await;
+        let mut utp = service.take_utp_transport().unwrap();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let mut oversized = vec![7; SESSION_UDP_UTP_DATAGRAM_BYTES * 2];
+        oversized[0] = UTP_VERSION;
+        remote
+            .send_to(&oversized, dht.local_address())
+            .await
+            .unwrap();
+        let (_, received, _, _) = timeout(Duration::from_secs(1), utp.receive())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(received.len(), SESSION_UDP_UTP_DATAGRAM_BYTES + 1);
         service.shutdown().await.unwrap();
     }
 
     #[tokio::test]
     async fn full_ingress_drops_new_work_and_tracks_the_bound() {
         let (sender, receiver) = mpsc::channel(SESSION_UDP_DHT_QUEUE);
+        let (utp_sender, _utp_receiver) = mpsc::channel(SESSION_UDP_UTP_QUEUE);
         let stats = SessionUdpStats::default();
         for value in 0..SESSION_UDP_DHT_QUEUE {
             assert!(dispatch_dht(
@@ -746,7 +1170,7 @@ mod tests {
                 bytes: vec![255],
             },
         ));
-        let snapshot = stats.snapshot(&sender);
+        let snapshot = stats.snapshot(&sender, &utp_sender);
         assert_eq!(snapshot.queued, SESSION_UDP_DHT_QUEUE);
         assert_eq!(snapshot.queue_high_water, SESSION_UDP_DHT_QUEUE);
         assert_eq!(snapshot.datagrams_dropped, 1);
@@ -760,5 +1184,55 @@ mod tests {
                 bytes: Vec::new(),
             },
         ));
+    }
+
+    #[tokio::test]
+    async fn full_utp_route_does_not_block_dht_ingress() {
+        let (dht_sender, mut dht_receiver) = mpsc::channel(SESSION_UDP_DHT_QUEUE);
+        let (utp_sender, _utp_receiver) = mpsc::channel(SESSION_UDP_UTP_QUEUE);
+        let stats = SessionUdpStats::default();
+        let source = SocketAddr::from((Ipv4Addr::LOCALHOST, 1));
+        for _ in 0..SESSION_UDP_UTP_QUEUE {
+            assert!(dispatch_utp(
+                &utp_sender,
+                &stats,
+                SessionUtpIngress::Datagram {
+                    generation: 1,
+                    family: AddressFamily::Ipv4,
+                    source,
+                    bytes: vec![UTP_VERSION; UTP_HEADER_SIZE],
+                },
+            ));
+        }
+        assert!(dispatch_utp(
+            &utp_sender,
+            &stats,
+            SessionUtpIngress::Datagram {
+                generation: 1,
+                family: AddressFamily::Ipv4,
+                source,
+                bytes: vec![UTP_VERSION; UTP_HEADER_SIZE],
+            },
+        ));
+        assert!(dispatch_dht(
+            &dht_sender,
+            &stats,
+            SessionUdpIngress::Datagram {
+                family: AddressFamily::Ipv4,
+                source,
+                bytes: b"dht".to_vec(),
+            },
+        ));
+
+        assert!(matches!(
+            dht_receiver.recv().await,
+            Some(SessionUdpIngress::Datagram { bytes, .. }) if bytes == b"dht"
+        ));
+        let snapshot = stats.snapshot(&dht_sender, &utp_sender);
+        assert_eq!(snapshot.utp_queued, SESSION_UDP_UTP_QUEUE);
+        assert_eq!(snapshot.utp_queue_high_water, SESSION_UDP_UTP_QUEUE);
+        assert_eq!(snapshot.utp_datagrams_dropped, 1);
+        assert_eq!(snapshot.dht_datagrams_dropped, 0);
+        assert_eq!(snapshot.datagrams_dropped, 1);
     }
 }
