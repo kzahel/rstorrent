@@ -226,7 +226,7 @@ def run_once(
             raise ScenarioFailure("completion was not fully checkpointed")
         if int(completion["revision"]) != final_revision:
             raise ScenarioFailure("completion snapshot and SQLite revision differ")
-        output_payload = payload_root / fixture.info_hash / "payload.bin"
+        output_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
         payload_hash = compare_payloads(fixture.payload_path, output_payload)
         if payload_hash != fixture.payload_hash:
             raise ScenarioFailure("checkpoint profile payload differs from seed")
