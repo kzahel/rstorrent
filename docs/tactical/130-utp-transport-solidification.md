@@ -388,3 +388,14 @@ retries across the complete fixed fixture and reports the count. Integrity,
 one-outstanding-request shape, role timeout, exact hash, and all transport and
 cleanup gates remain unchanged. A pure test proves the exact retry ceiling;
 the two-role loopback oracle passes with zero retries.
+
+The restarted cohort exposed the corresponding late-response edge: after a
+choke/retry, libtorrent delivered a byte-valid duplicate of piece 0 block 0
+while the diagnostic was awaiting block 16384. The abort again deleted the
+exact remote mapping and reported no cleanup residue. The diagnostic may now
+discard at most 16 blocks only when their index/range is strictly earlier than
+the sole current request and their bytes exactly equal already hash-bound
+payload/current-piece bytes. Future, overlapping-undelivered, out-of-range,
+or byte-different blocks remain terminal protocol errors. The duplicate count
+is explicit cohort evidence, and pure tests cover same-piece, prior-piece,
+mismatch, future, range, and exact-ceiling cases.

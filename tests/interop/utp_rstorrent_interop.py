@@ -205,6 +205,9 @@ def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> N
         choke_retries = payload.get("choke_retries")
         if not isinstance(choke_retries, int) or not 0 <= choke_retries <= 16:
             raise InteropFailure(f"{role} reported invalid transient choke retries")
+        duplicate_blocks = payload.get("duplicate_blocks")
+        if not isinstance(duplicate_blocks, int) or not 0 <= duplicate_blocks <= 16:
+            raise InteropFailure(f"{role} reported invalid duplicate blocks")
     resources = event.get("resources", {})
     terminal_utp = resources.get("terminal_utp", {})
     terminal_udp = resources.get("terminal_udp", {})

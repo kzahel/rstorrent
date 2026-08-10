@@ -13,6 +13,7 @@ use crate::utp_runtime::UtpStream;
 
 pub const MAX_CONTROLLED_UTP_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
 pub const MAX_CONTROLLED_UTP_CHOKE_RETRIES: u8 = 16;
+pub const MAX_CONTROLLED_UTP_DUPLICATE_BLOCKS: u8 = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ControlledUtpDownloadReport {
@@ -20,6 +21,7 @@ pub struct ControlledUtpDownloadReport {
     pub pieces: usize,
     pub requests: u64,
     pub choke_retries: u8,
+    pub duplicate_blocks: u8,
     pub peer_id: [u8; 20],
 }
 
@@ -32,6 +34,9 @@ pub enum ControlledUtpDownloadError {
     Peer(String),
     Choked {
         maximum_retries: u8,
+    },
+    DuplicateBlockLimit {
+        maximum: u8,
     },
     Rejected(BlockRequest),
     UnexpectedBlock {
@@ -60,6 +65,10 @@ impl fmt::Display for ControlledUtpDownloadError {
             Self::Choked { maximum_retries } => write!(
                 formatter,
                 "controlled uTP peer exceeded {maximum_retries} transient choke retries"
+            ),
+            Self::DuplicateBlockLimit { maximum } => write!(
+                formatter,
+                "controlled uTP peer exceeded {maximum} verified duplicate blocks"
             ),
             Self::Rejected(request) => write!(
                 formatter,
@@ -113,6 +122,7 @@ pub async fn download_controlled_utp(
     let mut payload = Vec::with_capacity(capacity);
     let mut requests = 0_u64;
     let mut choke_retries = 0_u8;
+    let mut duplicate_blocks = 0_u8;
     for (piece_index, expected_hash) in metainfo.piece_hashes.iter().enumerate() {
         let index = u32::try_from(piece_index).expect("metainfo piece limit fits u32");
         let piece_length = metainfo
@@ -131,7 +141,16 @@ pub async fn download_controlled_utp(
                     .await
                     .map_err(|error| ControlledUtpDownloadError::Peer(error.to_string()))?;
                 requests = requests.saturating_add(1);
-                match wait_for_block(&mut peer, request).await? {
+                match wait_for_block(
+                    &mut peer,
+                    request,
+                    &payload,
+                    &piece,
+                    metainfo.piece_length,
+                    &mut duplicate_blocks,
+                )
+                .await?
+                {
                     BlockWait::Received(block) => break block,
                     BlockWait::RetryAfterChoke => {
                         record_choke_retry(&mut choke_retries)?;
@@ -163,6 +182,7 @@ pub async fn download_controlled_utp(
             pieces: metainfo.piece_count(),
             requests,
             choke_retries,
+            duplicate_blocks,
             peer_id: handshake.peer_id,
         },
     ))
@@ -204,6 +224,10 @@ enum BlockWait {
 async fn wait_for_block(
     peer: &mut crate::peer_io::PeerIo,
     expected: BlockRequest,
+    completed_payload: &[u8],
+    current_piece: &[u8],
+    piece_length: u32,
+    duplicate_blocks: &mut u8,
 ) -> Result<BlockWait, ControlledUtpDownloadError> {
     let mut choked = false;
     loop {
@@ -227,6 +251,18 @@ async fn wait_for_block(
                 begin,
                 block,
             } => {
+                if delivered_block_matches(
+                    expected,
+                    index,
+                    begin,
+                    &block,
+                    completed_payload,
+                    current_piece,
+                    piece_length,
+                ) {
+                    record_duplicate_block(duplicate_blocks)?;
+                    continue;
+                }
                 return Err(ControlledUtpDownloadError::UnexpectedBlock {
                     expected,
                     index,
@@ -268,6 +304,50 @@ fn record_choke_retry(retries: &mut u8) -> Result<(), ControlledUtpDownloadError
     Ok(())
 }
 
+fn delivered_block_matches(
+    expected: BlockRequest,
+    index: u32,
+    begin: u32,
+    block: &[u8],
+    completed_payload: &[u8],
+    current_piece: &[u8],
+    piece_length: u32,
+) -> bool {
+    if index > expected.index || (index == expected.index && begin >= expected.begin) {
+        return false;
+    }
+    let Some(end) = (begin as usize).checked_add(block.len()) else {
+        return false;
+    };
+    if index == expected.index {
+        return current_piece
+            .get(begin as usize..end)
+            .is_some_and(|delivered| delivered == block);
+    }
+    let Some(start) = (index as usize)
+        .checked_mul(piece_length as usize)
+        .and_then(|offset| offset.checked_add(begin as usize))
+    else {
+        return false;
+    };
+    let Some(end) = start.checked_add(block.len()) else {
+        return false;
+    };
+    completed_payload
+        .get(start..end)
+        .is_some_and(|delivered| delivered == block)
+}
+
+fn record_duplicate_block(duplicates: &mut u8) -> Result<(), ControlledUtpDownloadError> {
+    if *duplicates >= MAX_CONTROLLED_UTP_DUPLICATE_BLOCKS {
+        return Err(ControlledUtpDownloadError::DuplicateBlockLimit {
+            maximum: MAX_CONTROLLED_UTP_DUPLICATE_BLOCKS,
+        });
+    }
+    *duplicates += 1;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +363,60 @@ mod tests {
             record_choke_retry(&mut retries),
             Err(ControlledUtpDownloadError::Choked {
                 maximum_retries: MAX_CONTROLLED_UTP_CHOKE_RETRIES,
+            })
+        ));
+    }
+
+    #[test]
+    fn only_byte_equal_already_delivered_blocks_are_duplicates() {
+        let expected = BlockRequest {
+            index: 1,
+            begin: 4,
+            length: 4,
+        };
+        assert!(delivered_block_matches(
+            expected,
+            1,
+            0,
+            b"abcd",
+            b"01234567",
+            b"abcd",
+            8,
+        ));
+        assert!(delivered_block_matches(
+            expected,
+            0,
+            4,
+            b"4567",
+            b"01234567",
+            b"abcd",
+            8,
+        ));
+        for (index, begin, block) in [
+            (1, 0, b"abce".as_slice()),
+            (1, 4, b"abcd".as_slice()),
+            (2, 0, b"abcd".as_slice()),
+            (0, 7, b"89".as_slice()),
+        ] {
+            assert!(!delivered_block_matches(
+                expected,
+                index,
+                begin,
+                block,
+                b"01234567",
+                b"abcd",
+                8,
+            ));
+        }
+
+        let mut duplicates = 0;
+        for _ in 0..MAX_CONTROLLED_UTP_DUPLICATE_BLOCKS {
+            record_duplicate_block(&mut duplicates).expect("bounded duplicate");
+        }
+        assert!(matches!(
+            record_duplicate_block(&mut duplicates),
+            Err(ControlledUtpDownloadError::DuplicateBlockLimit {
+                maximum: MAX_CONTROLLED_UTP_DUPLICATE_BLOCKS,
             })
         ));
     }
