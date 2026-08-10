@@ -2272,6 +2272,11 @@ impl ApplicationService {
             };
             let is_checking = resume.state == TorrentState::Checking;
             let active = self.active_download_for(&torrent.torrent_id).is_some();
+            let awaiting_external_publication = resume.state == TorrentState::AwaitingPublication
+                && matches!(
+                    self.storage_roots.get(&resume.storage_root),
+                    Some(StorageRootLocation::PlatformCapability)
+                );
             if is_checking {
                 checking.push((
                     resume.download_queue_position.unwrap_or(i64::MAX),
@@ -2304,10 +2309,9 @@ impl ApplicationService {
                     || resume.state == TorrentState::AwaitingStorage
                     || matches!(
                         resume.state,
-                        TorrentState::NeedsRepair
-                            | TorrentState::Error
-                            | TorrentState::AwaitingPublication
-                    ),
+                        TorrentState::NeedsRepair | TorrentState::Error
+                    )
+                    || awaiting_external_publication,
                 active_generation,
             });
         }
@@ -8732,6 +8736,72 @@ mod tests {
             "replaying one request must not start another generation"
         );
         assert_eq!(fs::read(&output).expect("read rechecked output"), payload);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn startup_finishes_durable_path_publication_intent_without_recheck() {
+        let root = test_root("pending-path-publication");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 19 + offset / 5) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("pending.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-pending-publication", &torrent_id))
+            .expect("add pending publication");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record pending metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record durable pending pieces");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Staging)
+            .expect("record staging ownership");
+        store
+            .mark_publication_prepared(&torrent_id)
+            .expect("record publication intent");
+        drop(store);
+
+        let payload_root = root.join("payload");
+        fs::create_dir_all(&payload_root).expect("create payload root");
+        let paths = torrent_storage_paths(&payload_root, "pending.bin", info_hash)
+            .expect("plan pending publication paths");
+        fs::write(&paths.staging, &payload).expect("write durable staging payload");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open pending publication application");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "pending-publication",
+        )
+        .await;
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("completed publication resume");
+        assert_eq!(resume.verification.requested(), 0);
+        assert_eq!(resume.verification.completed(), 0);
+        assert!(!paths.staging.exists());
+        assert_eq!(fs::read(&paths.output).expect("published payload"), payload);
 
         service.shutdown().await.expect("shutdown");
         drop(service);

@@ -31,6 +31,7 @@ from session_checkpoint_crash import SCENARIOS as CHECKPOINT_SCENARIOS
 from session_checkpoint_crash import run_once as run_checkpoint_crash
 from session_resume import (
     build_binary,
+    derive_durable_state,
     envelope,
     exchange,
     start_process,
@@ -246,24 +247,47 @@ def read_sqlite_state(database: Path, info_hash: str) -> tuple[str, str, list[in
     with sqlite3.connect(database, timeout=1) as connection:
         row = connection.execute(
             """
-            SELECT state, storage_state, piece_count, have_state
+            SELECT raw_info, piece_count, have_state, desired_state,
+                   payload_state, verification_requested,
+                   verification_completed, quarantine_reason
             FROM torrents WHERE lower(hex(info_hash)) = ?
             """,
             (info_hash,),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
-    state, storage_state, piece_count, have_state = row
+    (
+        raw_info,
+        piece_count,
+        have_state,
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    ) = row
     if have_state is None:
-        return state, storage_state, []
-    return (
-        state,
-        storage_state,
-        [
+        have: list[int] = []
+    else:
+        have = [
             index
             for index in range(piece_count)
             if have_state[34 + index // 8] & (1 << (7 - index % 8))
-        ],
+        ]
+    state = derive_durable_state(
+        raw_info,
+        int(piece_count or 0),
+        len(have),
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    )
+    return (
+        state,
+        payload_state,
+        have,
     )
 
 
