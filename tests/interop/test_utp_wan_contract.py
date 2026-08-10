@@ -260,6 +260,29 @@ class UtpWanContractTests(unittest.TestCase):
             {"min": 1, "median": 2, "max": 3},
         )
 
+    def test_remote_leecher_failure_evidence_is_bounded(self) -> None:
+        with self.assertRaisesRegex(
+            WanFailure,
+            "progress_ppm=500000.*wanted_done=1048576.*timeouts=2",
+        ):
+            validate_remote_leecher_complete(
+                {
+                    "event": "failed",
+                    "role": "remote-leecher",
+                    "reason": "transfer-timeout",
+                    "progress_ppm": 500000,
+                    "wanted_done_bytes": 1048576,
+                    "libtorrent_stats": {
+                        "utp.utp_packets_in": 10,
+                        "utp.utp_packets_out": 11,
+                        "utp.utp_packet_loss": 1,
+                        "utp.utp_timeout": 2,
+                        "utp.utp_packet_resend": 3,
+                    },
+                },
+                "a" * 40,
+            )
+
     def test_mapping_audit_requires_verified_absence(self) -> None:
         complete = subprocess.CompletedProcess(
             ["rstorrent-utp-interop"],

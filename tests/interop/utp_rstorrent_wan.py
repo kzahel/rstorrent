@@ -515,6 +515,20 @@ def validate_remote_complete(event: dict[str, Any]) -> None:
 def validate_remote_leecher_complete(
     event: dict[str, Any], expected_sha1: str
 ) -> None:
+    if event.get("event") == "failed" and event.get("role") == "remote-leecher":
+        stats = event.get("libtorrent_stats")
+        stats = stats if isinstance(stats, dict) else {}
+        raise WanFailure(
+            "remote leecher failure evidence: "
+            f"reason={event.get('reason', 'missing')}, "
+            f"progress_ppm={event.get('progress_ppm', 'missing')}, "
+            f"wanted_done={event.get('wanted_done_bytes', 'missing')}, "
+            f"utp_in={stats.get('utp.utp_packets_in', 'missing')}, "
+            f"utp_out={stats.get('utp.utp_packets_out', 'missing')}, "
+            f"loss={stats.get('utp.utp_packet_loss', 'missing')}, "
+            f"timeouts={stats.get('utp.utp_timeout', 'missing')}, "
+            f"resends={stats.get('utp.utp_packet_resend', 'missing')}"
+        )
     if event.get("event") != "complete" or event.get("role") != "remote-leecher":
         raise WanFailure("remote leecher did not emit terminal evidence")
     if event.get("peer_high_water") != 1:
@@ -1010,8 +1024,11 @@ def run_local_seed_direction(host: str, binary: Path) -> dict[str, Any]:
                     role.wait_success(time.monotonic() + PROCESS_CLEANUP_SECONDS)
                     if local_complete is None:
                         local_complete = cleanup_terminal
-                except Exception:
-                    pass
+                except Exception as error:
+                    if run_error is not None:
+                        run_error = WanFailure(
+                            f"{run_error}; local seed stop evidence: {error}"
+                        )
             if role is not None:
                 role.cleanup()
             if remote is not None:

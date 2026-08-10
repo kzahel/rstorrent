@@ -158,6 +158,20 @@ def run(arguments: argparse.Namespace) -> None:
                 break
             time.sleep(POLL_SECONDS)
         else:
+            stats = stats_snapshot(session, diagnostics, time.monotonic() + 2.0)
+            status = handle.status()
+            write_event(
+                {
+                    "event": "failed",
+                    "role": "remote-leecher",
+                    "reason": "transfer-timeout",
+                    "peer_high_water": peer_high_water,
+                    "progress_ppm": int(status.progress_ppm),
+                    "wanted_done_bytes": int(status.total_wanted_done),
+                    "libtorrent_stats": stats,
+                    "diagnostics": diagnostics[-MAX_DIAGNOSTICS:],
+                }
+            )
             raise RemoteLeecherFailure("remote uTP download timed out")
 
         output = arguments.output_root / torrent_info.name()

@@ -399,3 +399,14 @@ payload/current-piece bytes. Future, overlapping-undelivered, out-of-range,
 or byte-different blocks remain terminal protocol errors. The duplicate count
 is explicit cohort evidence, and pure tests cover same-piece, prior-piece,
 mismatch, future, range, and exact-ceiling cases.
+
+The next restart advanced beyond both peer-wire failures, then one local-seed
+sample reached the remote leecher's 180-second transfer bound without exact
+completion. Exact local/remote cleanup again passed. Because the remote role
+previously emitted no terminal statistics on this path and the controller
+discarded the local seed's failed-stop detail, no transport change follows
+from that incomplete observation. The attached role now emits one bounded
+failure event with content progress and aggregate uTP counters, and the
+controller preserves the local seed's partial-upload failure detail. One
+single-direction diagnostic retry will distinguish transient path variance
+from a reproducible sender stall before implementation changes.
