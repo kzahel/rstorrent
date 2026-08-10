@@ -10,13 +10,13 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::dht::{DhtConfig, DhtObservation, DhtService};
 use rstorrent_engine::{
     AddressFamily, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
-    DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadReport,
+    DownloadConfig, DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadReport,
     DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
     ResumeValidationIntent, ResumedStorage, SessionUdpService, TorrentPeerActivitySink,
-    TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource, resume_magnet_with_control,
-    select_global_ipv6,
+    TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
+    download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
 };
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -166,6 +166,7 @@ struct Config {
     wire_payload_limit: u64,
     checkpoint_sync_bypassed: bool,
     summary_activity_observation: bool,
+    nonresumable_execution: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -1026,6 +1027,7 @@ struct Diagnostics {
     checkpoint_commit_service_max_micros: u64,
     checkpoint_sync_bypassed: bool,
     summary_activity_observation: bool,
+    nonresumable_execution: bool,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
     peer_methods: PeerMethodEvidence,
@@ -1357,7 +1359,6 @@ async fn run(config: Config) -> ProbeResult {
     let mut budget_config = PeerBudgetConfig::system_default();
     budget_config.configured_limit = config.profile.connection_limit();
     budget_config.incoming_slack = 0;
-    let encryption = PeerEncryptionPolicyHandle::new(config.profile.encryption());
     let torrent_peers = match TorrentPeerHandle::new(peer_sink.clone()) {
         Ok(handle) => handle,
         Err(error) => {
@@ -1380,37 +1381,62 @@ async fn run(config: Config) -> ProbeResult {
             );
         }
     };
-    let download_config = ResumableMagnetDownloadConfig {
-        magnet: prepared.magnet,
-        storage_root: config.output.clone(),
-        network: NetworkConfig::new(
-            NetworkPolicy::Online,
-            Duration::from_secs(15),
-            Duration::from_secs(15),
-        )
-        .with_encryption(config.profile.encryption())
-        .with_mse_rc4_only(matches!(config.profile, Profile::MatchedRc430))
-        .with_peer_exchange(config.profile.peer_exchange()),
-        peer_budget: PeerBudget::new(budget_config),
-        mse_dh: MseDhWorkOwner::new(),
-        encryption,
-        torrent_peers: Some(torrent_peers),
-        resource_limits,
-        skip_files: Vec::new(),
-        verified_info: prepared.verified_info,
-        verified_pieces: Vec::new(),
-        artifact_state: ResumeArtifactState::None,
-        resume_validation: ResumeValidationIntent::FastEligible,
-        download_missing: true,
-        dht: dht.as_ref().map(|runtime| runtime.service.handle()),
-        udp_trackers: prepared.trackers,
-    };
+    let network = NetworkConfig::new(
+        NetworkPolicy::Online,
+        Duration::from_secs(15),
+        Duration::from_secs(15),
+    )
+    .with_encryption(config.profile.encryption())
+    .with_mse_rc4_only(matches!(config.profile, Profile::MatchedRc430))
+    .with_peer_exchange(config.profile.peer_exchange());
     sink.mark_admitted();
     let task_control = control.clone();
-    let checkpoints = Arc::new(ProbeCheckpointSink);
-    let mut task = tokio::spawn(async move {
-        resume_magnet_with_control(download_config, checkpoints, task_control).await
-    });
+    let mut task = if config.nonresumable_execution {
+        let direct_config = DownloadConfig {
+            metainfo_path: prepared
+                .metainfo_path
+                .expect("nonresumable diagnostic input is gated to metainfo"),
+            peer: config.peer_hints[0],
+            output_path: config.output.join(
+                prepared
+                    .publication_name
+                    .expect("metainfo input has a publication name"),
+            ),
+            network,
+            resource_limits,
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+        };
+        tokio::spawn(download_verified_piece_with_peer_state(
+            direct_config,
+            task_control,
+            PeerBudget::new(budget_config),
+            torrent_peers,
+        ))
+    } else {
+        let download_config = ResumableMagnetDownloadConfig {
+            magnet: prepared.magnet,
+            storage_root: config.output.clone(),
+            network,
+            peer_budget: PeerBudget::new(budget_config),
+            mse_dh: MseDhWorkOwner::new(),
+            encryption: PeerEncryptionPolicyHandle::new(config.profile.encryption()),
+            torrent_peers: Some(torrent_peers),
+            resource_limits,
+            skip_files: Vec::new(),
+            verified_info: prepared.verified_info,
+            verified_pieces: Vec::new(),
+            artifact_state: ResumeArtifactState::None,
+            resume_validation: ResumeValidationIntent::FastEligible,
+            download_missing: true,
+            dht: dht.as_ref().map(|runtime| runtime.service.handle()),
+            udp_trackers: prepared.trackers,
+        };
+        let checkpoints = Arc::new(ProbeCheckpointSink);
+        tokio::spawn(async move {
+            resume_magnet_with_control(download_config, checkpoints, task_control).await
+        })
+    };
     let deadline = tokio::time::sleep(config.timeout);
     tokio::pin!(deadline);
     let mut reached = false;
@@ -1524,6 +1550,8 @@ struct PreparedInput {
     magnet: String,
     verified_info: Option<Vec<u8>>,
     trackers: Option<Vec<TrackerConfig>>,
+    metainfo_path: Option<PathBuf>,
+    publication_name: Option<String>,
 }
 
 fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, String> {
@@ -1541,6 +1569,8 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                     Discovery::Tracker | Discovery::Full
                 ))
                 .then(Vec::new),
+                metainfo_path: None,
+                publication_name: None,
             })
         }
         ProbeInput::Metainfo(path) => {
@@ -1561,6 +1591,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
             }
             let raw_info = bytes[projection.info_span.clone()].to_vec();
             sink.mark_metainfo(&projection.metainfo);
+            let publication_name = projection.metainfo.name.clone();
             let magnet = format!(
                 "magnet:?xt=urn:btih:{}",
                 hex_info_hash(&projection.metainfo.info_hash)
@@ -1601,6 +1632,8 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                 magnet,
                 verified_info: Some(raw_info),
                 trackers: Some(trackers),
+                metainfo_path: Some(path.clone()),
+                publication_name: Some(publication_name),
             })
         }
     }
@@ -1717,6 +1750,7 @@ fn result(
         peer_sink.snapshot(diagnostics),
         config.checkpoint_sync_bypassed,
         config.summary_activity_observation,
+        config.nonresumable_execution,
     );
     ProbeResult {
         schema_version: 2,
@@ -1763,6 +1797,7 @@ fn diagnostic_result(
     peer_methods: PeerMethodEvidence,
     checkpoint_sync_bypassed: bool,
     summary_activity_observation: bool,
+    nonresumable_execution: bool,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
@@ -1907,6 +1942,7 @@ fn diagnostic_result(
             .checkpoint_commit_service_max_micros,
         checkpoint_sync_bypassed,
         summary_activity_observation,
+        nonresumable_execution,
         storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
             Some("write")
         } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -1937,6 +1973,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     let mut wire_payload_limit = DEFAULT_WIRE_PAYLOAD_LIMIT;
     let mut checkpoint_sync_bypassed = false;
     let mut summary_activity_observation = false;
+    let mut nonresumable_execution = false;
     let mut index = 0;
     while index < arguments.len() {
         let flag = &arguments[index];
@@ -1996,6 +2033,13 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                     _ => return Err(format!("{flag} must be detailed or summary")),
                 };
             }
+            "--diagnostic-execution" => {
+                nonresumable_execution = match value.as_str() {
+                    "resumable" => false,
+                    "nonresumable" => true,
+                    _ => return Err(format!("{flag} must be resumable or nonresumable")),
+                };
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -2031,6 +2075,17 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                 .to_owned(),
         );
     }
+    if nonresumable_execution
+        && (!matches!(&input, ProbeInput::Metainfo(_))
+            || peer_hints.len() != 1
+            || target != Target::Complete
+            || !matches!(profile, Profile::MatchedPlain30 | Profile::MatchedRc430))
+    {
+        return Err(
+            "nonresumable execution requires direct metainfo, one peer hint, complete target, and a matched profile"
+                .to_owned(),
+        );
+    }
     Ok(Config {
         input,
         expected_info_hash: expected_info_hash
@@ -2046,6 +2101,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         wire_payload_limit,
         checkpoint_sync_bypassed,
         summary_activity_observation,
+        nonresumable_execution,
     })
 }
 
@@ -2176,6 +2232,30 @@ mod tests {
         magnet.extend([
             "--diagnostic-activity-observation".to_owned(),
             "summary".to_owned(),
+        ]);
+        assert!(parse_args(magnet).is_err());
+    }
+
+    #[test]
+    fn nonresumable_execution_is_narrowly_diagnostic() {
+        let mut metainfo = required_arguments();
+        metainfo[0] = "--metainfo".to_owned();
+        metainfo[1] = "fixture.torrent".to_owned();
+        metainfo.extend([
+            "--peer-hint".to_owned(),
+            "127.0.0.1:6881".to_owned(),
+            "--diagnostic-execution".to_owned(),
+            "nonresumable".to_owned(),
+        ]);
+        let config = parse_args(metainfo).expect("matched complete direct execution");
+        assert!(config.nonresumable_execution);
+
+        let mut magnet = required_arguments();
+        magnet.extend([
+            "--peer-hint".to_owned(),
+            "127.0.0.1:6881".to_owned(),
+            "--diagnostic-execution".to_owned(),
+            "nonresumable".to_owned(),
         ]);
         assert!(parse_args(magnet).is_err());
     }

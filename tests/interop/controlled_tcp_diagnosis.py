@@ -50,7 +50,15 @@ from public_compare_contract import parse_metainfo, verify_payload
 
 
 OWNERS = ("focused", "resumable", "libtorrent")
-OWNER_CHOICES = (*OWNERS, "resumable-no-sync", "resumable-summary-observation")
+OWNER_CHOICES = (
+    *OWNERS,
+    "resumable-no-sync",
+    "resumable-summary-observation",
+    "probe-nonresumable",
+    "resumable-buffer-8m",
+    "resumable-buffer-16m",
+    "resumable-buffer-32m",
+)
 MAX_PAYLOAD_MIB = 2048
 MAX_PIECE_KIB = 256 * 1024
 MAX_OWNER_SECONDS = 45
@@ -77,6 +85,8 @@ class DiagnosisResult:
     profile: str
     checkpoint_sync: str
     activity_observation: str
+    execution_path: str
+    payload_allowance_bytes: int | None
     version: str
     published_seconds: float
     active_seconds: float | None
@@ -412,9 +422,19 @@ def run_owner(
             "resumable",
             "resumable-no-sync",
             "resumable-summary-observation",
+            "probe-nonresumable",
+            "resumable-buffer-8m",
+            "resumable-buffer-16m",
+            "resumable-buffer-32m",
         ):
             checkpoint_sync_bypass = owner == "resumable-no-sync"
             summary_activity_observation = owner == "resumable-summary-observation"
+            nonresumable_execution = owner == "probe-nonresumable"
+            payload_allowance_bytes = {
+                "resumable-buffer-8m": 8 * MIB,
+                "resumable-buffer-16m": 16 * MIB,
+                "resumable-buffer-32m": 32 * MIB,
+            }.get(owner, PAYLOAD_ALLOWANCE)
             raw = run_resumable_rstorrent(
                 resumable_binary,
                 torrent_path,
@@ -428,6 +448,8 @@ def run_owner(
                 peer_hints=[f"127.0.0.1:{peer_port}"],
                 diagnostic_checkpoint_sync_bypass=checkpoint_sync_bypass,
                 diagnostic_summary_activity_observation=summary_activity_observation,
+                diagnostic_nonresumable_execution=nonresumable_execution,
+                max_buffered_payload_bytes=payload_allowance_bytes,
             )
             metrics = normalize_adapter_result(owner, raw, fixture, profile)
             version = binary_sha256(resumable_binary)
@@ -474,15 +496,29 @@ def run_owner(
                 "bypassed"
                 if owner == "resumable-no-sync"
                 else "enabled"
-                if owner == "resumable"
+                if owner.startswith("resumable")
                 else "not-applicable"
             ),
             activity_observation=(
                 "summary"
                 if owner == "resumable-summary-observation"
                 else "detailed"
-                if owner in ("resumable", "resumable-no-sync")
+                if owner.startswith("resumable") or owner == "probe-nonresumable"
                 else "not-applicable"
+            ),
+            execution_path=(
+                "nonresumable"
+                if owner in ("focused", "probe-nonresumable")
+                else "resumable"
+                if owner.startswith("resumable")
+                else "libtorrent"
+            ),
+            payload_allowance_bytes=(
+                PAYLOAD_ALLOWANCE
+                if owner == "focused"
+                else payload_allowance_bytes
+                if owner.startswith("resumable") or owner == "probe-nonresumable"
+                else None
             ),
             version=version,
             published_seconds=published_seconds,
@@ -573,6 +609,8 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
         resumable_summary_observation = owner_summaries.get(
             "resumable-summary-observation"
         )
+        probe_nonresumable = owner_summaries.get("probe-nonresumable")
+        resumable_buffer_8m = owner_summaries.get("resumable-buffer-8m")
         path_ratio = (
             None
             if focused is None or resumable is None
@@ -588,6 +626,16 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
             if resumable is None or resumable_summary_observation is None
             else resumable_summary_observation["median_mib_s"]
             / resumable["median_mib_s"]
+        )
+        execution_ratio = (
+            None
+            if resumable is None or probe_nonresumable is None
+            else resumable["median_mib_s"] / probe_nonresumable["median_mib_s"]
+        )
+        buffer_ratio = (
+            None
+            if resumable is None or resumable_buffer_8m is None
+            else resumable_buffer_8m["median_mib_s"] / resumable["median_mib_s"]
         )
         summaries.append(
             {
@@ -606,6 +654,14 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
                 "summary_detailed_observation_ratio": observation_ratio,
                 "summary_detailed_observation_classification": (
                     None if observation_ratio is None else classify_ratio(observation_ratio)
+                ),
+                "resumable_probe_nonresumable_ratio": execution_ratio,
+                "resumable_probe_nonresumable_classification": (
+                    None if execution_ratio is None else classify_ratio(execution_ratio)
+                ),
+                "buffer_8m_64m_ratio": buffer_ratio,
+                "buffer_8m_64m_classification": (
+                    None if buffer_ratio is None else classify_ratio(buffer_ratio)
                 ),
             }
         )
@@ -767,6 +823,7 @@ def main(arguments: list[str]) -> int:
             "storage_concurrency": {"writes": 4, "hashes": 4},
             "checkpoint_sync": "selected-by-owner",
             "activity_observation": "selected-by-owner",
+            "execution_path": "selected-by-owner",
             "order": "rotating-by-run",
         },
         "elapsed_seconds": time.monotonic() - experiment_started,

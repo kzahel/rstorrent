@@ -24,18 +24,34 @@ def result(owner: str, throughput: float, run: int = 1) -> DiagnosisResult:
         owner=owner,
         profile="matched-plain-30",
         checkpoint_sync=(
-            "enabled"
-            if owner == "resumable"
-            else "bypassed"
+            "bypassed"
             if owner == "resumable-no-sync"
+            else "enabled"
+            if owner.startswith("resumable")
             else "not-applicable"
         ),
         activity_observation=(
             "summary"
             if owner == "resumable-summary-observation"
             else "detailed"
-            if owner in ("resumable", "resumable-no-sync")
+            if owner.startswith("resumable") or owner == "probe-nonresumable"
             else "not-applicable"
+        ),
+        execution_path=(
+            "nonresumable"
+            if owner in ("focused", "probe-nonresumable")
+            else "resumable"
+            if owner.startswith("resumable")
+            else "libtorrent"
+        ),
+        payload_allowance_bytes=(
+            {
+                "resumable-buffer-8m": 8 * 1024 * 1024,
+                "resumable-buffer-16m": 16 * 1024 * 1024,
+                "resumable-buffer-32m": 32 * 1024 * 1024,
+            }.get(owner, 64 * 1024 * 1024)
+            if owner == "focused" or owner.startswith("resumable") or owner == "probe-nonresumable"
+            else None
         ),
         version="fixture",
         published_seconds=1.0 / throughput,
@@ -124,6 +140,34 @@ class ControlledTcpDiagnosisTests(unittest.TestCase):
         self.assertEqual(
             summary["summary_detailed_observation_classification"], "near_parity"
         )
+
+    def test_summary_compares_probe_execution_paths(self) -> None:
+        summary = summarize_results(
+            [
+                result("resumable", 80.0),
+                result("resumable", 100.0, 2),
+                result("probe-nonresumable", 100.0),
+                result("probe-nonresumable", 120.0, 2),
+            ]
+        )[0]
+        self.assertAlmostEqual(
+            summary["resumable_probe_nonresumable_ratio"], 90.0 / 110.0
+        )
+        self.assertEqual(
+            summary["resumable_probe_nonresumable_classification"], "behind"
+        )
+
+    def test_summary_compares_resumable_payload_allowances(self) -> None:
+        summary = summarize_results(
+            [
+                result("resumable", 80.0),
+                result("resumable", 100.0, 2),
+                result("resumable-buffer-8m", 100.0),
+                result("resumable-buffer-8m", 120.0, 2),
+            ]
+        )[0]
+        self.assertAlmostEqual(summary["buffer_8m_64m_ratio"], 110.0 / 90.0)
+        self.assertEqual(summary["buffer_8m_64m_classification"], "ahead")
 
     def test_adapter_rejects_utp_or_more_than_one_peer(self) -> None:
         valid = {

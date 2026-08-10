@@ -518,6 +518,8 @@ def run_rstorrent(
     peer_hints: list[str] | None = None,
     diagnostic_checkpoint_sync_bypass: bool = False,
     diagnostic_summary_activity_observation: bool = False,
+    diagnostic_nonresumable_execution: bool = False,
+    max_buffered_payload_bytes: int | None = None,
 ) -> dict[str, Any]:
     profile_contract = comparison_profile(profile)
     if expected_info_hash is None:
@@ -550,6 +552,12 @@ def run_rstorrent(
         command.extend(("--diagnostic-checkpoint-sync", "bypass"))
     if diagnostic_summary_activity_observation:
         command.extend(("--diagnostic-activity-observation", "summary"))
+    if diagnostic_nonresumable_execution:
+        command.extend(("--diagnostic-execution", "nonresumable"))
+    if max_buffered_payload_bytes is not None:
+        command.extend(
+            ("--max-buffered-payload-bytes", str(max_buffered_payload_bytes))
+        )
     result = run_owner_process(
         command, "rstorrent", timeout_seconds + cleanup_seconds * 2 + OUTER_GRACE_SECONDS
     )
