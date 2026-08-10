@@ -111,8 +111,12 @@ the single authoritative **Now**.
   Its first checkpoint installed the exact official libtorrent `2.0.13.0`
   ARM64/Python 3.13 wheel in a dedicated user environment without system
   packages, and non-mutating discovery found a connected remote UPnP gateway
-  reporting an eligible external IPv4 address. No mapping or uTP traffic has
-  occurred yet.
+  reporting an eligible external IPv4 address. The first mapping attempt sent
+  no uTP traffic because libtorrent automatically installed both TCP and UDP
+  leases. An independent audit caught that both survived the initial cleanup;
+  exact deletion then proved zero residue. The repaired harness disables that
+  dual mapper, uses one explicitly named MiniUPnP UDP lease, and audits cleanup
+  by PID, description, port, and directory even before readiness.
 
 ## Why The Campaign Must Be Adaptive
 

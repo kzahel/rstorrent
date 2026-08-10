@@ -32,6 +32,7 @@ MAPPING_CLEANUP_SECONDS = 5.0
 MAX_UPNPC_BYTES = 64 * 1024
 MAX_DIAGNOSTICS = 50
 MAX_LEASE_SECONDS = 3_600
+MAPPING_DESCRIPTION = "RSTorrent-uTP-WAN"
 STATS_NAMES = (
     "peer.num_tcp_peers",
     "peer.num_utp_peers",
@@ -144,6 +145,45 @@ def query_mappings() -> list[MappingEntry]:
     return parse_mapping_entries(output)
 
 
+def run_upnpc(arguments: list[str]) -> str:
+    completed = subprocess.run(
+        ["upnpc", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=MAPPING_QUERY_TIMEOUT_SECONDS,
+        check=False,
+    )
+    output = completed.stdout + completed.stderr
+    if len(output.encode()) > MAX_UPNPC_BYTES:
+        raise RemoteSeedFailure("UPnP command exceeded its output bound")
+    if completed.returncode != 0:
+        raise RemoteSeedFailure("UPnP command failed")
+    return output
+
+
+def add_udp_mapping(local_address: str, port: int) -> str:
+    output = run_upnpc(
+        [
+            "-e",
+            MAPPING_DESCRIPTION,
+            "-a",
+            local_address,
+            str(port),
+            str(port),
+            "UDP",
+            str(MAX_LEASE_SECONDS),
+        ]
+    )
+    match = re.search(
+        r"^ExternalIPAddress\s*=\s*([^\s]+)\s*$",
+        output,
+        re.MULTILINE,
+    )
+    if match is None or not eligible_public_ipv4(match.group(1)):
+        raise RemoteSeedFailure("UPnP add did not report a public external IPv4 address")
+    return match.group(1)
+
+
 def matching_mappings(
     entries: list[MappingEntry],
     local_address: str,
@@ -199,7 +239,7 @@ def create_session(port: int) -> lt.session:
             "listen_interfaces": f"0.0.0.0:{port}",
             "enable_dht": False,
             "enable_lsd": False,
-            "enable_upnp": True,
+            "enable_upnp": False,
             "enable_natpmp": False,
             "enable_incoming_tcp": False,
             "enable_outgoing_tcp": False,
@@ -237,43 +277,31 @@ def add_seed(
     return session.add_torrent(parameters)
 
 
-def mapping_alert_values(alert: Any) -> tuple[str, str, int]:
-    protocol = "UDP" if alert.map_protocol == lt.portmap_protocol.udp else "TCP"
-    transport = (
-        "UPnP" if alert.map_transport == lt.portmap_transport.upnp else "NAT-PMP"
-    )
-    return protocol, transport, int(alert.external_port)
-
-
-def disable_and_delete_mapping(
-    session: lt.session | None,
-    mapping_handles: list[Any],
+def delete_mapping(
     local_address: str | None,
     local_port: int | None,
-    external_port: int | None,
 ) -> bool:
-    if session is not None:
-        for handle in mapping_handles:
-            try:
-                session.delete_port_mapping(handle)
-            except RuntimeError:
-                pass
-        session.apply_settings({"enable_upnp": False})
-    if local_address is None or local_port is None or external_port is None:
+    if local_address is None or local_port is None:
         return True
+    installed = matching_mappings(query_mappings(), local_address, local_port)
+    owned = [
+        entry
+        for entry in installed
+        if entry.protocol == "UDP" and entry.description == MAPPING_DESCRIPTION
+    ]
+    if len(owned) > 1 or any(entry not in owned for entry in installed):
+        return False
+    if owned:
+        try:
+            run_upnpc(["-d", str(owned[0].external_port), "UDP"])
+        except RemoteSeedFailure:
+            pass
     deadline = time.monotonic() + MAPPING_CLEANUP_SECONDS
     while time.monotonic() < deadline:
         if not matching_mappings(query_mappings(), local_address, local_port):
             return True
         time.sleep(0.1)
-    subprocess.run(
-        ["upnpc", "-d", str(external_port), "UDP"],
-        capture_output=True,
-        text=True,
-        timeout=MAPPING_QUERY_TIMEOUT_SECONDS,
-        check=False,
-    )
-    return not matching_mappings(query_mappings(), local_address, local_port)
+    return False
 
 
 def write_event(value: dict[str, Any]) -> None:
@@ -285,6 +313,7 @@ def run(arguments: argparse.Namespace) -> None:
         raise RemoteSeedFailure("remote oracle version is not 2.0.13.0")
     if not re.fullmatch(r"[0-9a-f]{40}", arguments.expected_sha1):
         raise RemoteSeedFailure("expected SHA-1 is malformed")
+    write_event({"event": "started", "role": "remote-seed", "pid": os.getpid()})
     torrent_info = lt.torrent_info(str(arguments.metainfo))
     if (
         torrent_info.total_size() != PAYLOAD_BYTES
@@ -310,7 +339,6 @@ def run(arguments: argparse.Namespace) -> None:
 
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
-    mapping_handles: list[Any] = []
     external_port: int | None = None
     external_address: str | None = None
     diagnostics: list[str] = []
@@ -320,22 +348,7 @@ def run(arguments: argparse.Namespace) -> None:
         handle = add_seed(session, torrent_info, arguments.seed_root)
         ready_deadline = time.monotonic() + READY_TIMEOUT_SECONDS
         while time.monotonic() < ready_deadline:
-            for alert in collect_alerts(session, diagnostics):
-                if isinstance(alert, lt.portmap_alert):
-                    mapping_handles.append(alert.mapping)
-                    protocol, transport, port = mapping_alert_values(alert)
-                    if transport != "UPnP" or protocol != "UDP":
-                        raise RemoteSeedFailure(
-                            "remote oracle created a non-UPnP or non-UDP mapping"
-                        )
-                    external_port = port
-                elif isinstance(alert, lt.portmap_error_alert):
-                    if alert.map_transport == lt.portmap_transport.upnp:
-                        raise RemoteSeedFailure("remote UPnP mapping failed")
-                elif isinstance(alert, lt.external_ip_alert):
-                    candidate = str(alert.external_address)
-                    if eligible_public_ipv4(candidate):
-                        external_address = candidate
+            collect_alerts(session, diagnostics)
             status = handle.status()
             if status.errc.value() != 0:
                 raise RemoteSeedFailure("remote seed entered an error state")
@@ -343,45 +356,45 @@ def run(arguments: argparse.Namespace) -> None:
                 status.is_seeding
                 and session.is_listening()
                 and session.listen_port() == local_port
-                and external_port is not None
-                and external_address is not None
             ):
-                installed = matching_mappings(
-                    query_mappings(), local_address, local_port
-                )
-                if len(installed) != 1:
-                    raise RemoteSeedFailure(
-                        "independent query did not find exactly one owned mapping"
-                    )
-                mapping = installed[0]
-                if (
-                    mapping.protocol != "UDP"
-                    or mapping.external_port != external_port
-                    or not 0 < mapping.lease_seconds <= MAX_LEASE_SECONDS
-                ):
-                    raise RemoteSeedFailure(
-                        "independent query rejected the exact finite UDP mapping"
-                    )
-                write_event(
-                    {
-                        "event": "ready",
-                        "role": "remote-seed",
-                        "pid": os.getpid(),
-                        "listen_port": local_port,
-                        "external_address": external_address,
-                        "external_port": external_port,
-                        "mapping": {
-                            "protocol": "UDP",
-                            "transport": "UPnP",
-                            "lease_seconds": mapping.lease_seconds,
-                        },
-                        "libtorrent_version": lt.version,
-                    }
-                )
                 break
             time.sleep(POLL_SECONDS)
         else:
             raise RemoteSeedFailure("remote mapped seed readiness timed out")
+
+        external_address = add_udp_mapping(local_address, local_port)
+        external_port = local_port
+        installed = matching_mappings(query_mappings(), local_address, local_port)
+        if len(installed) != 1:
+            raise RemoteSeedFailure(
+                "independent query did not find exactly one owned mapping"
+            )
+        mapping = installed[0]
+        if (
+            mapping.protocol != "UDP"
+            or mapping.external_port != external_port
+            or mapping.description != MAPPING_DESCRIPTION
+            or not 0 < mapping.lease_seconds <= MAX_LEASE_SECONDS
+        ):
+            raise RemoteSeedFailure(
+                "independent query rejected the exact finite UDP mapping"
+            )
+        write_event(
+            {
+                "event": "ready",
+                "role": "remote-seed",
+                "pid": os.getpid(),
+                "listen_port": local_port,
+                "external_address": external_address,
+                "external_port": external_port,
+                "mapping": {
+                    "protocol": "UDP",
+                    "transport": "UPnP",
+                    "lease_seconds": mapping.lease_seconds,
+                },
+                "libtorrent_version": lt.version,
+            }
+        )
 
         stop_deadline = time.monotonic() + STOP_TIMEOUT_SECONDS
         peer_high_water = 0
@@ -417,13 +430,7 @@ def run(arguments: argparse.Namespace) -> None:
         session.remove_torrent(handle)
         handle = None
         session.pause()
-        cleanup_succeeded = disable_and_delete_mapping(
-            session,
-            mapping_handles,
-            local_address,
-            local_port,
-            external_port,
-        )
+        cleanup_succeeded = delete_mapping(local_address, local_port)
         if not cleanup_succeeded:
             raise RemoteSeedFailure("remote UDP mapping cleanup was not verified")
         write_event(
@@ -442,13 +449,7 @@ def run(arguments: argparse.Namespace) -> None:
         if session is not None:
             session.pause()
         if not cleanup_succeeded:
-            cleanup_succeeded = disable_and_delete_mapping(
-                session,
-                mapping_handles,
-                local_address,
-                local_port,
-                external_port,
-            )
+            cleanup_succeeded = delete_mapping(local_address, local_port)
         handle = None
         session = None
         gc.collect()

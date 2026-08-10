@@ -26,7 +26,7 @@ from utp_reference_oracle import (
     create_fixture,
     hash_file,
 )
-from utp_remote_seed import parse_mapping_entries
+from utp_remote_seed import MAPPING_DESCRIPTION, parse_mapping_entries
 from utp_rstorrent_interop import (
     InteropFailure,
     RoleProcess,
@@ -289,6 +289,15 @@ def eligible_public_endpoint(event: dict[str, Any]) -> tuple[str, int, int, int]
     return address, port, listen_port, pid
 
 
+def remote_started_pid(event: dict[str, Any]) -> int:
+    if event.get("event") != "started" or event.get("role") != "remote-seed":
+        raise WanFailure("remote seed did not emit its ownership event")
+    pid = event.get("pid")
+    if not isinstance(pid, int) or pid <= 1:
+        raise WanFailure("remote seed ownership event has an invalid PID")
+    return pid
+
+
 def ssh_control_address(host: str) -> ipaddress.IPv4Address | None:
     completed = subprocess.run(
         ["ssh", "-G", host],
@@ -388,23 +397,29 @@ def verify_remote_cleanup(
         process_check = run_ssh(host, f"kill -0 {pid} 2>/dev/null", check=False)
         if process_check.returncode == 0:
             raise WanFailure("remote seed process survived cleanup")
-    if external_port is not None:
+    inventory = run_ssh(host, "upnpc -l", timeout_seconds=12)
+    entries = parse_mapping_entries(inventory.stdout + inventory.stderr)
+    retained = [
+        entry
+        for entry in entries
+        if entry.protocol == "UDP"
+        and entry.description == MAPPING_DESCRIPTION
+    ]
+    if len(retained) > 1:
+        raise WanFailure("multiple owned UDP mappings survived cleanup")
+    if retained:
+        retained_port = retained[0].external_port
+        if external_port is not None and retained_port != external_port:
+            cleanup_mismatch = True
+        else:
+            cleanup_mismatch = False
+        run_ssh(host, f"upnpc -d {retained_port} UDP", timeout_seconds=12, check=False)
         inventory = run_ssh(host, "upnpc -l", timeout_seconds=12)
         entries = parse_mapping_entries(inventory.stdout + inventory.stderr)
-        retained = [
-            entry
-            for entry in entries
-            if entry.protocol == "UDP" and entry.external_port == external_port
-        ]
-        if retained:
-            run_ssh(host, f"upnpc -d {external_port} UDP", timeout_seconds=12, check=False)
-            inventory = run_ssh(host, "upnpc -l", timeout_seconds=12)
-            entries = parse_mapping_entries(inventory.stdout + inventory.stderr)
-            if any(
-                entry.protocol == "UDP" and entry.external_port == external_port
-                for entry in entries
-            ):
-                raise WanFailure("remote UDP mapping survived exact cleanup")
+        if any(entry.description == MAPPING_DESCRIPTION for entry in entries):
+            raise WanFailure("remote UDP mapping survived exact cleanup")
+        if cleanup_mismatch:
+            raise WanFailure("remote cleanup found an unexpected owned UDP port")
     if not REMOTE_RUN_PATTERN.fullmatch(remote_run):
         raise WanFailure("refusing to remove an ineligible remote run directory")
     run_ssh(host, f'rm -r -- "{remote_run}"')
@@ -449,8 +464,11 @@ def run(host: str) -> dict[str, Any]:
                 seed_root / PAYLOAD_NAME,
             )
             remote = RemoteSeedProcess.start(host, remote_run, expected_sha1)
+            remote_pid = remote_started_pid(remote.read_event(deadline))
             ready = remote.read_event(deadline)
-            external_address, external_port, _, remote_pid = eligible_public_endpoint(ready)
+            external_address, external_port, _, ready_pid = eligible_public_endpoint(ready)
+            if ready_pid != remote_pid:
+                raise WanFailure("remote seed ownership changed before readiness")
             verify_direct_route(host, external_address)
 
             role = RoleProcess.start(

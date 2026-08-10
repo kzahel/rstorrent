@@ -35,8 +35,9 @@ Try the least invasive remote-listener direction first:
 
 1. install or build libtorrent `2.0.13.0` in an isolated user-owned environment
    on `pimom`;
-2. start a forced-uTP libtorrent seed on one fixed UDP port, with its built-in
-   UPnP enabled and NAT-PMP disabled;
+2. start a forced-uTP libtorrent seed on one fixed UDP port with built-in UPnP
+   and NAT-PMP disabled, then have its attached owner request exactly one UDP
+   lease through the existing MiniUPnP client;
 3. require a successful UDP mapping plus gateway-reported globally routable
    external IPv4 address; and
 4. have the local RSTorrent diagnostic leecher dial that public endpoint.
@@ -79,9 +80,9 @@ The positive gates are:
    leaves through its ordinary Internet interface, not a Tailscale/overlay
    interface. No SSH forwarding or tunnel carries uTP.
 3. The remote oracle reports libtorrent `2.0.13.0`. TCP, MSE, DHT, LSD,
-   NAT-PMP, trackers, and web seeds are disabled. UPnP is enabled only in the
-   remote-listener direction; the remote-leecher fallback uses no remote
-   mapping. At most one peer is observed.
+   libtorrent's automatic UPnP, NAT-PMP, trackers, and web seeds are disabled.
+   The attached remote-listener owner creates one explicit UPnP UDP lease; the
+   remote-leecher fallback uses no remote mapping. At most one peer is observed.
 4. The exact 2,097,883-byte single-file fixture, 65,536-byte piece geometry,
    and SHA-1 `cdce24126a8e65854d876c0b83ad3ba19748f6dc` pass without TCP or a
    discovery mechanism.
@@ -136,12 +137,15 @@ machine-specific home paths.
 ### Remote-listener primary direction
 
 The attached remote helper owns one libtorrent session and torrent, listens
-on one explicit IPv4 port, and emits bounded line-delimited JSON. It waits for
-UPnP `portmap_alert` success and an eligible external-address observation
-before declaring readiness. It reports port mapping errors separately from
-uTP transfer failures, accepts one stop command, removes the torrent, disables
-UPnP or pauses/aborts the session, waits for mapping deletion evidence, emits
-terminal state, and exits.
+on one explicit IPv4 port, and emits bounded line-delimited JSON. After the
+listener is ready, it invokes the installed MiniUPnP client with an exact
+description, local/external port, UDP protocol, and finite lease, then queries
+the gateway inventory before declaring readiness. Libtorrent's automatic UPnP
+stays disabled because it maps both its TCP and UDP listen endpoints even when
+incoming TCP peer connections are disabled. The helper reports port-mapping
+errors separately from uTP transfer failures, accepts one stop command,
+removes the torrent, pauses/aborts the session, deletes the exact named UDP
+lease, waits for independent absence, emits terminal state, and exits.
 
 The local owner retains the SSH child, validates its structured output, checks
 the local route to the external endpoint, and starts the explicit diagnostic
@@ -255,10 +259,15 @@ documents already pinned by `docs/references.md` and Tactical `088`, especially
 `AddPortMapping`, `DeletePortMapping`, protocol values, finite leases, and SOAP
 faults.
 
-Adopted behavior is an explicit UDP mapping, alert/query-confirmed external
-endpoint, finite lease, and explicit cleanup. Intentional differences remain
-RSTorrent's fixed 548-byte Stage 3 datagram MTU, one diagnostic connection,
-bounded service snapshots, and no product uTP selection or advertisement.
+Adopted behavior is an explicit UDP mapping, query-confirmed external endpoint,
+finite lease, and explicit cleanup. The remote helper deliberately uses the
+observed MiniUPnP `2.2.8` client rather than libtorrent's automatic mapping
+owner: the first
+controlled attempt proved that owner installs both TCP and UDP mappings for
+one listen socket even when peer TCP is disabled. Intentional differences
+otherwise remain RSTorrent's fixed 548-byte Stage 3 datagram MTU, one
+diagnostic connection, bounded service snapshots, and no product uTP selection
+or advertisement.
 The local UPnP generalization preserves product TCP policy and exposes UDP
 only to the controlled diagnostic.
 
@@ -356,3 +365,28 @@ fragment, `--no-deps`, and binary-only selection. The temporary atomic-install
 directory was removed; only the authorized reusable oracle environment
 remains. No fixture, metainfo, run directory, listener, mapping, background
 process, firewall rule, router configuration, or Tailscale change exists yet.
+
+### First mapping attempt and cleanup repair
+
+The first committed-harness run reached remote listener setup but stopped
+before any RSTorrent uTP dial. Pinned libtorrent's automatic UPnP owner created
+one TCP and one UDP mapping for the shared listen port, so the helper rejected
+the non-UDP lease rather than claiming the exact-one-mapping gate.
+
+That failure exposed a harness cleanup defect: because rejection happened
+before the `ready` event, the local owner lacked the mapped port, and the
+remote helper treated its asynchronous delete request as sufficient. The
+mandatory independent audit found both finite `libtorrent/2.0.13.0` leases
+still present. Their exact description, internal client/port, shared external
+port, protocols, and remaining finite lease identified only the pair created
+by this run. Both entries were explicitly deleted and a second inventory
+confirmed zero matching leases; the remote process and run directory were
+also absent.
+
+The repaired helper now emits its PID before mapping work, keeps libtorrent's
+automatic UPnP disabled, installs one explicitly named UDP lease through
+MiniUPnP, and reconciles deletion by exact description and local port even when
+failure precedes readiness. The local owner independently audits that
+description after every outcome and can delete at most one exact surviving
+UDP entry. Deterministic contracts and Python compilation pass after the
+repair. A positive WAN transfer remains pending.
