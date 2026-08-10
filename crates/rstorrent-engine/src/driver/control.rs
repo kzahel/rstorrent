@@ -26,6 +26,7 @@ use crate::peer::{DialAttempt, DialAttemptId, PeerRegistryCounts, PeerRegistrySn
 use crate::peer::{PeerRegistry, PeerSelectionContext};
 use crate::peer_runtime::PeerConnectionObservation;
 use crate::piece_picker::PieceActivationPolicy;
+use crate::resume_validation::ResumeValidationRejectReason;
 use crate::selective_storage::PlatformStorageSpec;
 use crate::session_resources::{
     SessionExecutionPermit, SessionSemaphorePermit, SessionTorrentResources,
@@ -92,6 +93,23 @@ pub enum DownloadActivityEvent {
     CheckerProgress(Box<CheckerProgress>),
     CheckerFinished {
         generation: u64,
+    },
+    FastResumeAccepted {
+        committed_pieces: usize,
+        relevant_files: usize,
+        artifact_observations: usize,
+        part_header_bytes: u64,
+        elapsed_millis: u64,
+        payload_bytes_read: u64,
+        hash_jobs: usize,
+    },
+    FastResumeRejected {
+        reason: ResumeValidationRejectReason,
+        committed_pieces: usize,
+        relevant_files: usize,
+        artifact_observations: usize,
+        part_header_bytes: u64,
+        elapsed_millis: u64,
     },
     PathPublicationStage(PathPublicationStage),
     StorageState(Box<DiskRuntimeSnapshot>),

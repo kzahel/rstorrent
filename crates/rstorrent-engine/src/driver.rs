@@ -62,6 +62,9 @@ use crate::peer_socket::{
 };
 use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
 use crate::piece_picker::picker_seed;
+use crate::resume_validation::{
+    ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
+};
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectiveStorage,
     SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
@@ -236,6 +239,7 @@ pub struct ResumableMagnetDownloadConfig {
     pub verified_info: Option<Vec<u8>>,
     pub verified_pieces: Vec<bool>,
     pub artifact_state: ResumeArtifactState,
+    pub resume_validation: ResumeValidationIntent,
     pub download_missing: bool,
     pub dht: Option<DhtHandle>,
     /// Authoritative operational UDP tracker catalog. `None` uses the
@@ -3526,6 +3530,7 @@ struct ResumeContext {
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     initialize_descriptors: bool,
     artifact_state: ResumeArtifactState,
+    validation: ResumeValidationIntent,
     download_missing: bool,
 }
 
@@ -3543,6 +3548,7 @@ async fn run_resumable_magnet_download(
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
         artifact_state: config.artifact_state,
+        validation: config.resume_validation,
         download_missing: config.download_missing,
         initialize_descriptors: descriptors
             .as_ref()
@@ -6032,72 +6038,142 @@ async fn run_selective_download(
         revision: 0,
     };
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
-        let generation = resume
-            .checkpoints
-            .recheck_started()
-            .map_err(DownloadError::Checkpoint)?;
-        control.checker_started(generation, layout.piece_count());
-        let previous = verified_pieces.clone();
-        let checked = if resumed == ResumedStorage::Created {
-            let mut pause_updates = control.checking_pause_updates();
-            control.checker_set_phase(CheckerPhase::Hashing);
-            for piece_index in 0..layout.piece_count() {
-                wait_for_checking_resume(&control, &mut pause_updates).await?;
-                control.checker_set_phase(CheckerPhase::Hashing);
-                if control.is_cancelled() {
-                    control.checker_set_phase(CheckerPhase::Paused);
-                    return Err(DownloadError::Cancelled);
-                }
-                let piece_index = u32::try_from(piece_index)
-                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-                control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
-            }
-            FullRecheckResult {
-                verified: vec![false; layout.piece_count()],
-                recovered: Vec::new(),
-            }
-        } else {
-            match full_recheck_managed_storage(
-                &mut storage,
-                &metainfo,
-                &layout,
-                &previous,
-                &mut applied_selection,
-                &control,
+        let validation_started = Instant::now();
+        let validation = if resume.validation == ResumeValidationIntent::FastEligible {
+            Some(
+                storage
+                    .validate_fast_resume(resumed)
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?,
             )
-            .await
-            {
-                Ok(checked) => checked,
-                Err(error) => {
-                    if !matches!(error, DownloadError::Cancelled) {
-                        control.checker_finished(generation);
-                    }
-                    return Err(error);
-                }
-            }
+        } else {
+            None
         };
-        let mut pause_updates = control.checking_pause_updates();
-        wait_for_checking_resume(&control, &mut pause_updates).await?;
-        control.checker_set_phase(CheckerPhase::ReconcilingStorage);
-        verified_pieces = checked.verified;
-        if let Err(error) = storage.reconcile_after_recheck().await {
-            control.checker_finished(generation);
-            return Err(DownloadError::SelectiveStorage(error));
+        let outcome = decide_resume_admission(
+            resume.validation,
+            validation
+                .as_ref()
+                .map_or(ResumeStorageEvidence::Matches, |result| result.evidence),
+        );
+        let elapsed_millis =
+            u64::try_from(validation_started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        match outcome {
+            ResumeAdmissionOutcome::Accepted => {
+                let validation = validation.expect("fast admission has structural evidence");
+                control.emit(DownloadActivityEvent::FastResumeAccepted {
+                    committed_pieces: validation.committed_pieces,
+                    relevant_files: validation.relevant_files,
+                    artifact_observations: validation.artifact_observations,
+                    part_header_bytes: validation.part_header_bytes,
+                    elapsed_millis,
+                    payload_bytes_read: validation.payload_bytes_read,
+                    hash_jobs: validation.hash_jobs,
+                });
+            }
+            ResumeAdmissionOutcome::NeedsFullCheck(reason) => {
+                control.emit(DownloadActivityEvent::FastResumeRejected {
+                    reason,
+                    committed_pieces: validation.as_ref().map_or_else(
+                        || verified_pieces.iter().filter(|piece| **piece).count(),
+                        |validation| validation.committed_pieces,
+                    ),
+                    relevant_files: validation
+                        .as_ref()
+                        .map_or(0, |result| result.relevant_files),
+                    artifact_observations: validation
+                        .as_ref()
+                        .map_or(0, |result| result.artifact_observations),
+                    part_header_bytes: validation
+                        .as_ref()
+                        .map_or(0, |result| result.part_header_bytes),
+                    elapsed_millis,
+                });
+            }
+            ResumeAdmissionOutcome::AwaitingStorage => {
+                return Err(DownloadError::SelectiveStorage(
+                    SelectiveStorageError::InvalidStorageOperation(
+                        "fast resume is awaiting storage",
+                    ),
+                ));
+            }
+            ResumeAdmissionOutcome::NeedsRepair => {
+                return Err(DownloadError::SelectiveStorage(
+                    SelectiveStorageError::InvalidStorageOperation(
+                        "fast resume storage evidence needs repair",
+                    ),
+                ));
+            }
         }
-        if resumed == ResumedStorage::Staging
-            && let Err(error) = storage.sync_pieces(&checked.recovered).await
-        {
+        // Accepted state keeps the committed bitmap as runtime authority.
+        // Every other reachable outcome enters the existing checker.
+        if outcome != ResumeAdmissionOutcome::Accepted {
+            let generation = resume
+                .checkpoints
+                .recheck_started()
+                .map_err(DownloadError::Checkpoint)?;
+            control.checker_started(generation, layout.piece_count());
+            let previous = verified_pieces.clone();
+            let checked = if resumed == ResumedStorage::Created {
+                let mut pause_updates = control.checking_pause_updates();
+                control.checker_set_phase(CheckerPhase::Hashing);
+                for piece_index in 0..layout.piece_count() {
+                    wait_for_checking_resume(&control, &mut pause_updates).await?;
+                    control.checker_set_phase(CheckerPhase::Hashing);
+                    if control.is_cancelled() {
+                        control.checker_set_phase(CheckerPhase::Paused);
+                        return Err(DownloadError::Cancelled);
+                    }
+                    let piece_index = u32::try_from(piece_index)
+                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                    control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
+                }
+                FullRecheckResult {
+                    verified: vec![false; layout.piece_count()],
+                    recovered: Vec::new(),
+                }
+            } else {
+                match full_recheck_managed_storage(
+                    &mut storage,
+                    &metainfo,
+                    &layout,
+                    &previous,
+                    &mut applied_selection,
+                    &control,
+                )
+                .await
+                {
+                    Ok(checked) => checked,
+                    Err(error) => {
+                        if !matches!(error, DownloadError::Cancelled) {
+                            control.checker_finished(generation);
+                        }
+                        return Err(error);
+                    }
+                }
+            };
+            let mut pause_updates = control.checking_pause_updates();
+            wait_for_checking_resume(&control, &mut pause_updates).await?;
+            control.checker_set_phase(CheckerPhase::ReconcilingStorage);
+            verified_pieces = checked.verified;
+            if let Err(error) = storage.reconcile_after_recheck().await {
+                control.checker_finished(generation);
+                return Err(DownloadError::SelectiveStorage(error));
+            }
+            if resumed == ResumedStorage::Staging
+                && let Err(error) = storage.sync_pieces(&checked.recovered).await
+            {
+                control.checker_finished(generation);
+                return Err(DownloadError::SelectiveStorage(error));
+            }
+            wait_for_checking_resume(&control, &mut pause_updates).await?;
+            control.checker_set_phase(CheckerPhase::Finalizing);
+            if let Err(error) = resume.checkpoints.have_rechecked(&verified_pieces) {
+                control.checker_finished(generation);
+                return Err(DownloadError::Checkpoint(error));
+            }
             control.checker_finished(generation);
-            return Err(DownloadError::SelectiveStorage(error));
+            wait_for_checking_resume(&control, &mut pause_updates).await?;
         }
-        wait_for_checking_resume(&control, &mut pause_updates).await?;
-        control.checker_set_phase(CheckerPhase::Finalizing);
-        if let Err(error) = resume.checkpoints.have_rechecked(&verified_pieces) {
-            control.checker_finished(generation);
-            return Err(DownloadError::Checkpoint(error));
-        }
-        control.checker_finished(generation);
-        wait_for_checking_resume(&control, &mut pause_updates).await?;
     }
 
     let AppliedFileSelection {

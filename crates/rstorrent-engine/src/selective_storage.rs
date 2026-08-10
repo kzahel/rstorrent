@@ -25,6 +25,7 @@ use crate::part_file::{
     PartFile, PartFileCheckpointReference, PartFileError, PartFileIdentity, PartFileSpan,
 };
 use crate::positional_io::{read_exact_at, write_all_at};
+use crate::resume_validation::{ResumeStorageEvidence, ResumeValidationRejectReason};
 use crate::storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageFailure, PlatformStorageFailureKind,
     PlatformStorageTarget, StorageFileAccess, StorageFileKey, StorageFileLease, StorageFileLocator,
@@ -32,6 +33,17 @@ use crate::storage_file_pool::{
 };
 
 pub const VERIFICATION_CHUNK_LENGTH: usize = 16 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FastResumeValidation {
+    pub evidence: ResumeStorageEvidence,
+    pub committed_pieces: usize,
+    pub relevant_files: usize,
+    pub artifact_observations: usize,
+    pub part_header_bytes: u64,
+    pub payload_bytes_read: u64,
+    pub hash_jobs: usize,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SelectiveWriteStats {
@@ -456,7 +468,64 @@ enum RetainedFileSource {
     Fixed(StorageFileLease),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RetainedSourceObservation {
+    Exact,
+    Missing,
+    WrongLength,
+    WrongKind,
+}
+
 impl RetainedFileSource {
+    async fn observe_exact(
+        &self,
+        expected_length: u64,
+    ) -> Result<RetainedSourceObservation, SelectiveStorageError> {
+        match self {
+            Self::Dynamic {
+                reference,
+                expected_length: retained_expected,
+                ..
+            } => {
+                debug_assert_eq!(*retained_expected, expected_length);
+                let observation =
+                    reference
+                        .observe()
+                        .await
+                        .map_err(|error| SelectiveStorageError::Io {
+                            operation: "observe resume payload source",
+                            source: io::Error::other(error),
+                        })?;
+                if !observation.exists {
+                    return Ok(RetainedSourceObservation::Missing);
+                }
+                if observation.kind != Some(crate::storage_file_pool::StorageObjectKind::File) {
+                    return Ok(RetainedSourceObservation::WrongKind);
+                }
+                Ok(if observation.length == Some(expected_length) {
+                    RetainedSourceObservation::Exact
+                } else {
+                    RetainedSourceObservation::WrongLength
+                })
+            }
+            Self::Fixed(file) => {
+                let actual = file
+                    .file()
+                    .metadata()
+                    .map_err(|source| SelectiveStorageError::Io {
+                        operation: "inspect resume payload descriptor",
+                        source,
+                    })?
+                    .len();
+                Ok(if actual == expected_length {
+                    RetainedSourceObservation::Exact
+                } else {
+                    RetainedSourceObservation::WrongLength
+                })
+            }
+        }
+    }
+
     async fn acquire(
         &self,
         access: StorageFileAccess,
@@ -1770,6 +1839,158 @@ impl SelectiveStorage {
             .filter(|(index, file)| !file.padding && self.selection.is_wanted(*index))
             .map(|(_, file)| file.length)
             .sum()
+    }
+
+    /// Validate committed resume pieces from artifact structure alone.
+    ///
+    /// This method never reads payload bytes and never schedules hash work.
+    pub(crate) async fn validate_fast_resume(
+        &mut self,
+        resumed: ResumedStorage,
+    ) -> Result<FastResumeValidation, SelectiveStorageError> {
+        let committed_pieces = self.verified.iter().filter(|verified| **verified).count();
+        let mut validation = FastResumeValidation {
+            evidence: ResumeStorageEvidence::Matches,
+            committed_pieces,
+            relevant_files: 0,
+            artifact_observations: 0,
+            part_header_bytes: self.part_file.as_ref().map_or(0, PartFile::header_length),
+            payload_bytes_read: 0,
+            hash_jobs: 0,
+        };
+        if resumed == ResumedStorage::Created && committed_pieces != 0 {
+            validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::CreatedStorageWithCommittedPieces,
+            );
+            return Ok(validation);
+        }
+        if committed_pieces == 0 {
+            return Ok(validation);
+        }
+
+        // Prefix counts let each file ask whether its piece interval contains
+        // a committed bit without a file-by-piece nested scan.
+        let mut committed_prefix = Vec::with_capacity(self.verified.len() + 1);
+        committed_prefix.push(0_u32);
+        for verified in &self.verified {
+            let next = committed_prefix
+                .last()
+                .copied()
+                .unwrap_or_default()
+                .checked_add(u32::from(*verified))
+                .ok_or(SelectiveStorageError::InvalidStorageOperation(
+                    "resume committed-piece count overflow",
+                ))?;
+            committed_prefix.push(next);
+        }
+        let mut part_required = vec![false; self.verified.len()];
+
+        for (file_index, metainfo_file) in self.layout.files().iter().enumerate() {
+            if metainfo_file.padding || metainfo_file.length == 0 {
+                continue;
+            }
+            let range = self
+                .layout
+                .file_piece_range(file_index)?
+                .expect("nonempty files have a piece range");
+            let first = usize::try_from(*range.start())
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            let last = usize::try_from(*range.end())
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            if committed_prefix[last + 1] == committed_prefix[first] {
+                continue;
+            }
+            validation.relevant_files += 1;
+
+            let (source, missing_may_use_part) = if self.selection.is_wanted(file_index) {
+                (
+                    self.files[file_index].as_ref().map(|file| &file.source),
+                    self.pending_promotions.contains(&file_index),
+                )
+            } else {
+                (self.skipped_sources[file_index].as_ref(), true)
+            };
+            let observation = match source {
+                Some(source) => {
+                    validation.artifact_observations += 1;
+                    source.observe_exact(metainfo_file.length).await?
+                }
+                None => RetainedSourceObservation::Missing,
+            };
+            match observation {
+                RetainedSourceObservation::Exact => continue,
+                RetainedSourceObservation::WrongKind => {
+                    validation.evidence = ResumeStorageEvidence::NeedsRepair;
+                    return Ok(validation);
+                }
+                RetainedSourceObservation::WrongLength => {
+                    validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                        ResumeValidationRejectReason::UnexpectedPayloadLength,
+                    );
+                    return Ok(validation);
+                }
+                RetainedSourceObservation::Missing if !missing_may_use_part => {
+                    validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                        ResumeValidationRejectReason::MissingPayloadFile,
+                    );
+                    return Ok(validation);
+                }
+                RetainedSourceObservation::Missing => {
+                    for piece_index in range {
+                        let piece_index = usize::try_from(piece_index).map_err(|_| {
+                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
+                        })?;
+                        if self.verified[piece_index] {
+                            part_required[piece_index] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !part_required.iter().any(|required| *required) {
+            return Ok(validation);
+        }
+        if self.part_file.is_none()
+            && let StorageBacking::Platform { part_reference, .. } = &self.backing
+        {
+            self.part_file =
+                PartFile::open_optional_with_reference(part_reference.clone(), None, self.identity)
+                    .await?;
+            validation.part_header_bytes =
+                self.part_file.as_ref().map_or(0, PartFile::header_length);
+        }
+        let Some(part_file) = self.part_file.as_ref() else {
+            validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::MissingPartFile,
+            );
+            return Ok(validation);
+        };
+        validation.artifact_observations += 1;
+        let Some(part_length) = part_file.observed_file_length().await? else {
+            validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::MissingPartFile,
+            );
+            return Ok(validation);
+        };
+        for (piece_index, required) in part_required.into_iter().enumerate() {
+            if !required {
+                continue;
+            }
+            if !part_file.has_piece(piece_index)? {
+                validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                    ResumeValidationRejectReason::MissingPartSlot,
+                );
+                return Ok(validation);
+            }
+            if !part_file.has_complete_piece_at_length(piece_index, part_length)? {
+                validation.evidence = ResumeStorageEvidence::ContentMismatch(
+                    ResumeValidationRejectReason::TruncatedPartSlot,
+                );
+                return Ok(validation);
+            }
+        }
+        Ok(validation)
     }
 
     pub fn skipped_bytes(&self) -> u64 {
@@ -3897,6 +4118,7 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use crate::checkpoint::DurabilityTarget;
+    use crate::resume_validation::{ResumeStorageEvidence, ResumeValidationRejectReason};
     use crate::storage_file_pool::{StorageFileAccess, StorageFilePool, platform_storage_channel};
 
     use super::{
@@ -5044,6 +5266,168 @@ mod tests {
                 .await
                 .expect("normalized bytes"),
             bytes
+        );
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn fast_resume_accepts_exact_and_same_length_mutated_path_content() {
+        let root = test_path("fast-resume-exact");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = single_file_fixture();
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        tokio::fs::write(&paths.output, vec![0x41; metainfo.total_length as usize])
+            .await
+            .expect("write exact publication");
+
+        for byte in [0x41, 0x92] {
+            tokio::fs::write(&paths.output, vec![byte; metainfo.total_length as usize])
+                .await
+                .expect("write same-length publication");
+            let (mut storage, resumed) = SelectiveStorage::resume_with_paths_expected(
+                paths.clone(),
+                &metainfo,
+                layout.clone(),
+                selection.clone(),
+                vec![true; layout.piece_count()],
+                ResumeArtifactState::Published,
+            )
+            .await
+            .expect("inventory exact publication");
+            let validation = storage
+                .validate_fast_resume(resumed)
+                .await
+                .expect("validate exact publication");
+            assert_eq!(validation.evidence, ResumeStorageEvidence::Matches);
+            assert_eq!(validation.committed_pieces, layout.piece_count());
+            assert_eq!(validation.relevant_files, 1);
+            assert_eq!(validation.artifact_observations, 1);
+            assert_eq!(validation.payload_bytes_read, 0);
+            assert_eq!(validation.hash_jobs, 0);
+        }
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn fast_resume_sends_oversized_path_content_to_full_check() {
+        let root = test_path("fast-resume-oversized");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = single_file_fixture();
+        let paths =
+            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        tokio::fs::write(
+            &paths.output,
+            vec![0x51; metainfo.total_length as usize + 1],
+        )
+        .await
+        .expect("write oversized publication");
+        let (mut storage, resumed) = SelectiveStorage::resume_with_paths_expected(
+            paths,
+            &metainfo,
+            layout.clone(),
+            selection,
+            vec![true; layout.piece_count()],
+            ResumeArtifactState::Published,
+        )
+        .await
+        .expect("inventory oversized publication");
+        assert_eq!(
+            storage
+                .validate_fast_resume(resumed)
+                .await
+                .expect("validate oversized publication")
+                .evidence,
+            ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::UnexpectedPayloadLength,
+            ),
+        );
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn fast_resume_validates_part_slot_extent_without_reading_payload() {
+        let root = test_path("fast-resume-part-extent");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = fixture();
+        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            .expect("plan storage paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let (mut storage, _) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .expect("create storage");
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write boundary piece");
+        }
+        storage.sync_piece(0).await.expect("sync boundary piece");
+        storage.record_verified(0).expect("record boundary piece");
+        drop(storage);
+
+        let mut committed = vec![false; layout.piece_count()];
+        committed[0] = true;
+        let (mut exact, resumed) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            committed.clone(),
+        )
+        .await
+        .expect("resume exact part slot");
+        let validation = exact
+            .validate_fast_resume(resumed)
+            .await
+            .expect("validate exact part slot");
+        assert_eq!(validation.evidence, ResumeStorageEvidence::Matches);
+        assert!(validation.part_header_bytes > 0);
+        assert_eq!(validation.payload_bytes_read, 0);
+        assert_eq!(validation.hash_jobs, 0);
+        drop(exact);
+
+        let part_length = tokio::fs::metadata(&paths.part)
+            .await
+            .expect("part metadata")
+            .len();
+        let part = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&paths.part)
+            .await
+            .expect("open part for truncation");
+        part.set_len(part_length - 1)
+            .await
+            .expect("truncate part payload");
+        drop(part);
+        let (mut truncated, resumed) =
+            SelectiveStorage::resume_with_paths(paths, &metainfo, layout, selection, committed)
+                .await
+                .expect("inventory truncated part slot");
+        assert_eq!(
+            truncated
+                .validate_fast_resume(resumed)
+                .await
+                .expect("validate truncated part slot")
+                .evidence,
+            ResumeStorageEvidence::ContentMismatch(ResumeValidationRejectReason::TruncatedPartSlot,),
         );
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }

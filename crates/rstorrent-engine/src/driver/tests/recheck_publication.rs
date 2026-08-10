@@ -1,6 +1,6 @@
 use super::*;
 use crate::driver::AppliedFileSelection;
-use crate::{FileSelectionUpdate, PeerBudget};
+use crate::{FileSelectionUpdate, PeerBudget, ResumeValidationIntent};
 
 #[tokio::test]
 async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
@@ -209,6 +209,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
             udp_trackers: None,
@@ -239,6 +240,84 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
     tokio::fs::remove_dir_all(root)
         .await
         .expect("remove recheck fixture");
+}
+
+#[tokio::test]
+async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
+    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE + 731))
+        .map(|index| ((index * 29 + index / 11) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("fast-resume metainfo");
+    let root = test_path("fast-resume-complete");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create storage root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan storage");
+    tokio::fs::write(&paths.output, &payload)
+        .await
+        .expect("write complete publication");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let activity = Arc::new(RecordingActivitySink::default());
+    let control = DownloadControl::new();
+    control.set_activity_sink(activity.clone());
+    let unused_peer = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind unused fast-resume peer");
+    let peer_address = unused_peer.local_addr().expect("unused peer address");
+
+    let report = resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(1)),
+            peer_budget: PeerBudget::system_default(),
+            mse_dh: crate::MseDhWorkOwner::new(),
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: None,
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![true; layout.piece_count()],
+            artifact_state: ResumeArtifactState::Published,
+            resume_validation: ResumeValidationIntent::FastEligible,
+            download_missing: true,
+            dht: None,
+            udp_trackers: Some(Vec::new()),
+        },
+        checkpoints.clone(),
+        control,
+    )
+    .await
+    .expect("accept complete fast resume");
+
+    assert_eq!(report.bytes_written, 0);
+    assert!(checkpoints.rechecks().is_empty());
+    let events = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(events.iter().any(|event| matches!(
+        event,
+        DownloadActivityEvent::FastResumeAccepted {
+            committed_pieces,
+            payload_bytes_read: 0,
+            hash_jobs: 0,
+            ..
+        } if *committed_pieces == layout.piece_count()
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        DownloadActivityEvent::CheckerProgress(_)
+            | DownloadActivityEvent::CheckerFinished { .. }
+            | DownloadActivityEvent::PieceHashing { .. }
+    )));
+    drop(events);
+    tokio::fs::remove_dir_all(root).await.expect("remove root");
 }
 
 #[tokio::test]
@@ -595,6 +674,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
             verified_info: Some(raw_info),
             verified_pieces: vec![true; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
             udp_trackers: None,
@@ -691,6 +771,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
             verified_info: Some(raw_info),
             verified_pieces: vec![false; layout.piece_count()],
             artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
             download_missing: true,
             dht: None,
             udp_trackers: None,
@@ -775,6 +856,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
                 artifact_state: ResumeArtifactState::Staging,
+                resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
                 udp_trackers: None,
@@ -819,6 +901,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
                 verified_info: Some(raw_info.clone()),
                 verified_pieces: vec![false; layout.piece_count()],
                 artifact_state: ResumeArtifactState::Publishing,
+                resume_validation: ResumeValidationIntent::Full,
                 download_missing: true,
                 dht: None,
                 udp_trackers: None,

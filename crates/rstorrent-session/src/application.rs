@@ -19,12 +19,13 @@ use rstorrent_engine::{
     NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
     PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient, PlatformStorageFailureKind,
     PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, ResumedStorage, SessionDownloadResourceSnapshot, SessionDownloadResources,
-    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
-    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind,
-    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
-    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
-    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
+    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SessionDownloadResourceSnapshot,
+    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
+    StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
+    TrackerSource, TrackerTransport, decide_namespace_transition,
+    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -2468,6 +2469,7 @@ impl ApplicationService {
                             verified_info: Some(raw_info),
                             verified_pieces: Vec::new(),
                             artifact_state: ResumeArtifactState::None,
+                            resume_validation: ResumeValidationIntent::FastEligible,
                             download_missing: true,
                             dht: None,
                             udp_trackers: Some(Vec::new()),
@@ -2574,6 +2576,11 @@ impl ApplicationService {
             .as_ref()
             .map_or_else(Vec::new, |have| have.pieces().to_vec());
         let artifact_state = resume_artifact_state(&resume)?;
+        let resume_validation = if resume.verification.is_pending() {
+            ResumeValidationIntent::Full
+        } else {
+            ResumeValidationIntent::FastEligible
+        };
         let config = ResumableMagnetDownloadConfig {
             magnet: resume.magnet,
             storage_root: root_path,
@@ -2587,6 +2594,7 @@ impl ApplicationService {
             verified_info: resume.raw_info,
             verified_pieces,
             artifact_state,
+            resume_validation,
             download_missing: resume.desired_running,
             dht: None,
             udp_trackers: Some(Vec::new()),
@@ -4277,6 +4285,77 @@ impl ViewActivitySink {
                             "file_count",
                             u64::try_from(file_count).unwrap_or(u64::MAX),
                         ),
+                    ],
+                );
+            }
+            DownloadActivityEvent::FastResumeAccepted {
+                committed_pieces,
+                relevant_files,
+                artifact_observations,
+                part_header_bytes,
+                elapsed_millis,
+                payload_bytes_read,
+                hash_jobs,
+            } => {
+                self.record_structured(
+                    DiagnosticSeverity::Info,
+                    category::INTEGRITY_HASH,
+                    "fast_resume_accepted",
+                    "Committed resume state accepted after structural validation",
+                    Vec::new(),
+                    vec![
+                        DiagnosticField::count(
+                            "committed_pieces",
+                            u64::try_from(committed_pieces).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::count(
+                            "relevant_files",
+                            u64::try_from(relevant_files).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::count(
+                            "artifact_observations",
+                            u64::try_from(artifact_observations).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::bytes("part_header_bytes", part_header_bytes),
+                        DiagnosticField::duration_millis("validation_elapsed", elapsed_millis),
+                        DiagnosticField::bytes("payload_bytes_read", payload_bytes_read),
+                        DiagnosticField::count(
+                            "hash_jobs",
+                            u64::try_from(hash_jobs).unwrap_or(u64::MAX),
+                        ),
+                    ],
+                );
+            }
+            DownloadActivityEvent::FastResumeRejected {
+                reason,
+                committed_pieces,
+                relevant_files,
+                artifact_observations,
+                part_header_bytes,
+                elapsed_millis,
+            } => {
+                self.record_structured(
+                    DiagnosticSeverity::Info,
+                    category::INTEGRITY_HASH,
+                    "fast_resume_rejected",
+                    "Resume validation selected a complete torrent-local check",
+                    Vec::new(),
+                    vec![
+                        DiagnosticField::text("reason", format!("{reason:?}")),
+                        DiagnosticField::count(
+                            "committed_pieces",
+                            u64::try_from(committed_pieces).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::count(
+                            "relevant_files",
+                            u64::try_from(relevant_files).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::count(
+                            "artifact_observations",
+                            u64::try_from(artifact_observations).unwrap_or(u64::MAX),
+                        ),
+                        DiagnosticField::bytes("part_header_bytes", part_header_bytes),
+                        DiagnosticField::duration_millis("validation_elapsed", elapsed_millis),
                     ],
                 );
             }

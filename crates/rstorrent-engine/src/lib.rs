@@ -24,6 +24,7 @@ mod pex;
 mod piece_picker;
 pub mod port_mapping;
 mod positional_io;
+mod resume_validation;
 mod seed_content;
 mod selective_storage;
 mod session_resources;
@@ -111,6 +112,10 @@ pub use peer_runtime::{
 };
 pub use pex::PexError;
 pub use piece_picker::PieceActivationPolicy;
+pub use resume_validation::{
+    ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent,
+    ResumeValidationRejectReason, decide_resume_admission,
+};
 pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
 #[cfg(feature = "descriptor-storage-diagnostics")]
 #[doc(hidden)]

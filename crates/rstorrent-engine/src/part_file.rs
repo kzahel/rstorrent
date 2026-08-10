@@ -9,7 +9,7 @@ use crate::positional_io::{read_exact_at, write_all_at};
 use crate::storage_file_pool::{
     PlatformStorageFailureKind, StorageFileAccess, StorageFileKey, StorageFileLease,
     StorageFileLocator, StorageFilePool, StorageFilePoolError, StorageFileReference,
-    StorageFileRole,
+    StorageFileRole, StorageObjectKind,
 };
 use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 
@@ -72,6 +72,7 @@ pub enum PartFileError {
         expected_end: u64,
         file_length: u64,
     },
+    UnexpectedFileType,
     Io {
         operation: &'static str,
         source: io::Error,
@@ -145,6 +146,7 @@ impl fmt::Display for PartFileError {
                 formatter,
                 "piece {piece_index} payload ends at {expected_end}, file length is {file_length}"
             ),
+            Self::UnexpectedFileType => write!(formatter, "part-file artifact is not a file"),
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
         }
     }
@@ -567,6 +569,54 @@ impl PartFile {
 
     pub fn mapped_piece_count(&self) -> usize {
         self.slots.iter().filter(|slot| slot.is_some()).count()
+    }
+
+    pub(crate) fn header_length(&self) -> u64 {
+        self.header_length
+    }
+
+    /// Observe the current file extent without reading any part payload.
+    pub(crate) async fn observed_file_length(&self) -> Result<Option<u64>, PartFileError> {
+        match &self.source {
+            PartFileSource::Dynamic(reference) => {
+                let observation = reference
+                    .observe()
+                    .await
+                    .map_err(|error| PartFileError::Io {
+                        operation: "observe part-file extent",
+                        source: io::Error::other(error),
+                    })?;
+                if !observation.exists {
+                    return Ok(None);
+                }
+                if observation.kind != Some(StorageObjectKind::File) {
+                    return Err(PartFileError::UnexpectedFileType);
+                }
+                Ok(observation.length)
+            }
+            PartFileSource::Fixed(file) => file
+                .file()
+                .metadata()
+                .map(|metadata| Some(metadata.len()))
+                .map_err(|source| PartFileError::Io {
+                    operation: "inspect part-file extent",
+                    source,
+                }),
+        }
+    }
+
+    /// Whether a mapped piece's complete payload lies within an observed file.
+    pub(crate) fn has_complete_piece_at_length(
+        &self,
+        piece_index: usize,
+        file_length: u64,
+    ) -> Result<bool, PartFileError> {
+        self.validate_piece_index(piece_index)?;
+        let Some(slot) = self.slots[piece_index] else {
+            return Ok(false);
+        };
+        let piece_length = self.piece_length_at(piece_index)?;
+        Ok(self.payload_offset(slot, piece_length, 0)? <= file_length)
     }
 
     pub fn has_piece(&self, piece_index: usize) -> Result<bool, PartFileError> {
