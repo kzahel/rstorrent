@@ -460,8 +460,10 @@ requires; both now pass controlled interoperability and resource closure.
 LSD, NAT traversal, persistent peer caches, and dynamic VPN or metered policy
 remain separate future tacticals. The
 [`utp-transport-campaign`](utp-transport-campaign.md) topic now owns uTP's
-adaptive source, transport-owner, and evidence direction without accepting an
-implementation tactical. Completed Tactical
+adaptive source, transport-owner, and evidence direction. Completed Tactical
+[`119`](../tactical/119-deterministic-utp-transport-core.md) supplies only a
+runtime-free bounded transport state machine; it has not entered this peer
+connection-generation owner or changed TCP-only execution. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after

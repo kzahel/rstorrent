@@ -3,9 +3,9 @@
 Topic: `utp-transport-campaign`
 
 Status: Stage 0 Tactical
-[`118`](../tactical/118-utp-implementation-decision-spike.md) is complete and
-human review accepted its independent Rust recommendation. Stage 1 Tactical
-[`119`](../tactical/119-deterministic-utp-transport-core.md) is in progress;
+[`118`](../tactical/118-utp-implementation-decision-spike.md) and Stage 1
+Tactical [`119`](../tactical/119-deterministic-utp-transport-core.md) are
+complete. The campaign is paused at its required Stage 1 human-review gate;
 uTP remains **Unsupported** and no runtime transport or dependency is accepted.
 
 ## Scope And Ownership
@@ -58,8 +58,13 @@ the single authoritative **Now**.
   [`utp_reference_oracle.py`](../../tests/interop/utp_reference_oracle.py)
   proves only that two pinned libtorrent sessions can complete one bounded,
   forced-uTP loopback transfer under the future acceptance controls. No
-  RSTorrent uTP state machine, runtime stream, interoperability result, WAN
-  result, product policy, or public-swarm support evidence exists.
+  RSTorrent runtime stream, interoperability result, WAN result, product
+  policy, or public-swarm support evidence exists.
+- Completed Tactical `119` now supplies the independently authored,
+  dependency-free v1 codec and deterministic bounded connection/reliability
+  state in `rstorrent-protocol`. Its 41 focused tests and full workspace
+  baseline pass, but the core owns no socket, has exchanged no RSTorrent uTP
+  datagram, and does not change TCP-only peer execution or the support claim.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -159,12 +164,13 @@ Extracting or translating it mechanically would inherit provenance and much
 of that architecture while still demanding a difficult Rust/runtime
 adaptation.
 
-Stage 0 therefore recommends an independently authored Rust implementation
+Stage 0 therefore recommended an independently authored Rust implementation
 derived from public protocol behavior, with a deterministic sans-IO core and
 libtorrent as the primary completeness and interoperability oracle.
 Standalone libutp and librqbit-utp remain read-only secondary references and
-possible test peers. This recommendation is at the first human gate, not yet
-an accepted implementation choice.
+possible test peers. Human review accepted that choice, and Tactical `119`
+implemented its first bounded core slice without adding foreign source or a
+dependency.
 
 Any decision to copy, mechanically translate, vendor, wrap, link, or add a uTP
 dependency is a human review gate. It must include exact provenance, licenses,
@@ -217,6 +223,44 @@ The readiness queue promoted the campaign on 2026-08-10. Tactical `118` has
 reached its bounded Stage 0 stop with a reproducible oracle harness and the
 implementation/provenance recommendation above. It did not start source import
 or transport implementation.
+
+## Stage 1 Result And Review Choices
+
+Tactical `119` reached its bounded stop on 2026-08-10 in commits `6c580a5`,
+`b9e86f5`, `c4c2459`, `a5e2829`, and `a83d226`. It added a borrowed hostile
+v1 codec; explicit sequence/timestamp wrap; exact handshake IDs; 64-packet and
+1-MiB receive reordering; a 1,024-packet and 1-MiB sent ledger; cumulative and
+selective ACK release; clipped future-SACK influence; one-shot loss signals;
+Karn-safe RTT and bounded RTO/retransmission state; FIN close readiness; and
+terminal zero ownership. It added no manifest, unsafe code, runtime, socket,
+task, entropy owner, peer stream, or support claim.
+
+The implementation exposed no reliability-state or API failure requiring a
+repair slice. It did expose two state-order requirements now covered by tests:
+future SACK bits cannot influence loss beyond the actual sent range, and a
+receive-limit rejection must occur before the same datagram can release sent
+ownership through its ACK.
+
+The next human choice is:
+
+1. **A — deterministic Stage 2 (recommended):** draft one bounded tactical
+   that adds the impairment harness and completes receive-window,
+   packetization, delayed-ACK, LEDBAT/congestion, loss response, pacing, and
+   MTU behavior together. Start from BEP 29 and RFC 6817, use pinned
+   libtorrent as the interoperability oracle, and record deliberate choices
+   where their base-delay histories or congestion floors differ.
+2. **B — harness-only Stage 2a:** first land only the deterministic datagram
+   network, scenario vocabulary, and reference traces, then return for a
+   second review before selecting the controller. This lowers one tactical's
+   implementation breadth but adds a checkpoint before any data-plane result.
+3. **C — runtime-first loopback:** integrate the current reliability core with
+   shared UDP under a temporary conservative send policy before LEDBAT and MTU
+   are complete. This can reveal owner/API problems earlier, but it knowingly
+   creates a transport path that cannot yet satisfy the congestion gate and is
+   likely to require runtime rework; it is not recommended.
+
+None of these choices authorizes WAN, `pimom`, public-swarm, physical-device,
+port-mapping, pinhole, product-policy, or support-claim work.
 
 ## Validation Contract
 
@@ -309,11 +353,11 @@ accepted tactical.
 
 ## Restart Checkpoint
 
-Campaign state: **Stage 0 Tactical `118` complete; deterministic Stage 1
-Tactical `119` in progress; no uTP runtime accepted**.
+Campaign state: **Stage 0 Tactical `118` and deterministic Stage 1 Tactical
+`119` complete; required human review active; no uTP runtime accepted**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is to
-execute Tactical `119`'s bounded pure v1 codec and deterministic connection,
-receive, send, loss, RTT, and timer state, then reconcile its evidence before
-selecting the deterministic congestion/impaired-network slice.
+[`capability-readiness.md`](capability-readiness.md). The next action is human
+selection among the Stage 1 review choices above. Recommendation A keeps
+congestion and resource behavior deterministic before any socket/runtime
+integration; only after acceptance should its numbered tactical be drafted.

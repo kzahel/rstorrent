@@ -1,8 +1,8 @@
 # Tactical 119: Deterministic uTP Transport Core
 
-Status: In progress on 2026-08-10 as the single authoritative **Now** after
-human acceptance of Tactical `118`'s independently authored Rust
-recommendation.
+Status: Complete on 2026-08-10 at the Stage 1 human-review checkpoint. The
+runtime-free core is accepted as deterministic evidence only; uTP remains
+unsupported and no runtime transport is authorized by this result.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`, `peer-lifecycle`
@@ -210,5 +210,56 @@ resource bound to obtain a passing test.
 
 ## Execution Record
 
-In progress. Implementation commits and exact validation evidence will be
-appended as the bounded components land.
+Completed in five bounded implementation commits after the Tactical `118`
+decision-spike commit:
+
+- `6c580a5` fixed this tactical's stopping condition, exact bounds, state
+  shape, source record, validation, and non-goals before implementation;
+- `b9e86f5` added the borrowed hostile v1 packet/extension codec plus explicit
+  sequence and timestamp wrapping arithmetic;
+- `c4c2459` added bounded receive ordering, exact SACK generation, FIN gap and
+  compatibility behavior, resource high-water marks, and RESET cleanup;
+- `a5e2829` added the 1,024-packet/1-MiB sent ledger, cumulative and selective
+  ACK release, clipped future-SACK influence, one-shot loss signals, Karn-safe
+  RTT sampling, eight-attempt retransmission ownership, and saturating RTO
+  intents; and
+- `a83d226` composed exact initiating/accepting connection IDs, SYN/STATE/DATA
+  handshake behavior, outbound packet intents, FIN close readiness, and
+  terminal connection cleanup without a socket or task.
+
+The implementation adds `utp::{packet,sequence,receive,send,connection}` under
+`rstorrent-protocol`, retains `#![forbid(unsafe_code)]`, and changes no manifest
+or dependency. Forty-one uTP tests cover the common, hostile, wrap, loss,
+timer, limit, handshake, teardown, and zero-ownership cases. Exact exercised
+high waters include 64 queued receive packets, 1,040,000 queued receive bytes,
+1,024 outstanding send packets, and 1,048,576 outstanding send bytes; rejected
+next inputs leave snapshots unchanged, while RESET or explicit terminal
+cleanup returns current packet and byte ownership to zero.
+
+Two implementation findings tightened the hostile boundary. SACK bits that
+name sequence numbers beyond the highest packet actually sent are excluded
+from both release and loss inference, so a validly shaped extension cannot
+inject loss through impossible future acknowledgements. Connection processing
+validates and admits receive ownership before applying the same datagram's ACK,
+so a receive byte-limit failure cannot release local sent ownership as a
+partial state change.
+
+Validation passed on 2026-08-10:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
+
+The focused protocol run also passed all 41 uTP tests. No Python oracle,
+client, Android, WAN, public-swarm, `pimom`, or physical-device run was made;
+those would not exercise this runtime-free component. The retained forced-uTP
+libtorrent oracle remains the controlled peer for a later runtime slice.
+
+Deliberate deferrals remain the tactical's non-goals: receive-window policy,
+packetization, delayed ACK scheduling, LEDBAT and congestion control, pacing,
+MTU behavior, a deterministic datagram impairment harness, sockets, shared-UDP
+classification, tasks and cancellation, ordered-stream adaptation, peer-wire
+integration, transport policy, reachability, WAN evidence, and any support
+claim.

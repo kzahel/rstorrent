@@ -19,8 +19,9 @@ graduated. Tactical
 [`118`](../tactical/118-utp-implementation-decision-spike.md) completed the
 first uTP implementation/provenance review without adding transport code.
 Human review accepted its independent Rust recommendation, and Tactical
-[`119`](../tactical/119-deterministic-utp-transport-core.md) is the single
-authoritative **Now**. The completed
+[`119`](../tactical/119-deterministic-utp-transport-core.md) completed the
+runtime-free deterministic core. Its Stage 1 human-review checkpoint is the
+single authoritative **Now**. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -333,7 +334,8 @@ reason to stop.
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; non-implementing uTP Stage 0 Tactical
-`118` completed; deterministic uTP core Tactical `119` is active**.
+`118` and deterministic uTP core Tactical `119` completed; required Stage 1
+human review is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -347,16 +349,27 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest closed tactical:
-[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
-Its execution record retains the exact deterministic, Android, interop, and
-physical-iOS evidence without stable platform identifiers.
+[`119`](../tactical/119-deterministic-utp-transport-core.md). Its execution
+record retains the exact pure codec, wrapping, connection, ordering, SACK,
+loss, RTT/RTO, limit, FIN/RESET, and zero-ownership evidence. It ran no socket,
+client, WAN path, or physical device and makes no uTP support claim.
 
-Current milestone: Tactical `119` implements only the independently authored,
-runtime-free uTP v1 codec and bounded deterministic reliability state accepted
-after Tactical `118`; LEDBAT, sockets, tasks, and support remain later gates.
+Current milestone: required human review of Tactical `119`'s completed
+runtime-free uTP v1 codec and bounded deterministic reliability state. The
+recommended next choice is a separately approved deterministic Stage 2
+impaired-network, receive-window/packetization, LEDBAT/congestion, and MTU
+tactical; sockets, tasks, interoperability, WAN activity, and support remain
+later gates.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
+
+Next executable action: stop for the Stage 1 human decision recorded in
+[`utp-transport-campaign.md`](utp-transport-campaign.md). If recommendation A
+is accepted, draft the bounded Stage 2 tactical and its fixed impairment,
+fairness, utilization, queue-delay, loss, MTU, work, and resource thresholds
+before changing code. Do not start shared-UDP/runtime or external-network work
+from this checkpoint.
 
 A separate trusting fast-resume option may now be planned against Tactical
 `116`'s common path/SAF observations. Conservative checking remains the
@@ -372,6 +385,18 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `b9e86f5`, `c4c2459`, `a5e2829`, and `a83d226` add Tactical `119`'s
+  independently authored, dependency-free uTP codec, receive ordering, send
+  reliability, and connection lifecycle under the protocol crate's inward
+  dependency boundary;
+- 41 focused uTP tests cover hostile packet shape, wrapping, both handshake
+  roles, exact receive/send bounds, reorder/SACK, future-ACK injection,
+  duplicate and three-later-ACK loss, Karn filtering, RTO saturation,
+  retransmission exhaustion, FIN, RESET, and terminal zero ownership;
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` pass on 2026-08-10; and
+- no manifest, unsafe code, socket, task, runtime stream, client, WAN, public
+  swarm, `pimom`, or physical-device action was added or run.
 - commits `09713fd`, `dea0a9e`, and `8c8e154` implement and directly exercise
   one atomic wanted-plus-running file intent through the durable store,
   serialized controller, generated clients, and shared Files UI;
