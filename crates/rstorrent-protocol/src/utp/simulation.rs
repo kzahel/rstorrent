@@ -599,10 +599,21 @@ pub(super) struct TcpLikeSender {
 
 impl TcpLikeSender {
     pub(super) fn new(mss_bytes: usize) -> Self {
+        Self::with_initial_congestion_packets(mss_bytes, 2)
+    }
+
+    pub(super) fn with_initial_congestion_packets(
+        mss_bytes: usize,
+        initial_congestion_packets: usize,
+    ) -> Self {
         assert!(mss_bytes > 0, "TCP-like fixture MSS must be nonzero");
+        assert!(
+            initial_congestion_packets > 0,
+            "TCP-like fixture initial window must be nonzero"
+        );
         Self {
             mss_bytes,
-            congestion_window_bytes: mss_bytes.saturating_mul(2),
+            congestion_window_bytes: mss_bytes.saturating_mul(initial_congestion_packets),
             next_loss_reduction_micros: 0,
             loss_reductions: 0,
         }
@@ -656,6 +667,172 @@ mod tests {
         HoldUntilFull { release_bytes: usize },
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct CompetitorConfig {
+        starts_after_micros: u64,
+        stops_after_micros: u64,
+        segment_bytes: usize,
+        initial_window_segments: usize,
+        retransmit_after_micros: u64,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct TcpOutstanding {
+        bytes: usize,
+        sent_at_micros: u64,
+    }
+
+    #[derive(Clone, Debug)]
+    struct TcpScenarioState {
+        config: CompetitorConfig,
+        sender: TcpLikeSender,
+        outstanding: BTreeMap<u64, TcpOutstanding>,
+        delivered_tags: BTreeSet<u64>,
+        deliveries: Vec<(u64, usize, u64)>,
+        next_tag: u64,
+        stopped: bool,
+        retransmissions: u64,
+        congestion_window_high_water: usize,
+    }
+
+    impl TcpScenarioState {
+        fn new(config: CompetitorConfig) -> Self {
+            Self {
+                config,
+                sender: TcpLikeSender::with_initial_congestion_packets(
+                    config.segment_bytes,
+                    config.initial_window_segments,
+                ),
+                outstanding: BTreeMap::new(),
+                delivered_tags: BTreeSet::new(),
+                deliveries: Vec::new(),
+                next_tag: 0,
+                stopped: false,
+                retransmissions: 0,
+                congestion_window_high_water: config
+                    .segment_bytes
+                    .saturating_mul(config.initial_window_segments),
+            }
+        }
+
+        fn outstanding_bytes(&self) -> usize {
+            self.outstanding
+                .values()
+                .map(|outstanding| outstanding.bytes)
+                .sum()
+        }
+
+        fn stop(&mut self) {
+            self.stopped = true;
+            self.outstanding.clear();
+        }
+
+        fn on_acknowledgement(&mut self, tag: u64) {
+            if self.stopped {
+                return;
+            }
+            if let Some(outstanding) = self.outstanding.remove(&tag) {
+                self.sender.on_ack(outstanding.bytes);
+                self.congestion_window_high_water = self
+                    .congestion_window_high_water
+                    .max(self.sender.snapshot().congestion_window_bytes);
+            }
+        }
+
+        fn due_retransmission(&self, now_micros: u64) -> Option<u64> {
+            (!self.stopped).then_some(())?;
+            self.outstanding.iter().find_map(|(tag, outstanding)| {
+                (now_micros.saturating_sub(outstanding.sent_at_micros)
+                    >= self.config.retransmit_after_micros)
+                    .then_some(*tag)
+            })
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct CompetitorReport {
+        starts_at_micros: u64,
+        stops_at_micros: u64,
+        delivered_bytes: usize,
+        deliveries: Vec<(u64, usize, u64)>,
+        retransmissions: u64,
+        loss_reductions: u64,
+        congestion_window_high_water: usize,
+        utp_rtt_at_stop_micros: u64,
+    }
+
+    impl CompetitorReport {
+        fn overlap_share(&self, utp_deliveries: &[(u64, usize)]) -> f64 {
+            let competitor_bytes: usize = self
+                .deliveries
+                .iter()
+                .filter(|(at_micros, _, _)| {
+                    *at_micros >= self.starts_at_micros && *at_micros < self.stops_at_micros
+                })
+                .map(|(_, bytes, _)| *bytes)
+                .sum();
+            let utp_bytes: usize = utp_deliveries
+                .iter()
+                .filter(|(at_micros, _)| {
+                    *at_micros >= self.starts_at_micros && *at_micros < self.stops_at_micros
+                })
+                .map(|(_, bytes)| *bytes)
+                .sum();
+            competitor_bytes as f64 / competitor_bytes.saturating_add(utp_bytes).max(1) as f64
+        }
+
+        fn queue_delay_percentile(&self, percentile: usize) -> u64 {
+            assert!((1..=100).contains(&percentile));
+            let mut samples: Vec<_> = self
+                .deliveries
+                .iter()
+                .filter(|(at_micros, _, _)| {
+                    *at_micros >= self.starts_at_micros && *at_micros < self.stops_at_micros
+                })
+                .map(|(_, _, queue_delay)| *queue_delay)
+                .collect();
+            assert!(!samples.is_empty());
+            samples.sort_unstable();
+            let index = samples
+                .len()
+                .saturating_mul(percentile)
+                .div_ceil(100)
+                .saturating_sub(1);
+            samples[index]
+        }
+
+        fn recovery_delay_micros(
+            &self,
+            utp_deliveries: &[(u64, usize)],
+            bytes_per_second: u64,
+        ) -> Option<u64> {
+            let rtt = self.utp_rtt_at_stop_micros.max(1);
+            let deadline = self.stops_at_micros.saturating_add(rtt.saturating_mul(10));
+            utp_deliveries
+                .iter()
+                .map(|(at_micros, _)| *at_micros)
+                .filter(|at_micros| {
+                    *at_micros >= self.stops_at_micros.saturating_add(rtt) && *at_micros <= deadline
+                })
+                .find(|at_micros| {
+                    let window_start = at_micros.saturating_sub(rtt);
+                    let delivered: usize = utp_deliveries
+                        .iter()
+                        .filter(|(delivery_at, _)| {
+                            *delivery_at > window_start && *delivery_at <= *at_micros
+                        })
+                        .map(|(_, bytes)| *bytes)
+                        .sum();
+                    delivered as u128 * 1_000_000
+                        >= u128::from(bytes_per_second)
+                            .saturating_mul(u128::from(rtt))
+                            .saturating_mul(70)
+                            / 100
+                })
+                .map(|at_micros| at_micros - self.stops_at_micros)
+        }
+    }
+
     #[derive(Clone, Debug)]
     struct UtpScenario {
         link: LinkConfig,
@@ -664,6 +841,7 @@ mod tests {
         receiver_clock: EndpointClock,
         transfer_bytes: usize,
         receive_release: ReceiveReleasePolicy,
+        competitor: Option<CompetitorConfig>,
     }
 
     #[derive(Clone, Debug)]
@@ -682,6 +860,7 @@ mod tests {
         zero_receive_window_observed: bool,
         released_receive_window_bytes: Option<usize>,
         new_payload_emissions_while_remote_window_zero: u64,
+        competitor: Option<CompetitorReport>,
         sender: crate::utp::TransportSnapshot,
         receiver: crate::utp::TransportSnapshot,
         link: LinkSnapshot,
@@ -742,6 +921,7 @@ mod tests {
             receiver_clock: EndpointClock::new(0, 0).expect("receiver clock"),
             transfer_bytes: TRANSFER_BYTES,
             receive_release: ReceiveReleasePolicy::Immediate,
+            competitor: None,
         }
     }
 
@@ -815,8 +995,10 @@ mod tests {
         let source_hash = Sha1::digest(&source).into();
         let (mut sender, mut receiver, started_at_micros) =
             connected_transports(scenario.sender_clock, scenario.receiver_clock);
-        let mut link = DeterministicLink::new(scenario.link, scenario.script)
+        let mut link = DeterministicLink::new(scenario.link.clone(), scenario.script)
             .expect("construct deterministic link");
+        let mut competitor = scenario.competitor.map(TcpScenarioState::new);
+        let mut competitor_rtt_at_stop_micros = None;
         let mut queued_source_bytes = 0;
         let mut received = Vec::with_capacity(source.len());
         let mut deliveries = Vec::new();
@@ -837,10 +1019,10 @@ mod tests {
 
         loop {
             for delivery in link.advance_to(now_micros).expect("advance link") {
-                assert_eq!(delivery.datagram.flow_id, 1);
-                let packet = decode_packet(&delivery.datagram.bytes).expect("decode uTP datagram");
-                match delivery.direction {
-                    Direction::AToB => {
+                match (delivery.datagram.flow_id, delivery.direction) {
+                    (1, Direction::AToB) => {
+                        let packet = decode_packet(&delivery.datagram.bytes)
+                            .expect("decode uTP DATA datagram");
                         let outcome = receiver
                             .incoming(
                                 packet,
@@ -888,7 +1070,9 @@ mod tests {
                                 receive_byte_high_water.max(receive.byte_high_water);
                         }
                     }
-                    Direction::BToA => {
+                    (1, Direction::BToA) => {
+                        let packet = decode_packet(&delivery.datagram.bytes)
+                            .expect("decode uTP acknowledgement datagram");
                         let acknowledgement_number = packet.header.acknowledgement_number.get();
                         let before = sender.snapshot();
                         let outcome = sender
@@ -934,6 +1118,45 @@ mod tests {
                             queue_delay_samples_micros.push(queue_delay);
                         }
                     }
+                    (2, Direction::AToB) => {
+                        let tcp = competitor.as_mut().expect("configured TCP-like flow");
+                        if tcp.delivered_tags.insert(delivery.datagram.tag) {
+                            let serialization_micros = (delivery.datagram.bytes.len() as u64)
+                                .saturating_mul(1_000_000)
+                                .div_ceil(scenario.link.bytes_per_second)
+                                .max(1);
+                            let queue_delay_micros = delivery
+                                .delivered_at_micros
+                                .saturating_sub(delivery.sent_at_micros)
+                                .saturating_sub(scenario.link.base_delay_micros)
+                                .saturating_sub(serialization_micros);
+                            tcp.deliveries.push((
+                                now_micros,
+                                delivery.datagram.bytes.len(),
+                                queue_delay_micros,
+                            ));
+                            link.send(
+                                Direction::BToA,
+                                now_micros,
+                                SimDatagram {
+                                    flow_id: 2,
+                                    tag: delivery.datagram.tag,
+                                    bytes: vec![0; 40],
+                                    dont_fragment: false,
+                                },
+                            )
+                            .expect("send TCP-like acknowledgement");
+                        }
+                    }
+                    (2, Direction::BToA) => {
+                        competitor
+                            .as_mut()
+                            .expect("configured TCP-like flow")
+                            .on_acknowledgement(delivery.datagram.tag);
+                    }
+                    (flow_id, direction) => {
+                        panic!("unexpected deterministic flow {flow_id} in {direction:?}")
+                    }
                 }
             }
 
@@ -950,6 +1173,79 @@ mod tests {
                     .queue_data(&source[queued_source_bytes..queued_source_bytes + append_bytes])
                     .expect("append bounded stream bytes");
                 queued_source_bytes += append_bytes;
+            }
+
+            if let Some(tcp) = &mut competitor {
+                let starts_at = started_at_micros.saturating_add(tcp.config.starts_after_micros);
+                let stops_at = started_at_micros.saturating_add(tcp.config.stops_after_micros);
+                if now_micros >= stops_at && !tcp.stopped {
+                    competitor_rtt_at_stop_micros = Some(
+                        sender
+                            .snapshot()
+                            .connection
+                            .send
+                            .rtt
+                            .smoothed_rtt_micros
+                            .unwrap_or(20_000),
+                    );
+                    tcp.stop();
+                }
+                if now_micros >= starts_at && now_micros < stops_at {
+                    if let Some(tag) = tcp.due_retransmission(now_micros) {
+                        tcp.sender.on_loss(now_micros, 20_000);
+                        tcp.retransmissions = tcp.retransmissions.saturating_add(1);
+                        tcp.outstanding
+                            .get_mut(&tag)
+                            .expect("due TCP-like packet remains outstanding")
+                            .sent_at_micros = now_micros;
+                        link.send(
+                            Direction::AToB,
+                            now_micros,
+                            SimDatagram {
+                                flow_id: 2,
+                                tag,
+                                bytes: vec![0; tcp.config.segment_bytes],
+                                dont_fragment: false,
+                            },
+                        )
+                        .expect("retransmit TCP-like segment");
+                    }
+
+                    while tcp.outstanding.len() < MAX_SENT_PACKETS
+                        && tcp
+                            .outstanding_bytes()
+                            .saturating_add(tcp.config.segment_bytes)
+                            <= tcp.sender.snapshot().congestion_window_bytes
+                        && tcp
+                            .outstanding_bytes()
+                            .saturating_add(tcp.config.segment_bytes)
+                            <= MAX_SENT_BYTES
+                    {
+                        let tag = tcp.next_tag;
+                        tcp.next_tag = tcp.next_tag.saturating_add(1);
+                        tcp.outstanding.insert(
+                            tag,
+                            TcpOutstanding {
+                                bytes: tcp.config.segment_bytes,
+                                sent_at_micros: now_micros,
+                            },
+                        );
+                        link.send(
+                            Direction::AToB,
+                            now_micros,
+                            SimDatagram {
+                                flow_id: 2,
+                                tag,
+                                bytes: vec![0; tcp.config.segment_bytes],
+                                dont_fragment: false,
+                            },
+                        )
+                        .expect("send TCP-like segment");
+                    }
+                    tcp.congestion_window_high_water = tcp
+                        .congestion_window_high_water
+                        .max(tcp.sender.snapshot().congestion_window_bytes);
+                }
             }
 
             if let Some(emission) = sender
@@ -1047,10 +1343,23 @@ mod tests {
                 && sender_snapshot.pending_emission_bytes == 0
                 && receiver_snapshot.acknowledgements.pending_packets == 0
                 && receiver_snapshot.pending_emission_bytes == 0
+                && competitor.as_ref().is_none_or(|tcp| tcp.stopped)
                 && link_snapshot.pending_events == 0
                 && link_snapshot.queue_bytes == 0;
             if complete {
                 let received_hash = Sha1::digest(&received).into();
+                let competitor = competitor.map(|tcp| CompetitorReport {
+                    starts_at_micros: started_at_micros
+                        .saturating_add(tcp.config.starts_after_micros),
+                    stops_at_micros: started_at_micros
+                        .saturating_add(tcp.config.stops_after_micros),
+                    delivered_bytes: tcp.deliveries.iter().map(|(_, bytes, _)| *bytes).sum(),
+                    deliveries: tcp.deliveries,
+                    retransmissions: tcp.retransmissions,
+                    loss_reductions: tcp.sender.snapshot().loss_reductions,
+                    congestion_window_high_water: tcp.congestion_window_high_water,
+                    utp_rtt_at_stop_micros: competitor_rtt_at_stop_micros.unwrap_or(20_000),
+                });
                 return UtpScenarioReport {
                     source_hash,
                     received_hash,
@@ -1066,6 +1375,7 @@ mod tests {
                     zero_receive_window_observed,
                     released_receive_window_bytes,
                     new_payload_emissions_while_remote_window_zero,
+                    competitor,
                     sender: sender_snapshot,
                     receiver: receiver_snapshot,
                     link: link_snapshot,
@@ -1428,5 +1738,47 @@ mod tests {
             0
         );
         assert_eq!(report.sender.connection.send.outstanding_bytes, 0);
+    }
+
+    #[test]
+    fn tcp_like_foreground_dominates_then_utp_recovers_within_ten_rtts() {
+        let mut scenario = default_utp_scenario();
+        scenario.transfer_bytes = TRANSFER_BYTES * 2;
+        scenario.competitor = Some(CompetitorConfig {
+            starts_after_micros: 1_000_000,
+            stops_after_micros: 6_000_000,
+            segment_bytes: 1_000,
+            initial_window_segments: 64,
+            retransmit_after_micros: 200_000,
+        });
+        let bytes_per_second = scenario.link.bytes_per_second;
+        let report = run_utp_scenario(scenario);
+        let competitor = report.competitor.as_ref().expect("competitor report");
+
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(competitor.delivered_bytes > 0);
+        let overlap_share = competitor.overlap_share(&report.deliveries);
+        assert!(
+            overlap_share >= 0.70,
+            "competitor overlap share={overlap_share}, delivered={}, cwnd_high={}, losses={}",
+            competitor.delivered_bytes,
+            competitor.congestion_window_high_water,
+            competitor.loss_reductions
+        );
+        let competitor_queue_p95 = competitor.queue_delay_percentile(95);
+        assert!(competitor_queue_p95 <= 150_000, "report={report:?}");
+        let recovery_delay = competitor
+            .recovery_delay_micros(&report.deliveries, bytes_per_second)
+            .unwrap_or_else(|| panic!("uTP did not recover within ten RTTs: report={report:?}"));
+        assert!(
+            recovery_delay <= competitor.utp_rtt_at_stop_micros * 10,
+            "report={report:?}"
+        );
+        assert!(competitor.congestion_window_high_water >= 2_000);
+        assert!(competitor.loss_reductions > 0);
+        assert!(competitor.retransmissions >= competitor.loss_reductions);
+        assert!(report.sender.congestion.loss_reductions > 0);
+        assert!(report.link.queue_drops > 0);
+        assert!(report.link.queue_byte_high_water <= 75_000);
     }
 }
