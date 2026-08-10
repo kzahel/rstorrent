@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_STORAGE_FILE_LIMIT: usize = 40;
 pub const PLATFORM_STORAGE_REQUEST_CAPACITY: usize = 16;
@@ -628,13 +629,30 @@ pub struct PlatformStorageBroker {
     pending: Mutex<
         HashMap<u64, oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>>,
     >,
+    cancellation: CancellationToken,
 }
 
 impl PlatformStorageBroker {
     pub async fn next_request(&self) -> Option<PlatformStorageRequest> {
         loop {
+            let mut receiver = tokio::select! {
+                biased;
+                _ = self.cancellation.cancelled() => return None,
+                receiver = self.receiver.lock() => receiver,
+            };
+            let pending = tokio::select! {
+                biased;
+                _ = self.cancellation.cancelled() => {
+                    receiver.close();
+                    while let Ok(pending) = receiver.try_recv() {
+                        cancel_platform_reply(pending.reply);
+                    }
+                    return None;
+                }
+                pending = receiver.recv() => pending?,
+            };
+            drop(receiver);
             self.pending_guard().retain(|_, reply| !reply.is_closed());
-            let pending = self.receiver.lock().await.recv().await?;
             if pending.reply.is_closed() {
                 continue;
             }
@@ -686,21 +704,16 @@ impl PlatformStorageBroker {
     }
 
     pub fn cancel_all(&self) {
+        self.cancellation.cancel();
         if let Ok(mut receiver) = self.receiver.try_lock() {
             receiver.close();
             while let Ok(pending) = receiver.try_recv() {
-                let _ = pending.reply.send(Err(PlatformStorageFailure::new(
-                    PlatformStorageFailureKind::Cancelled,
-                    "platform storage broker stopped",
-                )));
+                cancel_platform_reply(pending.reply);
             }
         }
         let pending = std::mem::take(&mut *self.pending_guard());
         for (_, reply) in pending {
-            let _ = reply.send(Err(PlatformStorageFailure::new(
-                PlatformStorageFailureKind::Cancelled,
-                "platform storage broker stopped",
-            )));
+            cancel_platform_reply(reply);
         }
     }
 
@@ -730,8 +743,18 @@ pub fn platform_storage_channel() -> (PlatformStorageClient, Arc<PlatformStorage
         Arc::new(PlatformStorageBroker {
             receiver: AsyncMutex::new(receiver),
             pending: Mutex::new(HashMap::new()),
+            cancellation: CancellationToken::new(),
         }),
     )
+}
+
+fn cancel_platform_reply(
+    reply: oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>,
+) {
+    let _ = reply.send(Err(PlatformStorageFailure::new(
+        PlatformStorageFailureKind::Cancelled,
+        "platform storage broker stopped",
+    )));
 }
 
 #[derive(Debug)]
@@ -1558,6 +1581,27 @@ mod tests {
         assert_eq!(pool.snapshot().platform_pending, 0);
         assert!(broker.next_request().await.is_none());
         pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn broker_cancellation_wakes_all_waiting_provider_receivers() {
+        let (_client, broker) = platform_storage_channel();
+        let mut providers = Vec::new();
+        for _ in 0..4 {
+            let broker = broker.clone();
+            providers.push(tokio::spawn(async move { broker.next_request().await }));
+        }
+        tokio::task::yield_now().await;
+        broker.cancel_all();
+        for provider in providers {
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(1), provider)
+                    .await
+                    .expect("provider receiver did not wake")
+                    .expect("join provider receiver")
+                    .is_none()
+            );
+        }
     }
 
     #[tokio::test]

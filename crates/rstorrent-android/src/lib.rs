@@ -1787,6 +1787,37 @@ mod tests {
         fs::remove_dir_all(root).expect("remove product fixture");
     }
 
+    #[tokio::test]
+    async fn product_shutdown_cancels_probe_queued_without_a_provider() {
+        let root = test_path("application-platform-shutdown");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: String::new(),
+            platform_storage: true,
+            network_policy: AndroidNetworkPolicy::Offline,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open platform product application");
+        let probe_client = client.clone();
+        let probe = tokio::spawn(async move { probe_client.probe_saf_storage_roots().await });
+        tokio::task::yield_now().await;
+
+        tokio::time::timeout(Duration::from_secs(2), client.shutdown())
+            .await
+            .expect("platform shutdown timed out")
+            .expect("shutdown platform application");
+        assert!(
+            !probe
+                .await
+                .expect("join platform probe")
+                .expect("cancelled probe result")
+        );
+        fs::remove_dir_all(root).expect("remove platform product fixture");
+    }
+
     fn two_file_metainfo() -> Vec<u8> {
         let mut metainfo = b"d4:infod5:filesld6:lengthi1e4:pathl1:aee\
 d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\
