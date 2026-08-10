@@ -686,6 +686,15 @@ impl PlatformStorageBroker {
     }
 
     pub fn cancel_all(&self) {
+        if let Ok(mut receiver) = self.receiver.try_lock() {
+            receiver.close();
+            while let Ok(pending) = receiver.try_recv() {
+                let _ = pending.reply.send(Err(PlatformStorageFailure::new(
+                    PlatformStorageFailureKind::Cancelled,
+                    "platform storage broker stopped",
+                )));
+            }
+        }
         let pending = std::mem::take(&mut *self.pending_guard());
         for (_, reply) in pending {
             let _ = reply.send(Err(PlatformStorageFailure::new(
@@ -1506,6 +1515,48 @@ mod tests {
         assert_eq!(pool.snapshot().platform_pending, 0);
         assert_eq!(pool.snapshot().current_owned, 0);
         assert_eq!(pool.snapshot().cached_entries, 0);
+        pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn broker_cancellation_drains_requests_queued_before_provider_receive() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+            }),
+        );
+        let observation = tokio::spawn(async move { reference.observe().await });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while pool.snapshot().platform_pending == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("observation was not queued");
+
+        broker.cancel_all();
+        let error = observation
+            .await
+            .expect("join queued observation")
+            .expect_err("queued observation was cancelled");
+        assert_eq!(
+            error.platform_failure_kind(),
+            Some(PlatformStorageFailureKind::Cancelled)
+        );
+        assert_eq!(pool.snapshot().platform_pending, 0);
+        assert!(broker.next_request().await.is_none());
         pool.shutdown().await.expect("shutdown");
     }
 
