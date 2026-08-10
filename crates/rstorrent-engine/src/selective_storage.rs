@@ -6030,6 +6030,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resume_reconciliation_keeps_new_boundary_writes_on_wanted_routes() {
+        let root = test_path("resume-new-boundary-route");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        let metainfo = fixture();
+        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+            .expect("plan storage paths");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let bytes = torrent_bytes(&metainfo);
+        let (mut storage, _) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            vec![false; layout.piece_count()],
+        )
+        .await
+        .expect("create initial storage");
+        for request in layout
+            .request_ranges(0, &selection)
+            .expect("piece requests")
+        {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("write retained boundary piece");
+        }
+        storage.record_verified(0).expect("record retained piece");
+        storage.sync_piece(0).await.expect("sync retained piece");
+        drop(storage);
+
+        let mut committed = vec![false; layout.piece_count()];
+        committed[0] = true;
+        let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
+            paths.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            committed,
+        )
+        .await
+        .expect("resume partial storage");
+        assert_eq!(
+            storage
+                .validate_fast_resume(resumed)
+                .await
+                .expect("validate partial resume")
+                .evidence,
+            ResumeStorageEvidence::Matches
+        );
+        storage
+            .reconcile_after_recheck()
+            .await
+            .expect("reconcile accepted resume routes");
+
+        let piece = 2_u32;
+        let piece_offset = piece as usize * metainfo.piece_length as usize;
+        for request in layout
+            .request_ranges(piece, &selection)
+            .expect("new boundary requests")
+        {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    piece,
+                    request.begin,
+                    bytes[piece_offset + begin..piece_offset + begin + request.length as usize]
+                        .to_vec(),
+                )
+                .await
+                .expect("write new boundary piece");
+        }
+        let length = layout.piece_length_at(piece).expect("piece length") as usize;
+        assert_eq!(
+            storage
+                .hash_piece(piece)
+                .await
+                .expect("hash new boundary piece"),
+            <[u8; 20]>::from(Sha1::digest(&bytes[piece_offset..piece_offset + length]))
+        );
+
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
     async fn resume_keeps_existing_file_route_when_it_becomes_skipped() {
         let root = test_path("resume-retain-skipped");
         tokio::fs::create_dir(&root).await.expect("create root");

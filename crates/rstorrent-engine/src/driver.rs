@@ -65,7 +65,10 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
-use crate::piece_availability::{AvailabilityCursor, AvailabilityDrain, PieceAvailability};
+use crate::piece_availability::{
+    AvailabilityCursor, AvailabilityDrain, AvailabilitySnapshot, MAX_AVAILABILITY_DRAIN,
+    PieceAvailability,
+};
 use crate::piece_picker::picker_seed;
 use crate::resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
@@ -3684,6 +3687,7 @@ async fn acquire_metadata_from_connection(
     if peer.supports_fast_extension() {
         send_message(peer, &PeerMessage::HaveNone).await?;
     }
+    peer.mark_initial_availability_sent();
     send_message(
         peer,
         &PeerMessage::Extended {
@@ -4061,6 +4065,7 @@ enum ContentContributor {
 struct OutgoingUploadPeer {
     state: UploadPeerState,
     cursor: AvailabilityCursor,
+    pending_initial_haves: Option<(AvailabilitySnapshot, usize)>,
     membership: Option<SessionUploadMembership>,
     read: Option<OutgoingUploadRead>,
 }
@@ -4259,7 +4264,7 @@ impl<'a> ContentSwarmDownload<'a> {
             self.state
                 .remove_connection(connection, removal)
                 .map_err(DownloadError::Swarm)?;
-            self.contributor_attempts.remove(&connection);
+            self.prune_contributor_attempts();
             return Ok(());
         }
         self.remove_outgoing_upload(connection).await;
@@ -4294,7 +4299,7 @@ impl<'a> ContentSwarmDownload<'a> {
             self.state
                 .remove_connection(connection, ConnectionRemoval::Disconnected)
                 .map_err(DownloadError::Swarm)?;
-            self.contributor_attempts.remove(&connection);
+            self.prune_contributor_attempts();
         }
         Ok(())
     }
@@ -4344,6 +4349,9 @@ impl<'a> ContentSwarmDownload<'a> {
                 .await
                 .map_err(download_peer_set_error)?;
         }
+        let snapshot = self.availability.snapshot();
+        let pending_initial_haves = (!send_initial_availability && snapshot.available_count > 0)
+            .then_some((snapshot.clone(), 0));
         for piece in allowed_fast {
             sockets
                 .send(connection, PeerMessage::AllowedFast(piece))
@@ -4357,7 +4365,8 @@ impl<'a> ContentSwarmDownload<'a> {
             connection,
             OutgoingUploadPeer {
                 state,
-                cursor: self.availability.snapshot().cursor(),
+                cursor: snapshot.cursor(),
+                pending_initial_haves,
                 membership,
                 read: None,
             },
@@ -4496,26 +4505,59 @@ impl<'a> ContentSwarmDownload<'a> {
                     .expect("serviced outgoing upload remains present");
                 self.availability.drain(peer.cursor)
             };
-            match drain {
-                AvailabilityDrain::Changes { cursor, pieces, .. } => {
-                    self.outgoing_uploads
-                        .get_mut(&connection)
-                        .expect("serviced outgoing upload remains present")
-                        .cursor = cursor;
-                    for piece in pieces {
-                        if sockets
-                            .send(connection, PeerMessage::Have(piece))
-                            .await
-                            .is_err()
-                        {
-                            failures.push((connection, PeerFailure::RemoteClosed));
-                            break;
-                        }
-                    }
-                }
+            let changes = match drain {
+                AvailabilityDrain::Changes { cursor, pieces, .. } => (cursor, pieces),
                 AvailabilityDrain::EpochChanged(_) | AvailabilityDrain::Lagged => {
                     failures.push((connection, PeerFailure::RemoteClosed));
                     continue;
+                }
+            };
+
+            let initial_haves = {
+                let peer = self
+                    .outgoing_uploads
+                    .get_mut(&connection)
+                    .expect("serviced outgoing upload remains present");
+                if let Some((snapshot, next)) = peer.pending_initial_haves.as_mut() {
+                    let (pieces, finished) = {
+                        let mut pieces = Vec::with_capacity(MAX_AVAILABILITY_DRAIN);
+                        while *next < snapshot.piece_count && pieces.len() < MAX_AVAILABILITY_DRAIN
+                        {
+                            if snapshot.is_available(*next) {
+                                pieces.push(
+                                    u32::try_from(*next).expect("bounded availability piece"),
+                                );
+                            }
+                            *next += 1;
+                        }
+                        (pieces, *next == snapshot.piece_count)
+                    };
+                    if finished {
+                        peer.pending_initial_haves = None;
+                    }
+                    Some(pieces)
+                } else {
+                    None
+                }
+            };
+            let messages = if let Some(pieces) = initial_haves {
+                pieces
+            } else {
+                let (cursor, pieces) = changes;
+                self.outgoing_uploads
+                    .get_mut(&connection)
+                    .expect("serviced outgoing upload remains present")
+                    .cursor = cursor;
+                pieces
+            };
+            for piece in messages {
+                if sockets
+                    .send(connection, PeerMessage::Have(piece))
+                    .await
+                    .is_err()
+                {
+                    failures.push((connection, PeerFailure::RemoteClosed));
+                    break;
                 }
             }
 
@@ -5680,6 +5722,7 @@ async fn run_selective_swarm_loop(
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         let fast_extension = connection.supports_fast_extension();
+        let send_initial_availability = !connection.initial_availability_sent();
         let extension_map = connection.extension_map();
         peers.handoff_to_content(attempt)?;
         let id = sockets
@@ -5690,6 +5733,19 @@ async fn run_selective_swarm_loop(
             .add_connection(id, peers.elapsed())
             .map_err(DownloadError::Swarm)?;
         peers.install_extension_map(id, extension_map);
+        download
+            .state
+            .set_fast_extension(id, fast_extension)
+            .map_err(DownloadError::Swarm)?;
+        download
+            .install_outgoing_upload(
+                sockets,
+                id,
+                attempt.endpoint().address().ip(),
+                fast_extension,
+                send_initial_availability,
+            )
+            .await?;
         if !download.metainfo.private
             && sockets
                 .send(
@@ -5711,19 +5767,6 @@ async fn run_selective_swarm_loop(
             )
             .await?;
         }
-        download
-            .state
-            .set_fast_extension(id, fast_extension)
-            .map_err(DownloadError::Swarm)?;
-        download
-            .install_outgoing_upload(
-                sockets,
-                id,
-                attempt.endpoint().address().ip(),
-                fast_extension,
-                !fast_extension,
-            )
-            .await?;
         if sockets.send(id, PeerMessage::Interested).await.is_err() {
             close_content_connection(
                 peers,
@@ -6033,7 +6076,7 @@ async fn run_selective_swarm_loop(
                         .state
                         .remove_connection(id, ConnectionRemoval::Disconnected)
                         .map_err(DownloadError::Swarm)?;
-                    download.contributor_attempts.remove(&id);
+                    download.prune_contributor_attempts();
                 }
                 if let Some(failure) = failure {
                     peers.last_error = Some(DownloadError::PeerTask(format!(
@@ -6106,6 +6149,27 @@ async fn run_selective_swarm_loop(
                             .state
                             .set_fast_extension(id, capabilities.fast_extension)
                             .map_err(DownloadError::Swarm)?;
+                        if download
+                            .install_outgoing_upload(
+                                sockets,
+                                id,
+                                attempt.endpoint().address().ip(),
+                                capabilities.fast_extension,
+                                true,
+                            )
+                            .await
+                            .is_err()
+                        {
+                            close_content_connection(
+                                peers,
+                                sockets,
+                                &mut download.state,
+                                id,
+                                Some(PeerFailure::RemoteClosed),
+                            )
+                            .await?;
+                            continue;
+                        }
                         if handshake.supports_extensions()
                             && !download.metainfo.private
                             && sockets
@@ -6118,27 +6182,6 @@ async fn run_selective_swarm_loop(
                                 )
                                 .await
                                 .is_err()
-                        {
-                            close_content_connection(
-                                peers,
-                                sockets,
-                                &mut download.state,
-                                id,
-                                Some(PeerFailure::RemoteClosed),
-                            )
-                            .await?;
-                            continue;
-                        }
-                        if download
-                            .install_outgoing_upload(
-                                sockets,
-                                id,
-                                attempt.endpoint().address().ip(),
-                                capabilities.fast_extension,
-                                true,
-                            )
-                            .await
-                            .is_err()
                         {
                             close_content_connection(
                                 peers,
@@ -6778,6 +6821,10 @@ async fn run_selective_download(
                     payload_bytes_read: validation.payload_bytes_read,
                     hash_jobs: validation.hash_jobs,
                 });
+                storage
+                    .reconcile_after_recheck()
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?;
             }
             ResumeAdmissionOutcome::NeedsFullCheck(_) => {}
             ResumeAdmissionOutcome::AwaitingStorage => {

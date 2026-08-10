@@ -452,8 +452,9 @@ async fn stage_partial_fixture(
         .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
     let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
         .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let artifact_base = storage_root.join(hex(metainfo.info_hash));
     let mut storage =
-        SelectiveStorage::create(paths.output, metainfo, layout.clone(), selection.clone())
+        SelectiveStorage::create(artifact_base, metainfo, layout.clone(), selection.clone())
             .await
             .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
     let piece_length = usize::try_from(metainfo.piece_length)
@@ -502,6 +503,7 @@ async fn stage_partial_fixture(
             )));
         }
     }
+    debug_assert!(paths.staging.exists());
     Ok(())
 }
 

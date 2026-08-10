@@ -1020,6 +1020,121 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
 }
 
 #[tokio::test]
+async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() {
+    let payload = Arc::new(
+        (0..MIN_PAYLOAD_ALLOWANCE)
+            .map(|index| ((index * 71 + index / 37) & 0xff) as u8)
+            .collect::<Vec<_>>(),
+    );
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("disconnecting peer metainfo");
+    let root = test_path("incoming-disconnect-before-hash");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create disconnecting peer storage root");
+    let paths =
+        torrent_storage_paths_for_metainfo(&root, &metainfo).expect("disconnecting peer paths");
+    let idle_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind disconnecting peer idle source");
+    let idle_address = idle_listener
+        .local_addr()
+        .expect("disconnecting peer idle address");
+    let idle_task = tokio::spawn(serve_permanently_choked_peer(
+        idle_listener,
+        metainfo.info_hash,
+        Vec::new(),
+    ));
+
+    let peer_budget = PeerBudget::system_default();
+    let mse_dh = crate::MseDhWorkOwner::new();
+    let service = IncomingPeerService::bind(
+        IncomingPeerServiceConfig::new(IncomingTcpBootstrap::AutomaticLoopback)
+            .with_peer_budget(peer_budget.clone())
+            .with_mse_dh(mse_dh.clone()),
+    )
+    .await
+    .expect("bind disconnecting incoming service")
+    .expect("disconnecting incoming service enabled");
+    let control = DownloadControl::new();
+    control.set_storage_hash_delay(Duration::from_millis(300));
+    control.set_incoming_peer_handle(service.handle());
+    let torrent_peers =
+        TorrentPeerHandle::new(Arc::new(control.clone())).expect("disconnecting torrent peers");
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let download_task = tokio::spawn(resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(3)),
+            peer_budget,
+            mse_dh,
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: Some(torrent_peers),
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![false],
+            artifact_state: ResumeArtifactState::None,
+            resume_validation: ResumeValidationIntent::Full,
+            download_missing: true,
+            dht: None,
+            udp_trackers: None,
+        },
+        checkpoints,
+        control,
+    ));
+
+    timeout(Duration::from_secs(3), async {
+        loop {
+            if service.snapshot().registrations == 1 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("disconnecting incoming registration");
+    let incoming_task = tokio::spawn(serve_incoming_piece_then_disconnect(
+        service.listen_address(),
+        metainfo.info_hash,
+        payload.clone(),
+    ));
+    incoming_task
+        .await
+        .expect("disconnecting incoming peer joined");
+
+    let report = timeout(Duration::from_secs(5), download_task)
+        .await
+        .expect("delayed hash completed")
+        .expect("join delayed hash download")
+        .expect("disconnecting contributor remained attributable");
+    assert_eq!(report.verified_piece_count, 1);
+    timeout(Duration::from_secs(2), idle_task)
+        .await
+        .expect("disconnecting idle peer joined")
+        .expect("disconnecting idle peer task");
+    let terminal = service
+        .shutdown()
+        .await
+        .expect("shutdown disconnecting incoming service");
+    assert_eq!(terminal.registrations, 0);
+    assert_eq!(terminal.established, 0);
+    assert_eq!(
+        tokio::fs::read(&paths.output)
+            .await
+            .expect("read disconnected contributor publication"),
+        *payload
+    );
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove disconnecting contributor fixture");
+}
+
+#[tokio::test]
 async fn active_upload_read_failure_retracts_route_and_stops_generation() {
     let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
         .map(|index| ((index * 67 + index / 31) & 0xff) as u8)

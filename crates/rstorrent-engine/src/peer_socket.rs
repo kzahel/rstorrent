@@ -53,6 +53,7 @@ pub(crate) struct PeerConnection {
     attempt: DialAttempt,
     io: PeerIo,
     fast_extension: bool,
+    initial_availability_sent: bool,
     extension_map: ExtensionMap,
     mse_method: Option<MseMethod>,
     mse_endpoint_update: Option<MseEndpointState>,
@@ -70,6 +71,14 @@ impl PeerConnection {
 
     pub(crate) const fn supports_fast_extension(&self) -> bool {
         self.fast_extension
+    }
+
+    pub(crate) const fn initial_availability_sent(&self) -> bool {
+        self.initial_availability_sent
+    }
+
+    pub(crate) fn mark_initial_availability_sent(&mut self) {
+        self.initial_availability_sent = true;
     }
 
     pub(crate) const fn extension_map(&self) -> ExtensionMap {
@@ -104,6 +113,7 @@ impl PeerConnection {
             attempt,
             io: PeerIo::new(stream, io_timeout, None),
             fast_extension: false,
+            initial_availability_sent: false,
             extension_map: ExtensionMap::default(),
             mse_method: None,
             mse_endpoint_update: None,
@@ -356,6 +366,7 @@ async fn connect_with_progress(
             attempt,
             io,
             fast_extension: capabilities.fast_extension,
+            initial_availability_sent: false,
             extension_map: ExtensionMap::default(),
             mse_method,
             mse_endpoint_update,

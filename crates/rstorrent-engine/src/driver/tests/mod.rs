@@ -536,6 +536,7 @@ async fn serve_duplex_complementary_peer(
         .await
         .expect("unchoke downloader");
     let mut requested_local_piece = false;
+    let mut pending_remote_request = None;
     let mut uploaded = Some(uploaded);
     loop {
         match next_peer_message(&mut peer).await {
@@ -560,18 +561,7 @@ async fn serve_duplex_complementary_peer(
             }
             Ok(PeerMessage::Request(request)) => {
                 assert_eq!(request.index, 1);
-                let begin = request.begin as usize;
-                let end = begin + request.length as usize;
-                send_message(
-                    &mut peer,
-                    &PeerMessage::Piece {
-                        index: request.index,
-                        begin: request.begin,
-                        block: pieces[1][begin..end].to_vec(),
-                    },
-                )
-                .await
-                .expect("send complementary remote piece");
+                assert!(pending_remote_request.replace(request).is_none());
             }
             Ok(PeerMessage::Piece {
                 index: 0,
@@ -595,6 +585,22 @@ async fn serve_duplex_complementary_peer(
             }) => return,
             Ok(message) => panic!("unexpected duplex message {message:?}"),
             Err(error) => panic!("duplex peer failed: {error}"),
+        }
+        if uploaded.is_none()
+            && let Some(request) = pending_remote_request.take()
+        {
+            let begin = request.begin as usize;
+            let end = begin + request.length as usize;
+            send_message(
+                &mut peer,
+                &PeerMessage::Piece {
+                    index: request.index,
+                    begin: request.begin,
+                    block: pieces[1][begin..end].to_vec(),
+                },
+            )
+            .await
+            .expect("send complementary remote piece");
         }
     }
 }
@@ -706,6 +712,63 @@ async fn serve_incoming_duplex_complementary_peer(
             )
             .await
             .expect("send incoming complementary remote piece");
+        }
+    }
+}
+
+async fn serve_incoming_piece_then_disconnect(
+    address: SocketAddr,
+    info_hash: [u8; 20],
+    piece: Arc<Vec<u8>>,
+) {
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("connect disconnecting incoming peer");
+    stream
+        .write_all(&encode_handshake(info_hash, [73; 20]))
+        .await
+        .expect("send disconnecting incoming handshake");
+    let mut handshake = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake)
+        .await
+        .expect("read disconnecting incoming handshake");
+    decode_handshake(&handshake, info_hash).expect("valid disconnecting incoming handshake");
+
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b1000_0000]))
+        .await
+        .expect("send disconnecting incoming availability");
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .expect("unchoke disconnecting incoming peer");
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Request(request)) => {
+                let begin = request.begin as usize;
+                let end = begin + request.length as usize;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Piece {
+                        index: request.index,
+                        begin: request.begin,
+                        block: piece[begin..end].to_vec(),
+                    },
+                )
+                .await
+                .expect("send piece before disconnect");
+                return;
+            }
+            Ok(
+                PeerMessage::HaveNone
+                | PeerMessage::Bitfield(_)
+                | PeerMessage::Interested
+                | PeerMessage::NotInterested
+                | PeerMessage::KeepAlive
+                | PeerMessage::Extended { .. },
+            ) => {}
+            Ok(message) => panic!("unexpected disconnecting incoming message {message:?}"),
+            Err(error) => panic!("disconnecting incoming peer failed: {error}"),
         }
     }
 }
