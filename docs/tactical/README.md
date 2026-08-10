@@ -571,9 +571,13 @@ that scope and its cleanup or compatibility rules explicitly.
   global inspection, settings, and lifecycle experience while keeping
   unsupported engine and platform policy visibly unavailable.
 - [`118-utp-implementation-decision-spike.md`](118-utp-implementation-decision-spike.md):
-  at first review after the non-implementing source, license, platform,
-  ownership, and forced-uTP oracle decision spike; no implementation path is
-  accepted yet.
+  complete non-implementing source, license, platform, ownership, and
+  forced-uTP oracle decision spike; human review accepted the independently
+  authored Rust sans-IO recommendation.
+- [`119-deterministic-utp-transport-core.md`](119-deterministic-utp-transport-core.md):
+  active pure-Rust uTP v1 codec, wrapping arithmetic, bounded connection,
+  receive/reorder/SACK, send/ACK/loss, RTT, and timer-intent tactical without
+  sockets, tasks, congestion control, or a support claim.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

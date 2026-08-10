@@ -248,12 +248,12 @@ pass; no new physical-device UI claim was made.
 ### Now
 
 - Tactical
-  [`118`](../tactical/118-utp-implementation-decision-spike.md) is the single
-  authoritative **Now** and is stopped at its first human review. Its completed
-  source/license/platform dossier and reproducible forced-uTP loopback oracle
-  support an independently authored Rust sans-IO core; no uTP implementation
-  choice, engine code, runtime dependency, product policy, WAN activity, or
-  protocol claim is accepted yet.
+  [`119`](../tactical/119-deterministic-utp-transport-core.md) is the single
+  authoritative **Now** after human acceptance of Tactical `118`'s independent
+  Rust recommendation. It owns only the runtime-free uTP v1 codec, wrapping
+  arithmetic, bounded deterministic connection/reliability state, and pure
+  evidence; it adds no sockets, LEDBAT, runtime dependency, product policy,
+  WAN activity, or protocol claim.
 
 ### Next
 
@@ -275,8 +275,9 @@ important. Tactical `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
 the live gateway returned typed `606` to `AddPinhole`.
-The uTP topic records the adaptive campaign. Tactical `118` is at its
-non-implementing Stage 0 review gate; uTP remains unsupported.
+The uTP topic records the adaptive campaign. Tactical `118` is complete and
+Tactical `119` is the active deterministic transport-core slice; uTP remains
+unsupported.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

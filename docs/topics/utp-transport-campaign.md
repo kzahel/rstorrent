@@ -3,10 +3,10 @@
 Topic: `utp-transport-campaign`
 
 Status: Stage 0 Tactical
-[`118`](../tactical/118-utp-implementation-decision-spike.md) is at its first
-human review. Its source, platform, ownership, and forced-uTP evidence supports
-the independent Rust recommendation; uTP remains **Unsupported** and no
-implementing tactical or dependency is accepted.
+[`118`](../tactical/118-utp-implementation-decision-spike.md) is complete and
+human review accepted its independent Rust recommendation. Stage 1 Tactical
+[`119`](../tactical/119-deterministic-utp-transport-core.md) is in progress;
+uTP remains **Unsupported** and no runtime transport or dependency is accepted.
 
 ## Scope And Ownership
 
@@ -309,11 +309,11 @@ accepted tactical.
 
 ## Restart Checkpoint
 
-Campaign state: **Stage 0 Tactical `118` is at first review; no uTP
-implementation accepted**.
+Campaign state: **Stage 0 Tactical `118` complete; deterministic Stage 1
+Tactical `119` in progress; no uTP runtime accepted**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action requires
-human direction: approve the recommended independent Rust Stage 1, request a
-standalone-libutp FFI/platform feasibility slice, or request a librqbit
-hardening/LEDBAT-fork feasibility slice. No option starts until selected.
+[`capability-readiness.md`](capability-readiness.md). The next action is to
+execute Tactical `119`'s bounded pure v1 codec and deterministic connection,
+receive, send, loss, RTT, and timer state, then reconcile its evidence before
+selecting the deterministic congestion/impaired-network slice.

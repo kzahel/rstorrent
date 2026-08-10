@@ -1,11 +1,9 @@
 # Tactical 118: uTP Implementation Decision Spike
 
-Status: At the first human review on 2026-08-10 as the single authoritative
-**Now**. Stage 0 evidence is complete and the independent Rust path is
-recommended, but no implementation source or dependency has been accepted.
-This tactical authorizes source investigation, reference pinning, and a
-bounded loopback oracle only; it does not authorize uTP engine implementation
-or adoption of a runtime dependency.
+Status: Complete on 2026-08-10. Human review accepted recommendation A: an
+independently authored Rust sans-IO core. Tactical
+[`119`](119-deterministic-utp-transport-core.md) is the first implementing
+slice. No foreign implementation or runtime dependency was accepted.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `peer-lifecycle`,

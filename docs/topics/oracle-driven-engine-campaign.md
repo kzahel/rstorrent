@@ -16,9 +16,11 @@ graduated. Tactical
 complete after deterministic, controlled pinned-libtorrent, browser, scale,
 performance, and physical Pixel evidence. Tactical `116` subsequently
 graduated. Tactical
-[`118`](../tactical/118-utp-implementation-decision-spike.md) is the single
-authoritative **Now** and is stopped at the first uTP
-implementation/provenance review without adding transport code. The completed
+[`118`](../tactical/118-utp-implementation-decision-spike.md) completed the
+first uTP implementation/provenance review without adding transport code.
+Human review accepted its independent Rust recommendation, and Tactical
+[`119`](../tactical/119-deterministic-utp-transport-core.md) is the single
+authoritative **Now**. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -331,7 +333,7 @@ reason to stop.
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; non-implementing uTP Stage 0 Tactical
-`118` is at first review**.
+`118` completed; deterministic uTP core Tactical `119` is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -349,10 +351,11 @@ Latest closed tactical:
 Its execution record retains the exact deterministic, Android, interop, and
 physical-iOS evidence without stable platform identifiers.
 
-Current milestone: Tactical `118` has produced the pinned uTP source/license/
-platform dossier and bounded forced-uTP loopback oracle. Human direction is
-required before any implementation or dependency choice. Tactical `113` needs
-no further action unless different gateway hardware becomes available or a
+Current milestone: Tactical `119` implements only the independently authored,
+runtime-free uTP v1 codec and bounded deterministic reliability state accepted
+after Tactical `118`; LEDBAT, sockets, tasks, and support remain later gates.
+Tactical `113` needs no further action unless different gateway hardware
+becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 A separate trusting fast-resume option may now be planned against Tactical
