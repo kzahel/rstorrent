@@ -10,6 +10,8 @@ Tactical `122` adds direct-metainfo inputs, matched encryption/connection
 profiles, independent piece verification, process resources, atomic owner
 checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
+Completed Tactical `127` additionally records one 82.239-second remote-mapped
+uTP WAN transfer as a bounded observation, not a throughput threshold.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo
@@ -901,6 +903,37 @@ was contacted. No directory, fixture, listener, background process, package,
 checkout, firewall, router, or VPN state was created or changed, and no uTP
 packet was sent. The result is a bounded external precondition observation,
 not WAN interoperability or performance evidence.
+
+## Controlled Mapped uTP WAN Result: 2026-08-10
+
+Completed Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md) corrects the
+direct-interface premise and establishes libtorrent `2.0.13.0` in an isolated
+user-owned environment on the authorized NATed peer. One named, finite UDP
+UPnP lease exposed its forced-uTP seed. The local RSTorrent route to the
+redacted external endpoint used the ordinary Internet interface rather than
+Tailscale, and SSH remained control-plane only.
+
+RSTorrent downloaded and hash-verified the exact 2,097,883-byte fixture in
+82.239 seconds. Both owners observed exactly one uTP peer and zero TCP peers.
+Libtorrent reported 1,807 outbound and 909 inbound uTP packets with zero loss,
+timeout, fast-retransmit, or resend counters. RSTorrent classified every
+received UDP datagram as uTP with zero drops, observed 155.655--168.723 ms
+smoothed RTT, 0--2.211 ms queue delay, a fixed 548-byte MTU, and zero
+retransmission/loss/timeout high-waters. Terminal task, connection, half-open,
+and queue ownership was zero.
+
+The 82-second elapsed time is recorded as an observation, not a stable
+performance baseline or acceptance threshold. RSTorrent was the leecher and
+sent only request/control traffic; its observed fixed 1,056-byte send
+congestion window therefore does not measure RSTorrent's bulk-send controller.
+A complementary WAN direction with RSTorrent as seed is the recommended next
+measurement before product transport policy.
+
+The exact lease was deleted and query-confirmed absent. An independent audit
+also found no owned helper process or per-run directory. Raw endpoint,
+gateway, peer-ID, and packet data were not retained. The reusable isolated
+oracle environment is the only intentional remote residue.
 
 ## Comparator Outcome
 

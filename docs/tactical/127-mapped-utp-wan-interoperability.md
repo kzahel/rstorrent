@@ -1,6 +1,7 @@
 # Tactical 127: Mapped uTP WAN Interoperability
 
-Status: **Active** on 2026-08-10. Human review rejected Tactical `126`'s
+Status: **Complete** on 2026-08-10 at the required post-Stage 4 human-review
+checkpoint. Human review rejected Tactical `126`'s
 incorrect assumption that an Internet-reachable peer must have a global IPv4
 address assigned directly to its interface. The user authorized setup of the
 exact pinned libtorrent oracle on `pimom`, a temporary UDP UPnP mapping on its
@@ -367,7 +368,8 @@ Installation used `venv` plus the direct official wheel URL with its SHA-256
 fragment, `--no-deps`, and binary-only selection. The temporary atomic-install
 directory was removed; only the authorized reusable oracle environment
 remains. No fixture, metainfo, run directory, listener, mapping, background
-process, firewall rule, router configuration, or Tailscale change exists yet.
+process, firewall rule, router configuration, or Tailscale change existed at
+that checkpoint.
 
 ### First mapping attempt and cleanup repair
 
@@ -392,7 +394,7 @@ MiniUPnP, and reconciles deletion by exact description and local port even when
 failure precedes readiness. The local owner independently audits that
 description after every outcome and can delete at most one exact surviving
 UDP entry. Deterministic contracts and Python compilation pass after the
-repair. A positive WAN transfer remains pending.
+repair. A positive WAN transfer remained pending at that checkpoint.
 
 ### Public-path timeout observation
 
@@ -411,3 +413,81 @@ fixture needs roughly 90 seconds before orchestration and cleanup allowance.
 The next run therefore uses a 120-second WAN role bound inside a 150-second
 whole-case bound. The deterministic and loopback 30-second limits are
 unchanged.
+
+### Complete mapped-WAN result
+
+The next remote-mapped run passed in 82.239 seconds. RSTorrent acted as the
+leecher and dialed the query-confirmed public IPv4/UDP endpoint of the remote
+pinned libtorrent seed. Local route inspection selected the ordinary Internet
+interface rather than Tailscale, and the harness used SSH only to supervise
+the remote process and exchange bounded JSON control records. The endpoint is
+redacted from committed evidence.
+
+The remote owner reported libtorrent `2.0.13.0`, exactly one uTP peer, zero TCP
+peers, 2,097,883 payload bytes sent, and zero payload bytes received. It
+observed 909 uTP packets in and 1,807 out, including 131 payload packets in and
+1,675 out, with zero packet-loss, timeout, fast-retransmit, or resend counters.
+The exact 33-piece fixture completed with SHA-1
+`cdce24126a8e65854d876c0b83ad3ba19748f6dc` after 129 RSTorrent requests.
+
+RSTorrent received and classified all 1,807 UDP datagrams and 2,135,828 bytes
+as uTP with zero UDP/uTP drops and a 13-datagram queue high-water mark. It sent
+909 datagrams and 20,446 bytes. The connection high-water mark was one;
+retransmission datagrams, retransmission bytes, retransmission-queue high-water,
+loss-reduction high-water, timeout-collapse high-water, malformed datagrams,
+unknown connections, stale generations, and worker panics were all zero.
+
+Observed RSTorrent transport ranges were 155,655--168,723 microseconds smoothed
+RTT, 500,000--1,000,000 microseconds effective RTO, 1,499,512,080--
+1,499,513,941 microseconds raw base delay, 0--2,211 microseconds queue delay,
+1,056 bytes for both minimum and maximum congestion window, and
+1,032,602--1,048,576 bytes advertised receive window. The selected MTU was 548
+bytes. Delivered, unsent, and sent byte high-waters were 15,974, 68, and 68.
+Terminal uTP connections and half-opens were zero, as were terminal session-UDP
+tasks and queued datagrams.
+
+The remote gateway created exactly one named UDP mapping whose internal,
+external, and listener ports matched. Query observed 3,598 seconds remaining
+on the requested finite 3,600-second lease. Normal cleanup deleted the exact
+entry and confirmed its absence. It also terminated the helper, removed the
+per-run remote directory, and removed the local temporary directory. A
+separate post-run SSH audit found zero owned mappings, helper processes, or run
+directories and re-confirmed oracle version `2.0.13.0`. The reusable isolated
+oracle environment remains intentionally installed; no payload, metainfo, log,
+mapping, listener, or background process remains. The capability-gated local-
+mapping fallback was neither needed nor attempted.
+
+This proves one exact, direct, remote-mapped public-path uTP transfer and the
+required cleanup contract. It does not prove the reverse direction, ordinary
+product selection, incoming product reachability, MSE-over-uTP, IPv6 uTP,
+public-swarm behavior, or acceptable throughput. In particular, the 82-second
+elapsed time is a material observation; RSTorrent sent only request/control
+traffic in this direction, so its fixed 1,056-byte send congestion window is
+not itself a measurement of RSTorrent bulk-send performance. The campaign
+must review the complementary sender direction before product policy.
+
+### Validation
+
+The following required gates pass after the successful external run:
+
+```text
+source ~/.profile
+cargo test -p rstorrent-engine utp
+cargo test -p rstorrent-engine port_mapping
+uv run --project tests/interop --locked \
+  python tests/interop/test_utp_wan_contract.py
+uv run --project tests/interop --locked \
+  python tests/interop/utp_rstorrent_interop.py
+uv run --project tests/interop --locked \
+  python tests/interop/utp_rstorrent_wan.py --host pimom
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
+
+The WAN contract suite passes five cases. The unchanged loopback gate passes
+both directions with the exact fixture and terminal cleanup. The full Rust
+workspace passes with no failures: the largest crate reports 464 passed and
+seven ignored tests; the other large suites report 197/2 ignored and 227/2
+ignored. The tactical therefore meets its positive stopping condition and
+stops here for human review while BEP 29 remains **Unsupported**.

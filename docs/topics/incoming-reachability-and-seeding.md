@@ -42,13 +42,14 @@ reachability coordinator, bounded UPnP IGD v2 mapping, and an exact off-LAN
 incoming transfer through the observed mechanism. Other mapping protocols
 remain later slices.
 
-Active diagnostic-only Tactical
-[`127`](../tactical/127-mapped-utp-wan-interoperability.md) may extend that
+Completed diagnostic-only Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md) extends that
 engine mapping owner from an implicit TCP constant to an explicit TCP/UDP
-value. Existing product reachability remains explicitly TCP. Its sole UDP use
-is one finite verified mapping for controlled uTP WAN evidence when the remote
-gateway cannot provide the preferred mapping; it adds no persisted setting,
-advertisement, or ordinary product listener policy.
+value. Existing product reachability remains explicitly TCP. The successful
+direction used one finite verified UDP mapping owned by the remote oracle;
+the engine's UDP mapping path remains diagnostic-only and was not invoked.
+The result adds no persisted setting, advertisement, or ordinary product
+listener policy.
 
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
@@ -395,9 +396,9 @@ explicitly injected incoming IPv4 loopback stream through the existing peer-
 budget, registration, identity, upload, content-read, and cleanup path. The
 ordinary product listener remains TCP-only, uTP is not advertised, and UDP
 mapping still waits for an advertisable product capability. Tactical `127`'s
-temporary diagnostic UDP lease is deliberately not that product capability:
-it exists only for one controlled WAN evidence direction and must be deleted
-before the case terminates.
+temporary remote diagnostic UDP lease was deliberately not that product
+capability: it existed only for one controlled WAN evidence direction and its
+exact deletion plus independent absence audit passed before completion.
 
 ### Configuration, actual state, and evidence remain distinct
 

@@ -15,12 +15,14 @@ Human review accepted Stage 4 recommendation A, and Tactical
 planned outbound-only controlled WAN attempt after a direct-route preflight.
 That preflight closed evidence-limited before traffic because the host had no
 directly assigned global IPv4 endpoint or exact oracle. Human review then
-corrected that precondition and authorized active Tactical
+corrected that precondition and authorized Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md): set up the exact
 oracle on the NATed host, try remote UDP UPnP first, and use a local UDP mapping
-with reversed roles only if remote reachability capability is absent. uTP
-remains **Unsupported** and no product transport policy or dependency is
-accepted.
+with reversed roles only if remote reachability capability is absent. Tactical
+`127` is complete after one exact remote-mapped direct-public-path transfer and
+verified cleanup; the campaign is now at its required post-Stage 4 human-review
+checkpoint. uTP remains **Unsupported** and no product transport policy or
+dependency is accepted.
 
 ## Scope And Ownership
 
@@ -59,10 +61,11 @@ the single authoritative **Now**.
   session to one coordinated TCP/UDP socket pair per enabled address family.
   Tactical `118` inspects that landed owner rather than designing around the
   former IPv4-only shape.
-- Current product UPnP behavior maps TCP only. Tactical `127` may generalize
-  the existing engine mapping owner to an explicit TCP/UDP value while
-  retaining every product call as TCP; its UDP use is diagnostic-only for the
-  authorized local-listener fallback. No product uTP advertisement follows.
+- Current product UPnP behavior maps TCP only. Tactical `127` generalized the
+  existing engine mapping owner to an explicit TCP/UDP value while retaining
+  every product call as TCP; UDP remains diagnostic-only. The successful run
+  used the remote gateway rather than the local-listener fallback. No product
+  uTP advertisement follows.
 - Completed Tacticals
   [`111`](../tactical/111-mse-peer-stream-encryption.md) and
   [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md)
@@ -74,8 +77,9 @@ the single authoritative **Now**.
   proves the forced-uTP libtorrent baseline. The independent
   [`utp_rstorrent_interop.py`](../../tests/interop/utp_rstorrent_interop.py)
   now proves the same exact payload with RSTorrent as leecher and seed against
-  pinned libtorrent. This is loopback engine evidence only: no WAN result,
-  product policy, public listener, or public-swarm support evidence exists.
+  pinned libtorrent. Completed Tactical `127` additionally proves the leecher
+  role over one mapped direct public path. No reverse WAN result, product
+  policy, public product listener, or public-swarm support evidence exists.
 - Completed Tactical `119` now supplies the independently authored,
   dependency-free v1 codec and deterministic bounded connection/reliability
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
@@ -104,10 +108,10 @@ the single authoritative **Now**.
   Tailscale/shared-range IPv4 addresses but no directly assigned global IPv4,
   and system Python lacked libtorrent. No fixture, listener, uTP packet,
   package install, network change, or WAN interoperability result followed.
-- Active Tactical `127` treats those same interface facts correctly as a NATed
-  peer. It owns isolated pinned-oracle setup, verified finite UDP UPnP mapping
-  on the remote gateway or capability-gated local fallback, direct-route proof,
-  exact transfer evidence, and mapping/process/artifact cleanup.
+- Completed Tactical `127` treats those same interface facts correctly as a
+  NATed peer. It owns isolated pinned-oracle setup, verified finite UDP UPnP
+  mapping on the remote gateway or capability-gated local fallback, direct-
+  route proof, exact transfer evidence, and mapping/process/artifact cleanup.
   Its first checkpoint installed the exact official libtorrent `2.0.13.0`
   ARM64/Python 3.13 wheel in a dedicated user environment without system
   packages, and non-mutating discovery found a connected remote UPnP gateway
@@ -116,7 +120,12 @@ the single authoritative **Now**.
   leases. An independent audit caught that both survived the initial cleanup;
   exact deletion then proved zero residue. The repaired harness disables that
   dual mapper, uses one explicitly named MiniUPnP UDP lease, and audits cleanup
-  by PID, description, port, and directory even before readiness.
+  by PID, description, port, and directory even before readiness. Its final
+  run transferred the exact 2,097,883-byte fixture from the mapped remote
+  libtorrent seed to RSTorrent in 82.239 seconds with one uTP peer, zero TCP
+  peers, exact SHA-1, zero loss/retransmission counters, bounded queues, and
+  terminal zero ownership. Independent post-run audit found no mapping,
+  process, or per-run artifact residue.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -422,49 +431,59 @@ before external execution.
 
 ## Stage 4 Result And Review Choices
 
-Tactical `126` reached its evidence-limited stop on 2026-08-10. The authorized
-read-only SSH preflight found Linux/aarch64 and Python `3.13.5`, but the
-assigned IPv4 set contained only loopback, one RFC 1918 LAN address, and one
-Tailscale/shared-range address. There was no eligible directly assigned global
-IPv4 endpoint, and importing libtorrent produced `ModuleNotFoundError` rather
-than the locked `2.0.13.0` oracle.
+Tactical `126` first reached an evidence-limited stop because it incorrectly
+required a global address directly on the remote interface. Human review
+corrected that premise and authorized Tactical `127` to establish the exact
+oracle on the NATed `pimom`, try its UDP UPnP capability, and retain a local-
+mapping fallback only if the remote gateway was incapable.
 
-The control command exited normally after 4.5 seconds. It created no remote
-directory, payload, listener, or background process and made no package,
-checkout, firewall, router, or VPN change. No uTP data packet was sent, and no
-WAN interoperability claim follows. Using the SSH/Tailscale control path for
-the transfer would have violated the pre-agreed direct-route gate.
+Tactical `127` completed on 2026-08-10. The remote gateway reported a global
+external IPv4 address, installed exactly one query-confirmed finite UDP lease,
+and exposed the forced-uTP libtorrent `2.0.13.0` seed. RSTorrent's route to the
+redacted endpoint used the ordinary Internet interface, not Tailscale or SSH
+forwarding. The exact 2,097,883-byte, 33-piece fixture completed in 82.239
+seconds with the expected SHA-1, one uTP peer, zero TCP peers, and no discovery
+mechanism.
+
+Libtorrent reported 1,807 outbound and 909 inbound uTP packets, zero loss,
+timeout, fast-retransmit, or resend counters, and the exact payload-byte count.
+RSTorrent classified all 1,807 received UDP datagrams as uTP with zero drops,
+one live-connection high-water, a 13-datagram queue high-water, zero
+retransmissions/loss reductions/timeout collapses, 155.655--168.723 ms
+smoothed RTT, 500--1,000 ms RTO, 0--2.211 ms queue delay, a fixed 548-byte MTU,
+and terminal zero connection/task/queue ownership. Its 1,056-byte send
+congestion window applied only to request/control traffic in this leecher
+direction and does not establish bulk-send performance.
+
+The exact UDP lease was deleted and query-confirmed absent. Normal cleanup
+removed both per-run directories and the remote helper; an independent audit
+found zero owned mappings, processes, or run artifacts. The reusable isolated
+oracle remains intentionally installed. The local-mapping fallback was not
+needed or attempted. The first dual-mapping cleanup defect, its exact repair,
+and the earlier 30-second timeout are retained in Tactical `127` rather than
+hidden by the passing result.
 
 The next human choice is:
 
-1. **A — pause uTP and return to the readiness queue (recommended):** retain
-   the deterministic, runtime, and two-role loopback evidence, keep product
-   uTP disabled, and resume Stage 4 when an already suitable controlled host
-   exists.
-2. **B — authorize a separate `pimom` capability tactical:** explicitly scope
-   installation of the exact libtorrent oracle plus truthful direct UDP
-   reachability through the remote NAT/firewall, with its own rollback and
-   security review, before retrying Tactical `126`'s transfer contract.
-3. **C — authorize a different controlled host:** provide one that already has
-   pinned libtorrent and a directly reachable IPv4 UDP endpoint, then draft a
-   host-specific evidence tactical without changing product behavior.
+1. **A — complementary mapped-WAN sender evidence (recommended):** draft one
+   bounded tactical that intentionally creates a temporary local UDP mapping,
+   runs RSTorrent as the seed and bulk sender, and has the pinned `pimom`
+   oracle dial the public endpoint. This closes the unmeasured WAN direction
+   and directly observes RSTorrent's congestion controller, throughput,
+   cleanup, and local gateway capability before product policy.
+2. **B — pause uTP and resume the readiness queue:** retain the completed
+   deterministic, loopback, and one-direction WAN evidence, keep product uTP
+   disabled, and make focused-driver HTTP(S) tracker dispatch the next
+   executable engine slice.
+3. **C — plan Stage 5 product integration now:** define TCP/uTP selection,
+   racing, fallback, advertisement, incoming reachability, and MSE composition
+   from the current evidence. This is not recommended while RSTorrent's WAN
+   bulk-send direction is unmeasured.
 
-No choice is implicit. Choice B materially changes remote software and network
-state; choice C expands the authorized external target. The present authority
-does not permit either action, product policy, reverse incoming uTP, IPv6 uTP,
-MSE-over-uTP, mapping from this client, public-swarm work, or a support-claim
-change.
-
-Human review selected choice B and explicitly authorized both setup of the
-exact oracle on `pimom` and the finite mapped fallback direction on 2026-08-10.
-Tactical
-[`127`](../tactical/127-mapped-utp-wan-interoperability.md) supersedes the
-directly-assigned-address premise while preserving Tactical `126`'s result.
-Its primary direction maps the remote libtorrent seed through remote UPnP; if
-that network lacks eligible capability, its fallback maps the local
-RSTorrent diagnostic seed and has the remote oracle dial inward. This does not
-authorize permanent router/firewall changes, Tailscale data transport, product
-policy, a public swarm, or a support-claim change.
+No choice is implicit. Choice A requires explicit authority to use the local
+gateway mapping even though Tactical `127`'s capability-gated fallback was not
+triggered. None of the choices authorizes a permanent network change, another
+remote host, IPv6 uTP, a public swarm, a dependency, or a support-claim change.
 
 ## Validation Contract
 
@@ -502,25 +521,22 @@ ordinary operation.
 
 ## `pimom` WAN Evidence
 
-The host reachable through `ssh pimom` was the authorized Stage 4 control peer
-under Tactical `126`. That bounded authorization followed
-[`performance-and-live-evidence.md`](performance-and-live-evidence.md) and the
-tactical's explicit remote ownership and cleanup contract.
+The host reachable through `ssh pimom` is the authorized Stage 4 control peer.
+SSH remains control-plane only. Tactical `127` established a reusable isolated
+libtorrent `2.0.13.0` oracle without system packages and proved one direct
+public-path transfer through a query-confirmed remote UDP UPnP mapping. The
+Tailscale/shared-range SSH endpoint did not carry uTP traffic.
 
-SSH should orchestrate the reference process, gather bounded metrics, and
-retrieve temporary artifacts. The uTP packets under test must traverse the
-ordinary direct public route rather than an SSH tunnel or overlay. The first
-WAN case should have RSTorrent dial a forced-uTP libtorrent listener on the
-remote host, which avoids claiming local incoming UDP reachability. A later
-reverse-direction case requires a truthful reachable UDP endpoint and may
-therefore belong to a separate mapping/pinhole tactical. Use a controlled
-payload, verify its exact hash, capture only what the evidence needs, and
-remove remote and local temporary data after the result is recorded.
+The exact payload hash, transport observations, resource high-waters, and
+cleanup result are recorded above and in Tactical `127`; identifying endpoint
+and gateway data are deliberately redacted. Every per-run payload, metainfo,
+directory, log, mapping, listener, and process was removed. The only retained
+remote state is the documented user-owned oracle environment.
 
-The Tactical `126` preflight found no directly assigned global IPv4 endpoint
-and no installed libtorrent package. The Tailscale/shared-range SSH endpoint is
-not eligible for the data path. No remote state was created and no transfer
-was attempted; changing those capabilities requires another human decision.
+A complementary run with RSTorrent as the mapped local seed is not implicit in
+the completed authority. It requires the current human review choice because
+the remote gateway succeeded and therefore did not trigger Tactical `127`'s
+local capability fallback.
 
 ## Human Review Gates
 
@@ -562,15 +578,15 @@ accepted tactical.
 ## Restart Checkpoint
 
 Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
-`119`, deterministic Stage 2 Tactical `121`, and shared-UDP/runtime Stage 3
-Tactical `125` complete; human review accepted Stage 4 recommendation A and
-outbound-only WAN Tactical `126` closed evidence-limited at direct-route and
-oracle preflight; mapped-WAN Stage 4 Tactical `127` is active**.
+`119`, deterministic Stage 2 Tactical `121`, shared-UDP/runtime Stage 3
+Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
+only WAN Tactical `126` remains closed evidence-limited at its superseded
+direct-interface preflight; the campaign is at the post-Stage 4 human-review
+checkpoint**.
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). There is no executable
-uTP action beyond Tactical `127`. Proceed through its isolated remote setup,
-remote-UPnP-first and local-UPnP-fallback evidence, cleanup, and repository
-validation autonomously, then stop for human review. No permanent network
-change, different host, product enablement, dependency, public swarm, or
-support-claim authority is implied.
+uTP action until human review selects the recommended complementary local-
+mapped sender evidence, pauses for the readiness queue, or chooses product-
+policy planning. No permanent network change, different host, product
+enablement, dependency, public swarm, or support-claim authority is implied.

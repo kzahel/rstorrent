@@ -7,10 +7,10 @@ evidence, resource, cleanup, and stopping contracts before external execution.
 The authorized read-only preflight then found neither a directly routed IPv4
 endpoint nor the exact libtorrent oracle on `pimom`, so the tactical stopped
 before code, staging, or uTP traffic and makes no WAN interoperability claim.
-Active Tactical [`127`](127-mapped-utp-wan-interoperability.md) supersedes its
+Completed Tactical [`127`](127-mapped-utp-wan-interoperability.md) supersedes its
 incorrect directly-assigned-address precondition with an explicit NAT/UPnP
-reachability contract; this record remains the honest result of the narrower
-attempt.
+reachability contract and proves the mapped direct-public-path transfer; this
+record remains the honest result of the narrower attempt.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `peer-lifecycle`, `protocol-support`, `capability-readiness`,

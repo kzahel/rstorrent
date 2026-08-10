@@ -41,9 +41,11 @@ completed bounded real-torrent RSTorrent/libtorrent performance cohorts.
 Human review subsequently corrected Tactical `126`'s NAT premise, authorized
 isolated oracle setup plus remote/local temporary UDP UPnP directions, and
 activated Tactical
-[`127`](../tactical/127-mapped-utp-wan-interoperability.md) as the single
-authoritative **Now**. Tactical `122`'s classified Ubuntu result leaves
-focused-driver HTTP(S) tracker dispatch next in the queue. The
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md). That tactical now
+proves one exact remote-mapped direct-public-path uTP transfer and cleanup, and
+the single authoritative **Now** is its post-Stage 4 human-review decision.
+Tactical `122`'s classified Ubuntu result leaves focused-driver HTTP(S) tracker
+dispatch next if uTP pauses. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -359,9 +361,10 @@ Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
 Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 3
 Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
-evidence-limited at preflight with no WAN result; Tactical `122` completed
-paired public download performance evidence; and mapped-WAN uTP Tactical `127`
-is active**.
+evidence-limited at its superseded direct-interface preflight; Tactical `122`
+completed paired public download performance evidence; and mapped-WAN uTP
+Tactical `127` completed one exact direct-public-path leecher transfer and
+cleanup and is at human review**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -383,25 +386,25 @@ libtorrent package. It created no remote state, listener, or background
 process, sent no uTP packet, and makes no WAN or support claim.
 
 Latest completed tactical:
-[`122`](../tactical/122-paired-public-download-performance-cohorts.md). The
-schema-v2 comparator isolates both owners, matches plaintext or forced-RC4
-settings, accepts exact official metainfo, independently verifies content,
-records process resources and discovery-versus-active timing, atomically
-checkpoints every owner, and cleans bounded artifacts. Controlled 1 GiB gates
-pass; the three-minute public quick run completes Big Buck Bunny for both
-owners and classifies Ubuntu `reference_only` at the exact HTTP(S)-tracker
-dispatch boundary.
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md). A reusable isolated
+libtorrent `2.0.13.0` oracle on `pimom` exposed one query-confirmed finite UDP
+UPnP mapping. RSTorrent downloaded the exact 2,097,883-byte fixture over the
+ordinary public route in 82.239 seconds with one uTP peer, zero TCP peers,
+exact SHA-1, bounded resources, and terminal zero ownership. Exact deletion and
+an independent audit found no mapping, process, or per-run artifact residue.
+The local-mapped reverse direction remains unmeasured, and product uTP stays
+disabled.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute active Tactical `127`. Inventory `pimom`,
-establish the isolated exact pinned oracle, then implement and validate the
-remote-UPnP-first, local-UPnP-fallback controlled WAN harness within its route,
-resource, cleanup, and protocol-claim boundaries. Commit bounded stages and
-return for human review after positive WAN evidence or after both gateways are
-proven incapable. Focused-driver HTTP(S) tracker dispatch remains next and is
-not authorized until its own tactical records ownership and interoperability.
+Next executable action: none until human review chooses the recommended
+complementary mapped-WAN direction with RSTorrent as local seed/bulk sender,
+pauses uTP and restores focused-driver HTTP(S) tracker dispatch, or explicitly
+selects product-policy planning. No local gateway operation, product uTP
+enablement, public swarm, dependency, or support-claim change is implicit.
+Any implementation choice still requires its own bounded tactical and source-
+first ownership/interoperability contract.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -422,6 +425,12 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- Tactical `127` establishes the exact isolated `pimom` oracle, one verified
+  finite remote UDP mapping, and a direct-public-path transfer of the exact
+  fixture to RSTorrent in 82.239 seconds with one uTP peer, zero TCP peers,
+  bounded resources, terminal zero ownership, exact mapping deletion, and an
+  independent zero-residue audit. Product uTP remains disabled at human
+  review;
 - commit `302d840` fixes Tactical `126`'s direct-route, exact-oracle,
   outbound-only, evidence, and cleanup contract. Its authorized 4.5-second
   read-only `pimom` preflight finds only loopback, RFC 1918 LAN, and

@@ -481,6 +481,10 @@ controlled shared-UDP runtime and enters incoming uTP into this peer-
 connection-generation owner; one pinned-libtorrent seed run observes exactly
 one uTP generation and terminal removal. It does not change ordinary TCP-only
 product execution. Completed Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md) observes the same
+single generation and terminal removal while RSTorrent downloads over a
+direct public path from a remotely mapped pinned-libtorrent seed; product
+selection remains unchanged. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after
