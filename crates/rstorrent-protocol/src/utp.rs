@@ -2,6 +2,7 @@
 
 mod packet;
 mod receive;
+mod send;
 mod sequence;
 
 pub use packet::{
@@ -13,5 +14,10 @@ pub use packet::{
 pub use receive::{
     MAX_REORDER_BYTES, MAX_REORDER_DISTANCE, MAX_REORDER_PACKETS, ReceiveDisposition, ReceiveError,
     ReceiveOutcome, ReceiveSnapshot, ReceiveState, ReceivedPayload, SelectiveAckBits,
+};
+pub use send::{
+    AckDisposition, AckOutcome, INITIAL_RTO_MICROS, MAX_RTO_MICROS, MAX_SENT_BYTES,
+    MAX_SENT_PACKETS, MAX_TRANSMISSIONS, MIN_RTO_MICROS, RttSnapshot, SendError, SendSnapshot,
+    SendState, SentPacketSnapshot, TimeoutOutcome,
 };
 pub use sequence::{SequenceNumber, SequenceRelation, TimestampMicros};
