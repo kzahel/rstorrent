@@ -6,7 +6,7 @@ use std::fmt;
 use super::{
     AckOutcome, DecodedPacket, MAX_RECEIVE_BYTES, PacketType, ReceiveError, ReceiveOutcome,
     ReceiveSnapshot, ReceiveState, SelectiveAckBits, SendError, SendSnapshot, SendState,
-    SequenceNumber,
+    SentPacketSnapshot, SequenceNumber, TimeoutOutcome,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,6 +289,52 @@ impl ConnectionState {
     #[must_use]
     pub fn payload_for_retransmission(&self, sequence_number: SequenceNumber) -> Option<&[u8]> {
         self.send.payload_for_retransmission(sequence_number)
+    }
+
+    #[must_use]
+    pub fn outstanding_packets(&self) -> impl ExactSizeIterator<Item = SentPacketSnapshot> + '_ {
+        self.send.outstanding_packets()
+    }
+
+    pub fn retransmission_intent(
+        &self,
+        sequence_number: SequenceNumber,
+    ) -> Result<OutboundPacketIntent, ConnectionError> {
+        let packet = self
+            .send
+            .outstanding_packets()
+            .find(|packet| packet.sequence_number == sequence_number)
+            .ok_or(ConnectionError::Send(SendError::UnknownPacket(
+                sequence_number,
+            )))?;
+        match packet.packet_type {
+            PacketType::Syn => self.syn_intent().ok_or(ConnectionError::InvalidPhase {
+                phase: self.phase,
+                operation: "retransmit SYN",
+            }),
+            PacketType::Data | PacketType::Fin => self.outbound_sequence_intent(
+                packet.packet_type,
+                packet.sequence_number,
+                packet.payload_bytes,
+            ),
+            PacketType::State | PacketType::Reset => unreachable!("sent ledger packet type"),
+        }
+    }
+
+    pub fn mark_retransmitted(
+        &mut self,
+        sequence_number: SequenceNumber,
+        now_micros: u64,
+    ) -> Result<SentPacketSnapshot, ConnectionError> {
+        Ok(self.send.mark_retransmitted(sequence_number, now_micros)?)
+    }
+
+    pub fn on_timeout(
+        &mut self,
+        now_micros: u64,
+        apply_backoff: bool,
+    ) -> Result<Option<TimeoutOutcome>, ConnectionError> {
+        Ok(self.send.on_timeout_classified(now_micros, apply_backoff)?)
     }
 
     pub fn consume_received(&mut self, bytes: usize) -> Result<usize, ConnectionError> {

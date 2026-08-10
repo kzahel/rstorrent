@@ -67,6 +67,7 @@ pub struct AckOutcome {
     pub disposition: AckDisposition,
     pub acknowledged_packets: usize,
     pub acknowledged_bytes: usize,
+    pub acknowledged_sequences: Vec<SequenceNumber>,
     pub loss_signals: Vec<SequenceNumber>,
     pub rtt_sample_micros: Option<u64>,
     pub timeout_deadline_micros: Option<u64>,
@@ -483,6 +484,10 @@ impl SendState {
         if advance > 0 {
             self.cumulative_acknowledgement = acknowledgement_number;
         }
+        let acknowledged_sequences = acknowledged
+            .iter()
+            .map(|packet| packet.sequence_number)
+            .collect();
         let acknowledged_packets = acknowledged.len();
         let acknowledged_bytes = acknowledged.iter().map(|packet| packet.payload.len()).sum();
         let rtt_sample_micros = acknowledged
@@ -528,6 +533,7 @@ impl SendState {
             disposition,
             acknowledged_packets,
             acknowledged_bytes,
+            acknowledged_sequences,
             loss_signals,
             rtt_sample_micros,
             timeout_deadline_micros: self.timeout_deadline_micros,
@@ -564,6 +570,14 @@ impl SendState {
     }
 
     pub fn on_timeout(&mut self, now_micros: u64) -> Result<Option<TimeoutOutcome>, SendError> {
+        self.on_timeout_classified(now_micros, true)
+    }
+
+    pub fn on_timeout_classified(
+        &mut self,
+        now_micros: u64,
+        apply_backoff: bool,
+    ) -> Result<Option<TimeoutOutcome>, SendError> {
         if self.terminal {
             return Err(SendError::Terminal);
         }
@@ -574,7 +588,9 @@ impl SendState {
             return Ok(None);
         }
 
-        self.consecutive_timeouts = self.consecutive_timeouts.saturating_add(1);
+        if apply_backoff {
+            self.consecutive_timeouts = self.consecutive_timeouts.saturating_add(1);
+        }
         self.duplicate_ack_count = 0;
         let mut loss_signals = Vec::with_capacity(self.outstanding.len());
         for packet in &mut self.outstanding {
@@ -606,6 +622,7 @@ impl SendState {
             disposition,
             acknowledged_packets: 0,
             acknowledged_bytes: 0,
+            acknowledged_sequences: Vec::new(),
             loss_signals: Vec::new(),
             rtt_sample_micros: None,
             timeout_deadline_micros: self.timeout_deadline_micros,

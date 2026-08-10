@@ -43,8 +43,9 @@ pub use send::{
 };
 pub use sequence::{SequenceNumber, SequenceRelation, TimestampMicros};
 pub use transport::{
-    AckScheduler, AckSchedulerSnapshot, MAX_DELAYED_ACK_MICROS, MAX_RETRANSMISSION_WORK,
-    MAX_UNSENT_BYTES, RetransmissionQueue, RetransmissionSnapshot, TransmitQueue,
-    TransmitQueueError, TransmitQueueSnapshot, new_payload_bytes, retransmission_is_admissible,
-    utp_header_bytes,
+    AckScheduler, AckSchedulerSnapshot, DatagramSendResult, MAX_DELAYED_ACK_MICROS,
+    MAX_RETRANSMISSION_WORK, MAX_UNSENT_BYTES, RetransmissionLimit, RetransmissionQueue,
+    RetransmissionSnapshot, TransmitQueue, TransmitQueueError, TransmitQueueSnapshot,
+    TransportEmission, TransportError, TransportIncomingOutcome, TransportSnapshot, TransportState,
+    new_payload_bytes, retransmission_is_admissible, utp_header_bytes,
 };
