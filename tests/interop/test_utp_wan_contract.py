@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import ipaddress
 import json
 import subprocess
@@ -16,9 +17,11 @@ from utp_rstorrent_wan import (
     aborted_remote_summary,
     audit_local_mapping,
     bounded_diagnostics,
+    cohort_size,
     eligible_local_seed_endpoint,
     eligible_public_endpoint,
     redacted_rstorrent,
+    summarize_samples,
     validate_mapping_intent,
     validate_remote_leecher_complete,
     validate_remote_leecher_ready,
@@ -182,8 +185,78 @@ class UtpWanContractTests(unittest.TestCase):
                     "net.recv_payload_bytes": 2 * 1024 * 1024 + 731,
                 },
                 "diagnostics": [],
+                "transfer_seconds": 80.0,
             },
             "a" * 40,
+        )
+
+    def test_cohort_bound_and_summary_are_deterministic(self) -> None:
+        self.assertEqual(cohort_size("3"), 3)
+        with self.assertRaises(argparse.ArgumentTypeError):
+            cohort_size("4")
+        utp_names = (
+            "smoothed_rtt_min_micros",
+            "smoothed_rtt_max_micros",
+            "effective_rto_min_micros",
+            "effective_rto_max_micros",
+            "base_delay_min_micros",
+            "base_delay_max_micros",
+            "queue_delay_min_micros",
+            "queue_delay_max_micros",
+            "congestion_window_min_bytes",
+            "congestion_window_max_bytes",
+            "advertised_receive_window_min_bytes",
+            "advertised_receive_window_max_bytes",
+            "selected_mtu_min_bytes",
+            "selected_mtu_max_bytes",
+            "connection_datagram_queue_high_water",
+            "retransmission_queue_high_water",
+            "delivered_byte_high_water",
+            "unsent_byte_high_water",
+            "sent_byte_high_water",
+            "retransmission_datagrams_sent",
+            "retransmission_bytes_sent",
+            "loss_reduction_high_water",
+            "timeout_collapse_high_water",
+        )
+        oracle_names = (
+            "net.sent_payload_bytes",
+            "net.recv_payload_bytes",
+            "utp.utp_packets_in",
+            "utp.utp_packets_out",
+            "utp.utp_payload_pkts_in",
+            "utp.utp_payload_pkts_out",
+            "utp.utp_packet_loss",
+            "utp.utp_timeout",
+            "utp.utp_fast_retransmit",
+            "utp.utp_packet_resend",
+        )
+
+        def sample(seconds: int) -> dict[str, object]:
+            utp = {name: seconds for name in utp_names}
+            utp.update({"datagrams_sent": seconds, "datagram_bytes_sent": seconds})
+            return {
+                "seconds": seconds,
+                "active_transfer_seconds": seconds - 1,
+                "rstorrent": {
+                    "resources": {
+                        "live_utp": utp,
+                        "live_udp": {
+                            "utp_datagrams_classified": seconds,
+                            "utp_datagram_bytes_classified": seconds,
+                        },
+                    }
+                },
+                "remote": {
+                    "libtorrent_stats": {name: seconds for name in oracle_names}
+                },
+            }
+
+        summary = summarize_samples([sample(3), sample(1), sample(2)])
+        self.assertEqual(summary["samples"], 3)
+        self.assertEqual(
+            summary["metrics"]["case_seconds"],
+            {"min": 1, "median": 2, "max": 3},
         )
 
     def test_mapping_audit_requires_verified_absence(self) -> None:

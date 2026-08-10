@@ -143,6 +143,7 @@ def run(arguments: argparse.Namespace) -> None:
             }
         )
 
+        transfer_started = time.monotonic()
         handle.connect_peer((arguments.peer_address, arguments.peer_port))
         peer_high_water = 0
         while time.monotonic() < deadline:
@@ -191,6 +192,7 @@ def run(arguments: argparse.Namespace) -> None:
                 },
                 "libtorrent_stats": stats,
                 "diagnostics": diagnostics[-MAX_DIAGNOSTICS:],
+                "transfer_seconds": round(time.monotonic() - transfer_started, 6),
             }
         )
     finally:

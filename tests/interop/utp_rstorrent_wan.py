@@ -10,6 +10,7 @@ import json
 import queue
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -251,10 +252,20 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--host", required=True)
     parser.add_argument(
         "--direction",
-        choices=("remote-seed", "local-seed"),
-        default="remote-seed",
+        choices=("remote-seed", "local-seed", "both"),
     )
+    parser.add_argument("--cohort", type=cohort_size, default=1)
     return parser.parse_args()
+
+
+def cohort_size(value: str) -> int:
+    try:
+        count = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("cohort must be an integer") from error
+    if not 1 <= count <= 3:
+        raise argparse.ArgumentTypeError("cohort must be between 1 and 3")
+    return count
 
 
 def bounded_diagnostics(lines: list[str]) -> list[str]:
@@ -526,6 +537,11 @@ def validate_remote_leecher_complete(
         and stats.get("net.recv_payload_bytes", 0) >= PAYLOAD_SIZE
     ):
         raise WanFailure("remote leecher did not prove forced-uTP payload transfer")
+    transfer_seconds = event.get("transfer_seconds")
+    if not isinstance(transfer_seconds, (int, float)) or not (
+        0 < transfer_seconds <= 180
+    ):
+        raise WanFailure("remote leecher transfer duration is invalid")
 
 
 def validate_local_seed_bound(event: dict[str, Any]) -> int:
@@ -776,6 +792,7 @@ def run_remote_seed_direction(host: str, binary: Path) -> dict[str, Any]:
                     str(output),
                 ],
             )
+            transfer_started = time.monotonic()
             validate_wan_ready(role.read_event(deadline))
             complete = role.read_event(deadline)
             role.wait_success(deadline)
@@ -826,6 +843,9 @@ def run_remote_seed_direction(host: str, binary: Path) -> dict[str, Any]:
                     "diagnostics": bounded_diagnostics(remote_complete["diagnostics"]),
                 },
                 "rstorrent": redacted_rstorrent(complete),
+                "active_transfer_seconds": round(
+                    time.monotonic() - transfer_started, 6
+                ),
                 "seconds": round(time.monotonic() - started, 6),
             }
         except Exception as error:
@@ -969,6 +989,7 @@ def run_local_seed_direction(host: str, binary: Path) -> dict[str, Any]:
                     ),
                 },
                 "rstorrent": redacted_rstorrent(local_complete),
+                "active_transfer_seconds": remote_complete["transfer_seconds"],
                 "mapping": {
                     "protocol": "UDP",
                     "transport": "UPnP",
@@ -1043,9 +1064,149 @@ def run(host: str, direction: str = "remote-seed") -> dict[str, Any]:
     raise WanFailure("WAN direction is invalid")
 
 
+def sample_metrics(sample: dict[str, Any]) -> dict[str, int | float]:
+    rstorrent = sample["rstorrent"]
+    resources = rstorrent["resources"]
+    utp = resources["live_utp"]
+    udp = resources["live_udp"]
+    oracle = sample["remote"]["libtorrent_stats"]
+    metrics: dict[str, int | float] = {
+        "case_seconds": sample["seconds"],
+        "active_transfer_seconds": sample["active_transfer_seconds"],
+        "rstorrent_datagrams_sent": utp["datagrams_sent"],
+        "rstorrent_datagram_bytes_sent": utp["datagram_bytes_sent"],
+        "rstorrent_datagrams_received": udp["utp_datagrams_classified"],
+        "rstorrent_datagram_bytes_received": udp[
+            "utp_datagram_bytes_classified"
+        ],
+    }
+    for name in (
+        "smoothed_rtt_min_micros",
+        "smoothed_rtt_max_micros",
+        "effective_rto_min_micros",
+        "effective_rto_max_micros",
+        "base_delay_min_micros",
+        "base_delay_max_micros",
+        "queue_delay_min_micros",
+        "queue_delay_max_micros",
+        "congestion_window_min_bytes",
+        "congestion_window_max_bytes",
+        "advertised_receive_window_min_bytes",
+        "advertised_receive_window_max_bytes",
+        "selected_mtu_min_bytes",
+        "selected_mtu_max_bytes",
+        "connection_datagram_queue_high_water",
+        "retransmission_queue_high_water",
+        "delivered_byte_high_water",
+        "unsent_byte_high_water",
+        "sent_byte_high_water",
+        "retransmission_datagrams_sent",
+        "retransmission_bytes_sent",
+        "loss_reduction_high_water",
+        "timeout_collapse_high_water",
+    ):
+        metrics[f"rstorrent_{name}"] = utp[name]
+    for name in (
+        "net.sent_payload_bytes",
+        "net.recv_payload_bytes",
+        "utp.utp_packets_in",
+        "utp.utp_packets_out",
+        "utp.utp_payload_pkts_in",
+        "utp.utp_payload_pkts_out",
+        "utp.utp_packet_loss",
+        "utp.utp_timeout",
+        "utp.utp_fast_retransmit",
+        "utp.utp_packet_resend",
+    ):
+        metrics[f"libtorrent_{name.replace('.', '_')}"] = oracle[name]
+    return metrics
+
+
+def summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics = [sample_metrics(sample) for sample in samples]
+    names = metrics[0].keys()
+    summary = {}
+    for name in names:
+        values = [sample[name] for sample in metrics]
+        summary[name] = {
+            "min": min(values),
+            "median": statistics.median(values),
+            "max": max(values),
+        }
+    return {
+        "samples": len(samples),
+        "metrics": summary,
+    }
+
+
+def run_cohort(
+    host: str,
+    count: int,
+    direction: str | None = None,
+) -> dict[str, Any]:
+    if not SSH_ALIAS_PATTERN.fullmatch(host) or host.startswith("-"):
+        raise WanFailure("SSH host alias is malformed")
+    if not 1 <= count <= 3:
+        raise WanFailure("WAN cohort is outside its one-to-three sample bound")
+    if direction in (None, "both"):
+        directions = ("remote-seed", "local-seed")
+    elif direction in ("remote-seed", "local-seed"):
+        directions = (direction,)
+    else:
+        raise WanFailure("WAN cohort direction is invalid")
+    binary = build_role_binary()
+    started = time.monotonic()
+    samples: list[dict[str, Any]] = []
+    for _ in range(count):
+        for selected in directions:
+            if selected == "remote-seed":
+                samples.append(run_remote_seed_direction(host, binary))
+            else:
+                samples.append(run_local_seed_direction(host, binary))
+    grouped = {
+        selected: [
+            sample
+            for sample in samples
+            if (
+                selected == "remote-seed"
+                and sample["direction"].startswith("local-rstorrent-leecher")
+            )
+            or (
+                selected == "local-seed"
+                and sample["direction"].startswith("remote-libtorrent-leecher")
+            )
+        ]
+        for selected in directions
+    }
+    return {
+        "schema_version": 1,
+        "oracle": "rstorrent-pinned-libtorrent-mapped-utp-wan-cohort",
+        "libtorrent_version": "2.0.13.0",
+        "samples_per_direction": count,
+        "direction_order": list(directions),
+        "samples": samples,
+        "summaries": {
+            selected: summarize_samples(grouped[selected]) for selected in directions
+        },
+        "cleanup": {
+            "succeeded": all(sample["cleanup"]["succeeded"] for sample in samples),
+            "all_mappings_absent": True,
+            "all_processes_absent": True,
+            "all_run_directories_removed": True,
+        },
+        "seconds": round(time.monotonic() - started, 6),
+    }
+
+
 def main() -> int:
     arguments = parse_arguments()
-    print(json.dumps(run(arguments.host, arguments.direction), indent=2, sort_keys=True))
+    if arguments.cohort == 1 and arguments.direction not in (None, "both"):
+        result = run(arguments.host, arguments.direction)
+    elif arguments.cohort == 1 and arguments.direction is None:
+        result = run(arguments.host)
+    else:
+        result = run_cohort(arguments.host, arguments.cohort, arguments.direction)
+    print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
