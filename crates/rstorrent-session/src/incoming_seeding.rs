@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use rstorrent_engine::{
     FastResumeValidation, IncomingPeerError, IncomingPeerHandle, PlatformStorageFailureKind,
@@ -20,13 +21,17 @@ use crate::store::{ResumeRecord, StorageRootLocation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SeedReconcileOutcome {
-    Registered(FastResumeValidation),
+    Registered {
+        validation: FastResumeValidation,
+        elapsed_millis: u64,
+    },
     AlreadyRegistered,
     Unregistered,
     Ineligible(&'static str),
     NeedsFullCheck {
         reason: ResumeValidationRejectReason,
         validation: FastResumeValidation,
+        elapsed_millis: u64,
     },
     AwaitingStorage(String),
     NeedsRepair(String),
@@ -161,6 +166,7 @@ impl IncomingSeeding {
             .collect::<Result<Vec<_>, _>>()?;
         storage_file_pool.invalidate_storage(&resume.torrent_id);
         let root = root.expect("eligible seed has a configured root");
+        let validation_started = Instant::now();
         let validation = match root {
             StorageRootLocation::Path(root) => {
                 validate_published_fast_resume_with_path(
@@ -191,11 +197,17 @@ impl IncomingSeeding {
                 });
             }
         };
+        let elapsed_millis =
+            u64::try_from(validation_started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match decide_resume_admission(ResumeValidationIntent::FastEligible, validation.evidence) {
             ResumeAdmissionOutcome::Accepted => {}
             ResumeAdmissionOutcome::NeedsFullCheck(reason) => {
                 return Ok(SeedReconcileResult {
-                    outcome: SeedReconcileOutcome::NeedsFullCheck { reason, validation },
+                    outcome: SeedReconcileOutcome::NeedsFullCheck {
+                        reason,
+                        validation,
+                        elapsed_millis,
+                    },
                     token: None,
                 });
             }
@@ -269,7 +281,10 @@ impl IncomingSeeding {
             Err(error) => return Err(error.into()),
         };
         Ok(SeedReconcileResult {
-            outcome: SeedReconcileOutcome::Registered(validation),
+            outcome: SeedReconcileOutcome::Registered {
+                validation,
+                elapsed_millis,
+            },
             token: Some(token),
         })
     }

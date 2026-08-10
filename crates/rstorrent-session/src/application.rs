@@ -3520,11 +3520,15 @@ fn record_seed_reconcile(
     outcome: &SeedReconcileOutcome,
 ) -> Result<(), SubscriptionError> {
     match outcome {
-        SeedReconcileOutcome::Registered(validation) => {
+        SeedReconcileOutcome::Registered {
+            validation,
+            elapsed_millis,
+        } => {
             let committed_pieces = validation.committed_pieces.to_string();
             let relevant_files = validation.relevant_files.to_string();
             let artifact_observations = validation.artifact_observations.to_string();
             let part_header_bytes = validation.part_header_bytes.to_string();
+            let elapsed_millis = elapsed_millis.to_string();
             views.record_diagnostic(
                 DiagnosticSeverity::Info,
                 category::PEER_CONNECTION,
@@ -3536,6 +3540,7 @@ fn record_seed_reconcile(
                     ("relevant_files", &relevant_files),
                     ("artifact_observations", &artifact_observations),
                     ("part_header_bytes", &part_header_bytes),
+                    ("validation_elapsed_millis", &elapsed_millis),
                     ("payload_bytes_read", "0"),
                     ("hash_jobs", "0"),
                 ],
@@ -3557,10 +3562,15 @@ fn record_seed_reconcile(
             "Completed torrent could not be registered for incoming seeding",
             &[("detail", detail)],
         ),
-        SeedReconcileOutcome::NeedsFullCheck { reason, validation } => {
+        SeedReconcileOutcome::NeedsFullCheck {
+            reason,
+            validation,
+            elapsed_millis,
+        } => {
             let reason = format!("{reason:?}");
             let committed_pieces = validation.committed_pieces.to_string();
             let artifact_observations = validation.artifact_observations.to_string();
+            let elapsed_millis = elapsed_millis.to_string();
             views.record_diagnostic(
                 DiagnosticSeverity::Warning,
                 category::INTEGRITY_HASH,
@@ -3571,6 +3581,7 @@ fn record_seed_reconcile(
                     ("reason", &reason),
                     ("committed_pieces", &committed_pieces),
                     ("artifact_observations", &artifact_observations),
+                    ("validation_elapsed_millis", &elapsed_millis),
                 ],
             )
         }
@@ -3623,7 +3634,7 @@ fn apply_seed_reconcile_state(
                 .map_err(|error| error.to_string())?;
             false
         }
-        SeedReconcileOutcome::Registered(_)
+        SeedReconcileOutcome::Registered { .. }
         | SeedReconcileOutcome::AlreadyRegistered
         | SeedReconcileOutcome::Unregistered
         | SeedReconcileOutcome::Ineligible(_)
@@ -6167,6 +6178,7 @@ mod tests {
         .expect("open seed catalog store");
         let payload = b"abcdefg";
         let mut first_seed = None;
+        let mut seed_ids = Vec::with_capacity(500);
         for sequence in 0..500_u16 {
             let name = format!("seed-{sequence}.bin");
             let raw_info = single_file_info(&name, payload, 4);
@@ -6188,6 +6200,7 @@ mod tests {
             fs::write(root.join("payload").join(name), payload)
                 .expect("write complete seed payload");
             first_seed.get_or_insert(info_hash);
+            seed_ids.push(torrent_id);
         }
 
         let listeners = [
@@ -6237,12 +6250,17 @@ mod tests {
         }
         wait_for_seed_registrations(&service, 500).await;
         assert_eq!(service.active_download_ids().len(), 3);
-        assert_eq!(
-            service
-                .session_download_resource_snapshot()
-                .registered_generations,
-            3
-        );
+        let resources = service.session_download_resource_snapshot();
+        assert_eq!(resources.registered_generations, 3);
+        assert_eq!(resources.active_storage_hashes, 0);
+        {
+            let store = service.store_mut().expect("store after seed admission");
+            for torrent_id in &seed_ids {
+                let resume = store.load_resume(torrent_id).expect("complete seed resume");
+                assert_eq!(resume.verification.requested(), 0);
+                assert_eq!(resume.verification.completed(), 0);
+            }
+        }
 
         let mut incoming_peers = Vec::new();
         for generation in 1_u8..=10 {
@@ -6294,7 +6312,9 @@ mod tests {
         );
         assert!(combined.peer_budget.total <= 200);
         assert!(combined.peer_budget.total_high_water <= 200);
-        assert!(service.storage_file_pool_snapshot().owned_high_water <= 40);
+        let storage_resources = service.storage_file_pool_snapshot();
+        assert!(storage_resources.owned_high_water <= 40);
+        assert_eq!(storage_resources.platform_pending, 0);
 
         service.shutdown().await.expect("shutdown combined session");
         let terminal = service.session_download_resource_snapshot();
