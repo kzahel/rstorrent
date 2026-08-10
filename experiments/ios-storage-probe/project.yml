@@ -71,6 +71,21 @@ targets:
         TEST_TARGET_NAME: RSTorrentIOSStorageProbe
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: VD7BYQ6ABM
+  RSTorrentIOSStorageProbeTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests
+      - path: App/RootEligibility.swift
+      - path: App/ProbeRootStore.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kgraehl.rstorrent.storage-probe.tests
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: VD7BYQ6ABM
 schemes:
   RSTorrentIOSStorageProbe:
     build:
@@ -79,4 +94,5 @@ schemes:
         RSTorrentIOSStorageProbeUITests: [test]
     test:
       targets:
+        - RSTorrentIOSStorageProbeTests
         - RSTorrentIOSStorageProbeUITests
