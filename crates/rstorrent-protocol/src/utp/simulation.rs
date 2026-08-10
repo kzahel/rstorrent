@@ -668,6 +668,7 @@ mod tests {
         deliveries: Vec<(u64, usize)>,
         queue_delay_samples_micros: Vec<u32>,
         retransmissions: u64,
+        maximum_transmissions_per_sequence: u8,
         mtu_probes: u64,
         sender: crate::utp::TransportSnapshot,
         receiver: crate::utp::TransportSnapshot,
@@ -800,6 +801,8 @@ mod tests {
         let mut deliveries = Vec::new();
         let mut queue_delay_samples_micros = Vec::new();
         let mut retransmissions = 0_u64;
+        let mut transmissions_by_sequence = BTreeMap::<SequenceNumber, u8>::new();
+        let mut maximum_transmissions_per_sequence = 0;
         let mut mtu_probes = 0_u64;
         let mut receive_packet_high_water = 0;
         let mut receive_byte_high_water = 0;
@@ -885,6 +888,14 @@ mod tests {
                 let bytes = emission.encode().expect("encode sender datagram");
                 retransmissions += u64::from(emission.retransmission);
                 mtu_probes += u64::from(emission.mtu_probe);
+                if !emission.payload.is_empty() {
+                    let transmissions = transmissions_by_sequence
+                        .entry(emission.intent.sequence_number)
+                        .or_default();
+                    *transmissions = transmissions.saturating_add(1);
+                    maximum_transmissions_per_sequence =
+                        maximum_transmissions_per_sequence.max(*transmissions);
+                }
                 sender
                     .on_send_result(
                         emission.intent.sequence_number,
@@ -958,6 +969,7 @@ mod tests {
                     deliveries,
                     queue_delay_samples_micros,
                     retransmissions,
+                    maximum_transmissions_per_sequence,
                     mtu_probes,
                     sender: sender_snapshot,
                     receiver: receiver_snapshot,
@@ -1162,5 +1174,76 @@ mod tests {
         assert!(report.mtu_probes > 0);
         assert!(report.sender.mtu.search_complete);
         assert!(report.queue_delay_percentile(95) <= 150_000);
+    }
+
+    #[test]
+    fn fixed_jitter_duplication_and_reordering_preserve_the_stream() {
+        let mut scenario = default_utp_scenario();
+        scenario.link.jitter_pattern_micros = vec![-3_000, 2_000, 0, 1_000, -1_000, 0];
+        for ordinal in (137..20_000).step_by(137) {
+            scenario.script.reorder_extra_micros.insert(ordinal, 12_000);
+        }
+        for ordinal in (311..20_000).step_by(311) {
+            scenario.script.duplicate_ordinals.insert(ordinal);
+        }
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_bytes, TRANSFER_BYTES);
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.link.reordered > 0);
+        assert!(report.link.duplicates > 0);
+        assert_eq!(report.link.scripted_drops, 0);
+        assert_eq!(report.link.queue_drops, 0);
+        assert!(report.receive_packet_high_water <= MAX_REORDER_PACKETS);
+        assert!(report.receive_byte_high_water <= MAX_RECEIVE_BYTES);
+        assert_ne!(
+            report.sender.connection.phase,
+            crate::utp::ConnectionPhase::Reset
+        );
+        assert_eq!(report.sender.connection.send.outstanding_bytes, 0);
+        assert_eq!(
+            report
+                .receiver
+                .connection
+                .receive
+                .unwrap()
+                .total_buffered_bytes,
+            0
+        );
+    }
+
+    #[test]
+    fn fixed_one_percent_noncongestive_loss_recovers_within_attempt_limit() {
+        let mut scenario = default_utp_scenario();
+        for ordinal in (99..20_000).step_by(100) {
+            scenario.script.drop_ordinals.insert(ordinal);
+        }
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_bytes, TRANSFER_BYTES);
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.link.scripted_drops > 0);
+        assert_eq!(report.link.queue_drops, 0);
+        assert!(report.retransmissions > 0);
+        assert!(
+            report.maximum_transmissions_per_sequence <= crate::utp::MAX_TRANSMISSIONS,
+            "report={report:?}"
+        );
+        assert_eq!(report.sender.transmit.unsent_bytes, 0);
+        assert_eq!(report.sender.connection.send.outstanding_bytes, 0);
+        assert_eq!(report.sender.in_flight_bytes, 0);
+        assert_eq!(report.sender.retransmissions.pending_packets, 0);
+        assert_eq!(
+            report
+                .receiver
+                .connection
+                .receive
+                .unwrap()
+                .total_buffered_bytes,
+            0
+        );
+        assert_eq!(report.link.pending_events, 0);
+        assert_eq!(report.link.pending_event_bytes, 0);
+        assert_eq!(report.link.queue_bytes, 0);
     }
 }
