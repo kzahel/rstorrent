@@ -531,6 +531,10 @@ impl ApplicationService {
         service.restore_removals().await?;
         service.restore_running().await?;
         service.reconcile_incoming_catalog().await?;
+        // Completed-seed structural validation may discover one torrent that
+        // needs the existing checker. Admit that durable generation before
+        // returning the restored session.
+        service.reconcile_admission().await?;
         service.reconcile_discovery_catalog().await?;
         service.refresh_views()?;
         let views = service.views.clone();
@@ -2917,6 +2921,17 @@ impl ApplicationService {
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         if let Some(outcome) = outcome {
             record_seed_reconcile(&self.views, torrent_id, &outcome)?;
+            let start_checker = apply_seed_reconcile_state(
+                &self.store,
+                &self.storage_roots,
+                &self.views,
+                torrent_id,
+                &outcome,
+            )
+            .map_err(ApplicationError::Configuration)?;
+            if start_checker {
+                self.admission_wake.notify_one();
+            }
         }
         Ok(())
     }
@@ -3400,6 +3415,7 @@ async fn reconcile_completed_seed(
         .map_err(|error| error.to_string())?;
     if let Some(outcome) = outcome {
         record_seed_reconcile(views, torrent_id, &outcome).map_err(|error| error.to_string())?;
+        apply_seed_reconcile_state(store, storage_roots, views, torrent_id, &outcome)?;
     }
     Ok(())
 }
@@ -3504,14 +3520,27 @@ fn record_seed_reconcile(
     outcome: &SeedReconcileOutcome,
 ) -> Result<(), SubscriptionError> {
     match outcome {
-        SeedReconcileOutcome::Registered => views.record_diagnostic(
-            DiagnosticSeverity::Info,
-            category::PEER_CONNECTION,
-            "incoming_seed_registered",
-            Some(torrent_id),
-            "Completed torrent registered for incoming seeding",
-            &[],
-        ),
+        SeedReconcileOutcome::Registered(validation) => {
+            let committed_pieces = validation.committed_pieces.to_string();
+            let relevant_files = validation.relevant_files.to_string();
+            let artifact_observations = validation.artifact_observations.to_string();
+            let part_header_bytes = validation.part_header_bytes.to_string();
+            views.record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::PEER_CONNECTION,
+                "incoming_seed_fast_resume_accepted",
+                Some(torrent_id),
+                "Completed torrent structurally validated and registered for incoming seeding",
+                &[
+                    ("committed_pieces", &committed_pieces),
+                    ("relevant_files", &relevant_files),
+                    ("artifact_observations", &artifact_observations),
+                    ("part_header_bytes", &part_header_bytes),
+                    ("payload_bytes_read", "0"),
+                    ("hash_jobs", "0"),
+                ],
+            )
+        }
         SeedReconcileOutcome::Unregistered => views.record_diagnostic(
             DiagnosticSeverity::Info,
             category::PEER_CONNECTION,
@@ -3528,8 +3557,85 @@ fn record_seed_reconcile(
             "Completed torrent could not be registered for incoming seeding",
             &[("detail", detail)],
         ),
+        SeedReconcileOutcome::NeedsFullCheck { reason, validation } => {
+            let reason = format!("{reason:?}");
+            let committed_pieces = validation.committed_pieces.to_string();
+            let artifact_observations = validation.artifact_observations.to_string();
+            views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::INTEGRITY_HASH,
+                "incoming_seed_fast_resume_rejected",
+                Some(torrent_id),
+                "Completed torrent requires a torrent-local full check before seeding",
+                &[
+                    ("reason", &reason),
+                    ("committed_pieces", &committed_pieces),
+                    ("artifact_observations", &artifact_observations),
+                ],
+            )
+        }
+        SeedReconcileOutcome::AwaitingStorage(detail) => views.record_diagnostic(
+            DiagnosticSeverity::Warning,
+            category::PLATFORM_ADAPTER,
+            "incoming_seed_awaiting_storage",
+            Some(torrent_id),
+            "Completed torrent storage is currently unavailable for seeding",
+            &[("detail", detail)],
+        ),
+        SeedReconcileOutcome::NeedsRepair(detail) => views.record_diagnostic(
+            DiagnosticSeverity::Error,
+            category::STORAGE_IO,
+            "incoming_seed_storage_needs_repair",
+            Some(torrent_id),
+            "Completed torrent storage is malformed or ambiguously owned",
+            &[("detail", detail)],
+        ),
         SeedReconcileOutcome::AlreadyRegistered | SeedReconcileOutcome::Ineligible(_) => Ok(()),
     }
+}
+
+fn apply_seed_reconcile_state(
+    store: &Arc<Mutex<SessionStore>>,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+    views: &ViewHub,
+    torrent_id: &str,
+    outcome: &SeedReconcileOutcome,
+) -> Result<bool, String> {
+    let mut store = store
+        .lock()
+        .map_err(|_| "session store lock is poisoned".to_owned())?;
+    let start_checker = match outcome {
+        SeedReconcileOutcome::NeedsFullCheck { .. } => {
+            store
+                .begin_recheck(torrent_id)
+                .map_err(|error| error.to_string())?;
+            true
+        }
+        SeedReconcileOutcome::AwaitingStorage(detail) => {
+            store
+                .mark_awaiting_storage(torrent_id, Some(detail))
+                .map_err(|error| error.to_string())?;
+            false
+        }
+        SeedReconcileOutcome::NeedsRepair(detail) => {
+            store
+                .mark_needs_repair(torrent_id, detail)
+                .map_err(|error| error.to_string())?;
+            false
+        }
+        SeedReconcileOutcome::Registered(_)
+        | SeedReconcileOutcome::AlreadyRegistered
+        | SeedReconcileOutcome::Unregistered
+        | SeedReconcileOutcome::Ineligible(_)
+        | SeedReconcileOutcome::Unavailable(_) => return Ok(false),
+    };
+    let (snapshot, durable) =
+        durable_view_state(&store, storage_roots).map_err(|error| error.to_string())?;
+    drop(store);
+    views
+        .replace_durable(&snapshot, &durable)
+        .map_err(|error| error.to_string())?;
+    Ok(start_checker)
 }
 
 fn handle_task_outcome(
@@ -8542,6 +8648,14 @@ mod tests {
                 .pieces(),
             &[true, true]
         );
+        let startup_verification = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("startup verification")
+            .verification;
+        assert_eq!(startup_verification.requested(), 0);
+        assert_eq!(startup_verification.completed(), 0);
 
         let force = RequestEnvelope {
             version: CONTROL_VERSION,
@@ -8578,6 +8692,76 @@ mod tests {
             "replaying one request must not start another generation"
         );
         assert_eq!(fs::read(&output).expect("read rechecked output"), payload);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn complete_startup_structural_mismatch_runs_only_its_full_checker() {
+        let root = test_root("complete-fast-resume-mismatch");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 17 + offset / 7) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("mismatch.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-complete-mismatch", &torrent_id))
+            .expect("add complete torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record complete metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1])
+            .expect("record old complete have");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record published ownership");
+        store.mark_complete(&torrent_id).expect("mark complete");
+        drop(store);
+        let output = root.join("payload/mismatch.bin");
+        fs::create_dir_all(output.parent().expect("payload parent")).expect("create payload root");
+        fs::write(&output, &payload[..payload.len() - 1]).expect("write short publication");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open mismatched application");
+        for sequence in 0..200 {
+            let _ = service
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: format!("reap-mismatch-{sequence}"),
+                    expected_revision: None,
+                    command: Command::Snapshot,
+                })
+                .await
+                .expect("reap mismatch checker");
+            let resume = service
+                .store_mut()
+                .expect("store")
+                .load_resume(&torrent_id)
+                .expect("mismatch resume");
+            if resume.verification.completed() == 1 {
+                assert_eq!(resume.verification.requested(), 1);
+                assert_eq!(resume.have.expect("checked have").pieces(), &[false, false]);
+                break;
+            }
+            tokio::task::yield_now().await;
+            if sequence == 199 {
+                panic!("mismatched complete torrent did not finish its checker");
+            }
+        }
 
         service.shutdown().await.expect("shutdown");
         drop(service);

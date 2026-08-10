@@ -6,8 +6,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rstorrent_engine::{
-    IncomingPeerError, IncomingPeerHandle, PlatformStorageSpec, PublicationShape, SeedContent,
-    SeedRegistration, SeedRegistrationToken, StorageFilePool, TorrentPeerHandle,
+    FastResumeValidation, IncomingPeerError, IncomingPeerHandle, PlatformStorageFailureKind,
+    PlatformStorageSpec, PublicationShape, ResumeAdmissionOutcome, ResumeValidationIntent,
+    ResumeValidationRejectReason, SeedContent, SeedContentError, SeedRegistration,
+    SeedRegistrationToken, SelectiveStorageError, StorageFilePool, TorrentPeerHandle,
+    decide_resume_admission, validate_published_fast_resume_with_path,
+    validate_published_fast_resume_with_platform,
 };
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo};
 
@@ -16,10 +20,16 @@ use crate::store::{ResumeRecord, StorageRootLocation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SeedReconcileOutcome {
-    Registered,
+    Registered(FastResumeValidation),
     AlreadyRegistered,
     Unregistered,
     Ineligible(&'static str),
+    NeedsFullCheck {
+        reason: ResumeValidationRejectReason,
+        validation: FastResumeValidation,
+    },
+    AwaitingStorage(String),
+    NeedsRepair(String),
     Unavailable(String),
 }
 
@@ -150,7 +160,63 @@ impl IncomingSeeding {
             })
             .collect::<Result<Vec<_>, _>>()?;
         storage_file_pool.invalidate_storage(&resume.torrent_id);
-        let opened = match root.expect("eligible seed has a configured root") {
+        let root = root.expect("eligible seed has a configured root");
+        let validation = match root {
+            StorageRootLocation::Path(root) => {
+                validate_published_fast_resume_with_path(
+                    root,
+                    &metainfo,
+                    have.pieces(),
+                    &skipped,
+                    storage_file_pool.clone(),
+                )
+                .await
+            }
+            StorageRootLocation::PlatformCapability => {
+                validate_published_fast_resume_with_platform(
+                    platform_spec(resume, &metainfo, storage_file_pool),
+                    &metainfo,
+                    have.pieces(),
+                    &skipped,
+                )
+                .await
+            }
+        };
+        let validation = match validation {
+            Ok(validation) => validation,
+            Err(error) => {
+                return Ok(SeedReconcileResult {
+                    outcome: classify_validation_error(error),
+                    token: None,
+                });
+            }
+        };
+        match decide_resume_admission(ResumeValidationIntent::FastEligible, validation.evidence) {
+            ResumeAdmissionOutcome::Accepted => {}
+            ResumeAdmissionOutcome::NeedsFullCheck(reason) => {
+                return Ok(SeedReconcileResult {
+                    outcome: SeedReconcileOutcome::NeedsFullCheck { reason, validation },
+                    token: None,
+                });
+            }
+            ResumeAdmissionOutcome::AwaitingStorage => {
+                return Ok(SeedReconcileResult {
+                    outcome: SeedReconcileOutcome::AwaitingStorage(
+                        "published storage is unavailable".to_owned(),
+                    ),
+                    token: None,
+                });
+            }
+            ResumeAdmissionOutcome::NeedsRepair => {
+                return Ok(SeedReconcileResult {
+                    outcome: SeedReconcileOutcome::NeedsRepair(
+                        "published storage structure needs repair".to_owned(),
+                    ),
+                    token: None,
+                });
+            }
+        }
+        let opened = match root {
             StorageRootLocation::Path(root) => {
                 SeedContent::open_published_with_pool(
                     root,
@@ -164,16 +230,7 @@ impl IncomingSeeding {
             }
             StorageRootLocation::PlatformCapability => {
                 SeedContent::open_published_with_platform(
-                    &PlatformStorageSpec {
-                        pool: storage_file_pool.clone(),
-                        root_id: resume.storage_root.clone(),
-                        storage_id: resume.torrent_id.clone(),
-                        publication_name: metainfo.name.clone(),
-                        publication_shape: PublicationShape::from_metainfo(&metainfo),
-                        namespace_generation: 1,
-                        managed: true,
-                        published: true,
-                    },
+                    &platform_spec(resume, &metainfo, storage_file_pool),
                     &metainfo,
                     have.pieces(),
                     &skipped,
@@ -185,7 +242,7 @@ impl IncomingSeeding {
             Ok(content) => content,
             Err(error) => {
                 return Ok(SeedReconcileResult {
-                    outcome: SeedReconcileOutcome::Unavailable(error.to_string()),
+                    outcome: classify_seed_open_error(error),
                     token: None,
                 });
             }
@@ -212,7 +269,7 @@ impl IncomingSeeding {
             Err(error) => return Err(error.into()),
         };
         Ok(SeedReconcileResult {
-            outcome: SeedReconcileOutcome::Registered,
+            outcome: SeedReconcileOutcome::Registered(validation),
             token: Some(token),
         })
     }
@@ -226,6 +283,64 @@ impl IncomingSeeding {
 
     pub(crate) fn stop(&self) {
         self.enabled.store(false, Ordering::Release);
+    }
+}
+
+fn platform_spec(
+    resume: &ResumeRecord,
+    metainfo: &Metainfo,
+    storage_file_pool: &StorageFilePool,
+) -> PlatformStorageSpec {
+    PlatformStorageSpec {
+        pool: storage_file_pool.clone(),
+        root_id: resume.storage_root.clone(),
+        storage_id: resume.torrent_id.clone(),
+        publication_name: metainfo.name.clone(),
+        publication_shape: PublicationShape::from_metainfo(metainfo),
+        namespace_generation: 1,
+        managed: true,
+        published: true,
+    }
+}
+
+fn storage_failure_is_awaiting(kind: PlatformStorageFailureKind) -> bool {
+    matches!(
+        kind,
+        PlatformStorageFailureKind::GrantUnavailable
+            | PlatformStorageFailureKind::PermissionDenied
+            | PlatformStorageFailureKind::ProviderRefused
+            | PlatformStorageFailureKind::NonSeekable
+            | PlatformStorageFailureKind::Cancelled
+            | PlatformStorageFailureKind::DeadlineExceeded
+    )
+}
+
+fn classify_validation_error(error: SelectiveStorageError) -> SeedReconcileOutcome {
+    let detail = error.to_string();
+    if error
+        .platform_failure_kind()
+        .is_some_and(storage_failure_is_awaiting)
+        || matches!(error, SelectiveStorageError::Io { .. })
+    {
+        SeedReconcileOutcome::AwaitingStorage(detail)
+    } else {
+        SeedReconcileOutcome::NeedsRepair(detail)
+    }
+}
+
+fn classify_seed_open_error(error: SeedContentError) -> SeedReconcileOutcome {
+    let awaiting = matches!(
+        &error,
+        SeedContentError::Storage { source, .. }
+            if source
+                .platform_failure_kind()
+                .is_some_and(storage_failure_is_awaiting)
+    ) || matches!(error, SeedContentError::Io { .. });
+    let detail = error.to_string();
+    if awaiting {
+        SeedReconcileOutcome::AwaitingStorage(detail)
+    } else {
+        SeedReconcileOutcome::NeedsRepair(detail)
     }
 }
 

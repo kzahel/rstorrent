@@ -3773,6 +3773,48 @@ pub async fn verify_prepared_platform_files(
     Ok(())
 }
 
+pub async fn validate_published_fast_resume_with_path(
+    storage_root: &Path,
+    metainfo: &Metainfo,
+    verified: &[bool],
+    skipped: &[usize],
+    pool: StorageFilePool,
+) -> Result<FastResumeValidation, SelectiveStorageError> {
+    let layout = TorrentLayout::from_metainfo(metainfo);
+    let selection = FileSelection::new(&layout, skipped)?;
+    let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)?;
+    let (mut storage, resumed) = SelectiveStorage::resume_with_paths_and_pool_expected(
+        paths,
+        metainfo,
+        layout,
+        selection,
+        verified.to_vec(),
+        pool,
+        Some(ResumeArtifactState::Published),
+    )
+    .await?;
+    storage.validate_fast_resume(resumed).await
+}
+
+pub async fn validate_published_fast_resume_with_platform(
+    spec: PlatformStorageSpec,
+    metainfo: &Metainfo,
+    verified: &[bool],
+    skipped: &[usize],
+) -> Result<FastResumeValidation, SelectiveStorageError> {
+    let layout = TorrentLayout::from_metainfo(metainfo);
+    let selection = FileSelection::new(&layout, skipped)?;
+    let (mut storage, resumed) = SelectiveStorage::create_with_platform(
+        spec,
+        metainfo,
+        layout,
+        selection,
+        verified.to_vec(),
+    )
+    .await?;
+    storage.validate_fast_resume(resumed).await
+}
+
 fn collect_descriptors(
     file_count: usize,
     role: &'static str,
@@ -4748,6 +4790,40 @@ mod tests {
                     });
                 if matches!(
                     request.operation,
+                    crate::storage_file_pool::PlatformStorageOperation::Observe
+                ) {
+                    let observation = match std::fs::symlink_metadata(&path) {
+                        Ok(metadata) => crate::StorageObservation::present(
+                            if metadata.is_file() {
+                                crate::StorageObjectKind::File
+                            } else if metadata.is_dir() {
+                                crate::StorageObjectKind::Directory
+                            } else {
+                                crate::StorageObjectKind::Other
+                            },
+                            metadata.is_file().then_some(metadata.len()),
+                            None,
+                        )
+                        .expect("provider observation"),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                            crate::StorageObservation::missing()
+                        }
+                        Err(error) => {
+                            broker.complete_error(
+                                request.request_id,
+                                crate::PlatformStorageFailure::new(
+                                    crate::PlatformStorageFailureKind::ProviderRefused,
+                                    error.to_string(),
+                                ),
+                            );
+                            continue;
+                        }
+                    };
+                    broker.complete_observation(request.request_id, observation);
+                    continue;
+                }
+                if matches!(
+                    request.operation,
                     crate::storage_file_pool::PlatformStorageOperation::Delete
                 ) {
                     let result = match std::fs::remove_file(&path) {
@@ -4891,6 +4967,48 @@ mod tests {
         verify_prepared_platform_files(&published, &metainfo, &prepared)
             .await
             .expect("verify dynamic publication");
+        let mut committed = vec![false; layout.piece_count()];
+        for piece_index in [0_usize, 2, 3, 4] {
+            committed[piece_index] = true;
+        }
+        let validation = super::validate_published_fast_resume_with_platform(
+            published.clone(),
+            &metainfo,
+            &committed,
+            &[1, 2],
+        )
+        .await
+        .expect("validate platform fast resume");
+        assert_eq!(validation.evidence, ResumeStorageEvidence::Matches);
+        assert_eq!(validation.payload_bytes_read, 0);
+        assert_eq!(validation.hash_jobs, 0);
+        let selected_path = root.join(&metainfo.name).join("wanted/start.bin");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&selected_path)
+            .expect("open platform selected file")
+            .set_len(20_001)
+            .expect("oversize platform selected file");
+        let oversized = super::validate_published_fast_resume_with_platform(
+            published.clone(),
+            &metainfo,
+            &committed,
+            &[1, 2],
+        )
+        .await
+        .expect("validate oversized platform resume");
+        assert_eq!(
+            oversized.evidence,
+            ResumeStorageEvidence::ContentMismatch(
+                ResumeValidationRejectReason::UnexpectedPayloadLength,
+            )
+        );
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(selected_path)
+            .expect("reopen platform selected file")
+            .set_len(20_000)
+            .expect("restore platform selected length");
         let resumed_selection = storage.selection.clone();
         drop(storage);
         let (mut resumed, resumed_state) = SelectiveStorage::create_with_platform(
