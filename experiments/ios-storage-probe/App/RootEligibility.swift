@@ -1,5 +1,12 @@
 import Foundation
 
+enum ProbeRootPolicy {
+    // Physical automation cannot currently exercise a distinct On My iPhone
+    // directory and an iCloud negative control. Keep the picker available only
+    // as a non-mutating classifier until both controls graduate this gate.
+    static let selectedRootRegistrationEnabled = false
+}
+
 enum ProbeRootProvenance: String, Codable, Equatable {
     case appOwned = "app_owned"
     case picker

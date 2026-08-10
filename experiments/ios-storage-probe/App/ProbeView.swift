@@ -15,13 +15,15 @@ struct ProbeView: View {
                     status("Root resources", value: model.resources, id: "resources-status")
                     status("Selected root", value: model.selected, id: "selected-status")
                     status("Eligibility", value: model.eligibility, id: "eligibility-status")
-                    Button("Choose On-Device Test Folder") { model.chooseFolder() }
+                    Button("Classify System-Picked Folder") { model.chooseFolder() }
                         .accessibilityIdentifier("choose-folder")
-                    Button("Retry Selected Root") { model.retrySelected() }
-                        .accessibilityIdentifier("retry-selected")
+                    if ProbeRootPolicy.selectedRootRegistrationEnabled {
+                        Button("Retry Selected Root") { model.retrySelected() }
+                            .accessibilityIdentifier("retry-selected")
+                    }
                     Button("Open App Settings") { model.openAppSettings() }
                         .accessibilityIdentifier("open-app-settings")
-                    Text("iCloud and other providers are classified only and are never written.")
+                    Text("Only app-owned Documents is enabled. Picker results are classified without bookmarks or writes.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -38,10 +40,12 @@ struct ProbeView: View {
                         model.prepareAppOwnedInterruption()
                     }
                     .accessibilityIdentifier("prepare-app-interruption")
-                    Button("Prepare Selected Force-Close") {
-                        model.prepareSelectedInterruption()
+                    if ProbeRootPolicy.selectedRootRegistrationEnabled {
+                        Button("Prepare Selected Force-Close") {
+                            model.prepareSelectedInterruption()
+                        }
+                        .accessibilityIdentifier("prepare-selected-interruption")
                     }
-                    .accessibilityIdentifier("prepare-selected-interruption")
                 }
             }
             .navigationTitle("RSTorrent Probe")

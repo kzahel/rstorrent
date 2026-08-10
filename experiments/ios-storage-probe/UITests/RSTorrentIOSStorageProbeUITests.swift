@@ -40,7 +40,7 @@ final class RSTorrentIOSStorageProbeUITests: XCTestCase {
         )
     }
 
-    func testSelectsLocalFolderAndRestoresBookmark() throws {
+    func testClassifiesOverlappingPickerRootWithoutPersistence() throws {
         let app = XCUIApplication()
         app.launch()
         app.buttons["choose-folder"].tap()
@@ -59,10 +59,22 @@ final class RSTorrentIOSStorageProbeUITests: XCTestCase {
         let open = app.buttons["Open"]
         if open.waitForExistence(timeout: 5) { open.tap() }
 
-        XCTAssertTrue(waitForPrefix("pass", in: app.staticTexts["selected-status"], timeout: 30))
+        XCTAssertTrue(
+            waitForPrefix(
+                "classification-only",
+                in: app.staticTexts["selected-status"],
+                timeout: 30
+            )
+        )
         app.terminate()
         app.launch()
-        XCTAssertTrue(waitForSubstring("restored=true", in: app.staticTexts["selected-status"], timeout: 30))
+        XCTAssertTrue(
+            waitForPrefix(
+                "disabled app-owned-only",
+                in: app.staticTexts["selected-status"],
+                timeout: 30
+            )
+        )
     }
 
     private func copyControlledEndpointEnvironment(to app: XCUIApplication) {

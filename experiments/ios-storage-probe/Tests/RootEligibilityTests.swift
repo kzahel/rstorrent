@@ -1,6 +1,10 @@
 import XCTest
 
 final class RootEligibilityTests: XCTestCase {
+    func testSelectedRootRegistrationRemainsDisabledWithoutPhysicalControls() {
+        XCTAssertFalse(ProbeRootPolicy.selectedRootRegistrationEnabled)
+    }
+
     func testAppOwnedRequiresDirectoryAndRejectsSymbolicLink() {
         XCTAssertEqual(
             decide(.appOwned, directory: true, symbolicLink: false),

@@ -238,6 +238,21 @@ enum ProbeRootAccess {
         }
     }
 
+    static func classifySelected(_ url: URL) throws -> ProbeObservedRoot {
+        guard url.isFileURL else {
+            throw ProbeRootAccessError.nonFileURL
+        }
+        return try ProbeResourceLedger.shared.withResource(.rootOperation) {
+            try withSecurityScope(url) {
+                try observeResourceValues(
+                    at: url,
+                    provenance: .picker,
+                    queryFileProvider: true
+                )
+            }
+        }
+    }
+
     static func restoreSelected(bookmarkData: Data) throws -> ProbeSelectedRootResult {
         var stale = false
         let url = try URL(

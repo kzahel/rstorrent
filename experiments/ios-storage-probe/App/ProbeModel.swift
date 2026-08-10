@@ -185,19 +185,25 @@ final class ProbeModel: ObservableObject {
             var status = "fail operation did not complete"
             var eligibilityStatus = "failed-before-decision"
             do {
-                let result = try ProbeRootAccess.inspectSelected(url)
-                eligibilityStatus = Self.formatEligibility(result.observed)
-                if result.observed.decision.classification == .selectedOnDevice,
-                   let bookmark = result.bookmarkData,
-                   let rust = result.rustResult
-                {
-                    let record = try rootStore.installSelected(
-                        bookmarkData: bookmark,
-                        displayLabel: result.observed.displayLabel
-                    )
-                    status = "pass restored=false stale=false generation=\(record.generation) \(rust.json)"
+                if ProbeRootPolicy.selectedRootRegistrationEnabled {
+                    let result = try ProbeRootAccess.inspectSelected(url)
+                    eligibilityStatus = Self.formatEligibility(result.observed)
+                    if result.observed.decision.classification == .selectedOnDevice,
+                       let bookmark = result.bookmarkData,
+                       let rust = result.rustResult
+                    {
+                        let record = try rootStore.installSelected(
+                            bookmarkData: bookmark,
+                            displayLabel: result.observed.displayLabel
+                        )
+                        status = "pass restored=false stale=false generation=\(record.generation) \(rust.json)"
+                    } else {
+                        status = "rejected \(eligibilityStatus) bookmark=false rust=false"
+                    }
                 } else {
-                    status = "rejected \(eligibilityStatus) bookmark=false rust=false"
+                    let observed = try ProbeRootAccess.classifySelected(url)
+                    eligibilityStatus = Self.formatEligibility(observed)
+                    status = "classification-only policy=app-owned-only \(eligibilityStatus) bookmark=false root=false rust=false"
                 }
             } catch {
                 status = "fail \(Self.boundedError(error))"
@@ -221,6 +227,11 @@ final class ProbeModel: ObservableObject {
     }
 
     func retrySelected() {
+        guard ProbeRootPolicy.selectedRootRegistrationEnabled else {
+            selected = "disabled app-owned-only fallback=false"
+            ProbeDefaults.set("selected", selected)
+            return
+        }
         restoreSelectedBookmark()
     }
 
@@ -265,6 +276,10 @@ final class ProbeModel: ObservableObject {
     }
 
     func prepareSelectedInterruption() {
+        guard ProbeRootPolicy.selectedRootRegistrationEnabled else {
+            publishRecovery("unavailable selected roots disabled")
+            return
+        }
         let record: ProbeRootRecord
         do {
             guard let selected = try rootStore.load().roots.first(where: {
@@ -409,6 +424,11 @@ final class ProbeModel: ObservableObject {
     }
 
     private func restoreSelectedBookmark(from loadedRegistry: ProbeRootRegistry? = nil) {
+        guard ProbeRootPolicy.selectedRootRegistrationEnabled else {
+            selected = "disabled app-owned-only fallback=false"
+            ProbeDefaults.set("selected", selected)
+            return
+        }
         let record: ProbeRootRecord
         do {
             let registry = try loadedRegistry ?? rootStore.load()
