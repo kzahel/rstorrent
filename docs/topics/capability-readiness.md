@@ -287,10 +287,15 @@ path, product behavior, or support claim exists.
   fast resume and finite bandwidth/seeding-goal policy. Implementation has not
   started and it does not replace the single authoritative **Now**.
 
-- After Tactical `116`, a separate tactical may add an explicit faster, more
-  trusting resume option while keeping conservative behavior as the default
-  and Force recheck as a full validation pass. Unsupported or mismatched
-  platform observations fall back to the common checker.
+- Planned Tactical
+  [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) owns the accepted
+  per-torrent fast-resume slice. Eligible coherent path and supported local
+  SAF resumes will trust only durably committed bits after bounded structural
+  validation, with zero payload hashes or reads; checker-readable mismatches
+  fall back for that torrent only, while Force recheck remains full. This is
+  the normal eligible policy rather than a setting or conservative-by-default
+  option. Implementation has not started and does not supersede the current
+  uTP Stage 2 human-review **Now**.
 
 ### Later
 

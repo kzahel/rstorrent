@@ -29,6 +29,12 @@ restart, complete recheck, publication, upload, removal, grant repair,
 cancellation, exact cleanup, and bounded-resource assertions. Applicable
 Android behavior is now a non-deferrable completion gate for future engine
 tacticals.
+Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) consumes that
+common observation seam for the first accepted trusting policy. Supported
+local SAF resumes will follow the same per-torrent structural decision as path
+storage, without requiring an opaque provider token; the feature remains
+unimplemented and ordinary partial restart is still conservative today.
 
 ## Scope
 
@@ -422,7 +428,10 @@ bridge; after acquisition, payload I/O remains in Rust.
 
 Do not extend the diagnostic-only fixed-manifest APIs. General root
 management, cloud/removable provider support, relocation, and an exposed
-advanced file-pool setting still require their own product decisions. A later
-fast-resume tactical may consume the common observations only as
-disqualifying evidence: unsupported or mismatched facts fall back to full
-checking, and Force recheck always hashes.
+advanced file-pool setting still require their own product decisions. Planned
+Tactical `120` consumes exact existence, kind, and length as per-torrent fast-
+resume admission evidence for the supported local provider. It adds no
+persisted provider-token snapshot; absence of the optional opaque token alone
+does not force checking. Checker-readable disagreement falls back only that
+torrent, unavailable capability remains awaiting repair, and Force recheck
+always hashes.

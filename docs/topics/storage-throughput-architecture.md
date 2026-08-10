@@ -34,6 +34,12 @@ authority. Its physical iOS track proves that the narrow Rust logical-file
 capability survives app-owned bookmark restoration, Apple security scope,
 coordination, and lifecycle constraints. It does not add another payload
 runtime, external File Provider support, or a fast-resume policy.
+Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now owns that
+policy without changing the checkpoint order or hot-path owners: matching
+per-torrent structural evidence admits synchronized committed bits with zero
+payload reads/hashes, while Force recheck and checker-readable disagreement
+reuse the existing full checker.
 
 ## Purpose And Scope
 
@@ -489,14 +495,16 @@ all epoch bits, encodes once and commits once.
 | After writes and hash pass, before payload sync | The piece may exist on disk but its have bit is absent; recheck or redownload is safe. |
 | After payload sync, before SQLite commit | Durable bytes may be ahead of durable metadata; this is a safe false negative. |
 | During the SQLite transaction | SQLite exposes either the old or committed epoch; no partial have update is trusted. |
-| After the epoch commit | Conservative restart rehashes every wanted managed piece, including the claim, before presenting current verified state. |
+| After the epoch commit | Current ordinary partial restart rehashes managed pieces. Planned Tactical `120` instead trusts the committed claim after bounded per-torrent structural validation; Force recheck remains full. |
 
-The current restart path rehashes every physically readable wanted piece,
+The current restart path rehashes every physically readable logical piece,
 including persisted false bits. The replacement bitmap is committed only after
 all bounded hash jobs join and newly recovered staging targets pass their
-durability barrier. A later clean-shutdown fast-resume design may skip some
-hashing only after it defines stronger file identity, directory durability and
-storage-generation evidence.
+durability barrier. Planned Tactical `120` changes ordinary eligible admission
+without requiring clean shutdown: synchronized committed bits may skip payload
+hashing only after managed namespace, file, part-slot, root, and generation
+evidence agrees. Physically present false-bit bytes may then be downloaded
+again rather than recovered by startup hashing.
 
 Completed Tactical
 [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md)

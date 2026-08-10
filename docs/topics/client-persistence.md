@@ -71,13 +71,14 @@ torrents, settings, and the application service continue opening.
 
 Completed Tactical
 [`108`](../tactical/108-serialized-torrent-control-and-observable-checking.md)
-retains schema-14's fact-based authority and conservative default while
-decoupling selection from full-verification admission. Full-check evidence
-covers every readable logical piece independently of wanted policy;
+retained schema-14's fact-based authority and the then-current conservative
+default while decoupling selection from full-verification admission. Full-
+check evidence covers every readable logical piece independently of wanted
+policy;
 checker phase, counters, cursor, heartbeat, and storage queues remain runtime
 facts. The tactical deliberately adds no trusting resume field or heuristic,
-but establishes a pure admission-policy seam for a later explicit faster,
-more trusting option. Force recheck remains full under either future policy.
+but establishes the pure admission-policy seam now selected by planned
+Tactical `120`. Force recheck remains full under the accepted future policy.
 
 Tactical
 [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented slice
@@ -106,8 +107,17 @@ capability health, SAF published reads, and physical iOS persistence/lifecycle
 evidence without changing schema 17. Portable rows retain root identity,
 payload state, verification generations, and current storage generation;
 platform locators and runtime health remain adapter-owned. It does not
-authorize a trusting resume decision: conservative restart and full Force
-recheck remain current behavior.
+by itself authorize a trusting resume decision: conservative restart and full
+Force recheck remain current behavior.
+
+Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) records the now-
+accepted decision for the next persistence-facing slice. Ordinary eligible
+resumes will trust the existing synchronized per-torrent have bitmap after
+bounded structural storage validation, without a clean-shutdown prerequisite,
+global crash invalidation, product setting, or new observation table. A
+pending verification generation and Force recheck remain full. This policy is
+not implemented yet, so current ordinary partial restart remains conservative.
 
 ## Scope
 
@@ -354,11 +364,13 @@ restart path is deliberately conservative:
 6. synchronize newly recovered staging targets as required, then atomically
    replace the exact bitmap and leave checking only after every hash job joins.
 
-This is durable resume with bounded recheck, not optimistic fast resume. A
-future fast-resume policy may skip payload hashes when clean shutdown,
-write-ordering, storage identity, file observations, and part-file generation
-provide sufficient continuity evidence. Any disagreement falls back to
-hashing.
+This is the currently implemented durable resume with bounded recheck.
+Planned Tactical `120` replaces ordinary eligible admission, not these durable
+facts: committed have bits may skip payload hashes after write ordering,
+storage identity, namespace, exact logical-file observations, and part-file
+structure agree. Clean shutdown is not required. Checker-readable disagreement
+falls back for that torrent only, while malformed ownership remains repair-
+local and Force recheck always hashes.
 
 The critical crash-ordering invariant is one-sided: durable storage and
 verification occur before the database may commit a have-bit. A crash between
@@ -632,11 +644,12 @@ successful mutation unreadable after upgrade.
   post-sync/pre-commit crashes retain zero false have bits; the observed
   post-commit boundary safely retains all 256. Broader filesystem failure
   profiles remain open.
-- The exact clean-shutdown envelope and explicit trust policy required before
-  a later fast-resume path may skip hashing. Tactical `116` makes storage
-  generation, root health, logical artifact identity, and file observations
-  coherent for path and supported Android SAF storage, but deliberately leaves
-  the trust decision to a following tactical.
+- Planned Tactical `120` owns the accepted per-torrent trust policy now that
+  Tactical `116` makes storage generation, root health, logical artifact
+  identity, and file observations coherent for path and supported Android SAF
+  storage. It deliberately requires no clean-shutdown envelope, new schema
+  field, or persisted observation snapshot. Until it lands, ordinary partial
+  restart continues through the full checker.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.
 - Tactical

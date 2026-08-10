@@ -374,11 +374,16 @@ to draft a bounded Stage 3 shared-UDP/runtime and loopback-interoperability
 tactical before changing code. Do not start runtime or external-network work
 from this checkpoint.
 
-A separate trusting fast-resume option may now be planned against Tactical
-`116`'s common path/SAF observations. Conservative checking remains the
-default, every unsupported or mismatched fact falls back to the common full
-checker, and Force recheck remains the full validation pass. No trust policy
-has landed yet.
+Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now records the
+accepted trust policy against Tactical `116`'s common path/SAF observations.
+Eligible torrents use bounded per-torrent structural validation and trust
+only durably committed bits without payload hashing; there is no global crash
+invalidation, clean-shutdown prerequisite, or product setting. Readable
+content mismatches fall back to that torrent's common full checker, malformed
+ownership remains repair-local, and Force recheck remains full. The policy is
+planned rather than implemented and does not replace the current uTP Stage 2
+human-review checkpoint.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,

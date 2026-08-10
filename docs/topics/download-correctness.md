@@ -87,6 +87,12 @@ four-torrent fixture proves simultaneous progress, exact publication,
 completion-driven promotion, and terminal zero accounting. Queue order and
 active-count policy do not become integrity evidence or weaken conservative
 restart/checking behavior.
+Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now owns the
+accepted change to that ordinary restart policy. It will trust only durably
+committed per-torrent bits after bounded managed-artifact validation, with no
+global crash invalidation or clean-shutdown prerequisite. The current code
+still fully checks ordinary partial resumes until that tactical lands.
 
 ## Scope
 
@@ -136,10 +142,13 @@ have state and storage-root identity.
   unrelated verified pieces.
 - Storage failure cannot leave a block counted as received when its bytes were
   not accepted by the storage owner.
-- Restart treats persisted have state only as input evidence. The conservative
-  policy hashes every readable wanted piece in managed staging or publication,
-  recovers valid false bits, and clears invalid true bits before atomically
-  replacing current have state.
+- Restart currently treats persisted have state only as input evidence. The
+  implemented conservative policy hashes every readable logical piece in
+  managed staging or publication, recovers valid false bits, and clears
+  invalid true bits before atomically replacing current have state. Planned
+  Tactical `120` changes ordinary eligible admission to bounded structural
+  validation plus trust of committed true bits; explicit/pending Force recheck
+  retains this complete hash-and-replace behavior.
 - Completion and seeding eligibility must derive from verified wanted pieces
   and completed publication, never a rounded percentage.
 
@@ -272,6 +281,9 @@ related unit test exists.
 | DL-C32 | A public torrent learns its only useful second-hop peer through a hostile-capable PEX source | Bounded PEX admits the eligible endpoint through the ordinary registry and completes, while rate/source/address limits hold and privacy-unknown or private torrents admit no PEX peer. | Passing deterministic source/quota/privacy cases and controlled pinned-libtorrent `2.0.13.0` complementary two-hop evidence from Tactical [`094`](../tactical/094-bounded-bep11-peer-exchange.md). The oracle run captures one compact addition, observes one RSTorrent drop, and hash-verifies 16,777,216 bytes in 164.083 seconds. |
 | DL-C33 | A wanted file shares pieces with skipped files and padding while accepted work later fails verification | ETA work includes every real byte in each required piece, excludes synthetic padding, subtracts unique current-generation accepted blocks once, restores exact failed payload, and reconstructs from verified have state after generation or selection replacement. | Passing exhaustive fixed geometry, 96 generated differential layouts, maximum-limit release calibration, pure-clock lifecycle, stale-generation, real application completion, and pinned-libtorrent `2.0.13.0` selective-file evidence from Tactical [`104`](../tactical/104-selection-aware-torrent-eta.md). |
 | DL-C34 | Published content is rechecked, newly required pieces become durable, and the process restarts; a separate catalog row is malformed. | Piece checkpoints cannot relabel payload ownership, incomplete verification remains a restartable fact, the published torrent resumes from exact rechecked evidence, and the malformed torrent is quarantined without preventing profile open. | Passing schema-14 reducer/store/runtime/containment evidence plus an isolated migration and headless launch of the exact schema-13 incident shape. Final-owned content remains final-owned across checkpoints, verification completions are generation-fenced, and a malformed neighboring row enters repair without aborting startup. Tactical [`105`](../tactical/105-fact-based-persistence-and-recheck-containment.md) records the evidence. |
+| DL-C35 | Stable complete torrent A restarts beside torrent B killed before sync, after sync before commit, or after commit. | A performs zero payload reads and hash jobs and remains seed-ready. B trusts only synchronized committed bits; physically present false-bit bytes may be downloaded again, and no crash invalidates another torrent. | Planned Tactical [`120`](../tactical/120-per-torrent-trusting-fast-resume.md); A's existing completed-seed path is already structurally hash-free, but the combined crash/count evidence is not yet recorded. |
+| DL-C36 | A partial managed resume has coherent committed bits, then separately has missing, short, oversized, or truncated-slot evidence. | Matching structure accepts with zero payload reads/hashes. Checker-readable disagreement starts one full generation for that torrent only; malformed ownership or wrong-kind artifacts enter repair without mutation. | Planned Tactical `120`; current ordinary partial restart still performs a complete check. |
+| DL-C37 | An external actor changes committed payload bytes without changing required structural observations. | Ordinary fast resume may accept the historical bitmap and is not described as freshly checked; explicit Force recheck hashes all readable pieces and clears the mismatch. | Planned Tactical `120`; this scenario records the deliberate libtorrent-shaped trust boundary rather than claiming metadata proves content integrity. |
 
 ## Required Scheduler Observability
 

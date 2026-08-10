@@ -1,27 +1,31 @@
 # Code Organization And Refactoring
 
-Status: Living guidance and repository snapshot, refreshed on 2026-08-09 at
-source commit `c545e91` after completed Tacticals
+Status: Living guidance with its latest quantitative snapshot measured at
+source commit `c545e91`; direction was reconciled on 2026-08-10 at `caa32cf`
+after completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md),
 [`080`](../tactical/080-session-view-subsystem-boundaries.md), and the
 feature-driven ownership work through completed
 [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md), plus closed
 evidence-limited
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md),
-and completed
-[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md). The
-crate graph remains appropriate. Tactical `114` extracted pure admission,
-durable queue, newest-schema, and session-resource owners while retaining the
-application lifecycle and SQLite transaction authorities. Current general
-pressure remains highest in the application callback/test topology, historical
-store internals, and role-specific peer bootstrap paths exposed by MSE.
-Tactical `113`'s larger UPnP and reachability modules remain cohesive. No
-standalone refactor is selected by this topic. Planned Tactical
-[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-then selects the storage-specific artifact-geometry/logical-file seam already
-identified here, because path upload, Android SAF observations and upload,
-namespace transitions, and a physical iOS probe now provide concrete
-multi-platform pressure rather than a size-only reason to refactor.
+and completed Tacticals
+[`114`](../tactical/114-session-wide-concurrent-torrent-admission.md),
+[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md),
+and [`119`](../tactical/119-deterministic-utp-transport-core.md). The crate
+graph remains appropriate. Tactical `114` extracted pure admission, durable
+queue, newest-schema, and session-resource owners while retaining the
+application lifecycle and SQLite transaction authorities. Tactical `116`
+then extracted immutable artifact geometry, exact logical storage references
+and observations, shared published reads, and namespace transitions without a
+generic filesystem layer. Tactical `119` kept its dependency-free transport
+state inside the protocol crate. Current general pressure remains highest in
+the application callback/test topology, historical store internals, and role-
+specific peer bootstrap paths exposed by MSE. No standalone refactor is
+selected. Planned Tactical
+[`120`](../tactical/120-per-torrent-trusting-fast-resume.md) consumes the
+proven storage seam and selects only a feature-driven task-free resume-
+admission policy plus structural validation boundary.
 
 Topic: `code-organization-and-refactoring`
 
@@ -275,10 +279,12 @@ public facade becomes deliberate. Shorter files alone are not the outcome.
 
 ## Snapshot Method
 
-The following snapshot uses the source tree at `c545e91` on 2026-08-09, 12
+The following quantitative snapshot uses the source tree at `c545e91` on
+2026-08-09, 12
 commits after the `4f0ba8d` refresh. This shorter-than-usual interval records
 Tactical `114`'s material application, persistence, and resource-owner changes
-before Tactical `116` begins its selected storage boundary. Production
+before Tactical `116` began its selected storage boundary. Later direction
+text records `116`'s completed seam and planned Tactical `120`; production
 and test counts are approximate physical lines. For Rust files with one
 trailing `#[cfg(test)]` module, the marker separates the two; child test files
 are counted separately. Files with interspersed test-only helpers are
@@ -290,7 +296,7 @@ substantial ownership.
 | Boundary | Approximate production lines | Approximate test lines | Touches in 200 commits | Current assessment |
 | --- | ---: | ---: | ---: | --- |
 | Engine driver facade plus `control`, `storage_pipeline`, and session resources | about 11,492 across four owners | 8,575 child-test lines plus about 663 inline storage/resource tests | 23 on the facade, 4 on session resources | Tactical `079` still supplies useful owners. Tactical `114` adds one cohesive task-free session authority while `DownloadControl` retains torrent-local checker and observation state. No umbrella split is justified. |
-| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Shared immutable artifact geometry remains a concrete one-way-dependency seam. Planned Tactical `116` selects it after `114` because path upload, SAF observation/upload, and physical-iOS evidence now provide behavior pressure despite low recent churn. |
+| `SelectiveStorage` | about 3,816 | about 1,986 | 2 | Tactical `116` extracted shared immutable artifact geometry, logical observations, namespace decisions, and published reads while retaining `SelectiveStorage` as the write-side transition owner. Planned Tactical `120` now selects only the unconditional-resume-check admission seam and required structural validation; no broader split is justified. |
 | `SwarmState` | about 3,331 | about 1,766 | 9 | `piece_picker` owns independently changing activation policy. Retain the remaining deterministic transition owner until another policy separates. |
 | Incoming and outgoing peer bootstrap | about 4,507 across `incoming.rs` and `peer_socket.rs` before their test modules | about 2,031 | 18 incoming, 8 outgoing | Strong engine source-shape candidate after MSE. Pre-stream handshake/policy/accounting can become role-specific private children while listener/admission/upload and peer-set/task owners remain in place. Do not unify the two roles behind a generic async runner. |
 | DHT actor | about 3,044 | about 1,033 | 6 | Tactical `112` retained one actor around two independently bounded family nodes, one command route, and one observation owner. The growth is material, but no duplicated lifecycle or cross-family state leak appeared. Review again when a DHT policy changes independently; do not split by family or file size alone. |
@@ -485,10 +491,15 @@ owner, so the old sequencing blocker is gone. That owner still imports
 `selective_storage`, revealing that immutable artifact geometry is shared
 while it remains housed under the write-side coordinator.
 
-The most useful first seam is therefore storage artifact geometry and path
-derivation, with existing public re-exports and error behavior preserved.
-After that dependency is one-way, a dedicated write-side tactical may assess
-these already-visible private seams:
+Tactical `116` completed the useful first seam: `artifact_layout` now owns
+immutable storage geometry and safe logical mapping, `StorageFileReference`
+owns exact path/platform opens and observations through the bounded pool,
+`SeedContent` owns read-only published content, and the task-free namespace
+transition policy is shared. `SelectiveStorage` remains the state-transition
+coordinator for routes, part state, materialization, and publication.
+
+After that dependency became one-way, a dedicated write-side tactical may
+still assess these already-visible private seams when behavior demands it:
 
 - backing references and bounded lease acquisition;
 - immutable write and hash plans plus their blocking execution;
@@ -497,12 +508,11 @@ these already-visible private seams:
 
 Keep `SelectiveStorage` as the state-transition coordinator. Do not turn the
 children into services, make upload depend on write-side state, or split all
-five concerns mechanically in one pass. Planned Tactical `116` now selects
-this as a feature-driven storage boundary after Tactical `114`. It must also
-move verified upload reads onto the common logical-file/pool owner, add
-platform observations without a generic VFS, and isolate or remove production
-descriptor-manifest backing. Keep the extraction no larger than those tested
-path, SAF, and physical-iOS needs.
+five concerns mechanically in one pass. Planned Tactical `120` uses the
+completed seam to extract one task-free fast-resume admission decision and to
+deduplicate structural validation between resumed download and completed
+seeding. It must not grow into a generic resume framework, persistence layer,
+filesystem trait, or second checker.
 
 ### 6. Direct-Engine Discovery Compatibility Boundary
 
@@ -599,13 +609,15 @@ lifecycle owner and active-generation map. That outcome resolves the immediate
 single-slot and resource-multiplier seams; it does not justify a follow-up
 admission service, store repository layer, or broad application test move.
 
-Planned Tactical `116` is now the authoritative **Now** and the selected
-storage shoring work. Let
-its common published-read, observation, root-health, namespace-transition,
-Android parity, and physical-iOS cases drive the previously identified
-artifact-geometry extraction. Do not implement fast resume before that seam is
-proven, and do not turn three concrete adapters into a general filesystem
-framework.
+Tactical `116` is complete and proves the common published-read, observation,
+root-health, namespace-transition, Android parity, and physical-iOS storage
+seams which fast resume required. Planned Tactical `120` is the selected next
+storage-facing feature slice, while the authoritative product queue separately
+retains the uTP Stage 1 human-review checkpoint as **Now**. Let `120` remove
+only the unconditional resume check behind a task-free per-torrent decision
+and bounded structural validation. Do not reopen artifact geometry, create a
+global recovery coordinator, or turn the concrete path/SAF adapters into a
+general filesystem framework.
 
 If the feature queue is instead explicitly paused for one unrelated standalone
 structural tactical, application callback adapters plus categorized tests
@@ -637,6 +649,14 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-10:** Reconciled direction at source commit `caa32cf` without
+  rerunning the quantitative snapshot. Completed Tactical `116` resolved the
+  selected immutable artifact-geometry, logical observation, shared published-
+  read, and namespace-transition seams without a generic VFS or new crate.
+  Completed Tactical `119` kept pure uTP state in the protocol crate. Planned
+  Tactical `120` now selects only the feature-driven per-torrent resume-
+  admission and structural-validation boundary; it does not promote an
+  umbrella storage, persistence, or recovery refactor.
 - **2026-08-09:** Refreshed the repository snapshot at source commit
   `c545e91` after Tactical `114` completed. Pure admission, transactional queue
   order, current schema/newest migration, and session resource fairness now
