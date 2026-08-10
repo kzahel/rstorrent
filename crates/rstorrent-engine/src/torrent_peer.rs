@@ -202,6 +202,7 @@ impl TorrentPeerState {
             local_endpoint,
             peer_id,
             supports_extensions,
+            transport,
             mse_method,
             role,
             now,
@@ -219,7 +220,7 @@ impl TorrentPeerState {
                 record_id: observed.record_id,
                 endpoint: remote_endpoint,
                 local_endpoint,
-                transport: PeerTransport::Tcp,
+                transport,
                 role,
                 peer_id,
                 supports_extensions,
@@ -363,6 +364,7 @@ struct TorrentIncomingStart {
     local_endpoint: SocketAddr,
     peer_id: [u8; 20],
     supports_extensions: bool,
+    transport: PeerTransport,
     mse_method: Option<MseMethod>,
     role: PeerConnectionRole,
     now: Duration,
@@ -475,6 +477,28 @@ impl TorrentPeerHandle {
         role: PeerConnectionRole,
         mse_method: Option<MseMethod>,
     ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
+        self.begin_incoming_with_transport(
+            remote_endpoint,
+            local_endpoint,
+            peer_id,
+            supports_extensions,
+            role,
+            PeerTransport::Tcp,
+            mse_method,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn begin_incoming_with_transport(
+        &self,
+        remote_endpoint: SocketAddr,
+        local_endpoint: SocketAddr,
+        peer_id: [u8; 20],
+        supports_extensions: bool,
+        role: PeerConnectionRole,
+        transport: PeerTransport,
+        mse_method: Option<MseMethod>,
+    ) -> Result<IncomingPeerAttachment, TorrentPeerError> {
         if !self.address_family_policy().permits(remote_endpoint.ip()) {
             return Err(TorrentPeerError::AddressFamilyDenied(remote_endpoint));
         }
@@ -485,6 +509,7 @@ impl TorrentPeerHandle {
                 local_endpoint,
                 peer_id,
                 supports_extensions,
+                transport,
                 mse_method,
                 role,
                 now,
@@ -821,7 +846,8 @@ mod tests {
     };
     use crate::peer_runtime::{
         PeerAdmissionOutcome, PeerAdmissionRejection, PeerConnectionDirection,
-        PeerConnectionLifecycle, PeerConnectionRole, PeerUploadActivity, PeerUploadGrant,
+        PeerConnectionLifecycle, PeerConnectionRole, PeerTransport, PeerUploadActivity,
+        PeerUploadGrant,
     };
     use crate::swarm::ConnectionId;
     use rstorrent_protocol::mse::MseMethod;
@@ -1102,6 +1128,7 @@ mod tests {
                     local_endpoint: "127.0.0.1:43210".parse().expect("local"),
                     peer_id: *b"-LTTEST-000000000000",
                     supports_extensions: true,
+                    transport: PeerTransport::Tcp,
                     mse_method: None,
                     role: PeerConnectionRole::Content,
                     now: Duration::ZERO,

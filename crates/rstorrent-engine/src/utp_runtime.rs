@@ -289,10 +289,12 @@ pub struct UtpStream {
     local_address: SocketAddr,
     remote_address: SocketAddr,
     write_sender: PollSender<Vec<u8>>,
+    try_write_sender: mpsc::Sender<Vec<u8>>,
     control_sender: PollSender<UtpStreamControl>,
     events: mpsc::Receiver<UtpStreamEvent>,
     current_read: Option<(Vec<u8>, usize)>,
     consumption: Arc<UtpConsumption>,
+    read_notification: Arc<Notify>,
     cancellation: CancellationToken,
     terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
     flush_response: Option<oneshot::Receiver<io::Result<()>>>,
@@ -321,6 +323,98 @@ impl UtpStream {
                 || io::Error::new(io::ErrorKind::BrokenPipe, "uTP worker stopped"),
                 |terminal| io::Error::new(terminal.kind, terminal.detail.clone()),
             )
+    }
+
+    pub(crate) fn try_read(&mut self, destination: &mut [u8]) -> io::Result<usize> {
+        if self.eof || destination.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            if let Some((bytes, offset)) = &mut self.current_read {
+                let copied = destination.len().min(bytes.len().saturating_sub(*offset));
+                destination[..copied].copy_from_slice(&bytes[*offset..*offset + copied]);
+                *offset += copied;
+                self.consumption.record(copied);
+                if *offset == bytes.len() {
+                    self.current_read = None;
+                }
+                return Ok(copied);
+            }
+            match self.events.try_recv() {
+                Ok(UtpStreamEvent::Data(bytes)) => self.current_read = Some((bytes, 0)),
+                Ok(UtpStreamEvent::Eof) => {
+                    self.eof = true;
+                    return Ok(0);
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    return Err(io::Error::from(io::ErrorKind::WouldBlock));
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    let error = self.terminal_error();
+                    if error.kind() == io::ErrorKind::UnexpectedEof {
+                        self.eof = true;
+                        return Ok(0);
+                    }
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn try_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.write_closed {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "uTP write half is closed",
+            ));
+        }
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        let length = bytes.len().min(MAX_UTP_APPLICATION_WRITE_BYTES);
+        self.try_write_sender
+            .try_send(bytes[..length].to_vec())
+            .map_err(|error| match error {
+                TrySendError::Full(_) => io::Error::from(io::ErrorKind::WouldBlock),
+                TrySendError::Closed(_) => self.terminal_error(),
+            })?;
+        Ok(length)
+    }
+
+    pub(crate) async fn readable(&self) -> io::Result<()> {
+        loop {
+            if self.read_is_ready() {
+                return Ok(());
+            }
+            let notified = self.read_notification.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.read_is_ready() {
+                return Ok(());
+            }
+            notified.await;
+        }
+    }
+
+    pub(crate) async fn writable(&self) -> io::Result<()> {
+        let permit = self
+            .try_write_sender
+            .reserve()
+            .await
+            .map_err(|_| self.terminal_error())?;
+        drop(permit);
+        Ok(())
+    }
+
+    fn read_is_ready(&self) -> bool {
+        self.current_read.is_some()
+            || !self.events.is_empty()
+            || self.eof
+            || self
+                .terminal
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_some()
     }
 }
 
@@ -904,6 +998,7 @@ struct WorkerChannels {
     controls: mpsc::Receiver<UtpStreamControl>,
     events: mpsc::Sender<UtpStreamEvent>,
     consumption: Arc<UtpConsumption>,
+    read_notification: Arc<Notify>,
     stream_cancellation: CancellationToken,
     terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
 }
@@ -916,17 +1011,20 @@ fn stream_pair(
     let (control_sender, controls) = mpsc::channel(UTP_APPLICATION_CONTROL_QUEUE);
     let (event_sender, events) = mpsc::channel(UTP_STREAM_EVENT_QUEUE);
     let consumption = Arc::new(UtpConsumption::default());
+    let read_notification = Arc::new(Notify::new());
     let cancellation = CancellationToken::new();
     let terminal = Arc::new(Mutex::new(None));
     (
         UtpStream {
             local_address,
             remote_address,
-            write_sender: PollSender::new(write_sender),
+            write_sender: PollSender::new(write_sender.clone()),
+            try_write_sender: write_sender,
             control_sender: PollSender::new(control_sender),
             events,
             current_read: None,
             consumption: consumption.clone(),
+            read_notification: read_notification.clone(),
             cancellation: cancellation.clone(),
             terminal: terminal.clone(),
             flush_response: None,
@@ -939,6 +1037,7 @@ fn stream_pair(
             controls,
             events: event_sender,
             consumption,
+            read_notification,
             stream_cancellation: cancellation,
             terminal,
         },
@@ -1044,6 +1143,7 @@ fn spawn_worker(
         events: channels.events,
         pending_delivery: VecDeque::new(),
         consumption: channels.consumption,
+        read_notification: channels.read_notification,
         stream_cancellation: channels.stream_cancellation,
         terminal: channels.terminal,
         cancellation,
@@ -1075,6 +1175,7 @@ struct UtpWorker {
     events: mpsc::Sender<UtpStreamEvent>,
     pending_delivery: VecDeque<Vec<u8>>,
     consumption: Arc<UtpConsumption>,
+    read_notification: Arc<Notify>,
     stream_cancellation: CancellationToken,
     terminal: Arc<Mutex<Option<UtpStreamTerminal>>>,
     cancellation: CancellationToken,
@@ -1106,6 +1207,7 @@ impl UtpWorker {
             .terminal
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(terminal.stream_terminal());
+        self.read_notification.notify_waiters();
         WorkerReport { terminal }
     }
 
@@ -1218,7 +1320,7 @@ impl UtpWorker {
     fn flush_delivery(&mut self) {
         while let Some(bytes) = self.pending_delivery.pop_front() {
             match self.events.try_send(UtpStreamEvent::Data(bytes)) {
-                Ok(()) => {}
+                Ok(()) => self.read_notification.notify_one(),
                 Err(TrySendError::Full(UtpStreamEvent::Data(bytes))) => {
                     self.pending_delivery.push_front(bytes);
                     break;
@@ -1234,7 +1336,10 @@ impl UtpWorker {
         }
         if self.pending_delivery.is_empty() && self.remote_eof && !self.eof_sent {
             match self.events.try_send(UtpStreamEvent::Eof) {
-                Ok(()) => self.eof_sent = true,
+                Ok(()) => {
+                    self.eof_sent = true;
+                    self.read_notification.notify_one();
+                }
                 Err(TrySendError::Full(_)) => {}
                 Err(TrySendError::Closed(_)) => self.stream_cancellation.cancel(),
             }

@@ -32,7 +32,7 @@ use rstorrent_protocol::peer_wire::{
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpSocket, UdpSocket};
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout_at};
@@ -49,8 +49,9 @@ use crate::peer_budget::{
     DEFAULT_LISTEN_BACKLOG, PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetSnapshot,
 };
 use crate::peer_io::{PeerIo, record_bytes};
-use crate::peer_runtime::{PeerConnectionRole, PeerUploadActivity, PeerUploadGrant};
+use crate::peer_runtime::{PeerConnectionRole, PeerTransport, PeerUploadActivity, PeerUploadGrant};
 use crate::peer_socket::advertised_reserved_bits;
+use crate::peer_stream::PeerStream;
 use crate::pex::{PexReceiveContext, PexReceiveDisposition};
 use crate::piece_availability::AvailabilityDrain;
 use crate::seed_content::SeedContent;
@@ -62,6 +63,7 @@ use crate::torrent_peer::{
 use crate::upload::{MAX_GENERATED_ALLOWED_FAST_PIECES, generate_allowed_fast_set};
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedulerSnapshot};
+use crate::utp_runtime::UtpStream;
 
 use self::peer_io::{FrameValidity, IncomingPeerIo};
 use self::upload_runtime::UploadCoordinator;
@@ -457,6 +459,7 @@ impl ByteMetricSink for IncomingUploadMetricSink {
 
 #[derive(Debug)]
 struct Shared {
+    cancellation: CancellationToken,
     listener: Mutex<IncomingListenerObservation>,
     registry: Mutex<BTreeMap<[u8; 20], Arc<RegistrationRuntime>>>,
     mse_index: Mutex<HashMap<[u8; 20], BTreeSet<[u8; 20]>>>,
@@ -798,7 +801,7 @@ impl RegistrationRuntime {
 }
 
 struct IncomingAdmission {
-    stream: TcpStream,
+    stream: PeerStream,
     ciphers: Option<MseCipherPair>,
     carried: Vec<u8>,
     remote: SocketAddr,
@@ -876,6 +879,43 @@ impl Drop for SessionUploadMembership {
 }
 
 impl IncomingPeerHandle {
+    pub async fn admit_utp(
+        &self,
+        stream: UtpStream,
+        handshake_timeout: Duration,
+    ) -> Result<(), IncomingPeerError> {
+        if handshake_timeout.is_zero() {
+            return Err(IncomingPeerError::InvalidTimeout);
+        }
+        let remote = stream.peer_addr();
+        let Ok(pending_permit) = self.shared.pending_handshakes.clone().try_acquire_owned() else {
+            self.shared
+                .reject(IncomingRejectionReason::PendingLimit, Some(remote), None);
+            return Ok(());
+        };
+        let Ok(budget_permit) = self
+            .shared
+            .peer_budget
+            .try_acquire(PeerBudgetDirection::Incoming)
+        else {
+            self.shared
+                .reject(IncomingRejectionReason::ConnectionLimit, Some(remote), None);
+            return Ok(());
+        };
+        let _pending = ObservationGuard::pending(&self.shared);
+        run_handshake(
+            stream.into(),
+            remote,
+            handshake_timeout,
+            self.shared.clone(),
+            self.shared.cancellation.clone(),
+            budget_permit,
+        )
+        .await;
+        drop(pending_permit);
+        Ok(())
+    }
+
     pub(crate) fn register_session_upload(
         &self,
         info_hash: [u8; 20],
@@ -1004,7 +1044,9 @@ impl IncomingPeerRuntime {
             .upload_scheduler
             .unchoke_interval
             .min(config.upload_scheduler.optimistic_interval);
+        let cancellation = CancellationToken::new();
         let shared = Arc::new(Shared {
+            cancellation: cancellation.clone(),
             listener: Mutex::new(IncomingListenerObservation {
                 bootstrap: IncomingTcpBootstrap::Disabled,
                 listen_address: SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0).into(),
@@ -1032,7 +1074,6 @@ impl IncomingPeerRuntime {
             encryption: Mutex::new(config.encryption),
             mse_dh: config.mse_dh,
         });
-        let cancellation = CancellationToken::new();
         let upload_task = tokio::spawn(run_upload_scheduler(
             shared.clone(),
             cancellation.clone(),
@@ -1605,7 +1646,7 @@ async fn run_accept_loop(
                     handshakes.spawn(async move {
                         let _pending = ObservationGuard::pending(&shared);
                         run_handshake(
-                            stream,
+                            PeerStream::Tcp(stream),
                             remote,
                             handshake_timeout,
                             shared,
@@ -1669,7 +1710,7 @@ enum IncomingIoFailure {
 }
 
 async fn receive_incoming_handshake(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     deadline: Instant,
     policy: PeerEncryptionPolicy,
     shared: &Arc<Shared>,
@@ -1717,6 +1758,12 @@ async fn receive_incoming_handshake(
             mse_accounting: None,
         });
     }
+    if stream.transport() == PeerTransport::Utp {
+        return Err(IncomingHandshakeFailure::Invalid {
+            info_hash: None,
+            mse_failure: Some(MseHandshakeFailure::PolicyRejected),
+        });
+    }
     if policy == PeerEncryptionPolicy::Disabled {
         let mut accounting = MseHandshakeAccounting::new(MseRole::Responder, policy);
         accounting.wire_received(HANDSHAKE_LENGTH);
@@ -1745,7 +1792,7 @@ async fn receive_incoming_handshake(
 }
 
 async fn run_incoming_mse(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     first: [u8; HANDSHAKE_LENGTH],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -1782,7 +1829,7 @@ async fn run_incoming_mse(
 }
 
 async fn run_incoming_mse_inner(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     first: [u8; HANDSHAKE_LENGTH],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -2001,7 +2048,7 @@ fn incoming_mse_failure_reason(failure: &IncomingHandshakeFailure) -> MseHandsha
 }
 
 async fn read_incoming_exact(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     bytes: &mut [u8],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -2025,7 +2072,7 @@ async fn read_incoming_exact(
 }
 
 async fn read_incoming_some(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     bytes: &mut [u8],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -2056,7 +2103,7 @@ async fn read_incoming_some(
 }
 
 async fn write_incoming_mse_action(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     bytes: &[u8],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -2090,7 +2137,7 @@ async fn write_incoming_mse_action(
 
 #[allow(clippy::too_many_arguments)]
 async fn write_incoming_response(
-    stream: &mut TcpStream,
+    stream: &mut PeerStream,
     bytes: &[u8],
     deadline: Instant,
     shared: &Arc<Shared>,
@@ -2157,16 +2204,18 @@ fn finish_incoming_mse_success(
 }
 
 async fn run_handshake(
-    mut stream: TcpStream,
+    mut stream: PeerStream,
     remote: SocketAddr,
     timeout: Duration,
     shared: Arc<Shared>,
     cancellation: CancellationToken,
     mut budget_permit: PeerBudgetPermit,
 ) {
+    let remote = stream.peer_addr().unwrap_or(remote);
     let budget_cancellation = budget_permit.cancellation_token();
     let deadline = Instant::now() + timeout;
     let policy = shared.encryption_policy();
+    let transport = stream.transport();
     let received = match receive_incoming_handshake(
         &mut stream,
         deadline,
@@ -2262,14 +2311,18 @@ async fn run_handshake(
             return;
         }
     };
-    let attachment = match registration.data.torrent_peers.begin_incoming_with_mse(
-        remote,
-        local,
-        handshake.peer_id,
-        handshake.supports_extensions(),
-        PeerConnectionRole::Content,
-        mse_method,
-    ) {
+    let attachment = match registration
+        .data
+        .torrent_peers
+        .begin_incoming_with_transport(
+            remote,
+            local,
+            handshake.peer_id,
+            handshake.supports_extensions(),
+            PeerConnectionRole::Content,
+            transport,
+            mse_method,
+        ) {
         Ok(attachment) => attachment,
         Err(_) => {
             finish_incoming_mse_failure(
@@ -2608,7 +2661,7 @@ impl UploadSendTarget {
 }
 
 async fn run_incoming_peer(
-    stream: TcpStream,
+    stream: PeerStream,
     start: IncomingPeerStart,
 ) -> (PeerTermination, IncomingPeerAttachmentGuard) {
     let IncomingPeerStart {

@@ -1,4 +1,4 @@
-//! Direction-neutral framed TCP peer I/O.
+//! Direction-neutral framed peer I/O.
 
 use std::collections::VecDeque;
 use std::error::Error;
@@ -13,19 +13,19 @@ use rstorrent_protocol::peer_wire::{
     FrameDecoder, FrameError, HandshakeError, PeerMessage, encode_message,
 };
 use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
 use tokio::time::{Instant, timeout_at};
 
 use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::mse::MseDhWorkError;
 use crate::network::NetworkPolicy;
 use crate::peer::MseEndpointState;
+use crate::peer_stream::PeerStream;
 
 pub(crate) const NETWORK_READ_LENGTH: usize = 16 * 1024;
 
 #[derive(Debug)]
 pub(crate) struct PeerIo {
-    pub(crate) stream: TcpStream,
+    pub(crate) stream: PeerStream,
     pub(crate) decoder: FrameDecoder,
     pub(crate) queued_messages: VecDeque<PeerMessage>,
     queued_frames: VecDeque<QueuedFrame>,
@@ -45,12 +45,12 @@ struct QueuedFrame {
 
 impl PeerIo {
     pub(crate) fn new(
-        stream: TcpStream,
+        stream: impl Into<PeerStream>,
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Self {
         Self {
-            stream,
+            stream: stream.into(),
             decoder: FrameDecoder::new(),
             queued_messages: VecDeque::new(),
             queued_frames: VecDeque::new(),
@@ -329,6 +329,7 @@ pub(crate) enum PeerIoError {
     MseHandshake(MseHandshakeError),
     MseDh(MseDhWorkError),
     Entropy(getrandom::Error),
+    UtpEncryptionRequired,
     MseEndpointUpdate {
         state: MseEndpointState,
         source: Box<PeerIoError>,
@@ -355,6 +356,9 @@ impl fmt::Display for PeerIoError {
             Self::MseHandshake(error) => write!(formatter, "MSE handshake: {error}"),
             Self::MseDh(error) => error.fmt(formatter),
             Self::Entropy(error) => write!(formatter, "MSE entropy: {error}"),
+            Self::UtpEncryptionRequired => {
+                formatter.write_str("MSE-required policy rejects plaintext uTP")
+            }
             Self::MseEndpointUpdate { source, .. } => source.fmt(formatter),
             Self::Frame(error) => write!(formatter, "peer frame: {error}"),
         }
@@ -374,7 +378,8 @@ impl Error for PeerIoError {
             | Self::TimedOut { .. }
             | Self::Closed
             | Self::MseHandshake(_)
-            | Self::Entropy(_) => None,
+            | Self::Entropy(_)
+            | Self::UtpEncryptionRequired => None,
         }
     }
 }

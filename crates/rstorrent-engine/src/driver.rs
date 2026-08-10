@@ -7303,7 +7303,8 @@ fn download_peer_socket_error(error: PeerSocketError) -> DownloadError {
         PeerSocketError::Handshake(error) => DownloadError::Handshake(error),
         error @ (PeerSocketError::MseHandshake(_)
         | PeerSocketError::MseDh(_)
-        | PeerSocketError::Entropy(_)) => DownloadError::PeerTask(error.to_string()),
+        | PeerSocketError::Entropy(_)
+        | PeerSocketError::UtpEncryptionRequired) => DownloadError::PeerTask(error.to_string()),
         PeerSocketError::MseEndpointUpdate { source, .. } => download_peer_socket_error(*source),
         PeerSocketError::Frame(error) => DownloadError::Frame(error),
     }

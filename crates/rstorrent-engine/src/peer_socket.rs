@@ -17,13 +17,14 @@ use rstorrent_protocol::peer_wire::{
     FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH, Handshake,
     NegotiatedPeerCapabilities, PeerMessage, decode_handshake, encode_handshake_with_reserved,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::UtpStream;
 use crate::mse::{
     MseDhWorkOwner, MseHandshakeAccounting, MseHandshakeFailure, MseHandshakeOutcome,
     MseHandshakeSink, record_mse_handshake,
@@ -146,6 +147,7 @@ impl PeerSocketError {
             | Self::MseHandshake(_)
             | Self::MseDh(_)
             | Self::Entropy(_) => PeerFailure::Handshake,
+            Self::UtpEncryptionRequired => PeerFailure::Handshake,
             Self::Closed => PeerFailure::RemoteClosed,
             Self::Io { .. } | Self::TimedOut { .. } | Self::Frame(_) => PeerFailure::Protocol,
         }
@@ -376,6 +378,39 @@ async fn connect_with_progress(
     ))
 }
 
+pub(crate) async fn handshake_over_utp(
+    mut stream: UtpStream,
+    info_hash: [u8; 20],
+    advertise_extensions: bool,
+    network: NetworkConfig,
+) -> Result<(PeerIo, Handshake), PeerSocketError> {
+    let address = stream.peer_addr();
+    if !network.policy.allows(address) || !network.address_families.permits(address.ip()) {
+        return Err(PeerSocketError::NetworkPolicyDenied {
+            address,
+            policy: network.policy,
+        });
+    }
+    if network.encryption == PeerEncryptionPolicy::Required {
+        return Err(PeerSocketError::UtpEncryptionRequired);
+    }
+    let local_handshake = encode_handshake_with_reserved(
+        info_hash,
+        network.peer_id,
+        advertised_reserved_bits(advertise_extensions),
+    );
+    let handshake = run_outgoing_plain(
+        &mut stream,
+        info_hash,
+        &local_handshake,
+        network.peer_io_timeout,
+        None,
+    )
+    .await?;
+    let io = PeerIo::new(stream, network.peer_io_timeout, None);
+    Ok((io, handshake))
+}
+
 struct ConnectResources<'a> {
     progress: Option<&'a mpsc::Sender<PeerDialProgress>>,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
@@ -400,8 +435,8 @@ struct OutgoingMseAttempt {
     accounting: MseHandshakeAccounting,
 }
 
-async fn run_outgoing_plain(
-    stream: &mut TcpStream,
+async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
     info_hash: [u8; 20],
     local_handshake: &[u8; HANDSHAKE_LENGTH],
     io_timeout: Duration,
@@ -672,15 +707,15 @@ fn mse_outgoing_failure(error: &PeerSocketError) -> MseHandshakeFailure {
         PeerSocketError::MseHandshake(error) => MseHandshakeFailure::Protocol(*error),
         PeerSocketError::Handshake(_) => MseHandshakeFailure::BitTorrentHandshake,
         PeerSocketError::MseEndpointUpdate { source, .. } => mse_outgoing_failure(source),
-        PeerSocketError::NetworkPolicyDenied { .. } | PeerSocketError::Frame(_) => {
-            MseHandshakeFailure::TransportIo
-        }
+        PeerSocketError::NetworkPolicyDenied { .. }
+        | PeerSocketError::UtpEncryptionRequired
+        | PeerSocketError::Frame(_) => MseHandshakeFailure::TransportIo,
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn write_all_recorded(
-    stream: &mut TcpStream,
+    stream: &mut (impl AsyncWrite + Unpin),
     bytes: &[u8],
     deadline: Instant,
     io_timeout: Duration,
@@ -715,7 +750,7 @@ async fn write_all_recorded(
 
 #[allow(clippy::too_many_arguments)]
 async fn read_exact_recorded(
-    stream: &mut TcpStream,
+    stream: &mut (impl AsyncRead + Unpin),
     bytes: &mut [u8],
     deadline: Instant,
     io_timeout: Duration,
@@ -749,7 +784,7 @@ async fn read_exact_recorded(
 }
 
 async fn read_some_recorded(
-    stream: &mut TcpStream,
+    stream: &mut (impl AsyncRead + Unpin),
     bytes: &mut [u8],
     deadline: Instant,
     io_timeout: Duration,

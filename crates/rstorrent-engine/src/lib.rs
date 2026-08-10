@@ -21,6 +21,7 @@ mod peer_budget;
 mod peer_io;
 mod peer_runtime;
 mod peer_socket;
+mod peer_stream;
 mod pex;
 mod piece_availability;
 mod piece_picker;
@@ -38,6 +39,7 @@ mod torrent_peer;
 mod tracker;
 mod upload;
 mod upload_scheduler;
+mod utp_diagnostic;
 mod utp_runtime;
 
 pub use advertisement::{
@@ -180,6 +182,10 @@ pub use upload_scheduler::{
     DEFAULT_OPTIMISTIC_UNCHOKE_INTERVAL, DEFAULT_SEEDING_PIECE_QUOTA, DEFAULT_UNCHOKE_INTERVAL,
     DEFAULT_UNCHOKE_SLOTS, UploadDecision, UploadGrant, UploadPeerId, UploadScheduler,
     UploadSchedulerConfig, UploadSchedulerPeer, UploadSchedulerSnapshot,
+};
+pub use utp_diagnostic::{
+    ControlledUtpDownloadError, ControlledUtpDownloadReport, MAX_CONTROLLED_UTP_DOWNLOAD_BYTES,
+    download_controlled_utp,
 };
 pub use utp_runtime::{
     MAX_INCOMING_UTP_HALF_OPEN, MAX_UTP_APPLICATION_WRITE_BYTES, MAX_UTP_CONNECTIONS,

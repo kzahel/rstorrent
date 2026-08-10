@@ -7,9 +7,7 @@ use std::time::Duration;
 
 use rstorrent_protocol::mse::{MseCipherPair, Rc4};
 use rstorrent_protocol::peer_wire::{FrameDecoder, PeerMessage, encode_message};
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout_at};
@@ -19,6 +17,7 @@ use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::peer_io::{
     NETWORK_READ_LENGTH, PeerIoError, message_payload_metric, record_bytes, record_sent_range,
 };
+use crate::peer_stream::PeerStream;
 
 pub(super) const MAX_INCOMING_WRITER_BYTES: usize = 528_396;
 pub(super) const INCOMING_WRITER_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -132,7 +131,7 @@ struct IncomingWriter {
 
 impl IncomingWriter {
     fn spawn(
-        write: OwnedWriteHalf,
+        write: WriteHalf<PeerStream>,
         send_cipher: Option<Rc4>,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Self {
@@ -251,7 +250,7 @@ impl Drop for IncomingWriter {
 
 #[derive(Debug)]
 pub(super) struct IncomingPeerIo {
-    read: OwnedReadHalf,
+    read: ReadHalf<PeerStream>,
     receive_cipher: Option<Rc4>,
     decoder: FrameDecoder,
     queued_messages: VecDeque<PeerMessage>,
@@ -263,7 +262,7 @@ pub(super) struct IncomingPeerIo {
 impl IncomingPeerIo {
     #[cfg(test)]
     pub fn new(
-        stream: TcpStream,
+        stream: impl Into<PeerStream>,
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Self {
@@ -272,7 +271,7 @@ impl IncomingPeerIo {
     }
 
     pub fn new_with_mse(
-        stream: TcpStream,
+        stream: impl Into<PeerStream>,
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
         ciphers: Option<MseCipherPair>,
@@ -291,7 +290,7 @@ impl IncomingPeerIo {
             }
             None => (None, None),
         };
-        let (read, write) = stream.into_split();
+        let (read, write) = tokio::io::split(stream.into());
         Ok(Self {
             read,
             receive_cipher,
@@ -416,7 +415,7 @@ impl IncomingPeerIo {
 }
 
 async fn run_writer(
-    mut write: OwnedWriteHalf,
+    mut write: WriteHalf<PeerStream>,
     mut commands: mpsc::Receiver<WriterFrame>,
     state: Arc<Mutex<WriterState>>,
     changes: watch::Sender<WriterSnapshot>,
