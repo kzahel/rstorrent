@@ -8,7 +8,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -63,6 +63,20 @@ pub struct UtpServiceSnapshot {
     pub delivered_byte_high_water: usize,
     pub unsent_byte_high_water: usize,
     pub sent_byte_high_water: usize,
+    pub smoothed_rtt_min_micros: Option<u64>,
+    pub smoothed_rtt_max_micros: Option<u64>,
+    pub effective_rto_min_micros: Option<u64>,
+    pub effective_rto_max_micros: Option<u64>,
+    pub base_delay_min_micros: Option<u64>,
+    pub base_delay_max_micros: Option<u64>,
+    pub queue_delay_min_micros: Option<u64>,
+    pub queue_delay_max_micros: Option<u64>,
+    pub congestion_window_min_bytes: Option<usize>,
+    pub congestion_window_max_bytes: Option<usize>,
+    pub advertised_receive_window_min_bytes: Option<usize>,
+    pub advertised_receive_window_max_bytes: Option<usize>,
+    pub selected_mtu_min_bytes: Option<usize>,
+    pub selected_mtu_max_bytes: Option<usize>,
     pub worker_panics: u64,
 }
 
@@ -564,6 +578,78 @@ impl Drop for UtpStream {
     }
 }
 
+#[derive(Debug)]
+struct AtomicU64Range {
+    minimum: AtomicU64,
+    maximum: AtomicU64,
+    observed: AtomicBool,
+}
+
+impl Default for AtomicU64Range {
+    fn default() -> Self {
+        Self {
+            minimum: AtomicU64::new(u64::MAX),
+            maximum: AtomicU64::new(0),
+            observed: AtomicBool::new(false),
+        }
+    }
+}
+
+impl AtomicU64Range {
+    fn record(&self, value: u64) {
+        self.minimum.fetch_min(value, Ordering::Relaxed);
+        self.maximum.fetch_max(value, Ordering::Relaxed);
+        self.observed.store(true, Ordering::Release);
+    }
+
+    fn snapshot(&self) -> (Option<u64>, Option<u64>) {
+        if self.observed.load(Ordering::Acquire) {
+            (
+                Some(self.minimum.load(Ordering::Relaxed)),
+                Some(self.maximum.load(Ordering::Relaxed)),
+            )
+        } else {
+            (None, None)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct AtomicUsizeRange {
+    minimum: AtomicUsize,
+    maximum: AtomicUsize,
+    observed: AtomicBool,
+}
+
+impl Default for AtomicUsizeRange {
+    fn default() -> Self {
+        Self {
+            minimum: AtomicUsize::new(usize::MAX),
+            maximum: AtomicUsize::new(0),
+            observed: AtomicBool::new(false),
+        }
+    }
+}
+
+impl AtomicUsizeRange {
+    fn record(&self, value: usize) {
+        self.minimum.fetch_min(value, Ordering::Relaxed);
+        self.maximum.fetch_max(value, Ordering::Relaxed);
+        self.observed.store(true, Ordering::Release);
+    }
+
+    fn snapshot(&self) -> (Option<usize>, Option<usize>) {
+        if self.observed.load(Ordering::Acquire) {
+            (
+                Some(self.minimum.load(Ordering::Relaxed)),
+                Some(self.maximum.load(Ordering::Relaxed)),
+            )
+        } else {
+            (None, None)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct UtpStats {
     active_connections: AtomicUsize,
@@ -581,11 +667,29 @@ struct UtpStats {
     delivered_byte_high_water: AtomicUsize,
     unsent_byte_high_water: AtomicUsize,
     sent_byte_high_water: AtomicUsize,
+    smoothed_rtt_micros: AtomicU64Range,
+    effective_rto_micros: AtomicU64Range,
+    base_delay_micros: AtomicU64Range,
+    queue_delay_micros: AtomicU64Range,
+    congestion_window_bytes: AtomicUsizeRange,
+    advertised_receive_window_bytes: AtomicUsizeRange,
+    selected_mtu_bytes: AtomicUsizeRange,
     worker_panics: AtomicU64,
 }
 
 impl UtpStats {
     fn snapshot(&self) -> UtpServiceSnapshot {
+        let (smoothed_rtt_min_micros, smoothed_rtt_max_micros) =
+            self.smoothed_rtt_micros.snapshot();
+        let (effective_rto_min_micros, effective_rto_max_micros) =
+            self.effective_rto_micros.snapshot();
+        let (base_delay_min_micros, base_delay_max_micros) = self.base_delay_micros.snapshot();
+        let (queue_delay_min_micros, queue_delay_max_micros) = self.queue_delay_micros.snapshot();
+        let (congestion_window_min_bytes, congestion_window_max_bytes) =
+            self.congestion_window_bytes.snapshot();
+        let (advertised_receive_window_min_bytes, advertised_receive_window_max_bytes) =
+            self.advertised_receive_window_bytes.snapshot();
+        let (selected_mtu_min_bytes, selected_mtu_max_bytes) = self.selected_mtu_bytes.snapshot();
         UtpServiceSnapshot {
             active_connections: self.active_connections.load(Ordering::Relaxed),
             connection_high_water: self.connection_high_water.load(Ordering::Relaxed),
@@ -608,6 +712,20 @@ impl UtpStats {
             delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
             unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
             sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
+            smoothed_rtt_min_micros,
+            smoothed_rtt_max_micros,
+            effective_rto_min_micros,
+            effective_rto_max_micros,
+            base_delay_min_micros,
+            base_delay_max_micros,
+            queue_delay_min_micros,
+            queue_delay_max_micros,
+            congestion_window_min_bytes,
+            congestion_window_max_bytes,
+            advertised_receive_window_min_bytes,
+            advertised_receive_window_max_bytes,
+            selected_mtu_min_bytes,
+            selected_mtu_max_bytes,
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
         }
     }
@@ -643,9 +761,27 @@ impl UtpStats {
             .fetch_max(snapshot.transmit.byte_high_water, Ordering::Relaxed);
         self.sent_byte_high_water
             .fetch_max(snapshot.connection.send.byte_high_water, Ordering::Relaxed);
+        if let Some(smoothed_rtt_micros) = snapshot.connection.send.rtt.smoothed_rtt_micros {
+            self.smoothed_rtt_micros.record(smoothed_rtt_micros);
+        }
+        self.effective_rto_micros
+            .record(snapshot.connection.send.rtt.effective_rto_micros);
+        if let Some(base_delay_micros) = snapshot.congestion.delay.base_delay_micros {
+            self.base_delay_micros.record(u64::from(base_delay_micros));
+        }
+        if let Some(queue_delay_micros) = snapshot.congestion.delay.queue_delay_micros {
+            self.queue_delay_micros
+                .record(u64::from(queue_delay_micros));
+        }
+        self.congestion_window_bytes
+            .record(snapshot.congestion.congestion_window_bytes);
+        self.selected_mtu_bytes
+            .record(snapshot.mtu.candidate_datagram_bytes);
         if let Some(receive) = snapshot.connection.receive {
             self.delivered_byte_high_water
                 .fetch_max(receive.byte_high_water, Ordering::Relaxed);
+            self.advertised_receive_window_bytes
+                .record(receive.advertised_window_bytes);
         }
     }
 }

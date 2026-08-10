@@ -222,6 +222,34 @@ def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> N
         raise InteropFailure(f"{role} sent no uTP datagrams")
     if live_udp.get("utp_datagrams_classified", 0) <= 0:
         raise InteropFailure(f"{role} received no uTP datagrams")
+    for minimum_key, maximum_key in (
+        ("smoothed_rtt_min_micros", "smoothed_rtt_max_micros"),
+        ("effective_rto_min_micros", "effective_rto_max_micros"),
+        ("base_delay_min_micros", "base_delay_max_micros"),
+        ("queue_delay_min_micros", "queue_delay_max_micros"),
+        ("congestion_window_min_bytes", "congestion_window_max_bytes"),
+        (
+            "advertised_receive_window_min_bytes",
+            "advertised_receive_window_max_bytes",
+        ),
+        ("selected_mtu_min_bytes", "selected_mtu_max_bytes"),
+    ):
+        minimum = live_utp.get(minimum_key)
+        maximum = live_utp.get(maximum_key)
+        if not isinstance(minimum, int) or not isinstance(maximum, int):
+            raise InteropFailure(
+                f"{role} did not record {minimum_key}/{maximum_key}: {live_utp}"
+            )
+        if minimum < 0 or maximum < minimum:
+            raise InteropFailure(
+                f"{role} reported an invalid {minimum_key}/{maximum_key} range: "
+                f"{live_utp}"
+            )
+    if (
+        live_utp.get("selected_mtu_min_bytes") != 548
+        or live_utp.get("selected_mtu_max_bytes") != 548
+    ):
+        raise InteropFailure(f"{role} did not retain the fixed Stage 3 MTU")
     for key in (
         "malformed_datagrams",
         "unknown_connection_datagrams",
