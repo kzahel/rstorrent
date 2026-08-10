@@ -20,8 +20,11 @@ graduated. Tactical
 first uTP implementation/provenance review without adding transport code.
 Human review accepted its independent Rust recommendation, and Tactical
 [`119`](../tactical/119-deterministic-utp-transport-core.md) completed the
-runtime-free deterministic core. Its Stage 1 human-review checkpoint is the
-single authoritative **Now**. The completed
+runtime-free deterministic core. Tactical
+[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) completed
+the deterministic receive-credit, packetization, loss/congestion, pacing,
+MTU, and impaired-link stage. Its required pre-runtime Stage 2 human-review
+checkpoint is the single authoritative **Now**. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -333,9 +336,9 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tacticals `114` and `116` graduated; non-implementing uTP Stage 0 Tactical
-`118` and deterministic uTP core Tactical `119` completed; required Stage 1
-human review is active**.
+Tacticals `114` and `116` graduated; uTP Tacticals `118`, `119`, and runtime-
+free deterministic Stage 2 Tactical `121` completed; required Stage 2 human
+review is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -349,26 +352,26 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest closed tactical:
-[`119`](../tactical/119-deterministic-utp-transport-core.md). Its execution
-record retains the exact pure codec, wrapping, connection, ordering, SACK,
-loss, RTT/RTO, limit, FIN/RESET, and zero-ownership evidence. It ran no socket,
-client, WAN path, or physical device and makes no uTP support claim.
+[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md). Its
+execution record retains exact clean/impaired/fairness hashes and thresholds,
+the RFC 6817 and path-MTU choices, the stale-SACK retry repair, resource high-
+water marks, and zero terminal ownership. It ran no socket, client,
+interoperability peer, WAN path, or physical device and makes no uTP support
+claim.
 
-Current milestone: required human review of Tactical `119`'s completed
-runtime-free uTP v1 codec and bounded deterministic reliability state. The
-recommended next choice is a separately approved deterministic Stage 2
-impaired-network, receive-window/packetization, LEDBAT/congestion, and MTU
-tactical; sockets, tasks, interoperability, WAN activity, and support remain
-later gates.
+Current milestone: required human review of Tactical `121`'s completed
+runtime-free uTP transport state and fixed impairment evidence. The
+recommended next choice is a separately approved Stage 3 shared-UDP/runtime,
+ordered-stream, and forced-uTP pinned-libtorrent loopback tactical; WAN
+activity, reachability/product policy, and support remain later gates.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: stop for the Stage 1 human decision recorded in
-[`utp-transport-campaign.md`](utp-transport-campaign.md). If recommendation A
-is accepted, draft the bounded Stage 2 tactical and its fixed impairment,
-fairness, utilization, queue-delay, loss, MTU, work, and resource thresholds
-before changing code. Do not start shared-UDP/runtime or external-network work
+Next executable action: stop for the Stage 2 human decision recorded in
+[`utp-transport-campaign.md`](utp-transport-campaign.md). Recommendation A is
+to draft a bounded Stage 3 shared-UDP/runtime and loopback-interoperability
+tactical before changing code. Do not start runtime or external-network work
 from this checkpoint.
 
 A separate trusting fast-resume option may now be planned against Tactical
