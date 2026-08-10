@@ -749,6 +749,50 @@ zero terminal Swift resources. The probe app was then uninstalled. Temporary
 evidence and build output were removed, the simulator copy was uninstalled,
 and no cloud control directory or other provider content required cleanup.
 
+### Physical testbed follow-up
+
+A maintainer-requested follow-up on 2026-08-10 used the dedicated
+`ios-device-testbed` provider that should have been used for the original
+picker attempt. Its `probe` and `doctor` checks passed for the wired physical
+iPhone: the device was connected and unlocked, Developer Mode and Developer
+Tools security were enabled, signing was available, and the pinned Agent
+Device 0.20.5 runner cache was present.
+
+The first transactional testbed session opened this exact signed probe build
+successfully in 4.2 seconds. The follow-up then supplied an invalid unquoted
+selector shape to `wait`, so the wait timed out before a snapshot or picker
+action and ordinary session cleanup stopped the runner. That operator error is
+not evidence of an application or device failure. A fresh semantic `open`
+subsequently timed out after 90 seconds, and the testbed's prescribed
+`recover` plus `prepare` sequence spent its full 240-second bound repeatedly
+failing at `ios_runner_connect`. At the pause point the testbed again reported
+the phone connected and unlocked with no active lease. This matches the
+testbed's documented possibility of a human-attended Touch ID or XCTest
+authentication gate after runner restart, but no prompt was observed and that
+cause is not claimed as proven.
+
+While semantic automation was unavailable, the newly installed build repeated
+the complete non-picker physical matrix through CoreDevice. App-owned storage
+again produced the expected SHA-1 and 65,536/40,960-byte geometry, rejected the
+rename collision, returned the file pool to zero cached and owned leases, and
+returned process descriptors from a sampled high of eight to a baseline of
+seven. Direct Rust TCP and UDP loopback each echoed 30 bytes. A controlled
+SIGKILL left the 40,960-byte partial workspace and generation-fenced pending
+fact; relaunch removed it, repeated the full storage operation, preserved root
+generation 1, and cleared the pending fact. Three more termination/relaunch
+cycles retained the same bounds and zero terminal Swift resources. The final
+background run completed the finite continued-processing task, expired the
+ordinary UIKit assertion after 42 seconds, and retained zero current scopes,
+coordinators, root operations, or eligibility requests.
+
+No document-picker selection occurred during this follow-up, so the enabled
+policy and support claims do not change. Resume only with the maintainer near
+the phone: run the provider `probe`, `doctor`, and `prepare` sequence, complete
+any local authentication prompt, then hold one transactional session across a
+fresh semantic snapshot and the dedicated empty **On My iPhone** and iCloud
+classification controls. Do not enable selected-root registration from the
+mere fact that the runner reconnects.
+
 ## Deliberate Non-Goals And Next Boundary
 
 This tactical does not implement:
