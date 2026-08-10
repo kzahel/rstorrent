@@ -16,7 +16,15 @@ orchestrator itself does not import libtorrent. A release-mode direct-metainfo
 multi-file control passes plaintext and forced-RC4 publication for both owners
 with independent piece verification, actual RC4 payload-contributor evidence,
 bounded process telemetry, and cleanup. The retained small fixture is an
-adapter gate; the 1 GiB controlled and public cohort evidence remains pending.
+adapter gate.
+
+The required 1 GiB control also passes. On the same warm loopback fixture,
+RSTorrent/libtorrent publication was 2.573/1.830 seconds for plaintext and
+3.680/1.957 seconds for forced RC4. Peak RSS was 135.9/960.3 MiB and
+127.8/1,014.5 MiB respectively. All four outputs independently verified the
+full 1,073,741,824-byte logical payload and exact method, then joined and were
+removed. These single-run loopback ratios validate the harness and provide a
+controlled context; they are not a public-swarm baseline or regression floor.
 
 ## Purpose
 

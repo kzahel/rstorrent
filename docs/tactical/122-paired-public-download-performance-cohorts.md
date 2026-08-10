@@ -707,6 +707,31 @@ No public network access occurred. The next checkpoint is the release-mode
 1 GiB plaintext and forced-RC4 controlled gate, followed by official catalog
 refresh only if that gate remains exact and cleanup-safe.
 
+### Controlled 1 GiB gate: 2026-08-10
+
+The required release-mode direct-metainfo control used one 1,073,741,824-byte
+multi-file v1 payload with 1 MiB pieces and a pinned libtorrent seeder. Both
+owners independently verified every piece and published the exact file set in
+both profiles; all four workers stopped and joined cleanly.
+
+| Profile | Owner | Publication | Peak RSS | Payload method |
+| --- | --- | ---: | ---: | --- |
+| `matched-plain-30` | RSTorrent | 2.573 s | 135.9 MiB | plaintext stream |
+| `matched-plain-30` | libtorrent | 1.830 s | 960.3 MiB | plaintext stream |
+| `matched-rc4-30` | RSTorrent | 3.680 s | 127.8 MiB | RC4 |
+| `matched-rc4-30` | libtorrent | 1.957 s | 1,014.5 MiB | RC4 |
+
+The plaintext publication ratio was 1.41 and the forced-RC4 ratio was 1.88
+for this single warm loopback fixture. Those values prove neither a stable
+speed gap nor a causal crypto cost; the gate's authority is exact settings,
+payload method, integrity, process/resource capture, and cleanup. Each profile
+root was removed before the next profile began, and no payload or metainfo was
+retained.
+
+No public network access occurred. The next checkpoint refreshes official
+catalog candidates, records reviewed exact identities and provenance, and
+commits that catalog before any public payload worker starts.
+
 ## Non-Goals And Next Boundary
 
 - No engine optimization, picker/scheduler retuning, new protocol capability,

@@ -391,13 +391,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: Tactical `122`'s isolated schema-v2 workers,
-direct-metainfo production owner path, exact settings echo, process sampling,
-privacy retention, independent verifier, forced-RC4 offer, and controlled
-1 MiB plaintext/RC4 adapters pass. Run the release-mode 1 GiB plaintext and
-forced-RC4 control with exact payload, actual MSE-method, resource, and cleanup
-evidence. Refresh official catalog metainfo only after that gate passes, and
-use no public payload swarm before the reviewed catalog commit. Keep uTP
+Next executable action: Tactical `122`'s release-mode 1 GiB direct-metainfo
+plaintext and forced-RC4 controls pass for both owners with exact independent
+verification, actual payload-method evidence, process resources, bounded wire
+payload, and joined cleanup. Refresh the official WebTorrent and distribution
+metainfo candidates, inspect their normalized identities and provenance, and
+commit the reviewed catalog before any public payload worker starts. Keep uTP
 paused; do not install a remote oracle, change remote network state, contact
 another host, or infer product-policy, MSE-over-uTP, reverse-incoming, or
 support-claim authority.

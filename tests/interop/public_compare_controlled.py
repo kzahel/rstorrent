@@ -164,6 +164,9 @@ def main() -> int:
                 )
                 if classification != "both_reached":
                     failures.append(f"{profile}: {classification}")
+                profile_root = owned / profile
+                if profile_root.is_dir():
+                    shutil.rmtree(profile_root)
             report = {
                 "schema_version": 2,
                 "config": {
