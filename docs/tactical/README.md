@@ -570,6 +570,10 @@ that scope and its cleanup or compatibility rules explicitly.
   with a fully connected JSTorrent-shaped Compose library, six-tab detail,
   global inspection, settings, and lifecycle experience while keeping
   unsupported engine and platform policy visibly unavailable.
+- [`118-utp-implementation-decision-spike.md`](118-utp-implementation-decision-spike.md):
+  at first review after the non-implementing source, license, platform,
+  ownership, and forced-uTP oracle decision spike; no implementation path is
+  accepted yet.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -92,6 +92,39 @@ Neither document is vendored. The implementation and independently authored
 tests use the public wire behavior; no specification source or fixture was
 copied.
 
+## uTP References
+
+Tactical
+[`118`](tactical/118-utp-implementation-decision-spike.md) pins the uTP source
+set used for the implementation decision:
+
+- BEP 29 comes from managed `reference/bittorrent.org` commit
+  `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06`. RFC 6817 sections 1--5 are the
+  LEDBAT reference. Both are summarized independently; no specification text
+  or fixture is imported.
+- Rasterbar libtorrent `2.0.13` at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d` is the primary completeness and
+  executable interoperability oracle. The inspected uTP library files are
+  BSD-3-Clause. Its GPL-3.0 simulator submodule was neither initialized nor
+  run.
+- BitTorrent libutp at
+  `2b364cbb0650bdab64a5de2abb4518f9f228ec44` is an MIT-licensed standalone
+  C++ implementation with a C callback API. It is a build and behavior
+  reference only, not an accepted dependency or source donor.
+- Apache-2.0 `librqbit-utp` `0.7.0` is pinned at
+  `c26f57b2debbe35ed0ace1ad419de529f7a5bf95`; the matching crates.io checksum
+  is `4f3bfdc73944bc76cab24d5690a98816770040a654c449edf5ff2b9ba22626aa`.
+  The VCS and package source are test and design references only, not an
+  accepted dependency or fork base.
+
+The retained
+[`utp_reference_oracle.py`](../tests/interop/utp_reference_oracle.py) is
+independently authored. It generates temporary content and uses the locked
+libtorrent Python package as a separate executable loopback oracle; it copies
+no reference source, fixture, or test data. Any future copy, translation,
+vendoring, FFI link, dependency, or fork remains a human review gate with the
+applicable BSD-3-Clause, MIT, or Apache-2.0 notices and modification record.
+
 ## License Posture
 
 This inventory was checked against the managed revisions on 2026-07-29. It
@@ -99,6 +132,7 @@ describes the reference set; it is not a substitute for checking the precise
 file before importing material.
 
 - rqbit and its librqbit crates are Apache-2.0.
+- Standalone BitTorrent libutp is MIT.
 - Rasterbar libtorrent's main library is BSD-3-Clause. Its root `LICENSE`
   identifies separately licensed files; notably, its Python binding source is
   Boost Software License 1.0, while its optional `simulation/libsimulator`

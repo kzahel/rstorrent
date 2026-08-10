@@ -14,9 +14,11 @@ capability is unknown on the current hardware and the tactical is not
 graduated. Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) is
 complete after deterministic, controlled pinned-libtorrent, browser, scale,
-performance, and physical Pixel evidence. Planned Tactical
-[`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md) is
-the single authoritative **Now**. The completed
+performance, and physical Pixel evidence. Tactical `116` subsequently
+graduated. Tactical
+[`118`](../tactical/118-utp-implementation-decision-spike.md) is the single
+authoritative **Now** and is stopped at the first uTP
+implementation/provenance review without adding transport code. The completed
 maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -328,7 +330,8 @@ reason to stop.
 
 Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
-Tacticals `114` and `116` graduated**.
+Tacticals `114` and `116` graduated; non-implementing uTP Stage 0 Tactical
+`118` is at first review**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -346,10 +349,10 @@ Latest closed tactical:
 Its execution record retains the exact deterministic, Android, interop, and
 physical-iOS evidence without stable platform identifiers.
 
-Current milestone: Tactical `116` is complete. The capability-readiness queue
-owns the next authoritative **Now**; there is no residual storage-shoring
-implementation action in this campaign checkpoint. Tactical `113` needs no
-further action unless different gateway hardware becomes available or a
+Current milestone: Tactical `118` has produced the pinned uTP source/license/
+platform dossier and bounded forced-uTP loopback oracle. Human direction is
+required before any implementation or dependency choice. Tactical `113` needs
+no further action unless different gateway hardware becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 A separate trusting fast-resume option may now be planned against Tactical

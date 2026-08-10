@@ -2,8 +2,11 @@
 
 Topic: `utp-transport-campaign`
 
-Status: Investigation and campaign direction accepted. uTP remains **Later**
-and **Unsupported**; no implementing tactical is accepted or in progress.
+Status: Stage 0 Tactical
+[`118`](../tactical/118-utp-implementation-decision-spike.md) is at its first
+human review. Its source, platform, ownership, and forced-uTP evidence supports
+the independent Rust recommendation; uTP remains **Unsupported** and no
+implementing tactical or dependency is accepted.
 
 ## Scope And Ownership
 
@@ -21,9 +24,9 @@ shaped by failures and measurements. Each child tactical must still have fixed
 scope, invariants, resource limits, evidence, and a falsifiable stopping
 condition before code changes begin.
 
-Creating this topic does not promote uTP in
-[`capability-readiness.md`](capability-readiness.md), authorize a dependency or
-source import, or make a protocol-support claim.
+This topic does not by itself authorize a dependency, source import, or
+protocol-support claim. The readiness queue separately controls promotion and
+the single authoritative **Now**.
 
 ## Current Truth
 
@@ -36,11 +39,11 @@ source import, or make a protocol-support claim.
   DHT's 1,024-byte maximum and routes every accepted datagram toward DHT. uTP
   needs explicit classification, appropriately bounded packet storage, its own
   queue pressure, and observable drop behavior.
-- Planned Tactical
-  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) changes the
+- Completed Tactical
+  [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) changed the
   session to one coordinated TCP/UDP socket pair per enabled address family.
-  Any uTP runtime tactical must inspect the landed result rather than design
-  around today's IPv4-only shape.
+  Tactical `118` inspects that landed owner rather than designing around the
+  former IPv4-only shape.
 - Current UPnP behavior maps TCP only. Outgoing uTP can therefore reach a
   controlled off-LAN peer before incoming public uTP is advertisable. UDP
   mapping or an IPv6 pinhole is a separate reachability decision, not an
@@ -51,9 +54,12 @@ source import, or make a protocol-support claim.
   deliberately exclude uTP and MSE over uTP. Their sans-IO MSE state machine
   and policy helpers remain reusable once uTP exposes the same ordered peer-
   stream boundary; Stage 5 must compose and verify that path explicitly.
-- No deterministic uTP state machine, runtime stream, forced-uTP
-  interoperability result, WAN result, product policy, or public-swarm
-  support evidence exists in RSTorrent today.
+- The retained
+  [`utp_reference_oracle.py`](../../tests/interop/utp_reference_oracle.py)
+  proves only that two pinned libtorrent sessions can complete one bounded,
+  forced-uTP loopback transfer under the future acceptance controls. No
+  RSTorrent uTP state machine, runtime stream, interoperability result, WAN
+  result, product policy, or public-swarm support evidence exists.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -79,7 +85,7 @@ The campaign therefore uses these rules:
 5. Ordinary implementation details inside an accepted child tactical proceed
    autonomously. The explicit review gates below remain human decisions.
 
-## Initial Source Survey
+## Stage 0 Source Survey
 
 The normative starting points are BEP 29 for the wire protocol and
 [RFC 6817](https://www.rfc-editor.org/rfc/rfc6817.html) for LEDBAT. Deployed
@@ -102,33 +108,37 @@ before its tests:
 | Simulation | `simulation/test_utp.cpp` | Exercises PMTU discovery, an ordinary transfer, bufferbloat, a constrained path, and a small kernel send buffer. |
 | Fuzzing | `fuzzers/src/utp.cpp` | Supplies hostile packet input to the protocol path. |
 
-The first implementing tactical must inspect the exact functions and tests it
-uses, not merely this overview. In particular, `utp_socket_impl::incoming_packet`,
-`parse_sack`, `ack_packet`, `do_ledbat`, `packet_timeout`, `tick`, and
-`utp_socket_manager::incoming_packet` are initial completeness-review anchors.
-The simulator tests may be studied or run out of tree, but libtorrent's
-GPL-3.0 `simulation/libsimulator` submodule must not be linked into or
-distributed with RSTorrent without a separate decision.
+Tactical `118` inspected `utp_socket_impl` packet parsing, extension/SACK,
+acknowledgement, loss, LEDBAT, timeout, send, receive, FIN/RESET, and MTU paths,
+plus `utp_socket_manager` classification, lookup, admission, deferred-ACK,
+writability, drain, tick, and removal paths. The exact function list and
+resulting edge-case checklist are retained in its execution record. The
+simulator source was read, but the GPL-3.0 `simulation/libsimulator` submodule
+was not initialized, linked, run, or distributed.
 
 ### Standalone libutp
 
-[BitTorrent's standalone libutp](https://github.com/bittorrent/libutp) is a
-real alternative reference: a C++ implementation with a C callback API and an
-MIT license. Its own documentation calls the API unstable and recommends
-testing against or bundling the selected version. It is not part of the
-managed reference set and has not been accepted as a dependency. Before it can
-be used as more than a prospective comparison, a child tactical must pin an
-exact revision, inspect its tests and maintenance state, and record its
-threading, buffering, platform-build, FFI, cancellation, and upgrade costs.
+[BitTorrent's standalone libutp](https://github.com/bittorrent/libutp) is
+managed at `2b364cbb0650bdab64a5de2abb4518f9f228ec44`. It is an MIT-licensed
+C++ core with a non-thread-safe C callback API, hard-coded packet/socket
+storage, host-driven timeout and deferred-ACK pumps, and legacy LEDBAT
+behavior. The API is documented as unstable; the last pinned commit is from
+2018, the named test directory is absent, and the repository has no Android
+build target. Its native arm64 macOS build passed, but FFI, C++ packaging,
+lifetime, allocation, platform, and notice costs make it a secondary reference
+rather than the recommended product path.
 
 ### librqbit-utp
 
-The pinned rqbit tree resolves Rust/Tokio `librqbit-utp` `0.7.0`, but that
-crate's source is not itself captured by the managed rqbit checkout. It is a
-valuable secondary Rust implementation and executable peer candidate. It is
-not a drop-in choice until its exact package source, transitive dependencies,
-license notices, congestion behavior, retry/teardown semantics, platform
-support, tests, and resource bounds are audited and pinned.
+Apache-2.0 `librqbit-utp` `0.7.0` is managed at
+`c26f57b2debbe35ed0ace1ad419de529f7a5bf95` with its crates.io checksum
+recorded in [`references.md`](../references.md). Its 76 passing native tests
+and Android library check are useful evidence, and it has several explicit
+socket, stream, retry, timeout, and buffer limits. Direct adoption is rejected:
+LEDBAT is an explicit TODO, CUBIC is the only controller, and hostile per-stream
+packet ingress and socket control use unbounded channels. Adapting it would
+replace enough congestion, queue, task, and shared-socket ownership to create a
+long-lived fork without a credible scope advantage.
 
 ## Source-Reuse And License Decision
 
@@ -149,23 +159,21 @@ Extracting or translating it mechanically would inherit provenance and much
 of that architecture while still demanding a difficult Rust/runtime
 adaptation.
 
-The provisional direction is therefore an independently authored Rust
-implementation derived from public protocol behavior, with a deterministic
-sans-IO core and libtorrent as the primary completeness and interoperability
-oracle. Standalone libutp and librqbit-utp remain secondary references and
-possible test peers. This is a working direction, not an irreversible choice:
-the first child tactical must compare it against wrapping or depending on a
-pinned implementation before that choice becomes costly.
+Stage 0 therefore recommends an independently authored Rust implementation
+derived from public protocol behavior, with a deterministic sans-IO core and
+libtorrent as the primary completeness and interoperability oracle.
+Standalone libutp and librqbit-utp remain read-only secondary references and
+possible test peers. This recommendation is at the first human gate, not yet
+an accepted implementation choice.
 
 Any decision to copy, mechanically translate, vendor, wrap, link, or add a uTP
 dependency is a human review gate. It must include exact provenance, licenses,
 notices, dependency and platform costs, the ownership fit, and why independent
 implementation is no longer preferred.
 
-## Provisional Owner And Dependency Shape
+## Recommended Owner And Dependency Shape
 
-The campaign begins with the following hypothesis and revises it only from
-evidence:
+Stage 0 recommends the following shape and revises it only from later evidence:
 
 - a runtime-independent protocol component owns header and extension codecs,
   wrapping arithmetic, connection transitions, acknowledgement and
@@ -186,8 +194,9 @@ evidence:
 
 Socket replacement must define what happens to live uTP connections. No
 connection may silently continue on a new local endpoint or UDP generation,
-and no old connection or timer may mutate a replacement generation. Tactical
-`112` may refine the per-family socket owner before uTP begins.
+and no old connection or timer may mutate a replacement generation. Completed
+Tactical `112` supplies the coordinated per-family socket owner; a later uTP
+runtime tactical must integrate with and test that landed generation boundary.
 
 ## Candidate Child Slices
 
@@ -204,11 +213,10 @@ combine, reorder, or stop them before the next child is drafted.
 | 5. Ordinary swarm and product integration | Decide TCP/uTP selection, racing, fallback, advertisement, duplicate ownership, MSE-over-uTP composition, incoming UDP reachability, settings, and status only as evidence requires. | Controlled compatibility plus representative opt-in observations establish the exact default policy and any remaining platform gaps. |
 | 6. Claim graduation | Reconcile every required deterministic, runtime, interop, WAN, resource, restart, and product result. | The BEP 29 row changes only to the narrow claim supported by recorded evidence. |
 
-The first action when the readiness queue promotes this campaign is to draft
-Stage 0 as a bounded numbered tactical. It should not start source import or a
-full transport implementation. Its stopping condition is a reproducible
-oracle harness and a reviewed implementation/provenance decision sufficient
-to write the next tactical honestly.
+The readiness queue promoted the campaign on 2026-08-10. Tactical `118` has
+reached its bounded Stage 0 stop with a reproducible oracle harness and the
+implementation/provenance recommendation above. It did not start source import
+or transport implementation.
 
 ## Validation Contract
 
@@ -301,11 +309,11 @@ accepted tactical.
 
 ## Restart Checkpoint
 
-Campaign state: **strategy recorded; no child tactical accepted**.
+Campaign state: **Stage 0 Tactical `118` is at first review; no uTP
+implementation accepted**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). When uTP is promoted, the
-next action is to draft the Stage 0 decision-spike tactical, reconcile it with
-the landed Tactical `111`/`115` and then-current `112`/`113` state, and obtain
-human review of its implementation-source and external-test boundaries before
-execution.
+[`capability-readiness.md`](capability-readiness.md). The next action requires
+human direction: approve the recommended independent Rust Stage 1, request a
+standalone-libutp FFI/platform feasibility slice, or request a librqbit
+hardening/LEDBAT-fork feasibility slice. No option starts until selected.

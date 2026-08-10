@@ -24,6 +24,22 @@ revision = "7d7fc38fac61177fa5e02148f791b2f65250b09d"
 purpose = "Primary external interoperability oracle and broad protocol reference"
 required = true
 
+[[checkout]]
+name = "libutp"
+path = "reference/libutp"
+repository = "https://github.com/bittorrent/libutp.git"
+revision = "2b364cbb0650bdab64a5de2abb4518f9f228ec44"
+purpose = "Standalone MIT uTP implementation and dependency comparison"
+required = true
+
+[[checkout]]
+name = "librqbit-utp"
+path = "reference/librqbit-utp"
+repository = "https://github.com/ikatson/librqbit-utp.git"
+revision = "c26f57b2debbe35ed0ace1ad419de529f7a5bf95"
+purpose = "Rust and Tokio uTP implementation, test, and dependency comparison"
+required = true
+
 [[sibling]]
 name = "jstorrent"
 path = "../jstorrent"

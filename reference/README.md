@@ -36,6 +36,8 @@ branch-tracking sibling, status compares against the locally fetched
 | `reference/bittorrent.org` | `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06` | Authoritative offline BEP source documents and protocol index |
 | `reference/rqbit` | `4e5f94cbcf1d57ec500885c77cf1e24d70232d89` | Native Rust/Tokio engine, application API, storage, uTP, and implementation comparison |
 | `reference/libtorrent` | `v2.0.13` (`7d7fc38fac61177fa5e02148f791b2f65250b09d`) | Primary external interoperability oracle and broad protocol reference |
+| `reference/libutp` | `2b364cbb0650bdab64a5de2abb4518f9f228ec44` | Standalone MIT uTP source, C callback API, and build comparison; the pin has no maintained test suite |
+| `reference/librqbit-utp` | `c26f57b2debbe35ed0ace1ad419de529f7a5bf95` (crates.io `0.7.0`) | Rust/Tokio uTP source, tests, task model, and dependency comparison |
 | `../jstorrent` | first-party `main` | Product behavior, fixtures, integration scenarios, and Android/ChromeOS lessons |
 
 The bittorrent.org checkout provides the original reStructuredText BEP sources
@@ -61,6 +63,16 @@ roles: the checkout supports reading and provenance; the binding runs black-box
 peers and fixture creation. Its submodules are deliberately not initialized;
 in particular, the GPL `simulation/libsimulator` checkout is outside this
 project's reference and product dependency set.
+
+The standalone libutp pin captures BitTorrent's MIT-licensed callback-oriented
+C/C++ implementation for Tactical `118`'s source, build, and ownership
+comparison. It is not an accepted product dependency or source donor.
+
+The librqbit-utp pin is the exact VCS revision embedded in crates.io package
+`0.7.0`. The matching package is locked by rqbit at checksum
+`4f3bfdc73944bc76cab24d5690a98816770040a654c449edf5ff2b9ba22626aa`.
+The checkout exposes tests and repository metadata omitted or normalized by
+the package archive; neither form is an accepted RSTorrent dependency.
 
 JSTorrent remains a sibling because it is a first-party product repository that
 may be maintained independently. Do not create a second copy under
