@@ -1,10 +1,15 @@
 //! Runtime-independent BEP 29 uTP v1 values and deterministic transport state.
 
+mod connection;
 mod packet;
 mod receive;
 mod send;
 mod sequence;
 
+pub use connection::{
+    ConnectionError, ConnectionIds, ConnectionPhase, ConnectionSnapshot, ConnectionState,
+    IncomingDisposition, IncomingOutcome, OutboundPacketIntent,
+};
 pub use packet::{
     DecodedPacket, Extension, ExtensionToEncode, Extensions, MAX_SACK_BYTES,
     MAX_UTP_EXTENSION_COUNT, MAX_UTP_PACKET_SIZE, MAX_UTP_PAYLOAD_SIZE, PacketToEncode, PacketType,

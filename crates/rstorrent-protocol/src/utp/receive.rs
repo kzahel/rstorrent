@@ -206,6 +206,11 @@ impl ReceiveState {
         }
     }
 
+    #[must_use]
+    pub fn selective_ack(&self) -> Option<SelectiveAckBits> {
+        self.sack()
+    }
+
     pub fn receive(
         &mut self,
         packet_type: PacketType,
