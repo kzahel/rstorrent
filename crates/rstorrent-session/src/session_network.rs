@@ -852,6 +852,10 @@ impl SessionNetworkRuntime {
         self.incoming_seeding.clone()
     }
 
+    pub(crate) fn incoming_peer_handle(&self) -> IncomingPeerHandle {
+        self.incoming_handle.clone()
+    }
+
     pub(crate) fn advertised_endpoint(&self) -> AdvertisedPeerEndpointSelector {
         self.advertised_endpoint.clone()
     }

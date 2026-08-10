@@ -41,8 +41,12 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::active_seed_content::ActiveSeedContent;
 use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
+use crate::incoming::{
+    IncomingPeerHandle, SeedRegistration, SeedRegistrationToken, SessionUploadMembership,
+};
 use crate::metrics::ByteMetric;
 use crate::mse::MseDhWorkOwner;
 #[cfg(test)]
@@ -61,6 +65,7 @@ use crate::peer_socket::{
     self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
 };
 use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
+use crate::piece_availability::{AvailabilityCursor, AvailabilityDrain, PieceAvailability};
 use crate::piece_picker::picker_seed;
 use crate::resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
@@ -81,6 +86,11 @@ use crate::tracker::{
     TrackerAction, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint, TrackerId,
     TrackerSchedule, TrackerWaitKind,
 };
+use crate::upload::{
+    MAX_GENERATED_ALLOWED_FAST_PIECES, UploadAction, UploadCloseReason, UploadPeerState,
+    UploadRead, generate_allowed_fast_set,
+};
+use crate::upload_scheduler::UploadGrant;
 
 mod control;
 mod storage_pipeline;
@@ -3526,6 +3536,7 @@ fn merge_tracker_shutdown<T>(
 
 #[derive(Clone)]
 struct ResumeContext {
+    raw_info: Option<Arc<[u8]>>,
     verified_pieces: Vec<bool>,
     checkpoints: Arc<dyn DownloadCheckpointSink>,
     initialize_descriptors: bool,
@@ -3544,7 +3555,8 @@ async fn run_resumable_magnet_download(
     let dht = config.dht.clone();
     let configured_trackers = config.udp_trackers.clone();
     let torrent_peers = config.torrent_peers.clone();
-    let resume = ResumeContext {
+    let mut resume = ResumeContext {
+        raw_info: config.verified_info.map(Arc::from),
         verified_pieces: config.verified_pieces,
         checkpoints: checkpoints.clone(),
         artifact_state: config.artifact_state,
@@ -3556,8 +3568,8 @@ async fn run_resumable_magnet_download(
     };
     let descriptors = descriptors.map(|(descriptors, _)| descriptors);
 
-    if let Some(raw_info) = config.verified_info {
-        let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+    if let Some(raw_info) = resume.raw_info.as_ref() {
+        let metainfo = Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(DownloadError::Metainfo)?;
         if metainfo.info_hash != magnet.info_hash {
             return Err(DownloadError::Checkpoint(
@@ -3635,6 +3647,7 @@ async fn run_resumable_magnet_download(
             peers.close_current(None)?;
             return Err(DownloadError::Checkpoint(message));
         }
+        resume.raw_info = Some(raw_info.into());
         let content_config = ContentDownloadConfig {
             output_path: config.storage_root.join(&metainfo.name),
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
@@ -4009,6 +4022,10 @@ struct ContentSwarmDownload<'a> {
     state: SwarmState,
     storage_pipeline: Option<ContentStoragePipeline>,
     completed_storage: Option<ContentStorage>,
+    availability: PieceAvailability,
+    active_content: ActiveSeedContent,
+    active_registration: Option<(IncomingPeerHandle, SeedRegistrationToken)>,
+    outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     metainfo: &'a Metainfo,
     layout: &'a TorrentLayout,
     resume: Option<&'a ResumeContext>,
@@ -4023,6 +4040,18 @@ struct ContentSwarmDownload<'a> {
     maximum_planned_bytes: usize,
     max_buffered_payload_bytes: usize,
     selection_revision: u64,
+}
+
+struct OutgoingUploadPeer {
+    state: UploadPeerState,
+    cursor: AvailabilityCursor,
+    membership: Option<SessionUploadMembership>,
+    read: Option<OutgoingUploadRead>,
+}
+
+struct OutgoingUploadRead {
+    pending: UploadRead,
+    task: JoinHandle<Result<Vec<u8>, ()>>,
 }
 
 struct AppliedFileSelection {
@@ -4126,18 +4155,38 @@ impl<'a> ContentSwarmDownload<'a> {
         .map_err(DownloadError::Swarm)?;
         state.set_session_resources(control.session_resources());
         let checkpoints = resume.map(|resume| resume.checkpoints.clone());
+        let availability =
+            PieceAvailability::new(storage.0.route_epoch(), storage.0.verified_pieces())
+                .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let piece_lengths = (0..layout.piece_count())
+            .map(|piece| {
+                let piece = u32::try_from(piece)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                layout.piece_length_at(piece).map_err(DownloadError::Layout)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let storage_pipeline = ContentStoragePipeline::start(
+            storage,
+            control,
+            max_buffered_payload_bytes,
+            checkpoints,
+        )
+        .await?;
+        let active_content = ActiveSeedContent::new(
+            metainfo.info_hash,
+            metainfo.private,
+            piece_lengths,
+            availability.clone(),
+            storage_pipeline.active_upload_planner(),
+        );
         Ok(Self {
             state,
-            storage_pipeline: Some(
-                ContentStoragePipeline::start(
-                    storage,
-                    control,
-                    max_buffered_payload_bytes,
-                    checkpoints,
-                )
-                .await?,
-            ),
+            storage_pipeline: Some(storage_pipeline),
             completed_storage: None,
+            availability,
+            active_content,
+            active_registration: None,
+            outgoing_uploads: BTreeMap::new(),
             metainfo,
             layout,
             resume,
@@ -4157,6 +4206,281 @@ impl<'a> ContentSwarmDownload<'a> {
 
     fn is_complete(&self) -> bool {
         self.state.is_complete()
+    }
+
+    async fn install_outgoing_upload(
+        &mut self,
+        sockets: &PeerSocketSet,
+        connection: ConnectionId,
+        remote: std::net::IpAddr,
+        supports_fast: bool,
+        send_initial_availability: bool,
+    ) -> Result<(), DownloadError> {
+        let piece_lengths = self.active_content.piece_lengths();
+        let mut state =
+            UploadPeerState::from_availability(piece_lengths, self.availability.clone())
+                .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+        let allowed_fast = if supports_fast {
+            match remote {
+                std::net::IpAddr::V4(address) => generate_allowed_fast_set(
+                    self.metainfo.info_hash,
+                    address,
+                    self.layout.piece_count(),
+                    MAX_GENERATED_ALLOWED_FAST_PIECES,
+                )
+                .map_err(|error| DownloadError::StorageTask(error.to_owned()))?,
+                std::net::IpAddr::V6(_) => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        if supports_fast {
+            state
+                .enable_fast_extension(allowed_fast.iter().copied())
+                .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
+        }
+        if send_initial_availability
+            && let Some(message) = state.initial_availability_message(supports_fast)
+        {
+            sockets
+                .send(connection, message)
+                .await
+                .map_err(download_peer_set_error)?;
+        }
+        for piece in allowed_fast {
+            sockets
+                .send(connection, PeerMessage::AllowedFast(piece))
+                .await
+                .map_err(download_peer_set_error)?;
+        }
+        let membership = self.control.incoming_peer_handle().map(|handle| {
+            handle.register_session_upload(self.metainfo.info_hash, self.metainfo.piece_length)
+        });
+        self.outgoing_uploads.insert(
+            connection,
+            OutgoingUploadPeer {
+                state,
+                cursor: self.availability.snapshot().cursor(),
+                membership,
+                read: None,
+            },
+        );
+        Ok(())
+    }
+
+    async fn handle_outgoing_upload_message(
+        &mut self,
+        sockets: &PeerSocketSet,
+        connection: ConnectionId,
+        message: &PeerMessage,
+    ) -> Result<Option<PeerFailure>, DownloadError> {
+        let actions = {
+            let Some(peer) = self.outgoing_uploads.get_mut(&connection) else {
+                return Ok(None);
+            };
+            let actions = peer.state.on_message(message);
+            let interested = peer.state.snapshot().interested;
+            if let Some(membership) = &peer.membership {
+                membership.update_interest(interested);
+            }
+            if peer.membership.is_none() {
+                let mut actions = actions;
+                actions.extend(peer.state.set_granted(interested));
+                actions
+            } else {
+                actions
+            }
+        };
+        self.apply_outgoing_upload_actions(sockets, connection, actions)
+            .await
+    }
+
+    async fn apply_outgoing_upload_actions(
+        &mut self,
+        sockets: &PeerSocketSet,
+        connection: ConnectionId,
+        actions: Vec<UploadAction>,
+    ) -> Result<Option<PeerFailure>, DownloadError> {
+        for action in actions {
+            match action {
+                UploadAction::Send(message) => {
+                    let payload = match &message {
+                        PeerMessage::Piece { block, .. } => Some(block.len()),
+                        _ => None,
+                    };
+                    if sockets.send(connection, message).await.is_err() {
+                        return Ok(Some(PeerFailure::RemoteClosed));
+                    }
+                    if let Some(payload) = payload
+                        && let Some(peer) = self.outgoing_uploads.get_mut(&connection)
+                        && let Some(membership) = &mut peer.membership
+                    {
+                        membership.record_payload(payload);
+                    }
+                }
+                UploadAction::Read(read) => {
+                    let peer = self.outgoing_uploads.get_mut(&connection).ok_or({
+                        DownloadError::Swarm(SwarmError::Invariant("upload read peer disappeared"))
+                    })?;
+                    if peer.read.is_some() {
+                        return Ok(Some(PeerFailure::Protocol));
+                    }
+                    let content = self.active_content.clone();
+                    let handle = self.control.incoming_peer_handle();
+                    peer.read = Some(OutgoingUploadRead {
+                        pending: read,
+                        task: tokio::spawn(async move {
+                            let _permit = match handle {
+                                Some(handle) => Some(handle.acquire_upload_read().await.ok_or(())?),
+                                None => None,
+                            };
+                            content.read_block(read.request).await.map_err(|_| ())
+                        }),
+                    });
+                }
+                UploadAction::Close(reason) => {
+                    return Ok(Some(match reason {
+                        UploadCloseReason::InvalidRequest | UploadCloseReason::RequestLimit => {
+                            PeerFailure::Protocol
+                        }
+                        UploadCloseReason::ReadFailed | UploadCloseReason::ShortRead => {
+                            PeerFailure::RemoteClosed
+                        }
+                    }));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn service_outgoing_uploads(
+        &mut self,
+        sockets: &PeerSocketSet,
+    ) -> Result<Vec<(ConnectionId, PeerFailure)>, DownloadError> {
+        if let Some(handle) = self.control.incoming_peer_handle() {
+            handle.evaluate_uploads();
+        }
+        let stale = self
+            .outgoing_uploads
+            .keys()
+            .copied()
+            .filter(|connection| !sockets.contains(*connection))
+            .collect::<Vec<_>>();
+        for connection in stale {
+            self.remove_outgoing_upload(connection).await;
+        }
+
+        let connections = self.outgoing_uploads.keys().copied().collect::<Vec<_>>();
+        let mut failures = Vec::new();
+        for connection in connections {
+            let actions = {
+                let peer = self
+                    .outgoing_uploads
+                    .get_mut(&connection)
+                    .expect("collected outgoing upload remains present");
+                let granted = peer
+                    .membership
+                    .as_ref()
+                    .is_none_or(|membership| membership.grant() != UploadGrant::Choked);
+                peer.state.set_granted(granted)
+            };
+            if let Some(failure) = self
+                .apply_outgoing_upload_actions(sockets, connection, actions)
+                .await?
+            {
+                failures.push((connection, failure));
+                continue;
+            }
+
+            let drain = {
+                let peer = self
+                    .outgoing_uploads
+                    .get(&connection)
+                    .expect("serviced outgoing upload remains present");
+                self.availability.drain(peer.cursor)
+            };
+            match drain {
+                AvailabilityDrain::Changes { cursor, pieces, .. } => {
+                    self.outgoing_uploads
+                        .get_mut(&connection)
+                        .expect("serviced outgoing upload remains present")
+                        .cursor = cursor;
+                    for piece in pieces {
+                        if sockets
+                            .send(connection, PeerMessage::Have(piece))
+                            .await
+                            .is_err()
+                        {
+                            failures.push((connection, PeerFailure::RemoteClosed));
+                            break;
+                        }
+                    }
+                }
+                AvailabilityDrain::EpochChanged(_) | AvailabilityDrain::Lagged => {
+                    failures.push((connection, PeerFailure::RemoteClosed));
+                    continue;
+                }
+            }
+
+            let completed = {
+                let peer = self
+                    .outgoing_uploads
+                    .get_mut(&connection)
+                    .expect("serviced outgoing upload remains present");
+                if peer
+                    .read
+                    .as_ref()
+                    .is_some_and(|read| read.task.is_finished())
+                {
+                    peer.read.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(OutgoingUploadRead {
+                pending: read,
+                task,
+            }) = completed
+            {
+                let result = task.await.unwrap_or(Err(()));
+                let actions = self
+                    .outgoing_uploads
+                    .get_mut(&connection)
+                    .expect("completed outgoing upload remains present")
+                    .state
+                    .on_read_complete(read, result);
+                if let Some(failure) = self
+                    .apply_outgoing_upload_actions(sockets, connection, actions)
+                    .await?
+                {
+                    failures.push((connection, failure));
+                }
+            }
+        }
+        Ok(failures)
+    }
+
+    async fn remove_outgoing_upload(&mut self, connection: ConnectionId) {
+        if let Some(mut peer) = self.outgoing_uploads.remove(&connection)
+            && let Some(OutgoingUploadRead { task, .. }) = peer.read.take()
+        {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    async fn shutdown_outgoing_uploads(&mut self) {
+        let connections = self.outgoing_uploads.keys().copied().collect::<Vec<_>>();
+        for connection in connections {
+            self.remove_outgoing_upload(connection).await;
+        }
+    }
+
+    fn outgoing_upload_work_pending(&self) -> bool {
+        self.outgoing_uploads.values().any(|peer| {
+            let snapshot = peer.state.snapshot();
+            snapshot.queued_requests != 0 || peer.read.is_some()
+        })
     }
 
     fn advance_plan_window(&mut self, verified_piece: u32) -> Result<(), DownloadError> {
@@ -4224,6 +4548,12 @@ impl<'a> ContentSwarmDownload<'a> {
             .is_err()
         {
             return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+        }
+        if let Some(failure) = self
+            .handle_outgoing_upload_message(sockets, connection, &message)
+            .await?
+        {
+            return Ok(ContentMessageDisposition::ClosePeer(failure));
         }
         match message {
             PeerMessage::Choke => {
@@ -4301,6 +4631,11 @@ impl<'a> ContentSwarmDownload<'a> {
                 };
                 match disposition {
                     ReceiveDisposition::Accept { cancellations, .. } => {
+                        if let Some(peer) = self.outgoing_uploads.get_mut(&connection)
+                            && let Some(membership) = &mut peer.membership
+                        {
+                            membership.record_downloaded(block.len());
+                        }
                         let source_attempt = sockets.attempt(connection).ok_or({
                             DownloadError::Swarm(SwarmError::Invariant(
                                 "accepted block source socket is missing",
@@ -4537,6 +4872,9 @@ impl<'a> ContentSwarmDownload<'a> {
                         .state
                         .mark_piece_verified_for_generation(piece, generation)
                         .map_err(DownloadError::Swarm)?;
+                    self.availability
+                        .publish(piece_index, self.availability.snapshot().epoch)
+                        .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                     self.last_piece = Some(VerifiedPiece {
                         index: piece,
                         hash: actual,
@@ -4572,6 +4910,12 @@ impl<'a> ContentSwarmDownload<'a> {
                 checkpoints,
             )
             .await?,
+        );
+        self.active_content.replace_planner(
+            self.storage_pipeline
+                .as_ref()
+                .expect("restarted storage pipeline is installed")
+                .active_upload_planner(),
         );
         self.completed_storage = None;
         Ok(())
@@ -4644,7 +4988,42 @@ impl<'a> ContentSwarmDownload<'a> {
         self.selection = next_selection;
         self.selection_revision = update.revision;
         self.control.file_selection_applied(update.revision);
+        self.availability
+            .replace_epoch(storage.0.route_epoch(), storage.0.verified_pieces())
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
         self.restart_storage(storage).await
+    }
+
+    async fn register_active_route(
+        &mut self,
+        torrent_peers: TorrentPeerHandle,
+    ) -> Result<(), DownloadError> {
+        let Some(handle) = self.control.incoming_peer_handle() else {
+            return Ok(());
+        };
+        let Some(raw_info) = self.resume.and_then(|resume| resume.raw_info.clone()) else {
+            return Ok(());
+        };
+        let registration =
+            SeedRegistration::new_active(raw_info, self.active_content.clone(), torrent_peers)
+                .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        let token = handle
+            .register(registration)
+            .await
+            .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        self.active_registration = Some((handle, token));
+        Ok(())
+    }
+
+    async fn unregister_active_route(&mut self) -> Result<(), DownloadError> {
+        let Some((handle, token)) = self.active_registration.take() else {
+            return Ok(());
+        };
+        handle
+            .unregister(token)
+            .await
+            .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        Ok(())
     }
 
     fn take_storage(&mut self) -> Result<ContentStorage, DownloadError> {
@@ -5124,6 +5503,7 @@ async fn run_selective_swarm_loop(
     let mut selection_updates = download.control.selection_updates();
     let mut storage_pressure_started = None;
     let mut next_maintenance_at = Duration::ZERO;
+    let mut completion_drain_started = None;
     if let Some(connection) = peers.connection.take() {
         let attempt = connection.attempt();
         let fast_extension = connection.supports_fast_extension();
@@ -5162,6 +5542,15 @@ async fn run_selective_swarm_loop(
             .state
             .set_fast_extension(id, fast_extension)
             .map_err(DownloadError::Swarm)?;
+        download
+            .install_outgoing_upload(
+                sockets,
+                id,
+                attempt.endpoint().address().ip(),
+                fast_extension,
+                !fast_extension,
+            )
+            .await?;
         if sockets.send(id, PeerMessage::Interested).await.is_err() {
             close_content_connection(
                 peers,
@@ -5197,6 +5586,19 @@ async fn run_selective_swarm_loop(
             _ => {}
         }
         peers.publish_peer_registry(false);
+        for (connection, failure) in download.service_outgoing_uploads(sockets).await? {
+            download.remove_outgoing_upload(connection).await;
+            if sockets.contains(connection) {
+                close_content_connection(
+                    peers,
+                    sockets,
+                    &mut download.state,
+                    connection,
+                    Some(failure),
+                )
+                .await?;
+            }
+        }
         if now >= next_maintenance_at {
             if !storage_backpressured {
                 download
@@ -5275,7 +5677,12 @@ async fn run_selective_swarm_loop(
             download.control.observe_swarm(&download.state, now);
             download.control.emit_storage_state_force();
             peers.observe_content_peers(&download.state)?;
-            return Ok(());
+            let started = completion_drain_started.get_or_insert(now);
+            if !download.outgoing_upload_work_pending()
+                || now.saturating_sub(*started) >= Duration::from_secs(5)
+            {
+                return Ok(());
+            }
         }
 
         if !storage_backpressured {
@@ -5455,8 +5862,16 @@ async fn run_selective_swarm_loop(
                             .await?;
                             continue;
                         }
-                        if capabilities.fast_extension
-                            && sockets.send(id, PeerMessage::HaveNone).await.is_err()
+                        if download
+                            .install_outgoing_upload(
+                                sockets,
+                                id,
+                                attempt.endpoint().address().ip(),
+                                capabilities.fast_extension,
+                                true,
+                            )
+                            .await
+                            .is_err()
                         {
                             close_content_connection(
                                 peers,
@@ -5514,6 +5929,7 @@ async fn run_selective_swarm_loop(
                 if let Err(error) = result {
                     peers.last_error = Some(download_peer_socket_error(error));
                 }
+                download.remove_outgoing_upload(id).await;
                 close_content_connection(peers, sockets, &mut download.state, id, failure).await?;
             }
         }
@@ -5533,6 +5949,7 @@ async fn apply_content_disposition(
             let connection = connection.ok_or(DownloadError::Swarm(SwarmError::Invariant(
                 "storage completion cannot close a peer",
             )))?;
+            download.remove_outgoing_upload(connection).await;
             close_content_connection(
                 peers,
                 sockets,
@@ -5558,12 +5975,26 @@ async fn download_content_swarm<'a>(
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
     let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone());
     let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);
-    let result = run_selective_swarm_loop(peers, &mut sockets, &mut discovery, &mut download).await;
+    let result = match download.register_active_route(peers.peers.clone()).await {
+        Ok(()) => {
+            run_selective_swarm_loop(peers, &mut sockets, &mut discovery, &mut download).await
+        }
+        Err(error) => Err(error),
+    };
     let failure = result.as_ref().err().and_then(content_peer_failure);
     let discovery_cleanup = discovery.shutdown().await;
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
+    let registration_cleanup = download.unregister_active_route().await;
+    download.shutdown_outgoing_uploads().await;
     let connection_cleanup = match (discovery_cleanup, peer_cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(first), Err(second)) => Err(DownloadError::PeerTask(format!(
+            "{first}; additionally {second}"
+        ))),
+    };
+    let connection_cleanup = match (connection_cleanup, registration_cleanup) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
         (Err(first), Err(second)) => Err(DownloadError::PeerTask(format!(

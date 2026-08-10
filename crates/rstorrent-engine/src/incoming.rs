@@ -33,7 +33,7 @@ use rstorrent_protocol::peer_wire::{
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
-use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
@@ -52,6 +52,7 @@ use crate::peer_io::{PeerIo, record_bytes};
 use crate::peer_runtime::{PeerConnectionRole, PeerUploadActivity, PeerUploadGrant};
 use crate::peer_socket::advertised_reserved_bits;
 use crate::pex::{PexReceiveContext, PexReceiveDisposition};
+use crate::piece_availability::AvailabilityDrain;
 use crate::seed_content::SeedContent;
 use crate::swarm::MAX_FAST_ADVISORY_PIECES;
 use crate::torrent_peer::{IncomingPeerAttachment, TorrentPeerHandle};
@@ -61,6 +62,7 @@ use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedule
 
 use self::peer_io::{FrameValidity, IncomingPeerIo};
 use self::upload_runtime::UploadCoordinator;
+use crate::active_seed_content::ActiveSeedContent;
 
 pub const MAX_SEED_REGISTRATIONS: usize = 1024;
 pub const MAX_INCOMING_PENDING: usize = 8;
@@ -152,10 +154,43 @@ pub struct SeedRegistrationToken {
 pub struct SeedRegistration {
     info_hash: [u8; 20],
     raw_info: Arc<[u8]>,
-    content: SeedContent,
+    content: RegisteredSeedContent,
     piece_lengths: Arc<[u32]>,
     torrent_peers: TorrentPeerHandle,
     private: bool,
+}
+
+#[derive(Clone, Debug)]
+enum RegisteredSeedContent {
+    Published(SeedContent),
+    Active(ActiveSeedContent),
+}
+
+impl RegisteredSeedContent {
+    const fn local_complete(&self) -> bool {
+        matches!(self, Self::Published(_))
+    }
+
+    fn upload_state(&self, piece_lengths: Arc<[u32]>) -> Result<UploadPeerState, ()> {
+        match self {
+            Self::Published(content) => UploadPeerState::from_shared(
+                piece_lengths,
+                Arc::<[bool]>::from(content.availability()),
+            )
+            .map_err(|_| ()),
+            Self::Active(content) => {
+                UploadPeerState::from_availability(piece_lengths, content.availability())
+                    .map_err(|_| ())
+            }
+        }
+    }
+
+    async fn read_block(&self, request: BlockRequest) -> Result<Vec<u8>, ()> {
+        match self {
+            Self::Published(content) => content.read_block(request).await.map_err(|_| ()),
+            Self::Active(content) => content.read_block(request).await.map_err(|_| ()),
+        }
+    }
 }
 
 impl SeedRegistration {
@@ -181,8 +216,34 @@ impl SeedRegistration {
         Ok(Self {
             info_hash,
             raw_info,
-            content,
+            content: RegisteredSeedContent::Published(content),
             piece_lengths: piece_lengths.into(),
+            torrent_peers,
+            private,
+        })
+    }
+
+    pub(crate) fn new_active(
+        raw_info: Arc<[u8]>,
+        content: ActiveSeedContent,
+        torrent_peers: TorrentPeerHandle,
+    ) -> Result<Self, IncomingPeerError> {
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        if info_hash != content.info_hash() {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "metadata and active seed content identities differ",
+            ));
+        }
+        MetadataUpload::new(&raw_info).map_err(|_| {
+            IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
+        })?;
+        let piece_lengths = content.piece_lengths();
+        let private = content.is_private();
+        Ok(Self {
+            info_hash,
+            raw_info,
+            content: RegisteredSeedContent::Active(content),
+            piece_lengths,
             torrent_peers,
             private,
         })
@@ -639,9 +700,11 @@ impl RegistrationRuntime {
         let cancellation = self.cancellation.clone();
         let registration = self.clone();
         let piece_length = data.piece_lengths.first().copied().unwrap_or(1);
-        let membership = shared
-            .upload_coordinator
-            .register(data.info_hash, piece_length);
+        let membership = shared.upload_coordinator.register(
+            data.info_hash,
+            piece_length,
+            data.content.local_complete(),
+        );
         let peer_upload = Arc::new(UploadCounter::new());
         shared.peer_uploads_guard().insert(
             membership.id,
@@ -759,7 +822,93 @@ pub struct IncomingPeerHandle {
     shared: Arc<Shared>,
 }
 
+pub(crate) struct SessionUploadMembership {
+    shared: Arc<Shared>,
+    info_hash: [u8; 20],
+    id: crate::upload_scheduler::UploadPeerId,
+    grants: tokio::sync::watch::Receiver<UploadGrant>,
+    peer_upload: Arc<UploadCounter>,
+    payload_uploaded: u64,
+    payload_downloaded: u64,
+}
+
+impl SessionUploadMembership {
+    pub(crate) fn grant(&self) -> UploadGrant {
+        *self.grants.borrow()
+    }
+
+    pub(crate) fn update_interest(&self, interested: bool) {
+        self.shared
+            .upload_coordinator
+            .update_interest(self.id, interested);
+    }
+
+    pub(crate) fn record_payload(&mut self, bytes: usize) {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        self.payload_uploaded = self.payload_uploaded.saturating_add(bytes);
+        self.peer_upload.record(bytes);
+        self.shared.session_upload.record(bytes);
+        if let Some(registration) = self.shared.registry_guard().get(&self.info_hash) {
+            registration.upload.record(bytes);
+        }
+        self.shared
+            .upload_coordinator
+            .update_payload(self.id, self.payload_uploaded);
+    }
+
+    pub(crate) fn record_downloaded(&mut self, bytes: usize) {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        self.payload_downloaded = self.payload_downloaded.saturating_add(bytes);
+        self.shared
+            .upload_coordinator
+            .update_downloaded(self.id, self.payload_downloaded);
+    }
+}
+
+impl Drop for SessionUploadMembership {
+    fn drop(&mut self) {
+        self.shared.peer_uploads_guard().remove(&self.id);
+        self.shared.upload_coordinator.remove(self.id);
+    }
+}
+
 impl IncomingPeerHandle {
+    pub(crate) fn register_session_upload(
+        &self,
+        info_hash: [u8; 20],
+        piece_length: u32,
+    ) -> SessionUploadMembership {
+        let membership = self
+            .shared
+            .upload_coordinator
+            .register(info_hash, piece_length, false);
+        let peer_upload = Arc::new(UploadCounter::new());
+        self.shared.peer_uploads_guard().insert(
+            membership.id,
+            PeerUploadEntry {
+                info_hash,
+                counter: peer_upload.clone(),
+            },
+        );
+        SessionUploadMembership {
+            shared: self.shared.clone(),
+            info_hash,
+            id: membership.id,
+            grants: membership.grants,
+            peer_upload,
+            payload_uploaded: 0,
+            payload_downloaded: 0,
+        }
+    }
+
+    pub(crate) fn evaluate_uploads(&self) {
+        self.shared.upload_coordinator.evaluate();
+    }
+
+    pub(crate) async fn acquire_upload_read(&self) -> Option<OwnedSemaphorePermit> {
+        self.shared.upload_reads.clone().acquire_owned().await.ok()
+    }
+
     pub fn reconfigure_encryption(&self, encryption: PeerEncryptionPolicy) {
         *self
             .shared
@@ -2508,11 +2657,10 @@ async fn run_incoming_peer_loop(
     } else {
         NetworkPolicy::Online
     };
-    let availability: Arc<[bool]> = registration.content.availability().into();
-    let mut upload = match UploadPeerState::from_shared(
-        registration.piece_lengths.clone(),
-        availability.clone(),
-    ) {
+    let mut upload = match registration
+        .content
+        .upload_state(registration.piece_lengths.clone())
+    {
         Ok(upload) => upload,
         Err(_) => return PeerTermination::Storage,
     };
@@ -2521,7 +2669,7 @@ async fn run_incoming_peer_loop(
             std::net::IpAddr::V4(address) => match generate_allowed_fast_set(
                 registration.info_hash,
                 address,
-                availability.len(),
+                registration.piece_lengths.len(),
                 MAX_GENERATED_ALLOWED_FAST_PIECES,
             ) {
                 Ok(allowed) => allowed,
@@ -2551,6 +2699,7 @@ async fn run_incoming_peer_loop(
     {
         return PeerTermination::Closed;
     }
+    let mut availability_cursor = upload.availability().snapshot().cursor();
     for piece in allowed_fast {
         if io
             .send_message(&PeerMessage::AllowedFast(piece))
@@ -2603,6 +2752,21 @@ async fn run_incoming_peer_loop(
     let mut last_request_or_unchoke = last_peer_activity;
     let mut last_keepalive = last_peer_activity;
     loop {
+        match upload.availability().drain(availability_cursor) {
+            AvailabilityDrain::Changes { cursor, pieces, .. } => {
+                availability_cursor = cursor;
+                for piece in pieces {
+                    if io.queue_message(&PeerMessage::Have(piece)).is_err() {
+                        join_read(read.take()).await;
+                        return PeerTermination::Closed;
+                    }
+                }
+            }
+            AvailabilityDrain::EpochChanged(_) | AvailabilityDrain::Lagged => {
+                join_read(read.take()).await;
+                return PeerTermination::Storage;
+            }
+        }
         send_target.observe(io.uploaded_payload_bytes());
         let ready = io.send_buffer_size() < send_target.target;
         if let Some(termination) = apply_upload_actions(
@@ -2744,7 +2908,7 @@ async fn run_incoming_peer_loop(
                 if validate_incoming_fast_message(
                     supports_fast,
                     &message,
-                    availability.len(),
+                    registration.piece_lengths.len(),
                     &mut fast_initial_availability,
                     &mut fast_suggestions,
                     &mut fast_allowed,
@@ -3050,7 +3214,7 @@ async fn apply_upload_actions(
                         };
                         let _observation =
                             ObservationGuard::read(&read_shared, pending.request.length as usize);
-                        content.read_block(pending.request).await.map_err(|_| ())
+                        content.read_block(pending.request).await
                     }),
                 ));
             }
@@ -3294,9 +3458,11 @@ mod tests {
         FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake,
         encode_handshake_with_reserved, encode_message,
     };
+    use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::mpsc;
     use tokio::time::timeout;
 
     use super::{
@@ -3306,6 +3472,10 @@ mod tests {
         UploadRateWindow, drain_metadata_requests, handle_metadata_message,
         unique_mse_registration, validate_incoming_fast_message,
     };
+    use crate::SelectiveStorage;
+    use crate::active_seed_content::{
+        ACTIVE_UPLOAD_PLAN_CAPACITY, ActiveSeedContent, ActiveUploadPlanRequest,
+    };
     use crate::peer::PeerFailure;
     use crate::peer::{
         PeerEndpoint, PeerObservation, PeerRegistry, PeerRegistryConfig, PeerSelectionContext,
@@ -3313,6 +3483,7 @@ mod tests {
     };
     use crate::peer_io::PeerIo;
     use crate::peer_socket;
+    use crate::piece_availability::PieceAvailability;
     use crate::{
         DEFAULT_PEER_ID, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
         MseHandshakeSink, NetworkConfig, NetworkPolicy, PeerBudget, PeerBudgetConfig,
@@ -4237,6 +4408,123 @@ mod tests {
         drop(handle);
         service.shutdown().await.expect("shutdown service");
         tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn active_incomplete_registration_serves_verified_piece_and_later_have() {
+        let payload = b"abcdefg";
+        let raw_info = raw_info(payload);
+        let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, BEP9_METAINFO_LIMITS)
+            .expect("parse active fixture");
+        let root = root("active-incomplete");
+        tokio::fs::create_dir_all(&root)
+            .await
+            .expect("create active root");
+        let output = root.join("seed.bin");
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("active selection");
+        let mut storage = SelectiveStorage::create(output, &metainfo, layout.clone(), selection)
+            .await
+            .expect("create active storage");
+        storage
+            .write_block(0, 0, b"abcd".to_vec())
+            .await
+            .expect("write first active piece");
+        storage.record_verified(0).expect("verify first piece");
+        storage
+            .write_block(1, 0, b"efg".to_vec())
+            .await
+            .expect("write second active piece");
+        storage.record_verified(1).expect("verify second piece");
+        let route_epoch = storage.route_epoch();
+        let availability =
+            PieceAvailability::new(route_epoch, &[true, false]).expect("active availability");
+        let (plans, mut requests) = mpsc::channel(ACTIVE_UPLOAD_PLAN_CAPACITY);
+        let storage_owner = tokio::spawn(async move {
+            while let Some(ActiveUploadPlanRequest {
+                request,
+                route_epoch,
+                response,
+            }) = requests.recv().await
+            {
+                let _ = response.send(storage.prepare_upload_read(request, route_epoch));
+            }
+            storage
+        });
+        let content = ActiveSeedContent::new(
+            metainfo.info_hash,
+            false,
+            vec![4, 3],
+            availability.clone(),
+            plans,
+        );
+        let torrent_peers = TorrentPeerHandle::new(Arc::new(TestPeerActivity::default()))
+            .expect("active peer state");
+        let registration =
+            SeedRegistration::new_active(Arc::<[u8]>::from(raw_info), content, torrent_peers)
+                .expect("active registration");
+        let info_hash = registration.info_hash();
+        let mut active_config = config(IncomingTcpBootstrap::AutomaticLoopback);
+        active_config.peer_activity_timeout = Duration::from_secs(5);
+        active_config.no_request_timeout = Duration::from_secs(5);
+        active_config.inactivity_timeout = Duration::from_secs(5);
+        let service = IncomingPeerService::bind(active_config)
+            .await
+            .expect("bind active service")
+            .expect("active service enabled");
+        let handle = service.handle();
+        let token = handle
+            .register(registration)
+            .await
+            .expect("register active route");
+        let (mut stream, mut decoder, mut queued) =
+            connect(service.listen_address(), info_hash, [71; 20]).await;
+        assert_eq!(
+            next_message(&mut stream, &mut decoder, &mut queued).await,
+            PeerMessage::Bitfield(vec![0b1000_0000])
+        );
+        assert!(matches!(
+            next_message(&mut stream, &mut decoder, &mut queued).await,
+            PeerMessage::Extended { id: 0, .. }
+        ));
+        send(&mut stream, &PeerMessage::Interested).await;
+        assert_eq!(
+            next_message(&mut stream, &mut decoder, &mut queued).await,
+            PeerMessage::Unchoke
+        );
+        send(
+            &mut stream,
+            &PeerMessage::Request(BlockRequest {
+                index: 0,
+                begin: 0,
+                length: 4,
+            }),
+        )
+        .await;
+        assert_eq!(
+            next_message(&mut stream, &mut decoder, &mut queued).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: b"abcd".to_vec(),
+            }
+        );
+        availability
+            .publish(1, route_epoch)
+            .expect("publish second active piece");
+        send(&mut stream, &PeerMessage::KeepAlive).await;
+        assert_eq!(
+            next_message(&mut stream, &mut decoder, &mut queued).await,
+            PeerMessage::Have(1)
+        );
+
+        assert!(handle.unregister(token).await.expect("unregister active"));
+        drop(handle);
+        service.shutdown().await.expect("shutdown active service");
+        drop(storage_owner.await.expect("join active storage owner"));
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove active root");
     }
 
     #[tokio::test]

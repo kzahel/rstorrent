@@ -50,6 +50,8 @@ pub struct UploadSchedulerPeer {
     pub piece_length: u32,
     pub interested: bool,
     pub payload_uploaded: u64,
+    pub payload_downloaded: u64,
+    pub local_complete: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,6 +82,7 @@ struct PeerState {
     input: UploadSchedulerPeer,
     grant: UploadGrant,
     uploaded_at_last_round: u64,
+    downloaded_at_last_round: u64,
     uploaded_at_unchoke: u64,
     last_unchoke: Duration,
     last_optimistic: Option<Duration>,
@@ -91,6 +94,7 @@ impl PeerState {
             input,
             grant: UploadGrant::Choked,
             uploaded_at_last_round: input.payload_uploaded,
+            downloaded_at_last_round: input.payload_downloaded,
             uploaded_at_unchoke: input.payload_uploaded,
             last_unchoke: now,
             last_optimistic: None,
@@ -101,6 +105,12 @@ impl PeerState {
         self.input
             .payload_uploaded
             .saturating_sub(self.uploaded_at_last_round)
+    }
+
+    fn downloaded_in_last_round(self) -> u64 {
+        self.input
+            .payload_downloaded
+            .saturating_sub(self.downloaded_at_last_round)
     }
 
     fn quota_complete(self, now: Duration, pieces: u64) -> bool {
@@ -193,7 +203,8 @@ impl UploadScheduler {
                 (state.input.interested
                     && state.grant == UploadGrant::Regular
                     && (!ordinary_due
-                        || !state.quota_complete(now, self.config.seeding_piece_quota)))
+                        || (state.input.local_complete
+                            && !state.quota_complete(now, self.config.seeding_piece_quota))))
                 .then_some(*id)
             })
             .collect::<Vec<_>>();
@@ -264,6 +275,7 @@ impl UploadScheduler {
             state.grant = next;
             if ordinary_due {
                 state.uploaded_at_last_round = state.input.payload_uploaded;
+                state.downloaded_at_last_round = state.input.payload_downloaded;
             }
         }
 
@@ -300,6 +312,16 @@ impl UploadScheduler {
     fn compare_regular(&self, left: UploadPeerId, right: UploadPeerId, now: Duration) -> Ordering {
         let left = self.peers[&left];
         let right = self.peers[&right];
+        if !left.input.local_complete && !right.input.local_complete {
+            return right
+                .downloaded_in_last_round()
+                .cmp(&left.downloaded_in_last_round())
+                .then_with(|| left.last_unchoke.cmp(&right.last_unchoke))
+                .then_with(|| left.input.id.cmp(&right.input.id));
+        }
+        if left.input.local_complete != right.input.local_complete {
+            return left.input.local_complete.cmp(&right.input.local_complete);
+        }
         left.quota_complete(now, self.config.seeding_piece_quota)
             .cmp(&right.quota_complete(now, self.config.seeding_piece_quota))
             .then_with(|| {
@@ -374,7 +396,34 @@ mod tests {
             piece_length: 16_384,
             interested: true,
             payload_uploaded: uploaded,
+            payload_downloaded: 0,
+            local_complete: true,
         }
+    }
+
+    fn downloading_peer(value: u64, downloaded: u64) -> UploadSchedulerPeer {
+        let mut peer = peer(value, 0);
+        peer.local_complete = false;
+        peer.payload_downloaded = downloaded;
+        peer
+    }
+
+    #[test]
+    fn incomplete_torrent_regular_slot_uses_previous_download_round() {
+        let mut scheduler = UploadScheduler::new(UploadSchedulerConfig {
+            slots: 2,
+            ..UploadSchedulerConfig::default()
+        })
+        .expect("scheduler");
+        scheduler.update_peer(downloading_peer(1, 0), Duration::ZERO);
+        scheduler.update_peer(downloading_peer(2, 0), Duration::ZERO);
+        scheduler.evaluate(Duration::ZERO);
+
+        scheduler.update_peer(downloading_peer(1, 4), Duration::from_secs(15));
+        scheduler.update_peer(downloading_peer(2, 40), Duration::from_secs(15));
+        scheduler.evaluate(Duration::from_secs(15));
+        assert_eq!(scheduler.grant(id(2)), Some(UploadGrant::Regular));
+        assert_eq!(scheduler.grant(id(1)), Some(UploadGrant::Optimistic));
     }
 
     #[test]

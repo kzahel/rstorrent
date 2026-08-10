@@ -48,7 +48,12 @@ impl UploadCoordinator {
         })
     }
 
-    pub fn register(&self, torrent: [u8; 20], piece_length: u32) -> UploadMembership {
+    pub fn register(
+        &self,
+        torrent: [u8; 20],
+        piece_length: u32,
+        local_complete: bool,
+    ) -> UploadMembership {
         let mut state = self.state_guard();
         let id = UploadPeerId::new(state.next_peer).expect("upload peer generation is nonzero");
         state.next_peer = state.next_peer.wrapping_add(1).max(1);
@@ -58,6 +63,8 @@ impl UploadCoordinator {
             piece_length,
             interested: false,
             payload_uploaded: 0,
+            payload_downloaded: 0,
+            local_complete,
         };
         let (grants, receiver) = watch::channel(UploadGrant::Choked);
         state
@@ -95,6 +102,21 @@ impl UploadCoordinator {
             return;
         }
         peer.input.payload_uploaded = payload_uploaded;
+        let input = peer.input;
+        state
+            .scheduler
+            .update_peer(input, self.started_at.elapsed());
+    }
+
+    pub fn update_downloaded(&self, id: UploadPeerId, payload_downloaded: u64) {
+        let mut state = self.state_guard();
+        let Some(peer) = state.peers.get_mut(&id) else {
+            return;
+        };
+        if payload_downloaded <= peer.input.payload_downloaded {
+            return;
+        }
+        peer.input.payload_downloaded = payload_downloaded;
         let input = peer.input;
         state
             .scheduler
@@ -169,8 +191,8 @@ mod tests {
     #[test]
     fn interest_and_departure_publish_latest_value_grants() {
         let coordinator = coordinator(1);
-        let first = coordinator.register([1; 20], 16_384);
-        let second = coordinator.register([2; 20], 16_384);
+        let first = coordinator.register([1; 20], 16_384, true);
+        let second = coordinator.register([2; 20], 16_384, true);
         coordinator.update_interest(first.id, true);
         coordinator.update_interest(second.id, true);
         assert_eq!(*first.grants.borrow(), UploadGrant::Optimistic);
@@ -185,7 +207,7 @@ mod tests {
     fn reconfiguration_preserves_memberships_and_immediately_replaces_grants() {
         let coordinator = coordinator(8);
         let peers = (1..=10)
-            .map(|value| coordinator.register([value; 20], 16_384))
+            .map(|value| coordinator.register([value; 20], 16_384, true))
             .collect::<Vec<_>>();
         for peer in &peers {
             coordinator.update_interest(peer.id, true);

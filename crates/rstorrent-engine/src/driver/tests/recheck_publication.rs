@@ -784,6 +784,96 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
 }
 
 #[tokio::test]
+async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() {
+    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+        .map(|index| ((index * 53 + index / 17) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("duplex metainfo");
+    let pieces = Arc::new(
+        payload
+            .chunks(MIN_PAYLOAD_ALLOWANCE)
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>(),
+    );
+    let root = test_path("outgoing-incomplete-upload");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create duplex storage root");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("duplex paths");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).expect("duplex selection");
+    let mut storage =
+        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout.clone(), selection)
+            .await
+            .expect("create duplex staging");
+    storage
+        .write_block(0, 0, pieces[0].clone())
+        .await
+        .expect("stage local complementary piece");
+    storage.sync_piece(0).await.expect("sync local piece");
+    drop(storage);
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind duplex peer");
+    let peer_address = listener.local_addr().expect("duplex peer address");
+    let (uploaded_sender, uploaded_receiver) = oneshot::channel();
+    let peer_task = tokio::spawn(serve_duplex_complementary_peer(
+        listener,
+        metainfo.info_hash,
+        pieces.clone(),
+        uploaded_sender,
+    ));
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let report = resume_magnet(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(3)),
+            peer_budget: PeerBudget::system_default(),
+            mse_dh: crate::MseDhWorkOwner::new(),
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: None,
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![true, false],
+            artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
+            download_missing: true,
+            dht: None,
+            udp_trackers: None,
+        },
+        checkpoints,
+    )
+    .await
+    .expect("complete duplex download");
+    let uploaded = timeout(Duration::from_secs(2), uploaded_receiver)
+        .await
+        .expect("bounded outgoing upload")
+        .expect("outgoing upload observed");
+    assert_eq!(uploaded, pieces[0]);
+    assert_eq!(report.verified_piece_count, 2);
+    timeout(Duration::from_secs(2), peer_task)
+        .await
+        .expect("duplex peer joined")
+        .expect("duplex peer task");
+    assert_eq!(
+        tokio::fs::read(&paths.output)
+            .await
+            .expect("read duplex publication"),
+        payload
+    );
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove duplex fixture");
+}
+
+#[tokio::test]
 async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
     let payload = (0..(8 * MIN_PAYLOAD_ALLOWANCE))
         .map(|index| ((index * 37 + index / 19) & 0xff) as u8)

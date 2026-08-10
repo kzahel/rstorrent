@@ -30,7 +30,7 @@ use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::{Barrier, Notify, Semaphore, mpsc};
+use tokio::sync::{Barrier, Notify, Semaphore, mpsc, oneshot};
 use tokio::time::{sleep, timeout};
 
 use super::{
@@ -490,6 +490,13 @@ async fn serve_content_peer_recording(
                 .expect("send content block");
             }
             Ok(PeerMessage::Cancel(_)) => {}
+            Ok(
+                PeerMessage::Have(_)
+                | PeerMessage::Bitfield(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone
+                | PeerMessage::AllowedFast(_),
+            ) => {}
             Err(DownloadError::PeerClosed)
             | Err(DownloadError::Io {
                 operation: "read peer message",
@@ -497,6 +504,97 @@ async fn serve_content_peer_recording(
             }) => break,
             Ok(message) => panic!("unexpected content command {message:?}"),
             Err(error) => panic!("content peer failed: {error}"),
+        }
+    }
+}
+
+async fn serve_duplex_complementary_peer(
+    listener: TcpListener,
+    info_hash: [u8; 20],
+    pieces: Arc<Vec<Vec<u8>>>,
+    uploaded: oneshot::Sender<Vec<u8>>,
+) {
+    let (mut stream, _) = listener.accept().await.expect("accept duplex peer");
+    let mut handshake = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake)
+        .await
+        .expect("read duplex handshake");
+    decode_handshake(&handshake, info_hash).expect("valid duplex handshake");
+    stream
+        .write_all(&encode_handshake(
+            info_hash,
+            scripted_peer_id(&listener, *b"-RS-DUPLEX-000000000"),
+        ))
+        .await
+        .expect("send duplex handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b0100_0000]))
+        .await
+        .expect("send complementary availability");
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .expect("unchoke downloader");
+    let mut requested_local_piece = false;
+    let mut uploaded = Some(uploaded);
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Bitfield(bitfield)) => {
+                assert_eq!(bitfield, vec![0b1000_0000]);
+                send_message(&mut peer, &PeerMessage::Interested)
+                    .await
+                    .expect("express duplex interest");
+            }
+            Ok(PeerMessage::Unchoke) if !requested_local_piece => {
+                requested_local_piece = true;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Request(rstorrent_protocol::peer_wire::BlockRequest {
+                        index: 0,
+                        begin: 0,
+                        length: u32::try_from(pieces[0].len()).expect("piece length"),
+                    }),
+                )
+                .await
+                .expect("request complementary local piece");
+            }
+            Ok(PeerMessage::Request(request)) => {
+                assert_eq!(request.index, 1);
+                let begin = request.begin as usize;
+                let end = begin + request.length as usize;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Piece {
+                        index: request.index,
+                        begin: request.begin,
+                        block: pieces[1][begin..end].to_vec(),
+                    },
+                )
+                .await
+                .expect("send complementary remote piece");
+            }
+            Ok(PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block,
+            }) => {
+                if let Some(uploaded) = uploaded.take() {
+                    let _ = uploaded.send(block);
+                }
+            }
+            Ok(
+                PeerMessage::Have(1)
+                | PeerMessage::Interested
+                | PeerMessage::Cancel(_)
+                | PeerMessage::KeepAlive,
+            ) => {}
+            Err(DownloadError::PeerClosed)
+            | Err(DownloadError::Io {
+                operation: "read peer message",
+                ..
+            }) => return,
+            Ok(message) => panic!("unexpected duplex message {message:?}"),
+            Err(error) => panic!("duplex peer failed: {error}"),
         }
     }
 }
@@ -779,6 +877,12 @@ async fn serve_permanently_choked_peer(
     loop {
         match next_peer_message(&mut peer).await {
             Ok(PeerMessage::Interested) => {}
+            Ok(
+                PeerMessage::Have(_)
+                | PeerMessage::Bitfield(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone,
+            ) => {}
             Err(DownloadError::PeerClosed)
             | Err(DownloadError::Io {
                 operation: "read peer message",
@@ -1382,6 +1486,12 @@ async fn serve_metadata_then_piece(
         match next_peer_message(&mut peer).await {
             Ok(PeerMessage::Interested) => {}
             Ok(PeerMessage::Extended { id: 0, .. }) => {}
+            Ok(
+                PeerMessage::Have(_)
+                | PeerMessage::Bitfield(_)
+                | PeerMessage::HaveAll
+                | PeerMessage::HaveNone,
+            ) => {}
             Ok(PeerMessage::Request(request)) => {
                 assert_eq!(request.index, 0);
                 let begin = request.begin as usize;

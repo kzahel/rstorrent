@@ -698,3 +698,39 @@ cargo test -p rstorrent-engine active_upload_read
 cargo fmt --all -- --check
 cargo clippy -p rstorrent-engine -- -D warnings
 ```
+
+### Live active route and outgoing duplex upload
+
+- The content-storage task now accepts a separate bounded 16-item planning
+  channel. It returns immutable active-read plans while retaining exclusive
+  ownership of mutable selective storage; execution remains under the existing
+  session-wide 10-read semaphore and storage-file pool.
+- Resumable content downloads install an active incoming registration as soon
+  as verified metadata and storage exist. That route serves the exact initial
+  sparse availability, upload requests, and later HAVEs from the same dynamic
+  authority without requiring `Complete` or `Published` state.
+- Every outgoing content connection now owns one `UploadPeerState`, one
+  availability cursor, at most one read task, and one membership in the
+  existing session upload coordinator. Accepted requests use the active
+  storage route; completion waits briefly for already-admitted upload work
+  before the publication boundary closes sockets.
+- The session scheduler retains eight total slots including one automatic
+  optimistic slot at the default configuration. Incomplete-torrent regular
+  peers are reranked on the 15-second ordinary round by payload physically
+  downloaded from that connection in the preceding round; complete-seed peers
+  retain the existing upload-quota fallback.
+- Deterministic loopback evidence uses complementary pieces. On the outgoing
+  connection, RSTorrent advertises piece zero, downloads piece one, and emits
+  the requested piece-zero `Piece` frame before completion. On the incoming
+  connection, an active sparse route serves piece zero and later emits
+  `Have(1)` after publication through the availability authority.
+
+Validation at this checkpoint:
+
+```text
+cargo test -p rstorrent-engine active_incomplete_registration --lib
+cargo test -p rstorrent-engine upload_scheduler --lib
+cargo test -p rstorrent-engine \
+  outgoing_connection_uploads_verified_piece_before_torrent_completion --lib
+cargo clippy -p rstorrent-engine -p rstorrent-session -- -D warnings
+```

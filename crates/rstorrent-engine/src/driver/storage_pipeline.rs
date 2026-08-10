@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::control::StorageCommandKind;
 use super::{DownloadActivityEvent, DownloadCheckpointSink, DownloadControl, DownloadError};
+use crate::active_seed_content::{ACTIVE_UPLOAD_PLAN_CAPACITY, ActiveUploadPlanRequest};
 use crate::checkpoint::{
     CheckpointAdmission, CheckpointBatch, CheckpointBatchState, CheckpointIntent, CheckpointPolicy,
     DurabilityTarget,
@@ -302,6 +303,7 @@ pub(super) struct ContentStoragePipeline {
     job_limit: usize,
     queue_capacity: usize,
     checkpoint: Option<ContentCheckpointPipeline>,
+    active_upload_plans: mpsc::Sender<ActiveUploadPlanRequest>,
 }
 
 impl ContentStoragePipeline {
@@ -332,6 +334,8 @@ impl ContentStoragePipeline {
         let queue_capacity = job_limit;
         let (command_sender, command_receiver) = mpsc::channel(queue_capacity);
         let (completion_sender, completion_receiver) = mpsc::channel(queue_capacity);
+        let (active_upload_plan_sender, active_upload_plan_receiver) =
+            mpsc::channel(ACTIVE_UPLOAD_PLAN_CAPACITY);
         let cancellation = CancellationToken::new();
         let task = tokio::spawn(run_content_storage_task(
             storage,
@@ -340,6 +344,7 @@ impl ContentStoragePipeline {
             cancellation.clone(),
             control.clone(),
             queue_capacity,
+            active_upload_plan_receiver,
         ));
         Ok(Self {
             commands: Some(command_sender),
@@ -352,7 +357,12 @@ impl ContentStoragePipeline {
             job_limit,
             queue_capacity,
             checkpoint,
+            active_upload_plans: active_upload_plan_sender,
         })
+    }
+
+    pub(super) fn active_upload_planner(&self) -> mpsc::Sender<ActiveUploadPlanRequest> {
+        self.active_upload_plans.clone()
     }
 
     pub(super) fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
@@ -754,6 +764,7 @@ async fn run_content_storage_task(
     cancellation: CancellationToken,
     control: DownloadControl,
     queue_capacity: usize,
+    mut active_upload_plans: mpsc::Receiver<ActiveUploadPlanRequest>,
 ) -> Result<ContentStorage, DownloadError> {
     let mut ready_writes = VecDeque::new();
     let mut ready_hashes = VecDeque::new();
@@ -762,11 +773,22 @@ async fn run_content_storage_task(
     let mut active_writes = 0_usize;
     let mut active_hashes = 0_usize;
     let mut commands_closed = false;
+    let mut active_upload_plans_closed = false;
     let mut cancelled = false;
     let (write_concurrency, hash_concurrency) = control.storage_execution_limits();
 
     loop {
         if !cancelled {
+            loop {
+                match active_upload_plans.try_recv() {
+                    Ok(request) => complete_active_upload_plan(&storage, request),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        active_upload_plans_closed = true;
+                        break;
+                    }
+                }
+            }
             loop {
                 match commands.try_recv() {
                     Ok(command) => {
@@ -895,6 +917,7 @@ async fn run_content_storage_task(
             _ = cancellation.cancelled() => {
                 cancelled = true;
                 commands.close();
+                active_upload_plans.close();
             }
             joined = running.join_next(), if !running.is_empty() => {
                 let result = joined
@@ -960,8 +983,21 @@ async fn run_content_storage_task(
                     None => commands_closed = true,
                 }
             }
+            request = active_upload_plans.recv(), if !active_upload_plans_closed => {
+                match request {
+                    Some(request) => complete_active_upload_plan(&storage, request),
+                    None => active_upload_plans_closed = true,
+                }
+            }
         }
     }
+}
+
+fn complete_active_upload_plan(storage: &ContentStorage, request: ActiveUploadPlanRequest) {
+    let result = storage
+        .0
+        .prepare_upload_read(request.request, request.route_epoch);
+    let _ = request.response.send(result);
 }
 
 fn queue_content_storage_command(

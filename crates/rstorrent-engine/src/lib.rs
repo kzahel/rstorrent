@@ -2,6 +2,7 @@
 
 //! Runtime ownership for the first verified-piece diagnostic.
 
+mod active_seed_content;
 mod advertisement;
 mod artifact_layout;
 mod checkpoint;

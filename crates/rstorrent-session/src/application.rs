@@ -2669,6 +2669,7 @@ impl ApplicationService {
             &storage_root,
         ));
         control.set_storage_file_pool(self.storage_file_pool.clone());
+        control.set_incoming_peer_handle(self.session_network().incoming_peer_handle());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
         control

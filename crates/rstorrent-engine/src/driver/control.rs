@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::DownloadError;
 use crate::checkpoint::CheckpointBatch;
+use crate::incoming::IncomingPeerHandle;
 use crate::metrics::{ByteMetric, ByteMetricSink, SharedByteMetricSink};
 use crate::mse::MseHandshakeSink;
 use crate::peer::{DialAttempt, DialAttemptId, PeerRegistryCounts, PeerRegistrySnapshot};
@@ -431,6 +432,7 @@ struct DownloadControlInner {
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
+    incoming_peers: Mutex<Option<IncomingPeerHandle>>,
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
     checking_paused: watch::Sender<bool>,
@@ -785,6 +787,7 @@ impl DownloadControl {
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
+                incoming_peers: Mutex::new(None),
                 session_resources: Mutex::new(None),
                 selection_updates,
                 checking_paused,
@@ -836,6 +839,14 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(storage);
     }
 
+    pub fn set_incoming_peer_handle(&self, handle: IncomingPeerHandle) {
+        *self
+            .inner
+            .incoming_peers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(handle);
+    }
+
     pub fn set_session_resources(&self, resources: SessionTorrentResources) {
         *self
             .inner
@@ -873,6 +884,14 @@ impl DownloadControl {
     pub(super) fn platform_storage(&self) -> Option<PlatformStorageSpec> {
         self.inner
             .platform_storage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub(super) fn incoming_peer_handle(&self) -> Option<IncomingPeerHandle> {
+        self.inner
+            .incoming_peers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
