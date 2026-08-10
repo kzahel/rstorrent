@@ -148,6 +148,15 @@ the single authoritative **Now**.
   state needs a larger header; the repeated exact profile completed in 21.122
   seconds with a maximum 548-byte DATA datagram. Ordinary product uTP remains
   disabled.
+- Tactical `130`'s complete six-profile real-socket matrix passes in 71.312
+  seconds. Clean, alternating delay/jitter, one-percent sparse DATA loss,
+  exact duplicate/reorder ordinals, a three-DATA burst loss, and the fixed-MTU
+  black-hole baseline all produce the exact stream and terminal zero
+  ownership. The applied profiles observe up to 40 relay drops, 52 duplicates,
+  78 explicit reorder selections, 210 RSTorrent retransmissions, and 196 loss
+  reductions without timeout collapse, runtime queue loss, worker panic, or a
+  DATA datagram above 548 bytes. Diagnostic probe integration and hostile
+  lifecycle completion remain active work.
 
 ## Why The Campaign Must Be Adaptive
 

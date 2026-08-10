@@ -551,3 +551,30 @@ clippy pass. A second exact real-socket run completed in 21.122 active seconds
 with 9,737 decisions, 207 RSTorrent retransmissions, zero timeout collapse or
 runtime drops, queue high water 13 at the relay and two in the runtime, exact
 terminal cleanup, and a maximum DATA datagram of exactly 548 bytes.
+
+### Real-socket impairment evidence
+
+The complete six-profile matrix now passes in 71.312 seconds. Every case
+transferred and hash-verified the exact fixture with one uTP/zero TCP peer,
+kept DATA datagrams at or below 548 bytes, stayed within all relay/runtime
+queue and byte bounds, recorded zero malformed/unknown/runtime drops and zero
+worker panics, drained the relay queue, and terminated with zero uTP tasks,
+connections, half-opens, incoming registrations, or temporary artifacts.
+
+The representative matrix observations are:
+
+| Profile | Active seconds | Applied fault/recovery evidence |
+| --- | ---: | --- |
+| clean | 7.953 | 8,042 decisions; zero drops, duplicates, retransmissions, losses, or timeouts |
+| delay-jitter | 21.264 | 9,646 decisions; relay queue high water 14; 210 RSTorrent retransmissions and 196 loss reductions; zero timeout collapse |
+| sparse-loss | 11.541 | 40 exact DATA drops among 4,083 DATA datagrams; 82 retransmissions and 62 loss reductions |
+| duplicate-reorder | 11.924 | 52 exact duplicates and 78 delayed reorder selections; 158 retransmissions and 117 loss reductions; no duplicate stream delivery |
+| burst-loss | 8.386 | exact DATA ordinals 64--66 dropped; five retransmissions and two loss reductions |
+| MTU black hole, fixed baseline | 7.751 | zero drops because every DATA datagram remained at the 548-byte floor; zero retransmissions or loss |
+
+Pinned libtorrent reported zero loss, timeout, fast-retransmit, or packet-
+resend counters in the completed matrix. The loss and reordering profiles
+instead exercised RSTorrent's bounded SACK/fast-retransmit path. Congestion
+loss reductions occurred once per RTT as designed and no profile needed a
+timeout collapse. The fixed MTU-black-hole row is only the required baseline;
+it does not yet exercise diagnostic probes or justify path-MTU discovery.
