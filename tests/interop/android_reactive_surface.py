@@ -545,15 +545,21 @@ def run(arguments: argparse.Namespace) -> None:
         select_controlled_tree(adb)
         add_magnet(adb, magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"))
         trace, _, _ = wait_for_download(adb, screenshot)
-        for counter in ("requested", "received", "stored"):
-            if not positive_counter(trace, counter):
-                raise ScenarioFailure(
-                    f"Android trace never exposed positive {counter} bytes:\n{trace}"
-                )
+        if not positive_counter(trace, "verified") or "diagnostic=piece_verified" not in trace:
+            raise ScenarioFailure(
+                f"Android trace never exposed verified-piece progress:\n{trace}"
+            )
         verify_payload(adb, fixture.payload_hash)
         stop_from_notification(adb)
-        if "FATAL EXCEPTION" in product_logs(adb):
-            raise ScenarioFailure("Android runtime failed during joined shutdown")
+        shutdown_trace = product_logs(adb)
+        if "FATAL EXCEPTION" in shutdown_trace:
+            raise ScenarioFailure(
+                f"Android runtime failed during joined shutdown:\n{shutdown_trace}"
+            )
+        if "product_shutdown_complete" not in shutdown_trace:
+            raise ScenarioFailure(
+                f"Android runtime did not report joined shutdown:\n{shutdown_trace}"
+            )
         updates = trace.count("view_update")
         adb.shell("pm", "clear", PACKAGE)
         print(
