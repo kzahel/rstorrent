@@ -315,20 +315,19 @@ added.
 
 ### Now
 
-- The post-Stage 4 uTP human-review checkpoint is the single authoritative
-  decision. Tactical
-  [`127`](../tactical/127-mapped-utp-wan-interoperability.md) completed one
-  remote-mapped direct-public-path transfer and exact cleanup. The recommended
-  next choice is a separately bounded complementary direction with a temporary
-  local UDP mapping, RSTorrent as seed/bulk sender, and the pinned `pimom`
-  oracle as leecher. Pausing uTP and restoring focused-driver HTTP(S) tracker
-  dispatch is the alternative. No local gateway operation or further uTP work
-  is authorized until review.
+- Tactical
+  [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) is the
+  single authoritative work item. Human review explicitly paused uTP and
+  selected a bounded TCP-only synthetic comparison. It must reproduce current
+  slower regimes on byte-identical loopback fixtures, separate the focused and
+  resumable RSTorrent paths from pinned libtorrent, attribute the owning
+  boundary, and select a separate optimization tactical. No public swarm,
+  local gateway operation, or further uTP work is authorized by this choice.
 
 ### Next
 
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager follows if human review pauses uTP.
+  download driver's nested manager remains available after Tactical `128`.
   Completed Tactical
   [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
   proves that the long-lived application tracker owner is not composed into

@@ -12,6 +12,12 @@ checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
 Completed Tactical `127` additionally records one 82.239-second remote-mapped
 uTP WAN transfer as a bounded observation, not a throughput threshold.
+Active Tactical
+[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
+returns to byte-identical TCP-only loopback fixtures. It will first reproduce
+current geometry and focused-versus-resumable path differences, then use
+bounded request, storage, scheduler, checkpoint, observation, and process
+evidence to select one separate optimization slice.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo

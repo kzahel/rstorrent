@@ -43,9 +43,11 @@ isolated oracle setup plus remote/local temporary UDP UPnP directions, and
 activated Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md). That tactical now
 proves one exact remote-mapped direct-public-path uTP transfer and cleanup, and
-the single authoritative **Now** is its post-Stage 4 human-review decision.
-Tactical `122`'s classified Ubuntu result leaves focused-driver HTTP(S) tracker
-dispatch next if uTP pauses. The
+human review then explicitly paused uTP and activated TCP-only synthetic
+performance diagnosis Tactical
+[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) as the single
+authoritative **Now**. Tactical `122`'s classified Ubuntu result leaves
+focused-driver HTTP(S) tracker dispatch available after that diagnosis. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -364,7 +366,7 @@ Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
 evidence-limited at its superseded direct-interface preflight; Tactical `122`
 completed paired public download performance evidence; and mapped-WAN uTP
 Tactical `127` completed one exact direct-public-path leecher transfer and
-cleanup and is at human review**.
+cleanup; human review paused uTP; and Tactical `128` is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -398,13 +400,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: none until human review chooses the recommended
-complementary mapped-WAN direction with RSTorrent as local seed/bulk sender,
-pauses uTP and restores focused-driver HTTP(S) tracker dispatch, or explicitly
-selects product-policy planning. No local gateway operation, product uTP
-enablement, public swarm, dependency, or support-claim change is implicit.
-Any implementation choice still requires its own bounded tactical and source-
-first ownership/interoperability contract.
+Next executable action: execute Tactical `128`'s bounded TCP-only loopback
+geometry screen and exact focused/resumable/libtorrent path discriminator,
+then use repeated causal evidence to select one separate owner-level
+optimization tactical. No local gateway operation, further uTP work, public
+swarm, dependency, product setting, or support-claim change is implicit.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

@@ -598,6 +598,11 @@ that scope and its cleanup or compatibility rules explicitly.
   independent post-run audits prove zero mapping, process, and artifact
   residue. The local-mapping fallback was not needed, and product uTP stays
   disabled at the required human-review checkpoint.
+- [`128-controlled-tcp-performance-diagnosis.md`](128-controlled-tcp-performance-diagnosis.md):
+  active deterministic TCP-only comparison of focused RSTorrent, resumable
+  RSTorrent, and pinned libtorrent paths on byte-identical loopback fixtures;
+  maps current slower regimes, attributes the owning boundary, and selects a
+  separate bounded optimization without resuming uTP or public-swarm work.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
