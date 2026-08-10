@@ -20,12 +20,14 @@ corrected that precondition and authorized Tactical
 oracle on the NATed host, try remote UDP UPnP first, and use a local UDP mapping
 with reversed roles only if remote reachability capability is absent. Tactical
 `127` is complete after one exact remote-mapped direct-public-path transfer and
-verified cleanup. Human review then authorized active Tactical
+verified cleanup. Human review then authorized Tactical
 [`130`](../tactical/130-utp-transport-solidification.md) to complete the
 complementary WAN direction, a small bidirectional cohort, real-socket
 impairment/lifecycle hardening, and diagnostic-only MTU integration before the
-pre-product review. uTP remains **Unsupported** and no product transport policy
-or dependency is accepted.
+pre-product review. Tactical `130` is now closed with its WAN cohort evidence-
+limited and every controlled gate passing. The campaign is at that pre-product
+review; uTP remains **Unsupported** and no product transport policy or
+dependency is accepted.
 
 ## Scope And Ownership
 
@@ -129,12 +131,12 @@ the single authoritative **Now**.
   peers, exact SHA-1, zero loss/retransmission counters, bounded queues, and
   terminal zero ownership. Independent post-run audit found no mapping,
   process, or per-run artifact residue.
-- Active Tactical `130` now owns the remaining pre-product transport baseline:
-  RSTorrent bulk sending through one exact temporary local UDP mapping, three
-  fresh samples in each WAN direction, fixed real-socket impairment and
-  hostile lifecycle gates, and an explicit diagnostic MTU configuration. It
-  leaves ordinary runtime fixed at 548 bytes unless truthful portable probe
-  feedback is proven and separately reviewed for product use.
+- Closed Tactical `130` owns the pre-product transport-solidification record:
+  RSTorrent bulk sending through one exact temporary local UDP mapping, an
+  evidence-limited bidirectional WAN cohort, passing fixed real-socket
+  impairment and hostile lifecycle gates, and an explicit diagnostic MTU
+  configuration. Ordinary runtime remains fixed at 548 bytes pending a
+  separately authorized product decision.
 - Tactical `130`'s real-socket delay/jitter gate found two independently
   repaired interoperability defects. Accepted established packets now reset
   timeout backoff from receive time, matching pinned libtorrent without
@@ -155,8 +157,8 @@ the single authoritative **Now**.
   ownership. The applied profiles observe up to 40 relay drops, 52 duplicates,
   78 explicit reorder selections, 210 RSTorrent retransmissions, and 196 loss
   reductions without timeout collapse, runtime queue loss, worker panic, or a
-  DATA datagram above 548 bytes. Diagnostic probe integration and hostile
-  lifecycle completion remain active work.
+  DATA datagram above 548 bytes. The final fixed-matrix rerun also passes with
+  every ordinary candidate fixed at 548 and zero probe counters.
 - Tactical `130`'s hostile/lifecycle gate now combines 14 uTP runtime cases
   with 11 shared-session UDP cases. It proves endpoint-scoped spoofed
   RESET/STATE isolation, duplicate-SYN reuse, exact 16 half-open/incoming and
@@ -595,7 +597,7 @@ and gateway data are deliberately redacted. Every per-run payload, metainfo,
 directory, log, mapping, listener, and process was removed. The only retained
 remote state is the documented user-owned oracle environment.
 
-Active Tactical `130` now also proves the complementary first sample:
+Closed Tactical `130` also proves the complementary first sample:
 RSTorrent exposed its diagnostic seed through one exact finite local UDP UPnP
 lease and pinned libtorrent on `pimom` downloaded and hash-verified the same
 fixture over an ordinary Internet route. The 92.140-second run observed one
@@ -615,9 +617,10 @@ seconds. Together with the initial sample, three captured local-send successes
 retain exact hash, one uTP/zero TCP peers, 153--177 ms RTT observations, fixed
 548-byte MTU, finite exact lease cleanup, and zero residue. No compliant fresh
 three-sample remote-receive summary was retained before the external attempt
-budget expired. Do not infer a cohort baseline or silently run more WAN cases;
-the campaign continues with deterministic real-socket impairment/lifecycle
-work.
+budget expired. Do not infer a cohort baseline or silently run more WAN cases.
+The deterministic real-socket impairment/lifecycle and diagnostic-MTU gates
+subsequently passed; the incomplete cohort remains the explicit external
+evidence limit at pre-product review.
 
 ## Human Review Gates
 
@@ -663,12 +666,13 @@ Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
 Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
 direct-interface preflight; post-Stage 4 solidification Tactical `130` is
-active**.
+closed with the WAN cohort evidence-limited and every controlled gate
+passing; the campaign is at pre-product review**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Execute Tactical `130`
-through complementary WAN, cohort, impairment/lifecycle, diagnostic MTU,
-cleanup, and repository evidence, committing each bounded stage. Then stop at
-the pre-product human review. No permanent network change, different host,
-product enablement, dependency, public swarm, or support-claim authority is
-implied.
+[`capability-readiness.md`](capability-readiness.md). The next action is the
+human pre-product decision: keep uTP diagnostic-only and return to queued work,
+or authorize a separate product-integration tactical with explicit transport
+selection, reachability, fallback, presentation, and evidence gates. No
+implementation, permanent network change, different host, dependency, public
+swarm, or support-claim authority is implied by this checkpoint.

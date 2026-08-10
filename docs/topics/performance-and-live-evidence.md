@@ -12,10 +12,10 @@ checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
 Completed Tactical `127` additionally records one 82.239-second remote-mapped
 uTP WAN transfer as a bounded observation, not a throughput threshold.
-Active Tactical `130` owns the complementary bulk-send direction, three fresh
-samples per WAN direction, fixed real-socket impairment profiles, and
-diagnostic MTU measurements. These remain controlled observations rather than
-public-swarm or product performance claims.
+Closed Tactical `130` records the complementary bulk-send direction, an
+evidence-limited bidirectional cohort, passing fixed real-socket impairment
+profiles, and controlled diagnostic MTU measurements. These remain controlled
+observations rather than public-swarm or product performance claims.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the
@@ -975,15 +975,15 @@ The 82-second elapsed time is recorded as an observation, not a stable
 performance baseline or acceptance threshold. RSTorrent was the leecher and
 sent only request/control traffic; its observed fixed 1,056-byte send
 congestion window therefore does not measure RSTorrent's bulk-send controller.
-A complementary WAN direction with RSTorrent as seed is the recommended next
-measurement before product transport policy.
+That observation selected a complementary WAN direction with RSTorrent as seed
+before product transport policy.
 
 The exact lease was deleted and query-confirmed absent. An independent audit
 also found no owned helper process or per-run directory. Raw endpoint,
 gateway, peer-ID, and packet data were not retained. The reusable isolated
 oracle environment is the only intentional remote residue.
 
-Active Tactical
+Closed Tactical
 [`130`](../tactical/130-utp-transport-solidification.md) adds the first
 complementary observation with RSTorrent as the locally mapped bulk sender.
 Pinned libtorrent downloaded the exact fixture in 92.140 seconds over the
@@ -1007,6 +1007,25 @@ the unchanged 180-second bound, each with exact cleanup; diagnostic retries
 immediately around them passed. The external attempt budget expired before a
 compliant three-sample remote-receive summary was retained. These data are a
 stability gap, not a performance baseline or threshold.
+
+The controlled loopback transport matrix passes six deterministic real-socket
+profiles against pinned libtorrent in 72.868 seconds on its final rerun.
+Clean, alternating delay/jitter, one-percent sparse DATA loss, exact
+duplicate/reorder ordinals, three-packet burst loss, and the fixed 548-byte
+black-hole baseline all transfer and hash-verify the exact fixture with
+bounded queues and terminal zero ownership. The impairment rows exercise
+RSTorrent retransmission and once-per-RTT congestion reduction without a
+timeout collapse; every ordinary profile retains selected and candidate MTU
+548 with zero probe counters.
+
+The separate diagnostic profile completes in 4.200 active seconds. Its
+controlled 1,280-byte black hole drops three oversized probes and forwards
+three same-sequence fragmentable retries. Six total probes split into three
+acknowledgements and three failures, converge to a 1,269-byte proven floor,
+and produce zero congestion reductions or timeout collapses. This measures the
+runtime state/feedback loop, not Internet PMTU: the portable shared UDP sender
+does not apply per-emission fragmentation intent to the OS socket. Ordinary
+runtime therefore remains fixed at 548 bytes.
 
 ## Comparator Outcome
 

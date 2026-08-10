@@ -1,11 +1,11 @@
 # Tactical 130: uTP Transport Solidification
 
-Status: **Active** on 2026-08-10. At Tactical `127`'s post-Stage 4 review, the
-maintainer authorized the complete bounded transport-solidification workstream:
-temporary exact UDP UPnP leases on the already authorized local and `pimom`
-networks, a small bidirectional WAN cohort, controlled real-socket impairment
-and hostile lifecycle gates, and evidence-led diagnostic MTU work. Commit each
-bounded stage and stop at the final pre-product review.
+Status: **Closed, evidence-limited** on 2026-08-11. Every controlled
+impairment, hostile lifecycle, diagnostic-MTU, cleanup, and repository gate
+passes. The complementary mapped-WAN direction also passes, but the bounded
+bidirectional cohort closed without its complete fresh sample set after the
+authorized external attempt budget was exhausted. Product uTP remains
+disabled and BEP 29 remains **Unsupported** at the required pre-product review.
 
 Topics: `utp-transport-campaign`, `incoming-reachability-and-seeding`,
 `performance-and-live-evidence`, `peer-lifecycle`, `protocol-support`,
@@ -614,11 +614,12 @@ the existing 64-owner limit plus one rejection attempt.
 
 ### Diagnostic MTU runtime integration
 
-The runtime now has one explicit construction-time diagnostic configuration
-that supplies the existing `PathMtuState` with the bounded 548--1,472-byte
-IPv4 UDP payload range. The ordinary `UtpService::start` path still supplies
-equal 548-byte floor and ceiling values, so it cannot emit an MTU probe. Only
-the loopback-only `diagnostic-mtu-seed` role selects the wider range; no
+Commit `5f15713` gives the runtime one explicit construction-time diagnostic
+configuration that supplies the existing `PathMtuState` with the bounded
+548--1,472-byte IPv4 UDP payload range. The ordinary `UtpService::start` path
+still supplies equal 548-byte floor and ceiling values, so it cannot emit an
+MTU probe. Only the loopback-only `diagnostic-mtu-seed` role selects the wider
+range; no
 product caller, online role, peer-selection policy, or support claim changes.
 
 Runtime snapshots now distinguish the selected proven floor from the current
@@ -638,9 +639,10 @@ fragmentation protection.
 
 ### Diagnostic MTU controlled evidence
 
-The relay's separate diagnostic profile models the missing socket feedback
-without pretending that the current portable UDP API exposes per-datagram
-fragmentation control. It drops the first target-to-client DATA datagram over
+Commit `167626a` extends the relay with a separate diagnostic profile that
+models the missing socket feedback without pretending that the current
+portable UDP API exposes per-datagram fragmentation control. It drops the
+first target-to-client DATA datagram over
 1,280 bytes for each sequence number, then forwards a same-sequence retry.
 This corresponds to one protected probe followed by the transport's explicitly
 marked retry without fragmentation protection. The policy is deterministic,
@@ -680,3 +682,41 @@ per-datagram fragmentation protection would cross this tactical's dependency,
 unsafe/platform-code, or product-policy review stop. Ordinary runtime
 therefore remains fixed at 548 bytes and the uTP support claim remains
 **Unsupported**.
+
+### Closure and repository validation
+
+The tactical closes at its pre-product review with one explicit evidence
+limit: the six-sample WAN cohort did not complete before its fixed external
+attempt budget expired. The first complementary public-path transfer and two
+bounded diagnostic retries passed, while two intervening local-send samples
+timed out after exact cleanup. No retained compliant three-sample
+remote-receive summary exists. This gap is not represented as a pass and no
+further external attempt was made during reconciliation.
+
+Every non-WAN stopping gate passes. The fixed real-socket matrix and separate
+diagnostic-MTU profile hash-verify the exact fixture against pinned
+libtorrent; hostile and lifecycle tests prove their exact connection, queue,
+generation, cancellation, and terminal bounds; ordinary runtime remains fixed
+at 548 bytes; and all temporary fixture, relay, process, mapping, and run-
+directory owners clean up. The reusable isolated `pimom` oracle environment is
+the only intentional retained remote state.
+
+Final validation on 2026-08-11:
+
+- `cargo test -p rstorrent-protocol utp`: 87 passed;
+- `cargo test -p rstorrent-engine utp`: 22 passed;
+- `cargo test -p rstorrent-engine port_mapping`: 18 passed;
+- `test_utp_wan_contract.py`: 10 passed;
+- `test_utp_runtime_impairment.py`: six policy cases passed;
+- `utp_rstorrent_interop.py`: both exact loopback roles passed with ordinary
+  MTU fixed at 548 and zero probe counters;
+- `utp_runtime_impairment.py`: all six fixed profiles passed in 72.868 seconds;
+- `utp_runtime_impairment.py --diagnostic-mtu`: exact transfer, convergence,
+  isolation, bounds, and cleanup passed;
+- `cargo fmt --all -- --check` and warning-denying workspace Clippy passed; and
+- `cargo test --workspace`: all default workspace tests passed, with only the
+  repository's documented opt-in tests ignored.
+
+The WAN cohort command was deliberately not rerun because this tactical's
+external attempt budget is exhausted. No web/application contract changed, so
+the web generation, typecheck, and test gates are not applicable.

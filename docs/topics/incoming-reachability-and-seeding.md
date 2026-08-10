@@ -51,12 +51,12 @@ the engine's UDP mapping path remains diagnostic-only and was not invoked.
 The result adds no persisted setting, advertisement, or ordinary product
 listener policy.
 
-Active diagnostic-only Tactical
-[`130`](../tactical/130-utp-transport-solidification.md) may now exercise the
-engine's explicit UDP mapping path once on the authorized local gateway, then
-in a bounded cohort, with RSTorrent as the seed/bulk sender. Every product
-reachability call remains TCP, and every diagnostic UDP lease must be queried,
-deleted, and independently confirmed absent before the next sample.
+Closed diagnostic-only Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) exercises the engine's
+explicit UDP mapping path on the authorized local gateway with RSTorrent as
+the seed/bulk sender. Every product reachability call remains TCP, and every
+diagnostic UDP lease was queried, deleted, and independently confirmed absent
+before the next sample.
 
 The first such sample now passes. One exact finite 3,600-second UDP lease
 exposed the diagnostic RSTorrent seed, pinned libtorrent on `pimom` downloaded
@@ -65,6 +65,12 @@ shutdown deleted the lease, and an independent exact-port audit found it
 absent. An observed reset of the idempotent external-address SOAP query is now
 bounded to one retry; mutating mapping ownership and product TCP policy are
 unchanged.
+
+The bounded cohort later closed evidence-limited after three captured local-
+send successes and two intermittent 180-second timeouts, all with exact lease,
+process, and artifact cleanup. The external attempt budget expired before a
+compliant three-sample remote-receive summary was retained. No product UDP
+mapping, listener, advertisement, setting, or reachability claim follows.
 
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.

@@ -325,23 +325,23 @@ peer, bounded resources, cleanup, and alternating orders passed.
 
 ### Now
 
-- Active Tactical
+- Human pre-product review of closed Tactical
   [`130`](../tactical/130-utp-transport-solidification.md) is the single
-  authoritative work item selected at the post-Stage 4 review. It proves the
-  complementary local-mapped RSTorrent-sender WAN direction, runs a three-
-  sample cohort in both directions, composes the runtime with fixed real-socket
-  impairment and hostile lifecycle gates, and integrates diagnostic-only MTU
-  search when truthful feedback is available. Product uTP stays disabled.
+  authoritative work item. Its controlled transport-solidification gates pass
+  while the fresh bidirectional WAN cohort is explicitly evidence-limited.
+  Decide whether to keep uTP diagnostic-only and return to queued Tactical
+  `129`, or authorize a separate product-integration tactical. No product uTP
+  implementation is authorized by this review item.
 
 ### Next
 
 - Ready Tactical
   [`129`](../tactical/129-bounded-storage-intake-watermark.md) retains the
   storage-intake optimization selected by Tactical `128`; explicit maintainer
-  priority queues it intact behind the bounded uTP campaign.
+  priority kept it intact and it is queued behind the current uTP review.
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager remains available after Tactical `130` and
-  queued Tactical `129`.
+  download driver's nested manager remains available after queued Tactical
+  `129`.
   Completed Tactical
   [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
   proves that the long-lived application tracker owner is not composed into
@@ -371,15 +371,13 @@ The uTP topic records the adaptive campaign. Tacticals `118`, `119`, `121`,
 `125`, and `127` are complete; bounded deterministic state, both loopback
 roles, and one remote-mapped direct-public-path leecher transfer pass. Tactical
 `126` remains the evidence-limited record of its superseded direct-interface
-preflight. Active Tactical `130` owns the explicitly authorized local-mapped
-reverse WAN direction, bounded cohort, runtime impairment/lifecycle hardening,
-and diagnostic MTU work before the pre-product review. Its first reverse sample
-passes with exact hash, one uTP/zero TCP peers, exact local lease deletion, and
-zero transient residue. The WAN cohort closes evidence-limited after two
-repaired diagnostic peer-wire gaps and two intermittent cleaned-up local-send
-timeouts; the external attempt budget is exhausted. Controlled
-impairment/lifecycle and diagnostic MTU gates remain. uTP stays unsupported and
-disabled in products.
+preflight. Tactical `130` is closed after proving the complementary mapped-WAN
+direction, the fixed real-socket impairment matrix, hostile lifecycle bounds,
+and controlled diagnostic-MTU convergence. Its WAN cohort remains evidence-
+limited after two repaired diagnostic peer-wire gaps and two intermittent
+cleaned-up local-send timeouts exhausted the external attempt budget. Ordinary
+runtime stays fixed at 548 bytes; uTP remains unsupported and disabled in
+products.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
@@ -436,7 +434,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. Tactical `113` implements one independent finite-lease IPv6 firewall-pinhole slot and typed product status under the same reachability coordinator; deterministic and scripted-gateway evidence pass. Its live negative control passes, but the observed gateway rejects `AddPinhole` with typed `606`, so no physical off-network incoming IPv6 or cleanup claim is made. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| uTP peer transport | Partial | deterministic, runtime, interop | Tacticals `119` and `121` prove bounded v1 wire/connection/reliability transitions, exact receive credit and packetization, delayed ACK, retransmission execution, RFC 6817 congestion/pacing, path MTU, and fixed impairment/resource thresholds. Tactical `125` adds independent bounded DHT/uTP session routing, generation-fenced connection/task ownership, ordered-stream and peer-I/O composition, controlled incoming peer/upload integration, and exact pinned-libtorrent loopback transfers in both roles with terminal zero ownership. Tactical `127` adds one exact remote-mapped direct-public-path transfer with RSTorrent as leecher. Active Tactical `130` adds a first complementary locally mapped RSTorrent-seed sample. Both directions observe one uTP peer, zero TCP peers, exact content, bounded resources, exact lease deletion, and zero terminal residue. Ordinary product dialing/listening/selection remains TCP; a repeatable WAN cohort, IPv6 uTP, real-socket MTU probing, MSE-over-uTP, product policy, and support graduation remain absent until their gates pass. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
+| uTP peer transport | Partial | deterministic, runtime, interop | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tactical `127` proves a remote-mapped direct-public-path RSTorrent leecher; closed Tactical `130` proves the complementary locally mapped seed direction, a six-profile real-socket matrix, endpoint/half-open/queue/generation/cancellation lifecycle gates, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole without congestion reduction. Both WAN directions observe one uTP peer, zero TCP peers, exact content, lease deletion, and zero residue, but the fresh bidirectional cohort remains evidence-limited. Ordinary product dialing, listening, selection, fallback, mapping, advertisement, and presentation remain TCP-only and the default uTP MTU stays 548. Portable per-datagram fragmentation protection, a repeatable WAN cohort, IPv6 uTP, MSE-over-uTP, ordinary swarm evidence, product policy, and support graduation remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

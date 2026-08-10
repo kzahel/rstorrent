@@ -50,10 +50,12 @@ authoritative **Now**. Tactical `128` completed and selected bounded storage
 intake watermark Tactical
 [`129`](../tactical/129-bounded-storage-intake-watermark.md). Before its
 implementation, explicit maintainer priority resumed uTP and activated
-Tactical [`130`](../tactical/130-utp-transport-solidification.md) as the new
-authoritative **Now**; Tactical `129` remains ready and queued intact. Tactical
-`122`'s classified Ubuntu result leaves focused-driver HTTP(S) tracker dispatch
-available after those items. The
+Tactical [`130`](../tactical/130-utp-transport-solidification.md). It is now
+closed with every controlled gate passing and its fresh bidirectional WAN
+cohort evidence-limited. The authoritative **Now** is the required pre-product
+human review; Tactical `129` remains ready and queued intact. Tactical `122`'s
+classified Ubuntu result leaves focused-driver HTTP(S) tracker dispatch
+available after that queued item. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -374,7 +376,8 @@ completed paired public download performance evidence; and mapped-WAN uTP
 Tactical `127` completed one exact direct-public-path leecher transfer and
 cleanup; human review paused uTP; Tactical `128` completed controlled TCP
 diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
-Tactical `130` is active**.
+Tactical `130` is closed with its WAN cohort evidence-limited and every
+controlled gate passing. The campaign is at pre-product review**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -388,12 +391,14 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest closed tactical:
-[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md). Its
-preflight record retains the accepted direct-route and cleanup contract plus
-the observed evidence limit: the authorized host has LAN and Tailscale/shared-
-range IPv4 but no directly assigned global IPv4, and system Python has no
-libtorrent package. It created no remote state, listener, or background
-process, sent no uTP packet, and makes no WAN or support claim.
+[`130`](../tactical/130-utp-transport-solidification.md). It proves the
+complementary locally mapped WAN direction, exact six-profile real-socket
+impairment transfers, hostile endpoint/connection/queue/generation/cancellation
+bounds, and controlled diagnostic-MTU convergence to 1,269 bytes under a
+1,280-byte black hole without congestion reduction. The fresh bidirectional
+WAN cohort remains explicitly evidence-limited after its attempt budget
+expired; ordinary runtime remains fixed at 548 bytes and product uTP remains
+disabled.
 
 Latest completed tactical:
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md). A reusable isolated
@@ -403,24 +408,23 @@ ordinary public route in 82.239 seconds with one uTP peer, zero TCP peers,
 exact SHA-1, bounded resources, and terminal zero ownership. Exact deletion and
 an independent audit found no mapping, process, or per-run artifact residue.
 At Tactical `127`'s completion the local-mapped reverse direction remained
-unmeasured. Active Tactical `130` has since completed its first reverse sample:
+unmeasured. Tactical `130` subsequently completed its first reverse sample:
 the exact fixture passed from a locally mapped RSTorrent seed to the pinned
 remote leecher in 92.140 seconds with one uTP/zero TCP peers, exact joined
-lease deletion, and an independent zero-residue audit. This is not yet its
-fresh cohort, and product uTP stays disabled.
+lease deletion, and an independent zero-residue audit. Two bounded diagnostic
+retries also passed, but the full fresh cohort did not; product uTP stays
+disabled.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: continue Tactical `130` with fixed real-socket
-impairment and hostile lifecycle gates, then integrate diagnostic-only MTU
-search when its feedback is truthful. The WAN cohort is evidence-limited and
-its external attempt budget is exhausted; do not run another external sample
-without later human authority. Commit bounded stages and stop at the
-pre-product review.
-Tactical `129` remains the first ready non-uTP item. No product uTP, public
-swarm, dependency, permanent network change, or support-claim authority is
-implicit.
+Next executable action: conduct the human pre-product review of Tactical
+`130`. Choose whether to keep uTP diagnostic-only and return to Tactical `129`,
+or authorize a separate product-integration tactical with explicit transport
+selection, reachability, fallback, presentation, and evidence gates. Do not
+run another external sample without later human authority. No product uTP,
+public swarm, dependency, permanent network change, or support-claim authority
+is implicit.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -447,12 +451,13 @@ Last completed evidence:
   bounded resources, terminal zero ownership, exact mapping deletion, and an
   independent zero-residue audit. Product uTP remains disabled at human
   review;
-- Tactical `130` is active under explicit maintainer authorization for the
-  complementary mapped-WAN direction, bounded bidirectional cohort, real-
-  socket impairment/lifecycle hardening, and diagnostic MTU evidence. Its
-  first 92.140-second reverse sample passes with one uTP/zero TCP peers, exact
-  content, exact local lease deletion, and zero residue. It has no product or
-  support-claim authority;
+- Tactical `130` is closed with the WAN cohort evidence-limited. Three captured
+  locally mapped sender successes include the first 92.140-second sample and
+  two 58.777/64.528-second active retries, all with exact content, one uTP/zero
+  TCP peers, exact lease deletion, and zero residue. Its six-profile real-
+  socket matrix, 14 runtime lifecycle cases, 11 shared-UDP cases, and
+  diagnostic 1,269-byte controlled-MTU convergence pass without enabling
+  product uTP or changing the support claim;
 - commit `302d840` fixes Tactical `126`'s direct-route, exact-oracle,
   outbound-only, evidence, and cleanup contract. Its authorized 4.5-second
   read-only `pimom` preflight finds only loopback, RFC 1918 LAN, and
@@ -469,12 +474,11 @@ Last completed evidence:
   libtorrent `2.0.13.0` with RSTorrent as leecher and seed, one loopback uTP
   peer, zero TCP peers, bounded RTT/RTO, delay, window, MTU, and resource high-
   water observations, and terminal zero ownership in both roles;
-- 83 focused protocol uTP, 12 shared-UDP, and 10 runtime tests pass alongside
-  the complete Rust workspace, and the controlled two-role gate removes all
-  temporary state; and
-- no dependency, manifest, unsafe code, foreign source, WAN/LAN peer, public
-  swarm, visible client, product transport policy, or support claim was added
-  or run;
+- 87 focused protocol uTP, 14 runtime lifecycle, 11 shared-UDP, 18 UPnP, and
+  ten WAN contract tests pass alongside both controlled loopback roles, both
+  real-socket profile sets, and the complete Rust workspace; and
+- no dependency, manifest, unsafe code, foreign source, public swarm, visible
+  client, product transport policy, or support claim was added;
 - commits `b9e86f5`, `c4c2459`, `a5e2829`, and `a83d226` add Tactical `119`'s
   independently authored, dependency-free uTP codec, receive ordering, send
   reliability, and connection lifecycle under the protocol crate's inward
@@ -484,9 +488,10 @@ Last completed evidence:
   duplicate and three-later-ACK loss, Karn filtering, RTO saturation,
   retransmission exhaustion, FIN, RESET, and terminal zero ownership;
 - `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
-  `cargo test --workspace` pass on 2026-08-10; and
-- no manifest, unsafe code, socket, task, runtime stream, client, WAN, public
-  swarm, `pimom`, or physical-device action was added or run.
+  `cargo test --workspace` pass on 2026-08-11; and
+- that runtime-free Tactical `119` slice added no manifest, unsafe code,
+  socket, task, runtime stream, client, WAN, public swarm, `pimom`, or
+  physical-device action;
 - commits `09713fd`, `dea0a9e`, and `8c8e154` implement and directly exercise
   one atomic wanted-plus-running file intent through the durable store,
   serialized controller, generated clients, and shared Files UI;

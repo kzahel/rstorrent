@@ -484,13 +484,16 @@ product execution. Completed Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md) observes the same
 single generation and terminal removal while RSTorrent downloads over a
 direct public path from a remotely mapped pinned-libtorrent seed; product
-selection remains unchanged. Active Tactical
-[`130`](../tactical/130-utp-transport-solidification.md) owns bounded hostile
-real-socket pressure, cancellation, generation replacement, repeated
-start/stop, and the complementary mapped RSTorrent-sender direction before
-product policy. Its first complementary sample observes exactly one incoming
-uTP generation while RSTorrent uploads the exact fixture, followed by zero
-terminal incoming, uTP, UDP, half-open, connection, and queue ownership.
+selection remains unchanged. Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) is now closed after
+proving bounded hostile real-socket pressure, cancellation, generation
+replacement, repeated start/stop, and the complementary mapped RSTorrent-
+sender direction before product policy. Its lifecycle gate covers endpoint-
+scoped spoofed RESET/STATE, duplicate SYN reuse, exact 16 half-open and 64
+connection caps, independent 64/256 datagram queues, consumer drop during
+retransmission, socket generations, and eight complete restarts. Every case
+and the complementary WAN sample end with zero terminal incoming, uTP, UDP,
+half-open, connection, and queue ownership and no worker panic.
 Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
