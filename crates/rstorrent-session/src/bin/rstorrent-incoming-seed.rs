@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rstorrent_engine::dht::BootstrapNode;
+use rstorrent_engine::{SelectiveStorage, torrent_storage_paths_for_metainfo};
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
+use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
     ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
@@ -51,6 +53,9 @@ async fn run() -> Result<(), SeedHarnessError> {
         operation: "create storage root",
         source,
     })?;
+    if let Some(payload) = &arguments.fixture_payload {
+        stage_partial_fixture(payload, &arguments.storage_root, &metainfo, &arguments).await?;
+    }
     let storage_roots = vec![ConfiguredStorageRoot::path(
         "downloads",
         arguments.storage_root.clone(),
@@ -243,6 +248,9 @@ async fn run() -> Result<(), SeedHarnessError> {
             "swarm": snapshot_view(&service, ViewSelector::Torrent {
                 torrent_id: hex(metainfo.info_hash),
             }, ViewProjection::Swarm).await?,
+            "summary": snapshot_view(&service, ViewSelector::Torrent {
+                torrent_id: hex(metainfo.info_hash),
+            }, ViewProjection::Summary).await?,
         });
         stdout
             .write_all(format!("{snapshot_json}\n").as_bytes())
@@ -339,33 +347,51 @@ fn initialize_catalog(
             ));
         }
     }
+    let partial = arguments.fixture_payload.is_some();
     match store.load_resume(&torrent_id) {
         Ok(resume)
-            if resume.state == rstorrent_session::TorrentState::Complete
-                && resume.storage_state == StorageState::Published =>
+            if (!partial
+                && resume.state == rstorrent_session::TorrentState::Complete
+                && resume.storage_state == StorageState::Published)
+                || (partial
+                    && resume.state != rstorrent_session::TorrentState::Complete
+                    && resume.storage_state == StorageState::Staging) =>
         {
             return Ok(());
         }
         Ok(_) => {
             return Err(SeedHarnessError::Catalog(
-                "existing fixture catalog row is not complete and published".to_owned(),
+                "existing fixture catalog row does not match the requested mode".to_owned(),
             ));
         }
         Err(StoreError::UnknownTorrent(_)) => {}
         Err(error) => return Err(error.into()),
     }
+    let magnet = {
+        let mut magnet = arguments.tracker.as_deref().map_or_else(
+            || format!("magnet:?xt=urn:btih:{torrent_id}"),
+            |tracker| format!("magnet:?xt=urn:btih:{torrent_id}&tr={tracker}"),
+        );
+        if let Some(peer) = arguments.peer {
+            magnet.push_str("&x.pe=");
+            magnet.push_str(&peer.to_string());
+        }
+        magnet
+    };
     let response = store.handle_durable(&RequestEnvelope {
         version: CONTROL_VERSION,
         request_id: "initialize-incoming-seed".to_owned(),
         expected_revision: None,
         command: Command::AddMagnet {
-            magnet: arguments.tracker.as_deref().map_or_else(
-                || format!("magnet:?xt=urn:btih:{torrent_id}"),
-                |tracker| format!("magnet:?xt=urn:btih:{torrent_id}&tr={tracker}"),
-            ),
+            magnet,
             storage_root: "downloads".to_owned(),
             start_content: true,
-            skip_files: Vec::new(),
+            skip_files: arguments
+                .skip_files
+                .iter()
+                .map(|index| u32::try_from(*index))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| SeedHarnessError::Arguments("--skip-file exceeds u32".to_owned()))?,
         },
     })?;
     if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
@@ -374,12 +400,108 @@ fn initialize_catalog(
         ));
     }
     store.record_metadata(&torrent_id, raw_info)?;
-    store.record_pieces(
-        &torrent_id,
-        &(0..metainfo.piece_count()).collect::<Vec<_>>(),
-    )?;
-    store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
-    store.mark_complete(&torrent_id)?;
+    if partial {
+        store.record_pieces(&torrent_id, &arguments.initial_pieces)?;
+        store.mark_storage_prepared(&torrent_id, StorageState::Staging)?;
+    } else {
+        store.record_pieces(
+            &torrent_id,
+            &(0..metainfo.piece_count()).collect::<Vec<_>>(),
+        )?;
+        store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
+        store.mark_complete(&torrent_id)?;
+    }
+    Ok(())
+}
+
+async fn stage_partial_fixture(
+    payload_path: &std::path::Path,
+    storage_root: &std::path::Path,
+    metainfo: &Metainfo,
+    arguments: &Arguments,
+) -> Result<(), SeedHarnessError> {
+    if arguments.initial_pieces.is_empty() {
+        return Err(SeedHarnessError::Arguments(
+            "--fixture-payload requires at least one --initial-piece".to_owned(),
+        ));
+    }
+    let payload = std::fs::read(payload_path).map_err(|source| SeedHarnessError::Io {
+        operation: "read partial fixture payload",
+        source,
+    })?;
+    let total_length = usize::try_from(metainfo.total_length).map_err(|_| {
+        SeedHarnessError::Catalog("fixture payload length exceeds this platform".to_owned())
+    })?;
+    if payload.len() != total_length {
+        return Err(SeedHarnessError::Catalog(format!(
+            "fixture payload has {} bytes, expected {total_length}",
+            payload.len()
+        )));
+    }
+    if arguments
+        .initial_pieces
+        .iter()
+        .any(|piece| *piece >= metainfo.piece_count())
+    {
+        return Err(SeedHarnessError::Arguments(
+            "--initial-piece exceeds the metainfo piece count".to_owned(),
+        ));
+    }
+    let layout = TorrentLayout::from_metainfo(metainfo);
+    let selection = FileSelection::new(&layout, &arguments.skip_files)
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let mut storage =
+        SelectiveStorage::create(paths.output, metainfo, layout.clone(), selection.clone())
+            .await
+            .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let piece_length = usize::try_from(metainfo.piece_length)
+        .map_err(|_| SeedHarnessError::Catalog("piece length exceeds this platform".to_owned()))?;
+    for &piece_index in &arguments.initial_pieces {
+        let piece = u32::try_from(piece_index)
+            .map_err(|_| SeedHarnessError::Catalog("piece index exceeds u32".to_owned()))?;
+        let piece_offset = piece_index
+            .checked_mul(piece_length)
+            .ok_or_else(|| SeedHarnessError::Catalog("fixture piece offset overflow".to_owned()))?;
+        for request in layout
+            .request_ranges(piece, &selection)
+            .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?
+        {
+            let begin = usize::try_from(request.begin).map_err(|_| {
+                SeedHarnessError::Catalog("fixture request offset exceeds this platform".to_owned())
+            })?;
+            let length = usize::try_from(request.length).map_err(|_| {
+                SeedHarnessError::Catalog("fixture request length exceeds this platform".to_owned())
+            })?;
+            let start = piece_offset.checked_add(begin).ok_or_else(|| {
+                SeedHarnessError::Catalog("fixture request offset overflow".to_owned())
+            })?;
+            let end = start.checked_add(length).ok_or_else(|| {
+                SeedHarnessError::Catalog("fixture request length overflow".to_owned())
+            })?;
+            let bytes = payload.get(start..end).ok_or_else(|| {
+                SeedHarnessError::Catalog("fixture request exceeds payload".to_owned())
+            })?;
+            storage
+                .write_block(piece, request.begin, bytes.to_vec())
+                .await
+                .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+        }
+        storage
+            .sync_piece(piece)
+            .await
+            .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+        let actual = storage
+            .hash_piece(piece)
+            .await
+            .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+        if actual != metainfo.piece_hashes[piece_index] {
+            return Err(SeedHarnessError::Catalog(format!(
+                "fixture piece {piece_index} does not match metainfo"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -393,6 +515,10 @@ struct Arguments {
     encryption: EncryptionPolicy,
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
+    fixture_payload: Option<PathBuf>,
+    initial_pieces: Vec<usize>,
+    skip_files: Vec<usize>,
+    peer: Option<std::net::SocketAddr>,
 }
 
 impl Arguments {
@@ -408,6 +534,10 @@ impl Arguments {
         let mut encryption = None;
         let mut tracker = None;
         let mut dht_bootstrap = None;
+        let mut fixture_payload = None;
+        let mut initial_pieces = Vec::new();
+        let mut skip_files = Vec::new();
+        let mut peer = None;
         let mut index = 0;
         while index < arguments.len() {
             let flag = arguments[index]
@@ -485,10 +615,47 @@ impl Arguments {
                 index += 2;
                 continue;
             }
+            if flag == "--initial-piece" || flag == "--skip-file" {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| SeedHarnessError::Arguments(format!("{flag} must be UTF-8")))?;
+                let value = value.parse::<usize>().map_err(|_| {
+                    SeedHarnessError::Arguments(format!("{flag} must be a nonnegative integer"))
+                })?;
+                let values = if flag == "--initial-piece" {
+                    &mut initial_pieces
+                } else {
+                    &mut skip_files
+                };
+                if values.contains(&value) {
+                    return Err(SeedHarnessError::Arguments(format!(
+                        "{flag} {value} may appear only once"
+                    )));
+                }
+                values.push(value);
+                index += 2;
+                continue;
+            }
+            if flag == "--peer" {
+                let value = value.to_str().ok_or_else(|| {
+                    SeedHarnessError::Arguments("--peer must be UTF-8".to_owned())
+                })?;
+                let value = value.parse().map_err(|_| {
+                    SeedHarnessError::Arguments("--peer must be a socket address".to_owned())
+                })?;
+                if peer.replace(value).is_some() {
+                    return Err(SeedHarnessError::Arguments(
+                        "--peer may appear only once".to_owned(),
+                    ));
+                }
+                index += 2;
+                continue;
+            }
             let target = match flag {
                 "--profile-root" => &mut profile_root,
                 "--storage-root" => &mut storage_root,
                 "--metainfo" => &mut metainfo,
+                "--fixture-payload" => &mut fixture_payload,
                 _ => {
                     return Err(SeedHarnessError::Arguments(format!(
                         "unknown argument {flag}"
@@ -521,6 +688,10 @@ impl Arguments {
             encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
             tracker,
             dht_bootstrap,
+            fixture_payload,
+            initial_pieces,
+            skip_files,
+            peer,
         })
     }
 
@@ -918,6 +1089,61 @@ mod tests {
         )
         .expect("parse required encryption policy");
         assert_eq!(required.encryption, EncryptionPolicy::Required);
+        let partial = Arguments::parse(
+            [
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+                "--fixture-payload",
+                "payload.bin",
+                "--initial-piece",
+                "0",
+                "--initial-piece",
+                "2",
+                "--skip-file",
+                "1",
+                "--peer",
+                "127.0.0.1:6881",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse partial fixture arguments");
+        assert_eq!(partial.initial_pieces, [0, 2]);
+        assert_eq!(partial.skip_files, [1]);
+        assert_eq!(
+            partial.peer.expect("partial peer").to_string(),
+            "127.0.0.1:6881"
+        );
+        assert_eq!(
+            partial
+                .fixture_payload
+                .expect("partial fixture payload")
+                .to_string_lossy(),
+            "payload.bin"
+        );
+        assert!(
+            Arguments::parse(
+                [
+                    "--profile-root",
+                    "profile",
+                    "--storage-root",
+                    "storage",
+                    "--metainfo",
+                    "fixture.torrent",
+                    "--initial-piece",
+                    "0",
+                    "--initial-piece",
+                    "0",
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .is_err()
+        );
         assert!(Arguments::parse(std::iter::empty()).is_err());
     }
 }
