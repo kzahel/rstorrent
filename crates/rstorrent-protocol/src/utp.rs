@@ -7,6 +7,7 @@ mod send;
 mod sequence;
 #[cfg(test)]
 mod simulation;
+mod transport;
 
 pub use connection::{
     ConnectionError, ConnectionIds, ConnectionPhase, ConnectionSnapshot, ConnectionState,
@@ -29,3 +30,9 @@ pub use send::{
     SendState, SentPacketSnapshot, TimeoutOutcome,
 };
 pub use sequence::{SequenceNumber, SequenceRelation, TimestampMicros};
+pub use transport::{
+    AckScheduler, AckSchedulerSnapshot, MAX_DELAYED_ACK_MICROS, MAX_RETRANSMISSION_WORK,
+    MAX_UNSENT_BYTES, RetransmissionQueue, RetransmissionSnapshot, TransmitQueue,
+    TransmitQueueError, TransmitQueueSnapshot, new_payload_bytes, retransmission_is_admissible,
+    utp_header_bytes,
+};
