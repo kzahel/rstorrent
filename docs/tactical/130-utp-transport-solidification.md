@@ -410,3 +410,13 @@ failure event with content progress and aggregate uTP counters, and the
 controller preserves the local seed's partial-upload failure detail. One
 single-direction diagnostic retry will distinguish transient path variance
 from a reproducible sender stall before implementation changes.
+
+That diagnostic retry passed with exact completion in 58.777 active seconds,
+zero libtorrent loss/timeout/resend counters, fixed 548-byte RSTorrent MTU,
+exact lease deletion, and zero residue, so the first timeout alone did not
+justify a transport change. A later fresh-cohort local-seed case nevertheless
+reached the same bound. The remote helper emitted its bounded failure event,
+but the controller checked the expected nonzero process status before
+validating that event and hid its counters. Validation now precedes the process
+status check. The second and final single-direction diagnostic retry owns the
+decision between transport repair and recording a bounded path-variance gap.

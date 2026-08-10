@@ -965,8 +965,8 @@ def run_local_seed_direction(host: str, binary: Path) -> dict[str, Any]:
             remote_pid = remote_leecher_started_pid(remote.read_event(deadline))
             validate_remote_leecher_ready(remote.read_event(deadline), remote_pid)
             remote_complete = remote.read_event(deadline)
-            remote.wait_success(deadline)
             validate_remote_leecher_complete(remote_complete, expected_sha1)
+            remote.wait_success(deadline)
 
             role.send_stop()
             local_complete = role.read_event(deadline)
