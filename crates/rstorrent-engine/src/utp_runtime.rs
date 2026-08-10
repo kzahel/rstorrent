@@ -1051,23 +1051,7 @@ fn handle_datagram(
         receive_connection_id,
     };
     if let Some(route) = routes.get(&key) {
-        match route.ingress.try_send(bytes) {
-            Ok(()) => {
-                let queued = route
-                    .ingress
-                    .max_capacity()
-                    .saturating_sub(route.ingress.capacity());
-                stats
-                    .connection_datagram_queue_high_water
-                    .fetch_max(queued, Ordering::Relaxed);
-            }
-            Err(TrySendError::Full(_)) => {
-                saturating_increment(&stats.connection_datagrams_dropped, 1);
-            }
-            Err(TrySendError::Closed(_)) => {
-                saturating_increment(&stats.unknown_connection_datagrams, 1);
-            }
-        }
+        route_existing_datagram(route, bytes, stats);
         return;
     }
     if packet.header.packet_type != PacketType::Syn {
@@ -1126,6 +1110,26 @@ fn handle_datagram(
         workers,
         true,
     );
+}
+
+fn route_existing_datagram(route: &UtpRoute, bytes: Vec<u8>, stats: &UtpStats) {
+    match route.ingress.try_send(bytes) {
+        Ok(()) => {
+            let queued = route
+                .ingress
+                .max_capacity()
+                .saturating_sub(route.ingress.capacity());
+            stats
+                .connection_datagram_queue_high_water
+                .fetch_max(queued, Ordering::Relaxed);
+        }
+        Err(TrySendError::Full(_)) => {
+            saturating_increment(&stats.connection_datagrams_dropped, 1);
+        }
+        Err(TrySendError::Closed(_)) => {
+            saturating_increment(&stats.unknown_connection_datagrams, 1);
+        }
+    }
 }
 
 fn unique_connection_id(
@@ -1990,7 +1994,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn established_remote_reset_surfaces_as_connection_reset() {
+    async fn spoofed_state_and_reset_are_isolated_before_remote_reset() {
         let (udp, dht, utp) = service().await;
         let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let remote_address = remote.local_addr().unwrap();
@@ -2023,12 +2027,32 @@ mod tests {
             .unwrap()
             .unwrap()
             .unwrap();
+        let attacker = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        for packet_type in [PacketType::Reset, PacketType::State] {
+            attacker
+                .send_to(
+                    &packet(
+                        packet_type,
+                        syn.header.connection_id,
+                        901,
+                        syn.header.sequence_number.get(),
+                        &[],
+                    ),
+                    local_address,
+                )
+                .await
+                .unwrap();
+        }
+        wait_for(|| utp.snapshot().unknown_connection_datagrams == 1).await;
+        assert_eq!(utp.snapshot().active_connections, 1);
+        assert_eq!(stream.peer_addr(), remote_address);
+
         remote
             .send_to(
                 &packet(
                     PacketType::Reset,
                     syn.header.connection_id,
-                    901,
+                    902,
                     syn.header.sequence_number.get(),
                     &[],
                 ),
@@ -2119,6 +2143,11 @@ mod tests {
         .await;
         let snapshot = utp.snapshot();
         assert_eq!(
+            snapshot.incoming_half_open_high_water,
+            MAX_INCOMING_UTP_HALF_OPEN
+        );
+        assert_eq!(snapshot.incoming_half_open, 0);
+        assert_eq!(
             snapshot.incoming_stream_queue_high_water,
             UTP_INCOMING_STREAM_QUEUE
         );
@@ -2126,6 +2155,157 @@ mod tests {
         utp.shutdown().await.unwrap();
         drop(dht);
         udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn global_connection_limit_rejects_one_more_and_releases_every_worker() {
+        let (udp, dht, mut utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let mut streams = Vec::with_capacity(MAX_UTP_CONNECTIONS);
+        for index in 0..MAX_UTP_CONNECTIONS {
+            remote
+                .send_to(
+                    &packet(
+                        PacketType::Syn,
+                        u16::try_from(1_000 + index).unwrap(),
+                        u16::try_from(2_000 + index).unwrap(),
+                        0,
+                        &[],
+                    ),
+                    udp.local_address(),
+                )
+                .await
+                .unwrap();
+            streams.push(
+                timeout(Duration::from_secs(1), utp.accept())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        assert_eq!(utp.snapshot().active_connections, MAX_UTP_CONNECTIONS);
+
+        remote
+            .send_to(
+                &packet(PacketType::Syn, 9_000, 10_000, 0, &[]),
+                udp.local_address(),
+            )
+            .await
+            .unwrap();
+        wait_for(|| utp.snapshot().connection_datagrams_dropped >= 1).await;
+        assert!(
+            timeout(Duration::from_millis(100), utp.accept())
+                .await
+                .is_err()
+        );
+        let saturated = utp.snapshot();
+        assert_eq!(saturated.active_connections, MAX_UTP_CONNECTIONS);
+        assert_eq!(saturated.connection_high_water, MAX_UTP_CONNECTIONS);
+        assert_eq!(saturated.incoming_half_open, 0);
+
+        drop(streams);
+        wait_for(|| utp.snapshot().active_connections == 0).await;
+        let terminal = utp.shutdown().await.unwrap();
+        assert_eq!(terminal.active_connections, 0);
+        assert_eq!(terminal.incoming_half_open, 0);
+        assert_eq!(terminal.worker_panics, 0);
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn consumer_drop_during_retransmission_joins_with_zero_ownership() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let remote_address = remote.local_addr().unwrap();
+        let local_address = udp.local_address();
+        let handle = utp.handle();
+        let connect = tokio::spawn(async move { handle.connect(remote_address).await });
+        let mut bytes = [0; UTP_RUNTIME_DATAGRAM_BYTES];
+        let (length, _) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        let syn = decode_packet(&bytes[..length]).unwrap();
+        remote
+            .send_to(
+                &packet(
+                    PacketType::State,
+                    syn.header.connection_id,
+                    900,
+                    syn.header.sequence_number.get(),
+                    &[],
+                ),
+                local_address,
+            )
+            .await
+            .unwrap();
+        let mut stream = timeout(Duration::from_secs(1), connect)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        stream.write_all(&vec![7; 528]).await.unwrap();
+        let (length, _) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            decode_packet(&bytes[..length]).unwrap().header.packet_type,
+            PacketType::Data
+        );
+        wait_for(|| utp.snapshot().retransmission_datagrams_sent >= 1).await;
+
+        drop(stream);
+        wait_for(|| utp.snapshot().active_connections == 0).await;
+        let terminal = utp.shutdown().await.unwrap();
+        assert!(terminal.retransmission_datagrams_sent >= 1);
+        assert_eq!(terminal.active_connections, 0);
+        assert_eq!(terminal.incoming_half_open, 0);
+        assert_eq!(terminal.worker_panics, 0);
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn repeated_service_start_stop_releases_every_owner() {
+        for _ in 0..8 {
+            let (udp, dht, utp) = service().await;
+            let terminal = utp.shutdown().await.unwrap();
+            assert_eq!(terminal.active_connections, 0);
+            assert_eq!(terminal.incoming_half_open, 0);
+            assert_eq!(terminal.worker_panics, 0);
+            drop(dht);
+            udp.shutdown().await.unwrap();
+        }
+    }
+
+    #[test]
+    fn per_connection_datagram_queue_saturates_and_drops_only_new_work() {
+        let (ingress, mut receiver) = mpsc::channel(UTP_CONNECTION_DATAGRAM_QUEUE);
+        let route = UtpRoute {
+            ingress,
+            cancellation: CancellationToken::new(),
+        };
+        let stats = UtpStats::default();
+        for ordinal in 0..UTP_CONNECTION_DATAGRAM_QUEUE {
+            route_existing_datagram(&route, vec![ordinal as u8], &stats);
+        }
+        route_existing_datagram(&route, vec![255], &stats);
+
+        let snapshot = stats.snapshot();
+        assert_eq!(
+            snapshot.connection_datagram_queue_high_water,
+            UTP_CONNECTION_DATAGRAM_QUEUE
+        );
+        assert_eq!(snapshot.connection_datagrams_dropped, 1);
+        for ordinal in 0..UTP_CONNECTION_DATAGRAM_QUEUE {
+            assert_eq!(receiver.try_recv().unwrap(), vec![ordinal as u8]);
+        }
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[test]

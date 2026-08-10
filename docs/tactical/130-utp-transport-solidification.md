@@ -578,3 +578,35 @@ instead exercised RSTorrent's bounded SACK/fast-retransmit path. Congestion
 loss reductions occurred once per RTT as designed and no profile needed a
 timeout collapse. The fixed MTU-black-hole row is only the required baseline;
 it does not yet exercise diagnostic probes or justify path-MTU discovery.
+
+### Hostile and lifecycle evidence
+
+The runtime gate now has 14 passing focused cases, complemented by all 11
+shared-session UDP cases. Existing tests already covered shallow malformed and
+unknown packet rejection, remote-scoped connection IDs and duplicate SYN
+reuse, a legitimate RESET, consumer/service cancellation, socket generation
+replacement and removal, incoming-stream saturation, retry classification,
+and worker-panic accounting. The missing assertions and cases now prove:
+
+- RESET and STATE carrying a live connection ID from a different UDP endpoint
+  cannot affect the established stream; the spoofed STATE is counted unknown,
+  the spoofed RESET is silently ignored, and the legitimate endpoint's RESET
+  still terminates the stream as `ConnectionReset`;
+- a burst reaches the exact 16 incoming half-open/incoming-stream bound, drops
+  the next SYN, publishes all admitted workers, and returns half-open ownership
+  to zero;
+- 64 separately accepted incoming connections reach the exact global limit,
+  reject connection 65, and release every worker after their consumers drop;
+- the 64-entry per-connection datagram queue retains its original FIFO content
+  and drops only datagram 65, while the existing independent 256-entry shared
+  uTP queue gate drops only new uTP work and continues routing DHT;
+- dropping a stream after a real timeout retransmission joins the worker with
+  the recovery counter retained and zero active connections/half-opens/panics;
+  and
+- eight complete service start/stop cycles each terminate with zero active
+  connections, half-opens, or worker panics.
+
+The focused runtime tests finish in 0.52 seconds; session UDP tests finish in
+0.03 seconds. Warning-denying engine clippy and formatting pass. No test sends
+more than the authorized 1,024 datagrams, and the largest connection case is
+the existing 64-owner limit plus one rejection attempt.

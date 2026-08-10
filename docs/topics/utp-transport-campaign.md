@@ -157,6 +157,14 @@ the single authoritative **Now**.
   reductions without timeout collapse, runtime queue loss, worker panic, or a
   DATA datagram above 548 bytes. Diagnostic probe integration and hostile
   lifecycle completion remain active work.
+- Tactical `130`'s hostile/lifecycle gate now combines 14 uTP runtime cases
+  with 11 shared-session UDP cases. It proves endpoint-scoped spoofed
+  RESET/STATE isolation, duplicate-SYN reuse, exact 16 half-open/incoming and
+  64 global connection caps, 64-datagram per-connection and 256-datagram
+  shared queue pressure, consumer drop during retransmission, service and UDP
+  generation cancellation, and eight repeated start/stop cycles. Every
+  terminal assertion reports zero active connections/half-opens and no worker
+  panic. Diagnostic MTU integration remains active work.
 
 ## Why The Campaign Must Be Adaptive
 
