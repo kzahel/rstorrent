@@ -268,6 +268,14 @@ interoperability, WAN path, product behavior, or support claim exists.
 
 ### Next
 
+- Planned high-priority Tactical
+  [`123`](../tactical/123-duplex-verified-piece-upload.md) owns the correctness
+  repair that lets incomplete torrents announce and upload each verified,
+  currently readable piece over incoming and outgoing peers. It is the first
+  recommended engine correctness slice after work already in flight, ahead of
+  fast resume and finite bandwidth/seeding-goal policy. Implementation has not
+  started and it does not replace the single authoritative **Now**.
+
 - After Tactical `116`, a separate tactical may add an explicit faster, more
   trusting resume option while keeping conservative behavior as the default
   and Force recheck as a full validation pass. Unsupported or mismatched
