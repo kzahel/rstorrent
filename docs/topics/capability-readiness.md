@@ -303,15 +303,16 @@ added.
 
 ### Now
 
-- The post-Stage 3 uTP human-review checkpoint is the single authoritative
-  decision. Tactical
-  [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
-  completed bounded shared-UDP/runtime ownership and both forced-uTP
-  pinned-libtorrent loopback roles. The recommended next choice is a separately
-  bounded RSTorrent-outbound controlled WAN tactical; it requires explicit
-  authorization before using the identified remote host. Pausing the campaign
-  is the alternative. No external network, product policy, mapping/pinhole,
-  MSE-over-uTP, dependency, or support claim is currently authorized.
+- Tactical
+  [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) is the
+  single authoritative implementation/evidence slice. Human review accepted
+  Stage 4 recommendation A and authorized `ssh pimom` for orchestration plus
+  one RSTorrent-outbound forced-uTP WAN case. The data path must be direct
+  routed IPv4 rather than SSH, LAN, VPN, or overlay; read-only preflight closes
+  the tactical evidence-limited if that endpoint or exact libtorrent runtime
+  is absent. No mapping/pinhole, reverse incoming traffic, IPv6 uTP, MSE-over-
+  uTP, product policy, dependency, public swarm, or support claim is
+  authorized.
 
 ### Next
 
@@ -336,8 +337,9 @@ records positive physical capability as unknown on the current hardware after
 the live gateway returned typed `606` to `AddPinhole`.
 The uTP topic records the adaptive campaign. Tacticals `118`, `119`, `121`,
 and `125` are complete; the first bounded runtime plus independent loopback
-exchange passes, and the campaign is at its post-Stage 3 human checkpoint.
-uTP remains unsupported and disabled in products.
+exchange passes. Tactical `126` now owns direct-route preflight and one
+outbound-only controlled WAN attempt. uTP remains unsupported and disabled in
+products.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

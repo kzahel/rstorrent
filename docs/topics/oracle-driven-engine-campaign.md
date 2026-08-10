@@ -31,8 +31,11 @@ subsequently completed very-high-priority correctness Tactical
 accepted uTP Stage 3 recommendation A, and Tactical
 [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
 completed bounded shared-UDP/runtime ownership and pinned-libtorrent loopback
-interoperability in both roles. Its required post-Stage 3 review checkpoint is
-the single authoritative **Now**; no WAN or product integration is implied. The
+interoperability in both roles. Human review accepted Stage 4 recommendation
+A, and Tactical
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) is the single
+authoritative **Now** for direct-route preflight and one outbound-only WAN
+attempt; no product integration is implied. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -346,9 +349,9 @@ Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
-Tactical `124` completed incomplete-torrent duplex correctness; and uTP Stage
-3 Tactical `125` completed at its required post-loopback human-review
-checkpoint**.
+Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 3
+Tactical `125` completed; and outbound-only uTP WAN Tactical `126` is
+active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -384,11 +387,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: none until human review chooses the recommended
-bounded Stage 4 RSTorrent-outbound controlled WAN evidence, pauses the uTP
-campaign, or selects a design-only policy step. Do not contact the identified
-remote host or infer WAN, dependency, product-policy, MSE-over-uTP, or support-
-claim authority.
+Next executable action: commit Tactical `126`, then run its read-only `pimom`
+direct-route and exact-oracle preflight. Proceed to the bounded outbound-only
+transfer only if those gates pass. Close evidence-limited rather than using an
+SSH/VPN/overlay data path or adding reachability. Do not infer product-policy,
+MSE-over-uTP, dependency, reverse-incoming, or support-claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -399,8 +402,7 @@ invalidation, clean-shutdown prerequisite, or product setting. Readable
 content mismatches fall back to that torrent's common full checker, malformed
 ownership remains repair-local, and Force recheck remains full. Its crash,
 500-seed, controlled libtorrent, repository, Android cross-build, and two AVD
-gates pass. It does not replace the current uTP post-Stage 3 human-review
-checkpoint.
+gates pass. It does not replace active uTP Tactical `126`.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,

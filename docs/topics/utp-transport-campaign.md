@@ -10,9 +10,11 @@ Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md),
 then selected Stage 3 recommendation A at its stopping condition. Completed
 Tactical [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
 now owns bounded shared-UDP/runtime and two-role loopback interoperability.
-The campaign is at its required post-Stage 3 human-review checkpoint. uTP
-remains **Unsupported** and no WAN action, product transport policy, or
-dependency is accepted.
+Human review accepted Stage 4 recommendation A, and active Tactical
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) owns one
+outbound-only controlled WAN attempt after a direct-route preflight. uTP
+remains **Unsupported** and no product transport policy or dependency is
+accepted.
 
 ## Scope And Ownership
 
@@ -388,6 +390,12 @@ network. None of these choices authorizes reverse-direction incoming UDP,
 mapping/pinhole work, a public swarm, physical devices, MSE-over-uTP, IPv6 uTP,
 product enablement, a dependency, or a support-claim change.
 
+Human review selected choice A on 2026-08-10. Tactical
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) fixes the
+direct-route preflight, diagnostic-only online role, remote ownership,
+transport evidence, resource, cleanup, and evidence-limited stopping contracts
+before external execution.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -424,11 +432,10 @@ ordinary operation.
 
 ## `pimom` WAN Evidence
 
-The host reachable through `ssh pimom` is a promising controlled WAN peer, but
-this topic does not authorize connecting to it or changing it. A future live
-evidence tactical must follow
-[`performance-and-live-evidence.md`](performance-and-live-evidence.md) and
-obtain the normal opt-in for external activity.
+The host reachable through `ssh pimom` is the authorized Stage 4 control peer
+under Tactical `126`. That authorization is bounded by
+[`performance-and-live-evidence.md`](performance-and-live-evidence.md) and the
+tactical's explicit remote ownership and cleanup contract.
 
 SSH should orchestrate the reference process, gather bounded metrics, and
 retrieve temporary artifacts. The uTP packets under test must traverse the
@@ -481,11 +488,12 @@ accepted tactical.
 
 Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
 `119`, deterministic Stage 2 Tactical `121`, and shared-UDP/runtime Stage 3
-Tactical `125` complete; the required post-Stage 3 human-review checkpoint is
-active**.
+Tactical `125` complete; human review accepted Stage 4 recommendation A and
+outbound-only WAN Tactical `126` is active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). There is no next
-executable uTP action until human review selects Stage 4 controlled outbound
-WAN evidence, a pause, or a design-only product-policy step. No remote host,
-WAN, product enablement, dependency, or support-claim authority is implied.
+[`capability-readiness.md`](capability-readiness.md). The next executable uTP
+action is Tactical `126`'s read-only `pimom` preflight, followed by the bounded
+outbound case only if a direct non-overlay IPv4 endpoint and exact oracle are
+already available. No mapping, reverse incoming, product enablement,
+dependency, or support-claim authority is implied.

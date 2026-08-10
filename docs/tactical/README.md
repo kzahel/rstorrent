@@ -583,9 +583,14 @@ that scope and its cleanup or compatibility rules explicitly.
   congestion/pacing, path-MTU, and deterministic impaired-link tactical;
   its required review accepted Stage 3 recommendation A.
 - [`125-shared-udp-utp-runtime-and-loopback-interop.md`](125-shared-udp-utp-runtime-and-loopback-interop.md):
-  active bounded shared-UDP classification, supervised uTP runtime, ordered
+  complete bounded shared-UDP classification, supervised uTP runtime, ordered
   peer-stream, generation replacement, and forced-uTP pinned-libtorrent
   loopback interoperability tactical in both roles.
+- [`126-controlled-outbound-utp-wan-evidence.md`](126-controlled-outbound-utp-wan-evidence.md):
+  active outbound-only controlled WAN evidence tactical; SSH may orchestrate
+  `pimom`, but the measured uTP path must use an already eligible directly
+  routed IPv4 endpoint and must close evidence-limited rather than create
+  reachability or use an overlay.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
