@@ -396,7 +396,36 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 break
             time.sleep(POLL_SECONDS)
         else:
-            raise ImpairmentFailure(f"{profile} transfer exceeded its deadline")
+            role.send_command("snapshot")
+            snapshot_event = role.read_event(time.monotonic() + 2.0)
+            if (
+                snapshot_event.get("event") != "snapshot"
+                or snapshot_event.get("role") != "impairment-seed"
+            ):
+                raise ImpairmentFailure("impairment seed omitted its live snapshot")
+            stats = stats_snapshot(
+                session,
+                diagnostics,
+                time.monotonic() + 2.0,
+            )
+            status = handle.status()
+            relay_snapshot = relay.snapshot()
+            live = snapshot_event["resources"]["live_utp"]
+            incoming = snapshot_event["resources"]["live_incoming"]
+            role.send_stop()
+            raise ImpairmentFailure(
+                f"{profile} timeout evidence: progress_ppm={status.progress_ppm}, "
+                f"wanted_done={status.total_wanted_done}, "
+                f"uploaded={incoming['payload_bytes_sent']}, "
+                f"relay_data={relay_snapshot['data_datagrams']}, "
+                f"relay_dropped={relay_snapshot['dropped_datagrams']}, "
+                f"rst_retransmits={live['retransmission_datagrams_sent']}, "
+                f"rst_loss_reductions={live['loss_reduction_high_water']}, "
+                f"rst_timeouts={live['timeout_collapse_high_water']}, "
+                f"rst_cwnd_max={live['congestion_window_max_bytes']}, "
+                f"lt_loss={stats['utp.utp_packet_loss']}, "
+                f"lt_timeouts={stats['utp.utp_timeout']}"
+            )
         active_seconds = time.monotonic() - transfer_started
         output = leech_root / PAYLOAD_NAME
         if (
@@ -415,6 +444,17 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 f"relay_port={relay.endpoint[1]}, seed_port={seed_port}, "
                 f"leecher_port={leecher_port}"
             )
+        role.send_command("snapshot")
+        pre_stop = role.read_event(deadline)
+        if (
+            pre_stop.get("event") != "snapshot"
+            or pre_stop.get("role") != "impairment-seed"
+            or pre_stop.get("resources", {})
+            .get("live_incoming", {})
+            .get("payload_bytes_sent")
+            != PAYLOAD_SIZE
+        ):
+            raise ImpairmentFailure(f"{profile} pre-stop snapshot is invalid")
         role.send_stop()
         complete = role.read_event(deadline)
         role.wait_success(deadline)

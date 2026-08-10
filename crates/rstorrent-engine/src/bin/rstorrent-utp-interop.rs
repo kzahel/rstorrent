@@ -15,7 +15,7 @@ use rstorrent_engine::port_mapping::upnp::{
     UpnpDiscoveryConfig, UpnpError, UpnpMapping, UpnpStage, UpnpTransport, discover_igd_v2,
 };
 use rstorrent_engine::{
-    AddressFamilyPolicy, IncomingPeerRuntime, IncomingPeerServiceConfig,
+    AddressFamilyPolicy, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig, NetworkPolicy,
     PeerConnectionObservation, PeerEncryptionPolicy, PeerTransport, SeedContent, SeedRegistration,
     SessionUdpService, SessionUdpSnapshot, TorrentPeerActivitySink, TorrentPeerHandle, UtpService,
@@ -26,7 +26,6 @@ use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
-use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
@@ -571,7 +570,7 @@ async fn run_seed(
             .await
             .ok_or("uTP service stopped before accepting a stream")?;
         incoming.admit_utp(stream, HANDSHAKE_TIMEOUT).await?;
-        wait_for_stop().await?;
+        wait_for_stop(scope, &incoming, peer_sink.as_ref(), &utp, &udp).await?;
         let live_incoming = incoming.snapshot();
         let peers = peer_sink.snapshot();
         validate_seed_evidence(scope, &live_incoming, &peers)?;
@@ -782,23 +781,55 @@ async fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-async fn wait_for_stop() -> Result<(), Box<dyn Error>> {
-    let (sender, receiver) = oneshot::channel();
+async fn wait_for_stop(
+    scope: SeedScope,
+    incoming: &IncomingPeerHandle,
+    peer_sink: &RecordingPeerSink,
+    utp: &UtpService,
+    udp: &SessionUdpService,
+) -> Result<(), Box<dyn Error>> {
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     let input_thread = std::thread::spawn(move || {
-        let mut command = String::new();
-        let result = std::io::stdin()
-            .read_line(&mut command)
-            .map(|read| (read, command));
-        let _ = sender.send(result);
+        loop {
+            let mut command = String::new();
+            let result = std::io::stdin()
+                .read_line(&mut command)
+                .map(|read| (read, command));
+            let terminal = match result.as_ref() {
+                Ok((read, command)) => *read == 0 || command.trim() == "stop",
+                Err(_) => true,
+            };
+            if sender.send(result).is_err() || terminal {
+                break;
+            }
+        }
     });
-    let (read, command) = receiver.await.map_err(|_| "seed input thread stopped")??;
-    input_thread
-        .join()
-        .map_err(|_| "seed input thread panicked")?;
-    if read == 0 || command.trim() != "stop" {
-        return Err("seed requires a final stop command after verified download".into());
+    loop {
+        let (read, command) = receiver.recv().await.ok_or("seed input thread stopped")??;
+        match command.trim() {
+            "stop" if read > 0 => {
+                input_thread
+                    .join()
+                    .map_err(|_| "seed input thread panicked")?;
+                return Ok(());
+            }
+            "snapshot" if scope == SeedScope::Impairment => {
+                write_json(json!({
+                    "event": "snapshot",
+                    "role": scope.role(),
+                    "peer_evidence": peer_evidence_json(&peer_sink.snapshot()),
+                    "resources": {
+                        "live_incoming": incoming_json(&incoming.snapshot()),
+                        "live_udp": udp_json(udp.snapshot()),
+                        "live_utp": utp_json(utp.snapshot()),
+                    },
+                }))?;
+            }
+            _ => {
+                return Err("seed requires a final stop command after verified download".into());
+            }
+        }
     }
-    Ok(())
 }
 
 fn validate_seed_evidence(

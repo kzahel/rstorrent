@@ -485,3 +485,12 @@ loopback-role wrapper during an impaired profile. A distinct loopback-only
 `impairment-seed` now uses the tactical's 180-second role bound; ordinary
 `seed` stays at 30 seconds and the new role has no WAN mapping path. Its parser
 and warning-denying build pass before retrying the matrix.
+
+With the correct bound, the alternating 5/25 ms profile still failed to
+finish the exact fixture in 180 seconds. The impairment role now accepts a
+diagnostic-only `snapshot` command while it waits for final `stop`; all other
+seed scopes reject that command. Timeout handling captures bounded live
+incoming/uTP/UDP state, libtorrent progress/stats, and aggregate relay counters
+before terminating the failed case. Successful profiles also require a
+pre-stop snapshot with exact upload accounting, proving the command path. No
+packet payload or per-packet log is emitted.

@@ -113,11 +113,14 @@ class RoleProcess:
             raise InteropFailure(f"role process emitted a non-object event: {event}")
         return event
 
-    def send_stop(self) -> None:
+    def send_command(self, command: str) -> None:
         if self.process.stdin is None:
             raise InteropFailure("role process stdin is unavailable")
-        self.process.stdin.write("stop\n")
+        self.process.stdin.write(command + "\n")
         self.process.stdin.flush()
+
+    def send_stop(self) -> None:
+        self.send_command("stop")
 
     def wait_success(self, deadline: float) -> None:
         remaining = deadline - time.monotonic()
