@@ -33,11 +33,13 @@ accepted uTP Stage 3 recommendation A, and Tactical
 completed bounded shared-UDP/runtime ownership and pinned-libtorrent loopback
 interoperability in both roles. Human review accepted Stage 4 recommendation
 A, and Tactical
-[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) is the single
-authoritative **Now** at its post-Stage 4 review. Its authorized read-only
-preflight found no directly routed IPv4 endpoint or installed libtorrent
-oracle and closed evidence-limited before uTP traffic; no product integration
-is implied. The
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) closed
+evidence-limited after its authorized read-only preflight found no directly
+routed IPv4 endpoint or installed libtorrent oracle. Human review paused uTP,
+returned to the readiness queue, and activated Tactical
+[`122`](../tactical/122-paired-public-download-performance-cohorts.md) as the
+single authoritative **Now** for bounded real-torrent RSTorrent/libtorrent
+performance cohorts. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -352,8 +354,9 @@ limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
 Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 3
-Tactical `125` completed; and outbound-only uTP WAN Tactical `126` closed
-evidence-limited at preflight with no WAN result**.
+Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
+evidence-limited at preflight with no WAN result; and Tactical `122` is active
+for paired public download performance evidence**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -388,11 +391,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: none until human review pauses uTP and returns to the
-readiness queue, authorizes a separate `pimom` software/reachability tactical,
-or authorizes a different already capable controlled host. Do not install a
-remote oracle, change remote network state, contact another host, or infer
-product-policy, MSE-over-uTP, reverse-incoming, or support-claim authority.
+Next executable action: implement Tactical `122`'s deterministic catalog-v2,
+profile, bounds, independent-verifier, and report-schema foundation before
+changing either live worker or using the public network. Keep uTP paused; do
+not install a remote oracle, change remote network state, contact another
+host, or infer product-policy, MSE-over-uTP, reverse-incoming, or support-claim
+authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

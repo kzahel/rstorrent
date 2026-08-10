@@ -303,17 +303,14 @@ added.
 
 ### Now
 
-- The post-Stage 4 uTP human-review checkpoint is the single authoritative
-  decision. Tactical
-  [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) closed
-  evidence-limited after its authorized read-only `pimom` preflight found no
-  directly routed IPv4 endpoint and no installed libtorrent oracle. No uTP
-  packet, remote state, or network change followed. The recommended choice is
-  to pause uTP and return to the readiness queue; separate alternatives are an
-  explicitly authorized remote-capability tactical or a different already
-  capable host. No such external change, product policy, mapping/pinhole,
-  reverse incoming, MSE-over-uTP, dependency, public swarm, or support claim
-  is currently authorized.
+- Tactical
+  [`122`](../tactical/122-paired-public-download-performance-cohorts.md) is the
+  single authoritative implementation slice. It extends the existing
+  headless RSTorrent/libtorrent comparator with exact direct-metainfo inputs,
+  matched plaintext and RC4 settings, product-default comparisons, balanced
+  real-torrent cohorts, independent integrity verification, process/resource
+  evidence, and bounded cleanup. It establishes and diagnoses a baseline; it
+  does not authorize engine tuning or a recurring WAN/CI threshold.
 
 ### Next
 

@@ -1,11 +1,10 @@
 # Tactical 122: Paired Public Download Performance Cohorts
 
-Status: Planned on 2026-08-10. Implementation and public-network execution
-must not start until the current active work completes and
-[`capability-readiness`](../topics/capability-readiness.md) explicitly advances
-the queue. This document does not supersede Tactical
-[`121`](121-deterministic-utp-loss-congestion-and-mtu.md) or the independently
-planned Tactical [`120`](120-per-torrent-trusting-fast-resume.md).
+Status: Approved and in progress on 2026-08-10. Human review paused uTP after
+Tactical `126` closed evidence-limited, returned to the readiness queue, and
+explicitly authorized this tactical for autonomous end-to-end execution and
+bounded commits. This tactical does not change uTP support or reopen its WAN
+stage.
 
 Topics: `performance-and-live-evidence`, `public-torrent-testing`,
 `oracle-driven-engine-campaign`, `capability-readiness`, `peer-lifecycle`,
