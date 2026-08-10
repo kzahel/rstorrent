@@ -5,8 +5,11 @@ Topic: `utp-transport-campaign`
 Status: Stage 0 Tactical
 [`118`](../tactical/118-utp-implementation-decision-spike.md) and Stage 1
 Tactical [`119`](../tactical/119-deterministic-utp-transport-core.md) are
-complete. The campaign is paused at its required Stage 1 human-review gate;
-uTP remains **Unsupported** and no runtime transport or dependency is accepted.
+complete. Human review selected recommendation A, and deterministic Stage 2
+Tactical
+[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) is in
+progress. uTP remains **Unsupported** and no runtime transport or dependency
+is accepted.
 
 ## Scope And Ownership
 
@@ -262,6 +265,13 @@ The next human choice is:
 None of these choices authorizes WAN, `pimom`, public-swarm, physical-device,
 port-mapping, pinhole, product-policy, or support-claim work.
 
+Human review selected choice A on 2026-08-10. Tactical
+[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) fixes the
+Stage 2 controller, delayed-ACK, flow-control, packetization, recovery, MTU,
+impairment, resource, and acceptance contracts before implementation. The
+separate uncommitted fast-resume plan already owns number `120`; Stage 2 does
+not supersede or absorb that work.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -354,10 +364,12 @@ accepted tactical.
 ## Restart Checkpoint
 
 Campaign state: **Stage 0 Tactical `118` and deterministic Stage 1 Tactical
-`119` complete; required human review active; no uTP runtime accepted**.
+`119` complete; Stage 2 Tactical `121` approved and in progress; no uTP
+runtime accepted**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is human
-selection among the Stage 1 review choices above. Recommendation A keeps
-congestion and resource behavior deterministic before any socket/runtime
-integration; only after acceptance should its numbered tactical be drafted.
+[`capability-readiness.md`](capability-readiness.md). The next action is to
+execute Tactical `121` through its deterministic stopping condition, then
+return for human review before shared-UDP/runtime work. Its fixed thresholds
+must not be tuned after observing results without recording the failure and
+seeking direction.
