@@ -1,5 +1,6 @@
 //! Runtime-independent BEP 29 uTP v1 values and deterministic transport state.
 
+mod congestion;
 mod connection;
 mod packet;
 mod receive;
@@ -9,6 +10,11 @@ mod sequence;
 mod simulation;
 mod transport;
 
+pub use congestion::{
+    BASE_DELAY_BUCKETS, CURRENT_DELAY_SAMPLE_LIMIT, CongestionAckOutcome, CongestionController,
+    CongestionError, CongestionSnapshot, DelaySnapshot, INITIAL_CONGESTION_PACKETS,
+    MAX_CONGESTION_WINDOW_BYTES, MIN_CONGESTION_PACKETS, Pacer, PacerSnapshot, TARGET_DELAY_MICROS,
+};
 pub use connection::{
     ConnectionError, ConnectionIds, ConnectionPhase, ConnectionSnapshot, ConnectionState,
     IncomingDisposition, IncomingOutcome, OutboundPacketIntent,
