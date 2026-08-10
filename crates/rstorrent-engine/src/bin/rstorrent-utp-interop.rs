@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::port_mapping::upnp::{
-    UpnpDiscoveryConfig, UpnpMapping, UpnpStage, UpnpTransport, discover_igd_v2,
+    UpnpDiscoveryConfig, UpnpError, UpnpMapping, UpnpStage, UpnpTransport, discover_igd_v2,
 };
 use rstorrent_engine::{
     AddressFamilyPolicy, IncomingPeerRuntime, IncomingPeerServiceConfig,
@@ -500,8 +500,12 @@ async fn run_seed(
             "listen": local_endpoint.to_string(),
         }))?;
         let cancellation = CancellationToken::new();
-        let gateway =
-            discover_igd_v2(UpnpDiscoveryConfig::new(bind_address)?, &cancellation).await?;
+        let gateway = discover_igd_v2(
+            UpnpDiscoveryConfig::new(bind_address).map_err(diagnostic_upnp_error)?,
+            &cancellation,
+        )
+        .await
+        .map_err(diagnostic_upnp_error)?;
         let existing = gateway
             .query_mapping(
                 local_endpoint.port(),
@@ -509,7 +513,8 @@ async fn run_seed(
                 UpnpStage::Add,
                 &cancellation,
             )
-            .await?;
+            .await
+            .map_err(diagnostic_upnp_error)?;
         if existing.is_some() {
             return Err("exact diagnostic UDP external port is already occupied".into());
         }
@@ -527,7 +532,8 @@ async fn run_seed(
                 local_endpoint.port(),
                 &cancellation,
             )
-            .await?;
+            .await
+            .map_err(diagnostic_upnp_error)?;
         write_json(json!({
             "event": "ready",
             "role": scope.role(),
@@ -682,7 +688,12 @@ async fn select_local_network_ipv4() -> Result<Ipv4Addr, Box<dyn Error>> {
 async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Box<dyn Error>> {
     let local_address = select_local_network_ipv4().await?;
     let cancellation = CancellationToken::new();
-    let gateway = discover_igd_v2(UpnpDiscoveryConfig::new(local_address)?, &cancellation).await?;
+    let gateway = discover_igd_v2(
+        UpnpDiscoveryConfig::new(local_address).map_err(diagnostic_upnp_error)?,
+        &cancellation,
+    )
+    .await
+    .map_err(diagnostic_upnp_error)?;
     let entry = gateway
         .query_mapping(
             external_port,
@@ -690,7 +701,8 @@ async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Bo
             UpnpStage::Delete,
             &cancellation,
         )
-        .await?;
+        .await
+        .map_err(diagnostic_upnp_error)?;
     let owned = entry.as_ref().is_some_and(|entry| {
         entry.internal_client == local_address
             && entry.internal_port == local_port
@@ -704,12 +716,18 @@ async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Bo
     if let Some(entry) = entry.filter(|_| owned) {
         let mapping = UpnpMapping {
             local_endpoint: SocketAddrV4::new(local_address, local_port),
-            external_address: gateway.external_address(&cancellation).await?,
+            external_address: gateway
+                .external_address(&cancellation)
+                .await
+                .map_err(diagnostic_upnp_error)?,
             external_port,
             lease_seconds: entry.lease_seconds,
             transport: UpnpTransport::Udp,
         };
-        gateway.delete_mapping(&mapping, &cancellation).await?;
+        gateway
+            .delete_mapping(&mapping, &cancellation)
+            .await
+            .map_err(diagnostic_upnp_error)?;
         deleted = true;
     }
     write_json(json!({
@@ -721,6 +739,10 @@ async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Bo
         "owned_mapping_absent": !owned || deleted,
     }))?;
     Ok(())
+}
+
+fn diagnostic_upnp_error(error: UpnpError) -> Box<dyn Error> {
+    format!("UPnP {:?}: {}", error.stage(), error.detail()).into()
 }
 
 async fn read_fixture(path: &Path) -> Result<(Metainfo, Vec<u8>), Box<dyn Error>> {

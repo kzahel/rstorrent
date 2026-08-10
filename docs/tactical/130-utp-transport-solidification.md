@@ -317,4 +317,50 @@ cargo test --workspace
 
 ## Result And Evidence
 
-Pending execution.
+### Complementary mapped WAN stage
+
+Commit `3600bae` adds the complementary roles without changing ordinary
+product behavior. The diagnostic seed binds one concrete local IPv4 UDP
+socket, records its exact port before mapping, creates only the same external
+UDP port through the engine's existing IGD v2 owner, and deletes the lease
+before socket shutdown. The attached `pimom` role runs pinned libtorrent
+`2.0.13.0` as a forced-uTP leecher, rejects an overlay route, hash-verifies the
+fixture, and exits with one-peer bounds. The controller independently audits
+the exact local port and removes only the recorded remote PID and run
+directory.
+
+The first physical attempt reached the local gateway and completed exact-port
+absence query, then the gateway reset the idempotent
+`GetExternalIPAddress` HTTP exchange before any mapping was added. The exact
+cleanup audit passed. A bounded two-attempt idempotent SOAP query helper now
+retries only transport failures for external-address and specific-entry
+queries; mutating add/delete semantics remain under their existing
+reconciliation rules. A scripted gateway test reproduces the first-response
+reset and proves exactly one retry.
+
+The repaired fresh run passed in 92.140 seconds. Pinned libtorrent received
+and SHA-1 verified all 2,097,883 bytes, observed exactly one uTP peer and zero
+TCP peers, and reported 3,994 inbound/4,103 outbound uTP packets, one timeout,
+and zero packet-loss, fast-retransmit, or resend counters. RSTorrent uploaded
+exactly 2,097,883 payload bytes through one incoming uTP generation. Its
+smoothed RTT ranged 153.315--156.719 ms, queue delay 0--1.090 ms, congestion
+window 1,056--6,864 bytes, connection datagram queue high water two, and fixed
+selected MTU 548 bytes. It reported zero malformed, unknown, stale,
+connection-queue-drop, session-drop, retransmission, loss-reduction,
+timeout-collapse, or worker-panic counters.
+
+The local mapping was exact UDP, query-confirmed with a finite 3,600-second
+lease, deleted during joined RSTorrent shutdown, and independently absent
+afterward; the audit did not need to recover it. Terminal incoming, uTP, UDP,
+queue, process, local temporary-directory, and remote run-directory ownership
+was zero. Raw endpoints, gateway identity, peer ID, and transient files were
+not retained. This is the first reverse-direction sample, not the three-sample
+cohort or a product/support claim.
+
+Validation through this stage:
+
+- all 18 focused engine port-mapping tests pass;
+- the diagnostic binary argument test and warning-denying focused Clippy pass;
+- all eight WAN controller contract tests pass; and
+- both existing forced-uTP loopback roles still transfer the exact fixture
+  with terminal cleanup.

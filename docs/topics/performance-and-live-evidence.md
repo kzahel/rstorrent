@@ -983,6 +983,19 @@ also found no owned helper process or per-run directory. Raw endpoint,
 gateway, peer-ID, and packet data were not retained. The reusable isolated
 oracle environment is the only intentional remote residue.
 
+Active Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) adds the first
+complementary observation with RSTorrent as the locally mapped bulk sender.
+Pinned libtorrent downloaded the exact fixture in 92.140 seconds over the
+ordinary public route with one uTP peer, zero TCP peers, exact hash and upload
+accounting. RSTorrent observed 153.315--156.719 ms smoothed RTT, 0--1.090 ms
+queue delay, a 1,056--6,864-byte congestion window, fixed 548-byte MTU, and
+zero transport drops or retransmission high-waters; libtorrent recorded one
+timeout. Joined deletion plus an independent audit proved the exact finite
+local UDP mapping absent, and all local/remote transient resources were
+removed. Treat this as one sample; the tactical's fresh bidirectional cohort
+still owns any range or median.
+
 ## Comparator Outcome
 
 Tactical `015` added the smallest harness that can:

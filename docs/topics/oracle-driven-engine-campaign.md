@@ -402,17 +402,21 @@ UPnP mapping. RSTorrent downloaded the exact 2,097,883-byte fixture over the
 ordinary public route in 82.239 seconds with one uTP peer, zero TCP peers,
 exact SHA-1, bounded resources, and terminal zero ownership. Exact deletion and
 an independent audit found no mapping, process, or per-run artifact residue.
-The local-mapped reverse direction remains unmeasured, and product uTP stays
-disabled.
+At Tactical `127`'s completion the local-mapped reverse direction remained
+unmeasured. Active Tactical `130` has since completed its first reverse sample:
+the exact fixture passed from a locally mapped RSTorrent seed to the pinned
+remote leecher in 92.140 seconds with one uTP/zero TCP peers, exact joined
+lease deletion, and an independent zero-residue audit. This is not yet its
+fresh cohort, and product uTP stays disabled.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute Tactical `130` end to end. Prove the local-
-mapped RSTorrent-sender direction, run three fresh samples in both authorized
-WAN directions with exact cleanup, add fixed real-socket impairment and
-hostile lifecycle gates, and integrate diagnostic-only MTU search when its
-feedback is truthful. Commit bounded stages and stop at the pre-product review.
+Next executable action: continue Tactical `130` with three fresh samples in
+both authorized WAN directions and exact cleanup, then add fixed real-socket
+impairment and hostile lifecycle gates and integrate diagnostic-only MTU search
+when its feedback is truthful. Commit bounded stages and stop at the
+pre-product review.
 Tactical `129` remains the first ready non-uTP item. No product uTP, public
 swarm, dependency, permanent network change, or support-claim authority is
 implicit.
@@ -444,8 +448,10 @@ Last completed evidence:
   review;
 - Tactical `130` is active under explicit maintainer authorization for the
   complementary mapped-WAN direction, bounded bidirectional cohort, real-
-  socket impairment/lifecycle hardening, and diagnostic MTU evidence. It has
-  no product or support-claim authority;
+  socket impairment/lifecycle hardening, and diagnostic MTU evidence. Its
+  first 92.140-second reverse sample passes with one uTP/zero TCP peers, exact
+  content, exact local lease deletion, and zero residue. It has no product or
+  support-claim authority;
 - commit `302d840` fixes Tactical `126`'s direct-route, exact-oracle,
   outbound-only, evidence, and cleanup contract. Its authorized 4.5-second
   read-only `pimom` preflight finds only loopback, RFC 1918 LAN, and

@@ -58,6 +58,14 @@ in a bounded cohort, with RSTorrent as the seed/bulk sender. Every product
 reachability call remains TCP, and every diagnostic UDP lease must be queried,
 deleted, and independently confirmed absent before the next sample.
 
+The first such sample now passes. One exact finite 3,600-second UDP lease
+exposed the diagnostic RSTorrent seed, pinned libtorrent on `pimom` downloaded
+and hash-verified all 2,097,883 bytes over an ordinary Internet route, joined
+shutdown deleted the lease, and an independent exact-port audit found it
+absent. An observed reset of the idempotent external-address SOAP query is now
+bounded to one retry; mutating mapping ownership and product TCP policy are
+unchanged.
+
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
 Schema version 11 persists a preferred listen port, default `6881`; one

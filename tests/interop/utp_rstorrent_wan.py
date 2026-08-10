@@ -265,6 +265,15 @@ def bounded_diagnostics(lines: list[str]) -> list[str]:
     return result
 
 
+def read_role_event(
+    role: RoleProcess, deadline: float, expected: str
+) -> dict[str, Any]:
+    try:
+        return role.read_event(deadline)
+    except InteropFailure as error:
+        raise WanFailure(f"while awaiting {expected}: {error}") from error
+
+
 def run_ssh(
     host: str,
     command: str,
@@ -899,10 +908,15 @@ def run_local_seed_direction(host: str, binary: Path) -> dict[str, Any]:
                     str(seed_root),
                 ],
             )
-            local_port = validate_local_seed_bound(role.read_event(deadline))
+            local_port = validate_local_seed_bound(
+                read_role_event(role, deadline, "local bind ownership")
+            )
             external_port = local_port
-            validate_mapping_intent(role.read_event(deadline), local_port)
-            ready = role.read_event(deadline)
+            validate_mapping_intent(
+                read_role_event(role, deadline, "local exact mapping intent"),
+                local_port,
+            )
+            ready = read_role_event(role, deadline, "local mapped readiness")
             external_address, external_port = eligible_local_seed_endpoint(
                 ready, external_port
             )

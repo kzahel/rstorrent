@@ -550,10 +550,16 @@ and gateway data are deliberately redacted. Every per-run payload, metainfo,
 directory, log, mapping, listener, and process was removed. The only retained
 remote state is the documented user-owned oracle environment.
 
-A complementary run with RSTorrent as the mapped local seed is not implicit in
-the completed authority. It requires the current human review choice because
-the remote gateway succeeded and therefore did not trigger Tactical `127`'s
-local capability fallback.
+Active Tactical `130` now also proves the complementary first sample:
+RSTorrent exposed its diagnostic seed through one exact finite local UDP UPnP
+lease and pinned libtorrent on `pimom` downloaded and hash-verified the same
+fixture over an ordinary Internet route. The 92.140-second run observed one
+uTP/zero TCP peers, exact RSTorrent upload accounting, fixed 548-byte runtime
+MTU, bounded controller/resource high-waters, joined lease deletion, and an
+independent absent audit. One gateway reset of an idempotent external-address
+query produced a bounded query-only retry regression test. This is not yet the
+bidirectional cohort, impairment/lifecycle matrix, MTU result, product policy,
+or support claim.
 
 ## Human Review Gates
 

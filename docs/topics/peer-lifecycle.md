@@ -488,7 +488,10 @@ selection remains unchanged. Active Tactical
 [`130`](../tactical/130-utp-transport-solidification.md) owns bounded hostile
 real-socket pressure, cancellation, generation replacement, repeated
 start/stop, and the complementary mapped RSTorrent-sender direction before
-product policy. Completed Tactical
+product policy. Its first complementary sample observes exactly one incoming
+uTP generation while RSTorrent uploads the exact fixture, followed by zero
+terminal incoming, uTP, UDP, half-open, connection, and queue ownership.
+Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after

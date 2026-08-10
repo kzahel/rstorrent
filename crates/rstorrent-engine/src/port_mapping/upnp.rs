@@ -288,7 +288,7 @@ impl UpnpGateway {
         cancellation: &CancellationToken,
     ) -> Result<Ipv4Addr, UpnpError> {
         let leaves = self
-            .soap(
+            .idempotent_soap(
                 UpnpStage::ExternalAddress,
                 "GetExternalIPAddress",
                 &[],
@@ -320,7 +320,7 @@ impl UpnpGateway {
     ) -> Result<Option<UpnpMappingEntry>, UpnpError> {
         let port = external_port.to_string();
         let result = self
-            .soap(
+            .idempotent_soap(
                 stage,
                 "GetSpecificPortMappingEntry",
                 &[
@@ -666,6 +666,24 @@ impl UpnpGateway {
             cancellation,
         )
         .await
+    }
+
+    async fn idempotent_soap(
+        &self,
+        stage: UpnpStage,
+        action: &str,
+        arguments: &[(&str, &str)],
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<XmlLeaf>, UpnpError> {
+        for attempt in 0..2 {
+            match self.soap(stage, action, arguments, cancellation).await {
+                Err(error) if error.is_transport() && attempt == 0 => {
+                    tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
+                }
+                result => return result,
+            }
+        }
+        unreachable!("bounded idempotent SOAP retry always returns")
     }
 
     pub fn gateway_address(&self) -> Ipv4Addr {
@@ -2228,6 +2246,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn idempotent_external_address_query_retries_one_transport_reset() {
+        let (config, transcript, udp_task, http_task) =
+            scripted_gateway(ScriptedAddBehavior::DropFirstExternalAddress).await;
+        let cancellation = CancellationToken::new();
+        let gateway = discover_igd_v2(config, &cancellation)
+            .await
+            .expect("discover scripted gateway");
+        assert_eq!(
+            gateway
+                .external_address(&cancellation)
+                .await
+                .expect("retry idempotent external-address query"),
+            Ipv4Addr::new(203, 0, 113, 10)
+        );
+        udp_task.await.expect("join SSDP task");
+        http_task.await.expect("join HTTP task");
+        assert_eq!(
+            transcript.lock().unwrap().as_slice(),
+            [
+                "GET /root.xml",
+                "GET /wan.xml",
+                "GetExternalIPAddress",
+                "GetExternalIPAddress",
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn permanent_lease_fault_is_a_typed_hard_stop() {
         let (config, _, udp_task, http_task) =
             scripted_gateway(ScriptedAddBehavior::PermanentLeaseFault).await;
@@ -2701,6 +2747,7 @@ mod tests {
     enum ScriptedAddBehavior {
         Normal,
         ExactPort,
+        DropFirstExternalAddress,
         PermanentLeaseFault,
         DropAfterApply,
     }
@@ -2723,6 +2770,7 @@ mod tests {
         let response_count = match add_behavior {
             ScriptedAddBehavior::Normal => 10,
             ScriptedAddBehavior::ExactPort => 8,
+            ScriptedAddBehavior::DropFirstExternalAddress => 4,
             ScriptedAddBehavior::PermanentLeaseFault => 5,
             ScriptedAddBehavior::DropAfterApply => 8,
         };
@@ -2730,6 +2778,7 @@ mod tests {
         let http_transcript = transcript.clone();
         let http_task = tokio::spawn(async move {
             let mut mapped = false;
+            let mut external_address_queries = 0;
             for _ in 0..response_count {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let request = read_http_request(&mut stream).await;
@@ -2763,14 +2812,18 @@ mod tests {
                         assert!(request.contains("<NewExternalPort>42001</NewExternalPort>"));
                     }
                     let (status, body, drop_response) = match action {
-                        "GetExternalIPAddress" => (
-                            "200 OK",
-                            soap_response(
-                                action,
-                                "<NewExternalIPAddress>203.0.113.10</NewExternalIPAddress>",
-                            ),
-                            false,
-                        ),
+                        "GetExternalIPAddress" => {
+                            external_address_queries += 1;
+                            (
+                                "200 OK",
+                                soap_response(
+                                    action,
+                                    "<NewExternalIPAddress>203.0.113.10</NewExternalIPAddress>",
+                                ),
+                                add_behavior == ScriptedAddBehavior::DropFirstExternalAddress
+                                    && external_address_queries == 1,
+                            )
+                        }
                         "GetSpecificPortMappingEntry" if mapped => (
                             "200 OK",
                             soap_response(
