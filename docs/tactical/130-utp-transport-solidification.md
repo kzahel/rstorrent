@@ -540,4 +540,14 @@ timeout, or resend counters, and terminal zero ownership. RSTorrent recovered
 RTO remained 500 ms--1 second and queue high water was three datagrams. The
 largest observed DATA datagram was 554 bytes despite a selected 548-byte MTU,
 revealing that retransmissions can add a current SACK header to payload sized
-under an earlier header. That separate packet-size defect is the next repair.
+under an earlier header. Retransmission construction now omits only that
+newly-added SACK when necessary to preserve the original ordinary or probe
+datagram limit; its cumulative ACK remains current, and an impossible base
+header plus retained payload returns an explicit bounded error. The regression
+constructs a full 548-byte DATA packet, introduces receiver reordering after
+the first send, and proves its retransmission remains exactly 548 bytes rather
+than growing to 554. All 86 uTP protocol tests and warning-denying protocol
+clippy pass. A second exact real-socket run completed in 21.122 active seconds
+with 9,737 decisions, 207 RSTorrent retransmissions, zero timeout collapse or
+runtime drops, queue high water 13 at the relay and two in the runtime, exact
+terminal cleanup, and a maximum DATA datagram of exactly 548 bytes.

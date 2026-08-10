@@ -143,7 +143,11 @@ the single authoritative **Now**.
   encoder retains BEP 29's at-least-four-byte, four-byte-aligned shape. This
   explicit compatibility exception turned the prior 886 malformed-packet
   stall into a 21.283-second exact transfer with zero malformed or queue drops
-  and terminal zero ownership. Ordinary product uTP remains disabled.
+  and terminal zero ownership. A follow-up repair prevents retransmissions
+  from growing beyond their selected ordinary/probe MTU when current SACK
+  state needs a larger header; the repeated exact profile completed in 21.122
+  seconds with a maximum 548-byte DATA datagram. Ordinary product uTP remains
+  disabled.
 
 ## Why The Campaign Must Be Adaptive
 

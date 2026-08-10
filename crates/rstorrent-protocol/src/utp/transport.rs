@@ -436,6 +436,11 @@ pub enum TransportError {
     Queue(TransmitQueueError),
     Retransmission(RetransmissionLimit),
     MissingOutstandingPacket(SequenceNumber),
+    RetransmissionDatagramLimit {
+        sequence_number: SequenceNumber,
+        bytes: usize,
+        maximum: usize,
+    },
     PendingEmissionMismatch {
         expected_sequence: SequenceNumber,
         actual_sequence: SequenceNumber,
@@ -455,6 +460,15 @@ impl fmt::Display for TransportError {
             Self::MissingOutstandingPacket(sequence_number) => write!(
                 formatter,
                 "uTP transport packet {} is no longer outstanding",
+                sequence_number.get()
+            ),
+            Self::RetransmissionDatagramLimit {
+                sequence_number,
+                bytes,
+                maximum,
+            } => write!(
+                formatter,
+                "uTP retransmission packet {} requires {bytes} bytes above datagram limit {maximum}",
                 sequence_number.get()
             ),
             Self::PendingEmissionMismatch {
@@ -478,7 +492,9 @@ impl Error for TransportError {
             Self::Mtu(error) => Some(error),
             Self::Queue(error) => Some(error),
             Self::Retransmission(error) => Some(error),
-            Self::MissingOutstandingPacket(_) | Self::PendingEmissionMismatch { .. } => None,
+            Self::MissingOutstandingPacket(_)
+            | Self::RetransmissionDatagramLimit { .. }
+            | Self::PendingEmissionMismatch { .. } => None,
         }
     }
 }
@@ -958,7 +974,33 @@ impl TransportState {
         ) {
             return Ok(None);
         }
-        let intent = self.connection.retransmission_intent(sequence_number)?;
+        let mut intent = self.connection.retransmission_intent(sequence_number)?;
+        let mtu_snapshot = self.mtu.snapshot();
+        let datagram_limit = mtu_snapshot
+            .fragmentable_retry
+            .filter(|retry| retry.sequence_number == sequence_number)
+            .map_or(mtu_snapshot.floor_datagram_bytes, |retry| {
+                retry.datagram_bytes
+            });
+        let sack_bytes = intent
+            .selective_ack
+            .map_or(0, |selective_ack| selective_ack.as_bytes().len());
+        if utp_header_bytes(sack_bytes).saturating_add(payload.len()) > datagram_limit {
+            intent.selective_ack = None;
+        }
+        let datagram_bytes = utp_header_bytes(
+            intent
+                .selective_ack
+                .map_or(0, |selective_ack| selective_ack.as_bytes().len()),
+        )
+        .saturating_add(payload.len());
+        if datagram_bytes > datagram_limit {
+            return Err(TransportError::RetransmissionDatagramLimit {
+                sequence_number,
+                bytes: datagram_bytes,
+                maximum: datagram_limit,
+            });
+        }
         self.connection
             .mark_retransmitted(sequence_number, now_micros)?;
         debug_assert!(self.retransmissions.complete_front(sequence_number));
@@ -1510,6 +1552,77 @@ mod tests {
                 .transmissions,
             2
         );
+    }
+
+    #[test]
+    fn retransmission_omits_new_sack_to_preserve_original_mtu_limit() {
+        let (mut initiator, _) = connected_pair();
+        initiator.queue_data(&[3; 528]).expect("queue DATA");
+        let first = initiator
+            .poll_transmit(1_000, TimestampMicros::new(1_000))
+            .expect("poll DATA")
+            .expect("DATA");
+        assert_eq!(first.datagram_bytes(), IPV4_UDP_PAYLOAD_FLOOR);
+        initiator
+            .on_send_result(
+                first.intent.sequence_number,
+                DatagramSendResult::Sent,
+                1_000,
+            )
+            .expect("send DATA");
+
+        let reordered = encode_packet(PacketToEncode {
+            header: UtpHeader {
+                packet_type: PacketType::Data,
+                connection_id: 40,
+                timestamp: TimestampMicros::new(2_000),
+                timestamp_difference_micros: 1,
+                window_size: MAX_RECEIVE_BYTES as u32,
+                sequence_number: sequence(78),
+                acknowledgement_number: sequence(10),
+            },
+            extensions: &[],
+            payload: b"peer",
+        })
+        .expect("encode reordered peer DATA");
+        let incoming = initiator
+            .incoming(
+                decode_packet(&reordered).expect("decode reordered peer DATA"),
+                2_000,
+                TimestampMicros::new(2_000),
+            )
+            .expect("buffer reordered peer DATA");
+        assert_eq!(
+            incoming
+                .connection
+                .receive
+                .expect("receive outcome")
+                .disposition,
+            ReceiveDisposition::Buffered
+        );
+        assert!(
+            initiator
+                .connection
+                .state_intent()
+                .expect("SACK intent")
+                .selective_ack
+                .is_some()
+        );
+
+        let deadline = initiator
+            .snapshot()
+            .connection
+            .send
+            .timeout_deadline_micros
+            .expect("timeout deadline");
+        let retransmission = initiator
+            .poll_transmit(deadline, TimestampMicros::new(deadline as u32))
+            .expect("poll timeout")
+            .expect("retransmission");
+        assert!(retransmission.retransmission);
+        assert_eq!(retransmission.payload, first.payload);
+        assert!(retransmission.intent.selective_ack.is_none());
+        assert_eq!(retransmission.datagram_bytes(), IPV4_UDP_PAYLOAD_FLOOR);
     }
 
     #[test]
