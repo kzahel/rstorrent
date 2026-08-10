@@ -591,6 +591,12 @@ that scope and its cleanup or compatibility rules explicitly.
   found only LAN and Tailscale/shared-range IPv4 addresses and no installed
   libtorrent oracle. No fixture, listener, uTP packet, package, network change,
   or WAN interoperability claim followed.
+- [`127-mapped-utp-wan-interoperability.md`](127-mapped-utp-wan-interoperability.md):
+  active mapped-WAN uTP slice; establishes the pinned oracle on `pimom`, tries
+  one finite remote UDP UPnP lease for an RSTorrent outbound transfer, and uses
+  one finite local UDP lease with reversed roles only when remote reachability
+  capability is absent. The data path must be public rather than Tailscale,
+  every lease and run artifact must be removed, and product uTP stays disabled.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -14,8 +14,12 @@ Human review accepted Stage 4 recommendation A, and Tactical
 [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) records one
 planned outbound-only controlled WAN attempt after a direct-route preflight.
 That preflight closed evidence-limited before traffic because the host had no
-directly routed IPv4 endpoint or exact oracle. The campaign is at human review;
-uTP remains **Unsupported** and no product transport policy or dependency is
+directly assigned global IPv4 endpoint or exact oracle. Human review then
+corrected that precondition and authorized active Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md): set up the exact
+oracle on the NATed host, try remote UDP UPnP first, and use a local UDP mapping
+with reversed roles only if remote reachability capability is absent. uTP
+remains **Unsupported** and no product transport policy or dependency is
 accepted.
 
 ## Scope And Ownership
@@ -55,10 +59,10 @@ the single authoritative **Now**.
   session to one coordinated TCP/UDP socket pair per enabled address family.
   Tactical `118` inspects that landed owner rather than designing around the
   former IPv4-only shape.
-- Current UPnP behavior maps TCP only. Outgoing uTP can therefore reach a
-  controlled off-LAN peer before incoming public uTP is advertisable. UDP
-  mapping or an IPv6 pinhole is a separate reachability decision, not an
-  incidental addition to the first transport slice.
+- Current product UPnP behavior maps TCP only. Tactical `127` may generalize
+  the existing engine mapping owner to an explicit TCP/UDP value while
+  retaining every product call as TCP; its UDP use is diagnostic-only for the
+  authorized local-listener fallback. No product uTP advertisement follows.
 - Completed Tacticals
   [`111`](../tactical/111-mse-peer-stream-encryption.md) and
   [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md)
@@ -100,6 +104,10 @@ the single authoritative **Now**.
   Tailscale/shared-range IPv4 addresses but no directly assigned global IPv4,
   and system Python lacked libtorrent. No fixture, listener, uTP packet,
   package install, network change, or WAN interoperability result followed.
+- Active Tactical `127` treats those same interface facts correctly as a NATed
+  peer. It owns isolated pinned-oracle setup, verified finite UDP UPnP mapping
+  on the remote gateway or capability-gated local fallback, direct-route proof,
+  exact transfer evidence, and mapping/process/artifact cleanup.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -438,6 +446,17 @@ does not permit either action, product policy, reverse incoming uTP, IPv6 uTP,
 MSE-over-uTP, mapping from this client, public-swarm work, or a support-claim
 change.
 
+Human review selected choice B and explicitly authorized both setup of the
+exact oracle on `pimom` and the finite mapped fallback direction on 2026-08-10.
+Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md) supersedes the
+directly-assigned-address premise while preserving Tactical `126`'s result.
+Its primary direction maps the remote libtorrent seed through remote UPnP; if
+that network lacks eligible capability, its fallback maps the local
+RSTorrent diagnostic seed and has the remote oracle dial inward. This does not
+authorize permanent router/firewall changes, Tailscale data transport, product
+policy, a public swarm, or a support-claim change.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -537,11 +556,12 @@ Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
 `119`, deterministic Stage 2 Tactical `121`, and shared-UDP/runtime Stage 3
 Tactical `125` complete; human review accepted Stage 4 recommendation A and
 outbound-only WAN Tactical `126` closed evidence-limited at direct-route and
-oracle preflight; the post-Stage 4 review checkpoint is active**.
+oracle preflight; mapped-WAN Stage 4 Tactical `127` is active**.
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). There is no executable
-uTP action until human review pauses the campaign, authorizes a separate
-`pimom` capability tactical, or authorizes a different already capable host.
-No remote installation or network change, new host, mapping, reverse incoming,
-product enablement, dependency, or support-claim authority is implied.
+uTP action beyond Tactical `127`. Proceed through its isolated remote setup,
+remote-UPnP-first and local-UPnP-fallback evidence, cleanup, and repository
+validation autonomously, then stop for human review. No permanent network
+change, different host, product enablement, dependency, public swarm, or
+support-claim authority is implied.

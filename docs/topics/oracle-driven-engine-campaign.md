@@ -35,13 +35,15 @@ interoperability in both roles. Human review accepted Stage 4 recommendation
 A, and Tactical
 [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) closed
 evidence-limited after its authorized read-only preflight found no directly
-routed IPv4 endpoint or installed libtorrent oracle. Human review paused uTP,
-returned to the readiness queue, and activated Tactical
-[`122`](../tactical/122-paired-public-download-performance-cohorts.md) as the
-single authoritative **Now** for bounded real-torrent RSTorrent/libtorrent
-performance cohorts. Tactical `122` is now complete; its classified Ubuntu
-result moves the queue to source-first planning for focused-driver HTTP(S)
-tracker dispatch. The
+routed IPv4 endpoint or installed libtorrent oracle. Tactical
+[`122`](../tactical/122-paired-public-download-performance-cohorts.md) then
+completed bounded real-torrent RSTorrent/libtorrent performance cohorts.
+Human review subsequently corrected Tactical `126`'s NAT premise, authorized
+isolated oracle setup plus remote/local temporary UDP UPnP directions, and
+activated Tactical
+[`127`](../tactical/127-mapped-utp-wan-interoperability.md) as the single
+authoritative **Now**. Tactical `122`'s classified Ubuntu result leaves
+focused-driver HTTP(S) tracker dispatch next in the queue. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -357,8 +359,9 @@ Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
 Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 3
 Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
-evidence-limited at preflight with no WAN result; and Tactical `122` completed
-paired public download performance evidence**.
+evidence-limited at preflight with no WAN result; Tactical `122` completed
+paired public download performance evidence; and mapped-WAN uTP Tactical `127`
+is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -392,15 +395,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: create a bounded source-first tactical for HTTP(S)
-tracker dispatch in the resumable direct engine manager. Tactical `122` proves
-that the official Ubuntu torrent's HTTPS-only discovery is rejected in that
-focused path while libtorrent reaches 10% in 4.731 seconds; the application
-owner's existing HTTP(S) capability is unaffected. Read the pinned libtorrent
-tracker manager and tests, map reuse versus composition with the existing
-application transport owner, and specify deterministic plus controlled
-discovery-to-payload evidence before implementation. Keep uTP paused; do not
-infer authority to implement this follow-up until it owns a tactical.
+Next executable action: execute active Tactical `127`. Inventory `pimom`,
+establish the isolated exact pinned oracle, then implement and validate the
+remote-UPnP-first, local-UPnP-fallback controlled WAN harness within its route,
+resource, cleanup, and protocol-claim boundaries. Commit bounded stages and
+return for human review after positive WAN evidence or after both gateways are
+proven incapable. Focused-driver HTTP(S) tracker dispatch remains next and is
+not authorized until its own tactical records ownership and interoperability.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
