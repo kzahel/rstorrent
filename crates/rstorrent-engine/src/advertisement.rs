@@ -176,7 +176,7 @@ pub struct DiscoveryAdvertisementRegistration {
     pub trackers: Vec<TrackerConfig>,
     pub desired_running: bool,
     pub complete: bool,
-    pub incoming_registered: bool,
+    pub incoming_routable: bool,
     pub privacy: TorrentPrivacy,
     pub counters: TrackerCounters,
     pub peers: TorrentPeerHandle,
@@ -192,7 +192,7 @@ impl fmt::Debug for DiscoveryAdvertisementRegistration {
             .field("trackers", &self.trackers)
             .field("desired_running", &self.desired_running)
             .field("complete", &self.complete)
-            .field("incoming_registered", &self.incoming_registered)
+            .field("incoming_routable", &self.incoming_routable)
             .field("privacy", &self.privacy)
             .field("counters", &self.counters)
             .finish_non_exhaustive()
@@ -914,7 +914,7 @@ async fn run_service(
                         http_clients = Arc::new(rebound);
                     }
                     for entry in entries.values_mut() {
-                        if entry.registration.incoming_registered
+                        if entry.registration.incoming_routable
                             && entry.last_endpoint_generation != endpoint.generation
                             && entry.removal.is_none()
                         {
@@ -1026,8 +1026,7 @@ fn apply_registration(
     }
 
     let completed = !entry.registration.complete && registration.complete;
-    let incoming_changed =
-        entry.registration.incoming_registered != registration.incoming_registered;
+    let incoming_changed = entry.registration.incoming_routable != registration.incoming_routable;
     let resume = !entry.registration.desired_running && registration.desired_running;
     let dht_changed = entry.registration.privacy != registration.privacy
         || entry.registration.desired_running != registration.desired_running
@@ -1050,7 +1049,7 @@ fn apply_registration(
     if incoming_changed {
         entry.schedule.request_update();
     }
-    if completed && entry.registration.incoming_registered {
+    if completed {
         entry.schedule.request_completed();
     }
     if !entry.registration.desired_running && entry.removal.is_none() {
@@ -1171,7 +1170,7 @@ fn fill_tracker_operations(
                     let ports = tracker_ports(
                         network.policy,
                         endpoint,
-                        entry.registration.incoming_registered,
+                        entry.registration.incoming_routable,
                     );
                     let num_want = if event == AnnounceEvent::Stopped {
                         0
@@ -1528,17 +1527,17 @@ fn dht_announce_ports(
     registration: &DiscoveryAdvertisementRegistration,
 ) -> Option<DhtAnnouncePorts> {
     if !registration.desired_running
-        || !registration.complete
-        || !registration.incoming_registered
+        || !registration.incoming_routable
         || registration.privacy != TorrentPrivacy::Public
         || endpoint.stopping
     {
         return None;
     }
-    Some(DhtAnnouncePorts {
-        ipv4: family_port(policy, endpoint.ipv4),
-        ipv6: family_port(policy, endpoint.ipv6),
-    })
+    let ports = DhtAnnouncePorts {
+        ipv4: eligible_family_port(policy, endpoint.ipv4).unwrap_or(0),
+        ipv6: eligible_family_port(policy, endpoint.ipv6).unwrap_or(0),
+    };
+    (ports.ipv4 != 0 || ports.ipv6 != 0).then_some(ports)
 }
 
 fn apply_tracker_result(
@@ -1668,9 +1667,9 @@ struct TrackerPorts {
 fn tracker_ports(
     policy: NetworkPolicy,
     endpoint: PeerAdvertisementEndpoint,
-    incoming_registered: bool,
+    incoming_routable: bool,
 ) -> TrackerPorts {
-    if !incoming_registered || endpoint.stopping {
+    if !incoming_routable || endpoint.stopping {
         return TrackerPorts {
             ipv4: OUTBOUND_ONLY_TRACKER_PORT,
             ipv6: OUTBOUND_ONLY_TRACKER_PORT,
@@ -1683,6 +1682,13 @@ fn tracker_ports(
 }
 
 fn family_port(policy: NetworkPolicy, endpoint: PeerAdvertisementFamilyEndpoint) -> u16 {
+    eligible_family_port(policy, endpoint).unwrap_or(OUTBOUND_ONLY_TRACKER_PORT)
+}
+
+fn eligible_family_port(
+    policy: NetworkPolicy,
+    endpoint: PeerAdvertisementFamilyEndpoint,
+) -> Option<u16> {
     match (endpoint.endpoint, endpoint.scope) {
         (
             Some(endpoint),
@@ -1693,13 +1699,13 @@ fn family_port(policy: NetworkPolicy, endpoint: PeerAdvertisementFamilyEndpoint)
                 | PeerAdvertisementEndpointScope::Unfiltered
                 | PeerAdvertisementEndpointScope::Pinholed,
             ),
-        ) => endpoint.port(),
+        ) => Some(endpoint.port()),
         (Some(endpoint), Some(PeerAdvertisementEndpointScope::Loopback))
             if policy == NetworkPolicy::LoopbackOnly =>
         {
-            endpoint.port()
+            Some(endpoint.port())
         }
-        _ => OUTBOUND_ONLY_TRACKER_PORT,
+        _ => None,
     }
 }
 
@@ -1963,8 +1969,8 @@ mod tests {
                 NetworkPolicy::Online,
                 endpoint,
                 &DiscoveryAdvertisementRegistration {
-                    complete: true,
-                    incoming_registered: true,
+                    complete: false,
+                    incoming_routable: true,
                     privacy: TorrentPrivacy::Public,
                     ..test_registration(1, 41_001)
                 },
@@ -1977,7 +1983,7 @@ mod tests {
     }
 
     #[test]
-    fn dht_announcement_requires_verified_public_routable_seed() {
+    fn dht_announcement_requires_running_public_routable_torrent() {
         let endpoint = ipv4_endpoint(
             2,
             "127.0.0.1:43000",
@@ -1988,21 +1994,30 @@ mod tests {
             dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
             None
         );
-        registration.complete = true;
-        registration.incoming_registered = true;
         registration.privacy = TorrentPrivacy::Public;
+        assert_eq!(
+            dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            None
+        );
+        registration.incoming_routable = true;
         assert_eq!(
             dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
             Some(DhtAnnouncePorts {
                 ipv4: 43_000,
-                ipv6: 1,
+                ipv6: 0,
             })
         );
         assert_eq!(
             dht_announce_ports(NetworkPolicy::Online, endpoint, &registration),
-            Some(DhtAnnouncePorts { ipv4: 1, ipv6: 1 })
+            None
         );
         registration.privacy = TorrentPrivacy::Private;
+        assert_eq!(
+            dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
+            None
+        );
+        registration.privacy = TorrentPrivacy::Public;
+        registration.desired_running = false;
         assert_eq!(
             dht_announce_ports(NetworkPolicy::LoopbackOnly, endpoint, &registration),
             None
@@ -2114,7 +2129,7 @@ mod tests {
             }],
             desired_running: true,
             complete: false,
-            incoming_registered: false,
+            incoming_routable: false,
             privacy: TorrentPrivacy::Unknown,
             counters: TrackerCounters::unknown_metadata(),
             peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
@@ -2151,7 +2166,7 @@ mod tests {
             }],
             desired_running: true,
             complete: false,
-            incoming_registered: false,
+            incoming_routable: false,
             privacy: TorrentPrivacy::Private,
             counters: TrackerCounters::unknown_metadata(),
             peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
@@ -2253,7 +2268,7 @@ mod tests {
             }],
             desired_running: true,
             complete: false,
-            incoming_registered: true,
+            incoming_routable: true,
             privacy: TorrentPrivacy::Public,
             counters: counters.clone(),
             peers: peers.clone(),
@@ -2362,7 +2377,7 @@ mod tests {
         let activity = Arc::new(RecordingActivity::default());
         let tracker_url = format!("http://{tracker_address}/announce");
         let mut registration = http_registration([14; 20], tracker_url, activity.clone());
-        registration.incoming_registered = true;
+        registration.incoming_routable = true;
         service
             .handle()
             .upsert(registration)
@@ -2593,7 +2608,7 @@ mod tests {
                 }],
                 desired_running: true,
                 complete: false,
-                incoming_registered: false,
+                incoming_routable: false,
                 privacy: TorrentPrivacy::Private,
                 counters: TrackerCounters::default(),
                 peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
@@ -2769,7 +2784,7 @@ mod tests {
                     }],
                     desired_running: true,
                     complete: false,
-                    incoming_registered: false,
+                    incoming_routable: false,
                     privacy: TorrentPrivacy::Private,
                     counters: TrackerCounters::default(),
                     peers: TorrentPeerHandle::new(Arc::new(NoopSink)).expect("peer registry"),
@@ -2817,12 +2832,12 @@ mod tests {
     async fn session_tracker_sends_truthful_lifecycle_ports_and_counters() {
         let tracker = UdpSocket::bind("127.0.0.1:0").await.expect("bind tracker");
         let tracker_address = tracker.local_addr().expect("tracker address");
-        let (packet_sender, mut packet_receiver) = mpsc::channel(3);
+        let (packet_sender, mut packet_receiver) = mpsc::channel(4);
         let tracker_task = tokio::spawn(async move {
             let connection_id = 0x0102_0304_0506_0708_u64;
             let mut packet = [0_u8; 2048];
             let mut announces = 0;
-            while announces < 3 {
+            while announces < 4 {
                 let (length, client) = tracker.recv_from(&mut packet).await.expect("request");
                 if length == 16 {
                     let transaction = &packet[12..16];
@@ -2899,7 +2914,7 @@ mod tests {
             }],
             desired_running: true,
             complete: false,
-            incoming_registered: false,
+            incoming_routable: false,
             privacy: TorrentPrivacy::Public,
             counters: counters.clone(),
             peers,
@@ -2909,17 +2924,30 @@ mod tests {
         let started = packet_receiver.recv().await.expect("started announce");
         activity.wait_for_successes(1).await;
 
+        let routed_registration = DiscoveryAdvertisementRegistration {
+            incoming_routable: true,
+            ..registration.clone()
+        };
+        handle
+            .upsert(routed_registration.clone())
+            .await
+            .expect("install active incoming route");
+        let routed = packet_receiver
+            .recv()
+            .await
+            .expect("route corrective announce");
+        activity.wait_for_successes(2).await;
+
         counters.set_left(0);
         handle
             .upsert(DiscoveryAdvertisementRegistration {
                 complete: true,
-                incoming_registered: true,
-                ..registration
+                ..routed_registration
             })
             .await
             .expect("promote complete seed");
         let completed = packet_receiver.recv().await.expect("completed announce");
-        activity.wait_for_successes(2).await;
+        activity.wait_for_successes(3).await;
 
         let remove = tokio::spawn(async move { handle.remove([4; 20], 3).await });
         let stopped = packet_receiver.recv().await.expect("stopped announce");
@@ -2936,6 +2964,9 @@ mod tests {
         assert_eq!(announce_counter(&started, 56), 11);
         assert_eq!(announce_counter(&started, 64), 99);
         assert_eq!(announce_counter(&started, 72), 7);
+        assert_eq!(announce_event(&routed), AnnounceEvent::None as u32);
+        assert_eq!(announce_port(&routed), 48_001);
+        assert_eq!(announce_counter(&routed, 64), 99);
         assert_eq!(announce_event(&completed), AnnounceEvent::Completed as u32);
         assert_eq!(announce_port(&completed), 48_001);
         assert_eq!(announce_counter(&completed, 64), 0);
@@ -3012,7 +3043,7 @@ mod tests {
                 trackers: Vec::new(),
                 desired_running: true,
                 complete: true,
-                incoming_registered: true,
+                incoming_routable: true,
                 privacy: TorrentPrivacy::Public,
                 counters: TrackerCounters::default(),
                 peers,

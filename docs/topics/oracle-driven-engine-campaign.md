@@ -26,7 +26,11 @@ the deterministic receive-credit, packetization, loss/congestion, pacing,
 MTU, and impaired-link stage. Its required pre-runtime Stage 2 human-review
 checkpoint is the single authoritative **Now**. Independent completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now installs
-per-torrent structural fast resume without changing that uTP checkpoint. The
+per-torrent structural fast resume. Explicit maintainer authorization has
+since made very-high-priority correctness Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) the single
+authoritative **Now**; the completed uTP Stage 2 review checkpoint remains
+ready as the next campaign decision. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -340,7 +344,7 @@ Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
-required Stage 2 human review is active**.
+Tactical `124` active for incomplete-torrent duplex correctness**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -361,20 +365,23 @@ water marks, and zero terminal ownership. It ran no socket, client,
 interoperability peer, WAN path, or physical device and makes no uTP support
 claim.
 
-Current milestone: required human review of Tactical `121`'s completed
-runtime-free uTP transport state and fixed impairment evidence. The
-recommended next choice is a separately approved Stage 3 shared-UDP/runtime,
-ordered-stream, and forced-uTP pinned-libtorrent loopback tactical; WAN
-activity, reachability/product policy, and support remain later gates.
+Current milestone: complete Tactical `124`'s verified-piece upload during
+download. Compact availability/read authority, active initiated/accepted TCP
+duplex transfer, and truthful active-route tracker/DHT advertisement have
+landed. Lifecycle/adversarial fencing, controlled RSTorrent and pinned-
+libtorrent interoperability, Android parity, and final evidence reconciliation
+remain. Tactical `121`'s completed runtime-free state remains ready for its
+Stage 2 human review afterward; no uTP runtime work is implied.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: stop for the Stage 2 human decision recorded in
-[`utp-transport-campaign.md`](utp-transport-campaign.md). Recommendation A is
-to draft a bounded Stage 3 shared-UDP/runtime and loopback-interoperability
-tactical before changing code. Do not start runtime or external-network work
-from this checkpoint.
+Next executable action: continue Tactical `124` with its lifecycle and
+controlled complementary-piece matrix, then close Android parity and reconcile
+the owning claims. Do not start public-network work. After Tactical `124`
+stops, return to the Stage 2 human decision recorded in
+[`utp-transport-campaign.md`](utp-transport-campaign.md); do not infer uTP
+runtime authorization from this checkpoint.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

@@ -962,7 +962,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
             udp_trackers: None,
         },
         checkpoints,
-        control,
+        control.clone(),
     ));
 
     timeout(Duration::from_secs(3), async {
@@ -975,6 +975,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
     })
     .await
     .expect("active incoming registration");
+    assert!(control.incoming_content_routable());
 
     let (uploaded_sender, uploaded_receiver) = oneshot::channel();
     let incoming_task = tokio::spawn(serve_incoming_duplex_complementary_peer(
@@ -994,6 +995,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
         .expect("incoming upload observed");
     assert_eq!(uploaded, pieces[0]);
     assert_eq!(report.verified_piece_count, 2);
+    assert!(!control.incoming_content_routable());
     timeout(Duration::from_secs(2), incoming_task)
         .await
         .expect("incoming duplex peer joined")

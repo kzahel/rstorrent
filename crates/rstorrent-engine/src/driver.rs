@@ -5033,6 +5033,7 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         let next_selection =
             FileSelection::new(self.layout, &update.skip_files).map_err(DownloadError::Layout)?;
+        let previous_availability_empty = self.availability.snapshot().available_count == 0;
         self.stop_storage(false).await?;
         let mut storage = self.take_storage()?;
         let reconcile = match storage.0.reconcile_selection(next_selection.clone()).await {
@@ -5091,9 +5092,16 @@ impl<'a> ContentSwarmDownload<'a> {
         self.selection = next_selection;
         self.selection_revision = update.revision;
         self.control.file_selection_applied(update.revision);
+        let next_availability_empty = !storage.0.verified_pieces().iter().any(|piece| *piece);
         self.availability
             .replace_epoch(storage.0.route_epoch(), storage.0.verified_pieces())
             .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        if previous_availability_empty && next_availability_empty {
+            let cursor = self.availability.snapshot().cursor();
+            for peer in self.outgoing_uploads.values_mut() {
+                peer.cursor = cursor;
+            }
+        }
         self.restart_storage(storage).await
     }
 
@@ -5115,10 +5123,12 @@ impl<'a> ContentSwarmDownload<'a> {
             .await
             .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
         self.active_registration = Some((handle, token));
+        self.control.set_incoming_content_routable(true);
         Ok(())
     }
 
     async fn unregister_active_route(&mut self) -> Result<(), DownloadError> {
+        self.control.set_incoming_content_routable(false);
         let Some((handle, token)) = self.active_registration.take() else {
             return Ok(());
         };

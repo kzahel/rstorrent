@@ -7,14 +7,14 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::metadata::TorrentMetadataDownload;
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
 use super::DownloadError;
@@ -433,6 +433,8 @@ struct DownloadControlInner {
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
     incoming_peers: Mutex<Option<IncomingPeerHandle>>,
+    incoming_content_routable: AtomicBool,
+    incoming_route_wake: Mutex<Option<Arc<Notify>>>,
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
     checking_paused: watch::Sender<bool>,
@@ -788,6 +790,8 @@ impl DownloadControl {
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
                 incoming_peers: Mutex::new(None),
+                incoming_content_routable: AtomicBool::new(false),
+                incoming_route_wake: Mutex::new(None),
                 session_resources: Mutex::new(None),
                 selection_updates,
                 checking_paused,
@@ -845,6 +849,39 @@ impl DownloadControl {
             .incoming_peers
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(handle);
+    }
+
+    pub fn set_incoming_route_wake(&self, wake: Arc<Notify>) {
+        *self
+            .inner
+            .incoming_route_wake
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(wake);
+    }
+
+    #[must_use]
+    pub fn incoming_content_routable(&self) -> bool {
+        self.inner.incoming_content_routable.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_incoming_content_routable(&self, routable: bool) {
+        if self
+            .inner
+            .incoming_content_routable
+            .swap(routable, Ordering::AcqRel)
+            == routable
+        {
+            return;
+        }
+        if let Some(wake) = self
+            .inner
+            .incoming_route_wake
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+        {
+            wake.notify_one();
+        }
     }
 
     pub fn set_session_resources(&self, resources: SessionTorrentResources) {

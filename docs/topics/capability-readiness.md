@@ -286,9 +286,11 @@ added.
   [`124`](../tactical/124-duplex-verified-piece-upload.md) is in progress after
   explicit maintainer authorization. Compact per-piece authority, active
   selective-storage upload reads, initiated-socket duplex upload, and
-  accepted-socket duplex transfer have landed in bounded checkpoints.
-  Discovery truth, lifecycle/adversarial fences, controlled interoperability,
-  Android parity, and final evidence reconciliation remain before completion.
+  accepted-socket duplex transfer have landed in bounded checkpoints. Tracker
+  and public DHT advertisement now follow the actual active incoming route
+  independently of completion. Lifecycle/adversarial fences, controlled
+  interoperability, Android parity, and final evidence reconciliation remain
+  before completion.
 
 ### Next
 

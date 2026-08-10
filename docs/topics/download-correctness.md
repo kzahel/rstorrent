@@ -95,6 +95,15 @@ global crash invalidation or clean-shutdown prerequisite. The current code
 uses zero payload reads and hashes on an accepted resume; explicit or pending
 Force verification remains full, and structural disagreement falls back only
 the affected torrent.
+In-progress Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) now publishes a
+piece to the upload path only from the same verified/write-complete and
+currently readable route epoch used by active storage. Outgoing and accepted
+loopback peers have each exchanged complementary pieces in both directions
+before completion; request admission and read serialization revalidate the
+availability epoch, and incoming contributors share the existing integrity
+reputation. Lifecycle/adversarial, controlled interoperability, and Android
+evidence remain open in that tactical.
 
 ## Scope
 

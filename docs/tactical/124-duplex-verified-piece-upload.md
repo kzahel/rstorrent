@@ -7,8 +7,9 @@ dynamic upload-request revalidation, exact ordinary/Fast initial forms, and
 generation-stamped active selective-storage read plans across staging,
 retained, part-file, cross-file, and padding routes. Outgoing and accepted TCP
 content sockets now both carry duplex payload through the same swarm and
-upload owners. Discovery, lifecycle, interoperability, and Android gates
-remain in progress. This
+upload owners. Tracker/DHT advertisement now follows actual active-route
+routability independently from completion. Lifecycle/adversarial,
+interoperability, and Android gates remain in progress. This
 very-high-priority correctness repair ranks ahead of finite bandwidth controls
 and seeding-goal policy.
 
@@ -699,6 +700,42 @@ cargo test -p rstorrent-engine upload::tests
 cargo test -p rstorrent-engine active_upload_read
 cargo fmt --all -- --check
 cargo clippy -p rstorrent-engine -- -D warnings
+```
+
+### Active-route discovery truth
+
+- Discovery registration now names the operative fact `incoming_routable`
+  instead of overloading completed-seed registration. The active content owner
+  sets that fact only after the listener accepts its registration and clears
+  it before unregistering; a session wake drives a corrective advertisement
+  on both transitions.
+- UDP/HTTP/HTTPS tracker announces select the current eligible family TCP port
+  for an incomplete routed torrent while retaining exact nonzero `left` and
+  physical transfer counters. Completion requests the real `completed` event
+  independently of whether an incoming endpoint is currently available.
+- Public DHT lookup-and-announce requires desired-running, verified-public,
+  active-route, and eligible endpoint facts, but no longer requires torrent
+  completion. A family with no eligible TCP endpoint performs lookup without
+  announcing a port-1 fiction; at least one real family is required to enter
+  announce mode. Private torrents still suppress DHT, and RSTorrent continues
+  to omit unsupported BEP 21 `upload_only` rather than claiming seeding intent
+  during download.
+- Deterministic UDP evidence observes `started` with port 1, then a
+  pre-completion corrective update carrying the actual port and unchanged
+  nonzero `left`. Dual-family DHT evidence proves a configured IPv4-only
+  announcement stores no IPv6 peer value. The application HTTP tracker test
+  observes the live listener replacement port while its payload remains held
+  and the torrent is incomplete.
+
+Validation at this checkpoint:
+
+```text
+cargo test -p rstorrent-engine advertisement::tests --lib
+cargo test -p rstorrent-engine \
+  dht::tests::product_announcement_uses_each_familys_port --lib
+cargo test -p rstorrent-session \
+  http_tracker_only_peers6_completes_hash_verified_application_transfer
+cargo clippy -p rstorrent-engine -p rstorrent-session -- -D warnings
 ```
 
 ### Live active route and outgoing duplex upload

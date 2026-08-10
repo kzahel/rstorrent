@@ -49,17 +49,18 @@ impl DhtAnnouncePorts {
     }
 
     #[must_use]
-    pub const fn for_family(self, family: AddressFamily) -> u16 {
-        match family {
+    pub const fn for_family(self, family: AddressFamily) -> Option<u16> {
+        let port = match family {
             AddressFamily::Ipv4 => self.ipv4,
             AddressFamily::Ipv6 => self.ipv6,
-        }
+        };
+        if port == 0 { None } else { Some(port) }
     }
 
     fn validate(self) -> Result<Self, DhtError> {
-        if self.ipv4 == 0 || self.ipv6 == 0 {
+        if self.ipv4 == 0 && self.ipv6 == 0 {
             return Err(DhtError::Configuration(
-                "DHT peer announcement requires nonzero TCP ports",
+                "DHT peer announcement requires at least one nonzero TCP port",
             ));
         }
         Ok(self)
@@ -1527,7 +1528,7 @@ impl Actor {
                     let families = group.pending.iter().copied().collect::<Vec<_>>();
                     for family in &families {
                         if let Some(lookup) = self.lookups.get_mut(&(info_hash, *family)) {
-                            lookup.announce_port = Some(ports.for_family(*family));
+                            lookup.announce_port = ports.for_family(*family);
                         }
                     }
                     for family in families {
@@ -1599,7 +1600,7 @@ impl Actor {
             lookup.announce_port = group
                 .announcement
                 .as_ref()
-                .map(|announcement| announcement.ports.for_family(family));
+                .and_then(|announcement| announcement.ports.for_family(family));
             self.next_lookup_id = self.next_lookup_id.checked_add(1).unwrap_or(1);
             self.lookups.insert((info_hash, family), lookup);
             group.pending.insert(family);
@@ -3548,6 +3549,41 @@ mod tests {
         };
         assert_eq!(ipv6.peers.len(), 1);
         assert_eq!(socket_endpoint(ipv6.peers[0]).port(), 46_666);
+
+        let ipv4_only_hash = NodeId([15; 20]);
+        let report = client
+            .handle()
+            .lookup_and_announce_ports(
+                ipv4_only_hash.0,
+                DhtAnnouncePorts {
+                    ipv4: 48_888,
+                    ipv6: 0,
+                },
+            )
+            .await
+            .expect("single-family announcement");
+        assert_eq!(report.announces_succeeded, 1);
+        let single_family_query = encode_query(
+            b"sf",
+            NodeId([8; 20]),
+            &Query::GetPeers {
+                info_hash: ipv4_only_hash,
+                want: Vec::new(),
+            },
+            true,
+        )
+        .unwrap();
+        let Message::Response(ipv4) = exchange(&ipv4_probe, server_v4, &single_family_query).await
+        else {
+            panic!("single-family IPv4 response expected");
+        };
+        assert_eq!(ipv4.peers.len(), 1);
+        assert_eq!(socket_endpoint(ipv4.peers[0]).port(), 48_888);
+        let Message::Response(ipv6) = exchange(&ipv6_probe, server_v6, &single_family_query).await
+        else {
+            panic!("single-family IPv6 response expected");
+        };
+        assert!(ipv6.peers.is_empty());
 
         client.shutdown().await.unwrap();
         client_udp.shutdown().await.unwrap();

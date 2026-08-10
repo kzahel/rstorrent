@@ -318,6 +318,7 @@ pub struct ApplicationService {
     views: ViewHub,
     view_set_reaper: Option<ViewSetLeaseReaper>,
     admission_wake: Arc<Notify>,
+    discovery_wake: Arc<Notify>,
     maintenance_cancellation: CancellationToken,
     maintenance_started: bool,
     maintenance_task: Option<JoinHandle<()>>,
@@ -420,6 +421,7 @@ impl ApplicationService {
         };
         let speed_recorder = speed.recorder.clone();
         let admission_wake = Arc::new(Notify::new());
+        let discovery_wake = Arc::new(Notify::new());
         let storage_file_pool =
             StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
@@ -501,6 +503,7 @@ impl ApplicationService {
             views,
             view_set_reaper: Some(view_set_reaper),
             admission_wake,
+            discovery_wake,
             maintenance_cancellation: CancellationToken::new(),
             maintenance_started: false,
             maintenance_task: None,
@@ -661,6 +664,17 @@ impl ApplicationService {
                         .any(|file_index| resume.skip_files.binary_search(file_index).is_ok())
                 })
                 .unwrap_or(true),
+            _ => false,
+        };
+        let download_files_requires_restart = match &command {
+            Command::DownloadFiles { torrent_id, .. } if file_priority_changed => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.active_download_for(&torrent_id).is_some()
+                    && self
+                        .store_mut()?
+                        .load_resume(&torrent_id)
+                        .is_ok_and(|resume| resume.state == TorrentState::Paused)
+            }
             _ => false,
         };
         let add_magnet_duplicate = match &command {
@@ -931,6 +945,9 @@ impl ApplicationService {
                     "Torrent files requested for download",
                     &[],
                 )?;
+                if download_files_requires_restart {
+                    self.join_active_content(&torrent_id).await?;
+                }
                 let (resume, revision, eligible) = {
                     let store = self.store_mut()?;
                     let resume = store.load_resume(&torrent_id)?;
@@ -1333,6 +1350,7 @@ impl ApplicationService {
             )?;
         }
         self.refresh_views()?;
+        self.reconcile_discovery_catalog().await?;
         Ok(())
     }
 
@@ -1351,7 +1369,7 @@ impl ApplicationService {
     }
 
     pub async fn ensure_maintenance_owner(service: &Arc<tokio::sync::Mutex<Self>>) {
-        let (wake, cancellation) = {
+        let (admission_wake, discovery_wake, cancellation) = {
             let mut service = service.lock().await;
             if service.maintenance_started {
                 return;
@@ -1359,18 +1377,20 @@ impl ApplicationService {
             service.maintenance_started = true;
             (
                 service.admission_wake.clone(),
+                service.discovery_wake.clone(),
                 service.maintenance_cancellation.clone(),
             )
         };
         let weak_service = Arc::downgrade(service);
         let task = tokio::spawn(async move {
             loop {
-                tokio::select! {
+                let admission = tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => break,
-                    _ = wake.notified() => {}
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => {}
-                }
+                    _ = admission_wake.notified() => true,
+                    _ = discovery_wake.notified() => false,
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => true,
+                };
                 let Some(service) = weak_service.upgrade() else {
                     break;
                 };
@@ -1382,14 +1402,30 @@ impl ApplicationService {
                 if service.session_network.is_none() {
                     break;
                 }
-                if let Err(error) = service.reconcile_admission().await {
+                let result = if admission {
+                    service.reconcile_admission().await
+                } else {
+                    service.reconcile_discovery_catalog().await
+                };
+                if let Err(error) = result {
                     let detail = error.to_string();
+                    let (code, message) = if admission {
+                        (
+                            "download_admission_reconcile_failed",
+                            "Automatic download admission could not converge",
+                        )
+                    } else {
+                        (
+                            "discovery_advertisement_reconcile_failed",
+                            "Active-route advertisement could not converge",
+                        )
+                    };
                     let _ = service.views.record_diagnostic(
                         DiagnosticSeverity::Error,
                         category::LIFECYCLE_SESSION,
-                        "download_admission_reconcile_failed",
+                        code,
                         None,
-                        "Automatic download admission could not converge",
+                        message,
                         &[("detail", &detail)],
                     );
                 }
@@ -1402,7 +1438,7 @@ impl ApplicationService {
     pub async fn ensure_optional_maintenance_owner(
         service: &Arc<tokio::sync::Mutex<Option<Self>>>,
     ) {
-        let (wake, cancellation) = {
+        let (admission_wake, discovery_wake, cancellation) = {
             let mut service = service.lock().await;
             let Some(service) = service.as_mut() else {
                 return;
@@ -1413,18 +1449,20 @@ impl ApplicationService {
             service.maintenance_started = true;
             (
                 service.admission_wake.clone(),
+                service.discovery_wake.clone(),
                 service.maintenance_cancellation.clone(),
             )
         };
         let weak_service = Arc::downgrade(service);
         let task = tokio::spawn(async move {
             loop {
-                tokio::select! {
+                let admission = tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => break,
-                    _ = wake.notified() => {}
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => {}
-                }
+                    _ = admission_wake.notified() => true,
+                    _ = discovery_wake.notified() => false,
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => true,
+                };
                 let Some(service) = weak_service.upgrade() else {
                     break;
                 };
@@ -1439,14 +1477,30 @@ impl ApplicationService {
                 if service.session_network.is_none() {
                     break;
                 }
-                if let Err(error) = service.reconcile_admission().await {
+                let result = if admission {
+                    service.reconcile_admission().await
+                } else {
+                    service.reconcile_discovery_catalog().await
+                };
+                if let Err(error) = result {
                     let detail = error.to_string();
+                    let (code, message) = if admission {
+                        (
+                            "download_admission_reconcile_failed",
+                            "Automatic download admission could not converge",
+                        )
+                    } else {
+                        (
+                            "discovery_advertisement_reconcile_failed",
+                            "Active-route advertisement could not converge",
+                        )
+                    };
                     let _ = service.views.record_diagnostic(
                         DiagnosticSeverity::Error,
                         category::LIFECYCLE_SESSION,
-                        "download_admission_reconcile_failed",
+                        code,
                         None,
-                        "Automatic download admission could not converge",
+                        message,
                         &[("detail", &detail)],
                     );
                 }
@@ -2670,6 +2724,7 @@ impl ApplicationService {
         ));
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_incoming_peer_handle(self.session_network().incoming_peer_handle());
+        control.set_incoming_route_wake(self.discovery_wake.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
         control
@@ -2989,6 +3044,10 @@ impl ApplicationService {
         let admitted_download = !complete
             && resume.state != TorrentState::Checking
             && self.active_download_for(torrent_id).is_some();
+        let active_incoming_routable = admitted_download
+            && self
+                .active_download_for(torrent_id)
+                .is_some_and(|active| active.control.incoming_content_routable());
         counters.set_left(left);
         let registration = DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
@@ -3002,7 +3061,7 @@ impl ApplicationService {
                 admitted_download
             },
             complete,
-            incoming_registered: handle.has_seed_registration(),
+            incoming_routable: handle.has_seed_registration() || active_incoming_routable,
             privacy,
             counters,
             peers: runtime.peers(),
@@ -3472,7 +3531,7 @@ async fn reconcile_completed_advertisement(
             trackers: operational_trackers(&resume.trackers).map_err(|error| error.to_string())?,
             desired_running: resume.desired_running,
             complete: resume.state == TorrentState::Complete,
-            incoming_registered: runtime.has_seed_registration(),
+            incoming_routable: runtime.has_seed_registration(),
             privacy,
             counters,
             peers: runtime.peers(),
@@ -6888,6 +6947,22 @@ mod tests {
         })
         .await;
         assert!(service.active_download().is_some());
+        let live_port_parameter = format!("&port={live_port}&");
+        let routed_announce = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let request = announce_receiver
+                    .recv()
+                    .await
+                    .expect("tracker stopped before active route correction");
+                if request.contains(&live_port_parameter) {
+                    break request;
+                }
+            }
+        })
+        .await
+        .expect("active route corrective tracker announce");
+        assert!(!routed_announce.contains("event=completed"));
+        assert!(routed_announce.contains(&format!("&left={}&", payload.len())));
         payload_release
             .send(())
             .expect("release controlled outgoing payload");
