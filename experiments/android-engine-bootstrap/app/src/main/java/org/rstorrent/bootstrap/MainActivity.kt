@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.provider.Settings
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import org.rstorrent.bootstrap.ui.ProductApp
@@ -27,6 +28,8 @@ class MainActivity : ComponentActivity() {
     private var productBound = false
     private var productMode = false
     private var pendingProductMagnet: String? = null
+    private var pendingProductTorrentUri: String? = null
+    private var pendingProductTorrentStartContent = true
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
     private var pendingProductStartContent = true
@@ -37,6 +40,37 @@ class MainActivity : ComponentActivity() {
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingCrashAfterSafRename = false
+    private val productTreePicker =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            val treeUri = data?.data
+            if (result.resultCode != RESULT_OK || treeUri == null) return@registerForActivityResult
+            val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
+            contentResolver.takePersistableUriPermission(treeUri, flags)
+            ProductSafDocuments.persistTree(this, treeUri)
+            productService.value?.setSafTree(treeUri)
+        }
+    private val productTorrentPicker =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            val torrentUri = data?.data
+            if (result.resultCode != RESULT_OK || torrentUri == null) {
+                return@registerForActivityResult
+            }
+            val flags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+            runCatching { contentResolver.takePersistableUriPermission(torrentUri, flags) }
+            val service = productService.value
+            if (service == null) {
+                pendingProductTorrentUri = torrentUri.toString()
+            } else {
+                service.addTorrentFile(torrentUri, pendingProductTorrentStartContent)
+                pendingProductTorrentStartContent = true
+            }
+        }
+    private val notificationPermissionRequest =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            notificationsGranted.value = notificationPermissionGranted()
+        }
     private val productConnection =
         object : ServiceConnection {
             override fun onServiceConnected(
@@ -68,6 +102,14 @@ class MainActivity : ComponentActivity() {
                     }
                     pendingProductStartContent = true
                     pendingProductSkipFiles = emptyList()
+                }
+                pendingProductTorrentUri?.let { encoded ->
+                    pendingProductTorrentUri = null
+                    service.addTorrentFile(
+                        android.net.Uri.parse(encoded),
+                        pendingProductTorrentStartContent,
+                    )
+                    pendingProductTorrentStartContent = true
                 }
                 pendingProductTrackerEvidenceTorrent?.let {
                     pendingProductTrackerEvidenceTorrent = null
@@ -109,7 +151,16 @@ class MainActivity : ComponentActivity() {
                 )
             }.getOrDefault(ProductThemeMode.SYSTEM)
         dynamicColor.value = preferences.getBoolean(PREFERENCE_DYNAMIC_COLOR, true)
+        pendingProductTorrentUri = savedInstanceState?.getString(STATE_PENDING_TORRENT_URI)
+        pendingProductTorrentStartContent =
+            savedInstanceState?.getBoolean(STATE_PENDING_TORRENT_START, true) ?: true
         route(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingProductTorrentUri?.let { outState.putString(STATE_PENDING_TORRENT_URI, it) }
+        outState.putBoolean(STATE_PENDING_TORRENT_START, pendingProductTorrentStartContent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -139,24 +190,7 @@ class MainActivity : ComponentActivity() {
         data: Intent?,
     ) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PRODUCT_TORRENT_REQUEST) {
-            val torrentUri = data?.data
-            if (resultCode == RESULT_OK && torrentUri != null) {
-                productService.value?.addTorrentFile(torrentUri)
-            }
-            return
-        }
-        if (requestCode != TREE_REQUEST) {
-            if (requestCode == PRODUCT_TREE_REQUEST) {
-                val treeUri = data?.data
-                if (resultCode != RESULT_OK || treeUri == null) return
-                val flags = data.flags and ProductSafDocuments.GRANT_FLAGS
-                contentResolver.takePersistableUriPermission(treeUri, flags)
-                ProductSafDocuments.persistTree(this, treeUri)
-                productService.value?.setSafTree(treeUri)
-            }
-            return
-        }
+        if (requestCode != TREE_REQUEST) return
         val command = pendingCommand ?: error("SAF command was not retained")
         val treeUri = data?.data
         if (resultCode != RESULT_OK || treeUri == null) {
@@ -402,7 +436,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchProductTreePicker() {
-        startActivityForResult(
+        productTreePicker.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -416,12 +450,12 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             },
-            PRODUCT_TREE_REQUEST,
         )
     }
 
-    private fun launchProductTorrentPicker() {
-        startActivityForResult(
+    private fun launchProductTorrentPicker(startContent: Boolean) {
+        pendingProductTorrentStartContent = startContent
+        productTorrentPicker.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/x-bittorrent"
@@ -430,8 +464,8 @@ class MainActivity : ComponentActivity() {
                     arrayOf("application/x-bittorrent", "application/octet-stream"),
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             },
-            PRODUCT_TORRENT_REQUEST,
         )
     }
 
@@ -451,20 +485,9 @@ class MainActivity : ComponentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 52)
+            notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             notificationsGranted.value = true
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == NOTIFICATION_REQUEST) {
-            notificationsGranted.value = notificationPermissionGranted()
         }
     }
 
@@ -527,12 +550,11 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TREE_REQUEST = 51
-        private const val PRODUCT_TREE_REQUEST = 53
-        private const val PRODUCT_TORRENT_REQUEST = 54
-        private const val NOTIFICATION_REQUEST = 52
         private const val PRODUCT_PREFERENCES = "product_ui"
         private const val PREFERENCE_THEME_MODE = "theme_mode"
         private const val PREFERENCE_DYNAMIC_COLOR = "dynamic_color"
+        private const val STATE_PENDING_TORRENT_URI = "pending_torrent_uri"
+        private const val STATE_PENDING_TORRENT_START = "pending_torrent_start"
         const val EXTRA_PRODUCT_MAGNET = "product_magnet"
         const val EXTRA_PRODUCT_TRACKER_HTTPS_POLICY = "product_tracker_https_policy"
         const val EXTRA_PRODUCT_ENCRYPTION_POLICY = "product_encryption_policy"

@@ -194,6 +194,21 @@ object ProductSafDocuments {
         )
     }
 
+    fun publishedDocument(
+        context: Context,
+        treeUri: Uri,
+        path: List<String>,
+    ): Uri? {
+        require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        require(path.isNotEmpty()) { "published path is empty" }
+        path.forEach(::requireValidComponent)
+        var current = documentUri(treeUri)
+        for (component in path) {
+            current = findUniqueChild(context, current, component) ?: return null
+        }
+        return current
+    }
+
     private fun hasGrant(
         context: Context,
         treeUri: Uri,

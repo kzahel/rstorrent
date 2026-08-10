@@ -2,9 +2,22 @@ package org.rstorrent.bootstrap
 
 import org.rstorrent.session.uniffi.ActivePiece
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
+import org.rstorrent.session.uniffi.CatalogPageView
+import org.rstorrent.session.uniffi.DhtInspectionView
 import org.rstorrent.session.uniffi.DiagnosticEvent
+import org.rstorrent.session.uniffi.DiskPieceView
+import org.rstorrent.session.uniffi.DiskPipelineView
+import org.rstorrent.session.uniffi.FileCatalogState
+import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.IndexRange
+import org.rstorrent.session.uniffi.PeerView
+import org.rstorrent.session.uniffi.SpeedHistoryView
 import org.rstorrent.session.uniffi.StorageSettingsSnapshot
+import org.rstorrent.session.uniffi.SwarmCatalogState
+import org.rstorrent.session.uniffi.SwarmCountsView
+import org.rstorrent.session.uniffi.SwarmPeerView
+import org.rstorrent.session.uniffi.TrackerCatalogState
+import org.rstorrent.session.uniffi.TrackerView
 import org.rstorrent.session.uniffi.TorrentView
 import org.rstorrent.session.uniffi.ViewPatch
 import org.rstorrent.session.uniffi.ViewSnapshot
@@ -18,6 +31,32 @@ data class PieceActivityState(
     val active: List<ActivePiece>,
 )
 
+data class FileCatalogViewState(
+    val state: FileCatalogState,
+    val filesystemContentBase: String?,
+    val page: CatalogPageView,
+    val files: Map<String, FileView>,
+)
+
+data class TrackerCatalogViewState(
+    val state: TrackerCatalogState,
+    val page: CatalogPageView,
+    val trackers: Map<String, TrackerView>,
+)
+
+data class SwarmViewState(
+    val state: SwarmCatalogState,
+    val capturedMillis: String,
+    val maximumRecords: UInt,
+    val counts: SwarmCountsView,
+    val peers: Map<String, SwarmPeerView>,
+)
+
+data class DiskViewState(
+    val pipeline: DiskPipelineView,
+    val pieces: Map<String, DiskPieceView>,
+)
+
 data class ProductState(
     val ready: Boolean = false,
     val error: String? = null,
@@ -28,8 +67,16 @@ data class ProductState(
     val storage: StorageSettingsSnapshot? = null,
     val clientSettings: ClientSettingsRuntimeView? = null,
     val pieces: Map<String, PieceActivityState> = emptyMap(),
+    val files: Map<String, FileCatalogViewState> = emptyMap(),
+    val trackers: Map<String, TrackerCatalogViewState> = emptyMap(),
+    val peers: Map<String, Map<String, PeerView>> = emptyMap(),
+    val swarms: Map<String, SwarmViewState> = emptyMap(),
+    val disk: DiskViewState? = null,
+    val dht: DhtInspectionView? = null,
+    val speed: SpeedHistoryView? = null,
     val diagnostics: List<DiagnosticEvent> = emptyList(),
     val diagnosticSourceEvicted: String = "0",
+    val diagnosticLocalEvicted: ULong = 0UL,
     val diagnosticResets: ULong = 0UL,
     internal val streams: Map<String, StreamPosition> = emptyMap(),
 )
@@ -120,17 +167,65 @@ internal object ProductStateReducer {
                                     )
                             ),
                 )
-            is ViewSnapshot.Peers -> state
-            is ViewSnapshot.Swarm -> state
-            is ViewSnapshot.SessionDisk -> state
-            is ViewSnapshot.SessionDht -> state
-            is ViewSnapshot.SessionSpeed -> state
-            is ViewSnapshot.Files -> state
-            is ViewSnapshot.Trackers -> state
+            is ViewSnapshot.Peers ->
+                state.copy(
+                    peers = state.peers + (snapshot.torrentId to snapshot.peers.associateBy(PeerView::connectionId)),
+                )
+            is ViewSnapshot.Swarm ->
+                state.copy(
+                    swarms =
+                        state.swarms +
+                            (
+                                snapshot.torrentId to
+                                    SwarmViewState(
+                                        snapshot.state,
+                                        snapshot.capturedMillis,
+                                        snapshot.maximumRecords,
+                                        snapshot.counts,
+                                        snapshot.peers.associateBy(SwarmPeerView::peerRecordId),
+                                    )
+                            ),
+                )
+            is ViewSnapshot.SessionDisk ->
+                state.copy(
+                    disk = DiskViewState(snapshot.pipeline, snapshot.pieces.associateBy(DiskPieceView::rowId)),
+                )
+            is ViewSnapshot.SessionDht -> state.copy(dht = snapshot.inspection)
+            is ViewSnapshot.SessionSpeed -> state.copy(speed = snapshot.history)
+            is ViewSnapshot.Files ->
+                state.copy(
+                    files =
+                        state.files +
+                            (
+                                snapshot.torrentId to
+                                    FileCatalogViewState(
+                                        snapshot.state,
+                                        snapshot.filesystemContentBase,
+                                        snapshot.page,
+                                        snapshot.files.associateBy(FileView::fileId),
+                                    )
+                            ),
+                )
+            is ViewSnapshot.Trackers ->
+                state.copy(
+                    trackers =
+                        state.trackers +
+                            (
+                                snapshot.torrentId to
+                                    TrackerCatalogViewState(
+                                        snapshot.state,
+                                        snapshot.page,
+                                        snapshot.trackers.associateBy(TrackerView::trackerId),
+                                    )
+                            ),
+                )
             is ViewSnapshot.Diagnostics ->
                 state.copy(
                     diagnostics = snapshot.events.takeLast(512),
                     diagnosticSourceEvicted = snapshot.retention.sourceEvictedCount,
+                    diagnosticLocalEvicted =
+                        state.diagnosticLocalEvicted +
+                            (snapshot.events.size - 512).coerceAtLeast(0).toULong(),
                 )
         }
 
@@ -185,23 +280,67 @@ internal object ProductStateReducer {
                             ),
                 )
             }
-            is ViewPatch.Peers -> state
-            is ViewPatch.Swarm -> state
-            is ViewPatch.SessionDisk -> state
-            is ViewPatch.SessionDht -> state
-            is ViewPatch.SessionSpeed -> state
-            is ViewPatch.Files -> state
-            is ViewPatch.Trackers -> state
+            is ViewPatch.Peers -> {
+                val peers = state.peers[patch.torrentId].orEmpty().toMutableMap()
+                patch.removed.forEach(peers::remove)
+                patch.upsert.forEach { peers[it.connectionId] = it }
+                state.copy(peers = state.peers + (patch.torrentId to peers))
+            }
+            is ViewPatch.Swarm -> {
+                val peers = state.swarms[patch.torrentId]?.peers.orEmpty().toMutableMap()
+                patch.removed.forEach(peers::remove)
+                patch.upsert.forEach { peers[it.peerRecordId] = it }
+                state.copy(
+                    swarms =
+                        state.swarms +
+                            (
+                                patch.torrentId to
+                                    SwarmViewState(
+                                        patch.state,
+                                        patch.capturedMillis,
+                                        patch.maximumRecords,
+                                        patch.counts,
+                                        peers,
+                                    )
+                            ),
+                )
+            }
+            is ViewPatch.SessionDisk -> {
+                val pieces = state.disk?.pieces.orEmpty().toMutableMap()
+                patch.removed.forEach(pieces::remove)
+                patch.upsert.forEach { pieces[it.rowId] = it }
+                state.copy(disk = DiskViewState(patch.pipeline, pieces))
+            }
+            is ViewPatch.SessionDht -> state.copy(dht = patch.inspection)
+            is ViewPatch.SessionSpeed -> state.copy(speed = patch.history)
+            is ViewPatch.Files -> {
+                val current = state.files[patch.torrentId] ?: return state
+                val files = current.files.toMutableMap()
+                patch.removed.forEach(files::remove)
+                patch.upsert.forEach { files[it.fileId] = it }
+                state.copy(files = state.files + (patch.torrentId to current.copy(files = files)))
+            }
+            is ViewPatch.Trackers -> {
+                val current = state.trackers[patch.torrentId] ?: return state
+                val trackers = current.trackers.toMutableMap()
+                patch.removed.forEach(trackers::remove)
+                patch.upsert.forEach { trackers[it.trackerId] = it }
+                state.copy(
+                    trackers = state.trackers + (patch.torrentId to current.copy(trackers = trackers)),
+                )
+            }
             is ViewPatch.Diagnostics -> {
                 val events =
                     (state.diagnostics + patch.events)
                         .associateBy(DiagnosticEvent::sequence)
                         .values
                         .sortedBy { it.sequence.toULong() }
-                        .takeLast(512)
+                val retained = events.takeLast(512)
                 state.copy(
-                    diagnostics = events,
+                    diagnostics = retained,
                     diagnosticSourceEvicted = patch.retention.sourceEvictedCount,
+                    diagnosticLocalEvicted =
+                        state.diagnosticLocalEvicted + (events.size - retained.size).toULong(),
                 )
             }
         }

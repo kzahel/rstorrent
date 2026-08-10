@@ -9,8 +9,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 enum class ProductThemeMode {
     SYSTEM,
@@ -55,9 +58,16 @@ fun RstorrentTheme(
             else -> LightColors
         }
     val activity = context as? Activity
-    activity?.window?.let { window ->
-        window.statusBarColor = colors.surface.value.toInt()
-        window.navigationBarColor = colors.surface.value.toInt()
+    val view = LocalView.current
+    SideEffect {
+        activity?.window?.let { window ->
+            window.statusBarColor = colors.surface.value.toInt()
+            window.navigationBarColor = colors.surface.value.toInt()
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
     MaterialTheme(colorScheme = colors, content = content)
 }

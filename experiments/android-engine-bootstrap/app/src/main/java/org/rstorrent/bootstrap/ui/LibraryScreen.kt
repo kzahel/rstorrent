@@ -28,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -74,10 +75,13 @@ internal fun LibraryScreen(
     onRequestNotifications: () -> Unit,
     onSelectStorage: () -> Unit,
     onOpenTorrent: (String) -> Unit,
-    onAddMagnet: (String) -> Unit,
-    onBrowseTorrent: () -> Unit,
+    onAddMagnet: (String, Boolean) -> Unit,
+    onBrowseTorrent: (Boolean) -> Unit,
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
+    onMoveTop: (String) -> Unit,
+    onMoveBottom: (String) -> Unit,
+    onArchive: (String) -> Unit,
     onRemove: (Set<String>) -> Unit,
     onSpeed: () -> Unit,
     onDht: () -> Unit,
@@ -191,6 +195,9 @@ internal fun LibraryScreen(
                     count = selection.size,
                     onPause = { selection.forEach(onPause) },
                     onResume = { selection.forEach(onResume) },
+                    onMoveTop = { selection.forEach(onMoveTop) },
+                    onMoveBottom = { selection.forEach(onMoveBottom) },
+                    onArchive = { selection.forEach(onArchive) },
                     onRemove = { onRemove(selection) },
                     onClear = { selection = emptySet() },
                 )
@@ -275,12 +282,12 @@ internal fun LibraryScreen(
             enabled = state.ready && state.storageRootReady,
             onDismiss = { addOpen = false },
             onAddMagnet = {
-                onAddMagnet(it)
+                onAddMagnet(it.first, it.second)
                 addOpen = false
             },
-            onBrowse = {
+            onBrowse = { start ->
                 addOpen = false
-                onBrowseTorrent()
+                onBrowseTorrent(start)
             },
         )
     }
@@ -445,20 +452,26 @@ private fun SelectionActions(
     count: Int,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    onMoveTop: () -> Unit,
+    onMoveBottom: () -> Unit,
+    onArchive: () -> Unit,
     onRemove: () -> Unit,
     onClear: () -> Unit,
 ) {
     Surface(shadowElevation = 8.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text("$count selected", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = onPause) { Text("Pause") }
-            TextButton(onClick = onResume) { Text("Resume") }
-            TextButton(onClick = onRemove) { Text("Remove") }
-            TextButton(onClick = onClear) { Text("Done") }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$count selected", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onPause) { Text("Pause") }
+                TextButton(onClick = onResume) { Text("Resume") }
+                TextButton(onClick = onClear) { Text("Done") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onMoveTop) { Text("Top") }
+                TextButton(onClick = onMoveBottom) { Text("Bottom") }
+                TextButton(onClick = onArchive) { Text("Archive/restore") }
+                TextButton(onClick = onRemove) { Text("Remove") }
+            }
         }
     }
 }
@@ -467,10 +480,11 @@ private fun SelectionActions(
 private fun AddTorrentDialog(
     enabled: Boolean,
     onDismiss: () -> Unit,
-    onAddMagnet: (String) -> Unit,
-    onBrowse: () -> Unit,
+    onAddMagnet: (Pair<String, Boolean>) -> Unit,
+    onBrowse: (Boolean) -> Unit,
 ) {
     var magnet by rememberSaveable { mutableStateOf("") }
+    var startContent by rememberSaveable { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add torrent") },
@@ -483,7 +497,15 @@ private fun AddTorrentDialog(
                     label = { Text("Magnet link") },
                     minLines = 3,
                 )
-                OutlinedButton(onClick = onBrowse, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = startContent, onCheckedChange = { startContent = it })
+                    Text("Start downloading immediately")
+                }
+                OutlinedButton(
+                    onClick = { onBrowse(startContent) },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text("Browse .torrent file")
                 }
                 if (!enabled) {
@@ -497,7 +519,7 @@ private fun AddTorrentDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onAddMagnet(magnet.trim()) },
+                onClick = { onAddMagnet(magnet.trim() to startContent) },
                 enabled = enabled && magnet.isNotBlank(),
             ) { Text("Add") }
         },

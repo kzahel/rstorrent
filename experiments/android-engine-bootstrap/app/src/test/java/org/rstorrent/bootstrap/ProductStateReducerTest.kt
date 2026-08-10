@@ -22,6 +22,8 @@ import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.FileCatalogState
 import org.rstorrent.session.uniffi.FileIndexRange
 import org.rstorrent.session.uniffi.FilePriority
+import org.rstorrent.session.uniffi.FileSelectionView
+import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.IndexRange
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.Ipv6PinholeStatus
@@ -47,6 +49,9 @@ import org.rstorrent.session.uniffi.ViewSelector
 import org.rstorrent.session.uniffi.ViewSnapshot
 import org.rstorrent.session.uniffi.ViewUpdate
 import org.rstorrent.session.uniffi.ViewUpdatePayload
+import org.rstorrent.bootstrap.ui.LibraryFilter
+import org.rstorrent.bootstrap.ui.LibrarySort
+import org.rstorrent.bootstrap.ui.filteredAndSortedTorrents
 
 class ProductStateReducerTest {
     @Test
@@ -308,8 +313,102 @@ class ProductStateReducerTest {
         }
     }
 
+    @Test
+    fun fileCatalogSnapshotsAndPatchesFeedTheProductState() {
+        val first = file("first", 0U)
+        val second = file("second", 1U)
+        val initial =
+            ProductStateReducer.reduce(
+                ProductState(),
+                update(
+                    "1",
+                    "0",
+                    "1",
+                    ViewUpdatePayload.Snapshot(
+                        ViewSnapshot.Files(
+                            TORRENT_ID,
+                            FileCatalogState.AVAILABLE,
+                            null,
+                            CatalogPageView(0U, 1_024U, 2U, null),
+                            listOf(first),
+                        ),
+                    ),
+                ),
+            )
+        val patched =
+            ProductStateReducer.reduce(
+                initial,
+                update(
+                    "2",
+                    "1",
+                    "2",
+                    ViewUpdatePayload.Patch(
+                        ViewPatch.Files(TORRENT_ID, listOf(second), listOf(first.fileId)),
+                    ),
+                ),
+            )
+
+        assertEquals(listOf(second.fileId), patched.files.getValue(TORRENT_ID).files.keys.toList())
+        assertEquals(2U, patched.files.getValue(TORRENT_ID).page.total)
+    }
+
+    @Test
+    fun libraryFiltersUseOperationalStateAndSortingIsStable() {
+        val queued =
+            torrent("queued", TorrentState.PAUSED).copy(
+                displayName = "Zulu",
+                operationalState = TorrentOperationalState.QUEUED,
+                downloadQueuePosition = 2U,
+            )
+        val active =
+            torrent("active", TorrentState.DOWNLOADING).copy(
+                displayName = "Alpha",
+                operationalState = TorrentOperationalState.DOWNLOADING,
+                downloadQueuePosition = 1U,
+            )
+        val finished =
+            torrent("finished", TorrentState.COMPLETE).copy(
+                operationalState = TorrentOperationalState.PAUSED,
+            )
+
+        assertEquals(
+            listOf("active"),
+            filteredAndSortedTorrents(
+                listOf(queued, active, finished),
+                LibraryFilter.ACTIVE,
+                LibrarySort.STABLE,
+            ).map(TorrentView::torrentId),
+        )
+        assertEquals(
+            listOf("active", "finished", "queued"),
+            filteredAndSortedTorrents(
+                listOf(queued, active, finished),
+                LibraryFilter.ALL,
+                LibrarySort.NAME,
+            ).map(TorrentView::torrentId),
+        )
+    }
+
     private fun storage(): StorageSettingsSnapshot =
         StorageSettingsSnapshot(emptyList(), null, false)
+
+    private fun file(
+        id: String,
+        index: UInt,
+    ): FileView =
+        FileView(
+            fileId = id,
+            fileIndex = index,
+            path = listOf("file-$index.bin"),
+            lengthBytes = "1024",
+            torrentOffsetBytes = (index.toULong() * 1024UL).toString(),
+            firstPiece = index,
+            lastPiece = index,
+            selection = FileSelectionView.WANTED,
+            padding = false,
+            doneBytes = "0",
+            verifiedBytes = "0",
+        )
 
     private fun clientSettings(
         configured: ClientSettings =

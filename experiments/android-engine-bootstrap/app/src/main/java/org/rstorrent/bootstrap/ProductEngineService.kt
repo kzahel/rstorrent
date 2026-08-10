@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.net.wifi.WifiManager
@@ -43,6 +45,7 @@ import org.rstorrent.bootstrap.uniffi.AndroidViewSubscription
 import org.rstorrent.bootstrap.uniffi.SafStorageFailureKind
 import org.rstorrent.bootstrap.uniffi.SafStorageOperation
 import org.rstorrent.session.uniffi.Command
+import org.rstorrent.session.uniffi.CommandResult
 import org.rstorrent.session.uniffi.AddTorrentBytesRequest
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.ClientSettings
@@ -55,6 +58,8 @@ import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.FileSelectionIntent
+import org.rstorrent.session.uniffi.FilePriority
+import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
@@ -63,6 +68,8 @@ import org.rstorrent.session.uniffi.RequestEnvelope
 import org.rstorrent.session.uniffi.RemovalState
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.ResponseOutcome
+import org.rstorrent.session.uniffi.SpeedMetric
+import org.rstorrent.session.uniffi.SpeedRange
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.ViewProjection
@@ -84,23 +91,14 @@ class ProductEngineService : Service() {
     private val requestIds = AtomicLong(1)
     private val stopped = AtomicBoolean(false)
     private val clientReady = CompletableDeferred<Unit>()
+    private val presentationReady = CompletableDeferred<Unit>()
     private val mutableState = MutableStateFlow(ProductState())
     val state: StateFlow<ProductState> = mutableState.asStateFlow()
 
     private lateinit var client: AndroidApplicationClient
-    private var listSubscription: AndroidViewSubscription? = null
-    private var listJob: Job? = null
-    private var pieceSubscription: AndroidViewSubscription? = null
-    private var pieceJob: Job? = null
-    private var diagnosticSubscription: AndroidViewSubscription? = null
-    private var diagnosticJob: Job? = null
+    private lateinit var presentationRepository: AndroidPresentationRepository
     private var trackerEvidenceSubscription: AndroidViewSubscription? = null
     private var trackerEvidenceJob: Job? = null
-    private var diagnosticTorrentOnly = false
-    private var diagnosticProfile = DiagnosticProfile.NORMAL
-    private var diagnosticSeverity = DiagnosticSeverity.INFO
-    private var diagnosticCategories: List<DiagnosticCategory> = emptyList()
-    private var selectedTorrent: String? = null
     @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val crashAfterSafRename = AtomicBoolean(false)
@@ -135,23 +133,24 @@ class ProductEngineService : Service() {
                             60UL,
                         ),
                     )
-                listSubscription =
-                    client.subscribe(
-                        SubscriptionSpec(
-                            ViewSelector.TorrentList,
-                            ViewProjection.SUMMARY,
-                            DeliveryPolicy(250U, 256U * 1024U),
-                            null,
-                            null,
-                        ),
+                presentationRepository =
+                    AndroidPresentationRepository(
+                        scope,
+                        mutableState,
+                        stopped,
+                        onUpdate = { update, product, driveSaf ->
+                            traceUpdate(update, product)
+                            if (driveSaf) advanceSaf(product)
+                        },
+                        onError = ::reportError,
                     )
-                listJob = consume(requireNotNull(listSubscription), driveSaf = true)
+                presentationRepository.start(client)
+                presentationReady.complete(Unit)
                 repeat(SAF_PROVIDER_CONCURRENCY) {
                     scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
                 }
                 val storageRootHealthy = client.probeSafStorageRoots()
                 Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
-                subscribeDiagnostics()
                 mutableState.update {
                     it.copy(
                         ready = true,
@@ -169,6 +168,9 @@ class ProductEngineService : Service() {
             } catch (error: Throwable) {
                 if (!clientReady.isCompleted) {
                     clientReady.completeExceptionally(error)
+                }
+                if (!presentationReady.isCompleted) {
+                    presentationReady.completeExceptionally(error)
                 }
                 Log.e(TAG, "product service initialization failed", error)
                 mutableState.update {
@@ -207,15 +209,19 @@ class ProductEngineService : Service() {
     fun addMagnet(
         magnet: String,
         skipFiles: List<UInt> = emptyList(),
+        startContent: Boolean = true,
     ) {
         if (safTreeUri == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
-        dispatch(Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles))
+        dispatch(Command.AddMagnet(magnet.trim(), "downloads", startContent, skipFiles))
     }
 
-    fun addTorrentFile(uri: Uri) {
+    fun addTorrentFile(
+        uri: Uri,
+        startContent: Boolean = true,
+    ) {
         if (safTreeUri == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
@@ -230,7 +236,7 @@ class ProductEngineService : Service() {
                         requestId = "android-$requestPrefix-${requestIds.getAndIncrement()}",
                         expectedRevision = null,
                         storageRoot = "downloads",
-                        startContent = true,
+                        startContent = startContent,
                         selection = FileSelectionIntent.All,
                         sourceLength = source.size.toUInt(),
                     )
@@ -792,6 +798,82 @@ class ProductEngineService : Service() {
         dispatch(Command.RemoveTorrent(torrentId, policy))
     }
 
+    fun setFileWanted(
+        torrentId: String,
+        fileIndex: UInt,
+        wanted: Boolean,
+    ) {
+        dispatch(
+            Command.SetFilePriority(
+                torrentId,
+                listOf(fileIndex),
+                if (wanted) FilePriority.NORMAL else FilePriority.SKIP,
+            ),
+        )
+    }
+
+    fun downloadFileNow(
+        torrentId: String,
+        fileIndex: UInt,
+    ) {
+        dispatch(Command.DownloadFiles(torrentId, listOf(fileIndex)))
+    }
+
+    fun openCompletedFile(
+        torrentName: String,
+        file: FileView,
+    ) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                require(file.verifiedBytes == file.lengthBytes) { "File is not complete" }
+                val tree = safTreeUri ?: error("Download folder is unavailable")
+                val path =
+                    if (file.path.firstOrNull() == torrentName) {
+                        file.path
+                    } else {
+                        listOf(torrentName) + file.path
+                    }
+                val document =
+                    ProductSafDocuments.publishedDocument(this@ProductEngineService, tree, path)
+                        ?: error("Published file is unavailable")
+                val mime = contentResolver.getType(document) ?: "application/octet-stream"
+                startActivity(
+                    Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(document, mime)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                )
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    fun updateClientSettings(transform: (ClientSettings) -> ClientSettings) {
+        val configured = mutableState.value.clientSettings?.configured
+        if (configured == null) {
+            mutableState.update { it.copy(error = "Settings are still loading") }
+            return
+        }
+        dispatch(Command.SetClientSettings(transform(configured)))
+    }
+
+    fun copyMagnet(torrentId: String) {
+        scope.launch {
+            try {
+                clientReady.await()
+                val response = dispatchForResponse(Command.ExportMagnet(torrentId))
+                val result = response.result as? CommandResult.ExportMagnet
+                    ?: error("Magnet export returned no value")
+                val clipboard = getSystemService(ClipboardManager::class.java)
+                clipboard.setPrimaryClip(ClipData.newPlainText("Magnet link", result.result.magnet))
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
     fun shutdownFromUi() {
         scope.launch {
             try {
@@ -805,37 +887,30 @@ class ProductEngineService : Service() {
     }
 
     fun selectTorrent(torrentId: String) {
-        if (selectedTorrent == torrentId) return
-        selectedTorrent = torrentId
-        mutableState.update { it.copy(selectedTorrent = torrentId) }
-        if (diagnosticTorrentOnly) subscribeDiagnostics()
-        pieceJob?.cancel()
-        pieceSubscription?.close()
-        pieceJob = null
-        pieceSubscription = null
-        scope.launch {
-            try {
-                clientReady.await()
-                val subscription =
-                    client.subscribe(
-                        SubscriptionSpec(
-                            ViewSelector.Torrent(torrentId),
-                            ViewProjection.PIECE_ACTIVITY,
-                            DeliveryPolicy(0U, 256U * 1024U),
-                            null,
-                            null,
-                        ),
-                    )
-                if (selectedTorrent != torrentId) {
-                    subscription.close()
-                    return@launch
-                }
-                pieceSubscription = subscription
-                pieceJob = consume(subscription, driveSaf = false)
-            } catch (error: Throwable) {
-                reportError(error)
-            }
-        }
+        withPresentation { it.selectTorrent(torrentId) }
+    }
+
+    fun presentTorrent(
+        torrentId: String,
+        presentation: TorrentPresentation,
+    ) {
+        withPresentation { it.presentTorrent(torrentId, presentation) }
+    }
+
+    fun clearTorrentPresentation(torrentId: String) {
+        withPresentation { it.clearTorrent(torrentId) }
+    }
+
+    fun presentCatalogPage(
+        torrentId: String,
+        presentation: TorrentPresentation,
+        offset: UInt,
+    ) {
+        withPresentation { it.presentCatalogPage(torrentId, presentation, offset) }
+    }
+
+    fun presentGlobal(presentation: GlobalPresentation) {
+        withPresentation { it.presentGlobal(presentation) }
     }
 
     fun configureDiagnostics(
@@ -844,45 +919,16 @@ class ProductEngineService : Service() {
         categories: List<DiagnosticCategory>,
         torrentOnly: Boolean,
     ) {
-        diagnosticProfile = profile
-        diagnosticSeverity = severity
-        diagnosticCategories = categories
-        diagnosticTorrentOnly = torrentOnly
-        subscribeDiagnostics()
+        withPresentation { it.configureDiagnostics(profile, severity, categories, torrentOnly) }
     }
 
-    private fun subscribeDiagnostics() {
-        diagnosticJob?.cancel()
-        diagnosticSubscription?.close()
-        diagnosticJob = null
-        diagnosticSubscription = null
+    private fun withPresentation(action: (AndroidPresentationRepository) -> Unit) {
         scope.launch {
             try {
-                clientReady.await()
-                val selector =
-                    if (diagnosticTorrentOnly && selectedTorrent != null) {
-                        ViewSelector.Torrent(requireNotNull(selectedTorrent))
-                    } else {
-                        ViewSelector.TorrentList
-                    }
-                val subscription =
-                    client.subscribe(
-                        SubscriptionSpec(
-                            selector,
-                            ViewProjection.DIAGNOSTICS,
-                            DeliveryPolicy(100U, 256U * 1024U),
-                            DiagnosticFilter(
-                                diagnosticProfile,
-                                diagnosticSeverity,
-                                diagnosticCategories,
-                            ),
-                            null,
-                        ),
-                    )
-                diagnosticSubscription = subscription
-                diagnosticJob = consume(subscription, driveSaf = false)
+                presentationReady.await()
+                action(presentationRepository)
             } catch (error: Throwable) {
-                if (!stopped.get()) reportError(error)
+                if (!stopped.get() && error !is CancellationException) reportError(error)
             }
         }
     }
@@ -899,6 +945,10 @@ class ProductEngineService : Service() {
     }
 
     private suspend fun dispatchAwait(command: Command) {
+        dispatchForResponse(command)
+    }
+
+    private suspend fun dispatchForResponse(command: Command): org.rstorrent.session.uniffi.ResponseEnvelope {
         val response =
             client.dispatch(
                 RequestEnvelope(
@@ -912,6 +962,7 @@ class ProductEngineService : Service() {
         if (outcome is ResponseOutcome.Error) {
             error(outcome.error.message)
         }
+        return response
     }
 
     private suspend fun awaitTrackerPolicy(policy: HttpsServerAuthenticationPolicy) {
@@ -1058,41 +1109,6 @@ class ProductEngineService : Service() {
                 }
             }
     }
-
-    private fun consume(
-        subscription: AndroidViewSubscription,
-        driveSaf: Boolean,
-    ): Job =
-        scope.launch {
-            try {
-                while (true) {
-                    val update = subscription.nextUpdate() ?: break
-                    try {
-                        var reduced: ProductState? = null
-                        mutableState.update { current ->
-                            ProductStateReducer.reduce(current, update).also {
-                                reduced = it
-                            }
-                        }
-                        val product = requireNotNull(reduced)
-                        traceUpdate(update, product)
-                        if (driveSaf) advanceSaf(product)
-                        if (selectedTorrent == null) {
-                            product.torrents.keys.firstOrNull()?.let(::selectTorrent)
-                        }
-                    } catch (_: ViewResetRequiredException) {
-                        mutableState.update {
-                            it.copy(diagnosticResets = it.diagnosticResets + 1UL)
-                        }
-                        subscription.resync()
-                    }
-                }
-            } catch (error: Throwable) {
-                if (!stopped.get()) reportError(error)
-            } finally {
-                subscription.close()
-            }
-        }
 
     private fun advanceSaf(product: ProductState) {
         val treeUri = safTreeUri ?: return
@@ -1256,9 +1272,9 @@ class ProductEngineService : Service() {
                 is ViewUpdatePayload.ResetRequired -> "reset"
             }
         val torrent =
-            selectedTorrent?.let(product.torrents::get)
+            product.selectedTorrent?.let(product.torrents::get)
                 ?: product.torrents.values.firstOrNull()
-        val active = selectedTorrent?.let(product.pieces::get)?.active?.firstOrNull()
+        val active = product.selectedTorrent?.let(product.pieces::get)?.active?.firstOrNull()
         Log.i(
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +
@@ -1341,13 +1357,8 @@ class ProductEngineService : Service() {
 
     private suspend fun shutdown() {
         if (!stopped.compareAndSet(false, true)) return
-        listJob?.cancel()
-        pieceJob?.cancel()
-        diagnosticJob?.cancel()
+        if (::presentationRepository.isInitialized) presentationRepository.close()
         trackerEvidenceJob?.cancel()
-        listSubscription?.close()
-        pieceSubscription?.close()
-        diagnosticSubscription?.close()
         trackerEvidenceSubscription?.close()
         if (::client.isInitialized) {
             try {

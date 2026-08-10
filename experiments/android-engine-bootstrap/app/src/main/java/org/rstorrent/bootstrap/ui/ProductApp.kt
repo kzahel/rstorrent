@@ -3,6 +3,9 @@
 package org.rstorrent.bootstrap.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,7 +80,12 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.rstorrent.bootstrap.ProductEngineService
 import org.rstorrent.bootstrap.ProductState
+import org.rstorrent.bootstrap.GlobalPresentation
+import org.rstorrent.bootstrap.TorrentPresentation
 import org.rstorrent.session.uniffi.DiagnosticEvent
+import org.rstorrent.session.uniffi.DiagnosticCategory
+import org.rstorrent.session.uniffi.DiagnosticProfile
+import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentView
@@ -86,7 +94,7 @@ import org.rstorrent.session.uniffi.TorrentView
 fun ProductApp(
     service: ProductEngineService?,
     onSelectStorage: () -> Unit,
-    onBrowseTorrent: () -> Unit,
+    onBrowseTorrent: (Boolean) -> Unit,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
@@ -126,7 +134,7 @@ private fun ProductNavHost(
     state: ProductState,
     service: ProductEngineService?,
     onSelectStorage: () -> Unit,
-    onBrowseTorrent: () -> Unit,
+    onBrowseTorrent: (Boolean) -> Unit,
     notificationsGranted: Boolean,
     onRequestNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
@@ -145,10 +153,18 @@ private fun ProductNavHost(
                 onRequestNotifications = onRequestNotifications,
                 onSelectStorage = onSelectStorage,
                 onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
-                onAddMagnet = { service?.addMagnet(it) },
+                onAddMagnet = { magnet, start ->
+                    service?.addMagnet(magnet, startContent = start)
+                },
                 onBrowseTorrent = onBrowseTorrent,
                 onPause = { service?.pause(it) },
                 onResume = { service?.resume(it) },
+                onMoveTop = { service?.moveDownloadToTop(it) },
+                onMoveBottom = { service?.moveDownloadToBottom(it) },
+                onArchive = { id ->
+                    if (state.torrents[id]?.archived == true) service?.restoreArchive(id)
+                    else service?.archive(id)
+                },
                 onRemove = { removeTargets = it },
                 onSpeed = { navController.navigate(ProductRoutes.SPEED) },
                 onDht = { navController.navigate(ProductRoutes.DHT) },
@@ -162,7 +178,7 @@ private fun ProductNavHost(
             val torrent = state.torrents[torrentId]
             DisposableEffect(torrentId) {
                 service?.selectTorrent(torrentId)
-                onDispose { }
+                onDispose { service?.clearTorrentPresentation(torrentId) }
             }
             TorrentDetailScreen(
                 torrent = torrent,
@@ -176,30 +192,51 @@ private fun ProductNavHost(
                 onArchive = { service?.archive(torrentId) },
                 onRestore = { service?.restoreArchive(torrentId) },
                 onRemove = { removeTargets = setOf(torrentId) },
+                onCopyMagnet = { service?.copyMagnet(torrentId) },
                 onSpeed = { navController.navigate(ProductRoutes.SPEED) },
                 onDht = { navController.navigate(ProductRoutes.DHT) },
                 onLogs = { navController.navigate(ProductRoutes.LOGS) },
                 onSettings = { navController.navigate(ProductRoutes.SETTINGS) },
+                onPresent = { service?.presentTorrent(torrentId, it) },
+                onSetFileWanted = { file, wanted ->
+                    service?.setFileWanted(torrentId, file.fileIndex, wanted)
+                },
+                onDownloadFile = { service?.downloadFileNow(torrentId, it.fileIndex) },
+                onOpenFile = { file ->
+                    torrent?.displayName?.let { service?.openCompletedFile(it, file) }
+                },
+                onFilePage = {
+                    service?.presentCatalogPage(torrentId, TorrentPresentation.FILES, it)
+                },
+                onTrackerPage = {
+                    service?.presentCatalogPage(torrentId, TorrentPresentation.TRACKERS, it)
+                },
             )
         }
         composable(ProductRoutes.SPEED) {
-            SimpleRouteScreen(
-                title = "Speed",
-                onBack = navController::popBackStack,
-                description =
-                    "Rust-native download, upload, and storage history. " +
-                        "QuickJS thread-health metrics are intentionally not part of this screen.",
-            )
+            DisposableEffect(service) {
+                service?.presentGlobal(GlobalPresentation.SPEED)
+                onDispose { service?.presentGlobal(GlobalPresentation.NONE) }
+            }
+            SpeedScreen(state.speed, navController::popBackStack)
         }
         composable(ProductRoutes.DHT) {
-            SimpleRouteScreen(
-                title = "DHT Info",
-                onBack = navController::popBackStack,
-                description = "IPv4 and IPv6 DHT state will be presented independently.",
-            )
+            DisposableEffect(service) {
+                service?.presentGlobal(GlobalPresentation.DHT)
+                onDispose { service?.presentGlobal(GlobalPresentation.NONE) }
+            }
+            DhtScreen(state.dht, navController::popBackStack)
         }
         composable(ProductRoutes.LOGS) {
-            LogsShell(state.diagnostics, navController::popBackStack)
+            LogsShell(
+                events = state.diagnostics,
+                sourceEvicted = state.diagnosticSourceEvicted,
+                localEvicted = state.diagnosticLocalEvicted,
+                resets = state.diagnosticResets,
+                selectedTorrent = state.selectedTorrent,
+                service = service,
+                onBack = navController::popBackStack,
+            )
         }
         composable(ProductRoutes.SETTINGS) {
             SettingsHub(navController)
@@ -212,6 +249,13 @@ private fun ProductNavHost(
                     onClick = onSelectStorage,
                     action = if (state.storageRootReady) "Change" else "Select",
                 )
+                state.storage?.roots.orEmpty().forEach { root ->
+                    ReadOnlySettingsRow(
+                        root.label + if (root.rootId == state.storage?.defaultRoot) " (default)" else "",
+                        root.availability.name.lowercase() +
+                            (root.displayPath?.let { " · $it" } ?: " · Android document provider"),
+                    )
+                }
             }
         }
         composable(ProductRoutes.SETTINGS_SPEED) {
@@ -220,11 +264,18 @@ private fun ProductNavHost(
                 if (settings == null) {
                     Text("Settings are loading…", modifier = Modifier.padding(16.dp))
                 } else {
-                    ReadOnlySetting("Peer connections", settings.effectivePeerConnectionLimit.toString())
-                    ReadOnlySetting("Upload slots", settings.effectiveUploadSlots.toString())
-                    ReadOnlySetting("Active downloads", settings.effectiveActiveDownloads.toString())
-                    UnavailableSetting("Download rate limit")
-                    UnavailableSetting("Upload rate limit")
+                    ConnectionLimitsSettings(
+                        settings,
+                        onPeerConnections = { value ->
+                            service?.updateClientSettings { it.copy(peerConnectionLimit = value) }
+                        },
+                        onUploadSlots = { value ->
+                            service?.updateClientSettings { it.copy(uploadSlots = value) }
+                        },
+                        onActiveDownloads = { value ->
+                            service?.updateClientSettings { it.copy(activeDownloads = value) }
+                        },
+                    )
                 }
             }
         }
@@ -242,14 +293,40 @@ private fun ProductNavHost(
         composable(ProductRoutes.SETTINGS_NETWORK) {
             SettingsPage("Network & Privacy", navController::popBackStack) {
                 state.clientSettings?.let { settings ->
-                    ReadOnlySetting("Listener", settings.listenerStatus.toString())
-                    ReadOnlySetting("Port mapping", settings.portMappingStatus.toString())
-                    ReadOnlySetting("Encryption policy", settings.effectiveEncryption.name)
-                    ReadOnlySetting("IPv6", if (settings.effectiveIpv6Enabled) "Enabled" else "Disabled")
+                    NetworkSettings(
+                        settings,
+                        onListener = { enabled ->
+                            service?.updateClientSettings {
+                                it.copy(
+                                    listener =
+                                        if (enabled) {
+                                            org.rstorrent.session.uniffi.ListenerPolicy.AutomaticLocalNetwork
+                                        } else {
+                                            org.rstorrent.session.uniffi.ListenerPolicy.Disabled
+                                        },
+                                )
+                            }
+                        },
+                        onPortMapping = { enabled ->
+                            service?.updateClientSettings {
+                                it.copy(
+                                    portMapping =
+                                        if (enabled) {
+                                            org.rstorrent.session.uniffi.PortMappingPolicy.UPNP
+                                        } else {
+                                            org.rstorrent.session.uniffi.PortMappingPolicy.DISABLED
+                                        },
+                                )
+                            }
+                        },
+                        onIpv6 = { enabled ->
+                            service?.updateClientSettings { it.copy(ipv6Enabled = enabled) }
+                        },
+                        onEncryption = { policy ->
+                            service?.updateClientSettings { it.copy(encryption = policy) }
+                        },
+                    )
                 } ?: Text("Settings are loading…", modifier = Modifier.padding(16.dp))
-                UnavailableSetting("VPN-only mode")
-                UnavailableSetting("Metered network policy")
-                UnavailableSetting("Proxy")
             }
         }
         composable(ProductRoutes.SETTINGS_POWER) {
@@ -316,14 +393,34 @@ private fun TorrentDetailScreen(
     onArchive: () -> Unit,
     onRestore: () -> Unit,
     onRemove: () -> Unit,
+    onCopyMagnet: () -> Unit,
     onSpeed: () -> Unit,
     onDht: () -> Unit,
     onLogs: () -> Unit,
     onSettings: () -> Unit,
+    onPresent: (TorrentPresentation) -> Unit,
+    onSetFileWanted: (org.rstorrent.session.uniffi.FileView, Boolean) -> Unit,
+    onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onFilePage: (UInt) -> Unit,
+    onTrackerPage: (UInt) -> Unit,
 ) {
     var overflow by remember { mutableStateOf(false) }
     val pager = rememberPagerState(pageCount = { TorrentDetailTab.entries.size })
     val scope = rememberCoroutineScope()
+    LaunchedEffect(pager.currentPage) {
+        val presentation =
+            when (TorrentDetailTab.entries[pager.currentPage]) {
+                TorrentDetailTab.DETAILS,
+                TorrentDetailTab.STATUS,
+                -> TorrentPresentation.SUMMARY
+                TorrentDetailTab.FILES -> TorrentPresentation.FILES
+                TorrentDetailTab.TRACKERS -> TorrentPresentation.TRACKERS
+                TorrentDetailTab.PEERS -> TorrentPresentation.PEERS
+                TorrentDetailTab.PIECES -> TorrentPresentation.PIECES
+            }
+        onPresent(presentation)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -364,6 +461,7 @@ private fun TorrentDetailScreen(
                                 onClick = { overflow = false; if (torrent?.archived == true) onRestore() else onArchive() },
                             )
                             DropdownMenuItem(text = { Text("Remove torrent") }, onClick = { overflow = false; onRemove() })
+                            DropdownMenuItem(text = { Text("Copy magnet link") }, onClick = { overflow = false; onCopyMagnet() })
                             Divider()
                             DropdownMenuItem(text = { Text("Speed") }, onClick = { overflow = false; onSpeed() })
                             DropdownMenuItem(text = { Text("DHT Info") }, onClick = { overflow = false; onDht() })
@@ -386,7 +484,16 @@ private fun TorrentDetailScreen(
                 }
             }
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
-                DetailTabContent(TorrentDetailTab.entries[page], torrent, state)
+                DetailTabContent(
+                    TorrentDetailTab.entries[page],
+                    torrent,
+                    state,
+                    onSetFileWanted,
+                    onDownloadFile,
+                    onOpenFile,
+                    onFilePage,
+                    onTrackerPage,
+                )
             }
         }
     }
@@ -397,6 +504,11 @@ private fun DetailTabContent(
     tab: TorrentDetailTab,
     torrent: TorrentView?,
     state: ProductState,
+    onSetFileWanted: (org.rstorrent.session.uniffi.FileView, Boolean) -> Unit,
+    onDownloadFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
+    onFilePage: (UInt) -> Unit,
+    onTrackerPage: (UInt) -> Unit,
 ) {
     if (torrent == null) {
         CenterMessage("Torrent is no longer available")
@@ -430,12 +542,25 @@ private fun DetailTabContent(
                     Text("${pieces.verified.sumOf { (it.endExclusive - it.start).toInt() }} of ${pieces.pieceCount} verified")
                     Spacer(Modifier.height(12.dp))
                     PieceMap(pieces.pieceCount, pieces.verified, pieces.active)
+                    DiskSummary(state.disk, torrent.torrentId)
                 }
             }
         }
-        TorrentDetailTab.FILES -> CenterMessage("File catalog is loading…")
-        TorrentDetailTab.TRACKERS -> CenterMessage("Tracker catalog is loading…")
-        TorrentDetailTab.PEERS -> CenterMessage("Peer details are loading…")
+        TorrentDetailTab.FILES ->
+            FilesScreen(
+                state.files[torrent.torrentId],
+                onSetFileWanted,
+                onDownloadFile,
+                onOpenFile,
+                onFilePage,
+            )
+        TorrentDetailTab.TRACKERS ->
+            TrackersScreen(state.trackers[torrent.torrentId], onTrackerPage)
+        TorrentDetailTab.PEERS ->
+            PeersScreen(
+                state.peers[torrent.torrentId]?.values,
+                state.swarms[torrent.torrentId],
+            )
     }
 }
 
@@ -449,20 +574,113 @@ private fun DetailList(vararg rows: Pair<String, String>) {
 @Composable
 private fun LogsShell(
     events: List<DiagnosticEvent>,
+    sourceEvicted: String,
+    localEvicted: ULong,
+    resets: ULong,
+    selectedTorrent: String?,
+    service: ProductEngineService?,
     onBack: () -> Unit,
 ) {
+    var profileName by rememberSaveable { mutableStateOf(DiagnosticProfile.NORMAL.name) }
+    var severityName by rememberSaveable { mutableStateOf(DiagnosticSeverity.INFO.name) }
+    var category by rememberSaveable { mutableStateOf("") }
+    var torrentOnly by rememberSaveable { mutableStateOf(false) }
+    var profileMenu by remember { mutableStateOf(false) }
+    var severityMenu by remember { mutableStateOf(false) }
+    var categoryMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(profileName, severityName, category, torrentOnly, selectedTorrent, service) {
+        service?.configureDiagnostics(
+            DiagnosticProfile.valueOf(profileName),
+            DiagnosticSeverity.valueOf(severityName),
+            category.takeIf(String::isNotEmpty)?.let { listOf(DiagnosticCategory(it)) }.orEmpty(),
+            torrentOnly && selectedTorrent != null,
+        )
+    }
     SettingsPage("Logs", onBack) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Box {
+                TextButton(onClick = { profileMenu = true }) {
+                    Text("Profile: ${profileName.lowercase()}")
+                }
+                DropdownMenu(profileMenu, onDismissRequest = { profileMenu = false }) {
+                    DiagnosticProfile.entries.forEach { profile ->
+                        DropdownMenuItem(
+                            text = { Text(profile.name.lowercase()) },
+                            onClick = { profileName = profile.name; profileMenu = false },
+                        )
+                    }
+                }
+            }
+            Box {
+                TextButton(onClick = { severityMenu = true }) {
+                    Text("Minimum: ${severityName.lowercase()}")
+                }
+                DropdownMenu(severityMenu, onDismissRequest = { severityMenu = false }) {
+                    DiagnosticSeverity.entries.forEach { severity ->
+                        DropdownMenuItem(
+                            text = { Text(severity.name.lowercase()) },
+                            onClick = { severityName = severity.name; severityMenu = false },
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) {
+                TextButton(onClick = { categoryMenu = true }) {
+                    Text("Category: ${category.ifEmpty { "all" }}")
+                }
+                DropdownMenu(categoryMenu, onDismissRequest = { categoryMenu = false }) {
+                    LOG_CATEGORIES.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.ifEmpty { "all" }) },
+                            onClick = { category = option; categoryMenu = false },
+                        )
+                    }
+                }
+            }
+            Text("Current torrent")
+            Switch(
+                checked = torrentOnly && selectedTorrent != null,
+                onCheckedChange = { torrentOnly = it },
+                enabled = selectedTorrent != null,
+            )
+        }
+        Divider()
+        ListItem(
+            headlineContent = { Text("Delivery health") },
+            supportingContent = {
+                Text(
+                    "source evicted $sourceEvicted · local evicted $localEvicted · " +
+                        "subscription resets $resets",
+                )
+            },
+        )
+        Divider()
         if (events.isEmpty()) {
-            CenterMessage("No diagnostic records match the current filter")
+            Text(
+                "No diagnostic records match the current filter",
+                modifier = Modifier.padding(24.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         } else {
             events.takeLast(200).forEach { event ->
                 ListItem(
                     headlineContent = { Text(event.code, fontFamily = FontFamily.Monospace) },
                     supportingContent = {
-                        Text(
-                            "${event.severity.name.lowercase()} · ${event.category.value}",
-                            fontFamily = FontFamily.Monospace,
-                        )
+                        Column {
+                            Text(
+                                "${event.severity.name.lowercase()} · ${event.category.value}",
+                                fontFamily = FontFamily.Monospace,
+                            )
+                            Text(event.message)
+                        }
                     },
                 )
                 Divider()
@@ -507,10 +725,10 @@ private fun SettingsDestination(
         supportingContent = { Text(detail) },
         leadingContent = { Icon(icon, contentDescription = null) },
         trailingContent = { Text("›") },
-        modifier = Modifier.semantics(mergeDescendants = true) { role = Role.Button }.then(Modifier),
+        modifier =
+            Modifier.clickable(onClick = onClick)
+                .semantics(mergeDescendants = true) { role = Role.Button },
     )
-    // ListItem has no click parameter; the transparent action preserves a full-row target.
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text("Open $title") }
     Divider()
 }
 
@@ -550,9 +768,28 @@ private fun SettingsPage(
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding), content = content)
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            content = content,
+        )
     }
 }
+
+private val LOG_CATEGORIES =
+    listOf(
+        "",
+        "lifecycle",
+        "discovery",
+        "tracker",
+        "peer",
+        "metadata",
+        "scheduler",
+        "piece",
+        "storage",
+        "integrity",
+        "platform",
+        "performance",
+    )
 
 @Composable
 private fun ReadOnlySetting(
