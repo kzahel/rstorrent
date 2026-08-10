@@ -556,11 +556,22 @@ def run(host: str) -> dict[str, Any]:
             }
         except Exception as error:
             run_error = error
+            if remote is not None and remote.process.poll() is None:
+                try:
+                    remote.command("abort")
+                    remote_abort = remote.read_event(deadline)
+                    remote.wait_success(deadline)
+                except Exception as abort_error:
+                    run_error = WanFailure(
+                        f"{error}; remote abort failed: {abort_error}"
+                    )
         finally:
             if role is not None:
                 role.cleanup()
             if remote is not None:
-                remote_abort = remote.cleanup()
+                cleanup_terminal = remote.cleanup()
+                if cleanup_terminal is not None:
+                    remote_abort = cleanup_terminal
             if remote_run is not None:
                 try:
                     verify_remote_cleanup(
