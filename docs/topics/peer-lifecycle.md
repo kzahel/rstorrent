@@ -249,8 +249,12 @@ subowners with distinct invariants. Tactical
 cross-owner membership and current-connection observation into one task-free
 torrent peer state retained by a session per-torrent lifetime owner. Both
 outgoing work and routed incoming connections use that state without folding
-socket tasks into deterministic registry or scheduler logic. uTP execution
-remains separate work but fits the same identity and lifecycle vocabulary.
+socket tasks into deterministic registry or scheduler logic. Completed
+Tactical
+[`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) now
+proves that controlled incoming uTP enters that same identity, duplicate-
+resolution, upload, and terminal-generation vocabulary. Ordinary product
+dialing/listening remains TCP and no second peer model was introduced.
 
 Outgoing observation begins before TCP work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
@@ -469,10 +473,14 @@ requires; both now pass controlled interoperability and resource closure.
 LSD, NAT traversal, persistent peer caches, and dynamic VPN or metered policy
 remain separate future tacticals. The
 [`utp-transport-campaign`](utp-transport-campaign.md) topic now owns uTP's
-adaptive source, transport-owner, and evidence direction. Completed Tactical
-[`119`](../tactical/119-deterministic-utp-transport-core.md) supplies only a
-runtime-free bounded transport state machine; it has not entered this peer
-connection-generation owner or changed TCP-only execution. Completed Tactical
+adaptive source, transport-owner, and evidence direction. Completed Tacticals
+[`119`](../tactical/119-deterministic-utp-transport-core.md) and
+[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) supply
+the runtime-free bounded transport state. Completed Tactical `125` adds the
+controlled shared-UDP runtime and enters incoming uTP into this peer-
+connection-generation owner; one pinned-libtorrent seed run observes exactly
+one uTP generation and terminal removal. It does not change ordinary TCP-only
+product execution. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after

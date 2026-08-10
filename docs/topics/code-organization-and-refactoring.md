@@ -621,10 +621,14 @@ read, observation, root-health, and namespace seams to remove only the
 unconditional ordinary resume check. Cancellation work exposed one concrete
 Android lifecycle defect: broker receivers and provider workers now wake and
 join before the client closes. That repair adds no new layer or reusable
-service. The authoritative queue separately retains the uTP Stage 2 human-
-review checkpoint as **Now**. Do not reopen artifact geometry, create a global
-recovery coordinator, or turn concrete path/SAF adapters into a general
-filesystem framework.
+service. The authoritative queue then retained the uTP Stage 2 human-review
+checkpoint as **Now**. Completed Tactical `125` subsequently resolved
+the concrete second-transport seam with one private `PeerStream` enum, one
+supervised uTP runtime module, and one diagnostic composition module. It did
+not add a transport framework or crate. The authoritative queue now holds the
+post-Stage 3 human-review checkpoint as **Now**. Do not reopen artifact
+geometry, create a global recovery coordinator, or turn concrete path/SAF
+adapters into a general filesystem framework.
 
 If the feature queue is instead explicitly paused for one unrelated standalone
 structural tactical, application callback adapters plus categorized tests
@@ -656,6 +660,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-10:** Completed Tactical `125`. The shared session UDP owner now
+  isolates DHT/uTP queues, the runtime gives every uTP connection one bounded
+  worker/cancellation/join path, and the private two-variant `PeerStream`
+  boundary reuses peer framing without a generic trait hierarchy or new
+  crate. Both controlled pinned-libtorrent roles pass; no broader refactor is
+  selected.
 - **2026-08-10:** Completed Tactical `120`. One task-free
   `resume_validation` module now owns closed intent/evidence/outcome policy;
   concrete path/SAF storage owns bounded observations, and the existing

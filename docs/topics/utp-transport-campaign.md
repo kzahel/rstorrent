@@ -7,11 +7,12 @@ Status: Stage 0 Tactical
 Tactical [`119`](../tactical/119-deterministic-utp-transport-core.md) are
 complete. Human review selected recommendation A for deterministic Stage 2
 Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md),
-then selected Stage 3 recommendation A at its stopping condition. Active
+then selected Stage 3 recommendation A at its stopping condition. Completed
 Tactical [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
-owns bounded shared-UDP/runtime and two-role loopback interoperability. uTP
-remains **Unsupported** and no product transport policy or dependency is
-accepted.
+now owns bounded shared-UDP/runtime and two-role loopback interoperability.
+The campaign is at its required post-Stage 3 human-review checkpoint. uTP
+remains **Unsupported** and no WAN action, product transport policy, or
+dependency is accepted.
 
 ## Scope And Ownership
 
@@ -35,15 +36,16 @@ the single authoritative **Now**.
 
 ## Current Truth
 
-- RSTorrent peer traffic is TCP only. The transport-neutral peer lifecycle in
-  [`peer-lifecycle.md`](peer-lifecycle.md) already has incoming/outgoing
-  direction and TCP/uTP vocabulary, so uTP should become another connection
-  generation rather than a second peer model.
-- The session has one bounded UDP receive owner, but
-  `crates/rstorrent-engine/src/session_udp.rs` currently sizes ingress for the
-  DHT's 1,024-byte maximum and routes every accepted datagram toward DHT. uTP
-  needs explicit classification, appropriately bounded packet storage, its own
-  queue pressure, and observable drop behavior.
+- Ordinary product peer dialing, listening, selection, and advertisement
+  remain TCP only. Tactical `125` adds a controlled engine-only uTP injection
+  in both directions and records it as another connection generation in the
+  existing transport-neutral peer lifecycle rather than creating a second
+  peer model.
+- The session's one bounded UDP receive owner per family now classifies shallow
+  uTP shape before DHT and feeds independent 256-entry uTP and 64-entry DHT
+  routes. Each connection has a separate 64-datagram queue; generation-tagged
+  receive and send fence socket replacement/removal. DHT retains its 1,025-
+  byte malformed sentinel and independent pressure/termination behavior.
 - Completed Tactical
   [`112`](../tactical/112-dual-stack-transport-and-ipv6-dht.md) changed the
   session to one coordinated TCP/UDP socket pair per enabled address family.
@@ -61,10 +63,11 @@ the single authoritative **Now**.
   stream boundary; Stage 5 must compose and verify that path explicitly.
 - The retained
   [`utp_reference_oracle.py`](../../tests/interop/utp_reference_oracle.py)
-  proves only that two pinned libtorrent sessions can complete one bounded,
-  forced-uTP loopback transfer under the future acceptance controls. No
-  RSTorrent runtime stream, interoperability result, WAN result, product
-  policy, or public-swarm support evidence exists.
+  proves the forced-uTP libtorrent baseline. The independent
+  [`utp_rstorrent_interop.py`](../../tests/interop/utp_rstorrent_interop.py)
+  now proves the same exact payload with RSTorrent as leecher and seed against
+  pinned libtorrent. This is loopback engine evidence only: no WAN result,
+  product policy, public listener, or public-swarm support evidence exists.
 - Completed Tactical `119` now supplies the independently authored,
   dependency-free v1 codec and deterministic bounded connection/reliability
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
@@ -80,6 +83,14 @@ the single authoritative **Now**.
   bytes, receive ownership reached the exact 1-MiB bound, and link events
   reached 81 datagrams/80,239 bytes. This still owns no socket or task and has
   exchanged no RSTorrent datagram with another implementation.
+- Completed Tactical `125` composes that state with the shared session UDP
+  socket, one supervised service and worker per live connection, bounded
+  ordered streams, and one concrete TCP/uTP peer-stream enum. Ten runtime and
+  twelve shared-UDP cases pass. Pinned libtorrent transfers the exact
+  2,097,883-byte fixture in both roles with one loopback uTP peer, zero TCP
+  peers, exact SHA-1, no packet drops or worker panics, and terminal zero
+  ownership. Product selection, WAN behavior, IPv6 uTP, MSE-over-uTP, active
+  real-socket MTU discovery, and a support claim remain absent.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -216,8 +227,9 @@ Stage 0 recommends the following shape and revises it only from later evidence:
 Socket replacement must define what happens to live uTP connections. No
 connection may silently continue on a new local endpoint or UDP generation,
 and no old connection or timer may mutate a replacement generation. Completed
-Tactical `112` supplies the coordinated per-family socket owner; a later uTP
-runtime tactical must integrate with and test that landed generation boundary.
+Tactical `112` supplies the coordinated per-family socket owner; completed
+Tactical `125` integrates with and tests replacement and removal at that
+generation boundary.
 
 ## Candidate Child Slices
 
@@ -322,6 +334,60 @@ The next human choice is:
 No choice authorizes `pimom`, another external network, a public swarm,
 physical-device work, UDP reachability changes, or a support claim.
 
+Human review selected choice A on 2026-08-10. Tactical
+[`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) fixed
+the shared-UDP, runtime, peer-stream, controlled-peer, resource, and stopping
+contracts before implementation.
+
+## Stage 3 Result And Review Choices
+
+Tactical `125` reached its bounded stop on 2026-08-10 in commits `2d33516`,
+`5dd6d3c`, `c9ab011`, `7de2974`, `fed430c`, `2384d7c`, and `dc5ab32`. One
+session UDP receiver now isolates DHT and uTP into independent bounded queues;
+one supervisor owns generation-fenced endpoint/ID lookup, SYN admission,
+timers, workers, cancellation, ordered streams, and joined cleanup; and the
+concrete peer byte-stream boundary carries TCP or uTP without pushing UDP into
+peer-wire state. Incoming controlled uTP reuses the existing pending-
+handshake, peer-budget, identity, upload, content-read, observation, and
+cleanup owners. Ordinary product dialing and listening remain TCP.
+
+The fixed loopback oracle transferred the same 2,097,883-byte, 65,536-byte-
+piece fixture in both roles against libtorrent `2.0.13.0`, with SHA-1
+`cdce24126a8e65854d876c0b83ad3ba19748f6dc`. RSTorrent leecher completed 129
+requests in 0.557320 seconds; RSTorrent seed completed in 0.805350 seconds.
+Each side observed exactly one loopback uTP peer and zero TCP peers. All
+RSTorrent malformed, stale, unknown, drop, and panic counters and all
+libtorrent loss, timeout, and resend counters were zero. Queue and byte high-
+waters remained below their declared bounds, and both cases ended with zero
+session-UDP tasks, uTP connections/half-opens, peer owners, registrations, and
+queued datagrams. Both service snapshots retained bounded RTT/RTO, raw base-
+delay, queue-delay, congestion-window, advertised receive-window, and selected-
+MTU ranges; the selected MTU remained 548 bytes. The tactical records the
+exact per-role packet, transport, and resource values. Focused, full workspace,
+and controlled interoperability gates pass.
+
+No structural interoperability defect appeared, so a local repair slice is
+not indicated. The next human choice is:
+
+1. **A — Stage 4 controlled outbound WAN evidence (recommended):** draft one
+   bounded tactical for RSTorrent to dial a forced-uTP libtorrent seed on the
+   already identified authorized remote host over its ordinary routed path.
+   Retain the exact payload/hash and terminal-owner gates, add bounded path
+   RTT/loss/MTU/controller observations, and defer reverse incoming traffic
+   until truthful UDP reachability exists.
+2. **B — pause before external evidence:** keep the completed diagnostic
+   runtime and return the authoritative **Now** to another readiness item.
+   Product uTP remains disabled and the campaign resumes later at Stage 4.
+3. **C — plan product policy before WAN evidence:** define TCP/uTP selection,
+   fallback, advertisement, and presentation as a design-only tactical without
+   enabling them. This can clarify eventual controls, but it moves policy
+   ahead of realistic path evidence and is not recommended.
+
+Choice A requires explicit authorization for the remote host and its external
+network. None of these choices authorizes reverse-direction incoming UDP,
+mapping/pinhole work, a public swarm, physical devices, MSE-over-uTP, IPv6 uTP,
+product enablement, a dependency, or a support-claim change.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -414,11 +480,12 @@ accepted tactical.
 ## Restart Checkpoint
 
 Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
-`119`, and deterministic Stage 2 Tactical `121` complete; human review
-accepted Stage 3 recommendation A; Tactical `125` is active**.
+`119`, deterministic Stage 2 Tactical `121`, and shared-UDP/runtime Stage 3
+Tactical `125` complete; the required post-Stage 3 human-review checkpoint is
+active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next executable
-action is Tactical `125`'s staged session-UDP classification and supervised
-runtime work. Stop again after its forced-uTP pinned-libtorrent transfers in
-both roles; no WAN, product policy, dependency, or support claim is implied.
+[`capability-readiness.md`](capability-readiness.md). There is no next
+executable uTP action until human review selects Stage 4 controlled outbound
+WAN evidence, a pause, or a design-only product-policy step. No remote host,
+WAN, product enablement, dependency, or support-claim authority is implied.

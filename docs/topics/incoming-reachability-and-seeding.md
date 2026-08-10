@@ -380,8 +380,13 @@ Completed Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) replaces the
 independent DHT bind with a libtorrent-informed session socket set: a persisted
 preferred port, coordinated TCP/UDP allocation, one bounded UDP receive owner,
-and DHT transport consumption. uTP remains absent, and UDP mapping still waits
-for an actual advertisable UDP capability.
+and DHT transport consumption. Completed Tactical
+[`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) now
+adds a separate bounded uTP route to that receive owner and proves one
+explicitly injected incoming IPv4 loopback stream through the existing peer-
+budget, registration, identity, upload, content-read, and cleanup path. The
+ordinary product listener remains TCP-only, uTP is not advertised, and UDP
+mapping still waits for an advertisable product capability.
 
 ### Configuration, actual state, and evidence remain distinct
 
@@ -747,8 +752,8 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
   permission affect listening and mapping;
-- the eventual relationship among the DHT UDP port,
-  [future uTP](utp-transport-campaign.md), and UDP mapping; and
+- the eventual product-policy relationship among the DHT UDP port, the
+  [controlled uTP runtime](utp-transport-campaign.md), and UDP mapping; and
 - when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
   tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
   complete in Tactical

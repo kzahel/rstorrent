@@ -1,9 +1,9 @@
 # Tactical 125: Shared-UDP uTP Runtime And Loopback Interoperability
 
-Status: Active on 2026-08-10. Human review accepted recommendation A at
-Tactical `121`'s Stage 2 checkpoint. This tactical fixes the shared-UDP,
-runtime, ordered-stream, controlled-peer, resource, and stopping contracts
-before implementation.
+Status: Complete on 2026-08-10 at the required Stage 3 human-review
+checkpoint. Human review accepted recommendation A at Tactical `121`'s Stage
+2 checkpoint. Commits `2d33516`, `5dd6d3c`, `c9ab011`, `7de2974`, `fed430c`,
+`2384d7c`, and `dc5ab32` implement and validate the bounded slice.
 
 Topics: `utp-transport-campaign`, `peer-lifecycle`,
 `incoming-reachability-and-seeding`, `dht-discovery`, `protocol-support`,
@@ -335,6 +335,98 @@ cargo test --workspace
 The controlled Python gate may build diagnostic binaries but may not launch a
 visible product client. It records exact commands and removes all generated
 payload, profile, capture, and temporary runtime state.
+
+## Result And Evidence
+
+The accepted owner shape held without a dependency, unsafe code, manifest
+change, foreign source, or architectural repair. `SessionUdpService` remains
+the only socket receiver and now routes DHT and shallow uTP-shaped datagrams
+through independent finite queues. `UtpService` owns endpoint/family/socket-
+generation/receive-ID lookup, SYN-only admission, one worker per connection,
+timers, entropy, stream publication, cancellation, joined shutdown, and the
+declared high-water counters. Socket replacement and removal fence and cancel
+the old generation while the shared DHT transport remains independently
+owned.
+
+`UtpStream` supplies ordered async read/write plus the readiness/try operations
+needed by framed peer I/O. Application consumption, rather than delivery into
+the runtime queue, restores receive credit. The concrete `PeerStream` enum
+boxes only its larger uTP arm and delegates the common byte-stream operations;
+protocol framing and MSE-over-TCP behavior remain in their existing owners.
+The controlled outgoing diagnostic uses the common plaintext handshake and
+framed peer I/O, limits retained payload to 2 MiB + 731 bytes, and verifies
+every piece before publication. Incoming uTP enters the existing pending-
+handshake and shared peer-budget gates, torrent registration, peer-ID
+admission, upload scheduler, published-content reader, observations, and
+joined peer cleanup. MSE-required uTP is rejected without TCP fallback.
+
+Ten real-runtime cases now cover ordered duplex graceful close, bounded
+readiness/write admission, remote-scoped connection-ID reuse and duplicate
+SYN, malformed/unknown packets, RESET, consumer drop, service cancellation,
+socket replacement, socket removal, incoming half-open/stream saturation,
+retry-terminal classification, worker-panic route cleanup, and terminal zero
+ownership. Shared-UDP cases independently cover DHT/uTP classification and
+queue isolation, malformed sentinels, generation-checked send, replacement,
+dual-family joining, saturation, and saturating counters. The 83 protocol uTP
+tests retain the deterministic retry, loss, receive-pressure, FIN, and exact
+resource proofs beneath those socket cases.
+
+The retained `utp_rstorrent_interop.py` gate passed both roles against the
+locked libtorrent `2.0.13.0` package on IPv4 loopback. Both used one exact
+2,097,883-byte payload with 65,536-byte pieces and SHA-1
+`cdce24126a8e65854d876c0b83ad3ba19748f6dc`; both observed exactly one
+loopback uTP peer and zero TCP peers, with TCP, MSE, DHT, LSD, UPnP, and NAT-
+PMP disabled.
+
+- With RSTorrent as leecher, 129 block requests completed in 0.557320 seconds.
+  Libtorrent recorded 920 uTP packets in and 1,805 out; RSTorrent recorded
+  1,805 classified packets in and 920 packets out. Its session-uTP and per-
+  connection queue high-waters were both 12 descriptors; delivered ownership
+  reached 15,974 bytes and unsent/sent ownership each reached 68 bytes.
+- With RSTorrent as seed, completion took 0.805350 seconds. Libtorrent recorded
+  4,148 uTP packets in and 2,248 out; RSTorrent recorded 2,249 classified
+  packets in and 4,148 packets out. Its session-uTP and per-connection queue
+  high-waters were both 25 descriptors; delivered, unsent, and sent ownership
+  reached 288, 904,687, and 19,762 bytes. Existing upload ownership reached
+  one peer/slot/read, 17 queued requests, 278,528 queued bytes, and exactly
+  2,097,883 payload bytes.
+
+The leecher retained smoothed RTT 25..1,489 microseconds, effective RTO
+500,000..1,000,000 microseconds, raw peer-timestamp base delay
+3,111,349,205..3,111,349,245 microseconds, queue delay 0..26 microseconds,
+congestion window 1,056 bytes, advertised receive window
+1,032,602..1,048,576 bytes, and selected MTU 548 bytes. The seed retained
+smoothed RTT 50..427 microseconds, the same effective-RTO range, raw base delay
+1,513,249,295..1,513,249,373 microseconds, queue delay 0..99 microseconds,
+congestion window 1,056..19,833 bytes, advertised receive window
+1,048,288..1,048,576 bytes, and selected MTU 548 bytes. These are bounded
+aggregate observations; no payload or packet-level logging was added.
+
+Both roles recorded zero malformed, stale-generation, dropped, or unknown-
+connection uTP datagrams, zero worker panics, zero libtorrent loss/timeout/
+resend counters, and terminal zero session-UDP tasks, uTP connections, half-
+opens, incoming peers, registrations, and queued datagrams. The two-role gate
+finished in 2.190952 seconds excluding its bounded build and removed its
+temporary directory.
+
+Final validation passed exactly:
+
+```text
+cargo test -p rstorrent-protocol utp::                    # 83 passed
+cargo test -p rstorrent-engine session_udp                # 12 passed
+cargo test -p rstorrent-engine utp                        # passed
+cargo test -p rstorrent-engine utp_runtime::tests --lib   # 10 passed
+uv run --project tests/interop --locked \
+  python tests/interop/utp_rstorrent_interop.py            # both roles passed
+cargo fmt --all -- --check                                # passed
+cargo clippy --workspace -- -D warnings                   # passed
+cargo test --workspace                                    # passed
+```
+
+No WAN, LAN peer, external device, visible client, public swarm, IPv6 uTP,
+runtime path-MTU probe, UDP mapping, MSE-over-uTP, product selection, product
+listener, advertisement, or support-claim work ran. The interoperability
+result exposed no structural runtime gap requiring a repair slice.
 
 ## Non-Goals And Next Boundary
 

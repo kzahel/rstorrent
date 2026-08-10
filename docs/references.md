@@ -121,9 +121,14 @@ The retained
 [`utp_reference_oracle.py`](../tests/interop/utp_reference_oracle.py) is
 independently authored. It generates temporary content and uses the locked
 libtorrent Python package as a separate executable loopback oracle; it copies
-no reference source, fixture, or test data. Any future copy, translation,
-vendoring, FFI link, dependency, or fork remains a human review gate with the
-applicable BSD-3-Clause, MIT, or Apache-2.0 notices and modification record.
+no reference source, fixture, or test data. Completed Tactical `125` adds the
+independently authored
+[`utp_rstorrent_interop.py`](../tests/interop/utp_rstorrent_interop.py), which
+generates the same temporary fixture and runs RSTorrent as leecher and seed
+against that locked external oracle without linking or distributing
+libtorrent. Any future copy, translation, vendoring, FFI link, dependency, or
+fork remains a human review gate with the applicable BSD-3-Clause, MIT, or
+Apache-2.0 notices and modification record.
 
 ## License Posture
 

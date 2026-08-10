@@ -23,14 +23,16 @@ Human review accepted its independent Rust recommendation, and Tactical
 runtime-free deterministic core. Tactical
 [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) completed
 the deterministic receive-credit, packetization, loss/congestion, pacing,
-MTU, and impaired-link stage. Its required pre-runtime Stage 2 human-review
-checkpoint is the single authoritative **Now**. Independent completed Tactical
+MTU, and impaired-link stage. Independent completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now installs
 per-torrent structural fast resume. Explicit maintainer authorization
 subsequently completed very-high-priority correctness Tactical
-[`124`](../tactical/124-duplex-verified-piece-upload.md). The uTP Stage 2
-human-review checkpoint is again the single authoritative **Now**; no runtime
-integration is implied. The
+[`124`](../tactical/124-duplex-verified-piece-upload.md). Human review then
+accepted uTP Stage 3 recommendation A, and Tactical
+[`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
+completed bounded shared-UDP/runtime ownership and pinned-libtorrent loopback
+interoperability in both roles. Its required post-Stage 3 review checkpoint is
+the single authoritative **Now**; no WAN or product integration is implied. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -344,8 +346,9 @@ Campaign state: **Tactical `112` graduated; Tactical `113` closed evidence-
 limited with positive physical capability unknown on the current hardware;
 Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
-Tactical `124` completed incomplete-torrent duplex correctness; human review
-accepted uTP Stage 3 recommendation A and Tactical `125` is active**.
+Tactical `124` completed incomplete-torrent duplex correctness; and uTP Stage
+3 Tactical `125` completed at its required post-loopback human-review
+checkpoint**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -359,12 +362,13 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest closed tactical:
-[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md). Its
-execution record retains exact clean/impaired/fairness hashes and thresholds,
-the RFC 6817 and path-MTU choices, the stale-SACK retry repair, resource high-
-water marks, and zero terminal ownership. It ran no socket, client,
-interoperability peer, WAN path, or physical device and makes no uTP support
-claim.
+[`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md). Its
+execution record retains the shared DHT/uTP queue and generation boundary,
+supervised worker/stream ownership, concrete peer-stream integration, ten
+runtime cases, twelve shared-UDP cases, both exact pinned-libtorrent loopback
+roles, resource high-waters, and terminal zero ownership. It ran no WAN path,
+LAN peer, product client, public swarm, or physical device and makes no uTP
+support claim.
 
 Latest completed tactical:
 [`124`](../tactical/124-duplex-verified-piece-upload.md). Compact
@@ -373,17 +377,18 @@ truthful active-route tracker/DHT advertisement, failure retraction, and
 joined lifecycle/publication fencing pass. Controlled RSTorrent and pinned-
 libtorrent ordinary/Fast/MSE interoperability plus API 34 SAF partial restart,
 provider repair, duplex exchange, resource, and cleanup gates pass.
-Tactical `121`'s completed runtime-free state is the input to active Tactical
-`125`; its separately accepted scope owns bounded shared-UDP/runtime and
-two-role loopback interoperability without implying WAN or product policy.
+Tactical `125` composes Tactical `121`'s completed runtime-free state with
+bounded shared-UDP/runtime and two-role loopback interoperability without
+implying WAN or product policy.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute Tactical `125`'s staged session-UDP
-classification, supervised runtime, ordered peer-stream, and forced-uTP
-pinned-libtorrent loopback gates. Stop after the two-role verdict; do not infer
-WAN, dependency, product-policy, MSE-over-uTP, or support-claim authority.
+Next executable action: none until human review chooses the recommended
+bounded Stage 4 RSTorrent-outbound controlled WAN evidence, pauses the uTP
+campaign, or selects a design-only policy step. Do not contact the identified
+remote host or infer WAN, dependency, product-policy, MSE-over-uTP, or support-
+claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -394,7 +399,7 @@ invalidation, clean-shutdown prerequisite, or product setting. Readable
 content mismatches fall back to that torrent's common full checker, malformed
 ownership remains repair-local, and Force recheck remains full. Its crash,
 500-seed, controlled libtorrent, repository, Android cross-build, and two AVD
-gates pass. It does not replace the current uTP Stage 2 human-review
+gates pass. It does not replace the current uTP post-Stage 3 human-review
 checkpoint.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
@@ -405,6 +410,22 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `2d33516`, `5dd6d3c`, `c9ab011`, `7de2974`, `fed430c`, `2384d7c`,
+  and `dc5ab32` complete Tactical `125`'s session DHT/uTP classification,
+  generation-fenced supervised runtime, ordered peer stream, controlled
+  incoming/outgoing peer composition, two-role oracle, bounded transport
+  observations, and scripted terminal matrix;
+- the exact 2,097,883-byte fixture with SHA-1
+  `cdce24126a8e65854d876c0b83ad3ba19748f6dc` passes against pinned
+  libtorrent `2.0.13.0` with RSTorrent as leecher and seed, one loopback uTP
+  peer, zero TCP peers, bounded RTT/RTO, delay, window, MTU, and resource high-
+  water observations, and terminal zero ownership in both roles;
+- 83 focused protocol uTP, 12 shared-UDP, and 10 runtime tests pass alongside
+  the complete Rust workspace, and the controlled two-role gate removes all
+  temporary state; and
+- no dependency, manifest, unsafe code, foreign source, WAN/LAN peer, public
+  swarm, visible client, product transport policy, or support claim was added
+  or run;
 - commits `b9e86f5`, `c4c2459`, `a5e2829`, and `a83d226` add Tactical `119`'s
   independently authored, dependency-free uTP codec, receive ordering, send
   reliability, and connection lifecycle under the protocol crate's inward
