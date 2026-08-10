@@ -6,10 +6,10 @@ Status: Stage 0 Tactical
 [`118`](../tactical/118-utp-implementation-decision-spike.md) and Stage 1
 Tactical [`119`](../tactical/119-deterministic-utp-transport-core.md) are
 complete. Human review selected recommendation A, and deterministic Stage 2
-Tactical
-[`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) is in
-progress. uTP remains **Unsupported** and no runtime transport or dependency
-is accepted.
+Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md)
+has reached its stopping condition. The required pre-runtime human review is
+active. uTP remains **Unsupported** and no runtime transport or dependency is
+accepted.
 
 ## Scope And Ownership
 
@@ -68,6 +68,16 @@ the single authoritative **Now**.
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
   baseline pass, but the core owns no socket, has exchanged no RSTorrent uTP
   datagram, and does not change TCP-only peer execution or the support claim.
+- Completed Tactical `121` composes exact 1-MiB receive credit, a 1-MiB
+  unsent stream queue, packetization, delayed ACKs, retransmission execution,
+  fixed-point RFC 6817 congestion/pacing, and binary path-MTU discovery into
+  one runtime-free transport state. Fixed encoded 2/4/8-MiB transfers pass
+  clean, jitter/reorder/duplicate, 1% loss, queue, timestamp wrap/drift,
+  receive-pressure, 1,280-byte black-hole, and established TCP-like
+  foreground gates. The largest observed sent ledger was 59 packets/61,338
+  bytes, receive ownership reached the exact 1-MiB bound, and link events
+  reached 81 datagrams/80,239 bytes. This still owns no socket or task and has
+  exchanged no RSTorrent datagram with another implementation.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -272,6 +282,44 @@ impairment, resource, and acceptance contracts before implementation. The
 separate uncommitted fast-resume plan already owns number `120`; Stage 2 does
 not supersede or absorb that work.
 
+## Stage 2 Result And Review Choices
+
+Tactical `121` reached its bounded stop on 2026-08-10 in commits `ccb93a5`
+through `e8fba52`. Its independently authored state and fixed scenarios meet
+every pre-agreed utilization, fairness, delay, loss, receive-pressure, MTU,
+attempt, work, and ownership threshold. The TCP-like foreground receives
+77.0876% during overlap with a 124.144-ms queue-delay p95; uTP recovers to 70%
+utilization in 3.27 measured RTTs. A 1,280-byte DF black hole converges in six
+probe outcomes to a 13-byte interval with no congestion reduction attributable
+to the probe. The tactical records all scenario and resource high-water
+values.
+
+The implementation exposed one integration defect and repaired it within
+scope: stale SACKs for an already-in-flight fragmentable MTU retry could create
+duplicate retry traffic and a false subsequent congestion loss. Retry identity
+now remains isolated and coalesced until acknowledgement or ordinary timeout.
+No threshold, RFC controller choice, or resource bound was weakened.
+
+The next human choice is:
+
+1. **A — Stage 3 shared UDP and loopback interoperability (recommended):**
+   draft one bounded tactical for uTP/DHT datagram classification, connection
+   lookup/admission, runtime task/cancellation ownership, ordered-stream
+   adaptation, socket-generation replacement, and forced-uTP pinned-libtorrent
+   transfers in both roles. Keep product policy, WAN, mapping/pinhole, and MSE-
+   over-uTP out of scope.
+2. **B — split Stage 3 at the runtime seam:** first land only bounded shared-
+   UDP classification, connection/runtime ownership, ordered-stream adaptation,
+   and scripted failure/cleanup evidence, then return for another review before
+   any independent-implementation exchange. This reduces one tactical's breadth
+   but delays the first interoperability verdict.
+3. **C — pause the uTP campaign:** retain the completed deterministic core and
+   return the authoritative **Now** to the readiness queue without adding a
+   runtime path.
+
+No choice authorizes `pimom`, another external network, a public swarm,
+physical-device work, UDP reachability changes, or a support claim.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -364,12 +412,11 @@ accepted tactical.
 ## Restart Checkpoint
 
 Campaign state: **Stage 0 Tactical `118` and deterministic Stage 1 Tactical
-`119` complete; Stage 2 Tactical `121` approved and in progress; no uTP
-runtime accepted**.
+`119` complete; deterministic Stage 2 Tactical `121` complete at its required
+human checkpoint; no uTP runtime accepted**.
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). The next action is to
-execute Tactical `121` through its deterministic stopping condition, then
-return for human review before shared-UDP/runtime work. Its fixed thresholds
-must not be tuned after observing results without recording the failure and
-seeking direction.
+stop for the Stage 2 human decision above. Recommendation A is the first slice
+that can establish a real RSTorrent uTP runtime and independent loopback
+interoperability, but it does not begin before that review.

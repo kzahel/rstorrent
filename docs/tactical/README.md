@@ -575,9 +575,13 @@ that scope and its cleanup or compatibility rules explicitly.
   forced-uTP oracle decision spike; human review accepted the independently
   authored Rust sans-IO recommendation.
 - [`119-deterministic-utp-transport-core.md`](119-deterministic-utp-transport-core.md):
-  active pure-Rust uTP v1 codec, wrapping arithmetic, bounded connection,
+  complete pure-Rust uTP v1 codec, wrapping arithmetic, bounded connection,
   receive/reorder/SACK, send/ACK/loss, RTT, and timer-intent tactical without
   sockets, tasks, congestion control, or a support claim.
+- [`121-deterministic-utp-loss-congestion-and-mtu.md`](121-deterministic-utp-loss-congestion-and-mtu.md):
+  complete runtime-free uTP receive-credit, packetization, recovery, RFC 6817
+  congestion/pacing, path-MTU, and deterministic impaired-link tactical;
+  awaiting the required review before shared-UDP/runtime work.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
