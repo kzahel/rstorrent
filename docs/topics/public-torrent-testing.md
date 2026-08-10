@@ -2,12 +2,12 @@
 
 Topic: `public-torrent-testing`
 
-Status: Initial catalog and first post-fix Ubuntu evidence recorded from
-official project download pages and downloaded metainfo. Tactical `122` has
-migrated the five retained WebTorrent entries to provenance-bearing catalog
-schema version 2; official distribution refresh and exact metainfo pinning
-remain pending. Public runs remain opt-in, headless, bounded, and supporting
-evidence only.
+Status: The nine-entry schema-v2 catalog pins exact metainfo identity and
+geometry for five WebTorrent works plus current Debian, Ubuntu, Arch Linux,
+and Linux Mint images from their official project pages. Tactical `122` also
+records a bounded paired Big Buck Bunny completion and Ubuntu discovery
+failure classification. Public runs remain opt-in, headless, bounded, and
+supporting evidence only.
 
 ## Scope
 
@@ -23,17 +23,20 @@ available.
 [`performance-and-live-evidence.md`](performance-and-live-evidence.md) owns
 live-run safety and evidence classification. Tactical
 [`096`](../tactical/096-metadata-tracker-activation-and-family-observability.md)
-owns the current metadata-only and connection-family follow-up.
+records the completed metadata-only and connection-family repair.
 
 ## Catalog And Test Roles
 
-The release names, sizes, URLs, trackers, and DNS capabilities below are
-observations from 2026-08-06. Refresh them from the official page before every
-run rather than treating this table as immutable fixture data.
+The release names, sizes, URLs, trackers, and DNS capabilities below combine
+the 2026-08-06 application evidence with Tactical `122`'s exact 2026-08-10
+performance catalog. Refresh source aliases before every run and reject any
+metainfo identity or geometry drift rather than treating the table as an
+immutable fixture.
 
 | Project | Observed official artifact | Observed discovery shape | Intended role |
 | --- | --- | --- | --- |
-| Ubuntu | Ubuntu 24.04.4 live-server amd64, 3,405,469,696 bytes, from [`releases.ubuntu.com/24.04`](https://releases.ubuntu.com/24.04/) | Tier 0 `https://torrent.ubuntu.com/announce`; tier 1 `https://ipv6.torrent.ubuntu.com/announce`. Both names were dual-stack despite the second name. | Primary HTTPS application smoke, tier retention, metadata-only acquisition, and encrypted-but-unauthenticated presentation. It does not by itself prove an IPv6 route. |
+| WebTorrent | Big Buck Bunny plus four breadth works from the [official free-torrents page](https://webtorrent.io/free-torrents); Big Buck Bunny is 276,445,467 bytes. | The retained metainfo mixes UDP and WebSocket trackers; matched native-engine profiles retain the UDP rows and disable WebSocket trackers. | Small primary completion and legal media breadth. Exact source SHA-256, v1 identity, geometry, trackers, and web seeds are pinned for all five works. |
+| Ubuntu | Ubuntu 26.04 live-server amd64, 2,918,598,656 bytes, from the [official server download page](https://ubuntu.com/download/server). The earlier application evidence used Ubuntu 24.04.4. | Tier 0 `https://torrent.ubuntu.com/announce`; tier 1 `https://ipv6.torrent.ubuntu.com/announce`. The exact 26.04 metainfo has no alternate discovery source. | Primary HTTPS application smoke and direct-driver discovery boundary. It does not by itself prove an IPv6 route. |
 | Debian | Debian 13.6.0 amd64 netinst, 791,674,880 bytes, from the [official BitTorrent directory](https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/) | One `http://bttracker.debian.org:6969/announce` row; the hostname was dual-stack. | Best next plaintext HTTP and non-default-port tracker smoke. With a genuinely routed IPv6 host it can also verify the observed connection-family field. |
 | Arch Linux | Arch Linux 2026.08.01 x86_64, 1,597,014,016 bytes, from the [official download page](https://archlinux.org/download/) | The downloaded metainfo contained no tracker; the page also supplied a magnet. | Trackerless DHT-only metadata and payload discovery. This guards against accidental dependence on trackers and is not an HTTP test. |
 | Linux Mint | Linux Mint 22.3 Cinnamon 64-bit, 3,091,660,800 bytes, from the [official edition page](https://www.linuxmint.com/edition.php?id=326) | One public `udp://tracker.opentrackr.org:1337/announce` row. | Cross-distribution UDP interoperability against independently operated tracker infrastructure. It adds little HTTP coverage. |
@@ -66,8 +69,9 @@ exact metainfo inputs. An entry records source organization/page/date/license,
 roles, allowed input modes, expected geometry, and per-owner limits. Metainfo
 mode additionally requires an HTTPS official-host allowlist, outer SHA-256,
 v1 info hash, full geometry, tracker tiers, and web seeds before payload work.
-The current WebTorrent migration deliberately leaves all five entries
-magnet-only until those exact source bytes are refreshed and reviewed.
+All nine entries now pin exact official metainfo source bytes. The five
+WebTorrent entries additionally retain stable magnet mode for discovery-only
+comparisons.
 
 ## Live Run Contract
 
@@ -107,8 +111,20 @@ public-reliability claim because both Ubuntu names were dual-stack.
 An IPv6-only connectivity probe reached Debian's dual-stack tracker host on
 port 6969, but the deliberately incomplete request received no HTTP response.
 That proves only a route and TCP connection, not an accepted tracker announce.
-The next public tracker breadth is a bounded application-level Debian run on a
-host with native routed IPv6. Do not add a product-wide force-family setting
-or hard-code a dated DNS address merely to turn it green. Arch is the next
-DHT-only cohort. Linux Mint is optional UDP diversity, while Fedora and
+
+Tactical `122`'s 2026-08-10 quick comparison then completed Big Buck Bunny for
+both owners and independently verified all 276,445,467 bytes. Its Ubuntu 26.04
+pair classified `reference_only`: libtorrent verified 293,289,984 bytes at the
+10% milestone in 4.731 seconds, while RSTorrent received no tracker response
+or peer candidate before its 120-second boundary. The public probe uses the
+focused direct engine manager, whose tracker task currently rejects HTTP(S)
+endpoints; the long-lived application owner already supports them. The result
+therefore identifies a direct-driver integration gap rather than contradicting
+the earlier application HTTPS evidence or measuring Ubuntu payload throughput.
+
+The next source-first candidate is that direct-manager HTTP(S) integration.
+Separate later breadth remains a bounded application-level Debian run on a
+host with native routed IPv6 and an Arch DHT-only cohort. Do not add a
+product-wide force-family setting or hard-code a dated DNS address merely to
+turn either green. Linux Mint remains optional UDP diversity, while Fedora and
 openSUSE remain monitor-only.

@@ -249,11 +249,13 @@ async fn connect_with_progress(
             &mut stream,
             info_hash,
             local_handshake,
-            network.peer_io_timeout,
-            byte_metric_sink.as_ref(),
-            &mse_dh,
-            network.encryption,
-            network.mse_rc4_only,
+            OutgoingMseConfig {
+                io_timeout: network.peer_io_timeout,
+                byte_metric_sink: byte_metric_sink.as_ref(),
+                mse_dh: &mse_dh,
+                policy: network.encryption,
+                rc4_only: network.mse_rc4_only,
+            },
         )
         .await;
         match attempt.result {
@@ -436,6 +438,15 @@ struct OutgoingMseAttempt {
     accounting: MseHandshakeAccounting,
 }
 
+#[derive(Clone, Copy)]
+struct OutgoingMseConfig<'a> {
+    io_timeout: Duration,
+    byte_metric_sink: Option<&'a Arc<dyn ByteMetricSink>>,
+    mse_dh: &'a MseDhWorkOwner,
+    policy: PeerEncryptionPolicy,
+    rc4_only: bool,
+}
+
 async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     info_hash: [u8; 20],
@@ -473,24 +484,11 @@ async fn run_outgoing_mse(
     stream: &mut TcpStream,
     info_hash: [u8; 20],
     local_handshake: [u8; HANDSHAKE_LENGTH],
-    io_timeout: Duration,
-    byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
-    mse_dh: &MseDhWorkOwner,
-    policy: PeerEncryptionPolicy,
-    rc4_only: bool,
+    config: OutgoingMseConfig<'_>,
 ) -> OutgoingMseAttempt {
-    let mut accounting = MseHandshakeAccounting::new(MseRole::Initiator, policy);
-    let result = run_outgoing_mse_inner(
-        stream,
-        info_hash,
-        local_handshake,
-        io_timeout,
-        byte_metric_sink,
-        mse_dh,
-        rc4_only,
-        &mut accounting,
-    )
-    .await;
+    let mut accounting = MseHandshakeAccounting::new(MseRole::Initiator, config.policy);
+    let result =
+        run_outgoing_mse_inner(stream, info_hash, local_handshake, config, &mut accounting).await;
     OutgoingMseAttempt { result, accounting }
 }
 
@@ -498,12 +496,16 @@ async fn run_outgoing_mse_inner(
     stream: &mut TcpStream,
     info_hash: [u8; 20],
     local_handshake: [u8; HANDSHAKE_LENGTH],
-    io_timeout: Duration,
-    byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
-    mse_dh: &MseDhWorkOwner,
-    rc4_only: bool,
+    config: OutgoingMseConfig<'_>,
     accounting: &mut MseHandshakeAccounting,
 ) -> Result<OutgoingMse, OutgoingMseFailure> {
+    let OutgoingMseConfig {
+        io_timeout,
+        byte_metric_sink,
+        mse_dh,
+        rc4_only,
+        ..
+    } = config;
     let mut private_entropy = [0_u8; DH_PRIVATE_EXPONENT_LEN];
     getrandom::fill(&mut private_entropy).map_err(|error| OutgoingMseFailure {
         error: PeerSocketError::Entropy(error),

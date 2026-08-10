@@ -639,13 +639,11 @@ impl DownloadActivitySink for ProbeSink {
                         .get_or_insert(elapsed);
                 }
             }
-            DownloadActivityEvent::BlockReceived { length, .. } => {
-                if length > 0 {
-                    observation
-                        .milestones
-                        .first_payload_byte
-                        .get_or_insert(elapsed);
-                }
+            DownloadActivityEvent::BlockReceived { length, .. } if length > 0 => {
+                observation
+                    .milestones
+                    .first_payload_byte
+                    .get_or_insert(elapsed);
             }
             _ => {}
         }
@@ -1254,10 +1252,12 @@ async fn run(config: Config) -> ProbeResult {
             return result(
                 &config,
                 started,
-                &sink,
-                &peer_sink,
-                &control.diagnostic_snapshot(),
-                &utility_timeline,
+                ProbeResultSources {
+                    sink: sink.as_ref(),
+                    peer_sink: peer_sink.as_ref(),
+                    diagnostics: &control.diagnostic_snapshot(),
+                    utility_timeline: &utility_timeline,
+                },
                 None,
                 TerminalState {
                     outcome: "error",
@@ -1276,10 +1276,12 @@ async fn run(config: Config) -> ProbeResult {
                 return result(
                     &config,
                     started,
-                    &sink,
-                    &peer_sink,
-                    &control.diagnostic_snapshot(),
-                    &utility_timeline,
+                    ProbeResultSources {
+                        sink: sink.as_ref(),
+                        peer_sink: peer_sink.as_ref(),
+                        diagnostics: &control.diagnostic_snapshot(),
+                        utility_timeline: &utility_timeline,
+                    },
                     None,
                     TerminalState {
                         outcome: "error",
@@ -1306,10 +1308,12 @@ async fn run(config: Config) -> ProbeResult {
             return result(
                 &config,
                 started,
-                &sink,
-                &peer_sink,
-                &control.diagnostic_snapshot(),
-                &utility_timeline,
+                ProbeResultSources {
+                    sink: sink.as_ref(),
+                    peer_sink: peer_sink.as_ref(),
+                    diagnostics: &control.diagnostic_snapshot(),
+                    utility_timeline: &utility_timeline,
+                },
                 None,
                 TerminalState {
                     outcome: "harness_error",
@@ -1448,10 +1452,12 @@ async fn run(config: Config) -> ProbeResult {
     result(
         &config,
         started,
-        &sink,
-        &peer_sink,
-        &control.diagnostic_snapshot(),
-        &utility_timeline,
+        ProbeResultSources {
+            sink: sink.as_ref(),
+            peer_sink: peer_sink.as_ref(),
+            diagnostics: &control.diagnostic_snapshot(),
+            utility_timeline: &utility_timeline,
+        },
         dht_evidence,
         terminal,
     )
@@ -1524,7 +1530,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                                 TrackerEndpoint::from_http_url(&tracker.url)
                             }
                         }
-                        .ok_or_else(|| format!("unsupported tracker URL in metainfo"))?;
+                        .ok_or_else(|| "unsupported tracker URL in metainfo".to_owned())?;
                         Ok(TrackerConfig {
                             url: tracker.url,
                             endpoint,
@@ -1627,16 +1633,26 @@ fn classify_terminal(
     }
 }
 
+struct ProbeResultSources<'a> {
+    sink: &'a ProbeSink,
+    peer_sink: &'a ProbeTorrentPeerSink,
+    diagnostics: &'a DownloadDiagnosticSnapshot,
+    utility_timeline: &'a UtilityTimeline,
+}
+
 fn result(
     config: &Config,
     started: Instant,
-    sink: &ProbeSink,
-    peer_sink: &ProbeTorrentPeerSink,
-    diagnostics: &DownloadDiagnosticSnapshot,
-    utility_timeline: &UtilityTimeline,
+    sources: ProbeResultSources<'_>,
     dht_evidence: Option<DhtEvidence>,
     terminal: TerminalState,
 ) -> ProbeResult {
+    let ProbeResultSources {
+        sink,
+        peer_sink,
+        diagnostics,
+        utility_timeline,
+    } = sources;
     let observation = sink.snapshot();
     let diagnostics = diagnostic_result(
         diagnostics,

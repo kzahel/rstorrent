@@ -39,7 +39,9 @@ routed IPv4 endpoint or installed libtorrent oracle. Human review paused uTP,
 returned to the readiness queue, and activated Tactical
 [`122`](../tactical/122-paired-public-download-performance-cohorts.md) as the
 single authoritative **Now** for bounded real-torrent RSTorrent/libtorrent
-performance cohorts. The
+performance cohorts. Tactical `122` is now complete; its classified Ubuntu
+result moves the queue to source-first planning for focused-driver HTTP(S)
+tracker dispatch. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -355,8 +357,8 @@ Tacticals `114` and `116` graduated; Tactical `120` completed; uTP Tacticals
 `118`, `119`, and runtime-free deterministic Stage 2 Tactical `121` completed;
 Tactical `124` completed incomplete-torrent duplex correctness; uTP Stage 3
 Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
-evidence-limited at preflight with no WAN result; and Tactical `122` is active
-for paired public download performance evidence**.
+evidence-limited at preflight with no WAN result; and Tactical `122` completed
+paired public download performance evidence**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -378,34 +380,27 @@ libtorrent package. It created no remote state, listener, or background
 process, sent no uTP packet, and makes no WAN or support claim.
 
 Latest completed tactical:
-[`124`](../tactical/124-duplex-verified-piece-upload.md). Compact
-availability/read authority, active initiated/accepted TCP duplex transfer,
-truthful active-route tracker/DHT advertisement, failure retraction, and
-joined lifecycle/publication fencing pass. Controlled RSTorrent and pinned-
-libtorrent ordinary/Fast/MSE interoperability plus API 34 SAF partial restart,
-provider repair, duplex exchange, resource, and cleanup gates pass.
-Tactical `125` composes Tactical `121`'s completed runtime-free state with
-bounded shared-UDP/runtime and two-role loopback interoperability without
-implying WAN or product policy.
+[`122`](../tactical/122-paired-public-download-performance-cohorts.md). The
+schema-v2 comparator isolates both owners, matches plaintext or forced-RC4
+settings, accepts exact official metainfo, independently verifies content,
+records process resources and discovery-versus-active timing, atomically
+checkpoints every owner, and cleans bounded artifacts. Controlled 1 GiB gates
+pass; the three-minute public quick run completes Big Buck Bunny for both
+owners and classifies Ubuntu `reference_only` at the exact HTTP(S)-tracker
+dispatch boundary.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: Tactical `122`'s release-mode 1 GiB direct-metainfo
-plaintext and forced-RC4 controls pass for both owners with exact independent
-verification, actual payload-method evidence, process resources, bounded wire
-payload, and joined cleanup. Its reviewed nine-entry public catalog now pins
-the official WebTorrent, Debian, Ubuntu, Arch Linux, and Linux Mint metainfo
-identities and geometry. Its first matched public smoke passes exact Big Buck
-Bunny publication, independent verification, resources, and cleanup for both
-owners; delayed reference discovery produced a 16.438/417.640-second paired
-observation. A subsequent long cohort was interrupted and rejected because
-30-minute zero-payload waits and final-only reporting obscured the desired
-client A/B result. Add atomic per-owner checkpoints and active-transfer
-distributions, then run the 120-second `quick` Big Buck Bunny complete plus
-Ubuntu 10% comparison. Keep uTP paused; do not install a remote oracle, change
-remote network state, contact another host, or infer product-policy, MSE-over-
-uTP, reverse-incoming, or support-claim authority.
+Next executable action: create a bounded source-first tactical for HTTP(S)
+tracker dispatch in the resumable direct engine manager. Tactical `122` proves
+that the official Ubuntu torrent's HTTPS-only discovery is rejected in that
+focused path while libtorrent reaches 10% in 4.731 seconds; the application
+owner's existing HTTP(S) capability is unaffected. Read the pinned libtorrent
+tracker manager and tests, map reuse versus composition with the existing
+application transport owner, and specify deterministic plus controlled
+discovery-to-payload evidence before implementation. Keep uTP paused; do not
+infer authority to implement this follow-up until it owns a tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

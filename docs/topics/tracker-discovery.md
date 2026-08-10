@@ -36,13 +36,21 @@ advertised endpoint and transport source family-selected. An eligible IPv6
 operation binds the probe-selected global-unicast source and advertises that
 family's real TCP listener port; an ineligible or disabled family retains
 port `1`. This changes no tracker schedule, fan-out, or operation bound.
-Active Tactical
+Closed evidence-limited Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 refines that producer-owned IPv6 endpoint with `GlobalUnicast`, `Unfiltered`,
 or `Pinholed` evidence while preserving the same listener-backed wire port in
 all three cases. Tracker owners consume only the selected endpoint and do not
 own or infer gateway state. Scripted coverage passes; off-LAN incoming IPv6
 evidence remains pending.
+Completed Tactical
+[`122`](../tactical/122-paired-public-download-performance-cohorts.md) exposes
+one narrower integration boundary: the focused resumable download driver's
+nested tracker manager still dispatches only UDP. Its Ubuntu 26.04 public run
+rejected both HTTPS rows and found no peer, while the existing long-lived
+application owner retains its controlled and public HTTP(S) evidence. Direct-
+manager HTTP(S) dispatch is therefore a source-first follow-up candidate, not
+a regression of the application tracker capability.
 
 ## Scope
 
@@ -116,6 +124,8 @@ other discovery sources. Pause, archive, removal, generation replacement, and
 session shutdown explicitly stop and join the registration. Focused direct
 engine APIs retain their nested manager for standalone use, but application
 driver configurations disable it so the product has only the session owner.
+That nested manager currently supports only UDP transport; callers that pass
+HTTP(S) records receive a scheduled typed failure rather than an announce.
 
 Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP,
 HTTP, and HTTPS trackers form one initially shuffled synthetic tier. Failure

@@ -2,14 +2,14 @@
 
 Topic: `performance-and-live-evidence`
 
-Status: Active measurement contract. The catalog-backed paired
+Status: Active measurement contract. The completed catalog-backed paired
 RSTorrent/libtorrent comparator emits milestone, geometry, diagnostic,
 cleanup, and classification JSON without opening a product surface. Its first
 controlled and public full-download baselines are recorded below.
-Tactical `122` is extending that foundation with direct-metainfo inputs,
-matched encryption/connection profiles, independent piece verification,
-process resources, and a bounded quick real-torrent comparison. Public-swarm
-speed remains a measured baseline, not a CI pass threshold.
+Tactical `122` adds direct-metainfo inputs, matched encryption/connection
+profiles, independent piece verification, process resources, atomic owner
+checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
+remains a measured baseline, not a CI pass threshold.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo
@@ -55,6 +55,25 @@ public pair to 120 seconds per owner, and reports discovery time separately
 from active-transfer time. The required public work is now one Big Buck Bunny
 complete pair and one Ubuntu 10% pair under matched settings, not a multi-hour
 cohort.
+
+That corrected `quick` comparison completed from clean commit `58a9891` in
+about three minutes. Big Buck Bunny classified `both_reached`: RSTorrent and
+libtorrent independently verified all 276,445,467 bytes in 26.959 and 58.932
+seconds wall time. Discovery to first payload was 16.557 and 50.195 seconds;
+the isolated active phases were 10.402 seconds at 25.34 MiB/s and 8.737
+seconds at 30.18 MiB/s. RSTorrent was therefore about 19% slower during active
+payload transfer in this pair while discovering payload sooner. Peak RSS was
+29.2 MiB and 308.2 MiB.
+
+Ubuntu Server classified `reference_only`. Libtorrent found candidates in
+0.157 seconds and verified 293,289,984 bytes at the 10% milestone in 4.731
+seconds, averaging 63.04 MiB/s during its 4.437-second active phase. RSTorrent
+received no tracker response or candidate and timed out at 120.003 seconds.
+The exact implementation boundary explains the result: the resumable path can
+carry HTTP(S) tracker configurations, but the direct driver tracker manager
+rejects non-UDP endpoints. Ubuntu's official metainfo supplies only HTTPS
+trackers. This is a discovery integration gap and produces no Ubuntu
+throughput ratio.
 
 ## Purpose
 

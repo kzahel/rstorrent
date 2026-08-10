@@ -1,14 +1,13 @@
 # Tactical 122: Paired Public Download Performance Cohorts
 
-Status: Approved and in progress on 2026-08-10. Human review paused uTP after
-Tactical `126` closed evidence-limited, returned to the readiness queue, and
-explicitly authorized this tactical for autonomous end-to-end execution and
-bounded commits. This tactical does not change uTP support or reopen its WAN
-stage.
+Status: Completed on 2026-08-10. Human review paused uTP after Tactical `126`
+closed evidence-limited, returned to the readiness queue, and explicitly
+authorized this tactical for autonomous end-to-end execution and bounded
+commits. This tactical does not change uTP support or reopen its WAN stage.
 
 Topics: `performance-and-live-evidence`, `public-torrent-testing`,
 `oracle-driven-engine-campaign`, `capability-readiness`, `peer-lifecycle`,
-`storage-throughput-architecture`
+`storage-throughput-architecture`, `tracker-discovery`, `protocol-support`
 
 Dependencies: completed Tacticals
 [`015`](015-headless-live-comparison.md),
@@ -808,6 +807,73 @@ classified immediately; they do not trigger repeated 30-minute attempts.
 Controlled same-peer plaintext and RC4 results remain the causal throughput
 authority, while public pairs answer whether each client can find peers and
 deliver useful real-swarm payload promptly.
+
+### Quick public comparison: 2026-08-10
+
+The corrected `quick` suite ran from clean commit `58a9891` on the same Apple
+M4 Pro/macOS 26.5.2/APFS host. It authorized 10 GiB against a calculated
+9,845,557,814-byte worst case, used direct metainfo and
+`matched-plain-30`, and completed in about three minutes. The atomic report
+checkpoint was readable after the first owner and reached `status: complete`.
+
+Big Buck Bunny classified `both_reached`. Both owners independently verified
+all 1,055 pieces and 276,445,467 bytes, used TCP plaintext payload streams,
+joined without forced termination, and cleaned up.
+
+| Owner | Target wall | Discovery to first payload | Active transfer | Active rate | Peak RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RSTorrent | 26.959 s | 16.557 s | 10.402 s | 25.34 MiB/s | 29.2 MiB |
+| libtorrent | 58.932 s | 50.195 s | 8.737 s | 30.18 MiB/s | 308.2 MiB |
+
+RSTorrent's process-start target ratio was 0.457 because it discovered useful
+payload sooner. Its active-transfer ratio was 1.191: libtorrent's payload
+phase was about 19% faster in this one public pair. That agrees directionally
+with the controlled plaintext 1 GiB result while avoiding the false claim
+that discovery delay is transfer throughput.
+
+Ubuntu Server classified `reference_only`. Libtorrent found candidates in
+0.157 seconds, first payload in 0.294 seconds, and verified 293,289,984 bytes
+and 1,108 pieces at the 10% target in 4.731 seconds. Its 4.437-second active
+phase averaged 63.04 MiB/s and peaked at 336.5 MiB RSS. RSTorrent received no
+tracker response, found no candidate, attempted no dial, verified zero bytes,
+and timed out cooperatively at 120.003 seconds with 9.6 MiB peak RSS.
+
+Source inspection identifies the exact current boundary: the resumable
+download path accepts HTTP and HTTPS `TrackerConfig` values, but
+`driver.rs::run_tracker_manager` rejects every non-UDP endpoint with
+`HTTP tracker transport is unavailable in the direct engine manager`.
+Ubuntu's official metainfo contains only HTTPS trackers, whereas the Big Buck
+Bunny matched profile retains UDP trackers. This is a direct-engine tracker
+integration gap, not a scheduler, storage, TCP, or payload-throughput result.
+Changing that engine behavior is outside this measurement tactical; it is the
+narrowest recommended source-first follow-up.
+
+The 519,103-byte raw report passed privacy validation and was summarized here
+before removal. All temporary metainfo and payload roots were already removed
+by the harness. No integrity, publication, cleanup, privacy, resource-bound,
+or worker-supervision defect occurred.
+
+### Final validation: 2026-08-10
+
+The final tree passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace --no-fail-fast --quiet` with 961 passed and 11
+  ignored tests across all workspace targets;
+- the locked `tests/interop` discovery suite with all 28 tests passing;
+- `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-android --lib`
+  for both existing Android ABIs;
+- a final 1 MiB controlled schema-v2 gate in both matched plaintext and forced
+  RC4 profiles, with both owners reaching publication, independent complete
+  verification, the expected payload method, clean shutdown, and cleanup; and
+- `git diff --check`.
+
+No web contract changed, so TypeScript generation and web validation were
+inapplicable. The validation-only controlled report was removed after review.
+The stopping condition is satisfied: the public result is classified, the
+comparison harness is bounded and checkpointed, and the discovered engine gap
+is deferred without silently changing product behavior.
 
 ## Non-Goals And Next Boundary
 
