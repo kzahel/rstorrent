@@ -12,12 +12,50 @@ checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
 Completed Tactical `127` additionally records one 82.239-second remote-mapped
 uTP WAN transfer as a bounded observation, not a throughput threshold.
-Active Tactical
+Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
-returns to byte-identical TCP-only loopback fixtures. It will first reproduce
-current geometry and focused-versus-resumable path differences, then use
-bounded request, storage, scheduler, checkpoint, observation, and process
-evidence to select one separate optimization slice.
+returns to byte-identical TCP-only loopback fixtures. It reproduces the
+sustained large-transfer gap, rejects checkpoint sync, observation overhead,
+resumable semantics, and storage-worker count as primary causes, and selects
+storage intake backlog for ready Tactical
+[`129`](../tactical/129-bounded-storage-intake-watermark.md).
+
+## Controlled TCP Storage-Intake Diagnosis: 2026-08-10
+
+The retained release harness compares one focused RSTorrent process, the
+application-shaped resumable process, and pinned libtorrent `2.0.13.0` against
+one loopback libtorrent seed. Every result independently verifies all v1
+piece hashes and the whole file, records one TCP and zero uTP peers, rotates
+order, and removes its output before the next owner.
+
+Three-run 1 GiB plaintext medians across 256 KiB, 1 MiB, 4 MiB, and 16 MiB
+pieces placed the focused RSTorrent path at `0.839`, `0.910`, `0.848`, and
+`0.838` of libtorrent. The resumable path measured `0.908`, `0.867`, `0.764`,
+and `0.670`. Both retained the same 500-request/8,192,000-byte request window.
+At 64 and 256 MiB payloads RSTorrent beat the reference's fixed startup cost;
+the deficit appeared at 1 GiB sustained transfer.
+
+Increasing write/hash workers above `2/2` did not close the gap. Six-run
+alternating controls measured checkpoint-sync bypass at `0.988x` enabled,
+summary activity observation at `0.974x` detailed, and resumable execution at
+`1.103x` the same-probe nonresumable path. Those results reject durability
+sync, instrumentation, and resume semantics as the first optimization owner.
+
+The causal control was payload/storage backlog. With only the allowance
+changed, 8/16/32/64 MiB produced monotonic 1 GiB/16 MiB-piece medians of
+398.9/376.3/355.6/332.6 MiB/s. Corresponding payload high waters were
+6/12/24/48 MiB and storage-job high waters were 399/782/1,550/3,083. The final
+plaintext cohort measured libtorrent at 487.9 MiB/s, 64 MiB RSTorrent at 332.9
+(`0.682x`), and the 8 MiB control at 394.4 (`0.808x`). Forced RC4 measured
+371.3, 283.0 (`0.762x`), and 315.4 MiB/s (`0.849x`). The lower-backlog control
+also roughly halved RSTorrent RSS without increasing median CPU demand.
+
+This does not select an 8 MiB total memory limit. The current engine couples
+its resident-payload ceiling, a 75% intake watermark, and a block-count job
+limit. Tactical `129` will hold the safety ceiling constant while selecting a
+separate hysteretic storage intake watermark. Only its post-change result can
+select profiling or optimization of the remaining roughly 15--20% sustained
+TCP ceiling. Raw JSON and payload artifacts were removed after this summary.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo

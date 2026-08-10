@@ -55,6 +55,14 @@ staging, retained-file, part-slot, cross-file, and padding read plans execute
 under the existing ten-read and 40-handle session bounds. Accepted fast resume
 now reconciles pending file promotions before new writes so route authority
 and hashing cannot diverge.
+Completed Tactical
+[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) subsequently
+finds that sustained single-torrent throughput degrades monotonically as the
+current coupled resident/storage intake allowance grows from 8 to 64 MiB.
+Ready Tactical
+[`129`](../tactical/129-bounded-storage-intake-watermark.md) owns separating a
+hysteretic storage-queue watermark from the larger resident safety ceiling;
+it does not reopen storage concurrency or durability policy.
 
 ## Purpose And Scope
 

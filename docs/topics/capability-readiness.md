@@ -311,23 +311,32 @@ libtorrent oracle, both Android builds, and two API 34 AVD lifecycle gates
 pass. No schema, setting, provider, physical-device, or protocol claim was
 added.
 
+Tactical
+[`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) is complete.
+Its retained TCP-only loopback harness reproduces the sustained 1 GiB gap,
+rejects storage-worker count, checkpoint sync, observation overhead, and
+resumable semantics as primary causes, and isolates excessive storage intake
+backlog. An 8 MiB control improved the 1 GiB/16 MiB-piece resumable plaintext
+path from 332.9 to 394.4 MiB/s and cut storage-job high water from about 3,083
+to 399; forced RC4 moved in the same direction. Exact hashes, one TCP/zero uTP
+peer, bounded resources, cleanup, and alternating orders passed.
+
 ## Current Queue
 
 ### Now
 
 - Tactical
-  [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) is the
-  single authoritative work item. Human review explicitly paused uTP and
-  selected a bounded TCP-only synthetic comparison. It must reproduce current
-  slower regimes on byte-identical loopback fixtures, separate the focused and
-  resumable RSTorrent paths from pinned libtorrent, attribute the owning
-  boundary, and select a separate optimization tactical. No public swarm,
-  local gateway operation, or further uTP work is authorized by this choice.
+  [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the single
+  authoritative work item selected by Tactical `128`. It separates the
+  storage intake high/low watermark from the larger resident-payload safety
+  ceiling, preserves large-piece liveness and session fairness, and remeasures
+  the remaining TCP ceiling. No setting, public swarm, local gateway, or uTP
+  work is authorized by this choice.
 
 ### Next
 
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager remains available after Tactical `128`.
+  download driver's nested manager remains available after Tactical `129`.
   Completed Tactical
   [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
   proves that the long-lived application tracker owner is not composed into

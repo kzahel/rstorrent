@@ -1,9 +1,10 @@
 # Tactical 128: Controlled TCP Performance Diagnosis
 
-Status: **Active** on 2026-08-10. Human review explicitly paused further uTP
-work and selected a bounded synthetic comparison to identify when and why
-RSTorrent is slower than libtorrent before choosing another feature or
-optimization slice.
+Status: **Completed** on 2026-08-10. Human review explicitly paused further
+uTP work and selected a bounded synthetic comparison to identify when and why
+RSTorrent is slower than libtorrent. The completed evidence selects Tactical
+[`129`](129-bounded-storage-intake-watermark.md); no uTP or public-swarm work
+ran.
 
 Topics: `performance-and-live-evidence`, `storage-throughput-architecture`,
 `peer-lifecycle`, `capability-readiness`, `oracle-driven-engine-campaign`
@@ -228,6 +229,110 @@ an engine policy owner.
 | Measurement overhead | otherwise-identical diagnostic on/off control within 5% or a documented lower sampling rate |
 | Repository | `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, and locked interop tests proportional to changed harnesses |
 | Platforms | Android x86_64 and arm64-v8a cross-builds if common engine Rust changes; no emulator or physical-device run for diagnostic-only work |
+
+## Completed Evidence
+
+### Retained harness and geometry screen
+
+Commits `332f987`, `82436d6`, `edb50bc`, `1a48335`, and `4024ef6` add the
+release-only `tests/interop/controlled_tcp_diagnosis.py` harness, exact
+piece/whole-file verification, process sampling, phase/checkpoint telemetry,
+and narrowly gated causal controls. Each case used one materialized 1 GiB v1
+file, one pinned libtorrent TCP seed, one plaintext or forced-RC4 payload
+peer, 16 KiB requests, rotating owner order, warm uncontrolled APFS cache,
+and complete output removal. Every retained case reported one TCP peer, zero
+uTP peers, zero failed/redundant bytes, exact piece and whole-file hashes,
+joined termination, and cleanup.
+
+The three-run matched-plaintext geometry screen reproduced a sustained gap:
+
+| Piece size | Focused MiB/s | Focused/libtorrent | Resumable MiB/s | Resumable/libtorrent | Libtorrent MiB/s |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 256 KiB | 402.0 | 0.839 | 435.0 | 0.908 | 479.1 |
+| 1 MiB | 446.0 | 0.910 | 424.8 | 0.867 | 490.2 |
+| 4 MiB | 431.2 | 0.848 | 388.6 | 0.764 | 508.5 |
+| 16 MiB | 414.1 | 0.838 | 330.8 | 0.670 | 494.0 |
+
+Both RSTorrent paths filled the same 500-request/8,192,000-byte request
+window. The focused deficit stayed roughly 9--16%; the additional
+application-shaped deficit grew with piece size. A 16 MiB-piece focused
+storage-concurrency sweep measured `1/1` at 241.2 MiB/s, `2/2` at 403.7,
+`4/4` at 390.7, `8/4` at 395.7, and `8/8` at 379.8 against libtorrent at
+469.3. Too little concurrency is harmful, but increasing the existing
+bounded concurrency is not the missing optimization.
+
+### Scaling and rejected causes
+
+A three-run 16 MiB-piece scaling cohort found the gap only after sustained
+work dominates startup. At 64 MiB, focused/resumable/libtorrent medians were
+202.8/205.7/77.6 MiB/s. At 256 MiB they were 305.8/333.8/168.1. At 1 GiB they
+were 423.1/333.3/484.7, or `0.873` and `0.688` of libtorrent. The small
+libtorrent rows include its fixed process/session completion cost and are not
+claimed as a byte-path ceiling.
+
+Alternating same-owner controls rejected three tempting explanations:
+
+- bypassing physical checkpoint sync measured `0.988x` enabled throughput
+  over six repetitions, despite removing all 16 sync operations;
+- summary activity observation measured `0.974x` detailed per-block milestone
+  observation, within the 5% instrumentation bound and in the wrong direction;
+  and
+- through the same probe and peer evidence, the resumable path measured
+  338.1 MiB/s versus 306.5 for the nonresumable path (`1.103x`). Resume and
+  checkpoint semantics therefore do not explain the general application-
+  shaped gap.
+
+The resumable phase trace showed that payload intake and storage overlap:
+last storage completed only about 20--33 ms after the last payload, and final
+piece verification followed roughly 0.2 seconds later. The slow 64 MiB-
+allowance runs instead accumulated about 48 MiB of resident payload and 3,083
+storage jobs. Write/hash queue and summed service grew with that backlog.
+
+### Causal backlog control and final comparison
+
+Six alternating 1 GiB/16 MiB-piece runs changed only the resumable payload
+allowance from 64 to 8 MiB. Median throughput rose from 336.8 to 407.1 MiB/s
+(`1.209x`), median peak RSS fell from 108,355,584 to 46,358,528 bytes, payload
+high water fell from 50,331,648 to 6,291,456 bytes, and storage-job high water
+fell from 3,083 to 399. Median write queue wait fell from about 121 million to
+16 million summed microseconds; write service fell from about 7.6 to 5.3
+million, while hash service fell from about 10.1 to 8.0 million. Median CPU
+core-equivalents remained effectively unchanged near 1.18.
+
+The four-run 8/16/32/64 MiB sweep was monotonic:
+
+| Allowance | Payload high water | Storage jobs high water | Median MiB/s | Median peak RSS |
+| ---: | ---: | ---: | ---: | ---: |
+| 8 MiB | 6 MiB | 399 | 398.9 | 48,291,840 B |
+| 16 MiB | 12 MiB | 782 | 376.3 | 58,679,296 B |
+| 32 MiB | 24 MiB | 1,550 | 355.6 | 79,781,888 B |
+| 64 MiB | 48 MiB | 3,083 | 332.6 | 112,689,152 B |
+
+This control changes the emergency resident ceiling and its 75% intake
+watermark together, so it proves queue pressure is causal but does not prove
+that the total memory ceiling should be lowered. Tactical `129` will separate
+those policies and sweep the queue watermark with resident safety limits held
+constant.
+
+The final four-run plaintext cohort measured libtorrent at 487.9 MiB/s,
+RSTorrent/64 MiB at 332.9 (`0.682x`), and RSTorrent/8 MiB at 394.4 (`0.808x`).
+The final three-run forced-RC4 cohort measured 371.3, 283.0 (`0.762x`), and
+315.4 MiB/s (`0.849x`) respectively. Backlog control therefore removes most
+of the application-shaped penalty across both matched wire methods but does
+not erase the remaining sustained TCP ceiling.
+
+Raw JSON reports and payloads were summarized here and removed. These values
+are same-host controlled evidence, not CI thresholds or public-swarm claims.
+
+## Decision
+
+The first optimization owner is storage intake admission, specifically the
+accidental coupling between total resident-payload capacity and a storage job
+queue that can grow to thousands of 16 KiB items. Tactical `129` will add an
+independent byte watermark with hysteresis, preserve the larger safety and
+large-piece liveness limits, validate session fairness, and remeasure before
+any remaining peer-loop/CPU work. Checkpoint policy, observation, RC4, storage
+worker count, uTP, and UDP trackers are not selected by this evidence.
 
 ## Non-Goals And Next Boundary
 

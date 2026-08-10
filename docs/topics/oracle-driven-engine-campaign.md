@@ -46,8 +46,11 @@ proves one exact remote-mapped direct-public-path uTP transfer and cleanup, and
 human review then explicitly paused uTP and activated TCP-only synthetic
 performance diagnosis Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) as the single
+authoritative **Now**. Tactical `128` completed and selected bounded storage
+intake watermark Tactical
+[`129`](../tactical/129-bounded-storage-intake-watermark.md) as the new
 authoritative **Now**. Tactical `122`'s classified Ubuntu result leaves
-focused-driver HTTP(S) tracker dispatch available after that diagnosis. The
+focused-driver HTTP(S) tracker dispatch available after that optimization. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -366,7 +369,8 @@ Tactical `125` completed; outbound-only uTP WAN Tactical `126` closed
 evidence-limited at its superseded direct-interface preflight; Tactical `122`
 completed paired public download performance evidence; and mapped-WAN uTP
 Tactical `127` completed one exact direct-public-path leecher transfer and
-cleanup; human review paused uTP; and Tactical `128` is active**.
+cleanup; human review paused uTP; Tactical `128` completed controlled TCP
+diagnosis; and Tactical `129` is ready**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -400,11 +404,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute Tactical `128`'s bounded TCP-only loopback
-geometry screen and exact focused/resumable/libtorrent path discriminator,
-then use repeated causal evidence to select one separate owner-level
-optimization tactical. No local gateway operation, further uTP work, public
-swarm, dependency, product setting, or support-claim change is implicit.
+Next executable action: execute Tactical `129`'s source-first storage intake
+watermark slice. Hold resident safety ceilings constant, sweep a separate
+hysteretic queue watermark, preserve large-piece and session-fair progress,
+and repeat the controlled plaintext/RC4 gate before selecting any remaining
+TCP hot-path work. No local gateway operation, further uTP work, public swarm,
+dependency, product setting, or support-claim change is implicit.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

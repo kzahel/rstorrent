@@ -599,10 +599,14 @@ that scope and its cleanup or compatibility rules explicitly.
   residue. The local-mapping fallback was not needed, and product uTP stays
   disabled at the required human-review checkpoint.
 - [`128-controlled-tcp-performance-diagnosis.md`](128-controlled-tcp-performance-diagnosis.md):
-  active deterministic TCP-only comparison of focused RSTorrent, resumable
+  complete deterministic TCP-only comparison of focused RSTorrent, resumable
   RSTorrent, and pinned libtorrent paths on byte-identical loopback fixtures;
-  maps current slower regimes, attributes the owning boundary, and selects a
-  separate bounded optimization without resuming uTP or public-swarm work.
+  identifies sustained large-transfer storage admission/backlog as the first
+  optimization owner without resuming uTP or public-swarm work.
+- [`129-bounded-storage-intake-watermark.md`](129-bounded-storage-intake-watermark.md):
+  ready bounded optimization selected by Tactical `128`; separates storage
+  queue pressure from the larger resident-payload ceiling, validates
+  hysteresis and session fairness, and remeasures the remaining TCP ceiling.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
