@@ -11,6 +11,7 @@ from unittest.mock import patch
 from utp_remote_seed import eligible_public_ipv4, parse_mapping_entries
 from utp_rstorrent_wan import (
     WanFailure,
+    aborted_remote_summary,
     bounded_diagnostics,
     eligible_public_endpoint,
     verify_direct_route,
@@ -103,6 +104,24 @@ class UtpWanContractTests(unittest.TestCase):
         self.assertEqual(len(redacted), 50)
         self.assertTrue(all("104.20.30.40" not in line for line in redacted))
         self.assertTrue(all("<ipv4>" in line for line in redacted))
+
+    def test_abort_summary_is_bounded_to_transport_counts(self) -> None:
+        summary = aborted_remote_summary(
+            {
+                "event": "aborted",
+                "mapping_deleted": True,
+                "libtorrent_stats": {
+                    "utp.utp_packets_in": 7,
+                    "utp.utp_packets_out": 2,
+                    "peer.num_utp_peers": 1,
+                },
+            }
+        )
+        self.assertEqual(
+            summary,
+            "remote abort evidence: utp_in=7, utp_out=2, "
+            "utp_peers=1, mapping_deleted=True",
+        )
 
 
 if __name__ == "__main__":

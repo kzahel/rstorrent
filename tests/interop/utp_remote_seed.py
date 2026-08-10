@@ -413,10 +413,26 @@ def run(arguments: argparse.Namespace) -> None:
                 break
         if command not in {"stop", "abort"}:
             raise RemoteSeedFailure("remote seed did not receive a bounded stop command")
-        if command == "abort":
-            raise RemoteSeedFailure("remote seed was aborted by the local owner")
 
         stats = stats_snapshot(session, diagnostics, time.monotonic() + 2.0)
+        if command == "abort":
+            session.remove_torrent(handle)
+            handle = None
+            session.pause()
+            cleanup_succeeded = delete_mapping(local_address, local_port)
+            if not cleanup_succeeded:
+                raise RemoteSeedFailure("aborted remote UDP mapping cleanup was not verified")
+            write_event(
+                {
+                    "event": "aborted",
+                    "role": "remote-seed",
+                    "peer_high_water": peer_high_water,
+                    "libtorrent_stats": stats,
+                    "mapping_deleted": True,
+                    "diagnostics": diagnostics,
+                }
+            )
+            return
         if (
             peer_high_water != 1
             or stats["peer.num_tcp_peers"] != 0

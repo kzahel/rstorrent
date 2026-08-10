@@ -165,12 +165,14 @@ class RemoteSeedProcess:
                 f"{bounded_diagnostics(self.stderr.captured)}"
             )
 
-    def cleanup(self) -> None:
+    def cleanup(self) -> dict[str, Any] | None:
+        terminal = None
         if self.process.poll() is None:
             try:
                 self.command("abort")
+                terminal = self.read_event(time.monotonic() + PROCESS_CLEANUP_SECONDS)
                 self.process.wait(timeout=PROCESS_CLEANUP_SECONDS)
-            except (BrokenPipeError, subprocess.TimeoutExpired, WanFailure):
+            except (BrokenPipeError, subprocess.TimeoutExpired, WanFailure, queue.Empty):
                 self.process.terminate()
                 try:
                     self.process.wait(timeout=PROCESS_CLEANUP_SECONDS)
@@ -180,6 +182,7 @@ class RemoteSeedProcess:
         for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
             if stream is not None:
                 stream.close()
+        return terminal
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -387,6 +390,21 @@ def validate_remote_complete(event: dict[str, Any]) -> None:
         raise WanFailure("remote seed did not prove forced-uTP payload transfer")
 
 
+def aborted_remote_summary(event: dict[str, Any] | None) -> str:
+    if not isinstance(event, dict) or event.get("event") != "aborted":
+        return "remote abort evidence unavailable"
+    stats = event.get("libtorrent_stats")
+    if not isinstance(stats, dict):
+        return "remote abort statistics unavailable"
+    return (
+        "remote abort evidence: "
+        f"utp_in={stats.get('utp.utp_packets_in', 'missing')}, "
+        f"utp_out={stats.get('utp.utp_packets_out', 'missing')}, "
+        f"utp_peers={stats.get('peer.num_utp_peers', 'missing')}, "
+        f"mapping_deleted={event.get('mapping_deleted') is True}"
+    )
+
+
 def verify_remote_cleanup(
     host: str,
     remote_run: str,
@@ -449,6 +467,7 @@ def run(host: str) -> dict[str, Any]:
     result: dict[str, Any] | None = None
     run_error: Exception | None = None
     cleanup_error: Exception | None = None
+    remote_abort: dict[str, Any] | None = None
     with tempfile.TemporaryDirectory(prefix="rstorrent-utp-wan-") as temporary:
         local_root = Path(temporary)
         torrent_info, seed_root, expected_sha1 = create_fixture(local_root)
@@ -541,7 +560,7 @@ def run(host: str) -> dict[str, Any]:
             if role is not None:
                 role.cleanup()
             if remote is not None:
-                remote.cleanup()
+                remote_abort = remote.cleanup()
             if remote_run is not None:
                 try:
                     verify_remote_cleanup(
@@ -555,7 +574,7 @@ def run(host: str) -> dict[str, Any]:
     if cleanup_error is not None:
         raise WanFailure(f"WAN cleanup failed: {cleanup_error}") from cleanup_error
     if run_error is not None:
-        raise run_error
+        raise WanFailure(f"{run_error}; {aborted_remote_summary(remote_abort)}") from run_error
     if result is None:
         raise WanFailure("mapped WAN case produced no result")
     result["cleanup"] = {
