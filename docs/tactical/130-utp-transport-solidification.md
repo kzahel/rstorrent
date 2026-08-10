@@ -520,3 +520,24 @@ seconds but still stalled after 196,608 verified bytes. Its final wire summary
 showed RSTorrent DATA fully acknowledged while RSTorrent's receive ACK lagged
 seven client sequence numbers, so receiver/runtime ingress recovery remains
 the next diagnosis rather than sender pacing or timer backoff.
+
+The next bounded run exposed the receiver cause directly: the relay forwarded
+every datagram with queue high water 16 and both shared/per-connection runtime
+queues stayed at high water 2 with zero drops, but the codec counted 886
+malformed packets. BEP 29 requires SACK payloads of at least four bytes in
+multiples of four; pinned libtorrent's `send_pkt` instead emits exactly
+`(m_inbuf.span() + 7) / 8` bytes, bounded by the effective MTU. RSTorrent now
+keeps its own encoder standards-compliant while tolerating received SACKs of
+1--252 bytes. Zero length and over-bound inputs remain rejected, all bits
+beyond the actual sent sequence range remain inert, and the existing extension
+count, packet size, and duplicate-SACK bounds are unchanged.
+
+The same real-socket profile then completed the exact fixture in 21.283 active
+seconds with exact SHA-1/accounting, one uTP/zero TCP peers, 9,701 forwarded
+decisions, zero relay/runtime/malformed/unknown drops, zero libtorrent loss,
+timeout, or resend counters, and terminal zero ownership. RSTorrent recovered
+227 datagrams under the deliberate reordering with no timeout collapse; its
+RTO remained 500 ms--1 second and queue high water was three datagrams. The
+largest observed DATA datagram was 554 bytes despite a selected 548-byte MTU,
+revealing that retransmissions can add a current SACK header to payload sized
+under an earlier header. That separate packet-size defect is the next repair.

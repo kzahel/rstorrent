@@ -324,7 +324,7 @@ pub fn decode_packet(bytes: &[u8]) -> Result<DecodedPacket<'_>, UtpCodecError> {
         }
         let extension_payload = &bytes[offset..offset + length];
         if kind == SACK_EXTENSION {
-            validate_sack(length)?;
+            validate_received_sack(length)?;
             if selective_ack.replace(extension_payload).is_some() {
                 return Err(UtpCodecError::DuplicateSack);
             }
@@ -424,6 +424,13 @@ fn validate_extensions_for_encode(
 
 fn validate_sack(length: usize) -> Result<(), UtpCodecError> {
     if !(4..=MAX_SACK_BYTES).contains(&length) || !length.is_multiple_of(4) {
+        return Err(UtpCodecError::InvalidSackLength(length));
+    }
+    Ok(())
+}
+
+fn validate_received_sack(length: usize) -> Result<(), UtpCodecError> {
+    if !(1..=MAX_SACK_BYTES).contains(&length) {
         return Err(UtpCodecError::InvalidSackLength(length));
     }
     Ok(())
@@ -628,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn extension_limits_and_sack_shape_are_enforced_on_both_paths() {
+    fn extension_limits_and_outbound_sack_shape_are_enforced() {
         let unknown = ExtensionToEncode {
             kind: 2,
             bytes: &[],
@@ -696,6 +703,32 @@ mod tests {
             decode_packet(&chained),
             Err(UtpCodecError::TooManyExtensions { .. })
         ));
+    }
+
+    #[test]
+    fn decoding_tolerates_bounded_non_aligned_libtorrent_sacks() {
+        for length in [1, 3, 5, 252] {
+            let mut bytes = encode(PacketType::State, &[], &[]).expect("base packet");
+            bytes[1] = SACK_EXTENSION;
+            bytes.extend([0, length as u8]);
+            bytes.extend(vec![0x5a; length]);
+            let decoded = decode_packet(&bytes).expect("bounded received SACK");
+            assert_eq!(
+                decoded.selective_ack().expect("SACK").as_bytes(),
+                vec![0x5a; length]
+            );
+        }
+
+        for length in [0, 253] {
+            let mut bytes = encode(PacketType::State, &[], &[]).expect("base packet");
+            bytes[1] = SACK_EXTENSION;
+            bytes.extend([0, length as u8]);
+            bytes.extend(vec![0; length]);
+            assert!(matches!(
+                decode_packet(&bytes),
+                Err(UtpCodecError::InvalidSackLength(actual)) if actual == length
+            ));
+        }
     }
 
     #[test]

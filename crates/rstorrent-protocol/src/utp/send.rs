@@ -152,7 +152,7 @@ impl fmt::Display for SendError {
             Self::DataAfterFin => formatter.write_str("uTP DATA cannot be sent after FIN"),
             Self::InvalidSackLength(length) => write!(
                 formatter,
-                "uTP SACK length {length} is not 4..={MAX_SACK_BYTES} and divisible by four"
+                "received uTP SACK length {length} is outside 1..={MAX_SACK_BYTES}"
             ),
             Self::UnknownPacket(sequence_number) => write!(
                 formatter,
@@ -699,7 +699,7 @@ impl SequenceRelationExt for SequenceRelation {
 }
 
 fn validate_sack(bytes: &[u8]) -> Result<(), SendError> {
-    if !(4..=MAX_SACK_BYTES).contains(&bytes.len()) || !bytes.len().is_multiple_of(4) {
+    if !(1..=MAX_SACK_BYTES).contains(&bytes.len()) {
         return Err(SendError::InvalidSackLength(bytes.len()));
     }
     Ok(())
@@ -754,7 +754,7 @@ mod tests {
         for byte in 1..=5 {
             data(&mut state, byte, u64::from(byte) * 10);
         }
-        let sack = [0b0000_0101, 0, 0, 0];
+        let sack = [0b0000_0101];
         let selective = state
             .acknowledge(SequenceNumber::new(1), Some(&sack), PacketType::State, 100)
             .expect("selective ACK");
@@ -788,14 +788,9 @@ mod tests {
         let before = state.snapshot();
         assert_eq!(
             state
-                .acknowledge(
-                    SequenceNumber::new(99),
-                    Some(&[1, 2, 3]),
-                    PacketType::State,
-                    10
-                )
+                .acknowledge(SequenceNumber::new(99), Some(&[]), PacketType::State, 10)
                 .expect_err("invalid SACK"),
-            SendError::InvalidSackLength(3)
+            SendError::InvalidSackLength(0)
         );
         assert_eq!(state.snapshot(), before);
 

@@ -135,6 +135,15 @@ the single authoritative **Now**.
   hostile lifecycle gates, and an explicit diagnostic MTU configuration. It
   leaves ordinary runtime fixed at 548 bytes unless truthful portable probe
   feedback is proven and separately reviewed for product use.
+- Tactical `130`'s real-socket delay/jitter gate found two independently
+  repaired interoperability defects. Accepted established packets now reset
+  timeout backoff from receive time, matching pinned libtorrent without
+  allowing wrong connection IDs to affect state. The inbound codec also
+  tolerates libtorrent's bounded 1--252-byte SACK payloads while the RSTorrent
+  encoder retains BEP 29's at-least-four-byte, four-byte-aligned shape. This
+  explicit compatibility exception turned the prior 886 malformed-packet
+  stall into a 21.283-second exact transfer with zero malformed or queue drops
+  and terminal zero ownership. Ordinary product uTP remains disabled.
 
 ## Why The Campaign Must Be Adaptive
 
