@@ -8,6 +8,7 @@ import gc
 import hashlib
 import json
 import selectors
+import signal
 import shutil
 import sqlite3
 import subprocess
@@ -53,8 +54,11 @@ class RunResult:
     info_hash: str
     metadata_size: int
     pieces_before_kill: int
-    pieces_after_recheck: int
+    physically_valid_after_crash: int
     restart_payload_upload: int
+    accepted_corrupt_piece: int
+    force_recheck_upload: int
+    verification_generation: int
     payload_hash: str
     elapsed_seconds: float
     cleanup_succeeded: bool = False
@@ -196,7 +200,9 @@ def read_durable_state(
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
             """
-            SELECT raw_info, piece_count, have_state, state
+            SELECT raw_info, piece_count, have_state, desired_state,
+                   payload_state, verification_requested,
+                   verification_completed, quarantine_reason
             FROM torrents
             WHERE lower(hex(info_hash)) = ?
             """,
@@ -204,8 +210,27 @@ def read_durable_state(
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
-    raw_info, piece_count, have_state, state = row
+    (
+        raw_info,
+        piece_count,
+        have_state,
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    ) = row
     if piece_count is None or have_state is None:
+        state = derive_durable_state(
+            raw_info,
+            0,
+            0,
+            desired_state,
+            payload_state,
+            verification_requested,
+            verification_completed,
+            quarantine_reason,
+        )
         return raw_info, 0, 0, state
     if len(have_state) != 34 + (piece_count + 7) // 8:
         raise ScenarioFailure("durable have state has unexpected geometry")
@@ -214,7 +239,87 @@ def read_durable_state(
         for index in range(piece_count)
         if have_state[34 + index // 8] & (1 << (7 - index % 8))
     )
+    state = derive_durable_state(
+        raw_info,
+        piece_count,
+        verified,
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    )
     return raw_info, piece_count, verified, state
+
+
+def derive_durable_state(
+    raw_info: bytes | None,
+    piece_count: int,
+    verified: int,
+    desired_state: str,
+    payload_state: str,
+    verification_requested: int,
+    verification_completed: int,
+    quarantine_reason: str | None,
+) -> str:
+    if quarantine_reason is not None:
+        return "needs_repair"
+    if raw_info is None:
+        return "awaiting_metadata" if desired_state == "running" else "paused"
+    if verification_requested != verification_completed:
+        return "checking"
+    if desired_state != "running":
+        return "paused"
+    if payload_state == "publication_pending":
+        return "awaiting_publication"
+    if (
+        piece_count > 0
+        and verified == piece_count
+        and payload_state in {"legacy_owned", "final_owned"}
+    ):
+        return "complete"
+    return "downloading"
+
+
+def read_durable_piece_indices(database_path: Path, info_hash: str) -> set[int]:
+    with sqlite3.connect(database_path, timeout=1) as connection:
+        row = connection.execute(
+            """
+            SELECT piece_count, have_state FROM torrents
+            WHERE lower(hex(info_hash)) = ?
+            """,
+            (info_hash,),
+        ).fetchone()
+    if row is None or row[1] is None:
+        return set()
+    piece_count, have_state = row
+    return {
+        index
+        for index in range(piece_count)
+        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+    }
+
+
+def read_verification_generation(database_path: Path, info_hash: str) -> tuple[int, int]:
+    with sqlite3.connect(database_path, timeout=1) as connection:
+        row = connection.execute(
+            """
+            SELECT verification_requested, verification_completed FROM torrents
+            WHERE lower(hex(info_hash)) = ?
+            """,
+            (info_hash,),
+        ).fetchone()
+    if row is None:
+        raise ScenarioFailure("durable torrent row is missing")
+    return int(row[0]), int(row[1])
+
+
+def sha1_file(path: Path) -> str:
+    digest = hashlib.sha1()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def valid_payload_pieces(path: Path, torrent_info: lt.torrent_info) -> list[int]:
@@ -378,11 +483,17 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         )
         if not staging_payload.is_file():
             raise ScenarioFailure("forced death did not retain staging payload")
+        durable_indices = read_durable_piece_indices(database_path, fixture.info_hash)
+        if len(durable_indices) != pieces_before_kill:
+            raise ScenarioFailure("durable checkpoint count and bitmap disagree")
+        corrupt_piece = min(durable_indices)
+        corrupt_offset = corrupt_piece * RESUME_PIECE_SIZE
         with staging_payload.open("r+b") as payload:
+            payload.seek(corrupt_offset)
             first = payload.read(1)
             if len(first) != 1:
                 raise ScenarioFailure("staging payload is unexpectedly empty")
-            payload.seek(0)
+            payload.seek(corrupt_offset)
             payload.write(bytes([first[0] ^ 0xFF]))
             payload.flush()
 
@@ -392,26 +503,59 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             staging_payload,
             fixture.torrent_info,
         )
-        pieces_after_recheck = len(valid_after_crash)
+        physically_valid_after_crash = len(valid_after_crash)
         completion = wait_for_complete(process, fixture)
         upload_after_restart = handle.status().total_payload_upload
         restart_payload_upload = upload_after_restart - upload_before_restart
         expected_restart_upload = sum(
             fixture.torrent_info.piece_size(piece_index)
             for piece_index in range(fixture.torrent_info.num_pieces())
-            if piece_index not in valid_after_crash
+            if piece_index not in durable_indices
         )
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
-                "restart payload upload did not retain every valid claim and "
-                "redownload exactly the corrupt and missing pieces: "
+                "fast restart did not retain exactly the durable claims and "
+                "redownload every false bitmap entry: "
                 f"expected {expected_restart_upload}, got {restart_payload_upload}"
             )
 
         output_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
+        if sha1_file(output_payload) == fixture.payload_hash:
+            raise ScenarioFailure("ordinary fast resume did not retain same-length corruption")
+        force_upload_before = handle.status().total_payload_upload
+        force = exchange(
+            process,
+            envelope(
+                "force-recheck",
+                {"type": "force_recheck", "torrent_id": fixture.info_hash},
+            ),
+        )
+        process.send_signal(signal.SIGSTOP)
+        requested, completed = read_verification_generation(
+            database_path,
+            fixture.info_hash,
+        )
+        if requested != 1 or completed != 0:
+            process.send_signal(signal.SIGCONT)
+            raise ScenarioFailure("Force recheck was not durably pending at process death")
+        process.kill()
+        process.wait(timeout=5)
+        process = start_process(binary, profile_root, payload_root)
+        completion = wait_for_complete(
+            process,
+            fixture,
+            minimum_revision=int(force["revision"]) + 2,
+        )
+        force_recheck_upload = handle.status().total_payload_upload - force_upload_before
+        expected_force_upload = fixture.torrent_info.piece_size(corrupt_piece)
+        if force_recheck_upload != expected_force_upload:
+            raise ScenarioFailure(
+                f"Force recheck uploaded {force_recheck_upload} bytes; "
+                f"expected {expected_force_upload}"
+            )
         payload_hash = compare_payloads(fixture.payload_path, output_payload)
         if payload_hash != fixture.payload_hash:
-            raise ScenarioFailure("resumed payload differs from libtorrent seed")
+            raise ScenarioFailure("Force recheck did not restore exact payload")
         raw_info, completed_piece_count, completed_pieces, state = read_durable_state(
             database_path,
             fixture.info_hash,
@@ -420,6 +564,12 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             raise ScenarioFailure("completion changed exact raw info bytes")
         if state != "complete" or completed_pieces != completed_piece_count:
             raise ScenarioFailure("completion was not durably checkpointed")
+        requested, completed = read_verification_generation(
+            database_path,
+            fixture.info_hash,
+        )
+        if requested != 1 or completed != 1:
+            raise ScenarioFailure("Force recheck generation did not settle exactly once")
 
         stop_process(process, graceful=True)
         process = None
@@ -433,8 +583,10 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         wait_for_complete(
             process,
             fixture,
-            minimum_revision=completed_revision + 2,
+            minimum_revision=completed_revision,
         )
+        if read_verification_generation(database_path, fixture.info_hash) != (1, 1):
+            raise ScenarioFailure("stable restart unexpectedly started another checker")
         stop_process(process, graceful=True)
         process = None
         result = RunResult(
@@ -442,8 +594,11 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             info_hash=fixture.info_hash,
             metadata_size=len(fixture.info_bytes),
             pieces_before_kill=pieces_before_kill,
-            pieces_after_recheck=pieces_after_recheck,
+            physically_valid_after_crash=physically_valid_after_crash,
             restart_payload_upload=restart_payload_upload,
+            accepted_corrupt_piece=corrupt_piece,
+            force_recheck_upload=force_recheck_upload,
+            verification_generation=requested,
             payload_hash=payload_hash,
             elapsed_seconds=time.monotonic() - started,
         )
@@ -515,8 +670,11 @@ def main() -> int:
                 f"run={result.ordinal} info_hash={result.info_hash} "
                 f"metadata_size={result.metadata_size} "
                 f"pieces_before_kill={result.pieces_before_kill} "
-                f"pieces_after_recheck={result.pieces_after_recheck} "
+                f"physically_valid_after_crash={result.physically_valid_after_crash} "
                 f"restart_payload_upload={result.restart_payload_upload} "
+                f"accepted_corrupt_piece={result.accepted_corrupt_piece} "
+                f"force_recheck_upload={result.force_recheck_upload} "
+                f"verification_generation={result.verification_generation} "
                 f"payload_sha1={result.payload_hash} "
                 f"elapsed_seconds={result.elapsed_seconds:.3f} cleanup=ok"
             )

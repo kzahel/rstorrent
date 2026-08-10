@@ -87,7 +87,9 @@ class CrashResult:
     revision_after_crash: int
     durable_pieces_after_crash: int
     valid_pieces_after_crash: int
+    false_negative_pieces_after_crash: int
     restart_payload_upload: int
+    stable_verification_generation: int
     payload_hash: str
     elapsed_seconds: float
     cleanup_succeeded: bool = False
@@ -111,6 +113,71 @@ def parse_checkpoint_marker(line: str) -> dict[str, str] | None:
             return None
         fields[key] = value
     return fields
+
+
+def read_durable_piece_indices(database: Path, info_hash: str) -> set[int]:
+    with sqlite3.connect(database, timeout=1) as connection:
+        row = connection.execute(
+            """
+            SELECT piece_count, have_state FROM torrents
+            WHERE lower(hex(info_hash)) = ?
+            """,
+            (info_hash,),
+        ).fetchone()
+    if row is None or row[1] is None:
+        return set()
+    piece_count, have_state = row
+    return {
+        index
+        for index in range(piece_count)
+        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+    }
+
+
+def read_verification_generation(database: Path, info_hash: str) -> tuple[int, int]:
+    with sqlite3.connect(database, timeout=1) as connection:
+        row = connection.execute(
+            """
+            SELECT verification_requested, verification_completed FROM torrents
+            WHERE lower(hex(info_hash)) = ?
+            """,
+            (info_hash,),
+        ).fetchone()
+    if row is None:
+        raise ScenarioFailure("stable neighbor row is missing")
+    return int(row[0]), int(row[1])
+
+
+def wait_for_target_complete(
+    process: subprocess.Popen[str],
+    fixture,
+    expected_torrents: int,
+) -> dict:
+    deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
+    request_number = 0
+    while time.monotonic() < deadline:
+        response = exchange(
+            process,
+            envelope(f"target-snapshot-{request_number}", {"type": "snapshot"}),
+        )
+        request_number += 1
+        torrents = response["snapshot"]["torrents"]
+        if len(torrents) != expected_torrents:
+            raise ScenarioFailure("restart snapshot has the wrong torrent count")
+        torrent = next(
+            (row for row in torrents if row["torrent_id"] == fixture.info_hash),
+            None,
+        )
+        if torrent is None:
+            raise ScenarioFailure("restart snapshot lacks the crashing torrent")
+        if torrent["state"] == "complete":
+            if torrent["verified_piece_count"] != torrent["piece_count"]:
+                raise ScenarioFailure("complete target has incomplete have state")
+            return response
+        if torrent["state"] == "needs_repair":
+            raise ScenarioFailure(f"restart entered repair state: {torrent}")
+        time.sleep(0.05)
+    raise ScenarioFailure("restarted target did not complete before timeout")
 
 
 def wait_for_crash_boundary(
@@ -161,12 +228,20 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
     process: subprocess.Popen[str] | None = None
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
+    stable_handle: lt.torrent_handle | None = None
     started = time.monotonic()
     try:
         fixture = create_fixture(
-            run_path,
+            run_path / "crashing",
             payload_size=TOTAL_SIZE,
             piece_size=PIECE_SIZE,
+            root_name=f"crashing-{scenario.name}",
+        )
+        stable_fixture = create_fixture(
+            run_path / "stable",
+            payload_size=4 * PIECE_SIZE,
+            piece_size=PIECE_SIZE,
+            root_name="stable-neighbor",
         )
         profile_root = run_path / "profile"
         payload_root = run_path / "payload"
@@ -179,6 +254,40 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             fixture.seed_directory,
             diagnostics,
         )
+        stable_handle = add_seed(
+            session,
+            stable_fixture.torrent_info,
+            stable_fixture.seed_directory,
+            diagnostics,
+        )
+        process = start_process(
+            binary,
+            profile_root,
+            payload_root,
+            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
+            payload_allowance=PAYLOAD_ALLOWANCE,
+        )
+        exchange(
+            process,
+            envelope(
+                "add-stable-neighbor",
+                {
+                    "type": "add_magnet",
+                    "magnet": magnet_uri(
+                        stable_fixture.info_hash,
+                        f"127.0.0.1:{port}",
+                    ),
+                    "storage_root": "downloads",
+                    "skip_files": [],
+                },
+            ),
+        )
+        wait_for_complete(process, stable_fixture)
+        stop_process(process, graceful=True)
+        process = None
+        if read_verification_generation(database_path, stable_fixture.info_hash) != (0, 0):
+            raise ScenarioFailure("stable neighbor unexpectedly entered checking")
+
         process = start_process(
             binary,
             profile_root,
@@ -232,6 +341,12 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             raise ScenarioFailure(
                 f"{scenario.name} retained unexpected durable count {verified}"
             )
+        durable_indices = read_durable_piece_indices(
+            database_path,
+            fixture.info_hash,
+        )
+        if len(durable_indices) != verified:
+            raise ScenarioFailure("durable have count and bitmap disagree")
 
         staging_payload = (
             payload_root
@@ -250,23 +365,24 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             timeout_seconds=PROCESS_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
         )
-        wait_for_complete(
-            process,
-            fixture,
-            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
-        )
+        wait_for_target_complete(process, fixture, expected_torrents=2)
         restart_payload_upload = (
             handle.status().total_payload_upload - upload_before_restart
         )
         expected_restart_upload = sum(
             fixture.torrent_info.piece_size(piece_index)
             for piece_index in range(fixture.torrent_info.num_pieces())
-            if piece_index not in valid_after_crash
+            if piece_index not in durable_indices
         )
         if restart_payload_upload != expected_restart_upload:
             raise ScenarioFailure(
                 f"{scenario.name} restart uploaded {restart_payload_upload} bytes; "
                 f"expected {expected_restart_upload}"
+            )
+        false_negative_pieces = set(valid_after_crash) - durable_indices
+        if not scenario.expect_durable and not false_negative_pieces:
+            raise ScenarioFailure(
+                f"{scenario.name} did not retain a physically valid false-negative piece"
             )
 
         output_payload = payload_root / fixture.torrent_info.name() / "payload.bin"
@@ -279,6 +395,12 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
         )
         if final_state != "complete" or final_verified != final_piece_count:
             raise ScenarioFailure(f"{scenario.name} restart was not fully durable")
+        stable_requested, stable_completed = read_verification_generation(
+            database_path,
+            stable_fixture.info_hash,
+        )
+        if (stable_requested, stable_completed) != (0, 0):
+            raise ScenarioFailure("crashing torrent caused stable neighbor checking")
         stop_process(process, graceful=True)
         process = None
         result = CrashResult(
@@ -286,7 +408,9 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             revision_after_crash=revision,
             durable_pieces_after_crash=verified,
             valid_pieces_after_crash=len(valid_after_crash),
+            false_negative_pieces_after_crash=len(false_negative_pieces),
             restart_payload_upload=restart_payload_upload,
+            stable_verification_generation=stable_requested,
             payload_hash=payload_hash,
             elapsed_seconds=time.monotonic() - started,
         )
@@ -300,10 +424,13 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
                 diagnostics.extend(alert.message() for alert in session.pop_alerts())
                 if handle is not None and handle.is_valid():
                     session.remove_torrent(handle)
+                if stable_handle is not None and stable_handle.is_valid():
+                    session.remove_torrent(stable_handle)
                 session.pause()
             except Exception as error:
                 diagnostics.append(f"libtorrent cleanup failed: {error}")
         handle = None
+        stable_handle = None
         session = None
         gc.collect()
         try:
@@ -366,7 +493,9 @@ def main() -> int:
                 f"revision_after_crash={result.revision_after_crash} "
                 f"durable_pieces_after_crash={result.durable_pieces_after_crash} "
                 f"valid_pieces_after_crash={result.valid_pieces_after_crash} "
+                f"false_negative_pieces_after_crash={result.false_negative_pieces_after_crash} "
                 f"restart_payload_upload={result.restart_payload_upload} "
+                f"stable_verification_generation={result.stable_verification_generation} "
                 f"payload_sha1={result.payload_hash} "
                 f"elapsed_seconds={result.elapsed_seconds:.3f} cleanup=ok"
             )

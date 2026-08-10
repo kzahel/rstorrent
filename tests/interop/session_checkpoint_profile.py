@@ -27,6 +27,7 @@ from first_verified_piece import (
 from magnet_metadata import create_fixture, magnet_uri
 from session_resume import (
     build_binary,
+    derive_durable_state,
     envelope,
     exchange,
     read_durable_state,
@@ -71,7 +72,9 @@ def read_checkpoint_state(
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
             """
-            SELECT updated_revision, piece_count, have_state, state
+            SELECT updated_revision, raw_info, piece_count, have_state,
+                   desired_state, payload_state, verification_requested,
+                   verification_completed, quarantine_reason
             FROM torrents
             WHERE lower(hex(info_hash)) = ?
             """,
@@ -79,9 +82,29 @@ def read_checkpoint_state(
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
-    updated_revision, piece_count, have_state, state = row
+    (
+        updated_revision,
+        raw_info,
+        piece_count,
+        have_state,
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    ) = row
     if piece_count is None or have_state is None:
-        return int(updated_revision), 0, 0, str(state)
+        state = derive_durable_state(
+            raw_info,
+            0,
+            0,
+            desired_state,
+            payload_state,
+            verification_requested,
+            verification_completed,
+            quarantine_reason,
+        )
+        return int(updated_revision), 0, 0, state
     if len(have_state) != 34 + (piece_count + 7) // 8:
         raise ScenarioFailure("durable have state has unexpected geometry")
     verified = sum(
@@ -89,7 +112,17 @@ def read_checkpoint_state(
         for index in range(piece_count)
         if have_state[34 + index // 8] & (1 << (7 - index % 8))
     )
-    return int(updated_revision), int(piece_count), verified, str(state)
+    state = derive_durable_state(
+        raw_info,
+        piece_count,
+        verified,
+        desired_state,
+        payload_state,
+        verification_requested,
+        verification_completed,
+        quarantine_reason,
+    )
+    return int(updated_revision), int(piece_count), verified, state
 
 
 def wait_for_metadata_checkpoint(

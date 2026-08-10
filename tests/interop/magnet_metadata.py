@@ -104,15 +104,16 @@ def create_fixture(
     payload_size: int = PAYLOAD_SIZE,
     piece_size: int = PIECE_SIZE,
     prefix_payload_size: int = 0,
+    root_name: str = ROOT_NAME,
 ) -> Fixture:
     seed_directory = run_path / "seed"
-    torrent_root = seed_directory / ROOT_NAME
+    torrent_root = seed_directory / root_name
     torrent_root.mkdir(parents=True)
     files = lt.file_storage()
     for index in range(EMPTY_FILE_COUNT):
         name = f"{index:03}-{'a' * 176}.empty"
         relative = f"metadata/{name}"
-        torrent_name = f"{ROOT_NAME}/{relative}"
+        torrent_name = f"{root_name}/{relative}"
         files.add_file(torrent_name, 0)
         empty_path = torrent_root / relative
         empty_path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +122,7 @@ def create_fixture(
     if prefix_payload_size > 0:
         prefix_path = torrent_root / "nested" / "prefix.bin"
         write_deterministic_range(prefix_path, 0, prefix_payload_size)
-        files.add_file(f"{ROOT_NAME}/nested/prefix.bin", prefix_payload_size)
+        files.add_file(f"{root_name}/nested/prefix.bin", prefix_payload_size)
 
     payload_path = torrent_root / "payload.bin"
     payload_hash = (
@@ -129,7 +130,7 @@ def create_fixture(
         if prefix_payload_size > 0
         else write_deterministic_payload(payload_path, payload_size)
     )
-    files.add_file(f"{ROOT_NAME}/payload.bin", payload_size)
+    files.add_file(f"{root_name}/payload.bin", payload_size)
     creator = lt.create_torrent(
         files,
         piece_size=piece_size,
