@@ -7,6 +7,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::os::fd::BorrowedFd;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
@@ -405,7 +406,27 @@ fn remove_owned_workspace(path: &Path) -> Result<(), String> {
 }
 
 fn process_descriptor_count() -> Option<usize> {
-    fs::read_dir("/dev/fd").ok().map(Iterator::count)
+    if let Ok(entries) = fs::read_dir("/dev/fd") {
+        return Some(entries.count());
+    }
+
+    const MAXIMUM_DESCRIPTOR_SCAN: usize = 65_536;
+    let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile)
+        .current
+        .and_then(|value| usize::try_from(value).ok())?;
+    if limit > MAXIMUM_DESCRIPTOR_SCAN {
+        return None;
+    }
+    Some(
+        (0..limit)
+            .filter(|descriptor| {
+                // SAFETY: the borrowed value is used only by this immediate
+                // F_GETFD call, which reports EBADF if the number is not open.
+                let borrowed = unsafe { BorrowedFd::borrow_raw(*descriptor as i32) };
+                rustix::io::fcntl_getfd(borrowed).is_ok()
+            })
+            .count(),
+    )
 }
 
 fn sample_descriptor_high_water(high_water: &mut Option<usize>) {
