@@ -21,11 +21,23 @@ final class RSTorrentIOSStorageProbeUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(waitForSubstring("continued=completed", in: app.staticTexts["lifecycle-status"], timeout: 15))
 
-        app.buttons["arm-force-close"].tap()
-        XCTAssertTrue(waitForSubstring("forceArmed=true", in: app.staticTexts["lifecycle-status"], timeout: 5))
+        app.buttons["prepare-app-interruption"].tap()
+        XCTAssertTrue(
+            waitForSubstring(
+                "forceArmed=true",
+                in: app.staticTexts["lifecycle-status"],
+                timeout: 15
+            )
+        )
         app.terminate()
         app.launch()
-        XCTAssertTrue(waitForSubstring("forceRecovered=true", in: app.staticTexts["lifecycle-status"], timeout: 10))
+        XCTAssertTrue(
+            waitForSubstring(
+                "forceRecovered=true",
+                in: app.staticTexts["lifecycle-status"],
+                timeout: 30
+            )
+        )
     }
 
     func testSelectsLocalFolderAndRestoresBookmark() throws {

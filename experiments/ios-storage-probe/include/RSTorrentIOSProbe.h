@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 char *rstorrent_ios_probe_run_storage(const char *root);
+char *rstorrent_ios_probe_prepare_interrupted_storage(const char *root);
 char *rstorrent_ios_probe_run_network(
     const char *host,
     uint16_t tcp_port,

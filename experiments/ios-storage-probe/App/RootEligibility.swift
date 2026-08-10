@@ -13,6 +13,7 @@ enum ProbeRootEligibilityClass: String, Codable, Equatable {
 }
 
 enum ProbeFileProviderLookup: String, Codable, Equatable {
+    case notQueried = "not_queried"
     case noIdentifier = "no_identifier"
     case identified
     case failed
@@ -23,7 +24,9 @@ enum ProbeRootEligibilityReason: String, Codable, Equatable {
     case acceptedAppOwned = "accepted_app_owned"
     case acceptedSelectedOnDevice = "accepted_selected_on_device"
     case wrongKind = "wrong_kind"
+    case wrongScheme = "wrong_scheme"
     case symbolicLink = "symbolic_link"
+    case overlapsAppOwnedRoot = "overlaps_app_owned_root"
     case ubiquitous = "ubiquitous"
     case nonLocalVolume = "non_local_volume"
     case externalVolume = "external_volume"
@@ -34,8 +37,10 @@ enum ProbeRootEligibilityReason: String, Codable, Equatable {
 }
 
 struct ProbeRootEligibilityObservation: Codable, Equatable {
+    var isFileURL: Bool? = nil
     var isDirectory: Bool?
     var isSymbolicLink: Bool?
+    var overlapsAppOwnedRoot: Bool? = nil
     var isUbiquitousItem: Bool?
     var volumeIsLocal: Bool?
     var volumeIsInternal: Bool?
@@ -59,12 +64,25 @@ enum ProbeRootEligibility {
         guard observation.isDirectory == true else {
             return .init(classification: .unclassifiable, reason: .wrongKind)
         }
+        guard observation.isFileURL == true else {
+            return .init(classification: .unclassifiable, reason: .wrongScheme)
+        }
         guard observation.isSymbolicLink != true else {
             return .init(classification: .unclassifiable, reason: .symbolicLink)
         }
 
         if provenance == .appOwned {
             return .init(classification: .appOwned, reason: .acceptedAppOwned)
+        }
+
+        if observation.overlapsAppOwnedRoot == true {
+            return .init(
+                classification: .unclassifiable,
+                reason: .overlapsAppOwnedRoot
+            )
+        }
+        guard observation.overlapsAppOwnedRoot == false else {
+            return .init(classification: .unclassifiable, reason: .missingEvidence)
         }
 
         if observation.isUbiquitousItem == true {
@@ -78,6 +96,8 @@ enum ProbeRootEligibility {
         }
 
         switch observation.fileProviderLookup {
+        case .notQueried:
+            return .init(classification: .unclassifiable, reason: .missingEvidence)
         case .identified:
             return .init(classification: .unclassifiable, reason: .providerIdentified)
         case .failed:

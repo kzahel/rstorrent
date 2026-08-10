@@ -88,6 +88,25 @@ final class ProbeRootStoreTests: XCTestCase {
         XCTAssertNil(try store.load().pendingOperation)
     }
 
+    func testPendingStaleRefreshCommitsBookmarkAndCompletionAtomically() throws {
+        _ = try store.ensureAppOwned(displayLabel: "Local")
+        let root = try store.installSelected(
+            bookmarkData: Data([1, 2, 3]),
+            displayLabel: "Selected"
+        )
+        try store.beginPendingOperation(for: root)
+        let refreshed = try store.completePendingOperationAndRefreshSelected(
+            rootID: root.stableRootID,
+            generation: root.generation,
+            bookmarkData: Data([4, 5, 6]),
+            displayLabel: "Refreshed"
+        )
+        XCTAssertEqual(refreshed.stableRootID, root.stableRootID)
+        XCTAssertEqual(refreshed.generation, root.generation + 1)
+        XCTAssertEqual(refreshed.bookmarkData, Data([4, 5, 6]))
+        XCTAssertNil(try store.load().pendingOperation)
+    }
+
     func testCorruptAndOverfullRegistriesFailClosed() throws {
         let invalid = ProbeRootRegistry(
             schemaVersion: 99,

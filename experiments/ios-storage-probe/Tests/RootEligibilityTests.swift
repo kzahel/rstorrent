@@ -20,8 +20,10 @@ final class RootEligibilityTests: XCTestCase {
         let accepted = ProbeRootEligibility.decide(
             provenance: .picker,
             observation: .init(
+                isFileURL: true,
                 isDirectory: true,
                 isSymbolicLink: false,
+                overlapsAppOwnedRoot: false,
                 isUbiquitousItem: false,
                 volumeIsLocal: true,
                 volumeIsInternal: true,
@@ -38,24 +40,30 @@ final class RootEligibilityTests: XCTestCase {
 
         for observation in [
             ProbeRootEligibilityObservation(
+                isFileURL: true,
                 isDirectory: true,
                 isSymbolicLink: false,
+                overlapsAppOwnedRoot: false,
                 isUbiquitousItem: nil,
                 volumeIsLocal: true,
                 volumeIsInternal: true,
                 fileProviderLookup: .noIdentifier
             ),
             ProbeRootEligibilityObservation(
+                isFileURL: true,
                 isDirectory: true,
                 isSymbolicLink: false,
+                overlapsAppOwnedRoot: false,
                 isUbiquitousItem: false,
                 volumeIsLocal: nil,
                 volumeIsInternal: true,
                 fileProviderLookup: .noIdentifier
             ),
             ProbeRootEligibilityObservation(
+                isFileURL: true,
                 isDirectory: true,
                 isSymbolicLink: false,
+                overlapsAppOwnedRoot: false,
                 isUbiquitousItem: false,
                 volumeIsLocal: true,
                 volumeIsInternal: nil,
@@ -95,12 +103,20 @@ final class RootEligibilityTests: XCTestCase {
             decide(.picker, provider: .timedOut).reason,
             .providerLookupTimedOut
         )
+        XCTAssertEqual(decide(.picker, provider: .notQueried).reason, .missingEvidence)
+        XCTAssertEqual(decide(.picker, fileURL: false).reason, .wrongScheme)
+        XCTAssertEqual(
+            decide(.picker, overlapsAppOwned: true).reason,
+            .overlapsAppOwnedRoot
+        )
     }
 
     func testEncodedObservationContainsNoProviderIdentifierField() throws {
         let observation = ProbeRootEligibilityObservation(
+            isFileURL: true,
             isDirectory: true,
             isSymbolicLink: false,
+            overlapsAppOwnedRoot: false,
             isUbiquitousItem: false,
             volumeIsLocal: true,
             volumeIsInternal: true,
@@ -125,8 +141,10 @@ final class RootEligibilityTests: XCTestCase {
 
     private func decide(
         _ provenance: ProbeRootProvenance,
+        fileURL: Bool? = true,
         directory: Bool? = true,
         symbolicLink: Bool? = false,
+        overlapsAppOwned: Bool? = false,
         ubiquitous: Bool? = false,
         local: Bool? = true,
         internalVolume: Bool? = true,
@@ -135,8 +153,10 @@ final class RootEligibilityTests: XCTestCase {
         ProbeRootEligibility.decide(
             provenance: provenance,
             observation: .init(
+                isFileURL: fileURL,
                 isDirectory: directory,
                 isSymbolicLink: symbolicLink,
+                overlapsAppOwnedRoot: overlapsAppOwned,
                 isUbiquitousItem: ubiquitous,
                 volumeIsLocal: local,
                 volumeIsInternal: internalVolume,

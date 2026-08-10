@@ -81,7 +81,7 @@ enum ProbeRootStoreError: Error, Equatable, LocalizedError {
     }
 }
 
-final class ProbeRootStore {
+final class ProbeRootStore: @unchecked Sendable {
     static let schemaVersion = 1
     static let maximumRoots = 2
     static let maximumBookmarkBytes = 64 * 1024
@@ -89,6 +89,7 @@ final class ProbeRootStore {
 
     private let defaults: UserDefaults
     private let key: String
+    private let lock = NSRecursiveLock()
 
     init(defaults: UserDefaults = .standard, key: String = "probe.root-registry.v1") {
         self.defaults = defaults
@@ -96,110 +97,165 @@ final class ProbeRootStore {
     }
 
     func load() throws -> ProbeRootRegistry {
-        guard let data = defaults.data(forKey: key) else {
-            return .empty
+        try lock.withLock {
+            guard let data = defaults.data(forKey: key) else {
+                return .empty
+            }
+            let registry = try JSONDecoder().decode(ProbeRootRegistry.self, from: data)
+            try Self.validate(registry)
+            return registry
         }
-        let registry = try JSONDecoder().decode(ProbeRootRegistry.self, from: data)
-        try Self.validate(registry)
-        return registry
     }
 
     @discardableResult
     func ensureAppOwned(displayLabel: String) throws -> ProbeRootRecord {
-        var registry = try load()
-        if let existing = registry.roots.first(where: { $0.kind == .appOwned }) {
-            return existing
+        try lock.withLock {
+            var registry = try load()
+            if let existing = registry.roots.first(where: { $0.kind == .appOwned }) {
+                return existing
+            }
+            let record = ProbeRootRecord(
+                schemaVersion: Self.schemaVersion,
+                stableRootID: UUID().uuidString.lowercased(),
+                kind: .appOwned,
+                generation: 1,
+                displayLabel: displayLabel,
+                bookmarkData: nil,
+                lastEligibilityClass: .appOwned
+            )
+            registry.roots.append(record)
+            try save(registry)
+            return record
         }
-        let record = ProbeRootRecord(
-            schemaVersion: Self.schemaVersion,
-            stableRootID: UUID().uuidString.lowercased(),
-            kind: .appOwned,
-            generation: 1,
-            displayLabel: displayLabel,
-            bookmarkData: nil,
-            lastEligibilityClass: .appOwned
-        )
-        registry.roots.append(record)
-        try save(registry)
-        return record
     }
 
     @discardableResult
     func installSelected(bookmarkData: Data, displayLabel: String) throws -> ProbeRootRecord {
-        var registry = try load()
-        let record: ProbeRootRecord
-        if let index = registry.roots.firstIndex(where: { $0.kind == .selectedOnDevice }) {
-            let current = registry.roots[index]
-            guard current.generation < UInt64.max else {
-                throw ProbeRootStoreError.generationOverflow
+        try lock.withLock {
+            var registry = try load()
+            let record: ProbeRootRecord
+            if let index = registry.roots.firstIndex(where: { $0.kind == .selectedOnDevice }) {
+                let current = registry.roots[index]
+                guard current.generation < UInt64.max else {
+                    throw ProbeRootStoreError.generationOverflow
+                }
+                record = ProbeRootRecord(
+                    schemaVersion: Self.schemaVersion,
+                    stableRootID: current.stableRootID,
+                    kind: .selectedOnDevice,
+                    generation: current.generation + 1,
+                    displayLabel: displayLabel,
+                    bookmarkData: bookmarkData,
+                    lastEligibilityClass: .selectedOnDevice
+                )
+                registry.roots[index] = record
+            } else {
+                record = ProbeRootRecord(
+                    schemaVersion: Self.schemaVersion,
+                    stableRootID: UUID().uuidString.lowercased(),
+                    kind: .selectedOnDevice,
+                    generation: 1,
+                    displayLabel: displayLabel,
+                    bookmarkData: bookmarkData,
+                    lastEligibilityClass: .selectedOnDevice
+                )
+                registry.roots.append(record)
             }
-            record = ProbeRootRecord(
-                schemaVersion: Self.schemaVersion,
-                stableRootID: current.stableRootID,
-                kind: .selectedOnDevice,
-                generation: current.generation + 1,
-                displayLabel: displayLabel,
-                bookmarkData: bookmarkData,
-                lastEligibilityClass: .selectedOnDevice
-            )
-            registry.roots[index] = record
-        } else {
-            record = ProbeRootRecord(
-                schemaVersion: Self.schemaVersion,
-                stableRootID: UUID().uuidString.lowercased(),
-                kind: .selectedOnDevice,
-                generation: 1,
-                displayLabel: displayLabel,
-                bookmarkData: bookmarkData,
-                lastEligibilityClass: .selectedOnDevice
-            )
-            registry.roots.append(record)
+            try save(registry)
+            return record
         }
-        try save(registry)
-        return record
     }
 
     func beginPendingOperation(for root: ProbeRootRecord) throws {
-        var registry = try load()
-        guard registry.roots.contains(where: {
-            $0.stableRootID == root.stableRootID && $0.generation == root.generation
-        }) else {
-            throw ProbeRootStoreError.invalidPendingOperation
+        try lock.withLock {
+            var registry = try load()
+            guard registry.roots.contains(where: {
+                $0.stableRootID == root.stableRootID && $0.generation == root.generation
+            }) else {
+                throw ProbeRootStoreError.invalidPendingOperation
+            }
+            registry.pendingOperation = ProbePendingOperation(
+                rootID: root.stableRootID,
+                rootGeneration: root.generation,
+                phase: .preparedPartialWorkspace
+            )
+            try save(registry)
         }
-        registry.pendingOperation = ProbePendingOperation(
-            rootID: root.stableRootID,
-            rootGeneration: root.generation,
-            phase: .preparedPartialWorkspace
-        )
-        try save(registry)
     }
 
     @discardableResult
     func completePendingOperation(rootID: String, generation: UInt64) throws -> Bool {
-        var registry = try load()
-        guard
-            let pending = registry.pendingOperation,
-            pending.rootID == rootID,
-            pending.rootGeneration == generation
-        else {
-            return false
+        try lock.withLock {
+            var registry = try load()
+            guard
+                let pending = registry.pendingOperation,
+                pending.rootID == rootID,
+                pending.rootGeneration == generation
+            else {
+                return false
+            }
+            registry.pendingOperation = nil
+            try save(registry)
+            return true
         }
-        registry.pendingOperation = nil
-        try save(registry)
-        return true
+    }
+
+    @discardableResult
+    func completePendingOperationAndRefreshSelected(
+        rootID: String,
+        generation: UInt64,
+        bookmarkData: Data,
+        displayLabel: String
+    ) throws -> ProbeRootRecord {
+        try lock.withLock {
+            var registry = try load()
+            guard
+                let pending = registry.pendingOperation,
+                pending.rootID == rootID,
+                pending.rootGeneration == generation,
+                let index = registry.roots.firstIndex(where: {
+                    $0.stableRootID == rootID
+                        && $0.generation == generation
+                        && $0.kind == .selectedOnDevice
+                })
+            else {
+                throw ProbeRootStoreError.invalidPendingOperation
+            }
+            guard generation < UInt64.max else {
+                throw ProbeRootStoreError.generationOverflow
+            }
+            let refreshed = ProbeRootRecord(
+                schemaVersion: Self.schemaVersion,
+                stableRootID: rootID,
+                kind: .selectedOnDevice,
+                generation: generation + 1,
+                displayLabel: displayLabel,
+                bookmarkData: bookmarkData,
+                lastEligibilityClass: .selectedOnDevice
+            )
+            registry.roots[index] = refreshed
+            registry.pendingOperation = nil
+            try save(registry)
+            return refreshed
+        }
     }
 
     func reset() {
-        defaults.removeObject(forKey: key)
+        lock.withLock {
+            defaults.removeObject(forKey: key)
+            defaults.synchronize()
+        }
     }
 
     private func save(_ registry: ProbeRootRegistry) throws {
-        try Self.validate(registry)
-        guard let data = try? JSONEncoder().encode(registry) else {
-            throw ProbeRootStoreError.encodingFailed
+        try lock.withLock {
+            try Self.validate(registry)
+            guard let data = try? JSONEncoder().encode(registry) else {
+                throw ProbeRootStoreError.encodingFailed
+            }
+            defaults.set(data, forKey: key)
+            defaults.synchronize()
         }
-        defaults.set(data, forKey: key)
-        defaults.synchronize()
     }
 
     static func validate(_ registry: ProbeRootRegistry) throws {

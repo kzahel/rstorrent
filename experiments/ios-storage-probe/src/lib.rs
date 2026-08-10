@@ -33,15 +33,33 @@ struct StorageReport {
     truncated_length: u64,
     regular_file: bool,
     modified_unix_nanos: Option<u128>,
-    device: u64,
-    inode: u64,
     allocated_bytes: u64,
     rename_collision_rejected: bool,
     pool_limit: usize,
     handle_high_water: usize,
     cached_after_shutdown: usize,
     owned_after_shutdown: usize,
+    probe_file_high_water: usize,
+    process_descriptor_baseline: Option<usize>,
+    process_descriptor_sampled_high_water: Option<usize>,
+    process_descriptor_final: Option<usize>,
     cleanup_complete: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct InterruptedStorageReport {
+    ok: bool,
+    prepared_length: u64,
+    sync_complete: bool,
+    pool_limit: usize,
+    handle_high_water: usize,
+    cached_after_shutdown: usize,
+    owned_after_shutdown: usize,
+    probe_file_high_water: usize,
+    process_descriptor_baseline: Option<usize>,
+    process_descriptor_sampled_high_water: Option<usize>,
+    process_descriptor_final: Option<usize>,
+    cleanup_required: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +85,20 @@ pub extern "C" fn rstorrent_ios_probe_run_storage(root: *const c_char) -> *mut c
             .build()
             .map_err(|error| format!("build storage runtime: {error}"))?;
         runtime.block_on(run_storage(Path::new(&root)))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rstorrent_ios_probe_prepare_interrupted_storage(
+    root: *const c_char,
+) -> *mut c_char {
+    ffi_json(|| {
+        let root = c_string(root)?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| format!("build interrupted-storage runtime: {error}"))?;
+        runtime.block_on(prepare_interrupted_storage(Path::new(&root)))
     })
 }
 
@@ -132,6 +164,8 @@ fn c_string(value: *const c_char) -> Result<String, String> {
 }
 
 async fn run_storage(root: &Path) -> Result<StorageReport, String> {
+    let process_descriptor_baseline = process_descriptor_count();
+    let mut process_descriptor_sampled_high_water = process_descriptor_baseline;
     let workspace = root.join(PROBE_DIRECTORY);
     remove_owned_workspace(&workspace)?;
     let nested = workspace.join("nested").join("deeper");
@@ -146,6 +180,7 @@ async fn run_storage(root: &Path) -> Result<StorageReport, String> {
         .open(StorageFileAccess::ReadWriteCreate)
         .await
         .map_err(|error| format!("open source through engine pool: {error}"))?;
+    sample_descriptor_high_water(&mut process_descriptor_sampled_high_water);
     handle
         .file()
         .set_len(FILE_LENGTH)
@@ -193,6 +228,7 @@ async fn run_storage(root: &Path) -> Result<StorageReport, String> {
 
     fs::write(&collision, b"foreign")
         .map_err(|error| format!("create collision sentinel: {error}"))?;
+    sample_descriptor_high_water(&mut process_descriptor_sampled_high_water);
     let rename_collision_rejected =
         renameat_with(CWD, &source, CWD, &collision, RenameFlags::NOREPLACE).is_err();
     if !rename_collision_rejected {
@@ -207,6 +243,7 @@ async fn run_storage(root: &Path) -> Result<StorageReport, String> {
         .open(StorageFileAccess::ReadWriteExisting)
         .await
         .map_err(|error| format!("reopen published file: {error}"))?;
+    sample_descriptor_high_water(&mut process_descriptor_sampled_high_water);
     let mut reopened = vec![0; second.len()];
     published_handle
         .file()
@@ -236,6 +273,7 @@ async fn run_storage(root: &Path) -> Result<StorageReport, String> {
         .map_err(|error| format!("shutdown engine file pool: {error}"))?;
     let after_shutdown = pool.snapshot();
     remove_owned_workspace(&workspace)?;
+    let process_descriptor_final = process_descriptor_count();
     let cleanup_complete = !workspace.exists();
     if !cleanup_complete {
         return Err("probe workspace remained after cleanup".to_owned());
@@ -248,15 +286,74 @@ async fn run_storage(root: &Path) -> Result<StorageReport, String> {
         truncated_length: TRUNCATED_LENGTH,
         regular_file: metadata.is_file() && !metadata.file_type().is_symlink(),
         modified_unix_nanos,
-        device: metadata.dev(),
-        inode: metadata.ino(),
         allocated_bytes: metadata.blocks().saturating_mul(512),
         rename_collision_rejected,
         pool_limit: before_shutdown.limit,
         handle_high_water: before_shutdown.owned_high_water,
         cached_after_shutdown: after_shutdown.cached_entries,
         owned_after_shutdown: after_shutdown.current_owned,
+        probe_file_high_water: 2,
+        process_descriptor_baseline,
+        process_descriptor_sampled_high_water,
+        process_descriptor_final,
         cleanup_complete,
+    })
+}
+
+async fn prepare_interrupted_storage(root: &Path) -> Result<InterruptedStorageReport, String> {
+    let process_descriptor_baseline = process_descriptor_count();
+    let mut process_descriptor_sampled_high_water = process_descriptor_baseline;
+    let workspace = root.join(PROBE_DIRECTORY);
+    remove_owned_workspace(&workspace)?;
+    let nested = workspace.join("nested").join("deeper");
+    fs::create_dir_all(&nested).map_err(|error| format!("create interrupted tree: {error}"))?;
+
+    let interrupted = nested.join("interrupted.bin");
+    let pool = StorageFilePool::new(8, None).map_err(str::to_owned)?;
+    let reference = path_reference(&pool, &interrupted, 0, 0);
+    let handle = reference
+        .open(StorageFileAccess::ReadWriteCreate)
+        .await
+        .map_err(|error| format!("open interrupted file through engine pool: {error}"))?;
+    sample_descriptor_high_water(&mut process_descriptor_sampled_high_water);
+    let payload = pattern(4096, 137);
+    handle
+        .file()
+        .set_len(TRUNCATED_LENGTH)
+        .map_err(|error| format!("size interrupted file: {error}"))?;
+    handle
+        .file()
+        .write_all_at(&payload, 8192)
+        .map_err(|error| format!("write interrupted file: {error}"))?;
+    handle
+        .file()
+        .sync_all()
+        .map_err(|error| format!("sync interrupted file: {error}"))?;
+    drop(handle);
+    pool.invalidate_storage("ios-probe");
+    let before_shutdown = pool.snapshot();
+    pool.shutdown()
+        .await
+        .map_err(|error| format!("shutdown interrupted file pool: {error}"))?;
+    let after_shutdown = pool.snapshot();
+    fs::File::open(&nested)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("sync interrupted namespace: {error}"))?;
+    let process_descriptor_final = process_descriptor_count();
+
+    Ok(InterruptedStorageReport {
+        ok: true,
+        prepared_length: TRUNCATED_LENGTH,
+        sync_complete: true,
+        pool_limit: before_shutdown.limit,
+        handle_high_water: before_shutdown.owned_high_water,
+        cached_after_shutdown: after_shutdown.cached_entries,
+        owned_after_shutdown: after_shutdown.current_owned,
+        probe_file_high_water: 1,
+        process_descriptor_baseline,
+        process_descriptor_sampled_high_water,
+        process_descriptor_final,
+        cleanup_required: workspace.exists(),
     })
 }
 
@@ -304,6 +401,16 @@ fn remove_owned_workspace(path: &Path) -> Result<(), String> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("remove owned probe workspace: {error}")),
+    }
+}
+
+fn process_descriptor_count() -> Option<usize> {
+    fs::read_dir("/dev/fd").ok().map(Iterator::count)
+}
+
+fn sample_descriptor_high_water(high_water: &mut Option<usize>) {
+    if let Some(sample) = process_descriptor_count() {
+        *high_water = Some(high_water.map_or(sample, |current| current.max(sample)));
     }
 }
 
@@ -446,7 +553,10 @@ fn ip_unspecified_for(ip: IpAddr) -> IpAddr {
 
 #[cfg(test)]
 mod tests {
-    use super::{FILE_LENGTH, TRUNCATED_LENGTH, pattern, run_loopback_network, run_storage};
+    use super::{
+        FILE_LENGTH, PROBE_DIRECTORY, TRUNCATED_LENGTH, pattern, prepare_interrupted_storage,
+        run_loopback_network, run_storage,
+    };
 
     #[test]
     fn payload_patterns_and_geometry_are_deterministic() {
@@ -481,7 +591,48 @@ mod tests {
         assert_eq!(report.handle_high_water, 1);
         assert_eq!(report.cached_after_shutdown, 0);
         assert_eq!(report.owned_after_shutdown, 0);
+        assert_eq!(report.probe_file_high_water, 2);
+        assert!(report.process_descriptor_sampled_high_water >= report.process_descriptor_baseline);
+        assert!(report.process_descriptor_sampled_high_water >= report.process_descriptor_final);
         assert!(report.cleanup_complete);
         std::fs::remove_dir(root).expect("remove host test root");
+    }
+
+    #[test]
+    fn interrupted_storage_is_durable_and_next_run_reconciles_it() {
+        let root = std::env::temp_dir().join(format!(
+            "rstorrent-ios-probe-interrupted-host-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create interrupted host test root");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("interrupted host test runtime");
+        let prepared = runtime
+            .block_on(prepare_interrupted_storage(&root))
+            .expect("prepare interruption");
+        assert!(prepared.ok);
+        assert!(prepared.sync_complete);
+        assert!(prepared.cleanup_required);
+        assert_eq!(prepared.handle_high_water, 1);
+        assert_eq!(prepared.cached_after_shutdown, 0);
+        assert_eq!(prepared.owned_after_shutdown, 0);
+        assert_eq!(prepared.probe_file_high_water, 1);
+        assert!(
+            prepared.process_descriptor_sampled_high_water >= prepared.process_descriptor_baseline
+        );
+        assert!(
+            prepared.process_descriptor_sampled_high_water >= prepared.process_descriptor_final
+        );
+        assert!(root.join(PROBE_DIRECTORY).exists());
+
+        let recovered = runtime
+            .block_on(run_storage(&root))
+            .expect("recover storage");
+        assert!(recovered.ok);
+        assert!(recovered.cleanup_complete);
+        assert!(!root.join(PROBE_DIRECTORY).exists());
+        std::fs::remove_dir(root).expect("remove interrupted host test root");
     }
 }

@@ -11,9 +11,19 @@ struct ProbeView: View {
                     status("App-owned", value: model.appOwned, id: "app-owned-status")
                     Button("Run App-Owned Probe") { model.runAppOwned() }
                         .accessibilityIdentifier("run-app-owned")
-                    status("Selected local folder", value: model.selected, id: "selected-status")
-                    Button("Choose Local Probe Folder") { model.chooseFolder() }
+                    status("Root registry", value: model.rootState, id: "root-state-status")
+                    status("Root resources", value: model.resources, id: "resources-status")
+                    status("Selected root", value: model.selected, id: "selected-status")
+                    status("Eligibility", value: model.eligibility, id: "eligibility-status")
+                    Button("Choose On-Device Test Folder") { model.chooseFolder() }
                         .accessibilityIdentifier("choose-folder")
+                    Button("Retry Selected Root") { model.retrySelected() }
+                        .accessibilityIdentifier("retry-selected")
+                    Button("Open App Settings") { model.openAppSettings() }
+                        .accessibilityIdentifier("open-app-settings")
+                    Text("iCloud and other providers are classified only and are never written.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Networking") {
                     status("Direct Rust TCP/UDP", value: model.network, id: "network-status")
@@ -24,8 +34,14 @@ struct ProbeView: View {
                         .accessibilityIdentifier("start-continued")
                     Button("Arm Ordinary Expiration") { model.armOrdinaryExpirationProbe() }
                         .accessibilityIdentifier("arm-expiration")
-                    Button("Arm Force-Close Recovery") { model.armForceCloseProbe() }
-                        .accessibilityIdentifier("arm-force-close")
+                    Button("Prepare App-Owned Force-Close") {
+                        model.prepareAppOwnedInterruption()
+                    }
+                    .accessibilityIdentifier("prepare-app-interruption")
+                    Button("Prepare Selected Force-Close") {
+                        model.prepareSelectedInterruption()
+                    }
+                    .accessibilityIdentifier("prepare-selected-interruption")
                 }
             }
             .navigationTitle("RSTorrent Probe")
@@ -79,7 +95,7 @@ private struct FolderPicker: UIViewControllerRepresentable {
             _ controller: UIDocumentPickerViewController,
             didPickDocumentsAt urls: [URL]
         ) {
-            guard let url = urls.first else { return cancelled() }
+            guard urls.count == 1, let url = urls.first else { return cancelled() }
             selected(url)
         }
 

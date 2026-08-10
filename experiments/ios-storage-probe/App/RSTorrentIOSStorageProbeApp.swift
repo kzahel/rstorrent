@@ -52,8 +52,15 @@ private enum ContinuedProbe {
             ProbeDefaults.set("continued_result", "expired")
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            let storage = RustProbe.storage(at: ProbePaths.documents)
-            var completed = storage.ok
+            let completedStorage: Bool
+            do {
+                let (_, storage) = try ProbeRootAccess.runAppOwned(at: ProbePaths.documents)
+                completedStorage = storage.ok
+            } catch {
+                completedStorage = false
+            }
+            ProbeDefaults.set("resources", ProbeResourceLedger.shared.evidence())
+            var completed = completedStorage
             for step in 1 ... 20 {
                 if state.isExpired {
                     completed = false
