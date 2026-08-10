@@ -50,7 +50,7 @@ from public_compare_contract import parse_metainfo, verify_payload
 
 
 OWNERS = ("focused", "resumable", "libtorrent")
-OWNER_CHOICES = (*OWNERS, "resumable-no-sync")
+OWNER_CHOICES = (*OWNERS, "resumable-no-sync", "resumable-summary-observation")
 MAX_PAYLOAD_MIB = 2048
 MAX_PIECE_KIB = 256 * 1024
 MAX_OWNER_SECONDS = 45
@@ -76,6 +76,7 @@ class DiagnosisResult:
     owner: str
     profile: str
     checkpoint_sync: str
+    activity_observation: str
     version: str
     published_seconds: float
     active_seconds: float | None
@@ -407,8 +408,13 @@ def run_owner(
                 seed_handle,
             )
             version = binary_sha256(focused_binary)
-        elif owner in ("resumable", "resumable-no-sync"):
+        elif owner in (
+            "resumable",
+            "resumable-no-sync",
+            "resumable-summary-observation",
+        ):
             checkpoint_sync_bypass = owner == "resumable-no-sync"
+            summary_activity_observation = owner == "resumable-summary-observation"
             raw = run_resumable_rstorrent(
                 resumable_binary,
                 torrent_path,
@@ -421,6 +427,7 @@ def run_owner(
                 fixture.size_bytes * 2,
                 peer_hints=[f"127.0.0.1:{peer_port}"],
                 diagnostic_checkpoint_sync_bypass=checkpoint_sync_bypass,
+                diagnostic_summary_activity_observation=summary_activity_observation,
             )
             metrics = normalize_adapter_result(owner, raw, fixture, profile)
             version = binary_sha256(resumable_binary)
@@ -468,6 +475,13 @@ def run_owner(
                 if owner == "resumable-no-sync"
                 else "enabled"
                 if owner == "resumable"
+                else "not-applicable"
+            ),
+            activity_observation=(
+                "summary"
+                if owner == "resumable-summary-observation"
+                else "detailed"
+                if owner in ("resumable", "resumable-no-sync")
                 else "not-applicable"
             ),
             version=version,
@@ -556,6 +570,9 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
         focused = owner_summaries.get("focused")
         resumable = owner_summaries.get("resumable")
         resumable_no_sync = owner_summaries.get("resumable-no-sync")
+        resumable_summary_observation = owner_summaries.get(
+            "resumable-summary-observation"
+        )
         path_ratio = (
             None
             if focused is None or resumable is None
@@ -565,6 +582,12 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
             None
             if resumable is None or resumable_no_sync is None
             else resumable_no_sync["median_mib_s"] / resumable["median_mib_s"]
+        )
+        observation_ratio = (
+            None
+            if resumable is None or resumable_summary_observation is None
+            else resumable_summary_observation["median_mib_s"]
+            / resumable["median_mib_s"]
         )
         summaries.append(
             {
@@ -579,6 +602,10 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
                 "checkpoint_bypass_enabled_ratio": checkpoint_ratio,
                 "checkpoint_bypass_enabled_classification": (
                     None if checkpoint_ratio is None else classify_ratio(checkpoint_ratio)
+                ),
+                "summary_detailed_observation_ratio": observation_ratio,
+                "summary_detailed_observation_classification": (
+                    None if observation_ratio is None else classify_ratio(observation_ratio)
                 ),
             }
         )
@@ -739,6 +766,7 @@ def main(arguments: list[str]) -> int:
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
             "storage_concurrency": {"writes": 4, "hashes": 4},
             "checkpoint_sync": "selected-by-owner",
+            "activity_observation": "selected-by-owner",
             "order": "rotating-by-run",
         },
         "elapsed_seconds": time.monotonic() - experiment_started,

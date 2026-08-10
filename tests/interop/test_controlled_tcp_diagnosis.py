@@ -30,6 +30,13 @@ def result(owner: str, throughput: float, run: int = 1) -> DiagnosisResult:
             if owner == "resumable-no-sync"
             else "not-applicable"
         ),
+        activity_observation=(
+            "summary"
+            if owner == "resumable-summary-observation"
+            else "detailed"
+            if owner in ("resumable", "resumable-no-sync")
+            else "not-applicable"
+        ),
         version="fixture",
         published_seconds=1.0 / throughput,
         active_seconds=None,
@@ -102,6 +109,20 @@ class ControlledTcpDiagnosisTests(unittest.TestCase):
         )
         self.assertEqual(
             summary["checkpoint_bypass_enabled_classification"], "ahead"
+        )
+
+    def test_summary_compares_activity_observation_within_resumable_path(self) -> None:
+        summary = summarize_results(
+            [
+                result("resumable", 80.0),
+                result("resumable", 100.0, 2),
+                result("resumable-summary-observation", 81.0),
+                result("resumable-summary-observation", 99.0, 2),
+            ]
+        )[0]
+        self.assertAlmostEqual(summary["summary_detailed_observation_ratio"], 1.0)
+        self.assertEqual(
+            summary["summary_detailed_observation_classification"], "near_parity"
         )
 
     def test_adapter_rejects_utp_or_more_than_one_peer(self) -> None:

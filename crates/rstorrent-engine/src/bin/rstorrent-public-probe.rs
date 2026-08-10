@@ -165,6 +165,7 @@ struct Config {
     payload_limit: usize,
     wire_payload_limit: u64,
     checkpoint_sync_bypassed: bool,
+    summary_activity_observation: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -415,13 +416,15 @@ struct Observation {
 #[derive(Debug)]
 struct ProbeSink {
     started: Instant,
+    summary_activity_observation: bool,
     observation: Mutex<Observation>,
 }
 
 impl ProbeSink {
-    fn new(started: Instant) -> Self {
+    fn new(started: Instant, summary_activity_observation: bool) -> Self {
         Self {
             started,
+            summary_activity_observation,
             observation: Mutex::new(Observation::default()),
         }
     }
@@ -524,6 +527,15 @@ impl ProbeSink {
 
 impl DownloadActivitySink for ProbeSink {
     fn record(&self, event: DownloadActivityEvent) {
+        if self.summary_activity_observation
+            && matches!(
+                event,
+                DownloadActivityEvent::BlockReceived { .. }
+                    | DownloadActivityEvent::BlockStored { .. }
+            )
+        {
+            return;
+        }
         let elapsed = self.started.elapsed().as_secs_f64();
         let mut observation = self
             .observation
@@ -1013,6 +1025,7 @@ struct Diagnostics {
     checkpoint_commit_service_micros: u64,
     checkpoint_commit_service_max_micros: u64,
     checkpoint_sync_bypassed: bool,
+    summary_activity_observation: bool,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
     peer_methods: PeerMethodEvidence,
@@ -1283,7 +1296,7 @@ async fn run(config: Config) -> ProbeResult {
     let started = Instant::now();
     let control = DownloadControl::new();
     control.set_checkpoint_sync_bypassed_for_testing(config.checkpoint_sync_bypassed);
-    let sink = Arc::new(ProbeSink::new(started));
+    let sink = Arc::new(ProbeSink::new(started, config.summary_activity_observation));
     sink.mark_process_ready();
     control.set_activity_sink(sink.clone());
     let peer_sink = Arc::new(ProbeTorrentPeerSink::default());
@@ -1703,6 +1716,7 @@ fn result(
         utility_timeline,
         peer_sink.snapshot(diagnostics),
         config.checkpoint_sync_bypassed,
+        config.summary_activity_observation,
     );
     ProbeResult {
         schema_version: 2,
@@ -1748,6 +1762,7 @@ fn diagnostic_result(
     utility_timeline: &UtilityTimeline,
     peer_methods: PeerMethodEvidence,
     checkpoint_sync_bypassed: bool,
+    summary_activity_observation: bool,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
@@ -1891,6 +1906,7 @@ fn diagnostic_result(
             .progress
             .checkpoint_commit_service_max_micros,
         checkpoint_sync_bypassed,
+        summary_activity_observation,
         storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
             Some("write")
         } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -1920,6 +1936,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     let mut payload_limit = DEFAULT_PAYLOAD_LIMIT;
     let mut wire_payload_limit = DEFAULT_WIRE_PAYLOAD_LIMIT;
     let mut checkpoint_sync_bypassed = false;
+    let mut summary_activity_observation = false;
     let mut index = 0;
     while index < arguments.len() {
         let flag = &arguments[index];
@@ -1972,6 +1989,13 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                     _ => return Err(format!("{flag} must be enabled or bypass")),
                 };
             }
+            "--diagnostic-activity-observation" => {
+                summary_activity_observation = match value.as_str() {
+                    "detailed" => false,
+                    "summary" => true,
+                    _ => return Err(format!("{flag} must be detailed or summary")),
+                };
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -1997,6 +2021,16 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                 .to_owned(),
         );
     }
+    if summary_activity_observation
+        && (!matches!(&input, ProbeInput::Metainfo(_))
+            || target != Target::Complete
+            || !matches!(profile, Profile::MatchedPlain30 | Profile::MatchedRc430))
+    {
+        return Err(
+            "summary activity observation requires direct metainfo, complete target, and a matched profile"
+                .to_owned(),
+        );
+    }
     Ok(Config {
         input,
         expected_info_hash: expected_info_hash
@@ -2011,6 +2045,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         payload_limit,
         wire_payload_limit,
         checkpoint_sync_bypassed,
+        summary_activity_observation,
     })
 }
 
@@ -2126,6 +2161,26 @@ mod tests {
     }
 
     #[test]
+    fn summary_activity_observation_is_narrowly_diagnostic() {
+        let mut metainfo = required_arguments();
+        metainfo[0] = "--metainfo".to_owned();
+        metainfo[1] = "fixture.torrent".to_owned();
+        metainfo.extend([
+            "--diagnostic-activity-observation".to_owned(),
+            "summary".to_owned(),
+        ]);
+        let config = parse_args(metainfo).expect("matched complete metainfo summary");
+        assert!(config.summary_activity_observation);
+
+        let mut magnet = required_arguments();
+        magnet.extend([
+            "--diagnostic-activity-observation".to_owned(),
+            "summary".to_owned(),
+        ]);
+        assert!(parse_args(magnet).is_err());
+    }
+
+    #[test]
     fn percentage_thresholds_do_not_round_down() {
         assert!(!crosses(49, 100, 50));
         assert!(crosses(1, 1, 50));
@@ -2135,7 +2190,7 @@ mod tests {
 
     #[test]
     fn discovery_diagnostics_accumulate_without_endpoint_retention() {
-        let sink = ProbeSink::new(Instant::now());
+        let sink = ProbeSink::new(Instant::now(), false);
         for peer_count in [3, 7] {
             sink.record(DownloadActivityEvent::TrackerAnnounceSucceeded {
                 tracker: "redacted by aggregate".to_owned(),
@@ -2158,7 +2213,7 @@ mod tests {
 
     #[test]
     fn payload_milestones_separate_receive_store_and_verify() {
-        let sink = ProbeSink::new(Instant::now());
+        let sink = ProbeSink::new(Instant::now(), false);
         sink.record(DownloadActivityEvent::MetadataVerified {
             total_length: 32,
             piece_length: 32,
@@ -2195,6 +2250,33 @@ mod tests {
         let complete = sink.snapshot();
         assert!(complete.milestones.last_block_stored.is_some());
         assert!(complete.milestones.first_piece_verified.is_some());
+        assert!(complete.milestones.all_pieces_verified.is_some());
+    }
+
+    #[test]
+    fn summary_activity_observation_omits_per_block_milestones() {
+        let sink = ProbeSink::new(Instant::now(), true);
+        sink.record(DownloadActivityEvent::MetadataVerified {
+            total_length: 16,
+            piece_length: 16,
+            piece_count: 1,
+            file_count: 1,
+        });
+        sink.record(DownloadActivityEvent::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 16,
+        });
+        sink.record(DownloadActivityEvent::BlockStored {
+            piece_index: 0,
+            begin: 0,
+            length: 16,
+        });
+        sink.record(DownloadActivityEvent::PieceVerified { piece_index: 0 });
+
+        let complete = sink.snapshot();
+        assert!(complete.milestones.first_payload_byte.is_none());
+        assert!(complete.milestones.last_block_stored.is_none());
         assert!(complete.milestones.all_pieces_verified.is_some());
     }
 
