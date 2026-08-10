@@ -427,10 +427,15 @@ link-queue ownership.
 
 ### Validation And Deliberate Deferrals
 
-The focused deterministic scenario suite and protocol-crate clippy gate pass.
-The final workspace formatting, clippy, and test commands are recorded after
-the documentation reconciliation commit. No Python oracle, client, Android,
-WAN, public swarm, `pimom`, or physical device was run.
+Final validation on 2026-08-10 passes:
+
+- `cargo test -p rstorrent-protocol utp::`: 81 passed, 0 failed;
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`; and
+- `cargo test --workspace`.
+
+The workspace commands completed without failures. No Python oracle, client,
+Android, WAN, public swarm, `pimom`, or physical device was run.
 
 The stopping condition is met. Stage 3 still needs a separately reviewed
 tactical for shared-UDP classification, connection/runtime ownership,
