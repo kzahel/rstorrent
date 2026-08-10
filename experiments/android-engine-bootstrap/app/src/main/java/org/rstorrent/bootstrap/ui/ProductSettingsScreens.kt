@@ -37,11 +37,17 @@ internal fun ConnectionLimitsSettings(
         "Peer connections",
         settings.configured.peerConnectionLimit.toInt(),
         1..2_000,
+        supporting =
+            "Effective ${settings.effectivePeerConnectionLimit} · " +
+                settingsApplicationLabel(settings.peerConnectionsApplication),
     ) { onPeerConnections(it.toUInt()) }
     NumericSetting(
         "Upload slots",
         settings.configured.uploadSlots.toInt(),
         0..50,
+        supporting =
+            "Effective ${settings.effectiveUploadSlots} · " +
+                settingsApplicationLabel(settings.uploadSlotsApplication),
     ) { onUploadSlots(it.toUShort()) }
     NumericSetting(
         "Active downloads",
@@ -86,11 +92,10 @@ internal fun NetworkSettings(
         selected = settings.configured.encryption,
         values = EncryptionPolicy.entries,
         label = { it.name.lowercase().replaceFirstChar(Char::titlecase) },
+        detail =
+            "Effective ${settings.effectiveEncryption.name.lowercase()} · " +
+                settingsApplicationLabel(settings.encryptionApplication),
         onSelected = onEncryption,
-    )
-    ReadOnlySettingsRow(
-        "Tracker HTTPS",
-        settings.effectiveTrackerHttpsServerAuthentication?.name ?: "Unavailable",
     )
     DisabledSetting("VPN-only mode")
     DisabledSetting("Metered network policy")
@@ -160,12 +165,13 @@ private fun <T> ChoiceSetting(
     selected: T,
     values: List<T>,
     label: (T) -> String,
+    detail: String? = null,
     onSelected: (T) -> Unit,
 ) {
     var dialog by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text(title) },
-        supportingContent = { Text(label(selected)) },
+        supportingContent = { Text(listOfNotNull(label(selected), detail).joinToString(" · ")) },
         modifier = Modifier.clickable { dialog = true },
     )
     HorizontalDivider()

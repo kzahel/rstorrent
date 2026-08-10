@@ -311,9 +311,6 @@ private fun LibraryOverflowMenu(
     onShutdown: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        fun action(label: String, block: () -> Unit) {
-            // Kept local so every action also closes the transient menu.
-        }
         DropdownMenuItem(text = { Text("Pause All") }, onClick = { onDismiss(); onPauseAll() })
         DropdownMenuItem(text = { Text("Resume All") }, onClick = { onDismiss(); onResumeAll() })
         DropdownMenuItem(

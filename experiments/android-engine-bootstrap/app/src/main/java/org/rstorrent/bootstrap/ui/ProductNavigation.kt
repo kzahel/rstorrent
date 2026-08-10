@@ -51,7 +51,7 @@ enum class LibraryFilter(
 enum class LibrarySort(
     val label: String,
 ) {
-    STABLE("Date added"),
+    STABLE("Queue / stable order"),
     NAME("Name"),
     DOWNLOAD_SPEED("Download speed"),
 }

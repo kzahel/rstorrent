@@ -1,6 +1,7 @@
 package org.rstorrent.bootstrap
 
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -43,6 +44,9 @@ internal class AndroidPresentationRepository(
     private var diagnosticSeverity = DiagnosticSeverity.INFO
     private var diagnosticCategories: List<DiagnosticCategory> = emptyList()
     private var diagnosticTorrentOnly = false
+    private val detailRequest = AtomicLong()
+    private val globalRequest = AtomicLong()
+    private val diagnosticRequest = AtomicLong()
 
     suspend fun start(client: AndroidApplicationClient) {
         ownership.withLock {
@@ -77,8 +81,10 @@ internal class AndroidPresentationRepository(
         torrentId: String,
         presentation: TorrentPresentation,
     ) {
+        val request = detailRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != detailRequest.get()) return@withLock
                 selectedTorrent = torrentId
                 closeAll(detail)
                 state.update {
@@ -97,8 +103,10 @@ internal class AndroidPresentationRepository(
     }
 
     fun clearTorrent(torrentId: String) {
+        val request = detailRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != detailRequest.get()) return@withLock
                 if (selectedTorrent != torrentId) return@withLock
                 closeAll(detail)
             }
@@ -114,8 +122,10 @@ internal class AndroidPresentationRepository(
             presentation == TorrentPresentation.FILES ||
                 presentation == TorrentPresentation.TRACKERS,
         ) { "only paged catalog presentations accept an offset" }
+        val request = detailRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != detailRequest.get()) return@withLock
                 selectedTorrent = torrentId
                 closeAll(detail)
                 val projection =
@@ -130,8 +140,10 @@ internal class AndroidPresentationRepository(
     }
 
     fun presentGlobal(presentation: GlobalPresentation) {
+        val request = globalRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != globalRequest.get()) return@withLock
                 global?.close()
                 global =
                     when (presentation) {
@@ -149,8 +161,10 @@ internal class AndroidPresentationRepository(
         categories: List<DiagnosticCategory>,
         torrentOnly: Boolean,
     ) {
+        val request = diagnosticRequest.incrementAndGet()
         scope.launch {
             ownership.withLock {
+                if (request != diagnosticRequest.get()) return@withLock
                 diagnosticProfile = profile
                 diagnosticSeverity = severity
                 diagnosticCategories = categories
@@ -161,6 +175,9 @@ internal class AndroidPresentationRepository(
     }
 
     suspend fun close() {
+        detailRequest.incrementAndGet()
+        globalRequest.incrementAndGet()
+        diagnosticRequest.incrementAndGet()
         ownership.withLock {
             list?.close()
             list = null
@@ -214,6 +231,9 @@ internal class AndroidPresentationRepository(
                             }
                             onUpdate(update, requireNotNull(reduced), driveSaf)
                         } catch (_: ViewResetRequiredException) {
+                            state.update { it.copy(diagnosticResets = it.diagnosticResets + 1UL) }
+                            subscription.resync()
+                        } catch (_: ViewContinuityException) {
                             state.update { it.copy(diagnosticResets = it.diagnosticResets + 1UL) }
                             subscription.resync()
                         }
