@@ -2,6 +2,7 @@
 
 mod congestion;
 mod connection;
+mod mtu;
 mod packet;
 mod receive;
 mod send;
@@ -18,6 +19,11 @@ pub use congestion::{
 pub use connection::{
     ConnectionError, ConnectionIds, ConnectionPhase, ConnectionSnapshot, ConnectionState,
     IncomingDisposition, IncomingOutcome, OutboundPacketIntent,
+};
+pub use mtu::{
+    IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MIN_UTP_DATAGRAM_BYTES,
+    MTU_SEARCH_THRESHOLD_BYTES, MtuError, MtuProbe, MtuProbeFailure, MtuProbeOutcome,
+    PathMtuSnapshot, PathMtuState,
 };
 pub use packet::{
     DecodedPacket, Extension, ExtensionToEncode, Extensions, MAX_SACK_BYTES,
