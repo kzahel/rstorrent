@@ -5,11 +5,18 @@ from __future__ import annotations
 
 import unittest
 
-from utp_runtime_impairment import ImpairmentFailure, RelayPolicy, utp_packet_type
+from utp_runtime_impairment import (
+    DIAGNOSTIC_MTU_PROFILE,
+    ImpairmentFailure,
+    RelayPolicy,
+    utp_packet_type,
+)
 
 
-def packet(packet_type: int, length: int = 20) -> bytes:
-    return bytes([(packet_type << 4) | 1]) + bytes(length - 1)
+def packet(packet_type: int, length: int = 20, sequence: int = 0) -> bytes:
+    payload = bytearray([(packet_type << 4) | 1]) + bytearray(length - 1)
+    payload[16:18] = sequence.to_bytes(2, "big")
+    return bytes(payload)
 
 
 class UtpRuntimeImpairmentTests(unittest.TestCase):
@@ -51,6 +58,20 @@ class UtpRuntimeImpairmentTests(unittest.TestCase):
         self.assertFalse(mtu.decide("target-to-client", packet(0, 1280)).drop)
         self.assertTrue(mtu.decide("target-to-client", packet(0, 1281)).drop)
         self.assertFalse(mtu.decide("client-to-target", packet(0, 1400)).drop)
+
+    def test_diagnostic_mtu_drops_first_oversized_sequence_then_retries(self) -> None:
+        mtu = RelayPolicy(DIAGNOSTIC_MTU_PROFILE)
+        self.assertFalse(mtu.decide("target-to-client", packet(0, 1280, 10)).drop)
+        protected = mtu.decide("target-to-client", packet(0, 1281, 10))
+        self.assertTrue(protected.drop)
+        retry = mtu.decide("target-to-client", packet(0, 1281, 10))
+        self.assertFalse(retry.drop)
+        self.assertTrue(retry.fragmentable_mtu_retry)
+        next_probe = mtu.decide("target-to-client", packet(0, 1400, 11))
+        self.assertTrue(next_probe.drop)
+        self.assertFalse(
+            mtu.decide("client-to-target", packet(0, 1400, 12)).drop
+        )
 
     def test_delay_jitter_alternates_independently_each_way(self) -> None:
         policy = RelayPolicy("delay-jitter")

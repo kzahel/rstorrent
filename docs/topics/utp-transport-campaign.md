@@ -171,7 +171,15 @@ the single authoritative **Now**.
   observes zero probes. Structured runtime evidence separates the proven MTU
   floor, current candidate, probe outcomes, probe datagrams, and same-sequence
   fragmentable retries. The controlled real-socket size-black-hole proof
-  remains active work; no portable Internet PMTU or product claim follows.
+  transfers and verifies the exact fixture in 4.200 active seconds: six probes
+  split into three acknowledgements and three losses, all three same-sequence
+  fragmentable retries pass, the proven floor converges to 1,269 bytes below a
+  1,280-byte limit, and no congestion reduction or timeout collapse follows.
+  The unchanged fixed-runtime matrix also passes again with zero probes and a
+  548-byte maximum. Because the portable shared UDP sender does not apply the
+  transport's per-emission fragmentation intent to the OS socket, this is a
+  controlled diagnostic result rather than Internet PMTU evidence. No product
+  or support claim follows.
 
 ## Why The Campaign Must Be Adaptive
 

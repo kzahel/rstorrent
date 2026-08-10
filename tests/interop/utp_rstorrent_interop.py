@@ -196,7 +196,13 @@ def validate_ready(event: dict[str, Any], role: str) -> tuple[str, int]:
     return host, port
 
 
-def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> None:
+def validate_complete(
+    event: dict[str, Any],
+    role: str,
+    expected_sha1: str,
+    *,
+    require_fixed_mtu: bool = True,
+) -> None:
     if event.get("event") != "complete" or event.get("role") != role:
         raise InteropFailure(f"unexpected {role} completion event: {event}")
     payload = event.get("payload", {})
@@ -265,7 +271,7 @@ def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> N
                 f"{role} reported an invalid {minimum_key}/{maximum_key} range: "
                 f"{live_utp}"
             )
-    if (
+    if require_fixed_mtu and (
         live_utp.get("selected_mtu_min_bytes") != 548
         or live_utp.get("selected_mtu_max_bytes") != 548
     ):

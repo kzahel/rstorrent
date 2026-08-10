@@ -51,6 +51,8 @@ PROFILES = (
     "burst-loss",
     "mtu-black-hole",
 )
+DIAGNOSTIC_MTU_PROFILE = "diagnostic-mtu-black-hole"
+RELAY_PROFILES = PROFILES + (DIAGNOSTIC_MTU_PROFILE,)
 SCENARIO_TIMEOUT_SECONDS = 180.0
 MAX_PACKET_DECISIONS = 10_000
 MAX_PROFILE_BYTES = 16 * 1024 * 1024
@@ -68,11 +70,12 @@ class RelayDecision:
     drop: bool
     delays_seconds: tuple[float, ...]
     reordered: bool = False
+    fragmentable_mtu_retry: bool = False
 
 
 class RelayPolicy:
     def __init__(self, profile: str) -> None:
-        if profile not in PROFILES:
+        if profile not in RELAY_PROFILES:
             raise ImpairmentFailure(f"unknown relay profile {profile}")
         self.profile = profile
         self.packet_ordinal = 0
@@ -81,6 +84,7 @@ class RelayPolicy:
             "target-to-client": 0,
         }
         self.data_ordinal = 0
+        self.protected_oversized_sequences: set[int] = set()
 
     def decide(self, direction: str, payload: bytes) -> RelayDecision:
         self.packet_ordinal += 1
@@ -106,6 +110,16 @@ class RelayPolicy:
             return RelayDecision(64 <= self.data_ordinal <= 66, (0.002,))
         if self.profile == "mtu-black-hole" and eligible_data:
             return RelayDecision(len(payload) > 1_280, (0.002,))
+        if (
+            self.profile == DIAGNOSTIC_MTU_PROFILE
+            and eligible_data
+            and len(payload) > 1_280
+        ):
+            sequence = int.from_bytes(payload[16:18], "big")
+            if sequence not in self.protected_oversized_sequences:
+                self.protected_oversized_sequences.add(sequence)
+                return RelayDecision(True, (0.002,))
+            return RelayDecision(False, (0.002,), fragmentable_mtu_retry=True)
         return RelayDecision(False, (0.002,))
 
 
@@ -125,6 +139,8 @@ class RelaySnapshot:
     dropped_datagrams: int = 0
     duplicated_datagrams: int = 0
     reordered_datagrams: int = 0
+    mtu_probe_drops: int = 0
+    mtu_fragmentable_retries: int = 0
     data_datagrams: int = 0
     max_data_datagram_bytes: int = 0
     client_high_water: int = 0
@@ -247,7 +263,11 @@ class DeterministicUdpRelay:
             raise ImpairmentFailure("relay profile byte budget was exceeded")
         if decision.drop:
             snapshot.dropped_datagrams += 1
+            if self.policy.profile == DIAGNOSTIC_MTU_PROFILE:
+                snapshot.mtu_probe_drops += 1
             return
+        if decision.fragmentable_mtu_retry:
+            snapshot.mtu_fragmentable_retries += 1
         if copies > 1:
             snapshot.duplicated_datagrams += copies - 1
         if decision.reordered:
@@ -319,6 +339,7 @@ class DeterministicUdpRelay:
 
 
 def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, Any]) -> None:
+    live = rstorrent["resources"]["live_utp"]
     if relay["packet_decisions"] <= 0 or relay["data_datagrams"] <= 0:
         raise ImpairmentFailure(f"{profile} relayed no uTP DATA traffic")
     if relay["packet_decisions"] > MAX_PACKET_DECISIONS:
@@ -346,6 +367,64 @@ def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, A
         raise ImpairmentFailure("duplicate-reorder did not apply both policies")
     if profile == "mtu-black-hole" and relay["max_data_datagram_bytes"] > 548:
         raise ImpairmentFailure("fixed-MTU baseline emitted an oversized DATA datagram")
+    if profile in PROFILES:
+        if (
+            live["mtu_candidate_min_bytes"] != 548
+            or live["mtu_candidate_max_bytes"] != 548
+        ):
+            raise ImpairmentFailure(f"{profile} changed the fixed MTU candidate")
+        for key in (
+            "mtu_probes_started_high_water",
+            "mtu_probes_acknowledged_high_water",
+            "mtu_probes_failed_high_water",
+            "mtu_probe_datagrams_sent",
+            "mtu_fragmentable_retry_datagrams_sent",
+        ):
+            if live[key] != 0:
+                raise ImpairmentFailure(f"{profile} unexpectedly reported {key}")
+    if profile == DIAGNOSTIC_MTU_PROFILE:
+        selected = live["selected_mtu_max_bytes"]
+        if relay["mtu_probe_drops"] <= 0 or relay["mtu_fragmentable_retries"] <= 0:
+            raise ImpairmentFailure("diagnostic MTU relay observed no probe/retry feedback")
+        if relay["dropped_datagrams"] != relay["mtu_probe_drops"]:
+            raise ImpairmentFailure("diagnostic MTU relay dropped non-probe traffic")
+        if relay["max_data_datagram_bytes"] <= 1_280:
+            raise ImpairmentFailure("diagnostic MTU runtime emitted no oversized probe")
+        if live["mtu_probes_started_high_water"] <= 0:
+            raise ImpairmentFailure("diagnostic MTU runtime started no probes")
+        if live["mtu_probes_acknowledged_high_water"] <= 0:
+            raise ImpairmentFailure("diagnostic MTU runtime acknowledged no probes")
+        if live["mtu_probes_failed_high_water"] <= 0:
+            raise ImpairmentFailure("diagnostic MTU runtime failed no probes")
+        if live["mtu_probe_datagrams_sent"] != live["mtu_probes_started_high_water"]:
+            raise ImpairmentFailure("diagnostic MTU probe emissions do not match starts")
+        if (
+            live["mtu_fragmentable_retry_datagrams_sent"]
+            != live["mtu_probes_failed_high_water"]
+        ):
+            raise ImpairmentFailure("diagnostic MTU retries do not match failed probes")
+        if relay["mtu_probe_drops"] != live["mtu_probes_failed_high_water"]:
+            raise ImpairmentFailure("diagnostic MTU relay/runtime loss counts disagree")
+        if (
+            relay["mtu_fragmentable_retries"]
+            != live["mtu_fragmentable_retry_datagrams_sent"]
+        ):
+            raise ImpairmentFailure("diagnostic MTU relay/runtime retry counts disagree")
+        if (
+            live["selected_mtu_min_bytes"] != 548
+            or selected is None
+            or selected > 1_280
+            or 1_280 - selected > 16
+        ):
+            raise ImpairmentFailure(
+                f"diagnostic MTU search did not converge below 1280: {selected}"
+            )
+        if live["mtu_candidate_max_bytes"] <= 1_280:
+            raise ImpairmentFailure("diagnostic MTU search recorded no oversized candidate")
+        if live["loss_reduction_high_water"] != 0:
+            raise ImpairmentFailure("diagnostic MTU probe loss reduced congestion")
+        if live["timeout_collapse_high_water"] != 0:
+            raise ImpairmentFailure("diagnostic MTU probe loss collapsed congestion")
 
 
 def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
@@ -362,18 +441,23 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
     diagnostics: list[str] = []
     relay_live: dict[str, int] | None = None
     relay_terminal: dict[str, int] | None = None
+    role_name = (
+        "diagnostic-mtu-seed"
+        if profile == DIAGNOSTIC_MTU_PROFILE
+        else "impairment-seed"
+    )
     try:
         role = RoleProcess.start(
             binary,
             [
-                "impairment-seed",
+                role_name,
                 "--metainfo",
                 str(root / "forced-utp.torrent"),
                 "--storage-root",
                 str(seed_root),
             ],
         )
-        _, seed_port = validate_ready(role.read_event(deadline), "impairment-seed")
+        _, seed_port = validate_ready(role.read_event(deadline), role_name)
         relay = DeterministicUdpRelay(("127.0.0.1", seed_port), profile)
         relay.start()
         leecher_settings = dict(TRANSPORT_SETTINGS)
@@ -422,7 +506,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
             snapshot_event = role.read_event(time.monotonic() + 2.0)
             if (
                 snapshot_event.get("event") != "snapshot"
-                or snapshot_event.get("role") != "impairment-seed"
+                or snapshot_event.get("role") != role_name
             ):
                 raise ImpairmentFailure("impairment seed omitted its live snapshot")
             stats = stats_snapshot(
@@ -493,7 +577,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
         pre_stop = role.read_event(deadline)
         if (
             pre_stop.get("event") != "snapshot"
-            or pre_stop.get("role") != "impairment-seed"
+            or pre_stop.get("role") != role_name
             or pre_stop.get("resources", {})
             .get("live_incoming", {})
             .get("payload_bytes_sent")
@@ -503,7 +587,12 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
         role.send_stop()
         complete = role.read_event(deadline)
         role.wait_success(deadline)
-        validate_complete(complete, "impairment-seed", expected_sha1)
+        validate_complete(
+            complete,
+            role_name,
+            expected_sha1,
+            require_fixed_mtu=profile != DIAGNOSTIC_MTU_PROFILE,
+        )
         relay.wait_idle(1.0)
         relay_live = relay.snapshot()
         validate_profile(profile, relay_live, complete)
@@ -531,12 +620,14 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 raise ImpairmentFailure("relay retained terminal queue ownership")
 
 
-def run() -> dict[str, Any]:
+def run(profiles_to_run: tuple[str, ...] = PROFILES) -> dict[str, Any]:
     binary = build_role_binary()
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="rstorrent-utp-impairment-") as temporary:
         root = Path(temporary)
-        profiles = [run_profile(binary, root / profile, profile) for profile in PROFILES]
+        profiles = [
+            run_profile(binary, root / profile, profile) for profile in profiles_to_run
+        ]
     return {
         "schema_version": 1,
         "oracle": "rstorrent-pinned-libtorrent-utp-real-socket-impairment",
@@ -556,7 +647,14 @@ def run() -> dict[str, Any]:
 
 
 def main() -> int:
-    print(json.dumps(run(), indent=2, sort_keys=True))
+    arguments = sys.argv[1:]
+    if not arguments:
+        profiles = PROFILES
+    elif arguments == ["--diagnostic-mtu"]:
+        profiles = (DIAGNOSTIC_MTU_PROFILE,)
+    else:
+        raise ImpairmentFailure("usage: utp_runtime_impairment.py [--diagnostic-mtu]")
+    print(json.dumps(run(profiles), indent=2, sort_keys=True))
     return 0
 
 

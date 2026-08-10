@@ -56,8 +56,9 @@ The stages are sequential because each selects the next work:
    connect the already completed `PathMtuState` to real runtime emissions only
    behind an explicit diagnostic configuration and prove its feedback through
    the size-black-hole relay. A probe must be distinguishable from ordinary
-   traffic, and a failed probe must be retried at the proven floor without a
-   congestion reduction. If the current portable socket surface cannot honor
+   traffic, and a failed probe must be retried at the same size without
+   fragmentation protection before search continues, without a congestion
+   reduction. If the current portable socket surface cannot honor
    fragmentation protection on the real WAN path without a new dependency,
    unsafe platform code, or product policy, retain 548 for ordinary runtime
    and record that limit rather than claiming Internet path-MTU discovery.
@@ -634,3 +635,48 @@ warning-denying Clippy, and formatting pass. Controlled real-socket feedback
 through the relay's size-black-hole profile remains the next gate; these code
 paths alone do not establish path-MTU discovery or portable socket-level
 fragmentation protection.
+
+### Diagnostic MTU controlled evidence
+
+The relay's separate diagnostic profile models the missing socket feedback
+without pretending that the current portable UDP API exposes per-datagram
+fragmentation control. It drops the first target-to-client DATA datagram over
+1,280 bytes for each sequence number, then forwards a same-sequence retry.
+This corresponds to one protected probe followed by the transport's explicitly
+marked retry without fragmentation protection. The policy is deterministic,
+retains only sequence numbers inside the existing 10,000-decision bound, and
+counts probe drops and fragmentable retries separately. Ordinary matrix
+profiles never select this inference.
+
+The controlled diagnostic run passed. Pinned libtorrent `2.0.13.0` received
+and hash-verified the exact 2,097,883-byte fixture in 4.200 active seconds
+with one uTP peer, zero TCP peers, and zero libtorrent loss, timeout, fast-
+retransmit, or resend counters. The relay made 3,477 decisions, dropped three
+distinct oversized probes, forwarded all three same-sequence fragmentable
+retries, reached a 13-datagram/3,847-byte queue high water, drained to zero,
+and observed a largest DATA datagram of 1,356 bytes.
+
+RSTorrent started six probes: three below the path limit were acknowledged and
+three above it failed. It sent six marked probe datagrams and three marked
+fragmentable retries, converged from the 548-byte floor to a 1,269-byte proven
+floor within the 16-byte threshold below 1,280, and recorded a 1,356-byte
+maximum candidate. The three retransmissions caused zero congestion-window
+loss reductions and zero timeout collapses. Runtime queue high water was three
+with zero malformed, unknown, stale, connection, or shared-UDP drops, zero
+worker panics, and zero terminal ownership.
+
+The unchanged six-profile fixed-runtime matrix also passed again in 72.868
+seconds. Every ordinary profile retained selected and candidate MTU 548 with
+zero diagnostic probe or fragmentable-retry sends; the fixed black-hole row
+again emitted no DATA datagram above 548. The relay policy unit suite has six
+passing cases, including exact first-oversized-drop/same-sequence-retry
+selection.
+
+This establishes the diagnostic state and real-runtime feedback loop under a
+controlled relay. It does **not** establish Internet PMTU discovery: the
+shared Tokio UDP send surface does not currently apply the emission's
+`dont_fragment` intent to the operating-system socket. Adding portable
+per-datagram fragmentation protection would cross this tactical's dependency,
+unsafe/platform-code, or product-policy review stop. Ordinary runtime
+therefore remains fixed at 548 bytes and the uTP support claim remains
+**Unsupported**.
