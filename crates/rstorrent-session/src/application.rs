@@ -8839,30 +8839,33 @@ mod tests {
         expected: TorrentState,
         label: &str,
     ) {
-        for sequence in 0..200 {
-            let response = service
-                .dispatch(RequestEnvelope {
-                    version: CONTROL_VERSION,
-                    request_id: format!("{label}-snapshot-{sequence}"),
-                    expected_revision: None,
-                    command: Command::Snapshot,
-                })
-                .await
-                .expect("poll torrent state");
-            let ResponseOutcome::Success { snapshot } = response.outcome else {
-                panic!("state poll must succeed");
-            };
-            let torrent = snapshot
-                .torrents
-                .iter()
-                .find(|torrent| torrent.torrent_id == torrent_id)
-                .expect("polled torrent");
-            if torrent.state == expected {
-                return;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for sequence in 0_u64.. {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("{label}-snapshot-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("poll torrent state");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("state poll must succeed");
+                };
+                let torrent = snapshot
+                    .torrents
+                    .iter()
+                    .find(|torrent| torrent.torrent_id == torrent_id)
+                    .expect("polled torrent");
+                if torrent.state == expected {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            tokio::task::yield_now().await;
-        }
-        panic!("torrent {torrent_id} did not reach {expected:?}");
+        })
+        .await
+        .unwrap_or_else(|_| panic!("torrent {torrent_id} did not reach {expected:?}"));
     }
 
     #[tokio::test]
