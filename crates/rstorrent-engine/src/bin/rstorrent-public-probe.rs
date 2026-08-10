@@ -174,6 +174,8 @@ struct Milestones {
     first_candidate: Option<f64>,
     first_connection: Option<f64>,
     first_payload_byte: Option<f64>,
+    last_payload_byte: Option<f64>,
+    last_block_stored: Option<f64>,
     first_piece_verified: Option<f64>,
     #[serde(rename = "10_percent_verified")]
     ten_percent_verified: Option<f64>,
@@ -400,6 +402,8 @@ struct Observation {
     geometry: Geometry,
     verified_pieces: BTreeSet<u32>,
     verified_bytes: u64,
+    received_payload_bytes: u64,
+    stored_payload_bytes: u64,
     tracker_response_batches: u64,
     tracker_reported_peers: u64,
     dht_response_batches: u64,
@@ -644,6 +648,34 @@ impl DownloadActivitySink for ProbeSink {
                     .milestones
                     .first_payload_byte
                     .get_or_insert(elapsed);
+                observation.received_payload_bytes = observation
+                    .received_payload_bytes
+                    .saturating_add(u64::from(length));
+                if observation
+                    .geometry
+                    .total_length
+                    .is_some_and(|total| observation.received_payload_bytes >= total)
+                {
+                    observation
+                        .milestones
+                        .last_payload_byte
+                        .get_or_insert(elapsed);
+                }
+            }
+            DownloadActivityEvent::BlockStored { length, .. } if length > 0 => {
+                observation.stored_payload_bytes = observation
+                    .stored_payload_bytes
+                    .saturating_add(u64::from(length));
+                if observation
+                    .geometry
+                    .total_length
+                    .is_some_and(|total| observation.stored_payload_bytes >= total)
+                {
+                    observation
+                        .milestones
+                        .last_block_stored
+                        .get_or_insert(elapsed);
+                }
             }
             _ => {}
         }
@@ -971,6 +1003,14 @@ struct Diagnostics {
     storage_hash_queue_wait_max_micros: u64,
     storage_hash_service_micros: u64,
     storage_hash_service_max_micros: u64,
+    checkpoint_batches_started: usize,
+    checkpoint_batches_completed: usize,
+    checkpoint_pieces_completed: usize,
+    checkpoint_sync_operations_completed: usize,
+    checkpoint_sync_service_micros: u64,
+    checkpoint_sync_service_max_micros: u64,
+    checkpoint_commit_service_micros: u64,
+    checkpoint_commit_service_max_micros: u64,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
     peer_methods: PeerMethodEvidence,
@@ -1833,6 +1873,18 @@ fn diagnostic_result(
         storage_hash_queue_wait_max_micros: snapshot.progress.storage_hash_queue_wait_max_micros,
         storage_hash_service_micros: snapshot.progress.storage_hash_service_micros,
         storage_hash_service_max_micros: snapshot.progress.storage_hash_service_max_micros,
+        checkpoint_batches_started: snapshot.progress.checkpoint_batches_started,
+        checkpoint_batches_completed: snapshot.progress.checkpoint_batches_completed,
+        checkpoint_pieces_completed: snapshot.progress.checkpoint_pieces_completed,
+        checkpoint_sync_operations_completed: snapshot
+            .progress
+            .checkpoint_sync_operations_completed,
+        checkpoint_sync_service_micros: snapshot.progress.checkpoint_sync_service_micros,
+        checkpoint_sync_service_max_micros: snapshot.progress.checkpoint_sync_service_max_micros,
+        checkpoint_commit_service_micros: snapshot.progress.checkpoint_commit_service_micros,
+        checkpoint_commit_service_max_micros: snapshot
+            .progress
+            .checkpoint_commit_service_max_micros,
         storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
             Some("write")
         } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -2057,6 +2109,48 @@ mod tests {
         assert_eq!(snapshot.dht_response_batches, 1);
         assert_eq!(snapshot.dht_reported_peers, 5);
         assert_eq!(snapshot.peer_dial_attempts, 1);
+    }
+
+    #[test]
+    fn payload_milestones_separate_receive_store_and_verify() {
+        let sink = ProbeSink::new(Instant::now());
+        sink.record(DownloadActivityEvent::MetadataVerified {
+            total_length: 32,
+            piece_length: 32,
+            piece_count: 1,
+            file_count: 1,
+        });
+        sink.record(DownloadActivityEvent::BlockReceived {
+            piece_index: 0,
+            begin: 0,
+            length: 16,
+        });
+        sink.record(DownloadActivityEvent::BlockReceived {
+            piece_index: 0,
+            begin: 16,
+            length: 16,
+        });
+        sink.record(DownloadActivityEvent::BlockStored {
+            piece_index: 0,
+            begin: 0,
+            length: 16,
+        });
+        let partial = sink.snapshot();
+        assert!(partial.milestones.first_payload_byte.is_some());
+        assert!(partial.milestones.last_payload_byte.is_some());
+        assert!(partial.milestones.last_block_stored.is_none());
+        assert!(partial.milestones.first_piece_verified.is_none());
+
+        sink.record(DownloadActivityEvent::BlockStored {
+            piece_index: 0,
+            begin: 16,
+            length: 16,
+        });
+        sink.record(DownloadActivityEvent::PieceVerified { piece_index: 0 });
+        let complete = sink.snapshot();
+        assert!(complete.milestones.last_block_stored.is_some());
+        assert!(complete.milestones.first_piece_verified.is_some());
+        assert!(complete.milestones.all_pieces_verified.is_some());
     }
 
     #[test]
