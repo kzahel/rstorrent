@@ -419,6 +419,7 @@ pub struct TransportSnapshot {
     pub in_flight_byte_high_water: usize,
     pub timestamp_difference_micros: u32,
     pub pending_emission_bytes: usize,
+    pub close_requested: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -528,6 +529,7 @@ pub struct TransportState {
     timestamp_difference_micros: u32,
     initial_syn_pending: bool,
     pending_emission: Option<TransportEmission>,
+    close_requested: bool,
 }
 
 impl TransportState {
@@ -598,6 +600,7 @@ impl TransportState {
             timestamp_difference_micros: 0,
             initial_syn_pending,
             pending_emission: None,
+            close_requested: false,
         })
     }
 
@@ -621,11 +624,52 @@ impl TransportState {
                 .pending_emission
                 .as_ref()
                 .map_or(0, TransportEmission::datagram_bytes),
+            close_requested: self.close_requested,
         }
     }
 
     pub fn queue_data(&mut self, bytes: &[u8]) -> Result<(), TransportError> {
+        if self.close_requested {
+            return Err(TransportError::Queue(TransmitQueueError::Terminal));
+        }
         Ok(self.transmit.append(bytes)?)
+    }
+
+    pub fn request_close(&mut self) {
+        self.close_requested = true;
+    }
+
+    pub fn finish(&mut self) -> Result<(), TransportError> {
+        self.connection.finish()?;
+        self.release_terminal_ownership();
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn next_wakeup_micros(&self) -> Option<u64> {
+        let snapshot = self.snapshot();
+        if matches!(
+            snapshot.connection.phase,
+            ConnectionPhase::Reset | ConnectionPhase::Closed
+        ) {
+            return None;
+        }
+        let mut deadline = snapshot.acknowledgements.deadline_micros;
+        deadline = minimum_deadline(deadline, snapshot.connection.send.timeout_deadline_micros);
+        if snapshot.transmit.unsent_bytes > 0 || snapshot.retransmissions.pending_packets > 0 {
+            deadline = minimum_deadline(deadline, Some(snapshot.pacer.next_send_micros));
+        }
+        if snapshot.close_requested
+            && snapshot.transmit.unsent_bytes == 0
+            && !snapshot.connection.send.fin_sent
+            && matches!(
+                snapshot.connection.phase,
+                ConnectionPhase::Connected | ConnectionPhase::RemoteFinReceived
+            )
+        {
+            deadline = minimum_deadline(deadline, Some(snapshot.pacer.next_send_micros));
+        }
+        deadline
     }
 
     pub fn consume_received(
@@ -785,6 +829,11 @@ impl TransportState {
             {
                 return Ok(Some(self.install_pending_emission(emission)));
             }
+            if self.retransmissions.front().is_none()
+                && let Some(emission) = self.poll_fin(now_micros, local_timestamp)?
+            {
+                return Ok(Some(self.install_pending_emission(emission)));
+            }
         }
 
         if self.acknowledgements.is_due(now_micros) {
@@ -854,6 +903,37 @@ impl TransportState {
     pub fn abort(&mut self) {
         self.connection.abort();
         self.release_terminal_ownership();
+    }
+
+    fn poll_fin(
+        &mut self,
+        now_micros: u64,
+        local_timestamp: TimestampMicros,
+    ) -> Result<Option<TransportEmission>, TransportError> {
+        let snapshot = self.snapshot();
+        if !self.close_requested
+            || snapshot.transmit.unsent_bytes != 0
+            || snapshot.connection.send.fin_sent
+            || snapshot.connection.send.outstanding_packets >= MAX_SENT_PACKETS
+            || !matches!(
+                snapshot.connection.phase,
+                ConnectionPhase::Connected | ConnectionPhase::RemoteFinReceived
+            )
+        {
+            return Ok(None);
+        }
+        let intent = self.connection.record_fin(&[], now_micros)?;
+        self.record_in_flight(intent.sequence_number, 0);
+        self.acknowledgements.acknowledge();
+        Ok(Some(TransportEmission {
+            intent,
+            timestamp: local_timestamp,
+            timestamp_difference_micros: self.timestamp_difference_micros,
+            payload: Vec::new(),
+            retransmission: false,
+            mtu_probe: false,
+            dont_fragment: false,
+        }))
     }
 
     fn poll_retransmission(
@@ -1077,6 +1157,15 @@ impl TransportState {
         self.pending_emission = None;
         self.initial_syn_pending = false;
         self.acknowledgements.acknowledge();
+        self.close_requested = true;
+    }
+}
+
+fn minimum_deadline(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
+        (None, None) => None,
     }
 }
 
@@ -1421,6 +1510,148 @@ mod tests {
                 .transmissions,
             2
         );
+    }
+
+    #[test]
+    fn close_drains_data_then_finishes_after_bidirectional_fin_ack() {
+        let (mut initiator, mut acceptor) = connected_pair();
+        initiator
+            .queue_data(b"last bytes")
+            .expect("queue final data");
+        initiator.request_close();
+        assert!(matches!(
+            initiator.queue_data(b"too late"),
+            Err(TransportError::Queue(TransmitQueueError::Terminal))
+        ));
+
+        let data = initiator
+            .poll_transmit(1_000, TimestampMicros::new(1_000))
+            .expect("poll data")
+            .expect("data emission");
+        assert_eq!(data.intent.packet_type, PacketType::Data);
+        initiator
+            .on_send_result(data.intent.sequence_number, DatagramSendResult::Sent, 1_000)
+            .expect("record data send");
+        acceptor
+            .incoming(
+                decode_packet(&data.encode().expect("encode data")).expect("decode data"),
+                2_000,
+                TimestampMicros::new(2_000),
+            )
+            .expect("receive data");
+
+        let fin = initiator
+            .poll_transmit(2_001, TimestampMicros::new(2_001))
+            .expect("poll fin")
+            .expect("fin emission");
+        assert_eq!(fin.intent.packet_type, PacketType::Fin);
+        initiator
+            .on_send_result(fin.intent.sequence_number, DatagramSendResult::Sent, 2_001)
+            .expect("record fin send");
+        acceptor
+            .incoming(
+                decode_packet(&fin.encode().expect("encode fin")).expect("decode fin"),
+                3_000,
+                TimestampMicros::new(3_000),
+            )
+            .expect("receive fin");
+
+        acceptor.request_close();
+        let response_fin = acceptor
+            .poll_transmit(3_001, TimestampMicros::new(3_001))
+            .expect("poll response fin")
+            .expect("response fin emission");
+        assert_eq!(response_fin.intent.packet_type, PacketType::Fin);
+        assert_eq!(
+            response_fin.intent.acknowledgement_number,
+            fin.intent.sequence_number
+        );
+        acceptor
+            .on_send_result(
+                response_fin.intent.sequence_number,
+                DatagramSendResult::Sent,
+                3_001,
+            )
+            .expect("record response fin send");
+        initiator
+            .incoming(
+                decode_packet(&response_fin.encode().expect("encode response fin"))
+                    .expect("decode response fin"),
+                4_000,
+                TimestampMicros::new(4_000),
+            )
+            .expect("receive response fin");
+        assert!(initiator.snapshot().connection.ready_to_close);
+
+        let final_ack = initiator
+            .poll_transmit(4_001, TimestampMicros::new(4_001))
+            .expect("poll final ack")
+            .expect("final ack emission");
+        assert_eq!(final_ack.intent.packet_type, PacketType::State);
+        initiator
+            .on_send_result(
+                final_ack.intent.sequence_number,
+                DatagramSendResult::Sent,
+                4_001,
+            )
+            .expect("record final ack send");
+        acceptor
+            .incoming(
+                decode_packet(&final_ack.encode().expect("encode final ack"))
+                    .expect("decode final ack"),
+                5_000,
+                TimestampMicros::new(5_000),
+            )
+            .expect("receive final ack");
+        assert!(acceptor.snapshot().connection.ready_to_close);
+
+        acceptor
+            .consume_received(b"last bytes".len(), 5_001)
+            .expect("consume final data");
+        initiator.finish().expect("finish initiator");
+        acceptor.finish().expect("finish acceptor");
+        for snapshot in [initiator.snapshot(), acceptor.snapshot()] {
+            assert_eq!(snapshot.connection.phase, ConnectionPhase::Closed);
+            assert_eq!(snapshot.connection.send.outstanding_packets, 0);
+            assert_eq!(snapshot.in_flight_packets, 0);
+            assert_eq!(snapshot.pending_emission_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn next_wakeup_tracks_ack_timeout_pacing_and_close_work() {
+        let (mut initiator, mut acceptor) = connected_pair();
+        assert_eq!(initiator.next_wakeup_micros(), None);
+        initiator.queue_data(&[1; 528]).expect("queue data");
+        assert_eq!(initiator.next_wakeup_micros(), Some(0));
+        let data = initiator
+            .poll_transmit(10, TimestampMicros::new(10))
+            .expect("poll data")
+            .expect("data");
+        initiator
+            .on_send_result(data.intent.sequence_number, DatagramSendResult::Sent, 10)
+            .expect("send data");
+        assert_eq!(
+            initiator.next_wakeup_micros(),
+            initiator.snapshot().connection.send.timeout_deadline_micros
+        );
+
+        acceptor
+            .incoming(
+                decode_packet(&data.encode().expect("encode data")).expect("decode data"),
+                20,
+                TimestampMicros::new(20),
+            )
+            .expect("receive data");
+        assert_eq!(
+            acceptor.next_wakeup_micros(),
+            acceptor.snapshot().acknowledgements.deadline_micros
+        );
+
+        initiator.abort();
+        acceptor.abort();
+        assert_eq!(initiator.next_wakeup_micros(), None);
+        assert_eq!(acceptor.next_wakeup_micros(), None);
     }
 
     #[test]
