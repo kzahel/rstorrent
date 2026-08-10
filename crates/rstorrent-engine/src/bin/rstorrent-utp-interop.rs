@@ -44,6 +44,7 @@ Usage:
   rstorrent-utp-interop leecher --metainfo PATH --peer 127.0.0.1:PORT --output PATH
   rstorrent-utp-interop wan-leecher --metainfo PATH --peer PUBLIC_IPV4:PORT --output PATH
   rstorrent-utp-interop seed --metainfo PATH --storage-root PATH
+  rstorrent-utp-interop impairment-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop wan-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop wan-mapping-audit --local-port PORT --external-port PORT";
 
@@ -56,6 +57,7 @@ enum LeecherScope {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SeedScope {
     Loopback,
+    Impairment,
     Wan,
 }
 
@@ -63,6 +65,7 @@ impl SeedScope {
     const fn role(self) -> &'static str {
         match self {
             Self::Loopback => "seed",
+            Self::Impairment => "impairment-seed",
             Self::Wan => "wan-seed",
         }
     }
@@ -127,7 +130,7 @@ impl Arguments {
             }
             | Self::MappingAudit { .. } => LOOPBACK_ROLE_TIMEOUT,
             Self::Seed {
-                scope: SeedScope::Wan,
+                scope: SeedScope::Wan | SeedScope::Impairment,
                 ..
             } => WAN_ROLE_TIMEOUT,
         }
@@ -219,7 +222,7 @@ impl Arguments {
                     output: output.ok_or_else(|| format!("{role} requires --output"))?,
                 })
             }
-            "seed" | "wan-seed" => {
+            "seed" | "impairment-seed" | "wan-seed" => {
                 if peer.is_some()
                     || output.is_some()
                     || local_port.is_some()
@@ -228,10 +231,11 @@ impl Arguments {
                     return Err(format!("{role} received a role-specific argument"));
                 }
                 Ok(Self::Seed {
-                    scope: if role == "seed" {
-                        SeedScope::Loopback
-                    } else {
-                        SeedScope::Wan
+                    scope: match role {
+                        "seed" => SeedScope::Loopback,
+                        "impairment-seed" => SeedScope::Impairment,
+                        "wan-seed" => SeedScope::Wan,
+                        _ => unreachable!(),
                     },
                     metainfo: metainfo.ok_or_else(|| "--metainfo is required".to_owned())?,
                     storage_root: storage_root
@@ -467,7 +471,7 @@ async fn run_seed(
 ) -> Result<(), Box<dyn Error>> {
     let (metainfo, raw_info) = read_fixture(metainfo_path).await?;
     let bind_address = match scope {
-        SeedScope::Loopback => Ipv4Addr::LOCALHOST,
+        SeedScope::Loopback | SeedScope::Impairment => Ipv4Addr::LOCALHOST,
         SeedScope::Wan => select_local_network_ipv4().await?,
     };
     let socket = UdpSocket::bind((bind_address, 0)).await?;
@@ -814,6 +818,7 @@ fn validate_seed_evidence(
     }
     let endpoint_is_eligible = |peer: &SocketAddr| match (scope, peer) {
         (SeedScope::Loopback, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
+        (SeedScope::Impairment, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
         (SeedScope::Wan, SocketAddr::V4(endpoint)) => eligible_public_ipv4(*endpoint.ip()),
         (_, SocketAddr::V6(_)) => false,
     };
@@ -980,6 +985,22 @@ mod tests {
                 "seed",
             ])),
             Ok(Arguments::Seed { .. })
+        ));
+        let impairment_seed = Arguments::parse(strings(&[
+            "impairment-seed",
+            "--metainfo",
+            "fixture.torrent",
+            "--storage-root",
+            "seed",
+        ]))
+        .unwrap();
+        assert_eq!(impairment_seed.timeout(), WAN_ROLE_TIMEOUT);
+        assert!(matches!(
+            impairment_seed,
+            Arguments::Seed {
+                scope: SeedScope::Impairment,
+                ..
+            }
         ));
         let wan_seed = Arguments::parse(strings(&[
             "wan-seed",

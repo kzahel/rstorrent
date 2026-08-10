@@ -479,3 +479,9 @@ passes in 8.046 active seconds with exact hash/accounting, one uTP/zero TCP
 peers, 8,047 decisions, 2,263,555 considered/forwarded bytes, 3,991 DATA
 datagrams no larger than 548 bytes, queue high water 14 datagrams/1,738 bytes,
 zero relay or runtime drops/retransmissions, and terminal zero ownership.
+
+The first full-matrix attempt then reached the existing 30-second fast
+loopback-role wrapper during an impaired profile. A distinct loopback-only
+`impairment-seed` now uses the tactical's 180-second role bound; ordinary
+`seed` stays at 30 seconds and the new role has no WAN mapping path. Its parser
+and warning-denying build pass before retrying the matrix.

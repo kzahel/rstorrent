@@ -344,14 +344,14 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
         role = RoleProcess.start(
             binary,
             [
-                "seed",
+                "impairment-seed",
                 "--metainfo",
                 str(root / "forced-utp.torrent"),
                 "--storage-root",
                 str(seed_root),
             ],
         )
-        _, seed_port = validate_ready(role.read_event(deadline), "seed")
+        _, seed_port = validate_ready(role.read_event(deadline), "impairment-seed")
         relay = DeterministicUdpRelay(("127.0.0.1", seed_port), profile)
         relay.start()
         leecher_settings = dict(TRANSPORT_SETTINGS)
@@ -418,7 +418,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
         role.send_stop()
         complete = role.read_event(deadline)
         role.wait_success(deadline)
-        validate_complete(complete, "seed", expected_sha1)
+        validate_complete(complete, "impairment-seed", expected_sha1)
         relay.wait_idle(1.0)
         relay_live = relay.snapshot()
         validate_profile(profile, relay_live, complete)
