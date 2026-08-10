@@ -7,6 +7,8 @@ use std::sync::Arc;
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH, PeerMessage};
 use sha1::{Digest, Sha1};
 
+use crate::piece_availability::PieceAvailability;
+
 pub const MAX_QUEUED_UPLOAD_REQUESTS: usize = 2_000;
 pub const MAX_QUEUED_UPLOAD_BYTES: usize =
     MAX_QUEUED_UPLOAD_REQUESTS * MAX_REQUEST_BLOCK_LENGTH as usize;
@@ -54,6 +56,8 @@ struct PendingRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct InFlightRequest {
     pending: PendingRequest,
+    availability_epoch: u64,
+    availability_revision: u64,
     cancelled: bool,
     terminal_sent: bool,
 }
@@ -61,7 +65,7 @@ struct InFlightRequest {
 #[derive(Debug)]
 pub struct UploadPeerState {
     piece_lengths: Arc<[u32]>,
-    available: Arc<[bool]>,
+    availability: PieceAvailability,
     interested: bool,
     choking: bool,
     fast_extension: bool,
@@ -87,12 +91,23 @@ impl UploadPeerState {
         if piece_lengths.len() != available.len() {
             return Err("piece lengths and availability must have equal lengths");
         }
+        let availability = PieceAvailability::new(0, &available)?;
+        Self::from_availability(piece_lengths, availability)
+    }
+
+    pub fn from_availability(
+        piece_lengths: Arc<[u32]>,
+        availability: PieceAvailability,
+    ) -> Result<Self, &'static str> {
+        if piece_lengths.len() != availability.snapshot().piece_count {
+            return Err("piece lengths and availability must have equal lengths");
+        }
         if piece_lengths.contains(&0) {
             return Err("piece lengths must be nonzero");
         }
         Ok(Self {
             piece_lengths,
-            available,
+            availability,
             interested: false,
             choking: true,
             fast_extension: false,
@@ -108,23 +123,15 @@ impl UploadPeerState {
     }
 
     pub fn bitfield(&self) -> Vec<u8> {
-        let mut bitfield = vec![0; self.available.len().div_ceil(8)];
-        for (index, available) in self.available.iter().copied().enumerate() {
-            if available {
-                bitfield[index / 8] |= 1 << (7 - index % 8);
-            }
-        }
-        bitfield
+        self.availability.snapshot().bitfield().to_vec()
     }
 
-    pub fn initial_availability_message(&self, fast_extension: bool) -> PeerMessage {
-        if fast_extension && self.available.iter().all(|available| *available) {
-            PeerMessage::HaveAll
-        } else if fast_extension && self.available.iter().all(|available| !*available) {
-            PeerMessage::HaveNone
-        } else {
-            PeerMessage::Bitfield(self.bitfield())
-        }
+    pub fn initial_availability_message(&self, fast_extension: bool) -> Option<PeerMessage> {
+        self.availability.snapshot().initial_message(fast_extension)
+    }
+
+    pub fn availability(&self) -> &PieceAvailability {
+        &self.availability
     }
 
     pub fn snapshot(&self) -> UploadPeerSnapshot {
@@ -241,6 +248,11 @@ impl UploadPeerState {
             .pending_bytes
             .saturating_sub(read.request.length as usize);
         let mut actions = Vec::new();
+        let piece = usize::try_from(read.request.index).ok();
+        let availability = self.availability.snapshot();
+        let still_available = availability.epoch == in_flight.availability_epoch
+            && availability.revision >= in_flight.availability_revision
+            && piece.is_some_and(|piece| availability.is_available(piece));
         match result {
             Err(()) => {
                 if self.fast_extension && !in_flight.terminal_sent {
@@ -257,6 +269,7 @@ impl UploadPeerState {
             Ok(block)
                 if !in_flight.cancelled
                     && !in_flight.terminal_sent
+                    && still_available
                     && self.interested
                     && (!self.choking || self.allowed_fast.contains(&read.request.index)) =>
             {
@@ -265,6 +278,12 @@ impl UploadPeerState {
                     begin: read.request.begin,
                     block,
                 }));
+            }
+            Ok(_) if !still_available => {
+                if self.fast_extension && !in_flight.terminal_sent {
+                    actions.push(UploadAction::Send(PeerMessage::RejectRequest(read.request)));
+                }
+                actions.push(UploadAction::Close(UploadCloseReason::ReadFailed));
             }
             Ok(_) if self.fast_extension && !in_flight.terminal_sent => {
                 actions.push(UploadAction::Send(PeerMessage::RejectRequest(read.request)));
@@ -374,8 +393,11 @@ impl UploadPeerState {
         let Some(pending) = position.and_then(|position| self.queued.remove(position)) else {
             return;
         };
+        let availability = self.availability.snapshot();
         self.in_flight = Some(InFlightRequest {
             pending,
+            availability_epoch: availability.epoch,
+            availability_revision: availability.revision,
             cancelled: false,
             terminal_sent: false,
         });
@@ -438,7 +460,8 @@ impl UploadPeerState {
         let Some(&piece_length) = self.piece_lengths.get(index) else {
             return false;
         };
-        if !self.available.get(index).copied().unwrap_or(false) || request.begin >= piece_length {
+        let availability = self.availability.snapshot();
+        if !availability.is_available(index) || request.begin >= piece_length {
             return false;
         }
         request
@@ -526,19 +549,23 @@ mod tests {
         let all = UploadPeerState::new(vec![4; 3], vec![true; 3]).expect("all state");
         let none = UploadPeerState::new(vec![4; 3], vec![false; 3]).expect("none state");
         let mixed = UploadPeerState::new(vec![4; 3], vec![true, false, true]).expect("mixed state");
-        assert_eq!(all.initial_availability_message(true), PeerMessage::HaveAll);
+        assert_eq!(
+            all.initial_availability_message(true),
+            Some(PeerMessage::HaveAll)
+        );
         assert_eq!(
             none.initial_availability_message(true),
-            PeerMessage::HaveNone
+            Some(PeerMessage::HaveNone)
         );
         assert_eq!(
             mixed.initial_availability_message(true),
-            PeerMessage::Bitfield(vec![0b1010_0000])
+            Some(PeerMessage::Bitfield(vec![0b1010_0000]))
         );
         assert!(matches!(
             all.initial_availability_message(false),
-            PeerMessage::Bitfield(_)
+            Some(PeerMessage::Bitfield(_))
         ));
+        assert_eq!(none.initial_availability_message(false), None);
     }
 
     #[test]

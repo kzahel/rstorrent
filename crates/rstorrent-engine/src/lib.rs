@@ -21,6 +21,7 @@ mod peer_io;
 mod peer_runtime;
 mod peer_socket;
 mod pex;
+mod piece_availability;
 mod piece_picker;
 pub mod port_mapping;
 mod positional_io;
@@ -111,6 +112,11 @@ pub use peer_runtime::{
     PeerTransport, PeerUploadActivity, PeerUploadGrant,
 };
 pub use pex::PexError;
+pub use piece_availability::{
+    AvailabilityCursor, AvailabilityDrain, AvailabilitySnapshot, MAX_AVAILABILITY_CHANGES,
+    MAX_AVAILABILITY_DRAIN, MAX_LOCAL_AVAILABILITY_BYTES, MAX_LOCAL_AVAILABILITY_PIECES,
+    PieceAvailability,
+};
 pub use piece_picker::PieceActivationPolicy;
 pub use resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent,
@@ -124,14 +130,14 @@ pub use selective_storage::{
     DescriptorStoragePlanFile, plan_descriptor_storage, verify_prepared_descriptors,
 };
 pub use selective_storage::{
-    FastResumeValidation, MaterializationReport, PlatformStorageSpec, PreparedFileHash,
-    ResumeArtifactState, ResumedStorage, SelectionReconcileReport, SelectiveStorage,
-    SelectiveStorageError, SelectiveWriteStats, TorrentStoragePaths,
-    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-    selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
-    torrent_storage_paths_with_shape, validate_publication_name,
-    validate_published_fast_resume_with_path, validate_published_fast_resume_with_platform,
-    verify_prepared_platform_files,
+    FastResumeValidation, MAX_UPLOAD_READ_SEGMENTS, MaterializationReport, PlatformStorageSpec,
+    PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectionReconcileReport,
+    SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
+    TorrentStoragePaths, remove_selective_part_if_present, remove_selective_staging_if_present,
+    selective_part_path, selective_staging_path, torrent_storage_paths,
+    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
+    validate_publication_name, validate_published_fast_resume_with_path,
+    validate_published_fast_resume_with_platform, verify_prepared_platform_files,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

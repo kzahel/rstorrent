@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::storage_layout::{
     FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
@@ -33,6 +34,7 @@ use crate::storage_file_pool::{
 };
 
 pub const VERIFICATION_CHUNK_LENGTH: usize = 16 * 1024;
+pub const MAX_UPLOAD_READ_SEGMENTS: usize = MAX_REQUEST_BLOCK_LENGTH as usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FastResumeValidation {
@@ -65,6 +67,123 @@ pub struct SelectionReconcileReport {
     pub promoted_files: Vec<usize>,
     pub demoted_files: Vec<usize>,
     pub invalidated_pieces: Vec<usize>,
+}
+
+#[derive(Debug)]
+pub struct SelectiveUploadReadPlan {
+    request: BlockRequest,
+    route_epoch: u64,
+    spans: Vec<SelectiveUploadReadSpan>,
+}
+
+#[derive(Clone, Debug)]
+enum SelectiveUploadReadSpan {
+    File {
+        source: RetainedFileSource,
+        file_offset: u64,
+        block_offset: usize,
+        length: usize,
+    },
+    Part {
+        source: PartFileCheckpointReference,
+        file_offset: u64,
+        block_offset: usize,
+        length: usize,
+    },
+    Padding {
+        block_offset: usize,
+        length: usize,
+    },
+}
+
+impl SelectiveUploadReadPlan {
+    pub const fn request(&self) -> BlockRequest {
+        self.request
+    }
+
+    pub const fn route_epoch(&self) -> u64 {
+        self.route_epoch
+    }
+
+    pub fn segment_count(&self) -> usize {
+        self.spans.len()
+    }
+
+    pub async fn execute(self) -> Result<Vec<u8>, SelectiveStorageError> {
+        let mut block = vec![0_u8; self.request.length as usize];
+        for span in self.spans {
+            let (source, file_offset, block_offset, length) =
+                match span {
+                    SelectiveUploadReadSpan::File {
+                        source,
+                        file_offset,
+                        block_offset,
+                        length,
+                    } => (
+                        source.acquire(StorageFileAccess::ReadExisting).await?,
+                        file_offset,
+                        block_offset,
+                        length,
+                    ),
+                    SelectiveUploadReadSpan::Part {
+                        source,
+                        file_offset,
+                        block_offset,
+                        length,
+                    } => (
+                        source
+                            .acquire(StorageFileAccess::ReadExisting)
+                            .await
+                            .map_err(SelectiveStorageError::PartFile)?,
+                        file_offset,
+                        block_offset,
+                        length,
+                    ),
+                    SelectiveUploadReadSpan::Padding {
+                        block_offset,
+                        length,
+                    } => {
+                        let end = block_offset.checked_add(length).ok_or(
+                            SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow),
+                        )?;
+                        block
+                            .get_mut(block_offset..end)
+                            .ok_or(SelectiveStorageError::Layout(
+                                LayoutError::ArithmeticOverflow,
+                            ))?
+                            .fill(0);
+                        continue;
+                    }
+                };
+            let bytes = tokio::task::spawn_blocking(move || {
+                let mut bytes = vec![0_u8; length];
+                read_exact_at(source.file(), &mut bytes, file_offset)?;
+                Ok::<_, io::Error>(bytes)
+            })
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "join active upload read",
+                source: io::Error::other(source),
+            })?
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "read active upload range",
+                source,
+            })?;
+            let end =
+                block_offset
+                    .checked_add(bytes.len())
+                    .ok_or(SelectiveStorageError::Layout(
+                        LayoutError::ArithmeticOverflow,
+                    ))?;
+            block
+                .get_mut(block_offset..end)
+                .ok_or(SelectiveStorageError::Layout(
+                    LayoutError::ArithmeticOverflow,
+                ))?
+                .copy_from_slice(&bytes);
+        }
+        Ok(block)
+    }
 }
 
 #[derive(Debug)]
@@ -2084,6 +2203,129 @@ impl SelectiveStorage {
 
     pub const fn route_epoch(&self) -> u64 {
         self.route_epoch
+    }
+
+    pub fn prepare_upload_read(
+        &self,
+        request: BlockRequest,
+        expected_route_epoch: u64,
+    ) -> Result<SelectiveUploadReadPlan, SelectiveStorageError> {
+        if expected_route_epoch != self.route_epoch {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "stale active upload route epoch",
+            ));
+        }
+        if request.length == 0 || request.length > MAX_REQUEST_BLOCK_LENGTH {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "invalid active upload request length",
+            ));
+        }
+        let piece_index = usize::try_from(request.index).map_err(|_| {
+            SelectiveStorageError::InvalidVerifiedPiece {
+                piece_index: usize::MAX,
+            }
+        })?;
+        if !self.verified.get(piece_index).copied().unwrap_or(false) {
+            return Err(SelectiveStorageError::InvalidVerifiedPiece { piece_index });
+        }
+        let segments = self.layout.segments(
+            request.index,
+            request.begin,
+            request.length,
+            &self.selection,
+        )?;
+        if segments.len() > MAX_UPLOAD_READ_SEGMENTS {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "active upload read segment limit",
+            ));
+        }
+        let mut spans = Vec::with_capacity(segments.len());
+        for segment in segments {
+            let span = match segment.target {
+                SegmentTarget::WantedFile {
+                    file_index,
+                    file_offset,
+                } => {
+                    let part_span = if self.pending_promotions.contains(&file_index) {
+                        match self.part_file.as_ref() {
+                            Some(part_file) if part_file.has_piece(piece_index)? => {
+                                let span = part_file.plan_read_piece_range(
+                                    piece_index,
+                                    segment.piece_offset,
+                                    segment.length,
+                                )?;
+                                Some((part_file.checkpoint_reference(), span))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some((source, part_span)) = part_span {
+                        SelectiveUploadReadSpan::Part {
+                            source,
+                            file_offset: part_span.file_offset,
+                            block_offset: segment.block_offset,
+                            length: segment.length,
+                        }
+                    } else {
+                        let file = self.files[file_index]
+                            .as_ref()
+                            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
+                        SelectiveUploadReadSpan::File {
+                            source: file.source.clone(),
+                            file_offset,
+                            block_offset: segment.block_offset,
+                            length: segment.length,
+                        }
+                    }
+                }
+                SegmentTarget::SkippedFile {
+                    file_index,
+                    file_offset,
+                } => {
+                    let part_span = match self.part_file.as_ref() {
+                        Some(part_file) if part_file.has_piece(piece_index)? => {
+                            let span = part_file.plan_read_piece_range(
+                                piece_index,
+                                segment.piece_offset,
+                                segment.length,
+                            )?;
+                            Some((part_file.checkpoint_reference(), span))
+                        }
+                        _ => None,
+                    };
+                    if let Some((source, part_span)) = part_span {
+                        SelectiveUploadReadSpan::Part {
+                            source,
+                            file_offset: part_span.file_offset,
+                            block_offset: segment.block_offset,
+                            length: segment.length,
+                        }
+                    } else {
+                        let source = self.skipped_sources[file_index]
+                            .as_ref()
+                            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?;
+                        SelectiveUploadReadSpan::File {
+                            source: source.clone(),
+                            file_offset,
+                            block_offset: segment.block_offset,
+                            length: segment.length,
+                        }
+                    }
+                }
+                SegmentTarget::Padding => SelectiveUploadReadSpan::Padding {
+                    block_offset: segment.block_offset,
+                    length: segment.length,
+                },
+            };
+            spans.push(span);
+        }
+        Ok(SelectiveUploadReadPlan {
+            request,
+            route_epoch: self.route_epoch,
+            spans,
+        })
     }
 
     pub async fn write_block(
@@ -4156,6 +4398,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
+    use rstorrent_protocol::peer_wire::BlockRequest;
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
     use sha1::{Digest, Sha1};
 
@@ -4612,6 +4855,113 @@ mod tests {
                 actual,
             }) if expected == second_length && actual == second_length - 1
         ));
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn active_upload_read_composes_cross_file_padding_and_staging_bytes() {
+        let output = test_path("active-upload-cross-file-padding");
+        clean(&output).await;
+        let metainfo = Metainfo {
+            info_hash: [0x44; 20],
+            piece_hashes: vec![[0; 20]],
+            piece_length: 12,
+            total_length: 12,
+            name: "active-upload".to_owned(),
+            private: false,
+            mode: MetainfoMode::MultiFile,
+            files: vec![
+                MetainfoFile {
+                    path: vec!["first".to_owned()],
+                    length: 4,
+                    offset: 0,
+                    padding: false,
+                },
+                MetainfoFile {
+                    path: vec![".pad".to_owned(), "3".to_owned()],
+                    length: 3,
+                    offset: 4,
+                    padding: true,
+                },
+                MetainfoFile {
+                    path: vec!["second".to_owned()],
+                    length: 5,
+                    offset: 7,
+                    padding: false,
+                },
+            ],
+        };
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
+            .await
+            .expect("storage");
+        storage
+            .write_block(0, 0, b"abcd".to_vec())
+            .await
+            .expect("first file");
+        storage
+            .write_block(0, 7, b"efghi".to_vec())
+            .await
+            .expect("second file");
+        storage.record_verified(0).expect("verified");
+        let plan = storage
+            .prepare_upload_read(
+                BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 12,
+                },
+                storage.route_epoch(),
+            )
+            .expect("read plan");
+        assert_eq!(plan.segment_count(), 3);
+        assert_eq!(
+            plan.execute().await.expect("read"),
+            [
+                b'a', b'b', b'c', b'd', 0, 0, 0, b'e', b'f', b'g', b'h', b'i'
+            ]
+        );
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn active_upload_read_serves_verified_part_backed_piece() {
+        let output = test_path("active-upload-part");
+        clean(&output).await;
+        let metainfo = fixture();
+        let bytes = torrent_bytes(&metainfo);
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
+        let mut storage =
+            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
+                .await
+                .expect("storage");
+        for request in layout.request_ranges(0, &selection).expect("requests") {
+            let begin = request.begin as usize;
+            storage
+                .write_block(
+                    0,
+                    request.begin,
+                    bytes[begin..begin + request.length as usize].to_vec(),
+                )
+                .await
+                .expect("piece write");
+        }
+        storage.record_verified(0).expect("verified");
+        let request = BlockRequest {
+            index: 0,
+            begin: 16_384,
+            length: 16_384,
+        };
+        let plan = storage
+            .prepare_upload_read(request, storage.route_epoch())
+            .expect("part read plan");
+        assert_eq!(plan.segment_count(), 2);
+        assert_eq!(
+            plan.execute().await.expect("part-backed read"),
+            bytes[16_384..32_768]
+        );
         clean(&output).await;
     }
 

@@ -1,12 +1,14 @@
 # Tactical 123: Duplex Verified-Piece Upload During Download
 
-Status: Planned on 2026-08-10 after the maintainer classified the missing
-behavior as a very-high-priority correctness repair. This planning-only
-request does not authorize implementation, and no implementation has started.
-This is the first recommended engine correctness slice after work already in
-flight. It ranks ahead of Tactical
-[`120`](120-per-torrent-trusting-fast-resume.md), finite bandwidth controls,
-and seeding-goal policy unless the maintainer changes the authoritative queue.
+Status: In progress on 2026-08-10 after the maintainer authorized autonomous
+end-to-end implementation and bounded commits. The first deterministic slice
+now implements the compact availability epoch/revision/timeline authority,
+dynamic upload-request revalidation, exact ordinary/Fast initial forms, and
+generation-stamped active selective-storage read plans across staging,
+retained, part-file, cross-file, and padding routes. Socket, discovery,
+lifecycle, interoperability, and Android gates remain in progress. This
+very-high-priority correctness repair ranks ahead of finite bandwidth controls
+and seeding-goal policy.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `download-correctness`, `protocol-support`,
@@ -661,5 +663,38 @@ On 2026-08-10, repository and reference inspection established the current
 whole-torrent gate, the reusable upload/storage owners, pinned libtorrent's
 per-piece and reciprocity behavior, and JSTorrent's first-party duplex history.
 No Rust, TypeScript, Kotlin, schema, generated contract, test fixture, or
-runtime behavior changed while drafting this tactical. Implementation and all
-validation evidence remain pending.
+runtime behavior changed while drafting this tactical. The execution record
+below supersedes that planning-time state as implementation lands.
+
+## Execution Record
+
+### Deterministic availability and active-read foundation
+
+- `PieceAvailability` owns at most 2,097,152 compact bits, one storage epoch,
+  a monotonic revision, and a 4,096-entry false-to-true timeline. Initial
+  snapshots choose `HaveAll`, `HaveNone`, sparse Bitfield, or the ordinary
+  no-message form exactly; cursors drain at most 16 HAVEs and classify epoch
+  replacement or lag without blocking the publisher.
+- `UploadPeerState` now consumes the shared authority instead of retaining an
+  immutable per-peer bool slice. Request admission, read start, and response
+  serialization retain and revalidate the availability epoch/revision; a
+  withdrawn or replaced route cannot emit payload.
+- `SelectiveStorage::prepare_upload_read` validates current verification,
+  request geometry, and route epoch, then maps only the requested range to
+  immutable staging/retained-file, part-slot, or padding spans under the exact
+  16,384-segment ceiling. Execution uses existing positional file references
+  and returns a short/open/read failure as a typed storage error.
+- Focused tests pass for none/sparse/all initial forms, spare-bit clearing,
+  one-time publication, 16-item drains, 4,096-event lag, epoch replacement,
+  maximum geometry, cross-file/padding reconstruction, and a verified
+  part-backed boundary read.
+
+Validation at this checkpoint:
+
+```text
+cargo test -p rstorrent-engine piece_availability
+cargo test -p rstorrent-engine upload::tests
+cargo test -p rstorrent-engine active_upload_read
+cargo fmt --all -- --check
+cargo clippy -p rstorrent-engine -- -D warnings
+```

@@ -2546,10 +2546,8 @@ async fn run_incoming_peer_loop(
     {
         return PeerTermination::Protocol;
     }
-    if io
-        .send_message(&upload.initial_availability_message(supports_fast))
-        .await
-        .is_err()
+    if let Some(initial_availability) = upload.initial_availability_message(supports_fast)
+        && io.send_message(&initial_availability).await.is_err()
     {
         return PeerTermination::Closed;
     }
