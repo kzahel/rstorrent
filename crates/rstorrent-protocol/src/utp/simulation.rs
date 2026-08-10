@@ -650,6 +650,12 @@ mod tests {
     const MAX_SCENARIO_MICROS: u64 = 300_000_000;
     type LossBatch = (u64, u16, Option<u16>, Vec<u16>, u64, u64);
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ReceiveReleasePolicy {
+        Immediate,
+        HoldUntilFull { release_bytes: usize },
+    }
+
     #[derive(Clone, Debug)]
     struct UtpScenario {
         link: LinkConfig,
@@ -657,6 +663,7 @@ mod tests {
         sender_clock: EndpointClock,
         receiver_clock: EndpointClock,
         transfer_bytes: usize,
+        receive_release: ReceiveReleasePolicy,
     }
 
     #[derive(Clone, Debug)]
@@ -672,6 +679,9 @@ mod tests {
         maximum_transmissions_per_sequence: u8,
         mtu_probes: u64,
         loss_batches: Vec<LossBatch>,
+        zero_receive_window_observed: bool,
+        released_receive_window_bytes: Option<usize>,
+        new_payload_emissions_while_remote_window_zero: u64,
         sender: crate::utp::TransportSnapshot,
         receiver: crate::utp::TransportSnapshot,
         link: LinkSnapshot,
@@ -731,6 +741,7 @@ mod tests {
             sender_clock: EndpointClock::new(0, 0).expect("sender clock"),
             receiver_clock: EndpointClock::new(0, 0).expect("receiver clock"),
             transfer_bytes: TRANSFER_BYTES,
+            receive_release: ReceiveReleasePolicy::Immediate,
         }
     }
 
@@ -815,6 +826,10 @@ mod tests {
         let mut maximum_transmissions_per_sequence = 0;
         let mut mtu_probes = 0_u64;
         let mut loss_batches = Vec::new();
+        let mut zero_receive_window_observed = false;
+        let mut released_receive_window_bytes = None;
+        let mut receive_pressure_released = false;
+        let mut new_payload_emissions_while_remote_window_zero = 0_u64;
         let mut receive_packet_high_water = 0;
         let mut receive_byte_high_water = 0;
         let deadline = started_at_micros.saturating_add(MAX_SCENARIO_MICROS);
@@ -840,11 +855,31 @@ mod tests {
                                 deliveries.push((now_micros, payload.bytes.len()));
                                 received.extend(payload.bytes);
                             }
-                            if consumed > 0 {
+                            if consumed > 0
+                                && (scenario.receive_release == ReceiveReleasePolicy::Immediate
+                                    || receive_pressure_released)
+                            {
                                 receiver
                                     .consume_received(consumed, now_micros)
                                     .expect("release delivered stream bytes");
                             }
+                        }
+                        if let ReceiveReleasePolicy::HoldUntilFull { release_bytes } =
+                            scenario.receive_release
+                            && !receive_pressure_released
+                            && receiver
+                                .snapshot()
+                                .connection
+                                .receive
+                                .is_some_and(|receive| receive.advertised_window_bytes == 0)
+                        {
+                            zero_receive_window_observed = true;
+                            released_receive_window_bytes = Some(
+                                receiver
+                                    .consume_received(release_bytes, now_micros)
+                                    .expect("release exact receive-pressure credit"),
+                            );
+                            receive_pressure_released = true;
                         }
                         if let Some(receive) = receiver.snapshot().connection.receive {
                             receive_packet_high_water =
@@ -924,6 +959,13 @@ mod tests {
                 )
                 .expect("poll sender")
             {
+                if !emission.retransmission
+                    && !emission.payload.is_empty()
+                    && sender_snapshot.remote_window_bytes == 0
+                {
+                    new_payload_emissions_while_remote_window_zero =
+                        new_payload_emissions_while_remote_window_zero.saturating_add(1);
+                }
                 let bytes = emission.encode().expect("encode sender datagram");
                 retransmissions += u64::from(emission.retransmission);
                 mtu_probes += u64::from(emission.mtu_probe);
@@ -984,7 +1026,17 @@ mod tests {
             }
 
             let sender_snapshot = sender.snapshot();
-            let receiver_snapshot = receiver.snapshot();
+            let mut receiver_snapshot = receiver.snapshot();
+            if received.len() == source.len()
+                && let ReceiveReleasePolicy::HoldUntilFull { .. } = scenario.receive_release
+                && let Some(receive) = receiver_snapshot.connection.receive
+                && receive.delivered_unconsumed_bytes > 0
+            {
+                receiver
+                    .consume_received(receive.delivered_unconsumed_bytes, now_micros)
+                    .expect("release retained receive-pressure bytes at completion");
+                receiver_snapshot = receiver.snapshot();
+            }
             let link_snapshot = link.snapshot();
             let complete = queued_source_bytes == source.len()
                 && received.len() == source.len()
@@ -1011,6 +1063,9 @@ mod tests {
                     maximum_transmissions_per_sequence,
                     mtu_probes,
                     loss_batches,
+                    zero_receive_window_observed,
+                    released_receive_window_bytes,
+                    new_payload_emissions_while_remote_window_zero,
                     sender: sender_snapshot,
                     receiver: receiver_snapshot,
                     link: link_snapshot,
@@ -1346,5 +1401,32 @@ mod tests {
         );
         assert_eq!(report.sender.congestion.timeout_collapses, 0);
         assert!(report.sender.congestion.ignored_loss_events >= report.sender.mtu.probes_failed);
+    }
+
+    #[test]
+    fn receive_pressure_closes_and_reopens_exact_stream_credit() {
+        let mut scenario = default_utp_scenario();
+        scenario.transfer_bytes = MAX_RECEIVE_BYTES * 2;
+        scenario.receive_release = ReceiveReleasePolicy::HoldUntilFull {
+            release_bytes: 64 * 1024,
+        };
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_bytes, MAX_RECEIVE_BYTES * 2);
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.zero_receive_window_observed, "report={report:?}");
+        assert_eq!(report.released_receive_window_bytes, Some(64 * 1024));
+        assert_eq!(report.new_payload_emissions_while_remote_window_zero, 0);
+        assert_eq!(report.receive_byte_high_water, MAX_RECEIVE_BYTES);
+        assert_eq!(
+            report
+                .receiver
+                .connection
+                .receive
+                .unwrap()
+                .total_buffered_bytes,
+            0
+        );
+        assert_eq!(report.sender.connection.send.outstanding_bytes, 0);
     }
 }
