@@ -610,3 +610,27 @@ The focused runtime tests finish in 0.52 seconds; session UDP tests finish in
 0.03 seconds. Warning-denying engine clippy and formatting pass. No test sends
 more than the authorized 1,024 datagrams, and the largest connection case is
 the existing 64-owner limit plus one rejection attempt.
+
+### Diagnostic MTU runtime integration
+
+The runtime now has one explicit construction-time diagnostic configuration
+that supplies the existing `PathMtuState` with the bounded 548--1,472-byte
+IPv4 UDP payload range. The ordinary `UtpService::start` path still supplies
+equal 548-byte floor and ceiling values, so it cannot emit an MTU probe. Only
+the loopback-only `diagnostic-mtu-seed` role selects the wider range; no
+product caller, online role, peer-selection policy, or support claim changes.
+
+Runtime snapshots now distinguish the selected proven floor from the current
+search candidate and retain high-water counts for probes started,
+acknowledged, and failed. Successful sends separately count diagnostic probe
+datagrams and same-sequence retries without fragmentation protection. The
+transport marks those retry emissions explicitly and keeps their original
+probe datagram limit, including the previously repaired SACK-header bound.
+The ordinary duplex runtime regression proves both selected and candidate MTU
+remain exactly 548 bytes with zero probe or fragmentable-retry sends.
+
+The engine and protocol focused tests, diagnostic-role parser test,
+warning-denying Clippy, and formatting pass. Controlled real-socket feedback
+through the relay's size-black-hole profile remains the next gate; these code
+paths alone do not establish path-MTU discovery or portable socket-level
+fragmentation protection.

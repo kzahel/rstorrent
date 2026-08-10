@@ -15,9 +15,10 @@ use std::time::Duration;
 
 use futures_util::FutureExt;
 use rstorrent_protocol::utp::{
-    ConnectionError, ConnectionPhase, DatagramSendResult, IncomingDisposition, MAX_UNSENT_BYTES,
-    PacketType, SendError, SequenceNumber, TimestampMicros, TransportError, TransportState,
-    UtpCodecError, decode_packet,
+    ConnectionError, ConnectionPhase, DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING,
+    IPV4_UDP_PAYLOAD_FLOOR, IncomingDisposition, MAX_UNSENT_BYTES, PacketType, PathMtuState,
+    SendError, SequenceNumber, TimestampMicros, TransportError, TransportState, UtpCodecError,
+    decode_packet,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc::error::TrySendError;
@@ -45,6 +46,35 @@ const UTP_STREAM_EVENT_QUEUE: usize = 64;
 const UTP_DELIVERY_CHUNK_BYTES: usize = 16 * 1024;
 const UTP_ENTROPY_DRAWS: usize = 16;
 const MAX_EMISSIONS_PER_TURN: usize = 64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UtpRuntimeConfig {
+    floor_datagram_bytes: usize,
+    ceiling_datagram_bytes: usize,
+}
+
+impl UtpRuntimeConfig {
+    #[must_use]
+    pub const fn diagnostic_ipv4_path_mtu() -> Self {
+        Self {
+            floor_datagram_bytes: IPV4_UDP_PAYLOAD_FLOOR,
+            ceiling_datagram_bytes: IPV4_UDP_PAYLOAD_CEILING,
+        }
+    }
+
+    const fn fixed() -> Self {
+        Self {
+            floor_datagram_bytes: UTP_RUNTIME_DATAGRAM_BYTES,
+            ceiling_datagram_bytes: UTP_RUNTIME_DATAGRAM_BYTES,
+        }
+    }
+
+    fn validate(self) -> Result<Self, UtpRuntimeError> {
+        PathMtuState::new(self.floor_datagram_bytes, self.ceiling_datagram_bytes)
+            .map_err(TransportError::from)?;
+        Ok(self)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct UtpServiceSnapshot {
@@ -82,6 +112,13 @@ pub struct UtpServiceSnapshot {
     pub advertised_receive_window_max_bytes: Option<usize>,
     pub selected_mtu_min_bytes: Option<usize>,
     pub selected_mtu_max_bytes: Option<usize>,
+    pub mtu_candidate_min_bytes: Option<usize>,
+    pub mtu_candidate_max_bytes: Option<usize>,
+    pub mtu_probes_started_high_water: u64,
+    pub mtu_probes_acknowledged_high_water: u64,
+    pub mtu_probes_failed_high_water: u64,
+    pub mtu_probe_datagrams_sent: u64,
+    pub mtu_fragmentable_retry_datagrams_sent: u64,
     pub worker_panics: u64,
 }
 
@@ -211,6 +248,21 @@ pub struct UtpService {
 
 impl UtpService {
     pub fn start(udp: &mut SessionUdpService) -> Result<Self, UtpRuntimeError> {
+        Self::start_with_config(udp, UtpRuntimeConfig::fixed())
+    }
+
+    pub fn start_diagnostic(
+        udp: &mut SessionUdpService,
+        config: UtpRuntimeConfig,
+    ) -> Result<Self, UtpRuntimeError> {
+        Self::start_with_config(udp, config)
+    }
+
+    fn start_with_config(
+        udp: &mut SessionUdpService,
+        config: UtpRuntimeConfig,
+    ) -> Result<Self, UtpRuntimeError> {
+        let config = config.validate()?;
         let transport = udp.take_utp_transport()?;
         let (commands, command_ingress) = mpsc::channel(UTP_SERVICE_COMMAND_QUEUE);
         let (incoming_sender, incoming) = mpsc::channel(UTP_INCOMING_STREAM_QUEUE);
@@ -222,6 +274,7 @@ impl UtpService {
             incoming_sender,
             stats.clone(),
             cancellation.clone(),
+            config,
         ));
         Ok(Self {
             handle: UtpHandle { commands, stats },
@@ -684,6 +737,12 @@ struct UtpStats {
     congestion_window_bytes: AtomicUsizeRange,
     advertised_receive_window_bytes: AtomicUsizeRange,
     selected_mtu_bytes: AtomicUsizeRange,
+    mtu_candidate_bytes: AtomicUsizeRange,
+    mtu_probes_started_high_water: AtomicU64,
+    mtu_probes_acknowledged_high_water: AtomicU64,
+    mtu_probes_failed_high_water: AtomicU64,
+    mtu_probe_datagrams_sent: AtomicU64,
+    mtu_fragmentable_retry_datagrams_sent: AtomicU64,
     worker_panics: AtomicU64,
 }
 
@@ -700,6 +759,8 @@ impl UtpStats {
         let (advertised_receive_window_min_bytes, advertised_receive_window_max_bytes) =
             self.advertised_receive_window_bytes.snapshot();
         let (selected_mtu_min_bytes, selected_mtu_max_bytes) = self.selected_mtu_bytes.snapshot();
+        let (mtu_candidate_min_bytes, mtu_candidate_max_bytes) =
+            self.mtu_candidate_bytes.snapshot();
         UtpServiceSnapshot {
             active_connections: self.active_connections.load(Ordering::Relaxed),
             connection_high_water: self.connection_high_water.load(Ordering::Relaxed),
@@ -745,6 +806,19 @@ impl UtpStats {
             advertised_receive_window_max_bytes,
             selected_mtu_min_bytes,
             selected_mtu_max_bytes,
+            mtu_candidate_min_bytes,
+            mtu_candidate_max_bytes,
+            mtu_probes_started_high_water: self
+                .mtu_probes_started_high_water
+                .load(Ordering::Relaxed),
+            mtu_probes_acknowledged_high_water: self
+                .mtu_probes_acknowledged_high_water
+                .load(Ordering::Relaxed),
+            mtu_probes_failed_high_water: self.mtu_probes_failed_high_water.load(Ordering::Relaxed),
+            mtu_probe_datagrams_sent: self.mtu_probe_datagrams_sent.load(Ordering::Relaxed),
+            mtu_fragmentable_retry_datagrams_sent: self
+                .mtu_fragmentable_retry_datagrams_sent
+                .load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
         }
     }
@@ -803,7 +877,15 @@ impl UtpStats {
         self.congestion_window_bytes
             .record(snapshot.congestion.congestion_window_bytes);
         self.selected_mtu_bytes
+            .record(snapshot.mtu.floor_datagram_bytes);
+        self.mtu_candidate_bytes
             .record(snapshot.mtu.candidate_datagram_bytes);
+        self.mtu_probes_started_high_water
+            .fetch_max(snapshot.mtu.probes_started, Ordering::Relaxed);
+        self.mtu_probes_acknowledged_high_water
+            .fetch_max(snapshot.mtu.probes_acknowledged, Ordering::Relaxed);
+        self.mtu_probes_failed_high_water
+            .fetch_max(snapshot.mtu.probes_failed, Ordering::Relaxed);
         if let Some(receive) = snapshot.connection.receive {
             self.delivered_byte_high_water
                 .fetch_max(receive.byte_high_water, Ordering::Relaxed);
@@ -825,6 +907,7 @@ async fn run_service(
     incoming: mpsc::Sender<UtpStream>,
     stats: Arc<UtpStats>,
     cancellation: CancellationToken,
+    config: UtpRuntimeConfig,
 ) -> Result<UtpServiceSnapshot, UtpRuntimeError> {
     let send = transport.send_handle();
     let generations = transport.generation_changes();
@@ -848,6 +931,7 @@ async fn run_service(
                     &stats,
                     &mut routes,
                     &mut workers,
+                    config,
                 ),
                 None => break Ok(()),
             },
@@ -866,6 +950,7 @@ async fn run_service(
                     &stats,
                     &mut routes,
                     &mut workers,
+                    config,
                 );
             }
         }
@@ -910,6 +995,7 @@ fn handle_service_command(
     stats: &Arc<UtpStats>,
     routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
     workers: &mut WorkerSet,
+    config: UtpRuntimeConfig,
 ) {
     match command {
         UtpServiceCommand::Connect { target, response } => {
@@ -922,6 +1008,7 @@ fn handle_service_command(
                 stats,
                 routes,
                 workers,
+                config,
                 response,
             );
             if let Err((error, response)) = result {
@@ -941,6 +1028,7 @@ fn prepare_outgoing(
     stats: &Arc<UtpStats>,
     routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
     workers: &mut WorkerSet,
+    config: UtpRuntimeConfig,
     response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
 ) -> Result<
     (),
@@ -980,8 +1068,8 @@ fn prepare_outgoing(
         receive_connection_id,
         initial_sequence,
         clock.now_micros(),
-        UTP_RUNTIME_DATAGRAM_BYTES,
-        UTP_RUNTIME_DATAGRAM_BYTES,
+        config.floor_datagram_bytes,
+        config.ceiling_datagram_bytes,
     ) {
         Ok(state) => state,
         Err(error) => return Err((error.into(), response)),
@@ -1023,6 +1111,7 @@ fn handle_datagram(
     stats: &Arc<UtpStats>,
     routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
     workers: &mut WorkerSet,
+    config: UtpRuntimeConfig,
 ) {
     if family != AddressFamily::Ipv4 {
         saturating_increment(&stats.unknown_connection_datagrams, 1);
@@ -1083,8 +1172,8 @@ fn handle_datagram(
     let state = match TransportState::accept_syn(
         packet,
         initial_sequence,
-        UTP_RUNTIME_DATAGRAM_BYTES,
-        UTP_RUNTIME_DATAGRAM_BYTES,
+        config.floor_datagram_bytes,
+        config.ceiling_datagram_bytes,
     ) {
         Ok(state) => state,
         Err(_) => {
@@ -1544,6 +1633,12 @@ impl UtpWorker {
                             u64::try_from(length).unwrap_or(u64::MAX),
                         );
                     }
+                    if emission.mtu_probe {
+                        saturating_increment(&self.stats.mtu_probe_datagrams_sent, 1);
+                    }
+                    if emission.fragmentable_mtu_retry {
+                        saturating_increment(&self.stats.mtu_fragmentable_retry_datagrams_sent, 1);
+                    }
                     DatagramSendResult::Sent
                 }
                 Ok(length) => {
@@ -1829,6 +1924,15 @@ mod tests {
         let right_terminal = right_utp.shutdown().await.unwrap();
         assert_eq!(left_terminal.active_connections, 0);
         assert_eq!(right_terminal.active_connections, 0);
+        for terminal in [left_terminal, right_terminal] {
+            assert_eq!(terminal.selected_mtu_min_bytes, Some(548));
+            assert_eq!(terminal.selected_mtu_max_bytes, Some(548));
+            assert_eq!(terminal.mtu_candidate_min_bytes, Some(548));
+            assert_eq!(terminal.mtu_candidate_max_bytes, Some(548));
+            assert_eq!(terminal.mtu_probes_started_high_water, 0);
+            assert_eq!(terminal.mtu_probe_datagrams_sent, 0);
+            assert_eq!(terminal.mtu_fragmentable_retry_datagrams_sent, 0);
+        }
         drop(left_dht);
         drop(right_dht);
         left_udp.shutdown().await.unwrap();

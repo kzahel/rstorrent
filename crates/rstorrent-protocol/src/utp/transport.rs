@@ -353,6 +353,7 @@ pub struct TransportEmission {
     pub payload: Vec<u8>,
     pub retransmission: bool,
     pub mtu_probe: bool,
+    pub fragmentable_mtu_retry: bool,
     pub dont_fragment: bool,
 }
 
@@ -832,6 +833,7 @@ impl TransportState {
                 payload: Vec::new(),
                 retransmission: false,
                 mtu_probe: false,
+                fragmentable_mtu_retry: false,
                 dont_fragment: false,
             })));
         }
@@ -862,6 +864,7 @@ impl TransportState {
                 payload: Vec::new(),
                 retransmission: false,
                 mtu_probe: false,
+                fragmentable_mtu_retry: false,
                 dont_fragment: false,
             })));
         }
@@ -948,6 +951,7 @@ impl TransportState {
             payload: Vec::new(),
             retransmission: false,
             mtu_probe: false,
+            fragmentable_mtu_retry: false,
             dont_fragment: false,
         }))
     }
@@ -976,12 +980,11 @@ impl TransportState {
         }
         let mut intent = self.connection.retransmission_intent(sequence_number)?;
         let mtu_snapshot = self.mtu.snapshot();
-        let datagram_limit = mtu_snapshot
+        let fragmentable_mtu_retry = mtu_snapshot
             .fragmentable_retry
             .filter(|retry| retry.sequence_number == sequence_number)
-            .map_or(mtu_snapshot.floor_datagram_bytes, |retry| {
-                retry.datagram_bytes
-            });
+            .map(|retry| retry.datagram_bytes);
+        let datagram_limit = fragmentable_mtu_retry.unwrap_or(mtu_snapshot.floor_datagram_bytes);
         let sack_bytes = intent
             .selective_ack
             .map_or(0, |selective_ack| selective_ack.as_bytes().len());
@@ -1019,6 +1022,7 @@ impl TransportState {
             payload,
             retransmission: true,
             mtu_probe: false,
+            fragmentable_mtu_retry: fragmentable_mtu_retry.is_some(),
             dont_fragment: false,
         }))
     }
@@ -1114,6 +1118,7 @@ impl TransportState {
             payload,
             retransmission: false,
             mtu_probe: use_probe,
+            fragmentable_mtu_retry: false,
             dont_fragment: use_probe,
         }))
     }

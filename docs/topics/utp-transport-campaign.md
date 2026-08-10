@@ -164,7 +164,14 @@ the single authoritative **Now**.
   shared queue pressure, consumer drop during retransmission, service and UDP
   generation cancellation, and eight repeated start/stop cycles. Every
   terminal assertion reports zero active connections/half-opens and no worker
-  panic. Diagnostic MTU integration remains active work.
+  panic.
+- Tactical `130` now exposes the existing 548--1,472-byte path-MTU search only
+  through an explicit loopback diagnostic service configuration. Ordinary
+  runtime construction remains fixed at 548 bytes and its duplex regression
+  observes zero probes. Structured runtime evidence separates the proven MTU
+  floor, current candidate, probe outcomes, probe datagrams, and same-sequence
+  fragmentable retries. The controlled real-socket size-black-hole proof
+  remains active work; no portable Internet PMTU or product claim follows.
 
 ## Why The Campaign Must Be Adaptive
 
