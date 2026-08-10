@@ -1,12 +1,9 @@
 # Tactical 117: JSTorrent-Shaped Android Product UI
 
-Status: Active and implementation-authorized on 2026-08-10 after completed
-Tacticals [`114`](114-session-wide-concurrent-torrent-admission.md) and
-[`116`](116-platform-storage-coherence-and-ios-feasibility.md). Maintainer
-direction explicitly selected this client-product slice as the current work;
-the separate fast-resume policy follow-up is not a dependency unless
-implementation finds a concrete UI contract requirement. No connected
-physical-device interaction is authorized by this activation.
+Status: Completed on 2026-08-10. The first-party Compose product, Android
+application bridge, generated bindings, deterministic presentation tests,
+both packaged ABIs, and controlled API 34 AVD evidence pass. No connected
+physical device was used.
 
 Topics: `client-surfaces`, `capability-readiness`, `product-direction`,
 `application-control`, `application-view-api`, `android-saf-storage`,
@@ -411,11 +408,104 @@ honestly by this UI.
   to catch visibly unusable scrolling and tab changes; do not invent a release
   performance threshold without baseline evidence.
 
-Visible desktop apps and connected physical devices are not authorized by this
-planned tactical. A later implementation may use owned no-window emulators.
+Visible desktop apps and connected physical devices were not authorized by
+this tactical. Implementation used owned no-window emulators.
 Pixel, Chromebook, or other physical evidence requires separate explicit
 authorization and must name the device, actions, cleanup, and captured
 artifacts before use.
+
+## Completion Record
+
+Tactical `117` replaces the launcher's diagnostic column with the maintained
+RSTorrent Compose product while retaining the diagnostic harness as an
+explicit test-only entry point. The implementation landed in five reviewable
+commits: product plan, product shell, live product views, coverage hardening,
+and lifecycle hardening.
+
+The resulting Android product has:
+
+- one Material 3, dynamic-color, system light/dark Library with RSTorrent
+  launcher and notification branding, setup/repair states, authoritative
+  All/Active/Queued/Finished filters, bounded stable sorting, Add, long-press
+  selection, queue, archive, pause/resume, and guarded removal flows;
+- one six-tab swipeable torrent detail destination in the required Details,
+  Status, Files, Trackers, Peers, Pieces order, including live bounded catalog
+  pages, file selection and `Download now`, complete-file content-URI launch,
+  peer/swarm/piece/disk projections, and the applicable torrent actions;
+- top-level RSTorrent-native Speed, separate IPv4/IPv6 DHT, structured Logs,
+  and the JSTorrent-shaped Settings hierarchy. Backed settings expose their
+  configured/effective/application truth; absent bandwidth, VPN/metered,
+  proxy, power, playback, search/plugin, tracker-mutation, and richer file-
+  priority features say `Not available yet` instead of becoming local policy;
+- one service-scoped `AndroidPresentationRepository` that owns the list,
+  visible detail, visible global, and diagnostic interests, atomically reduces
+  bounded generated updates, resynchronizes resets and continuity faults, and
+  makes rapid route changes last-request-wins; and
+- a bounded generated `AddTorrentBytesRequest` bridge. The Activity Result
+  flow retains only the persistable document URI and start choice across
+  recreation, reads at most 64 MiB, never puts payload in saved state, and
+  invokes the in-process application operation without path identity.
+
+No JSTorrent Compose source was copied. The UI is independently authored from
+the exact source/AVD behavior inspection recorded above, so no imported MIT
+source files or additional attribution artifacts were created.
+
+### Maintained module boundary
+
+The product remains in `experiments/android-engine-bootstrap` rather than
+moving to a new `clients/android` directory. That module is already the only
+Android package, manifest, generated-UniFFI build, two-ABI build, foreground-
+service owner, SAF adapter, controlled runner, and accumulated physical/AVD
+evidence target. Moving it would either invalidate those stable evidence paths
+or create a second Android packaging and lifecycle authority. Product code is
+separated by `Product*`, `AndroidPresentationRepository`, and `ui/` sources;
+the older diagnostic activity/service remains an explicitly named evidence
+harness. The module README now records this as a maintained product boundary,
+not as a disposable UI experiment.
+
+### Evidence
+
+The closing validation on 2026-08-10 passed:
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace`, including the Rust Android raw-byte application
+  intake test;
+- `experiments/android-engine-bootstrap/build.sh`, which regenerated both
+  UniFFI packages, cross-built and packaged `x86_64` and `arm64-v8a`, then ran
+  the debug APK and Kotlin unit-test build;
+- Gradle `lintDebug`, `testDebugUnitTest`, and
+  `assembleDebugAndroidTest` after the clean two-ABI build;
+- two Compose instrumentation tests on the owned no-window API 34
+  `jstorrent-tablet` AVD at 2560x1600: first-launch Add/Settings hierarchy and
+  injected active-torrent traversal of all six detail tabs plus Speed, DHT,
+  Logs, and dark theme;
+- manual phone and large-screen first-launch inspection for hierarchy,
+  dynamic/system bar colors, setup state, and absence of runtime crashes; the
+  captures were investigation artifacts and were not retained; and
+- one fresh controlled `product-dynamic-saf` plus
+  `product-concurrent-downloads` run. Dynamic SAF completed publication,
+  restart/recheck, exact selective publication, upload, pause/removal, and
+  cleanup with storage-owned high water `6`, pending high water `2`, and
+  process-FD baseline/final/high `118/136/140`. The concurrent profile
+  observed configured `3`, effective/active `2`, queued `1`, registered high
+  `3`, terminal active/queued `0/0`, storage-owned high water `11`, and
+  process-FD baseline/final/high `120/135/148`; exact cleanup passed.
+
+The deterministic reducer suite includes 500-row filter/sort coverage and
+bounded file-page replacement. Existing controlled Android profiles continue
+to own root revocation/repair, Activity recreation, forced process restart,
+and application-owner lifecycle evidence. This presentation slice did not
+interact with the connected Pixel and makes no new physical-device UI claim.
+
+### Remaining product and engine gaps
+
+The Android UI side is complete for the currently exposed RSTorrent
+capabilities. General cloud/removable root policy, bandwidth limits, Android
+VPN/metered/proxy policy, power controls, search plugins, tracker mutation,
+high file priority/streaming urgency, incomplete-file playback/HTTP serving,
+and fast/trusting resume remain separate engine, platform, security, or
+product tacticals. Their routes or rows are absent or explicitly unavailable;
+they are not hidden partial implementations in this product.
 
 ## Non-Goals
 

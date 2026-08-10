@@ -565,6 +565,11 @@ that scope and its cleanup or compatibility rules explicitly.
   Android matrices and a bounded physical-iPhone storage, networking, and
   lifecycle feasibility harness pass without adding fast resume or an iOS
   product claim.
+- [`117-jstorrent-shaped-android-product-ui.md`](117-jstorrent-shaped-android-product-ui.md):
+  complete Android product-presentation slice; replaces the bootstrap page
+  with a fully connected JSTorrent-shaped Compose library, six-tab detail,
+  global inspection, settings, and lifecycle experience while keeping
+  unsupported engine and platform policy visibly unavailable.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

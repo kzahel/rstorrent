@@ -2,9 +2,9 @@
 
 Topic: `client-surfaces`
 
-Status: Accepted and implemented through Tacticals `008` and `009` across a
-browser-hosted web view, a Tauri desktop webview, and Android Compose. The
-Android foreground product client now uses durable SAF storage without
+Status: Accepted and implemented through Tactical `117` across a browser-
+hosted web view, a Tauri desktop webview, and Android Compose. The Android
+foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
 the original Linux development host. Closing its macOS window detaches that
@@ -34,13 +34,15 @@ Tactical `084` splits the shared React Settings dialog into focused
 appearance, download, and connection/seeding sections. Browser-hosted and
 Tauri clients now share one atomic persisted loopback-listener/global-peer/
 upload-slot form and authoritative active/effective/bind status; Android
-receives the generated contract but no Compose settings screen.
+receives the generated contract; Tactical `117` now presents these backed
+settings in Compose.
 Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
 slice adds the generated four-value MSE/PE policy and live effective state to
 that same contract. Browser and Tauri share the labelled non-security control
 and the truthful encrypted-or-obfuscated peer flag; Android carries and
 compiles the enum/default, exposes bounded DH-owner evidence to the retained
-product harness, and deliberately adds no Compose settings screen. The named
+product harness. Tactical `117` now presents the backed encryption setting and
+exact peer detail. The named
 API 37 physical Pixel 7a profile applied `required`, completed five forced-RC4
 oracle sessions, published the exact payload, drained the DH owner, and cleaned
 up within the recorded descriptor and storage bounds.
@@ -56,10 +58,9 @@ default-enabled IPv6 control and configured/effective/application state to the
 same generated settings contract. Browser and Tauri share the control and
 typed degradation presentation. Android compiles and persists the value and
 its retained product harness proves policy/restart behavior on the API 34 AVD
-and named API 37 Pixel 7a, but deliberately adds no Compose settings screen.
-The DHT inspection surface renders both
-families within its existing bounded view rather than adding a second page or
-client-owned inference.
+and named API 37 Pixel 7a. Tactical `117` now presents the backed IPv6 setting
+and renders both DHT families within one bounded Compose view rather than
+adding a second page or client-owned inference.
 Completed Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) adds
 authoritative operational state and queue position to shared torrent rows,
@@ -67,14 +68,20 @@ configured/effective active-download limits and clamp state to Settings, and
 Move to top/Move to bottom actions to Transfers. Headless Chrome proves those
 settings and actions through the generated contract. Android consumes the
 same additive contract and a physical Pixel 7a proves configured three/
-effective two plus promotion, while Compose deliberately gains no new control
-in this tactical.
+effective two plus promotion. Tactical `117` now exposes the same queue and
+active-download controls in Compose.
 Maintainer direction on 2026-08-09 accepts iOS as an eventual first-party
-in-process product. Planned Tactical
+in-process product. Completed Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 adds only a minimal physical-device feasibility harness around the real Rust
 storage and direct-networking seams; it does not add a fourth supported UI
 surface or select the eventual native presentation toolkit.
+Completed Tactical
+[`117`](../tactical/117-jstorrent-shaped-android-product-ui.md) supplies the
+first UI-complete Android product for the current application boundary. Its
+single-stack Material 3 Library, six-tab torrent detail, Speed, dual-family
+DHT, structured Logs, and Settings hierarchy deliberately follow JSTorrent
+Android standalone with RSTorrent branding and honest capability gaps.
 Active Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 adds no setting. Browser and Tauri render the existing IPv4 mapping status and
@@ -209,6 +216,14 @@ The existing JSTorrent Android application is the primary Compose product
 reference. Reuse or adapt its screen composition, navigation, piece
 visualization, notification and power-management behavior, SAF root-selection
 experience, and platform lifecycle lessons.
+
+Tactical `117` makes that reuse direction concrete: a single-stack Material 3
+Library leads to one torrent detail route with Details, Status, Files,
+Trackers, Peers, and Pieces tabs, while Speed, dual-family DHT, structured
+Logs, and Settings remain global routes. Preserve JSTorrent's hierarchy,
+interaction rhythm, and density with RSTorrent branding. Replace QuickJS-
+specific health presentation with Rust-native application metrics, and never
+enable a setting whose durable/effective behavior is absent.
 
 Do not preserve its QuickJS controller, stringly typed subscription topics,
 combined mutable `EngineState`, daemon topology, or view-model workarounds as
@@ -483,12 +498,14 @@ future server.
   tray or cross-platform window policy, installers, updates, file associations,
   or platform-capability adapter.
 - Android durable SAF session storage and provider publication are proven for
-  one persisted root. General root management, root migration, removable
-  media policy, and file-selection presentation remain product gaps.
-- The current UI proves one controlled torrent. General multi-torrent
-  scheduling and complete product presentation remain absent. Peers, Files,
-  Trackers, Pieces, global Disk, Swarm, Logs, Speed, and dual-family DHT are
-  live; broader product workflows and content presentation remain incomplete.
+  one persisted root. The Compose product presents root setup/health/repair,
+  bounded file selection, `Download now`, and completed-file open. General
+  root migration and cloud/removable-media policy remain product gaps.
+- The Android Compose product now presents authoritative multi-torrent queue
+  and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
+  Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
+  playback, bandwidth policy, dynamic network policy, and tracker mutation
+  remain explicitly unavailable rather than discarded or simulated.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,
@@ -499,11 +516,10 @@ future server.
   Those controls should extend application network prerequisites while
   preserving torrent intent; VPN-grade leak prevention requires explicit
   Android network binding and race analysis.
-- Android has no Compose connection/seeding settings screen. Tactical `084`
-  deliberately stops at generated contract and build/test coverage there;
-  Tacticals `111`, `112`, `113`, and `115` follow the same boundary for MSE/PE
-  policy, IPv6 policy and pinhole status, and exact peer detail. Mobile restart
-  UX and connectivity policy require their own product slice.
+- Android now has Compose connection/seeding settings for backed peer, upload-
+  slot, active-download, listener, port-mapping, IPv6, and encryption values,
+  including configured/effective/application truth. VPN, metered-network,
+  bandwidth, proxy, and power policy remain separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker
@@ -519,6 +535,6 @@ cross-surface observability slice motivated by the first public-magnet desktop
 run. Tactical `013` records explicit product and harness network selection.
 Tacticals `033` through `035` record the leased view-set boundary, responsive
 demo surface, and first live peer projection plus recovery evidence.
-Production remote authorization, dynamic Android network controls, general
-multi-torrent scheduling, and broader desktop lifecycle work remain later
-boundaries.
+Completed Tactical `117` records the Android product-presentation closure.
+Production remote authorization, dynamic Android network controls, and
+broader desktop lifecycle work remain later boundaries.

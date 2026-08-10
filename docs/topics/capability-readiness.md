@@ -232,11 +232,22 @@ bookmark restoration, coordination, and bounded lifecycle behavior for an
 app-owned fixture; external File Provider support remains unproven. No fast-
 resume trust decision was added.
 
+Tactical
+[`117`](../tactical/117-jstorrent-shaped-android-product-ui.md) is complete.
+The maintained Compose product now follows JSTorrent Android standalone's
+Library, six-tab torrent detail, Speed, DHT, Logs, and Settings hierarchy with
+RSTorrent branding. It consumes the existing bounded application views and
+commands through one service-scoped presentation owner, adds bounded raw
+`.torrent` intake and completed-file launch, and labels unsupported engine or
+platform policy unavailable. Workspace, generated two-ABI, Gradle lint/unit,
+API 34 Compose navigation, and controlled SAF/concurrent-download evidence
+pass; no new physical-device UI claim was made.
+
 ## Current Queue
 
 ### Now
 
-- Queue selection after completed Tactical `116` is the single authoritative
+- Queue selection after completed Tactical `117` is the single authoritative
   **Now**; no following implementation tactical is authorized in this state.
 
 ### Next
@@ -356,7 +367,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. A real media catalog/playback remains incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
-| Android Compose foreground client | Partial | runtime, AVD, physical | General settings, connectivity policy, and complete torrent controls remain incomplete. | [`client-surfaces`](client-surfaces.md) |
+| Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, bandwidth policy, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |
 | Eventual iOS native client | Absent | physical feasibility | No product target or support claim exists. Tactical `116`'s physical harness links the real Rust pool, storage, SHA-1, namespace, TCP, and UDP operations; app-owned bookmark restoration, balanced security scope, coordination, ordinary expiration, finite continued processing, and force-close recovery pass on iOS 26.6. A separate system-picked local root, external File Provider behavior, product persistence, notification policy, and indefinite background operation remain unproven. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |

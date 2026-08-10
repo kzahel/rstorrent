@@ -225,6 +225,13 @@ wants Google Play installation and does not need the extension interface. It
 uses the same Android backend and profile as extension-controlled Android, so
 changing between those two presentations is not a migration.
 
+Completed Tactical
+[`117`](../tactical/117-jstorrent-shaped-android-product-ui.md) makes this a
+credible primary path by adapting JSTorrent Android standalone's Library,
+torrent-detail tabs, Speed, DHT, Logs, and Settings hierarchy to the typed
+RSTorrent application. It retains RSTorrent branding and truthful capability
+gaps rather than reproducing QuickJS or unsupported feature policy.
+
 ### ChromeOS choice and status
 
 The first-run UX should emphasize two backend choices:

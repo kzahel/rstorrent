@@ -10,6 +10,17 @@ service only. The product application has one storage architecture: bounded
 dynamic acquisition through an explicitly granted Android Storage Access
 Framework tree.
 
+Despite the historical directory name, this is the maintained Android product
+boundary. It remains here because this module already owns the sole Android
+package, manifest, foreground-service lifecycle, generated UniFFI sources,
+two-ABI packaging, SAF platform adapter, and controlled AVD/physical evidence.
+Moving only the Compose sources to `clients/android` would split those owners;
+moving the complete module would invalidate the stable paths used by the
+accumulated Android evidence. Product sources are isolated under `Product*`,
+`AndroidPresentationRepository`, and `ui/`. The older diagnostic activity and
+service are retained as explicitly named evidence infrastructure, not as an
+alternate product UI.
+
 Build both locked Android ABIs and the debug APK:
 
 ```bash
@@ -23,6 +34,17 @@ The build uses Android Gradle Plugin `8.7.3`, Gradle `8.11.1`, Kotlin
 native library and packages independently cross-built `x86_64` and
 `arm64-v8a` libraries. Generated bindings, native libraries, reports, and APKs
 remain under ignored build directories.
+
+Run product lint, unit, and instrumentation packaging after the full build:
+
+```bash
+cd experiments/android-engine-bootstrap
+./gradlew lintDebug testDebugUnitTest assembleDebugAndroidTest
+ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest
+```
+
+The instrumentation command requires an explicitly selected owned emulator;
+never substitute the first device returned by ADB.
 
 Device execution is owned by `run_bootstrap.py`. Do not install or start this
 harness by selecting the first ADB device; the runner verifies an explicit

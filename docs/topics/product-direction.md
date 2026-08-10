@@ -371,7 +371,11 @@ testing evidence justifies it.
   release-sequencing non-goal.
 - Search plugins, streaming playback, or remote administration in the first
   useful client.
-- Exact JSTorrent API, UI, persistence, or feature parity.
+- Exact JSTorrent API, engine, persistence, or feature parity. Completed
+  Tactical
+  [`117`](../tactical/117-jstorrent-shaped-android-product-ui.md)
+  deliberately adopts the Android standalone navigation, screens, and feel;
+  that bounded presentation decision does not imply whole-product parity.
 - A literal all-Rust UI requirement. Rust engine ownership and first-party
   clients are the important constraints.
 
