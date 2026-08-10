@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "source": "https://webtorrent.io/free-torrents",
-  "retrieved": "2026-07-30",
-  "license_note": "WebTorrent describes these torrents as public-domain or Creative Commons works; verify the individual work license before redistribution.",
+  "source": "Official project download pages and WebTorrent Free Torrents",
+  "retrieved": "2026-08-10",
+  "license_note": "Entries record per-project provenance; payload redistribution is outside this harness and remains subject to each project's terms.",
   "torrents": [
     {
       "slug": "big-buck-bunny",
@@ -14,23 +14,37 @@
       "source": {
         "organization": "WebTorrent",
         "page": "https://webtorrent.io/free-torrents",
-        "retrieved": "2026-07-30",
+        "retrieved": "2026-08-10",
         "license_note": "WebTorrent lists Big Buck Bunny as a freely distributable Blender Foundation film; payload redistribution is outside this harness."
       },
       "input_modes": [
+        "metainfo",
         "magnet"
       ],
       "magnet": "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent",
-      "metainfo": null,
+      "metainfo": {
+        "url": "https://webtorrent.io/torrents/big-buck-bunny.torrent",
+        "allowed_hosts": ["webtorrent.io"],
+        "sha256": "13b4241c2fc4c2be3806287895566c0f596b9716643f2e679fd1482bcc7ed449"
+      },
       "expected": {
         "payload_bytes": 276445467,
         "piece_length": 262144,
         "piece_count": 1055,
         "file_count": 3,
         "private": false,
-        "padding_bytes": null,
-        "tracker_tiers": null,
-        "web_seeds": null
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.leechers-paradise.org:6969"],
+          ["udp://tracker.coppersurfer.tk:6969"],
+          ["udp://tracker.opentrackr.org:1337"],
+          ["udp://explodie.org:6969"],
+          ["udp://tracker.empire-js.us:1337"],
+          ["wss://tracker.btorrent.xyz"],
+          ["wss://tracker.openwebtorrent.com"],
+          ["wss://tracker.fastcast.nz"]
+        ],
+        "web_seeds": ["https://webtorrent.io/torrents/"]
       },
       "limits": {
         "max_target": "complete",
@@ -48,28 +62,42 @@
       "source": {
         "organization": "WebTorrent",
         "page": "https://webtorrent.io/free-torrents",
-        "retrieved": "2026-07-30",
+        "retrieved": "2026-08-10",
         "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
       },
       "input_modes": [
+        "metainfo",
         "magnet"
       ],
       "magnet": "magnet:?xt=urn:btih:c9e15763f722f23e98a29decdfae341b98d53056&dn=Cosmos+Laundromat&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fcosmos-laundromat.torrent",
-      "metainfo": null,
+      "metainfo": {
+        "url": "https://webtorrent.io/torrents/cosmos-laundromat.torrent",
+        "allowed_hosts": ["webtorrent.io"],
+        "sha256": "ea0de7ae6edd064180765585a2ade72689a0cce0354ca244c054112c2f30741e"
+      },
       "expected": {
-        "payload_bytes": null,
-        "piece_length": null,
-        "piece_count": null,
-        "file_count": null,
-        "private": null,
-        "padding_bytes": null,
-        "tracker_tiers": null,
-        "web_seeds": null
+        "payload_bytes": 220864086,
+        "piece_length": 262144,
+        "piece_count": 843,
+        "file_count": 6,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.leechers-paradise.org:6969"],
+          ["udp://tracker.coppersurfer.tk:6969"],
+          ["udp://tracker.opentrackr.org:1337"],
+          ["udp://explodie.org:6969"],
+          ["udp://tracker.empire-js.us:1337"],
+          ["wss://tracker.btorrent.xyz"],
+          ["wss://tracker.openwebtorrent.com"],
+          ["wss://tracker.fastcast.nz"]
+        ],
+        "web_seeds": ["https://webtorrent.io/torrents/"]
       },
       "limits": {
         "max_target": "first-piece",
         "owner_timeout_seconds": 600,
-        "wire_payload_ceiling_bytes": null
+        "wire_payload_ceiling_bytes": 489299542
       }
     },
     {
@@ -82,28 +110,42 @@
       "source": {
         "organization": "WebTorrent",
         "page": "https://webtorrent.io/free-torrents",
-        "retrieved": "2026-07-30",
+        "retrieved": "2026-08-10",
         "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
       },
       "input_modes": [
+        "metainfo",
         "magnet"
       ],
       "magnet": "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent",
-      "metainfo": null,
+      "metainfo": {
+        "url": "https://webtorrent.io/torrents/sintel.torrent",
+        "allowed_hosts": ["webtorrent.io"],
+        "sha256": "4c8fdad0414b4767546a0f92fe3d660a66edc32471874e7a1cfa97120317b84a"
+      },
       "expected": {
-        "payload_bytes": null,
-        "piece_length": null,
-        "piece_count": null,
-        "file_count": null,
-        "private": null,
-        "padding_bytes": null,
-        "tracker_tiers": null,
-        "web_seeds": null
+        "payload_bytes": 129302391,
+        "piece_length": 131072,
+        "piece_count": 987,
+        "file_count": 11,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.leechers-paradise.org:6969"],
+          ["udp://tracker.coppersurfer.tk:6969"],
+          ["udp://tracker.opentrackr.org:1337"],
+          ["udp://explodie.org:6969"],
+          ["udp://tracker.empire-js.us:1337"],
+          ["wss://tracker.btorrent.xyz"],
+          ["wss://tracker.openwebtorrent.com"],
+          ["wss://tracker.fastcast.nz"]
+        ],
+        "web_seeds": ["https://webtorrent.io/torrents/"]
       },
       "limits": {
         "max_target": "first-piece",
         "owner_timeout_seconds": 600,
-        "wire_payload_ceiling_bytes": null
+        "wire_payload_ceiling_bytes": 397737847
       }
     },
     {
@@ -116,28 +158,42 @@
       "source": {
         "organization": "WebTorrent",
         "page": "https://webtorrent.io/free-torrents",
-        "retrieved": "2026-07-30",
+        "retrieved": "2026-08-10",
         "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
       },
       "input_modes": [
+        "metainfo",
         "magnet"
       ],
       "magnet": "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent",
-      "metainfo": null,
+      "metainfo": {
+        "url": "https://webtorrent.io/torrents/tears-of-steel.torrent",
+        "allowed_hosts": ["webtorrent.io"],
+        "sha256": "437d9f961b0dcfa7f3fb7e88169dd27174190a8e512840dc01879a058882d387"
+      },
       "expected": {
-        "payload_bytes": null,
-        "piece_length": null,
-        "piece_count": null,
-        "file_count": null,
-        "private": null,
-        "padding_bytes": null,
-        "tracker_tiers": null,
-        "web_seeds": null
+        "payload_bytes": 571426507,
+        "piece_length": 524288,
+        "piece_count": 1090,
+        "file_count": 10,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.leechers-paradise.org:6969"],
+          ["udp://tracker.coppersurfer.tk:6969"],
+          ["udp://tracker.opentrackr.org:1337"],
+          ["udp://explodie.org:6969"],
+          ["udp://tracker.empire-js.us:1337"],
+          ["wss://tracker.btorrent.xyz"],
+          ["wss://tracker.openwebtorrent.com"],
+          ["wss://tracker.fastcast.nz"]
+        ],
+        "web_seeds": ["https://webtorrent.io/torrents/"]
       },
       "limits": {
         "max_target": "first-piece",
         "owner_timeout_seconds": 600,
-        "wire_payload_ceiling_bytes": null
+        "wire_payload_ceiling_bytes": 857139760
       }
     },
     {
@@ -150,28 +206,205 @@
       "source": {
         "organization": "WebTorrent",
         "page": "https://webtorrent.io/free-torrents",
-        "retrieved": "2026-07-30",
+        "retrieved": "2026-08-10",
         "license_note": "WebTorrent lists this Creative Commons compilation for free-torrent testing; payload redistribution is outside this harness."
       },
       "input_modes": [
+        "metainfo",
         "magnet"
       ],
       "magnet": "magnet:?xt=urn:btih:a88fda5954e89178c372716a6a78b8180ed4dad3&dn=The+WIRED+CD+-+Rip.+Sample.+Mash.+Share&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fwired-cd.torrent",
-      "metainfo": null,
+      "metainfo": {
+        "url": "https://webtorrent.io/torrents/wired-cd.torrent",
+        "allowed_hosts": ["webtorrent.io"],
+        "sha256": "0808786baeb257f29c4092d7162f3c6f9ecea6197acf11f4414e8b3a2ca1df0b"
+      },
       "expected": {
-        "payload_bytes": null,
-        "piece_length": null,
-        "piece_count": null,
-        "file_count": null,
-        "private": null,
-        "padding_bytes": null,
-        "tracker_tiers": null,
-        "web_seeds": null
+        "payload_bytes": 56070710,
+        "piece_length": 65536,
+        "piece_count": 856,
+        "file_count": 18,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.leechers-paradise.org:6969"],
+          ["udp://tracker.coppersurfer.tk:6969"],
+          ["udp://tracker.opentrackr.org:1337"],
+          ["udp://explodie.org:6969"],
+          ["udp://tracker.empire-js.us:1337"],
+          ["wss://tracker.btorrent.xyz"],
+          ["wss://tracker.openwebtorrent.com"],
+          ["wss://tracker.fastcast.nz"]
+        ],
+        "web_seeds": ["https://webtorrent.io/torrents/"]
       },
       "limits": {
         "max_target": "first-piece",
         "owner_timeout_seconds": 600,
-        "wire_payload_ceiling_bytes": null
+        "wire_payload_ceiling_bytes": 324506166
+      }
+    },
+    {
+      "slug": "debian-13.6.0-amd64-netinst",
+      "name": "Debian 13.6.0 amd64 netinst",
+      "info_hash": "481b6e3617be4c88f96cb25e47c9d8272130071e",
+      "roles": [
+        "medium-distro",
+        "tracker-breadth"
+      ],
+      "source": {
+        "organization": "Debian Project",
+        "page": "https://www.debian.org/CD/netinst/",
+        "retrieved": "2026-08-10",
+        "license_note": "Official Debian stable netinst torrent; Debian image redistribution terms are outside this harness."
+      },
+      "input_modes": [
+        "metainfo"
+      ],
+      "magnet": null,
+      "metainfo": {
+        "url": "https://cdimage.debian.org/cdimage/release/13.6.0/amd64/bt-cd/debian-13.6.0-amd64-netinst.iso.torrent",
+        "allowed_hosts": ["cdimage.debian.org"],
+        "sha256": "763e5f84c8aff61da94f20604e078900825ab8c4d44dc66d6b9de73c5be29976"
+      },
+      "expected": {
+        "payload_bytes": 791674880,
+        "piece_length": 262144,
+        "piece_count": 3020,
+        "file_count": 1,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["http://bttracker.debian.org:6969/announce"]
+        ],
+        "web_seeds": [
+          "https://cdimage.debian.org/cdimage/release/13.6.0/amd64/iso-cd/debian-13.6.0-amd64-netinst.iso",
+          "https://cdimage.debian.org/cdimage/archive/13.6.0/amd64/iso-cd/debian-13.6.0-amd64-netinst.iso"
+        ]
+      },
+      "limits": {
+        "max_target": "complete",
+        "owner_timeout_seconds": 1800,
+        "wire_payload_ceiling_bytes": 1187512320
+      }
+    },
+    {
+      "slug": "ubuntu-26.04-live-server-amd64",
+      "name": "Ubuntu 26.04 live server amd64",
+      "info_hash": "e1fc140a6391357fa1cf08ddb70274f9c05eb88b",
+      "roles": [
+        "large-distro"
+      ],
+      "source": {
+        "organization": "Canonical",
+        "page": "https://ubuntu.com/download/server",
+        "retrieved": "2026-08-10",
+        "license_note": "Official Ubuntu Server torrent; Ubuntu image redistribution terms are outside this harness."
+      },
+      "input_modes": [
+        "metainfo"
+      ],
+      "magnet": null,
+      "metainfo": {
+        "url": "https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso.torrent",
+        "allowed_hosts": ["releases.ubuntu.com"],
+        "sha256": "58c48339fd49faff8004e1b0f5a85792d20b840920966da37ab8c7507431af8c"
+      },
+      "expected": {
+        "payload_bytes": 2918598656,
+        "piece_length": 262144,
+        "piece_count": 11134,
+        "file_count": 1,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["https://torrent.ubuntu.com/announce"],
+          ["https://ipv6.torrent.ubuntu.com/announce"]
+        ],
+        "web_seeds": []
+      },
+      "limits": {
+        "max_target": "complete",
+        "owner_timeout_seconds": 3600,
+        "wire_payload_ceiling_bytes": 4377897984
+      }
+    },
+    {
+      "slug": "archlinux-2026.08.01-x86_64",
+      "name": "Arch Linux 2026.08.01 x86_64",
+      "info_hash": "ed8507e22addc40fd6fb4f1677bf27fd75967f70",
+      "roles": [
+        "dht-only"
+      ],
+      "source": {
+        "organization": "Arch Linux",
+        "page": "https://archlinux.org/download/",
+        "retrieved": "2026-08-10",
+        "license_note": "Official monthly Arch Linux install-image torrent; image redistribution terms are outside this harness."
+      },
+      "input_modes": [
+        "metainfo"
+      ],
+      "magnet": null,
+      "metainfo": {
+        "url": "https://archlinux.org/releng/releases/2026.08.01/torrent/",
+        "allowed_hosts": ["archlinux.org"],
+        "sha256": "1e8def6094f97517b5069f3ed471db826813a656bc41e59af29584e37e09ef63"
+      },
+      "expected": {
+        "payload_bytes": 1597014016,
+        "piece_length": 524288,
+        "piece_count": 3047,
+        "file_count": 1,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [],
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 1200,
+        "wire_payload_ceiling_bytes": 2395521024
+      }
+    },
+    {
+      "slug": "linuxmint-22.3-cinnamon-64bit",
+      "name": "Linux Mint 22.3 Cinnamon 64-bit",
+      "info_hash": "2fee37827d0b6dc81372a7affcd1e3dcb4110e64",
+      "roles": [
+        "tracker-breadth"
+      ],
+      "source": {
+        "organization": "Linux Mint",
+        "page": "https://linuxmint.com/download.php",
+        "retrieved": "2026-08-10",
+        "license_note": "Official Linux Mint Cinnamon torrent; image redistribution terms are outside this harness."
+      },
+      "input_modes": [
+        "metainfo"
+      ],
+      "magnet": null,
+      "metainfo": {
+        "url": "https://linuxmint.com/torrents/linuxmint-22.3-cinnamon-64bit.iso.torrent",
+        "allowed_hosts": ["linuxmint.com"],
+        "sha256": "df4ed6d10da55456f72aa9c2d0d726b5f6b0fe2fe5d1bb304c756411a913f6c3"
+      },
+      "expected": {
+        "payload_bytes": 3091660800,
+        "piece_length": 2097152,
+        "piece_count": 1475,
+        "file_count": 1,
+        "private": false,
+        "padding_bytes": 0,
+        "tracker_tiers": [
+          ["udp://tracker.opentrackr.org:1337/announce"]
+        ],
+        "web_seeds": []
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 1200,
+        "wire_payload_ceiling_bytes": 4637491200
       }
     }
   ]

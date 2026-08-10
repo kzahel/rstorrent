@@ -26,6 +26,15 @@ full 1,073,741,824-byte logical payload and exact method, then joined and were
 removed. These single-run loopback ratios validate the harness and provide a
 controlled context; they are not a public-swarm baseline or regression floor.
 
+The reviewed schema-v2 catalog now pins nine exact official metainfo
+identities: five WebTorrent works plus current Debian, Ubuntu, Arch Linux, and
+Linux Mint distribution images. Every HTTPS source was independently parsed
+and revalidated against its recorded outer SHA-256, v1 info hash, geometry,
+and discovery set before public payload work. Arch's 468-entry web-seed set is
+pinned by the outer hash but intentionally represented as `null`; its
+`dht-only` profile disables web seeds and the report does not need to retain
+hundreds of third-party URLs. No payload or metainfo artifact is committed.
+
 ## Purpose
 
 Real swarms expose discovery, scheduling, timeout, completion, CPU, memory, and

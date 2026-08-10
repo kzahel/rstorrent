@@ -321,6 +321,7 @@ def mark_percent_milestones(
 def _add_parameters(request: dict[str, Any], profile: str, output_root: Path) -> Any:
     input_config = request["input"]
     mode = input_config["mode"]
+    descriptor = None
     if mode == "magnet":
         parameters = lt.parse_magnet_uri(input_config["magnet"])
     elif mode == "metainfo":
@@ -352,6 +353,16 @@ def _add_parameters(request: dict[str, Any], profile: str, output_root: Path) ->
         parameters.flags |= lt.torrent_flags.override_web_seeds
         parameters.url_seeds = []
         parameters.http_seeds = []
+    if descriptor is not None and profile in ("matched-plain-30", "matched-rc4-30"):
+        retained = [
+            (tier_index, url)
+            for tier_index, tier in enumerate(descriptor.tracker_tiers)
+            for url in tier
+            if url.lower().startswith(("udp://", "http://", "https://"))
+        ]
+        parameters.flags |= lt.torrent_flags.override_trackers
+        parameters.trackers = [url for _, url in retained]
+        parameters.tracker_tiers = [tier for tier, _ in retained]
     if not contract["tracker"]:
         parameters.flags |= lt.torrent_flags.override_trackers
         parameters.trackers = []

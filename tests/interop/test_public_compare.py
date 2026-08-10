@@ -47,7 +47,16 @@ class PublicCompareTests(unittest.TestCase):
 
     def test_catalog_and_derived_magnets(self) -> None:
         catalog = load_catalog(Path(__file__).parents[1] / "live" / "torrents.json")
-        self.assertEqual(len(catalog["torrents"]), 5)
+        self.assertEqual(len(catalog["torrents"]), 9)
+        roles = {role for entry in catalog["torrents"] for role in entry["roles"]}
+        self.assertTrue(
+            {"small-primary", "medium-distro", "large-distro", "dht-only"}.issubset(roles)
+        )
+        arch = next(
+            entry for entry in catalog["torrents"] if "dht-only" in entry["roles"]
+        )
+        self.assertIsNone(arch["expected"]["web_seeds"])
+        self.assertEqual(arch["expected"]["tracker_tiers"], [])
         source = catalog["torrents"][0]
         common_rst, common_lib = scenario_magnets(source, "common")
         self.assertEqual(common_rst, common_lib)

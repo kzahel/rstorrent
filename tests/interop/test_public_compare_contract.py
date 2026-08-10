@@ -138,7 +138,7 @@ class PublicCompareContractTests(unittest.TestCase):
     def test_tracked_catalog_v2_is_valid(self) -> None:
         catalog = load_catalog_document(Path(__file__).parents[1] / "live" / "torrents.json")
         self.assertEqual(catalog["schema_version"], 2)
-        self.assertEqual(len(catalog["torrents"]), 5)
+        self.assertEqual(len(catalog["torrents"]), 9)
         primary = catalog["torrents"][0]
         self.assertEqual(primary["roles"], ["small-primary"])
         self.assertEqual(
@@ -155,12 +155,7 @@ class PublicCompareContractTests(unittest.TestCase):
             validate_catalog_document(duplicate)
         unpinned = copy.deepcopy(catalog)
         entry = unpinned["torrents"][0]
-        entry["input_modes"].append("metainfo")
-        entry["metainfo"] = {
-            "url": "https://webtorrent.io/torrents/big-buck-bunny.torrent",
-            "allowed_hosts": ["webtorrent.io"],
-            "sha256": None,
-        }
+        entry["metainfo"]["sha256"] = None
         with self.assertRaisesRegex(ContractError, "SHA-256"):
             validate_catalog_document(unpinned)
 

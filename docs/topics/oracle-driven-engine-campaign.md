@@ -394,12 +394,14 @@ separate control-transport investigation is explicitly authorized.
 Next executable action: Tactical `122`'s release-mode 1 GiB direct-metainfo
 plaintext and forced-RC4 controls pass for both owners with exact independent
 verification, actual payload-method evidence, process resources, bounded wire
-payload, and joined cleanup. Refresh the official WebTorrent and distribution
-metainfo candidates, inspect their normalized identities and provenance, and
-commit the reviewed catalog before any public payload worker starts. Keep uTP
-paused; do not install a remote oracle, change remote network state, contact
-another host, or infer product-policy, MSE-over-uTP, reverse-incoming, or
-support-claim authority.
+payload, and joined cleanup. Its reviewed nine-entry public catalog now pins
+the official WebTorrent, Debian, Ubuntu, Arch Linux, and Linux Mint metainfo
+identities and geometry. Run the bounded public suites in order: `smoke`,
+`standard`, `large`, `product`, and `encryption`; retain every classification
+and stop escalation only for integrity, cleanup, privacy, or hard-bound
+defects. Keep uTP paused; do not install a remote oracle, change remote network
+state, contact another host, or infer product-policy, MSE-over-uTP, reverse-
+incoming, or support-claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

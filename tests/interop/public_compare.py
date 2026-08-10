@@ -643,17 +643,32 @@ def fetch_catalog_metainfo(entry: dict[str, Any], destination: Path) -> Any:
     split = urlsplit(recipe["url"])
     if split.scheme != "https" or split.hostname not in allowed_hosts:
         raise HarnessError("metainfo source is outside its HTTPS host allowlist")
-    opener = urllib.request.build_opener(BoundedRedirectHandler(allowed_hosts))
-    try:
-        with opener.open(recipe["url"], timeout=30) as response:
-            payload = response.read(64 * 1024 * 1024 + 1)
-    except (OSError, urllib.error.URLError) as error:
-        raise HarnessError(f"metainfo retrieval failed: {type(error).__name__}") from error
+    request = urllib.request.Request(
+        recipe["url"], headers={"User-Agent": "RSTorrent-public-compare/2"}
+    )
+    last_error: Exception | None = None
+    for _attempt in range(2):
+        try:
+            opener = urllib.request.build_opener(BoundedRedirectHandler(allowed_hosts))
+            with opener.open(request, timeout=60) as response:
+                payload = response.read(64 * 1024 * 1024 + 1)
+            break
+        except (OSError, urllib.error.URLError) as error:
+            last_error = error
+    else:
+        assert last_error is not None
+        raise HarnessError(
+            f"metainfo retrieval failed: {type(last_error).__name__}"
+        ) from last_error
     descriptor = parse_metainfo(payload)
     if descriptor.outer_sha256 != recipe["sha256"] or descriptor.info_hash != entry["info_hash"]:
         raise HarnessError("official metainfo changed from the reviewed catalog identity")
     expected = entry["expected"]
-    if descriptor.normalized_geometry() != expected:
+    observed = descriptor.normalized_geometry()
+    if any(
+        value is not None and observed.get(key) != value
+        for key, value in expected.items()
+    ):
         raise HarnessError("official metainfo geometry or discovery set changed from catalog")
     if descriptor.private:
         raise HarnessError("private torrents are outside this harness")

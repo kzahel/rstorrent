@@ -732,6 +732,31 @@ No public network access occurred. The next checkpoint refreshes official
 catalog candidates, records reviewed exact identities and provenance, and
 commits that catalog before any public payload worker starts.
 
+### Reviewed public catalog: 2026-08-10
+
+The version-2 catalog now pins nine exact metainfo identities from the
+official WebTorrent, Debian, Ubuntu, Arch Linux, and Linux Mint HTTPS sources.
+It retains all five WebTorrent works and assigns the primary cohort roles to
+Big Buck Bunny, Debian 13.6.0 amd64 netinst, Ubuntu 26.04 live server amd64,
+Arch Linux 2026.08.01 x86_64, and Linux Mint 22.3 Cinnamon 64-bit. Each entry
+records the outer SHA-256, v1 info hash, payload and piece geometry, tracker
+tiers, input modes, owner deadline, and wire-payload ceiling.
+
+The offline inspection path fetched only the nine small metainfo resources,
+parsed them independently, and then re-fetched every source through the
+catalog allowlist to prove that all recorded hashes and non-null normalized
+fields still matched. Arch publishes no tracker and 468 web seeds; its exact
+outer metainfo hash pins that source set, while the catalog deliberately uses
+`null` instead of retaining the large URL list because the `dht-only` profile
+overrides all web seeds. Retrieval accepts only cataloged HTTPS hosts, starts
+a fresh five-redirect counter on each of two bounded attempts, and refuses
+identity or reviewed-geometry drift before a payload worker starts.
+
+No payload was downloaded and no third-party metainfo was retained. The next
+checkpoint is the required public `smoke` suite, followed by `standard`,
+`large`, `product`, and `encryption` when no integrity, cleanup, privacy, or
+hard-bound defect is observed.
+
 ## Non-Goals And Next Boundary
 
 - No engine optimization, picker/scheduler retuning, new protocol capability,
