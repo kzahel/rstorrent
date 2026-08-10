@@ -561,6 +561,19 @@ query produced a bounded query-only retry regression test. This is not yet the
 bidirectional cohort, impairment/lifecycle matrix, MTU result, product policy,
 or support claim.
 
+The bounded Tactical `130` WAN cohort closes evidence-limited. Two
+remote-receive attempts exposed diagnostic-only transient-choke and stale-
+duplicate handling gaps; both are repaired with exact counters and integrity
+bounds. Two local-send cases reached the unchanged 180-second limit, while two
+single-direction diagnostic retries passed in 58.777 and 64.528 active
+seconds. Together with the initial sample, three captured local-send successes
+retain exact hash, one uTP/zero TCP peers, 153--177 ms RTT observations, fixed
+548-byte MTU, finite exact lease cleanup, and zero residue. No compliant fresh
+three-sample remote-receive summary was retained before the external attempt
+budget expired. Do not infer a cohort baseline or silently run more WAN cases;
+the campaign continues with deterministic real-socket impairment/lifecycle
+work.
+
 ## Human Review Gates
 
 Pause after the active bounded slice and ask for direction before:

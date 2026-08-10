@@ -412,10 +412,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: continue Tactical `130` with three fresh samples in
-both authorized WAN directions and exact cleanup, then add fixed real-socket
-impairment and hostile lifecycle gates and integrate diagnostic-only MTU search
-when its feedback is truthful. Commit bounded stages and stop at the
+Next executable action: continue Tactical `130` with fixed real-socket
+impairment and hostile lifecycle gates, then integrate diagnostic-only MTU
+search when its feedback is truthful. The WAN cohort is evidence-limited and
+its external attempt budget is exhausted; do not run another external sample
+without later human authority. Commit bounded stages and stop at the
 pre-product review.
 Tactical `129` remains the first ready non-uTP item. No product uTP, public
 swarm, dependency, permanent network change, or support-claim authority is

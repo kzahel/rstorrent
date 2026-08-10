@@ -420,3 +420,40 @@ but the controller checked the expected nonzero process status before
 validating that event and hid its counters. Validation now precedes the process
 status check. The second and final single-direction diagnostic retry owns the
 decision between transport repair and recording a bounded path-variance gap.
+
+The second diagnostic retry also passed: 64.528 active/90.957 whole-case
+seconds, exact payload/hash, one uTP and zero TCP peers, one libtorrent
+timeout with zero loss/resend, fixed 548-byte RSTorrent MTU, exact lease
+deletion, and zero residue. The two observed 180-second local-send timeouts are
+therefore intermittent and bracketed by clean 58.777- and 64.528-second active
+transfers. They are not sufficient to select a transport-state repair without
+the bounded failure counters that the earlier controller ordering hid.
+
+The WAN attempt budget is exhausted and no further external run is permitted
+in this tactical. The planned six-sample cohort closes evidence-limited rather
+than being represented as passed. Three individually captured local-send
+successes—the initial 92.140-second case and the two diagnostic retries—show:
+
+- whole-case time 85.798--92.140 seconds, median 90.957; the two samples with
+  active timing are 58.777 and 64.528 seconds;
+- RSTorrent smoothed-RTT minima 153.315--154.459 ms and maxima
+  156.719--177.030 ms; queue-delay maxima 0.807--2.793 ms;
+- congestion-window maxima 6,864--8,209 bytes, median 6,984, with the same
+  1,056-byte minimum and fixed 548-byte MTU in all three;
+- 3,995--3,997 RSTorrent outbound datagrams carrying
+  2,179,700--2,179,736 bytes and 4,102--4,107 classified inbound datagrams,
+  with connection-queue high water two--four;
+- libtorrent 3,994--3,996 inbound and 4,101--4,106 outbound packets, zero
+  loss/fast-retransmit/resend and zero--one timeouts; and
+- exact 2,097,883-byte upload, one uTP/zero TCP peer, finite 3,599--3,600-
+  second leases, joined deletion, independent absence, and zero terminal or
+  remote residue in every captured success.
+
+These three successes are not substituted for the missing three-sample
+remote-seed direction or the interrupted alternating cohort. Earlier
+successful cases inside stopped cohort processes did not emit a retained
+summary and are not reconstructed from elapsed time. The two remote-direction
+peer-wire failures and both local-direction timeouts independently passed
+their mapping/process/directory cleanup paths. Further WAN evidence requires a
+later human-authorized attempt budget after controlled impairment/lifecycle
+work supplies a deterministic diagnosis target.

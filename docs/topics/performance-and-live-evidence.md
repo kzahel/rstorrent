@@ -996,6 +996,18 @@ local UDP mapping absent, and all local/remote transient resources were
 removed. Treat this as one sample; the tactical's fresh bidirectional cohort
 still owns any range or median.
 
+That cohort attempt is now evidence-limited. Three separately captured
+local-send successes have 85.798--92.140-second whole-case times (90.957
+median); the two instrumented active transfers are 58.777 and 64.528 seconds.
+They retain exact hashes, one uTP/zero TCP peers, 153.315--177.030 ms observed
+smoothed-RTT extrema, 0.807--2.793 ms maximum queue delay, 6,864--8,209-byte
+maximum congestion windows, fixed 548-byte MTU, and zero RSTorrent
+retransmission/loss-collapse high-waters. Two other local-send attempts hit
+the unchanged 180-second bound, each with exact cleanup; diagnostic retries
+immediately around them passed. The external attempt budget expired before a
+compliant three-sample remote-receive summary was retained. These data are a
+stability gap, not a performance baseline or threshold.
+
 ## Comparator Outcome
 
 Tactical `015` added the smallest harness that can:

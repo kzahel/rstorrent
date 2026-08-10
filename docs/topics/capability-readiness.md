@@ -374,9 +374,12 @@ roles, and one remote-mapped direct-public-path leecher transfer pass. Tactical
 preflight. Active Tactical `130` owns the explicitly authorized local-mapped
 reverse WAN direction, bounded cohort, runtime impairment/lifecycle hardening,
 and diagnostic MTU work before the pre-product review. Its first reverse sample
-now passes with exact hash, one uTP/zero TCP peers, exact local lease deletion,
-and zero transient residue. The fresh cohort and later gates remain. uTP stays
-unsupported and disabled in products.
+passes with exact hash, one uTP/zero TCP peers, exact local lease deletion, and
+zero transient residue. The WAN cohort closes evidence-limited after two
+repaired diagnostic peer-wire gaps and two intermittent cleaned-up local-send
+timeouts; the external attempt budget is exhausted. Controlled
+impairment/lifecycle and diagnostic MTU gates remain. uTP stays unsupported and
+disabled in products.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
