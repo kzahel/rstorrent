@@ -5,6 +5,8 @@ mod packet;
 mod receive;
 mod send;
 mod sequence;
+#[cfg(test)]
+mod simulation;
 
 pub use connection::{
     ConnectionError, ConnectionIds, ConnectionPhase, ConnectionSnapshot, ConnectionState,
