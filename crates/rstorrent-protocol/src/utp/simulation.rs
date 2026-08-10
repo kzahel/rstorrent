@@ -638,6 +638,344 @@ impl TcpLikeSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utp::{
+        DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MAX_RECEIVE_BYTES,
+        MAX_REORDER_PACKETS, MAX_SENT_BYTES, MAX_SENT_PACKETS, MAX_UNSENT_BYTES, SequenceNumber,
+        TimestampMicros, TransportState, decode_packet,
+    };
+    use sha1::{Digest, Sha1};
+
+    const TRANSFER_BYTES: usize = 4 * 1024 * 1024;
+    const SIMULATION_TICK_MICROS: u64 = 250;
+    const MAX_SCENARIO_MICROS: u64 = 300_000_000;
+
+    #[derive(Clone, Debug)]
+    struct UtpScenario {
+        link: LinkConfig,
+        script: ImpairmentScript,
+        sender_clock: EndpointClock,
+        receiver_clock: EndpointClock,
+        transfer_bytes: usize,
+    }
+
+    #[derive(Clone, Debug)]
+    struct UtpScenarioReport {
+        source_hash: [u8; 20],
+        received_hash: [u8; 20],
+        received_bytes: usize,
+        started_at_micros: u64,
+        completed_at_micros: u64,
+        deliveries: Vec<(u64, usize)>,
+        queue_delay_samples_micros: Vec<u32>,
+        retransmissions: u64,
+        mtu_probes: u64,
+        sender: crate::utp::TransportSnapshot,
+        receiver: crate::utp::TransportSnapshot,
+        link: LinkSnapshot,
+        receive_packet_high_water: usize,
+        receive_byte_high_water: usize,
+    }
+
+    impl UtpScenarioReport {
+        fn utilization_after(&self, warmup_micros: u64, bytes_per_second: u64) -> f64 {
+            let measurement_start = self.started_at_micros.saturating_add(warmup_micros);
+            let delivered_bytes: usize = self
+                .deliveries
+                .iter()
+                .filter(|(at_micros, _)| *at_micros >= measurement_start)
+                .map(|(_, bytes)| *bytes)
+                .sum();
+            let duration_micros = self
+                .completed_at_micros
+                .saturating_sub(measurement_start)
+                .max(1);
+            delivered_bytes as f64 * 1_000_000.0 / duration_micros as f64 / bytes_per_second as f64
+        }
+
+        fn queue_delay_percentile(&self, percentile: usize) -> u32 {
+            assert!((1..=100).contains(&percentile));
+            assert!(!self.queue_delay_samples_micros.is_empty());
+            let mut samples = self.queue_delay_samples_micros.clone();
+            samples.sort_unstable();
+            let index = samples
+                .len()
+                .saturating_mul(percentile)
+                .div_ceil(100)
+                .saturating_sub(1);
+            samples[index]
+        }
+    }
+
+    fn default_utp_scenario() -> UtpScenario {
+        UtpScenario {
+            link: LinkConfig {
+                base_delay_micros: 10_000,
+                jitter_pattern_micros: vec![0],
+                bytes_per_second: 500_000,
+                queue_capacity_bytes: 75_000,
+                path_udp_payload_mtu: IPV4_UDP_PAYLOAD_CEILING,
+                df_black_hole: true,
+            },
+            script: ImpairmentScript::default(),
+            sender_clock: EndpointClock::new(0, 0).expect("sender clock"),
+            receiver_clock: EndpointClock::new(0, 0).expect("receiver clock"),
+            transfer_bytes: TRANSFER_BYTES,
+        }
+    }
+
+    fn scenario_source(bytes: usize) -> Vec<u8> {
+        (0..bytes)
+            .map(|index| {
+                let mixed = index.wrapping_mul(31) ^ index.rotate_left(7) ^ (index / 251);
+                mixed as u8
+            })
+            .collect()
+    }
+
+    fn connected_transports(
+        sender_clock: EndpointClock,
+        receiver_clock: EndpointClock,
+    ) -> (TransportState, TransportState, u64) {
+        let mut sender = TransportState::initiate(
+            40,
+            SequenceNumber::new(10),
+            0,
+            IPV4_UDP_PAYLOAD_FLOOR,
+            IPV4_UDP_PAYLOAD_CEILING,
+        )
+        .expect("initiate deterministic uTP connection");
+        let syn = sender
+            .poll_transmit(0, TimestampMicros::new(sender_clock.timestamp(0)))
+            .expect("poll SYN")
+            .expect("SYN emission");
+        let syn_bytes = syn.encode().expect("encode SYN");
+        sender
+            .on_send_result(syn.intent.sequence_number, DatagramSendResult::Sent, 0)
+            .expect("record SYN send");
+
+        let mut receiver = TransportState::accept_syn(
+            decode_packet(&syn_bytes).expect("decode SYN"),
+            SequenceNumber::new(77),
+            IPV4_UDP_PAYLOAD_FLOOR,
+            IPV4_UDP_PAYLOAD_CEILING,
+        )
+        .expect("accept deterministic uTP connection");
+        let state_at = 10_000;
+        let state = receiver
+            .poll_transmit(
+                state_at,
+                TimestampMicros::new(receiver_clock.timestamp(state_at)),
+            )
+            .expect("poll handshake STATE")
+            .expect("handshake STATE emission");
+        let state_bytes = state.encode().expect("encode handshake STATE");
+        receiver
+            .on_send_result(
+                state.intent.sequence_number,
+                DatagramSendResult::Sent,
+                state_at,
+            )
+            .expect("record handshake STATE send");
+
+        let connected_at = 20_000;
+        sender
+            .incoming(
+                decode_packet(&state_bytes).expect("decode handshake STATE"),
+                connected_at,
+                TimestampMicros::new(sender_clock.timestamp(connected_at)),
+            )
+            .expect("complete deterministic uTP handshake");
+        (sender, receiver, connected_at)
+    }
+
+    fn run_utp_scenario(scenario: UtpScenario) -> UtpScenarioReport {
+        let source = scenario_source(scenario.transfer_bytes);
+        let source_hash = Sha1::digest(&source).into();
+        let (mut sender, mut receiver, started_at_micros) =
+            connected_transports(scenario.sender_clock, scenario.receiver_clock);
+        let mut link = DeterministicLink::new(scenario.link, scenario.script)
+            .expect("construct deterministic link");
+        let mut queued_source_bytes = 0;
+        let mut received = Vec::with_capacity(source.len());
+        let mut deliveries = Vec::new();
+        let mut queue_delay_samples_micros = Vec::new();
+        let mut retransmissions = 0_u64;
+        let mut mtu_probes = 0_u64;
+        let mut receive_packet_high_water = 0;
+        let mut receive_byte_high_water = 0;
+        let deadline = started_at_micros.saturating_add(MAX_SCENARIO_MICROS);
+        let mut now_micros = started_at_micros;
+
+        loop {
+            for delivery in link.advance_to(now_micros).expect("advance link") {
+                assert_eq!(delivery.datagram.flow_id, 1);
+                let packet = decode_packet(&delivery.datagram.bytes).expect("decode uTP datagram");
+                match delivery.direction {
+                    Direction::AToB => {
+                        let outcome = receiver
+                            .incoming(
+                                packet,
+                                now_micros,
+                                TimestampMicros::new(scenario.receiver_clock.timestamp(now_micros)),
+                            )
+                            .expect("receive uTP datagram");
+                        if let Some(receive) = outcome.connection.receive {
+                            let mut consumed = 0;
+                            for payload in receive.delivered {
+                                consumed += payload.bytes.len();
+                                deliveries.push((now_micros, payload.bytes.len()));
+                                received.extend(payload.bytes);
+                            }
+                            if consumed > 0 {
+                                receiver
+                                    .consume_received(consumed, now_micros)
+                                    .expect("release delivered stream bytes");
+                            }
+                        }
+                        if let Some(receive) = receiver.snapshot().connection.receive {
+                            receive_packet_high_water =
+                                receive_packet_high_water.max(receive.packet_high_water);
+                            receive_byte_high_water =
+                                receive_byte_high_water.max(receive.byte_high_water);
+                        }
+                    }
+                    Direction::BToA => {
+                        let outcome = sender
+                            .incoming(
+                                packet,
+                                now_micros,
+                                TimestampMicros::new(scenario.sender_clock.timestamp(now_micros)),
+                            )
+                            .expect("receive uTP acknowledgement");
+                        if outcome
+                            .connection
+                            .acknowledgement
+                            .is_some_and(|acknowledgement| acknowledgement.acknowledged_bytes > 0)
+                            && let Some(queue_delay) =
+                                sender.snapshot().congestion.delay.queue_delay_micros
+                        {
+                            queue_delay_samples_micros.push(queue_delay);
+                        }
+                    }
+                }
+            }
+
+            assert!(
+                received.len() <= source.len(),
+                "receiver delivered more bytes than were queued"
+            );
+            let sender_snapshot = sender.snapshot();
+            let queue_capacity = MAX_UNSENT_BYTES - sender_snapshot.transmit.unsent_bytes;
+            let source_remaining = source.len() - queued_source_bytes;
+            let append_bytes = queue_capacity.min(source_remaining).min(64 * 1024);
+            if append_bytes > 0 {
+                sender
+                    .queue_data(&source[queued_source_bytes..queued_source_bytes + append_bytes])
+                    .expect("append bounded stream bytes");
+                queued_source_bytes += append_bytes;
+            }
+
+            if let Some(emission) = sender
+                .poll_transmit(
+                    now_micros,
+                    TimestampMicros::new(scenario.sender_clock.timestamp(now_micros)),
+                )
+                .expect("poll sender")
+            {
+                let bytes = emission.encode().expect("encode sender datagram");
+                retransmissions += u64::from(emission.retransmission);
+                mtu_probes += u64::from(emission.mtu_probe);
+                sender
+                    .on_send_result(
+                        emission.intent.sequence_number,
+                        DatagramSendResult::Sent,
+                        now_micros,
+                    )
+                    .expect("record sender datagram");
+                link.send(
+                    Direction::AToB,
+                    now_micros,
+                    SimDatagram {
+                        flow_id: 1,
+                        tag: u64::from(emission.intent.sequence_number.get()),
+                        bytes,
+                        dont_fragment: emission.dont_fragment,
+                    },
+                )
+                .expect("send through deterministic link");
+            }
+
+            if let Some(emission) = receiver
+                .poll_transmit(
+                    now_micros,
+                    TimestampMicros::new(scenario.receiver_clock.timestamp(now_micros)),
+                )
+                .expect("poll receiver")
+            {
+                let bytes = emission.encode().expect("encode receiver datagram");
+                receiver
+                    .on_send_result(
+                        emission.intent.sequence_number,
+                        DatagramSendResult::Sent,
+                        now_micros,
+                    )
+                    .expect("record receiver datagram");
+                link.send(
+                    Direction::BToA,
+                    now_micros,
+                    SimDatagram {
+                        flow_id: 1,
+                        tag: u64::from(emission.intent.sequence_number.get()),
+                        bytes,
+                        dont_fragment: emission.dont_fragment,
+                    },
+                )
+                .expect("send acknowledgement through deterministic link");
+            }
+
+            let sender_snapshot = sender.snapshot();
+            let receiver_snapshot = receiver.snapshot();
+            let link_snapshot = link.snapshot();
+            let complete = queued_source_bytes == source.len()
+                && received.len() == source.len()
+                && sender_snapshot.transmit.unsent_bytes == 0
+                && sender_snapshot.connection.send.outstanding_bytes == 0
+                && sender_snapshot.in_flight_bytes == 0
+                && sender_snapshot.retransmissions.pending_packets == 0
+                && sender_snapshot.pending_emission_bytes == 0
+                && receiver_snapshot.acknowledgements.pending_packets == 0
+                && receiver_snapshot.pending_emission_bytes == 0
+                && link_snapshot.pending_events == 0
+                && link_snapshot.queue_bytes == 0;
+            if complete {
+                let received_hash = Sha1::digest(&received).into();
+                return UtpScenarioReport {
+                    source_hash,
+                    received_hash,
+                    received_bytes: received.len(),
+                    started_at_micros,
+                    completed_at_micros: now_micros,
+                    deliveries,
+                    queue_delay_samples_micros,
+                    retransmissions,
+                    mtu_probes,
+                    sender: sender_snapshot,
+                    receiver: receiver_snapshot,
+                    link: link_snapshot,
+                    receive_packet_high_water,
+                    receive_byte_high_water,
+                };
+            }
+
+            assert!(
+                now_micros < deadline,
+                "uTP scenario exceeded {} virtual microseconds: sender={sender_snapshot:?}, receiver={receiver_snapshot:?}, link={link_snapshot:?}, queued={queued_source_bytes}, received={}",
+                MAX_SCENARIO_MICROS,
+                received.len()
+            );
+            now_micros = now_micros.saturating_add(SIMULATION_TICK_MICROS);
+        }
+    }
 
     fn config() -> LinkConfig {
         LinkConfig {
@@ -786,5 +1124,43 @@ mod tests {
         assert_eq!(sender.snapshot().loss_reductions, 1);
         sender.on_loss(30_000, 20_000);
         assert_eq!(sender.snapshot().loss_reductions, 2);
+    }
+
+    #[test]
+    fn clean_four_mebibyte_utp_transfer_is_exact_bounded_and_saturates_link() {
+        let scenario = default_utp_scenario();
+        let bytes_per_second = scenario.link.bytes_per_second;
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_bytes, TRANSFER_BYTES);
+        assert_eq!(report.received_hash, report.source_hash);
+        assert_eq!(report.retransmissions, 0);
+        assert_eq!(report.link.scripted_drops, 0);
+        assert_eq!(report.link.queue_drops, 0);
+        assert_eq!(report.link.mtu_black_hole_drops, 0);
+        assert!(
+            report.utilization_after(1_000_000, bytes_per_second) >= 0.8,
+            "report={report:?}"
+        );
+        assert!(report.sender.transmit.byte_high_water <= MAX_UNSENT_BYTES);
+        assert!(report.sender.connection.send.packet_high_water <= MAX_SENT_PACKETS);
+        assert!(report.sender.connection.send.byte_high_water <= MAX_SENT_BYTES);
+        assert!(report.receive_packet_high_water <= MAX_REORDER_PACKETS);
+        assert!(report.receive_byte_high_water <= MAX_RECEIVE_BYTES);
+        assert_eq!(report.sender.transmit.unsent_bytes, 0);
+        assert_eq!(report.sender.connection.send.outstanding_bytes, 0);
+        assert_eq!(
+            report
+                .receiver
+                .connection
+                .receive
+                .unwrap()
+                .total_buffered_bytes,
+            0
+        );
+        assert_eq!(report.link.pending_event_bytes, 0);
+        assert!(report.mtu_probes > 0);
+        assert!(report.sender.mtu.search_complete);
+        assert!(report.queue_delay_percentile(95) <= 150_000);
     }
 }
