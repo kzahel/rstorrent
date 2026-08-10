@@ -99,6 +99,7 @@ class ProductEngineService : Service() {
     private lateinit var presentationRepository: AndroidPresentationRepository
     private var trackerEvidenceSubscription: AndroidViewSubscription? = null
     private var trackerEvidenceJob: Job? = null
+    @Volatile private var safStorageJobs: List<Job> = emptyList()
     @Volatile private var safTreeUri: Uri? = null
     private val safWork = ConcurrentHashMap.newKeySet<String>()
     private val crashAfterSafRename = AtomicBoolean(false)
@@ -146,9 +147,10 @@ class ProductEngineService : Service() {
                     )
                 presentationRepository.start(client)
                 presentationReady.complete(Unit)
-                repeat(SAF_PROVIDER_CONCURRENCY) {
-                    scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
-                }
+                safStorageJobs =
+                    List(SAF_PROVIDER_CONCURRENCY) {
+                        scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
+                    }
                 val storageRootHealthy = client.probeSafStorageRoots()
                 Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
                 mutableState.update {
@@ -1357,17 +1359,22 @@ class ProductEngineService : Service() {
 
     private suspend fun shutdown() {
         if (!stopped.compareAndSet(false, true)) return
+        Log.i(TAG, "product_shutdown_begin")
         if (::presentationRepository.isInitialized) presentationRepository.close()
         trackerEvidenceJob?.cancel()
         trackerEvidenceSubscription?.close()
         if (::client.isInitialized) {
             try {
+                Log.i(TAG, "product_shutdown_client_begin")
                 client.shutdown()
+                Log.i(TAG, "product_shutdown_client_complete")
             } finally {
+                safStorageJobs.forEach { it.join() }
                 client.close()
             }
         }
         releasePowerLocks()
+        Log.i(TAG, "product_shutdown_complete")
     }
 
     private fun reportError(error: Throwable) {

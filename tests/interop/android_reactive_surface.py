@@ -36,6 +36,12 @@ ANDROID_PAYLOAD_SIZE = 128 * 1024
 BOUNDS_PATTERN = re.compile(r"\[(\d+),(\d+)]\[(\d+),(\d+)]")
 GRANT_FOLDER = "RSTorrentReactiveGrant"
 GRANT_PATH = f"/sdcard/Download/{GRANT_FOLDER}"
+STORAGE_SELECTION_LABELS = {
+    "Choose a download folder",
+    "Select download folder",
+    "Select folder",
+    "Repair",
+}
 
 
 class Adb:
@@ -203,11 +209,10 @@ def select_controlled_tree(adb: Adb) -> None:
     deadline = time.monotonic() + 15
     control: ET.Element | None = None
     while time.monotonic() < deadline:
-        try:
-            control = find_control(adb, "Select download folder")
+        control = click_labeled(list(dump_ui(adb).iter()), STORAGE_SELECTION_LABELS)
+        if control is not None:
             break
-        except ScenarioFailure:
-            time.sleep(0.2)
+        time.sleep(0.2)
     if control is None:
         raise ScenarioFailure("Android product UI did not expose SAF root selection")
     tap_bounds(adb, control.attrib["bounds"])
@@ -225,7 +230,7 @@ def select_controlled_tree(adb: Adb) -> None:
             for node in nodes
         )
         if not showing_documents and not accepted:
-            retry = click_labeled(nodes, {"Select download folder"})
+            retry = click_labeled(nodes, STORAGE_SELECTION_LABELS)
             if retry is not None:
                 tap_bounds(adb, retry.attrib["bounds"])
                 time.sleep(0.4)
@@ -318,7 +323,7 @@ def wait_for_download(
         trace = product_logs(adb)
         if "FATAL EXCEPTION" in trace or f"E/{TRACE_TAG}" in trace:
             raise ScenarioFailure(f"Android product client failed:\n{trace}")
-        if not control_checked and positive_counter(trace, "requested"):
+        if not control_checked and "state=DOWNLOADING" in trace:
             verify_pause_resume(adb)
             control_checked = True
             if screenshot is not None:
@@ -351,7 +356,11 @@ def find_control(adb: Adb, label: str) -> ET.Element:
         node
         for node in root.iter()
         if node.attrib.get("clickable") == "true"
-        and any(descendant.attrib.get("text") == label for descendant in node.iter())
+        and any(
+            descendant.attrib.get("text") == label
+            or descendant.attrib.get("content-desc") == label
+            for descendant in node.iter()
+        )
     ]
     control = min(controls, key=lambda node: bounds_area(node.attrib["bounds"]), default=None)
     if control is None:

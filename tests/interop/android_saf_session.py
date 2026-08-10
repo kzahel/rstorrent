@@ -26,7 +26,6 @@ from android_reactive_surface import (
     bounds_area,
     dump_ui,
     find_control,
-    positive_counter,
     product_logs,
     require_unlocked,
     tap_bounds,
@@ -45,6 +44,12 @@ DOWNLOAD_TIMEOUT_SECONDS = 90
 SAF_RESUME_TIMEOUT_SECONDS = 45
 CRASH_AFTER_RENAME_EXTRA = "product_crash_after_saf_rename"
 RELEASE_GRANT_EXTRA = "product_release_saf_grant"
+STORAGE_SELECTION_LABELS = {
+    "Choose a download folder",
+    "Select download folder",
+    "Select folder",
+    "Repair",
+}
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -116,11 +121,10 @@ def select_controlled_tree(adb: Adb) -> None:
     deadline = time.monotonic() + 15
     control: ET.Element | None = None
     while time.monotonic() < deadline:
-        try:
-            control = find_control(adb, "Select download folder")
+        control = click_labeled(list(dump_ui(adb).iter()), STORAGE_SELECTION_LABELS)
+        if control is not None:
             break
-        except ScenarioFailure:
-            time.sleep(0.2)
+        time.sleep(0.2)
     if control is None:
         raise ScenarioFailure("Android product UI did not expose SAF root selection")
     tap_bounds(adb, control.attrib["bounds"])
@@ -137,7 +141,7 @@ def select_controlled_tree(adb: Adb) -> None:
             for node in nodes
         )
         if not showing_documents and not accepted:
-            retry = click_labeled(nodes, {"Select download folder"})
+            retry = click_labeled(nodes, STORAGE_SELECTION_LABELS)
             if retry is not None:
                 tap_bounds(adb, retry.attrib["bounds"])
                 time.sleep(0.4)
@@ -210,11 +214,9 @@ def verify_revoked_grant_fails_closed(adb: Adb) -> None:
         raise ScenarioFailure(f"product did not restart after SAF grant loss:\n{started.stdout}")
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        try:
-            find_control(adb, "Select download folder")
+        if click_labeled(list(dump_ui(adb).iter()), STORAGE_SELECTION_LABELS) is not None:
             break
-        except ScenarioFailure:
-            time.sleep(0.2)
+        time.sleep(0.2)
     else:
         raise ScenarioFailure("revoked SAF grant was still presented as usable")
     preferences = adb.shell(
@@ -282,7 +284,7 @@ def wait_for_checkpoint(adb: Adb) -> str:
         trace = product_logs(adb)
         if "FATAL EXCEPTION" in trace or f"E/{TRACE_TAG}" in trace:
             raise ScenarioFailure(f"Android SAF client failed:\n{trace}")
-        if not control_checked and positive_counter(trace, "requested"):
+        if not control_checked and "state=DOWNLOADING" in trace:
             verify_saf_pause_resume(adb)
             control_checked = True
         if control_checked and not lifecycle_checked:
@@ -393,25 +395,28 @@ def stop_foreground_service(adb: Adb) -> None:
         time.sleep(0.1)
     if "ConnectionRecord" in services:
         raise ScenarioFailure("Activity remained bound before foreground Stop")
-    adb.shell(
-        "run-as",
-        PACKAGE,
-        "am",
-        "startservice",
-        "--user",
-        "0",
-        "-n",
-        f"{PACKAGE}/.ProductEngineService",
-        "-a",
-        f"{PACKAGE}.PRODUCT_STOP",
-    )
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        services = adb.shell("dumpsys", "activity", "services", PACKAGE).stdout
-        if ".ProductEngineService" not in services:
-            return
-        time.sleep(0.1)
-    raise ScenarioFailure("foreground service did not terminate after its Stop action")
+    try:
+        adb.shell(
+            "run-as",
+            PACKAGE,
+            "am",
+            "startservice",
+            "--user",
+            "0",
+            "-n",
+            f"{PACKAGE}/.ProductEngineService",
+            "-a",
+            f"{PACKAGE}.PRODUCT_STOP",
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            services = adb.shell("dumpsys", "activity", "services", PACKAGE).stdout
+            if ".ProductEngineService" not in services:
+                return
+            time.sleep(0.1)
+        raise ScenarioFailure("foreground service did not terminate after its Stop action")
+    except ScenarioFailure as error:
+        raise ScenarioFailure(f"{error}\nlogs:\n{product_logs(adb)}") from error
 
 
 def run(arguments: argparse.Namespace) -> None:
@@ -452,8 +457,15 @@ def run(arguments: argparse.Namespace) -> None:
             raise ScenarioFailure("Android trace did not expose prepared storage")
         verify_shared_payload(adb, fixture.payload_hash)
         stop_foreground_service(adb)
-        if "FATAL EXCEPTION" in product_logs(adb):
-            raise ScenarioFailure("Android runtime failed during joined shutdown")
+        shutdown_trace = product_logs(adb)
+        if "FATAL EXCEPTION" in shutdown_trace:
+            raise ScenarioFailure(
+                f"Android runtime failed during joined shutdown:\n{shutdown_trace}"
+            )
+        if "product_shutdown_complete" not in shutdown_trace:
+            raise ScenarioFailure(
+                f"Android runtime did not report joined shutdown:\n{shutdown_trace}"
+            )
         cleanup(adb)
         print(
             f"android_serial={arguments.serial} info_hash={fixture.info_hash} "
