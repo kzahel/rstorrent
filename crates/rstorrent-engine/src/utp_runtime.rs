@@ -1540,6 +1540,7 @@ mod tests {
     use rstorrent_protocol::utp::{
         ExtensionToEncode, MAX_RECEIVE_BYTES, PacketToEncode, UtpHeader, encode_packet,
     };
+    use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UdpSocket;
@@ -1661,6 +1662,135 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stream_try_api_is_bounded_and_observes_prequeued_readiness() {
+        let local_address = SocketAddr::from((Ipv4Addr::LOCALHOST, 41000));
+        let remote_address = SocketAddr::from((Ipv4Addr::LOCALHOST, 41001));
+        let (mut stream, mut channels) = stream_pair(local_address, remote_address);
+        let write = vec![7; MAX_UTP_APPLICATION_WRITE_BYTES + 1];
+        assert_eq!(
+            stream.try_write(&write).unwrap(),
+            MAX_UTP_APPLICATION_WRITE_BYTES
+        );
+        assert_eq!(
+            stream.try_write(&[8]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            channels.writes.recv().await.unwrap(),
+            vec![7; MAX_UTP_APPLICATION_WRITE_BYTES]
+        );
+        timeout(Duration::from_secs(1), stream.writable())
+            .await
+            .unwrap()
+            .unwrap();
+
+        channels
+            .events
+            .try_send(UtpStreamEvent::Data(vec![1, 2, 3]))
+            .unwrap();
+        channels
+            .events
+            .try_send(UtpStreamEvent::Data(vec![4, 5]))
+            .unwrap();
+        timeout(Duration::from_secs(1), stream.readable())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut first = [0; 3];
+        assert_eq!(stream.try_read(&mut first).unwrap(), 3);
+        assert_eq!(first, [1, 2, 3]);
+        timeout(Duration::from_secs(1), stream.readable())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut second = [0; 2];
+        assert_eq!(stream.try_read(&mut second).unwrap(), 2);
+        assert_eq!(second, [4, 5]);
+        assert_eq!(channels.consumption.take(), 5);
+        channels.events.try_send(UtpStreamEvent::Eof).unwrap();
+        timeout(Duration::from_secs(1), stream.readable())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stream.try_read(&mut [0; 1]).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn connection_id_lookup_is_remote_scoped_and_duplicate_syn_reuses_worker() {
+        let (udp, dht, mut utp) = service().await;
+        let first_remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let second_remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let syn = packet(PacketType::Syn, 700, 800, 0, &[]);
+        first_remote
+            .send_to(&syn, udp.local_address())
+            .await
+            .unwrap();
+        second_remote
+            .send_to(&syn, udp.local_address())
+            .await
+            .unwrap();
+        let first = timeout(Duration::from_secs(1), utp.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let second = timeout(Duration::from_secs(1), utp.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            BTreeSet::from([first.peer_addr(), second.peer_addr()]),
+            BTreeSet::from([
+                first_remote.local_addr().unwrap(),
+                second_remote.local_addr().unwrap(),
+            ])
+        );
+        assert_eq!(utp.snapshot().active_connections, 2);
+
+        first_remote
+            .send_to(&syn, udp.local_address())
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(100), utp.accept())
+                .await
+                .is_err()
+        );
+        assert_eq!(utp.snapshot().active_connections, 2);
+        drop(first);
+        drop(second);
+        wait_for(|| utp.snapshot().active_connections == 0).await;
+        let terminal = utp.shutdown().await.unwrap();
+        assert_eq!(terminal.connection_high_water, 2);
+        assert_eq!(terminal.worker_panics, 0);
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn consumer_drop_and_service_cancellation_are_distinct_and_terminal() {
+        let (left_udp, left_dht, left_utp, left, right_udp, right_dht, right_utp, mut right) =
+            connected_pair().await;
+        drop(left);
+        wait_for(|| left_utp.snapshot().active_connections == 0).await;
+        assert_eq!(right_utp.snapshot().active_connections, 1);
+        let left_terminal = left_utp.shutdown().await.unwrap();
+        assert_eq!(left_terminal.active_connections, 0);
+
+        let right_terminal = right_utp.shutdown().await.unwrap();
+        assert_eq!(right_terminal.active_connections, 0);
+        let error = timeout(Duration::from_secs(1), right.read(&mut [0; 1]))
+            .await
+            .unwrap()
+            .expect_err("service cancellation must fail the retained stream");
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        drop(right);
+        drop(left_dht);
+        drop(right_dht);
+        left_udp.shutdown().await.unwrap();
+        right_udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn malformed_and_unknown_packets_do_not_create_connections() {
         let (udp, dht, utp) = service().await;
         let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -1771,6 +1901,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn socket_removal_cancels_the_generation_and_releases_ownership() {
+        let (mut left_udp, left_dht, left_utp, mut left, right_udp, right_dht, right_utp, right) =
+            connected_pair().await;
+        left_udp.remove_family(AddressFamily::Ipv4).await.unwrap();
+        let error = timeout(Duration::from_secs(1), left.read(&mut [0; 1]))
+            .await
+            .unwrap()
+            .expect_err("family removal must terminate the stream");
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionAborted);
+        wait_for(|| left_utp.snapshot().active_connections == 0).await;
+        assert_eq!(right_utp.snapshot().active_connections, 1);
+        drop(left);
+        drop(right);
+        left_utp.shutdown().await.unwrap();
+        right_utp.shutdown().await.unwrap();
+        drop(left_dht);
+        drop(right_dht);
+        left_udp.shutdown().await.unwrap();
+        right_udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn incoming_stream_queue_saturation_drops_new_syns() {
         let (udp, dht, utp) = service().await;
         let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -1804,5 +1956,38 @@ mod tests {
         utp.shutdown().await.unwrap();
         drop(dht);
         udp.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn retry_exhaustion_and_worker_panic_are_classified_and_observed() {
+        let terminal = classify_worker_error(UtpRuntimeError::Protocol(
+            TransportError::Connection(ConnectionError::Send(SendError::TransmissionLimit {
+                sequence_number: SequenceNumber::new(9),
+                transmissions: 8,
+                maximum: 8,
+            })),
+        ));
+        assert!(matches!(terminal, WorkerTerminal::RetryExhausted));
+        assert_eq!(terminal.stream_terminal().kind, io::ErrorKind::TimedOut);
+
+        let key = UtpConnectionKey {
+            family: AddressFamily::Ipv4,
+            generation: 1,
+            remote: SocketAddr::from((Ipv4Addr::LOCALHOST, 42000)),
+            receive_connection_id: 12,
+        };
+        let (ingress, _) = mpsc::channel(1);
+        let mut routes = BTreeMap::from([(
+            key,
+            UtpRoute {
+                ingress,
+                cancellation: CancellationToken::new(),
+            },
+        )]);
+        let stats = UtpStats::default();
+        let panic: WorkerPanic = Box::new("controlled worker panic");
+        handle_worker_join(Some(Ok((key, Err(panic)))), &mut routes, &stats).unwrap();
+        assert!(routes.is_empty());
+        assert_eq!(stats.snapshot().worker_panics, 1);
     }
 }
