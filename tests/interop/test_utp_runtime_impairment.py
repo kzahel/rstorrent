@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import unittest
 
-from utp_runtime_impairment import RelayPolicy, utp_packet_type
+from utp_runtime_impairment import ImpairmentFailure, RelayPolicy, utp_packet_type
 
 
 def packet(packet_type: int, length: int = 20) -> bytes:
@@ -52,12 +52,21 @@ class UtpRuntimeImpairmentTests(unittest.TestCase):
         self.assertTrue(mtu.decide("target-to-client", packet(0, 1281)).drop)
         self.assertFalse(mtu.decide("client-to-target", packet(0, 1400)).drop)
 
-    def test_delay_jitter_alternates_all_datagrams(self) -> None:
+    def test_delay_jitter_alternates_independently_each_way(self) -> None:
         policy = RelayPolicy("delay-jitter")
         self.assertEqual(
             [policy.decide("client-to-target", packet(2)).delays_seconds for _ in range(4)],
             [(0.005,), (0.025,), (0.005,), (0.025,)],
         )
+        self.assertEqual(
+            [policy.decide("target-to-client", packet(0)).delays_seconds for _ in range(4)],
+            [(0.005,), (0.025,), (0.005,), (0.025,)],
+        )
+        self.assertEqual(policy.packet_ordinal, 8)
+
+    def test_unknown_relay_direction_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ImpairmentFailure, "unknown relay direction"):
+            RelayPolicy("clean").decide("unexpected", packet(0))
 
 
 if __name__ == "__main__":

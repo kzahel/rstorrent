@@ -76,15 +76,24 @@ class RelayPolicy:
             raise ImpairmentFailure(f"unknown relay profile {profile}")
         self.profile = profile
         self.packet_ordinal = 0
+        self.direction_ordinals = {
+            "client-to-target": 0,
+            "target-to-client": 0,
+        }
         self.data_ordinal = 0
 
     def decide(self, direction: str, payload: bytes) -> RelayDecision:
         self.packet_ordinal += 1
+        try:
+            self.direction_ordinals[direction] += 1
+        except KeyError as error:
+            raise ImpairmentFailure(f"unknown relay direction {direction}") from error
+        direction_ordinal = self.direction_ordinals[direction]
         eligible_data = direction == "target-to-client" and utp_packet_type(payload) == 0
         if eligible_data:
             self.data_ordinal += 1
         if self.profile == "delay-jitter":
-            delay = 0.005 if self.packet_ordinal % 2 else 0.025
+            delay = 0.005 if direction_ordinal % 2 else 0.025
             return RelayDecision(False, (delay,))
         if self.profile == "sparse-loss" and eligible_data:
             return RelayDecision(self.data_ordinal % 100 == 0, (0.002,))
@@ -124,6 +133,10 @@ class RelaySnapshot:
     queued_datagrams: int = 0
     queued_bytes: int = 0
     discarded_on_stop: int = 0
+    last_client_sequence: int | None = None
+    last_client_acknowledgement: int | None = None
+    last_target_sequence: int | None = None
+    last_target_acknowledgement: int | None = None
 
 
 class DeterministicUdpRelay:
@@ -214,6 +227,15 @@ class DeterministicUdpRelay:
         if snapshot.packet_decisions > MAX_PACKET_DECISIONS:
             raise ImpairmentFailure("relay packet decisions exceeded their bound")
         decision = self.policy.decide(direction, payload)
+        if utp_packet_type(payload) is not None:
+            sequence = int.from_bytes(payload[16:18], "big")
+            acknowledgement = int.from_bytes(payload[18:20], "big")
+            if direction == "client-to-target":
+                snapshot.last_client_sequence = sequence
+                snapshot.last_client_acknowledgement = acknowledgement
+            else:
+                snapshot.last_target_sequence = sequence
+                snapshot.last_target_acknowledgement = acknowledgement
         if direction == "target-to-client" and utp_packet_type(payload) == 0:
             snapshot.data_datagrams += 1
             snapshot.max_data_datagram_bytes = max(
@@ -411,6 +433,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
             status = handle.status()
             relay_snapshot = relay.snapshot()
             live = snapshot_event["resources"]["live_utp"]
+            udp = snapshot_event["resources"]["live_udp"]
             incoming = snapshot_event["resources"]["live_incoming"]
             role.send_stop()
             raise ImpairmentFailure(
@@ -418,13 +441,35 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 f"wanted_done={status.total_wanted_done}, "
                 f"uploaded={incoming['payload_bytes_sent']}, "
                 f"relay_data={relay_snapshot['data_datagrams']}, "
+                f"relay_forwarded={relay_snapshot['forwarded_datagrams']}, "
+                f"relay_queue_hwm={relay_snapshot['queue_high_water']}, "
                 f"relay_dropped={relay_snapshot['dropped_datagrams']}, "
+                f"relay_client_seq_ack={relay_snapshot['last_client_sequence']}/"
+                f"{relay_snapshot['last_client_acknowledgement']}, "
+                f"relay_target_seq_ack={relay_snapshot['last_target_sequence']}/"
+                f"{relay_snapshot['last_target_acknowledgement']}, "
                 f"rst_retransmits={live['retransmission_datagrams_sent']}, "
+                f"rst_connection_queue_hwm="
+                f"{live['connection_datagram_queue_high_water']}, "
+                f"rst_connection_drops={live['connection_datagrams_dropped']}, "
+                f"rst_malformed={live['malformed_datagrams']}, "
+                f"rst_unknown={live['unknown_connection_datagrams']}, "
+                f"udp_utp_queue_hwm={udp['utp_queue_high_water']}, "
+                f"udp_utp_drops={udp['utp_datagrams_dropped']}, "
                 f"rst_loss_reductions={live['loss_reduction_high_water']}, "
                 f"rst_timeouts={live['timeout_collapse_high_water']}, "
+                f"rst_rtt={live['smoothed_rtt_min_micros']}.."
+                f"{live['smoothed_rtt_max_micros']}, "
+                f"rst_rto={live['effective_rto_min_micros']}.."
+                f"{live['effective_rto_max_micros']}, "
+                f"rst_queue_delay={live['queue_delay_min_micros']}.."
+                f"{live['queue_delay_max_micros']}, "
+                f"rst_cwnd_min={live['congestion_window_min_bytes']}, "
                 f"rst_cwnd_max={live['congestion_window_max_bytes']}, "
                 f"lt_loss={stats['utp.utp_packet_loss']}, "
-                f"lt_timeouts={stats['utp.utp_timeout']}"
+                f"lt_timeouts={stats['utp.utp_timeout']}, "
+                f"lt_fast_retransmit={stats['utp.utp_fast_retransmit']}, "
+                f"lt_resends={stats['utp.utp_packet_resend']}"
             )
         active_seconds = time.monotonic() - transfer_started
         output = leech_root / PAYLOAD_NAME

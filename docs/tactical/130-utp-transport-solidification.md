@@ -494,3 +494,29 @@ incoming/uTP/UDP state, libtorrent progress/stats, and aggregate relay counters
 before terminating the failed case. Successful profiles also require a
 pre-stop snapshot with exact upload accounting, proving the command path. No
 packet payload or per-packet log is emitted.
+
+The first bounded snapshots exposed two separate facts. First, delay/jitter
+ordinals must be independent in each relay direction; sharing one ordinal let
+interleaved ACK and DATA traffic assign nearly constant delay to one direction.
+The policy and tests now enforce independent alternating 5/25 ms sequences.
+Second, repeated runs still reached only 196,608--655,360 verified bytes before
+the bound despite zero relay drops and relay queue high water no greater than
+16. A pinned libtorrent-to-libtorrent control completed the same fixture and
+profile in about 24 seconds, although the deliberately severe reordering made
+the oracle record 924 seed resends, one seed timeout, 33 leecher resends, and
+two leecher timeouts.
+
+RSTorrent's failure snapshots localized one recovery defect: its effective RTO
+could climb from 500 ms to the 60-second cap while valid peer traffic remained
+active. Pinned `utp_stream.cpp` resets `m_num_timeouts` and restarts the timeout
+from `receive_time` after every valid incoming packet, after ACK/SACK parsing.
+RSTorrent instead reset consecutive timeout state only on new send-ledger ACK
+progress and recomputed from an old transmission time. Established accepted
+packets now reset backoff from their receive time; wrong connection IDs and
+packets rejected before establishment remain atomic. Deterministic send and
+connection regressions, all 84 uTP protocol tests, and warning-denying protocol
+clippy pass. A post-repair real-socket retry limited the RTO high water to 4
+seconds but still stalled after 196,608 verified bytes. Its final wire summary
+showed RSTorrent DATA fully acknowledged while RSTorrent's receive ACK lagged
+seven client sequence numbers, so receiver/runtime ingress recovery remains
+the next diagnosis rather than sender pacing or timer backoff.

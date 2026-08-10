@@ -608,6 +608,14 @@ impl SendState {
         }))
     }
 
+    /// Reset timeout backoff after an established connection accepts a valid
+    /// packet, even when its acknowledgement does not advance the send ledger.
+    pub fn on_valid_incoming(&mut self, now_micros: u64) {
+        self.consecutive_timeouts = 0;
+        self.timeout_deadline_micros = (!self.outstanding.is_empty())
+            .then(|| now_micros.saturating_add(self.effective_rto_micros()));
+    }
+
     pub fn reset(&mut self) {
         self.outstanding.clear();
         self.outstanding_bytes = 0;
@@ -927,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn timeout_backoff_saturates_and_ack_progress_resets_it() {
+    fn timeout_backoff_saturates_and_valid_incoming_resets_it() {
         let mut state = SendState::new(SequenceNumber::new(1));
         let sequence = data(&mut state, 1, 0);
         let mut deadline = INITIAL_RTO_MICROS;
@@ -944,6 +952,19 @@ mod tests {
         }
         assert_eq!(last_effective, MAX_RTO_MICROS);
         assert_eq!(state.snapshot().rtt.effective_rto_micros, MAX_RTO_MICROS);
+
+        let duplicate = state
+            .acknowledge(SequenceNumber::new(0), None, PacketType::State, deadline)
+            .expect("valid duplicate ACK");
+        assert_eq!(duplicate.disposition, AckDisposition::Duplicate);
+        assert_eq!(state.snapshot().consecutive_timeouts, 10);
+
+        state.on_valid_incoming(deadline);
+        assert_eq!(state.snapshot().consecutive_timeouts, 0);
+        assert_eq!(
+            state.snapshot().timeout_deadline_micros,
+            Some(deadline + INITIAL_RTO_MICROS)
+        );
 
         state
             .acknowledge(sequence, None, PacketType::State, deadline)

@@ -469,6 +469,7 @@ impl ConnectionState {
                 now_micros,
             )
             .expect("decoded SACK and live connection preserve send invariants");
+        self.send.on_valid_incoming(now_micros);
         self.refresh_phase();
         let reply = matches!(
             packet.header.packet_type,
@@ -563,8 +564,8 @@ impl ConnectionState {
 mod tests {
     use super::*;
     use crate::utp::{
-        ExtensionToEncode, PacketToEncode, SACK_EXTENSION, TimestampMicros, UtpHeader,
-        decode_packet, encode_packet,
+        AckDisposition, ExtensionToEncode, PacketToEncode, SACK_EXTENSION, TimestampMicros,
+        UtpHeader, decode_packet, encode_packet,
     };
 
     fn packet(
@@ -742,6 +743,48 @@ mod tests {
         assert_eq!(
             acceptor.payload_for_retransmission(outbound.sequence_number),
             Some(&b"local"[..])
+        );
+    }
+
+    #[test]
+    fn valid_established_packet_resets_timeout_backoff_without_ack_progress() {
+        let syn = packet(PacketType::Syn, 50, 10, 0, &[]);
+        let mut connection = ConnectionState::accept_syn(decoded(&syn), SequenceNumber::new(100))
+            .expect("accept SYN");
+        connection.record_data(b"owned", 0).expect("local DATA");
+        connection
+            .on_timeout(crate::utp::INITIAL_RTO_MICROS, true)
+            .expect("timeout state")
+            .expect("due timeout");
+        assert_eq!(connection.snapshot().send.consecutive_timeouts, 1);
+
+        let wrong_id = packet(PacketType::State, 50, 11, 99, &[]);
+        let outcome = connection
+            .incoming(decoded(&wrong_id), crate::utp::INITIAL_RTO_MICROS + 1)
+            .expect("wrong connection ID is ignored");
+        assert!(matches!(
+            outcome.disposition,
+            IncomingDisposition::WrongConnectionId { .. }
+        ));
+        assert_eq!(connection.snapshot().send.consecutive_timeouts, 1);
+
+        let duplicate_ack = packet(PacketType::State, 51, 11, 99, &[]);
+        let received_at = crate::utp::INITIAL_RTO_MICROS + 2;
+        let outcome = connection
+            .incoming(decoded(&duplicate_ack), received_at)
+            .expect("valid duplicate ACK");
+        assert_eq!(outcome.disposition, IncomingDisposition::Accepted);
+        assert_eq!(
+            outcome
+                .acknowledgement
+                .expect("acknowledgement outcome")
+                .disposition,
+            AckDisposition::Duplicate
+        );
+        assert_eq!(connection.snapshot().send.consecutive_timeouts, 0);
+        assert_eq!(
+            connection.snapshot().send.timeout_deadline_micros,
+            Some(received_at + crate::utp::INITIAL_RTO_MICROS)
         );
     }
 
