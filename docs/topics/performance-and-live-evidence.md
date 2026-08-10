@@ -817,6 +817,24 @@ controlled samples establish a defensible threshold.
 - Committed summaries contain no peer IP addresses, tokens, machine-specific
   paths, or large binary artifacts.
 
+## Controlled uTP WAN Preflight: 2026-08-10
+
+Closed evidence-limited Tactical
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) applied the
+live-evidence safety contract before staging a payload or adding a WAN
+diagnostic. Its authorized read-only `ssh pimom` preflight completed in 4.5
+seconds with forwarding disabled and reported Linux/aarch64, Python `3.13.5`,
+and an assigned IPv4 set consisting only of loopback, RFC 1918 LAN, and
+Tailscale/shared-range addresses. It found no directly assigned global IPv4
+endpoint and no installed Python libtorrent package.
+
+The SSH/Tailscale address was control-plane only and was rejected as the uTP
+data endpoint. No public-IP service, tracker, DHT node, swarm, or other host
+was contacted. No directory, fixture, listener, background process, package,
+checkout, firewall, router, or VPN state was created or changed, and no uTP
+packet was sent. The result is a bounded external precondition observation,
+not WAN interoperability or performance evidence.
+
 ## Comparator Outcome
 
 Tactical `015` added the smallest harness that can:

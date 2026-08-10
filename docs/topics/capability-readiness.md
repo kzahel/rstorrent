@@ -303,16 +303,17 @@ added.
 
 ### Now
 
-- Tactical
-  [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) is the
-  single authoritative implementation/evidence slice. Human review accepted
-  Stage 4 recommendation A and authorized `ssh pimom` for orchestration plus
-  one RSTorrent-outbound forced-uTP WAN case. The data path must be direct
-  routed IPv4 rather than SSH, LAN, VPN, or overlay; read-only preflight closes
-  the tactical evidence-limited if that endpoint or exact libtorrent runtime
-  is absent. No mapping/pinhole, reverse incoming traffic, IPv6 uTP, MSE-over-
-  uTP, product policy, dependency, public swarm, or support claim is
-  authorized.
+- The post-Stage 4 uTP human-review checkpoint is the single authoritative
+  decision. Tactical
+  [`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) closed
+  evidence-limited after its authorized read-only `pimom` preflight found no
+  directly routed IPv4 endpoint and no installed libtorrent oracle. No uTP
+  packet, remote state, or network change followed. The recommended choice is
+  to pause uTP and return to the readiness queue; separate alternatives are an
+  explicitly authorized remote-capability tactical or a different already
+  capable host. No such external change, product policy, mapping/pinhole,
+  reverse incoming, MSE-over-uTP, dependency, public swarm, or support claim
+  is currently authorized.
 
 ### Next
 
@@ -337,9 +338,10 @@ records positive physical capability as unknown on the current hardware after
 the live gateway returned typed `606` to `AddPinhole`.
 The uTP topic records the adaptive campaign. Tacticals `118`, `119`, `121`,
 and `125` are complete; the first bounded runtime plus independent loopback
-exchange passes. Tactical `126` now owns direct-route preflight and one
-outbound-only controlled WAN attempt. uTP remains unsupported and disabled in
-products.
+exchange passes. Tactical `126` closed its direct-route preflight and planned
+outbound-only controlled WAN attempt evidence-limited
+before traffic because the host had neither a directly routed IPv4 endpoint
+nor libtorrent. uTP remains unsupported and disabled in products.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
@@ -396,7 +398,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. Tactical `113` implements one independent finite-lease IPv6 firewall-pinhole slot and typed product status under the same reachability coordinator; deterministic and scripted-gateway evidence pass. Its live negative control passes, but the observed gateway rejects `AddPinhole` with typed `606`, so no physical off-network incoming IPv6 or cleanup claim is made. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| uTP peer transport | Partial | deterministic, runtime, interop | Tacticals `119` and `121` prove bounded v1 wire/connection/reliability transitions, exact receive credit and packetization, delayed ACK, retransmission execution, RFC 6817 congestion/pacing, path MTU, and fixed impairment/resource thresholds. Tactical `125` adds independent bounded DHT/uTP session routing, generation-fenced connection/task ownership, ordered-stream and peer-I/O composition, controlled incoming peer/upload integration, and exact pinned-libtorrent loopback transfers in both roles with terminal zero ownership. Ordinary product dialing/listening/selection remains TCP; WAN evidence, IPv6 uTP, real-socket MTU probing, MSE-over-uTP, UDP reachability, product policy, and support graduation remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
+| uTP peer transport | Partial | deterministic, runtime, interop | Tacticals `119` and `121` prove bounded v1 wire/connection/reliability transitions, exact receive credit and packetization, delayed ACK, retransmission execution, RFC 6817 congestion/pacing, path MTU, and fixed impairment/resource thresholds. Tactical `125` adds independent bounded DHT/uTP session routing, generation-fenced connection/task ownership, ordered-stream and peer-I/O composition, controlled incoming peer/upload integration, and exact pinned-libtorrent loopback transfers in both roles with terminal zero ownership. Tactical `126`'s authorized remote preflight found no direct IPv4 endpoint or installed oracle and stopped before uTP traffic. Ordinary product dialing/listening/selection remains TCP; WAN evidence, IPv6 uTP, real-socket MTU probing, MSE-over-uTP, UDP reachability, product policy, and support graduation remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

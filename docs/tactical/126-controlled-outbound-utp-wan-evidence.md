@@ -1,9 +1,12 @@
 # Tactical 126: Controlled Outbound uTP WAN Evidence
 
-Status: Active on 2026-08-10. Human review accepted Stage 4 recommendation A
-after completed Tactical `125` reached its post-loopback checkpoint. This
-tactical fixes the direct-route preflight, outbound-only transfer, evidence,
-resource, cleanup, and stopping contracts before external execution.
+Status: **Closed, evidence-limited** on 2026-08-10. Human review accepted Stage
+4 recommendation A after completed Tactical `125` reached its post-loopback
+checkpoint. Commit `302d840` fixed the direct-route, outbound-only transfer,
+evidence, resource, cleanup, and stopping contracts before external execution.
+The authorized read-only preflight then found neither a directly routed IPv4
+endpoint nor the exact libtorrent oracle on `pimom`, so the tactical stopped
+before code, staging, or uTP traffic and makes no WAN interoperability claim.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `peer-lifecycle`, `protocol-support`, `capability-readiness`,
@@ -252,6 +255,49 @@ cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
+
+## Result And Evidence
+
+The first authorized SSH preflight reached the evidence-limited stopping
+condition in 4.5 seconds. It used batch mode, a ten-second connection bound,
+disabled forwarding, allocated no terminal, and passed one read-only Python
+program over standard input. The command returned successfully and reported:
+
+- Linux on `aarch64` with Python `3.13.5`;
+- loopback, one RFC 1918 LAN address, and one `100.64.0.0/10` Tailscale/shared-
+  range address as the complete assigned IPv4 set;
+- zero directly assigned global-unicast IPv4 addresses; and
+- `ModuleNotFoundError` for the system Python `libtorrent` import rather than
+  the required locked `2.0.13.0` package.
+
+The SSH control endpoint was the shared-range interface and was never used as
+a uTP target. The preflight contacted no public-IP service, tracker, DHT node,
+swarm, or other host. It did not run `sudo`, install a package, modify a
+checkout or network rule, create `/tmp` state, stage a fixture, bind a
+listener, launch a background process, or send a uTP datagram. The attached
+remote Python process exited with the SSH command; therefore there was no
+remote work directory, payload, listener, or owned process to remove.
+
+Both positive prerequisites independently failed. A useful attempt would now
+require installing the exact oracle and creating or identifying direct
+external UDP reachability through the remote NAT/firewall. Both actions are
+explicit non-goals and human-review gates, so no diagnostic WAN role,
+loss/retransmission instrumentation, remote helper, local harness, or runtime
+change was added. Tactical `125`'s loopback results remain the highest uTP
+interoperability evidence, and BEP 29 remains **Unsupported** as a product
+claim.
+
+Validation for the path reached:
+
+```text
+ssh -o BatchMode=yes -o ConnectTimeout=10 \
+  -o ClearAllForwardings=yes -o RequestTTY=no pimom python3 -
+                                                     # read-only preflight passed
+git diff --check                                     # passed
+```
+
+The full Rust and loopback baselines were not rerun because the tactical
+stopped before any source, manifest, test, fixture, or runtime change.
 
 ## Non-Goals And Next Boundary
 

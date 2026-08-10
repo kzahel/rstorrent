@@ -587,10 +587,10 @@ that scope and its cleanup or compatibility rules explicitly.
   peer-stream, generation replacement, and forced-uTP pinned-libtorrent
   loopback interoperability tactical in both roles.
 - [`126-controlled-outbound-utp-wan-evidence.md`](126-controlled-outbound-utp-wan-evidence.md):
-  active outbound-only controlled WAN evidence tactical; SSH may orchestrate
-  `pimom`, but the measured uTP path must use an already eligible directly
-  routed IPv4 endpoint and must close evidence-limited rather than create
-  reachability or use an overlay.
+  closed evidence-limited after its authorized read-only `pimom` preflight
+  found only LAN and Tailscale/shared-range IPv4 addresses and no installed
+  libtorrent oracle. No fixture, listener, uTP packet, package, network change,
+  or WAN interoperability claim followed.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

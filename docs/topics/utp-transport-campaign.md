@@ -10,10 +10,12 @@ Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md),
 then selected Stage 3 recommendation A at its stopping condition. Completed
 Tactical [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md)
 now owns bounded shared-UDP/runtime and two-role loopback interoperability.
-Human review accepted Stage 4 recommendation A, and active Tactical
-[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) owns one
-outbound-only controlled WAN attempt after a direct-route preflight. uTP
-remains **Unsupported** and no product transport policy or dependency is
+Human review accepted Stage 4 recommendation A, and Tactical
+[`126`](../tactical/126-controlled-outbound-utp-wan-evidence.md) records one
+planned outbound-only controlled WAN attempt after a direct-route preflight.
+That preflight closed evidence-limited before traffic because the host had no
+directly routed IPv4 endpoint or exact oracle. The campaign is at human review;
+uTP remains **Unsupported** and no product transport policy or dependency is
 accepted.
 
 ## Scope And Ownership
@@ -93,6 +95,11 @@ the single authoritative **Now**.
   peers, exact SHA-1, no packet drops or worker panics, and terminal zero
   ownership. Product selection, WAN behavior, IPv6 uTP, MSE-over-uTP, active
   real-socket MTU discovery, and a support claim remain absent.
+- Closed evidence-limited Tactical `126` used SSH only for one authorized
+  read-only `pimom` preflight. The host exposed loopback, RFC 1918 LAN, and
+  Tailscale/shared-range IPv4 addresses but no directly assigned global IPv4,
+  and system Python lacked libtorrent. No fixture, listener, uTP packet,
+  package install, network change, or WAN interoperability result followed.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -396,6 +403,41 @@ direct-route preflight, diagnostic-only online role, remote ownership,
 transport evidence, resource, cleanup, and evidence-limited stopping contracts
 before external execution.
 
+## Stage 4 Result And Review Choices
+
+Tactical `126` reached its evidence-limited stop on 2026-08-10. The authorized
+read-only SSH preflight found Linux/aarch64 and Python `3.13.5`, but the
+assigned IPv4 set contained only loopback, one RFC 1918 LAN address, and one
+Tailscale/shared-range address. There was no eligible directly assigned global
+IPv4 endpoint, and importing libtorrent produced `ModuleNotFoundError` rather
+than the locked `2.0.13.0` oracle.
+
+The control command exited normally after 4.5 seconds. It created no remote
+directory, payload, listener, or background process and made no package,
+checkout, firewall, router, or VPN change. No uTP data packet was sent, and no
+WAN interoperability claim follows. Using the SSH/Tailscale control path for
+the transfer would have violated the pre-agreed direct-route gate.
+
+The next human choice is:
+
+1. **A — pause uTP and return to the readiness queue (recommended):** retain
+   the deterministic, runtime, and two-role loopback evidence, keep product
+   uTP disabled, and resume Stage 4 when an already suitable controlled host
+   exists.
+2. **B — authorize a separate `pimom` capability tactical:** explicitly scope
+   installation of the exact libtorrent oracle plus truthful direct UDP
+   reachability through the remote NAT/firewall, with its own rollback and
+   security review, before retrying Tactical `126`'s transfer contract.
+3. **C — authorize a different controlled host:** provide one that already has
+   pinned libtorrent and a directly reachable IPv4 UDP endpoint, then draft a
+   host-specific evidence tactical without changing product behavior.
+
+No choice is implicit. Choice B materially changes remote software and network
+state; choice C expands the authorized external target. The present authority
+does not permit either action, product policy, reverse incoming uTP, IPv6 uTP,
+MSE-over-uTP, mapping from this client, public-swarm work, or a support-claim
+change.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -432,8 +474,8 @@ ordinary operation.
 
 ## `pimom` WAN Evidence
 
-The host reachable through `ssh pimom` is the authorized Stage 4 control peer
-under Tactical `126`. That authorization is bounded by
+The host reachable through `ssh pimom` was the authorized Stage 4 control peer
+under Tactical `126`. That bounded authorization followed
 [`performance-and-live-evidence.md`](performance-and-live-evidence.md) and the
 tactical's explicit remote ownership and cleanup contract.
 
@@ -446,6 +488,11 @@ reverse-direction case requires a truthful reachable UDP endpoint and may
 therefore belong to a separate mapping/pinhole tactical. Use a controlled
 payload, verify its exact hash, capture only what the evidence needs, and
 remove remote and local temporary data after the result is recorded.
+
+The Tactical `126` preflight found no directly assigned global IPv4 endpoint
+and no installed libtorrent package. The Tailscale/shared-range SSH endpoint is
+not eligible for the data path. No remote state was created and no transfer
+was attempted; changing those capabilities requires another human decision.
 
 ## Human Review Gates
 
@@ -489,11 +536,12 @@ accepted tactical.
 Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
 `119`, deterministic Stage 2 Tactical `121`, and shared-UDP/runtime Stage 3
 Tactical `125` complete; human review accepted Stage 4 recommendation A and
-outbound-only WAN Tactical `126` is active**.
+outbound-only WAN Tactical `126` closed evidence-limited at direct-route and
+oracle preflight; the post-Stage 4 review checkpoint is active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next executable uTP
-action is Tactical `126`'s read-only `pimom` preflight, followed by the bounded
-outbound case only if a direct non-overlay IPv4 endpoint and exact oracle are
-already available. No mapping, reverse incoming, product enablement,
-dependency, or support-claim authority is implied.
+[`capability-readiness.md`](capability-readiness.md). There is no executable
+uTP action until human review pauses the campaign, authorizes a separate
+`pimom` capability tactical, or authorizes a different already capable host.
+No remote installation or network change, new host, mapping, reverse incoming,
+product enablement, dependency, or support-claim authority is implied.
