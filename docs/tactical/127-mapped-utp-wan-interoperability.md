@@ -322,4 +322,37 @@ cargo test --workspace
 
 ## Result And Evidence
 
-Pending.
+### Remote capability and oracle checkpoint
+
+The bounded inventory found Debian 13 on Linux/aarch64 with Python `3.13.5`,
+GNU C++ `14.2.0`, `make`, `pkg-config`, a noninteractive package-manager path,
+and ample space on the home filesystem. Available memory at inspection was
+about 662 MiB. CMake, Ninja, Boost headers, Python development headers, and
+system libtorrent were absent; Debian's package candidate was libtorrent
+`2.0.11`, not the pinned version. No package-manager or `sudo` action followed.
+
+The installed MiniUPnP client discovered one connected remote Internet Gateway
+Device through the ordinary Ethernet route. Its reported external IPv4 address
+passed global-unicast validation. This proves discovery and external-address
+observation only: no UDP mapping was created at this checkpoint. The local
+machine did not have the MiniUPnP command-line client, which does not affect
+the existing engine-owned UPnP fallback.
+
+The official PyPI `2.0.13` release supplied an exact CPython 3.13 manylinux
+ARM64 wheel, avoiding a source build and all system-package changes. One
+dedicated user-owned virtual environment now retains:
+
+- wheel
+  `libtorrent-2.0.13-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl`;
+- SHA-256
+  `065e36d476e3dc8df7680205f4134cbcd02bb00da48439ccd0023e19371a4983`;
+- imported binding version `2.0.13.0`; and
+- available `portmap_alert`, `portmap_error_alert`, `external_ip_alert`, listen
+  and peer alerts, plus explicit UPnP, NAT-PMP, TCP, uTP, and listen-interface
+  settings.
+
+Installation used `venv` plus the direct official wheel URL with its SHA-256
+fragment, `--no-deps`, and binary-only selection. The temporary atomic-install
+directory was removed; only the authorized reusable oracle environment
+remains. No fixture, metainfo, run directory, listener, mapping, background
+process, firewall rule, router configuration, or Tailscale change exists yet.

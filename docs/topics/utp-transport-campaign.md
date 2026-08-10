@@ -108,6 +108,11 @@ the single authoritative **Now**.
   peer. It owns isolated pinned-oracle setup, verified finite UDP UPnP mapping
   on the remote gateway or capability-gated local fallback, direct-route proof,
   exact transfer evidence, and mapping/process/artifact cleanup.
+  Its first checkpoint installed the exact official libtorrent `2.0.13.0`
+  ARM64/Python 3.13 wheel in a dedicated user environment without system
+  packages, and non-mutating discovery found a connected remote UPnP gateway
+  reporting an eligible external IPv4 address. No mapping or uTP traffic has
+  occurred yet.
 
 ## Why The Campaign Must Be Adaptive
 
