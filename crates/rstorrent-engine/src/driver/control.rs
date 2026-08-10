@@ -408,6 +408,7 @@ struct DownloadControlInner {
     storage_hash_delay_millis: AtomicU64,
     checkpoint_sync_delay_millis: AtomicU64,
     checkpoint_commit_delay_millis: AtomicU64,
+    checkpoint_sync_bypassed_for_testing: AtomicBool,
     checkpoint_sync_failures: AtomicUsize,
     storage_hashes_started: AtomicUsize,
     storage_write_concurrency: AtomicUsize,
@@ -765,6 +766,7 @@ impl DownloadControl {
                 storage_hash_delay_millis: AtomicU64::new(0),
                 checkpoint_sync_delay_millis: AtomicU64::new(0),
                 checkpoint_commit_delay_millis: AtomicU64::new(0),
+                checkpoint_sync_bypassed_for_testing: AtomicBool::new(false),
                 checkpoint_sync_failures: AtomicUsize::new(0),
                 storage_hashes_started: AtomicUsize::new(0),
                 storage_write_concurrency: AtomicUsize::new(CONTENT_STORAGE_WRITE_CONCURRENCY),
@@ -1493,6 +1495,19 @@ impl DownloadControl {
         self.inner
             .checkpoint_commit_delay_millis
             .store(millis, Ordering::Release);
+    }
+
+    #[doc(hidden)]
+    pub fn set_checkpoint_sync_bypassed_for_testing(&self, bypassed: bool) {
+        self.inner
+            .checkpoint_sync_bypassed_for_testing
+            .store(bypassed, Ordering::Release);
+    }
+
+    pub(super) fn checkpoint_sync_bypassed_for_testing(&self) -> bool {
+        self.inner
+            .checkpoint_sync_bypassed_for_testing
+            .load(Ordering::Acquire)
     }
 
     pub(super) async fn enter_path_publication_stage(&self, stage: PathPublicationStage) {

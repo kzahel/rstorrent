@@ -41,7 +41,6 @@ from local_throughput_compare import (
 )
 from performance_profiles import collect_hardware_environment
 from public_compare import (
-    build_probe,
     command_text,
     run_libtorrent as run_resumable_libtorrent,
     run_rstorrent as run_resumable_rstorrent,
@@ -51,6 +50,7 @@ from public_compare_contract import parse_metainfo, verify_payload
 
 
 OWNERS = ("focused", "resumable", "libtorrent")
+OWNER_CHOICES = (*OWNERS, "resumable-no-sync")
 MAX_PAYLOAD_MIB = 2048
 MAX_PIECE_KIB = 256 * 1024
 MAX_OWNER_SECONDS = 45
@@ -75,6 +75,7 @@ class DiagnosisResult:
     order: int
     owner: str
     profile: str
+    checkpoint_sync: str
     version: str
     published_seconds: float
     active_seconds: float | None
@@ -406,7 +407,8 @@ def run_owner(
                 seed_handle,
             )
             version = binary_sha256(focused_binary)
-        elif owner == "resumable":
+        elif owner in ("resumable", "resumable-no-sync"):
+            checkpoint_sync_bypass = owner == "resumable-no-sync"
             raw = run_resumable_rstorrent(
                 resumable_binary,
                 torrent_path,
@@ -418,6 +420,7 @@ def run_owner(
                 descriptor.info_hash,
                 fixture.size_bytes * 2,
                 peer_hints=[f"127.0.0.1:{peer_port}"],
+                diagnostic_checkpoint_sync_bypass=checkpoint_sync_bypass,
             )
             metrics = normalize_adapter_result(owner, raw, fixture, profile)
             version = binary_sha256(resumable_binary)
@@ -460,6 +463,13 @@ def run_owner(
             order=order,
             owner=owner,
             profile=profile,
+            checkpoint_sync=(
+                "bypassed"
+                if owner == "resumable-no-sync"
+                else "enabled"
+                if owner == "resumable"
+                else "not-applicable"
+            ),
             version=version,
             published_seconds=published_seconds,
             active_seconds=metrics.pop("active_seconds"),
@@ -545,10 +555,16 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
                 values["classification"] = classify_ratio(ratio)
         focused = owner_summaries.get("focused")
         resumable = owner_summaries.get("resumable")
+        resumable_no_sync = owner_summaries.get("resumable-no-sync")
         path_ratio = (
             None
             if focused is None or resumable is None
             else resumable["median_mib_s"] / focused["median_mib_s"]
+        )
+        checkpoint_ratio = (
+            None
+            if resumable is None or resumable_no_sync is None
+            else resumable_no_sync["median_mib_s"] / resumable["median_mib_s"]
         )
         summaries.append(
             {
@@ -559,6 +575,10 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
                 "resumable_focused_ratio": path_ratio,
                 "resumable_focused_classification": (
                     None if path_ratio is None else classify_ratio(path_ratio)
+                ),
+                "checkpoint_bypass_enabled_ratio": checkpoint_ratio,
+                "checkpoint_bypass_enabled_classification": (
+                    None if checkpoint_ratio is None else classify_ratio(checkpoint_ratio)
                 ),
             }
         )
@@ -587,7 +607,7 @@ def parse_args(arguments: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--runs", type=int, choices=range(1, 11), default=1)
     parser.add_argument(
-        "--owners", nargs="+", choices=OWNERS, default=list(OWNERS)
+        "--owners", nargs="+", choices=OWNER_CHOICES, default=list(OWNERS)
     )
     parser.add_argument(
         "--profile",
@@ -718,6 +738,7 @@ def main(arguments: list[str]) -> int:
             "block_size_bytes": BLOCK_SIZE,
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
             "storage_concurrency": {"writes": 4, "hashes": 4},
+            "checkpoint_sync": "selected-by-owner",
             "order": "rotating-by-run",
         },
         "elapsed_seconds": time.monotonic() - experiment_started,

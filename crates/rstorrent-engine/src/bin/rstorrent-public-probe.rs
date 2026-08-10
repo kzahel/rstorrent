@@ -164,6 +164,7 @@ struct Config {
     cleanup_grace: Duration,
     payload_limit: usize,
     wire_payload_limit: u64,
+    checkpoint_sync_bypassed: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -1011,6 +1012,7 @@ struct Diagnostics {
     checkpoint_sync_service_max_micros: u64,
     checkpoint_commit_service_micros: u64,
     checkpoint_commit_service_max_micros: u64,
+    checkpoint_sync_bypassed: bool,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
     peer_methods: PeerMethodEvidence,
@@ -1280,6 +1282,7 @@ async fn start_live_dht() -> Result<LiveDhtRuntime, String> {
 async fn run(config: Config) -> ProbeResult {
     let started = Instant::now();
     let control = DownloadControl::new();
+    control.set_checkpoint_sync_bypassed_for_testing(config.checkpoint_sync_bypassed);
     let sink = Arc::new(ProbeSink::new(started));
     sink.mark_process_ready();
     control.set_activity_sink(sink.clone());
@@ -1699,6 +1702,7 @@ fn result(
         &observation,
         utility_timeline,
         peer_sink.snapshot(diagnostics),
+        config.checkpoint_sync_bypassed,
     );
     ProbeResult {
         schema_version: 2,
@@ -1743,6 +1747,7 @@ fn diagnostic_result(
     observation: &ObservationSnapshot,
     utility_timeline: &UtilityTimeline,
     peer_methods: PeerMethodEvidence,
+    checkpoint_sync_bypassed: bool,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
@@ -1885,6 +1890,7 @@ fn diagnostic_result(
         checkpoint_commit_service_max_micros: snapshot
             .progress
             .checkpoint_commit_service_max_micros,
+        checkpoint_sync_bypassed,
         storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
             Some("write")
         } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -1913,6 +1919,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     let mut cleanup_seconds = DEFAULT_CLEANUP_SECONDS;
     let mut payload_limit = DEFAULT_PAYLOAD_LIMIT;
     let mut wire_payload_limit = DEFAULT_WIRE_PAYLOAD_LIMIT;
+    let mut checkpoint_sync_bypassed = false;
     let mut index = 0;
     while index < arguments.len() {
         let flag = &arguments[index];
@@ -1958,6 +1965,13 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
             "--wire-payload-ceiling-bytes" => {
                 wire_payload_limit = bounded_u64(value, flag, 1, u64::MAX)?;
             }
+            "--diagnostic-checkpoint-sync" => {
+                checkpoint_sync_bypassed = match value.as_str() {
+                    "enabled" => false,
+                    "bypass" => true,
+                    _ => return Err(format!("{flag} must be enabled or bypass")),
+                };
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
@@ -1973,6 +1987,16 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     if profile_sha256.len() != 64 || !profile_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("--profile-sha256 must be a 64-character hexadecimal digest".to_owned());
     }
+    if checkpoint_sync_bypassed
+        && (!matches!(&input, ProbeInput::Metainfo(_))
+            || target != Target::Complete
+            || !matches!(profile, Profile::MatchedPlain30 | Profile::MatchedRc430))
+    {
+        return Err(
+            "checkpoint sync bypass requires direct metainfo, complete target, and a matched profile"
+                .to_owned(),
+        );
+    }
     Ok(Config {
         input,
         expected_info_hash: expected_info_hash
@@ -1986,6 +2010,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         cleanup_grace: Duration::from_secs(cleanup_seconds),
         payload_limit,
         wire_payload_limit,
+        checkpoint_sync_bypassed,
     })
 }
 
@@ -2078,6 +2103,26 @@ mod tests {
         let config = parse_args(arguments).expect("forced RC4 arguments");
         assert_eq!(config.profile, Profile::MatchedRc430);
         assert_eq!(config.peer_hints.len(), 1);
+    }
+
+    #[test]
+    fn checkpoint_sync_bypass_is_narrowly_diagnostic() {
+        let mut metainfo = required_arguments();
+        metainfo[0] = "--metainfo".to_owned();
+        metainfo[1] = "fixture.torrent".to_owned();
+        metainfo.extend([
+            "--diagnostic-checkpoint-sync".to_owned(),
+            "bypass".to_owned(),
+        ]);
+        let config = parse_args(metainfo).expect("matched complete metainfo bypass");
+        assert!(config.checkpoint_sync_bypassed);
+
+        let mut magnet = required_arguments();
+        magnet.extend([
+            "--diagnostic-checkpoint-sync".to_owned(),
+            "bypass".to_owned(),
+        ]);
+        assert!(parse_args(magnet).is_err());
     }
 
     #[test]

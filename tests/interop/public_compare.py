@@ -516,6 +516,7 @@ def run_rstorrent(
     expected_info_hash: str | None = None,
     wire_payload_ceiling_bytes: int | None = None,
     peer_hints: list[str] | None = None,
+    diagnostic_checkpoint_sync_bypass: bool = False,
 ) -> dict[str, Any]:
     profile_contract = comparison_profile(profile)
     if expected_info_hash is None:
@@ -544,6 +545,8 @@ def run_rstorrent(
     ]
     for peer_hint in peer_hints or []:
         command.extend(("--peer-hint", peer_hint))
+    if diagnostic_checkpoint_sync_bypass:
+        command.extend(("--diagnostic-checkpoint-sync", "bypass"))
     result = run_owner_process(
         command, "rstorrent", timeout_seconds + cleanup_seconds * 2 + OUTER_GRACE_SECONDS
     )

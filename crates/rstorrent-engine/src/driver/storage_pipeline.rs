@@ -671,6 +671,8 @@ async fn flush_content_checkpoint(
         Err(DownloadError::Checkpoint(
             "injected checkpoint sync failure".to_owned(),
         ))
+    } else if control.checkpoint_sync_bypassed_for_testing() {
+        Ok(())
     } else {
         sync_checkpoint_targets(handles, &batch).await
     };
