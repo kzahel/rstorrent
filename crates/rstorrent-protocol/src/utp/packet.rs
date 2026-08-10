@@ -8,6 +8,7 @@ use super::{SequenceNumber, TimestampMicros};
 pub const UTP_VERSION: u8 = 1;
 pub const UTP_HEADER_SIZE: usize = 20;
 pub const MAX_UTP_PACKET_SIZE: usize = u16::MAX as usize;
+pub const MAX_UTP_PAYLOAD_SIZE: usize = MAX_UTP_PACKET_SIZE - UTP_HEADER_SIZE;
 pub const MAX_UTP_EXTENSION_COUNT: usize = 8;
 pub const SACK_EXTENSION: u8 = 1;
 pub const MAX_SACK_BYTES: usize = 252;
