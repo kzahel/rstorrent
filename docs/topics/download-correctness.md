@@ -95,7 +95,7 @@ global crash invalidation or clean-shutdown prerequisite. The current code
 uses zero payload reads and hashes on an accepted resume; explicit or pending
 Force verification remains full, and structural disagreement falls back only
 the affected torrent.
-In-progress Tactical
+Completed Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) now publishes a
 piece to the upload path only from the same verified/write-complete and
 currently readable route epoch used by active storage. Outgoing and accepted
@@ -105,7 +105,13 @@ availability epoch, and incoming contributors share the existing integrity
 reputation. A current-epoch upload observation/read failure now clears the
 advertised epoch before stopping the generation, while pause, force recheck,
 archive, removal, and publication prove joined route replacement. Controlled
-interoperability and Android evidence remain open in that tactical.
+ordinary/Fast/MSE interoperability independently verifies cross-file and
+part-backed final hashes. The API 34 SAF gate persists an exact two-piece
+partial state, fails closed on grant loss, repairs it, and completes a
+bidirectional complementary exchange under the shared resource owners. An
+accepted fast resume also reconciles pending file promotions before new
+writes, and contributor evidence survives disconnect until delayed hashing
+finishes.
 
 ## Scope
 

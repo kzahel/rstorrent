@@ -36,6 +36,13 @@ local SAF resumes follow the same per-torrent structural decision as path
 storage, without requiring an opaque provider token. Matching ordinary resume
 trusts only committed bits with zero payload hashing; publication recovery and
 explicit or pending Force verification remain full.
+Completed Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) extends the same
+verified/readable authority to incomplete-torrent upload. One API 34
+no-window AVD run persists an exact two-piece partial state, fails closed on
+grant loss, repairs through the picker, then exchanges complementary Fast
+payload with pinned libtorrent through staging and part routes before either
+side completes. Rust remains the only payload owner.
 
 ## Scope
 
@@ -440,6 +447,13 @@ bridge; after acquisition, payload I/O remains in Rust.
   and closed broker receivers blocked during cancellation and four Kotlin
   provider workers racing UniFFI client destruction; service shutdown now
   wakes, joins, and only then closes those owners.
+- Tactical `124`'s API 34 no-window AVD exchanges four Piece frames in each
+  direction before completion sequence 7, verifies all wanted Android and
+  oracle hashes, excludes skipped/padding publication, and records 7/40
+  Rust-owned handles, 2/16 pending provider requests, and process-descriptor
+  high water 140 from baseline 118. Grant loss enters awaiting storage;
+  repair resumes the same partial torrent; exact application removal and AVD
+  cleanup pass.
 
 ## Recommended Next Work
 

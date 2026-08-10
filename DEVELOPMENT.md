@@ -450,6 +450,17 @@ uv run --project tests/interop --locked \
   python tests/interop/multi_peer_liveness.py
 ```
 
+The incomplete-torrent duplex profile gives each participant a complementary
+sparse set over wanted, skipped, padding, cross-file, and part-backed routes.
+It captures Piece frames in both directions before completion for ordinary,
+Fast, and forced-MSE peers, verifies exact final hashes, and exercises accepted
+fast-resume route reconciliation:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/incomplete_duplex.py
+```
+
 The concurrent-torrent profile downloads independent deterministic fixtures
 from separate pinned-libtorrent source sessions. It alternates recorded case
 order, checks the single-torrent and two-torrent throughput gates, and reports
@@ -471,6 +482,19 @@ resource/file-descriptor high-waters, and cleanup:
 experiments/android-engine-bootstrap/build.sh
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target pixel7a --profile product-concurrent-downloads --no-build
+```
+
+The Android SAF incomplete-duplex profile stages a two-piece partial torrent,
+revokes and repairs its provider grant across process restart, then exchanges
+complementary Fast payload with pinned libtorrent before completion. It checks
+exact wanted hashes, absent skipped/padding files, resource high waters, and
+managed cleanup:
+
+```bash
+experiments/android-engine-bootstrap/build.sh
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-incomplete-duplex --no-build
 ```
 
 Tactical `003`'s self-contained Android probe builds both supported native

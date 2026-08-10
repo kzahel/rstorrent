@@ -1,18 +1,15 @@
 # Tactical 124: Duplex Verified-Piece Upload During Download
 
-Status: In progress on 2026-08-10 after the maintainer authorized autonomous
-end-to-end implementation and bounded commits. The first deterministic slice
-now implements the compact availability epoch/revision/timeline authority,
-dynamic upload-request revalidation, exact ordinary/Fast initial forms, and
-generation-stamped active selective-storage read plans across staging,
-retained, part-file, cross-file, and padding routes. Outgoing and accepted TCP
-content sockets now both carry duplex payload through the same swarm and
-upload owners. Tracker/DHT advertisement now follows actual active-route
-routability independently from completion. Read-failure retraction and the
-pause/recheck/archive/removal/publication lifecycle fences have landed.
-Controlled interoperability and Android gates remain in progress. This
-very-high-priority correctness repair ranks ahead of finite bandwidth controls
-and seeding-goal policy.
+Status: Complete on 2026-08-10. One compact availability authority, bounded
+active selective-storage reader, and the existing session upload scheduler now
+serve verified pieces while a torrent is still downloading. Initiated and
+accepted TCP connections carry duplex payload; active routed torrents
+advertise the real eligible tracker/DHT port independently of completion; and
+read failure, selection, pause, recheck, root loss, publication, removal, and
+shutdown fence stale authority. Controlled RSTorrent/libtorrent ordinary,
+Fast, MSE, cross-file, part-backed, restart, and Android SAF evidence passes.
+Finite bandwidth controls and seeding-goal policy remain separate follow-on
+work.
 
 Topics: `incoming-reachability-and-seeding`, `peer-lifecycle`,
 `download-correctness`, `protocol-support`,
@@ -839,3 +836,100 @@ cargo test -p rstorrent-engine \
   known_bad_incoming_contributor_is_banned_after_disconnect
 cargo clippy -p rstorrent-engine -- -D warnings
 ```
+
+### Controlled interoperability and resume correctness
+
+- The independently authored four-piece fixture interleaves wanted, skipped,
+  and padding files so every verified piece exercises a boundary route and
+  every participant owns a complementary sparse set. It verifies all final
+  non-padding files independently by SHA-1.
+- RSTorrent-initiated ordinary TCP and libtorrent-initiated Fast TCP each
+  capture four Piece frames per direction. The first frames in both directions
+  precede the earliest possible completion; both directions include a second
+  16-KiB block backed by cross-file and part storage.
+- The RSTorrent/RSTorrent Fast case captures the same bidirectional evidence.
+  A bounded complete rescue seed may close the last block after the required
+  duplex proof because publication is explicitly allowed to fence the active
+  socket. Forced MSE separately proves bidirectional encrypted payload without
+  exposing a plaintext handshake.
+- A resumed wanted/part/wanted boundary exposed a file-level pending-promotion
+  marker surviving an accepted fast resume. Accepted resume now performs the
+  same route reconciliation as checked state, so newly written wanted spans
+  are never hashed from a zero-filled part slot.
+- Contributor attribution now survives connection removal until every delayed
+  hash generation that names it completes. A disconnect before delayed hash
+  success therefore still earns the exact trust point, while hash-failure and
+  ban behavior retain bounded generation ownership.
+
+Controlled validation:
+
+```text
+uv run --project tests/interop --locked \
+  python tests/interop/incomplete_duplex.py
+```
+
+### Android SAF parity and stopping evidence
+
+- The debug-only encryption-policy injection now preserves the same bounded
+  skip-file intent as ordinary magnet add; no product command or generated
+  contract changed.
+- The API 34 no-window AVD stages exactly two verified pieces through a
+  full-seed proxy capped by exact non-padding wire geometry, then closes that
+  route. It revokes the SAF grant, force-stops and restarts the product,
+  observes `AwaitingStorage` without losing stable root identity, repairs the
+  grant through the system picker, and resumes the persisted partial torrent.
+- A complementary pinned-libtorrent peer and Android exchange four Fast Piece
+  frames in each direction. The first Android and oracle frames have global
+  sequence 2 and 1, both before completion sequence 7; both include
+  cross-file/part-backed second-block reads. Every wanted output and the
+  oracle's complete copy match independent SHA-1, while skipped and padding
+  files remain absent from Android publication.
+- The run records a 7/40 Rust-owned handle high water, 2/16 pending provider
+  high water, and process descriptors `118 -> 140 -> 134`. Exact managed
+  removal, broker shutdown, reverse transport cleanup, app stop, and fresh AVD
+  deletion pass.
+- `build.sh` cross-builds `x86_64` and `arm64-v8a`, regenerates the unchanged
+  UniFFI boundary, and assembles/tests the debug APK. Gradle lint, JVM unit
+  tests, and Android-test APK assembly pass.
+
+Android validation:
+
+```text
+source ~/.profile
+experiments/android-engine-bootstrap/build.sh
+cd experiments/android-engine-bootstrap
+./gradlew lintDebug testDebugUnitTest assembleDebugAndroidTest
+python3 run_bootstrap.py --target avd --avd jstorrent-tablet \
+  --storage saf-internal --runs 1 \
+  --profile product-incomplete-duplex --no-build
+```
+
+All T124-C01 through T124-C20 stopping scenarios now have deterministic,
+scripted-runtime, controlled-interoperability, or Android evidence at their
+applicable layer. No public-network or physical-device run was required.
+
+### Final repository validation
+
+The exact default workspace baseline passes after the implementation and
+evidence changes:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
+
+The first parallel workspace run exposed an old test-only polling assumption:
+the durable path-publication restart test allowed 200 scheduler yields rather
+than bounded wall-clock time and could finish polling before its blocking
+rename completed. Commit `ae78220` replaces that loop with the established
+five-second/10-millisecond test wait; the focused test, the default-parallel
+session crate, and the exact workspace baseline then pass. This changes no
+runtime timeout or publication behavior.
+
+The controlled harness, both Android ABI build, Gradle lint/JVM tests/Android-
+test APK assembly, and API 34 no-window AVD profile above also pass. Web code
+and generated application types did not change, so the web type/test baseline
+and contract regeneration are inapplicable. Temporary diagnostic variants and
+the retained failed-run directory were moved to the system Trash before
+closure.

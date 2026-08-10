@@ -22,6 +22,11 @@ generic filesystem layer. Tactical `119` kept its dependency-free transport
 state inside the protocol crate. Completed Tactical `120` then placed one
 task-free typed resume decision in the engine, reused common structural
 observations, and left the full checker and write-side coordinator intact.
+Completed Tactical `124` adds one task-free `piece_availability` authority and
+a bounded active-read planning seam beneath the existing storage child. The
+incoming socket remains its framed-IO owner while a bounded bridge attaches it
+to the existing swarm; no second scheduler, generic filesystem layer, upload
+service, or crate split was introduced.
 Current general pressure remains highest in
 the application callback/test topology, historical store internals, and role-
 specific peer bootstrap paths exposed by MSE. No standalone refactor is

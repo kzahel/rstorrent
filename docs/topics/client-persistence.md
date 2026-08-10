@@ -119,6 +119,15 @@ global crash invalidation, product setting, or new observation table. A
 pending verification generation and Force recheck remain full. The decision
 uses existing schema-17 facts and adds no persisted heuristic or resume field.
 
+Completed Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) changes no schema and
+adds no second durable availability authority. Verified pieces become
+uploadable immediately in the running generation; after restart, only the
+committed bitmap admitted by Tactical `120` or a completed check restores that
+authority. Accepted fast resume also reconciles pending file promotions before
+new writes, so persisted route state cannot leave wanted bytes stranded behind
+a part-file route while hashing reads a different location.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database

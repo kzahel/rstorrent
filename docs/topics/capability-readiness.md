@@ -282,24 +282,19 @@ added.
 
 ### Now
 
-- Very-high-priority correctness Tactical
-  [`124`](../tactical/124-duplex-verified-piece-upload.md) is in progress after
-  explicit maintainer authorization. Compact per-piece authority, active
-  selective-storage upload reads, initiated-socket duplex upload, and
-  accepted-socket duplex transfer have landed in bounded checkpoints. Tracker
-  and public DHT advertisement now follow the actual active incoming route
-  independently of completion. Active read failure now retracts its route, and
-  pause/recheck/archive/removal/publication fences close old connection
-  generations. Controlled interoperability, Android parity, and final evidence
-  reconciliation remain before completion.
+- The uTP Stage 2 human-review checkpoint in Tactical
+  [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) is the
+  single authoritative decision point. Every runtime-free threshold passes;
+  no shared-UDP/runtime integration is authorized until that review accepts a
+  separately bounded Stage 3 tactical.
 
 ### Next
 
-- The uTP Stage 2 human-review checkpoint in Tactical
-  [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) remains
-  ready with every fixed threshold passing. A separately approved Stage 3
-  tactical would own bounded shared-UDP/runtime integration and controlled
-  interoperability; uTP remains unsupported meanwhile.
+- Finite session/per-torrent bandwidth enforcement and durable seeding goals
+  are the next policy-planning candidates. They remain separate tacticals:
+  rate allocation owns hot-path fairness and cancellation, while ratio/time
+  goals own durable accounting and torrent lifecycle. Neither is authorized
+  for implementation by Tactical `124`'s completion.
 
 ### Later
 
@@ -388,7 +383,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Endgame | Implemented | deterministic, runtime, live | Strict duplicates, core cancels, late-loss safety, exact accounting, and public verified publication pass; throughput parity remains open. | [`download-correctness`](download-correctness.md) |
 | Hash-failure recovery | Implemented | deterministic, runtime, interop, live | A failed v1 generation resets the whole piece with bounded contributors; v2 block-level recovery and full parole selection are absent. | [`download-correctness`](download-correctness.md) |
 | Reliable completion on ordinary swarms | Partial | deterministic, runtime, interop, live | Multi-peer liveness, endgame, corrupt-generation retry, and bounded storage completion pass, but completion latency is not yet comparable and public corruption was not induced. | [`download-correctness`](download-correctness.md) |
-| Payload upload and seeding | Implemented | deterministic, runtime, interop, web, AVD, physical | Completed published path and supported SAF storage serve exact verified/readable bitfields and bounded 16-KiB requests to multiple peers under live 0--50 session slots, with default eight and one optimistic grant, 2,000 descriptors per peer, ten reads, the shared 40-handle pool, and a 528,396-byte/64-descriptor writer bound. Exact multi-peer accounting passes locally and for a 4,195,035-byte direct off-LAN path transfer through a verified UPnP mapping; AVD and physical Android leechers each independently verify an exact 133,304-byte SAF transfer. Completed Tactical [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md) proves immediate zero-slot choking and live regrant without losing peer identity, state, or counters. Finite bandwidth, ratio/time goals, incomplete-torrent upload, and discovery-driven public seeding remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
+| Payload upload and seeding | Implemented | deterministic, runtime, interop, web, AVD, physical | Published and active incomplete torrents serve exact verified/readable availability and bounded 16-KiB requests through initiated or accepted TCP peers under the shared live 0--50 slot, ten-read, 40-handle, and writer bounds. Complementary RSTorrent/libtorrent ordinary, Fast, forced-MSE, cross-file, part-backed, and API 34 SAF transfers capture Piece frames in both directions before completion and independently verify every final hash. Active routed torrents advertise the real tracker/DHT port with nonzero `left`; failure and lifecycle changes retract or replace authority before stale reads. Exact completed-seed local, mapped off-LAN, AVD, and physical evidence remains. Finite bandwidth, ratio/time goals, and discovery-driven public incomplete-swarm reliability remain absent. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`protocol-support`](protocol-support.md) |
 
 ### Integrity, Storage, And Resume
 
@@ -399,7 +394,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Cross-file, skipped-file, and padding storage | Implemented | deterministic, runtime, interop, web | Lazy part creation, retained lowered destinations, route-epoch promotion/demotion, exact verified-span export, uncertain boundary-piece invalidation, and empty-part cleanup pass; BEP 47 symlinks are deliberately rejected. | [`client-persistence`](client-persistence.md) |
 | Path-backed staging and publication | Implemented | deterministic, runtime, interop | Explicit file/tree topology, hash-owned internal artifacts, durable publishing intent, atomic no-replace rename, namespace sync, crash reconciliation, and fail-closed removal pass. Disk-space policy, relocation, and broader filesystem/provider coverage remain incomplete. | [`client-persistence`](client-persistence.md), [`download-roots`](download-roots.md) |
 | Bounded asynchronous content storage | Implemented | deterministic, runtime, interop, live, physical | Payload sync and batched SQLite checkpoints use a separate bounded joined owner; immutable positional writes and hashes execute with independent session totals, root/torrent fairness, explicit generation joins, and the shared 40-handle pool. Controlled multi-torrent/root isolation and physical Android concurrency pass; broader provider/root profiles remain open. | [`storage-throughput-architecture`](storage-throughput-architecture.md) |
-| Android SAF storage and publication | Implemented | deterministic, runtime, interop, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool. Typed observations gate root health, trusting ordinary resume, and published reads; fixed manifests are diagnostic-only. The API 34 AVD covers the Tactical `120` trust and joined-shutdown policy. Earlier complete AVD and physical Android 17/API 37 matrices cover download, selection, conservative restart, Force recheck, publication, exact SAF-backed upload, removal, grant repair, cancellation, concurrent admission, and cleanup within an 11/40 pool and 3/16 pending-request high water. General root management, cloud/removable policy, migration, and relocation remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
+| Android SAF storage and publication | Implemented | deterministic, runtime, interop, AVD, physical | The product uses lazy dynamic acquisition and one 40-handle path/SAF pool. Typed observations gate root health, trusting ordinary resume, active and published reads, and provider repair; fixed manifests are diagnostic-only. The API 34 Tactical `124` profile persists a two-piece partial torrent, fails closed on grant loss, repairs, exchanges complementary Fast payload with pinned libtorrent before completion, and removes exactly at 7/40 handles and 2/16 pending requests. Tactical `120` trusting-resume and earlier complete AVD and physical Android 17/API 37 matrices retain download, selection, checking, publication, upload, cancellation, concurrency, and cleanup coverage. General root management, cloud/removable policy, migration, and relocation remain absent. | [`android-saf-storage`](android-saf-storage.md), [`client-persistence`](client-persistence.md) |
 | Durable have state and per-torrent resume | Implemented | deterministic, persistence, runtime, interop, web, AVD, physical | Schema 14 stores one payload fact and generation-fenced verification evidence. Exact ordinary path/SAF structure admits only synchronized committed bits with zero payload reads/hashes; disagreement invokes the full selection-independent checker only for that torrent, malformed state cannot abort profile open, and Force always hashes. Same-length external mutation is deliberately outside ordinary detection. | [`client-persistence`](client-persistence.md), [`download-correctness`](download-correctness.md) |
 | Recovery after content hash failure | Implemented | deterministic, runtime | Sole corrupt and ambiguous multi-source generations retry cleanly with bounded exact-generation attribution. | [`download-correctness`](download-correctness.md) |
 

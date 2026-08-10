@@ -83,6 +83,15 @@ three active discovery registrations at limit three. A combined 500-complete-
 seed, ten-interested-peer, three-download test preserves the 200-connection
 ceiling and the existing global seven-regular/one-optimistic upload grants,
 then drains every download resource registration.
+Completed Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) admits routed incoming
+content sockets into the same `SwarmState`, picker, request/cancel lifecycle,
+contributor attribution, integrity reputation, and connection ceiling as
+initiated sockets. One generation-fenced 64-event/16-command bridge leaves
+framed IO in the incoming task; nonblocking saturation closes the role instead
+of creating a second scheduler or cross-channel wait. Contributor evidence
+survives disconnect until delayed hashing resolves, and controlled
+complementary transfers prove both directions before completion.
 
 ## Scope
 

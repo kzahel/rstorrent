@@ -20,19 +20,20 @@ authenticated gateway proof follows pinned libtorrent and RSTorrent peers
 through exact transfer, removal, pause, and terminal zero ownership.
 Finite bandwidth and seeding goals remain future slices.
 
-Very-high-priority Tactical
-[`124`](../tactical/124-duplex-verified-piece-upload.md) is in progress. Its
-landed checkpoints replace the whole-torrent upload gate with compact
-verified/readable piece authority, serve active selective storage through the
-existing bounded upload owner, and carry payload in both directions over
+Completed very-high-priority Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) replaces the
+whole-torrent upload gate with compact
+verified/readable piece authority, serves active selective storage through the
+existing bounded upload owner, and carries payload in both directions over
 initiated and accepted TCP sockets before completion. Discovery now consumes
 an actual active-route `incoming_routable` fact: trackers correct to the
 eligible listener port with nonzero `left`, while verified-public DHT announces
 only on families with a real TCP endpoint. Typed active-read failure retracts
 the advertised epoch and route, and serialized pause/recheck/archive/removal
 plus publication handoff close old listener generations before returning.
-Controlled pinned-libtorrent and Android gates remain before Tactical `124`
-completion.
+Controlled ordinary/Fast/MSE pinned-libtorrent and API 34 Android SAF gates
+prove complementary sparse exchange, cross-file and part-backed reads,
+provider loss/repair, exact hashes, and terminal cleanup.
 
 Tactical
 [`088`](../tactical/088-upnp-mapped-external-tcp-seeding.md) is complete. It
@@ -165,6 +166,12 @@ endpoint:
   unregister before lifecycle or storage-authority changes. Both use the
   common logical published-content owner, verified/readable availability,
   session file pool, and read admission;
+- admitted metadata-verified incomplete torrents install a generation-fenced
+  active route as soon as storage exists. Initiated and accepted peers share
+  the ordinary download swarm, dynamic verified/readable availability,
+  session choking, ten-read and 40-handle authorities, exact contribution and
+  upload accounting, and the same integrity reputation. Publication may close
+  those sockets before the published registration replaces the namespace;
 - every peer starts choked; one session coordinator grants at most eight
   upload slots, including one automatically derived optimistic slot, using
   pinned libtorrent's fixed-slot, 15/30-second, and complete-seed round-robin
@@ -814,3 +821,12 @@ reuses the session file pool, read admission, exact accounting, and joined
 unregistration. AVD and physical runs each upload and independently verify
 the exact 133,304-byte fixture through pinned libtorrent. No second seeding
 runtime or new reachability policy was added.
+Completed Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) now closes the
+whole-torrent gate. Compact per-piece authority, active selective reads,
+initiated and accepted duplex sockets, contributor-ranked ordinary choking,
+actual-port active discovery, failure retraction, and joined namespace fences
+all use the established session owners. Controlled RSTorrent/libtorrent and
+API 34 SAF runs prove complementary payload in both directions before
+completion with exact hashes and bounded cleanup. Finite bandwidth and
+ratio/time goals remain separate policy tacticals.

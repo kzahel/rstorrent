@@ -76,6 +76,9 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --runs 1 --profile product-ipv6-policy
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-incomplete-duplex --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -106,6 +109,15 @@ than payload transfer. It proves an initially healthy persisted grant, retains
 the stable root identity after debug-only grant revocation, observes the root
 as unavailable after process restart, repairs it through the system picker,
 and observes it as healthy across another restart.
+
+The `product-incomplete-duplex` profile stages exactly two verified pieces
+through a capped seed, revokes the SAF grant, force-stops and restarts the
+product, observes unavailable storage, and repairs the same stable root. A
+complementary pinned-libtorrent peer then exchanges Fast Piece frames with
+Android in both directions before completion, including cross-file and
+part-backed second blocks. The profile verifies exact wanted and oracle hashes,
+absent skipped/padding publication, handle/provider/descriptor high waters,
+and exact managed, reverse-transport, application, and fresh-AVD cleanup.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

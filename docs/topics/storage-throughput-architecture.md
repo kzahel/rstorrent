@@ -40,6 +40,14 @@ policy without changing the checkpoint order or hot-path owners: matching
 per-torrent structural evidence admits synchronized committed bits with zero
 payload reads/hashes, while Force recheck and checker-readable disagreement
 reuse the existing full checker.
+Completed Tactical
+[`124`](../tactical/124-duplex-verified-piece-upload.md) adds a separate
+bounded 16-request active-upload planning channel to the content-storage task.
+Mutable selective storage remains singly owned; immutable generation-stamped
+staging, retained-file, part-slot, cross-file, and padding read plans execute
+under the existing ten-read and 40-handle session bounds. Accepted fast resume
+now reconciles pending file promotions before new writes so route authority
+and hashing cannot diverge.
 
 ## Purpose And Scope
 
