@@ -120,7 +120,7 @@ class UtpWanContractTests(unittest.TestCase):
         self.assertEqual(
             summary,
             "remote abort evidence: utp_in=7, utp_out=2, "
-            "utp_peers=1, mapping_deleted=True",
+            "utp_peers=1, payload_sent=missing, mapping_deleted=True",
         )
 
 

@@ -37,7 +37,7 @@ from utp_rstorrent_interop import (
 
 ROOT = Path(__file__).resolve().parents[2]
 REMOTE_HELPER = ROOT / "tests/interop/utp_remote_seed.py"
-SCENARIO_TIMEOUT_SECONDS = 90.0
+SCENARIO_TIMEOUT_SECONDS = 150.0
 PROCESS_CLEANUP_SECONDS = 5.0
 SSH_OPTIONS = (
     "-o",
@@ -401,6 +401,7 @@ def aborted_remote_summary(event: dict[str, Any] | None) -> str:
         f"utp_in={stats.get('utp.utp_packets_in', 'missing')}, "
         f"utp_out={stats.get('utp.utp_packets_out', 'missing')}, "
         f"utp_peers={stats.get('peer.num_utp_peers', 'missing')}, "
+        f"payload_sent={stats.get('net.sent_payload_bytes', 'missing')}, "
         f"mapping_deleted={event.get('mapping_deleted') is True}"
     )
 

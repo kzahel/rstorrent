@@ -169,8 +169,11 @@ the exact mapping before closing the socket generation.
 ### Orchestration and cleanup
 
 One local harness selects the primary or capability-gated fallback direction,
-uses `mktemp -d` for run state, applies a 90-second whole-case deadline and a
-five-second forced-cleanup allowance, and keeps every process attached. Remote
+uses `mktemp -d` for run state, applies a bounded whole-case deadline and a
+five-second forced-cleanup allowance, and keeps every process attached. The
+first public-path measurement revised the WAN role from the inherited
+30-second loopback bound to 120 seconds inside a 150-second case; loopback
+roles remain at 30 seconds. Remote
 cleanup targets only the exact validated run directory and process created by
 the invocation; no broad glob, unresolved environment variable, or unrelated
 process name is accepted. Cleanup runs in `finally` for success, protocol
@@ -186,7 +189,7 @@ failure, timeout, SSH loss, malformed output, and interruption.
 | RSTorrent live uTP connections | exactly 1, global service maximum 64 |
 | Temporary UPnP mappings | exactly 1 during selected direction |
 | UPnP lease | finite, at most 3,600 seconds |
-| Scenario wall time | 90 seconds |
+| Scenario wall time | 150 seconds |
 | SSH connect and cleanup allowance | 10 seconds / 5 seconds |
 | Captured stdout/stderr diagnostics | 50 lines per stream |
 | Remote per-run staged bytes | at most 16 MiB |
@@ -390,3 +393,21 @@ failure precedes readiness. The local owner independently audits that
 description after every outcome and can delete at most one exact surviving
 UDP entry. Deterministic contracts and Python compilation pass after the
 repair. A positive WAN transfer remains pending.
+
+### Public-path timeout observation
+
+The repaired exact-UDP case created and independently verified one named
+finite lease, proved the local route used the ordinary Internet interface, and
+reached the remote pinned oracle directly. The inherited 30-second role bound
+then expired before the 2,097,883-byte transfer completed. Abort evidence
+showed that the public data path was working: libtorrent received 663 uTP
+packets, sent 1,327, observed exactly one uTP peer, and confirmed mapping
+deletion. Independent post-run checks again found zero named
+leases, helper processes, or run directories.
+
+This is neither a UPnP capability failure nor authority to select the local
+fallback. At the observed packet rate and fixed 548-byte Stage 3 MTU, the exact
+fixture needs roughly 90 seconds before orchestration and cleanup allowance.
+The next run therefore uses a 120-second WAN role bound inside a 150-second
+whole-case bound. The deterministic and loopback 30-second limits are
+unchanged.

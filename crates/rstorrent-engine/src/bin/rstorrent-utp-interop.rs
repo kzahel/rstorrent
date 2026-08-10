@@ -28,7 +28,8 @@ use tokio::time::timeout;
 
 const PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
 const PIECE_BYTES: u32 = 64 * 1024;
-const ROLE_TIMEOUT: Duration = Duration::from_secs(30);
+const LOOPBACK_ROLE_TIMEOUT: Duration = Duration::from_secs(30);
+const WAN_ROLE_TIMEOUT: Duration = Duration::from_secs(120);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(5);
 const LEECHER_PEER_ID: [u8; 20] = *b"-RSUTPL-000000000000";
@@ -83,6 +84,20 @@ enum Arguments {
 }
 
 impl Arguments {
+    fn timeout(&self) -> Duration {
+        match self {
+            Self::Leecher {
+                scope: LeecherScope::Wan,
+                ..
+            } => WAN_ROLE_TIMEOUT,
+            Self::Leecher {
+                scope: LeecherScope::Loopback,
+                ..
+            }
+            | Self::Seed { .. } => LOOPBACK_ROLE_TIMEOUT,
+        }
+    }
+
     fn parse(mut values: impl Iterator<Item = OsString>) -> Result<Self, String> {
         let role = values
             .next()
@@ -259,14 +274,18 @@ async fn main() {
             std::process::exit(2);
         }
     };
-    match timeout(ROLE_TIMEOUT, run(arguments)).await {
+    let role_timeout = arguments.timeout();
+    match timeout(role_timeout, run(arguments)).await {
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
             eprintln!("uTP interoperability role failed: {error}");
             std::process::exit(1);
         }
         Err(_) => {
-            eprintln!("uTP interoperability role exceeded 30 seconds");
+            eprintln!(
+                "uTP interoperability role exceeded {} seconds",
+                role_timeout.as_secs()
+            );
             std::process::exit(1);
         }
     }
@@ -662,6 +681,28 @@ mod tests {
                 ..
             })
         ));
+        let wan = Arguments::parse(strings(&[
+            "wan-leecher",
+            "--metainfo",
+            "fixture.torrent",
+            "--peer",
+            "8.8.8.8:1",
+            "--output",
+            "payload.bin",
+        ]))
+        .unwrap();
+        assert_eq!(wan.timeout(), WAN_ROLE_TIMEOUT);
+        let loopback = Arguments::parse(strings(&[
+            "leecher",
+            "--metainfo",
+            "fixture.torrent",
+            "--peer",
+            "127.0.0.1:1",
+            "--output",
+            "payload.bin",
+        ]))
+        .unwrap();
+        assert_eq!(loopback.timeout(), LOOPBACK_ROLE_TIMEOUT);
         for peer in [
             "0.0.0.0:1",
             "10.0.0.1:1",
