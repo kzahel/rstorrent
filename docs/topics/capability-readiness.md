@@ -282,23 +282,21 @@ added.
 
 ### Now
 
-- The uTP Stage 2 human-review checkpoint is the single authoritative **Now**.
-  Tactical [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md)
-  has reached its runtime-free stop with every fixed threshold passing. The
-  recommended next choice is a separately approved Stage 3 tactical for
-  bounded shared-UDP/runtime ownership, ordered-stream adaptation, and forced-
-  uTP pinned-libtorrent loopback interoperability in both roles. No Stage 3
-  implementation is accepted until that review; uTP remains unsupported.
+- Very-high-priority correctness Tactical
+  [`124`](../tactical/124-duplex-verified-piece-upload.md) is in progress after
+  explicit maintainer authorization. Compact per-piece authority, active
+  selective-storage upload reads, initiated-socket duplex upload, and
+  accepted-socket duplex transfer have landed in bounded checkpoints.
+  Discovery truth, lifecycle/adversarial fences, controlled interoperability,
+  Android parity, and final evidence reconciliation remain before completion.
 
 ### Next
 
-- Planned high-priority Tactical
-  [`123`](../tactical/123-duplex-verified-piece-upload.md) owns the correctness
-  repair that lets incomplete torrents announce and upload each verified,
-  currently readable piece over incoming and outgoing peers. It is the first
-  recommended engine correctness slice after work already in flight, ahead of
-  finite bandwidth/seeding-goal policy. Implementation has not started and it
-  does not replace the single authoritative **Now**.
+- The uTP Stage 2 human-review checkpoint in Tactical
+  [`121`](../tactical/121-deterministic-utp-loss-congestion-and-mtu.md) remains
+  ready with every fixed threshold passing. A separately approved Stage 3
+  tactical would own bounded shared-UDP/runtime integration and controlled
+  interoperability; uTP remains unsupported meanwhile.
 
 ### Later
 

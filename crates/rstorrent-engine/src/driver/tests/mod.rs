@@ -599,6 +599,117 @@ async fn serve_duplex_complementary_peer(
     }
 }
 
+async fn serve_incoming_duplex_complementary_peer(
+    address: SocketAddr,
+    info_hash: [u8; 20],
+    pieces: Arc<Vec<Vec<u8>>>,
+    uploaded: oneshot::Sender<Vec<u8>>,
+) {
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("connect incoming duplex peer");
+    stream
+        .write_all(&encode_handshake(info_hash, [72; 20]))
+        .await
+        .expect("send incoming duplex handshake");
+    let mut handshake = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake)
+        .await
+        .expect("read incoming duplex handshake");
+    decode_handshake(&handshake, info_hash).expect("valid incoming duplex handshake");
+
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(3));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b0100_0000]))
+        .await
+        .expect("send incoming complementary availability");
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .expect("unchoke incoming downloader");
+    send_message(&mut peer, &PeerMessage::Interested)
+        .await
+        .expect("express incoming upload interest");
+
+    let mut initial_availability = false;
+    let mut requested_local_piece = false;
+    let mut pending_remote_request = None;
+    let mut uploaded = Some(uploaded);
+    loop {
+        match next_peer_message(&mut peer).await {
+            Ok(PeerMessage::Bitfield(bitfield)) => {
+                assert!(!initial_availability, "duplicate initial availability");
+                assert_eq!(bitfield, vec![0b1000_0000]);
+                initial_availability = true;
+            }
+            Ok(PeerMessage::Unchoke) if !requested_local_piece => {
+                requested_local_piece = true;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Request(rstorrent_protocol::peer_wire::BlockRequest {
+                        index: 0,
+                        begin: 0,
+                        length: u32::try_from(pieces[0].len()).expect("piece length"),
+                    }),
+                )
+                .await
+                .expect("request incoming complementary local piece");
+            }
+            Ok(PeerMessage::Request(request)) => {
+                assert_eq!(request.index, 1);
+                assert!(pending_remote_request.replace(request).is_none());
+            }
+            Ok(PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block,
+            }) => {
+                assert_eq!(block, pieces[0]);
+                if let Some(uploaded) = uploaded.take() {
+                    let _ = uploaded.send(block);
+                }
+            }
+            Ok(
+                PeerMessage::Have(1)
+                | PeerMessage::Interested
+                | PeerMessage::NotInterested
+                | PeerMessage::Choke
+                | PeerMessage::Cancel(_)
+                | PeerMessage::KeepAlive,
+            ) => {}
+            Err(DownloadError::PeerClosed)
+            | Err(DownloadError::Io {
+                operation: "read peer message",
+                ..
+            }) => {
+                assert!(initial_availability);
+                assert!(
+                    uploaded.is_none(),
+                    "incoming socket never uploaded piece zero"
+                );
+                return;
+            }
+            Ok(message) => panic!("unexpected incoming duplex message {message:?}"),
+            Err(error) => panic!("incoming duplex peer failed: {error}"),
+        }
+        if uploaded.is_none()
+            && let Some(request) = pending_remote_request.take()
+        {
+            let begin = request.begin as usize;
+            let end = begin + request.length as usize;
+            send_message(
+                &mut peer,
+                &PeerMessage::Piece {
+                    index: request.index,
+                    begin: request.begin,
+                    block: pieces[1][begin..end].to_vec(),
+                },
+            )
+            .await
+            .expect("send incoming complementary remote piece");
+        }
+    }
+}
+
 async fn serve_window_probe_peer(
     listener: TcpListener,
     info_hash: [u8; 20],

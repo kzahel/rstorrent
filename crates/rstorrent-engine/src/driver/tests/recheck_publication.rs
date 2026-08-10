@@ -1,6 +1,9 @@
 use super::*;
 use crate::driver::AppliedFileSelection;
-use crate::{FileSelectionUpdate, PeerBudget, ResumeValidationIntent};
+use crate::{
+    FileSelectionUpdate, IncomingPeerService, IncomingPeerServiceConfig, IncomingTcpBootstrap,
+    PeerBudget, ResumeValidationIntent, TorrentPeerHandle,
+};
 
 #[tokio::test]
 async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
@@ -871,6 +874,147 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
     tokio::fs::remove_dir_all(root)
         .await
         .expect("remove duplex fixture");
+}
+
+#[tokio::test]
+async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
+    let payload = (0..(2 * MIN_PAYLOAD_ALLOWANCE))
+        .map(|index| ((index * 61 + index / 29) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("incoming duplex metainfo");
+    let pieces = Arc::new(
+        payload
+            .chunks(MIN_PAYLOAD_ALLOWANCE)
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>(),
+    );
+    let root = test_path("incoming-incomplete-upload");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create incoming duplex storage root");
+    let paths =
+        torrent_storage_paths_for_metainfo(&root, &metainfo).expect("incoming duplex paths");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let selection = FileSelection::new(&layout, &[]).expect("incoming duplex selection");
+    let mut storage =
+        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout, selection)
+            .await
+            .expect("create incoming duplex staging");
+    storage
+        .write_block(0, 0, pieces[0].clone())
+        .await
+        .expect("stage incoming complementary piece");
+    storage
+        .sync_piece(0)
+        .await
+        .expect("sync incoming local piece");
+    drop(storage);
+
+    let idle_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind idle content peer");
+    let idle_address = idle_listener.local_addr().expect("idle peer address");
+    let idle_task = tokio::spawn(serve_permanently_choked_peer(
+        idle_listener,
+        metainfo.info_hash,
+        vec![0],
+    ));
+
+    let peer_budget = PeerBudget::system_default();
+    let mse_dh = crate::MseDhWorkOwner::new();
+    let mut incoming_config =
+        IncomingPeerServiceConfig::new(IncomingTcpBootstrap::AutomaticLoopback)
+            .with_peer_budget(peer_budget.clone())
+            .with_mse_dh(mse_dh.clone());
+    incoming_config.peer_activity_timeout = Duration::from_secs(5);
+    incoming_config.no_request_timeout = Duration::from_secs(5);
+    incoming_config.inactivity_timeout = Duration::from_secs(5);
+    let service = IncomingPeerService::bind(incoming_config)
+        .await
+        .expect("bind incoming peer service")
+        .expect("incoming service enabled");
+    let control = DownloadControl::new();
+    control.set_incoming_peer_handle(service.handle());
+    let torrent_peers =
+        TorrentPeerHandle::new(Arc::new(control.clone())).expect("incoming torrent peer state");
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let download_task = tokio::spawn(resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(3)),
+            peer_budget,
+            mse_dh,
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: Some(torrent_peers),
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![true, false],
+            artifact_state: ResumeArtifactState::Staging,
+            resume_validation: ResumeValidationIntent::Full,
+            download_missing: true,
+            dht: None,
+            udp_trackers: None,
+        },
+        checkpoints,
+        control,
+    ));
+
+    timeout(Duration::from_secs(3), async {
+        loop {
+            if service.snapshot().registrations == 1 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("active incoming registration");
+
+    let (uploaded_sender, uploaded_receiver) = oneshot::channel();
+    let incoming_task = tokio::spawn(serve_incoming_duplex_complementary_peer(
+        service.listen_address(),
+        metainfo.info_hash,
+        pieces.clone(),
+        uploaded_sender,
+    ));
+    let report = timeout(Duration::from_secs(8), download_task)
+        .await
+        .expect("bounded incoming duplex download")
+        .expect("join incoming duplex download")
+        .expect("complete incoming duplex download");
+    let uploaded = timeout(Duration::from_secs(2), uploaded_receiver)
+        .await
+        .expect("bounded incoming upload")
+        .expect("incoming upload observed");
+    assert_eq!(uploaded, pieces[0]);
+    assert_eq!(report.verified_piece_count, 2);
+    timeout(Duration::from_secs(2), incoming_task)
+        .await
+        .expect("incoming duplex peer joined")
+        .expect("incoming duplex peer task");
+    timeout(Duration::from_secs(2), idle_task)
+        .await
+        .expect("idle peer joined")
+        .expect("idle peer task");
+    assert_eq!(service.snapshot().registrations, 0);
+    let terminal = service.shutdown().await.expect("shutdown incoming service");
+    assert_eq!(terminal.registrations, 0);
+    assert_eq!(terminal.established, 0);
+    assert_eq!(
+        tokio::fs::read(&paths.output)
+            .await
+            .expect("read incoming duplex publication"),
+        payload
+    );
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove incoming duplex fixture");
 }
 
 #[tokio::test]

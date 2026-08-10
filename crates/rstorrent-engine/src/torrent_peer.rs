@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::mse::MseMethod;
+use rstorrent_protocol::peer_wire::PeerMessage;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::network::{AddressFamilyPolicy, AddressFamilyPolicyHandle};
@@ -24,6 +26,47 @@ use crate::pex::{PexError, PexState};
 use crate::swarm::ConnectionId;
 
 const PEER_OBSERVATION_INTERVAL: Duration = Duration::from_millis(100);
+pub(crate) const INCOMING_CONTENT_EVENT_CAPACITY: usize = 64;
+pub(crate) const INCOMING_CONTENT_COMMAND_CAPACITY: usize = 16;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IncomingContentCapabilities {
+    pub(crate) fast: bool,
+}
+
+#[derive(Debug)]
+pub(crate) enum IncomingContentCommand {
+    Send(PeerMessage),
+}
+
+#[derive(Debug)]
+pub(crate) enum IncomingContentEvent {
+    Connected {
+        attachment: IncomingPeerAttachment,
+        capabilities: IncomingContentCapabilities,
+        commands: mpsc::Sender<IncomingContentCommand>,
+    },
+    Message {
+        attachment: IncomingPeerAttachment,
+        message: PeerMessage,
+    },
+    Stopped {
+        attachment: IncomingPeerAttachment,
+        failure: Option<PeerFailure>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IncomingContentRouteToken(u64);
+
+#[derive(Debug, Default)]
+struct IncomingContentRouteState {
+    next_generation: u64,
+    active: Option<(
+        IncomingContentRouteToken,
+        mpsc::Sender<IncomingContentEvent>,
+    )>,
+}
 
 pub trait TorrentPeerActivitySink: Send + Sync + fmt::Debug {
     fn record_peer_connections(&self, captured_at: Duration, peers: Vec<PeerConnectionObservation>);
@@ -332,6 +375,7 @@ struct TorrentPeerHandleInner {
     connection_cancellations: Mutex<BTreeMap<ConnectionId, CancellationToken>>,
     address_families: AddressFamilyPolicyHandle,
     sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
+    incoming_content: Mutex<IncomingContentRouteState>,
 }
 
 #[derive(Clone, Debug)]
@@ -340,6 +384,46 @@ pub struct TorrentPeerHandle {
 }
 
 impl TorrentPeerHandle {
+    pub(crate) fn install_incoming_content_route(
+        &self,
+        sender: mpsc::Sender<IncomingContentEvent>,
+    ) -> IncomingContentRouteToken {
+        let mut route = self
+            .inner
+            .incoming_content
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        route.next_generation = route.next_generation.wrapping_add(1).max(1);
+        let token = IncomingContentRouteToken(route.next_generation);
+        route.active = Some((token, sender));
+        token
+    }
+
+    pub(crate) fn remove_incoming_content_route(&self, token: IncomingContentRouteToken) {
+        let mut route = self
+            .inner
+            .incoming_content
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if route
+            .active
+            .as_ref()
+            .is_some_and(|(active, _)| *active == token)
+        {
+            route.active = None;
+        }
+    }
+
+    pub(crate) fn incoming_content_route(&self) -> Option<mpsc::Sender<IncomingContentEvent>> {
+        self.inner
+            .incoming_content
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .active
+            .as_ref()
+            .map(|(_, sender)| sender.clone())
+    }
+
     pub fn new(sink: Arc<dyn TorrentPeerActivitySink>) -> Result<Self, TorrentPeerError> {
         Self::with_registry_config(PeerRegistryConfig::default(), sink)
     }
@@ -355,6 +439,7 @@ impl TorrentPeerHandle {
                 connection_cancellations: Mutex::new(BTreeMap::new()),
                 address_families: AddressFamilyPolicyHandle::default(),
                 sink: Mutex::new(sink),
+                incoming_content: Mutex::new(IncomingContentRouteState::default()),
             }),
         })
     }
@@ -592,6 +677,18 @@ impl TorrentPeerHandle {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&connection);
+    }
+
+    pub(crate) fn cancel_incoming_content(&self, attachment: IncomingPeerAttachment) {
+        if let Some(cancellation) = self
+            .inner
+            .connection_cancellations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&attachment.connection_id)
+        {
+            cancellation.cancel();
+        }
     }
 
     pub(crate) fn set_sink(&self, sink: Arc<dyn TorrentPeerActivitySink>) {

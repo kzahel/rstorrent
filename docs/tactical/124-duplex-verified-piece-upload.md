@@ -1,12 +1,14 @@
-# Tactical 123: Duplex Verified-Piece Upload During Download
+# Tactical 124: Duplex Verified-Piece Upload During Download
 
 Status: In progress on 2026-08-10 after the maintainer authorized autonomous
 end-to-end implementation and bounded commits. The first deterministic slice
 now implements the compact availability epoch/revision/timeline authority,
 dynamic upload-request revalidation, exact ordinary/Fast initial forms, and
 generation-stamped active selective-storage read plans across staging,
-retained, part-file, cross-file, and padding routes. Socket, discovery,
-lifecycle, interoperability, and Android gates remain in progress. This
+retained, part-file, cross-file, and padding routes. Outgoing and accepted TCP
+content sockets now both carry duplex payload through the same swarm and
+upload owners. Discovery, lifecycle, interoperability, and Android gates
+remain in progress. This
 very-high-priority correctness repair ranks ahead of finite bandwidth controls
 and seeding-goal policy.
 
@@ -182,26 +184,26 @@ loopback success does not satisfy this stopping condition.
 
 | ID | Scenario | Required outcome |
 | --- | --- | --- |
-| T123-C01 | Empty active peer | A metadata-verified active torrent with zero verified pieces accepts a routed incoming peer, sends Fast `HaveNone` or the ordinary no-bitfield form, advertises its real eligible port, and may download from that peer without offering payload. |
-| T123-C02 | Resumed partial initial state | After conservative recheck restores a sparse have set, both initiated directions send the exact sparse initial bitfield before any HAVE update. Fast `HaveAll` is forbidden unless every metainfo piece is readable. |
-| T123-C03 | Newly verified piece | The write/hash join establishes one piece, the shared availability revision advances once, every current eligible peer eventually receives one nonredundant HAVE, and a subsequent legal request returns the exact bytes before torrent completion. |
-| T123-C04 | Request racing verification | A request received before authority publication cannot reserve a read. A Fast peer gets its exact legal terminal; an ordinary peer follows the existing choke/request policy. The same request after HAVE succeeds. |
-| T123-C05 | Outgoing duplex | RSTorrent dials a peer, downloads one piece from it, prefers it at the next ordinary unchoke evaluation, and uploads a different verified piece over that same socket while both torrents remain incomplete. |
-| T123-C06 | Incoming duplex | A peer dials RSTorrent, is attached to the active content generation, supplies one missing piece, then requests and receives a different local verified piece on that same socket. |
-| T123-C07 | Complementary swarms | RSTorrent and an independent peer start with disjoint verified subsets. Wire evidence proves at least one payload block in each direction before either reaches complete; both final payloads independently match all metainfo hashes. |
-| T123-C08 | Fast lifecycle | Choke, Allowed Fast, request, cancel, read completion, writer pressure, and disconnect retain Tactical `093`'s exactly-one-piece-or-reject terminal behavior during active download. |
-| T123-C09 | Slow HAVE consumer | A peer whose writer cannot consume availability changes does not stall hashing or other peers. It is closed once its bounded change cursor falls behind; a replacement receives one current initial snapshot. |
-| T123-C10 | Cross-file and padding | A 16 KiB request crossing wanted files and padding returns exact concatenated bytes and zeroes. Segment count, handles, read jobs, and response charge stay within declared limits. |
-| T123-C11 | Part-backed verified piece | A verified boundary piece whose skipped spans live in the current part slot is advertised and served. RSTorrent does not inherit JSTorrent's inability to serve `.parts` data. |
-| T123-C12 | Selection route change | Promotion or demotion enters the existing storage fence, drains or cancels affected upload plans, retains availability when the exact bytes remain readable, and closes informed generations before clearing any bit that becomes unreadable. |
-| T123-C13 | Read observation failure | Truncation, wrong kind/length, provider rejection, stale namespace generation, open failure, or short read retracts every affected piece, fails the current request safely, closes every connection that may rely on the old advertisement, and enters existing root/repair policy when applicable. |
-| T123-C14 | Hash failure | A failed received generation is never advertised, no upload read is planned from it, contributor recovery remains bounded, and a later successful generation produces exactly one availability transition. |
-| T123-C15 | Pause and force recheck | The serialized controller removes discovery/routing eligibility, chokes and joins uploads, closes peers, and begins checking only after no old-generation response can start. Re-entry publishes only the new verified/readable snapshot. |
-| T123-C16 | Publication handoff | The last required piece may be uploaded while incomplete. Publication then fences reads and either explicitly closes or safely drains each socket before the current complete registration takes authority; no request is served from mixed namespaces. |
-| T123-C17 | Tracker, DHT, and privacy | A public incomplete torrent with a route emits actual-port tracker and DHT traffic with nonzero `left`; a private counterpart emits actual-port tracker traffic but no DHT or PEX. Completed is sent only on real selected completion. |
-| T123-C18 | Mixed session pressure | At least three active incomplete torrents and existing complete seeds compete beneath the same eight slots, ten reads, 40 handles, and session peer budget. Download contributors rank first, optimistic rotation remains live, and no torrent creates a private upload pool. |
-| T123-C19 | Restart boundary | A checkpoint-dirty piece is uploadable before process death. After restart it is unavailable until conservative checking—or Tactical `120` if separately completed—re-establishes authority; no persisted bit is trusted merely because it was previously announced. |
-| T123-C20 | SAF parity | An AVD peer exchanges complementary pieces through current SAF staging and part routes, then a simulated grant/provider failure causes joined retraction and awaiting-storage behavior with no Kotlin payload callback and no leaked broker request. |
+| T124-C01 | Empty active peer | A metadata-verified active torrent with zero verified pieces accepts a routed incoming peer, sends Fast `HaveNone` or the ordinary no-bitfield form, advertises its real eligible port, and may download from that peer without offering payload. |
+| T124-C02 | Resumed partial initial state | After conservative recheck restores a sparse have set, both initiated directions send the exact sparse initial bitfield before any HAVE update. Fast `HaveAll` is forbidden unless every metainfo piece is readable. |
+| T124-C03 | Newly verified piece | The write/hash join establishes one piece, the shared availability revision advances once, every current eligible peer eventually receives one nonredundant HAVE, and a subsequent legal request returns the exact bytes before torrent completion. |
+| T124-C04 | Request racing verification | A request received before authority publication cannot reserve a read. A Fast peer gets its exact legal terminal; an ordinary peer follows the existing choke/request policy. The same request after HAVE succeeds. |
+| T124-C05 | Outgoing duplex | RSTorrent dials a peer, downloads one piece from it, prefers it at the next ordinary unchoke evaluation, and uploads a different verified piece over that same socket while both torrents remain incomplete. |
+| T124-C06 | Incoming duplex | A peer dials RSTorrent, is attached to the active content generation, supplies one missing piece, then requests and receives a different local verified piece on that same socket. |
+| T124-C07 | Complementary swarms | RSTorrent and an independent peer start with disjoint verified subsets. Wire evidence proves at least one payload block in each direction before either reaches complete; both final payloads independently match all metainfo hashes. |
+| T124-C08 | Fast lifecycle | Choke, Allowed Fast, request, cancel, read completion, writer pressure, and disconnect retain Tactical `093`'s exactly-one-piece-or-reject terminal behavior during active download. |
+| T124-C09 | Slow HAVE consumer | A peer whose writer cannot consume availability changes does not stall hashing or other peers. It is closed once its bounded change cursor falls behind; a replacement receives one current initial snapshot. |
+| T124-C10 | Cross-file and padding | A 16 KiB request crossing wanted files and padding returns exact concatenated bytes and zeroes. Segment count, handles, read jobs, and response charge stay within declared limits. |
+| T124-C11 | Part-backed verified piece | A verified boundary piece whose skipped spans live in the current part slot is advertised and served. RSTorrent does not inherit JSTorrent's inability to serve `.parts` data. |
+| T124-C12 | Selection route change | Promotion or demotion enters the existing storage fence, drains or cancels affected upload plans, retains availability when the exact bytes remain readable, and closes informed generations before clearing any bit that becomes unreadable. |
+| T124-C13 | Read observation failure | Truncation, wrong kind/length, provider rejection, stale namespace generation, open failure, or short read retracts every affected piece, fails the current request safely, closes every connection that may rely on the old advertisement, and enters existing root/repair policy when applicable. |
+| T124-C14 | Hash failure | A failed received generation is never advertised, no upload read is planned from it, contributor recovery remains bounded, and a later successful generation produces exactly one availability transition. |
+| T124-C15 | Pause and force recheck | The serialized controller removes discovery/routing eligibility, chokes and joins uploads, closes peers, and begins checking only after no old-generation response can start. Re-entry publishes only the new verified/readable snapshot. |
+| T124-C16 | Publication handoff | The last required piece may be uploaded while incomplete. Publication then fences reads and either explicitly closes or safely drains each socket before the current complete registration takes authority; no request is served from mixed namespaces. |
+| T124-C17 | Tracker, DHT, and privacy | A public incomplete torrent with a route emits actual-port tracker and DHT traffic with nonzero `left`; a private counterpart emits actual-port tracker traffic but no DHT or PEX. Completed is sent only on real selected completion. |
+| T124-C18 | Mixed session pressure | At least three active incomplete torrents and existing complete seeds compete beneath the same eight slots, ten reads, 40 handles, and session peer budget. Download contributors rank first, optimistic rotation remains live, and no torrent creates a private upload pool. |
+| T124-C19 | Restart boundary | A checkpoint-dirty piece is uploadable before process death. After restart it is unavailable until conservative checking—or Tactical `120` if separately completed—re-establishes authority; no persisted bit is trusted merely because it was previously announced. |
+| T124-C20 | SAF parity | An AVD peer exchanges complementary pieces through current SAF staging and part routes, then a simulated grant/provider failure causes joined retraction and awaiting-storage behavior with no Kotlin payload callback and no leaked broker request. |
 
 ## State And Wire Contract
 
@@ -517,7 +519,7 @@ JSTorrent confirms the intended first-party product behavior: downloading and
 uploading share one torrent peer set. Its current advertised bitfield masks
 pieces held in `.parts` because that uploader cannot serve them. RSTorrent
 does not adopt that limitation: its native selective storage already owns
-safe part-slot reads, so T123-C11 requires those verified bytes to be served
+safe part-slot reads, so T124-C11 requires those verified bytes to be served
 under the common route epoch.
 
 ## Staged Implementation
@@ -733,4 +735,36 @@ cargo test -p rstorrent-engine upload_scheduler --lib
 cargo test -p rstorrent-engine \
   outgoing_connection_uploads_verified_piece_before_torrent_completion --lib
 cargo clippy -p rstorrent-engine -p rstorrent-session -- -D warnings
+```
+
+### Accepted-socket duplex content path
+
+- The incoming socket task remains the sole owner of its framed IO, upload
+  state, metadata/PEX state, and cancellation. A generation-fenced per-torrent
+  route connects it to the existing content supervisor through a bounded
+  64-event channel and a bounded 16-command channel; there is no second
+  request scheduler or socket owner.
+- The content supervisor admits accepted connections into the same
+  `SwarmState`, connection ceiling, picker, request/cancel lifecycle, storage
+  pipeline, contributor accounting, and peer-integrity policy as initiated
+  sockets. Commands use nonblocking bounded admission so a peer flooding the
+  event side cannot create a cross-channel wait cycle; saturation closes the
+  content role through the registered connection cancellation owner.
+- Attachment generations fence late events. Closed command routes are pruned
+  even if the bounded best-effort terminal diagnostic cannot be enqueued, and
+  known-bad incoming contributors retain a pending ban until their last active
+  connection is removed.
+- Deterministic loopback evidence now proves the stronger incoming-duplex
+  case: a peer dials the application listener, receives the exact sparse
+  bitfield, uploads missing piece one, and receives verified piece zero over
+  that same accepted TCP connection before RSTorrent completes or publishes.
+
+Validation at this checkpoint:
+
+```text
+cargo test -p rstorrent-engine \
+  accepted_connection_uploads_and_downloads_before_torrent_completion
+cargo test -p rstorrent-engine \
+  known_bad_incoming_contributor_is_banned_after_disconnect
+cargo clippy -p rstorrent-engine -- -D warnings
 ```

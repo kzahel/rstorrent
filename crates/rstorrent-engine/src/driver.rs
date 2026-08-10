@@ -81,7 +81,10 @@ use crate::swarm::{
     PieceHashFailure, PiecePlan, ReceiveDisposition, RejectDisposition, RequestAssignment,
     SwarmConfig, SwarmError, SwarmState,
 };
-use crate::torrent_peer::{TorrentPeerError, TorrentPeerHandle};
+use crate::torrent_peer::{
+    INCOMING_CONTENT_EVENT_CAPACITY, IncomingContentCommand, IncomingContentEvent,
+    IncomingPeerAttachment, TorrentPeerError, TorrentPeerHandle,
+};
 use crate::tracker::{
     TrackerAction, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint, TrackerId,
     TrackerSchedule, TrackerWaitKind,
@@ -4026,6 +4029,7 @@ struct ContentSwarmDownload<'a> {
     active_content: ActiveSeedContent,
     active_registration: Option<(IncomingPeerHandle, SeedRegistrationToken)>,
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
+    incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
     metainfo: &'a Metainfo,
     layout: &'a TorrentLayout,
     resume: Option<&'a ResumeContext>,
@@ -4035,11 +4039,22 @@ struct ContentSwarmDownload<'a> {
     selected_written_bytes: usize,
     part_written_bytes: usize,
     last_piece: Option<VerifiedPiece>,
-    contributor_attempts: BTreeMap<ConnectionId, DialAttempt>,
+    contributor_attempts: BTreeMap<ConnectionId, ContentContributor>,
     selection: FileSelection,
     maximum_planned_bytes: usize,
     max_buffered_payload_bytes: usize,
     selection_revision: u64,
+}
+
+struct IncomingContentPeer {
+    attachment: IncomingPeerAttachment,
+    commands: mpsc::Sender<IncomingContentCommand>,
+}
+
+#[derive(Clone, Copy)]
+enum ContentContributor {
+    Outgoing(DialAttempt),
+    Incoming(IncomingPeerAttachment),
 }
 
 struct OutgoingUploadPeer {
@@ -4187,6 +4202,7 @@ impl<'a> ContentSwarmDownload<'a> {
             active_content,
             active_registration: None,
             outgoing_uploads: BTreeMap::new(),
+            incoming_content: BTreeMap::new(),
             metainfo,
             layout,
             resume,
@@ -4206,6 +4222,84 @@ impl<'a> ContentSwarmDownload<'a> {
 
     fn is_complete(&self) -> bool {
         self.state.is_complete()
+    }
+
+    async fn send_content_message(
+        &self,
+        sockets: &PeerSocketSet,
+        connection: ConnectionId,
+        message: PeerMessage,
+    ) -> Result<(), ()> {
+        if sockets.contains(connection) {
+            return sockets.send(connection, message).await.map_err(|_| ());
+        }
+        let commands = self
+            .incoming_content
+            .get(&connection)
+            .map(|peer| peer.commands.clone())
+            .ok_or(())?;
+        commands
+            .try_send(IncomingContentCommand::Send(message))
+            .map_err(|_| ())
+    }
+
+    async fn close_content_peer(
+        &mut self,
+        peers: &mut TorrentPeerCoordinator,
+        sockets: &mut PeerSocketSet,
+        connection: ConnectionId,
+        failure: Option<PeerFailure>,
+        removal: ConnectionRemoval,
+    ) -> Result<(), DownloadError> {
+        if let Some(incoming) = self.incoming_content.remove(&connection) {
+            peers.peers.cancel_incoming_content(incoming.attachment);
+            self.state
+                .remove_connection(connection, removal)
+                .map_err(DownloadError::Swarm)?;
+            self.contributor_attempts.remove(&connection);
+            return Ok(());
+        }
+        self.remove_outgoing_upload(connection).await;
+        match removal {
+            ConnectionRemoval::Replaced => {
+                replace_content_connection(peers, sockets, &mut self.state, connection).await
+            }
+            ConnectionRemoval::Disconnected | ConnectionRemoval::Cancelled => {
+                close_content_connection(peers, sockets, &mut self.state, connection, failure).await
+            }
+        }
+    }
+
+    fn shutdown_incoming_content(&mut self, peers: &TorrentPeerHandle) {
+        let incoming = std::mem::take(&mut self.incoming_content);
+        for (connection, peer) in incoming {
+            peers.cancel_incoming_content(peer.attachment);
+            let _ = self
+                .state
+                .remove_connection(connection, ConnectionRemoval::Disconnected);
+        }
+    }
+
+    fn prune_closed_incoming_content(&mut self) -> Result<(), DownloadError> {
+        let closed = self
+            .incoming_content
+            .iter()
+            .filter_map(|(connection, peer)| peer.commands.is_closed().then_some(*connection))
+            .collect::<Vec<_>>();
+        for connection in closed {
+            self.incoming_content.remove(&connection);
+            self.state
+                .remove_connection(connection, ConnectionRemoval::Disconnected)
+                .map_err(DownloadError::Swarm)?;
+            self.contributor_attempts.remove(&connection);
+        }
+        Ok(())
+    }
+
+    fn established_content_connections(&self, sockets: &PeerSocketSet) -> usize {
+        sockets
+            .established_len()
+            .saturating_add(self.incoming_content.len())
     }
 
     async fn install_outgoing_upload(
@@ -4636,14 +4730,22 @@ impl<'a> ContentSwarmDownload<'a> {
                         {
                             membership.record_downloaded(block.len());
                         }
-                        let source_attempt = sockets.attempt(connection).ok_or({
-                            DownloadError::Swarm(SwarmError::Invariant(
-                                "accepted block source socket is missing",
-                            ))
-                        })?;
+                        let source_attempt = if let Some(attempt) = sockets.attempt(connection) {
+                            ContentContributor::Outgoing(attempt)
+                        } else {
+                            ContentContributor::Incoming(
+                                self.incoming_content
+                                    .get(&connection)
+                                    .ok_or(DownloadError::Swarm(SwarmError::Invariant(
+                                        "accepted block source route is missing",
+                                    )))?
+                                    .attachment,
+                            )
+                        };
                         for cancellation in cancellations {
-                            let _ = sockets
-                                .send(
+                            let _ = self
+                                .send_content_message(
+                                    sockets,
                                     cancellation.connection,
                                     PeerMessage::Cancel(cancellation.block.request()),
                                 )
@@ -4976,8 +5078,9 @@ impl<'a> ContentSwarmDownload<'a> {
             }
         };
         for cancellation in cancellations {
-            let _ = sockets
-                .send(
+            let _ = self
+                .send_content_message(
+                    sockets,
                     cancellation.connection,
                     PeerMessage::Cancel(cancellation.block.request()),
                 )
@@ -5032,7 +5135,7 @@ impl<'a> ContentSwarmDownload<'a> {
         })
     }
 
-    fn contributor_attempt(&self, connection: ConnectionId) -> Option<DialAttempt> {
+    fn contributor_attempt(&self, connection: ConnectionId) -> Option<ContentContributor> {
         self.contributor_attempts.get(&connection).copied()
     }
 
@@ -5054,10 +5157,13 @@ fn record_verified_piece_contributors(
                 "verified piece contributor attempt is missing",
             ))
         })?;
-        match peers
-            .peers
-            .with_state(|state| state.registry.record_piece_passed(attempt))
-        {
+        let result = peers.peers.with_state(|state| match attempt {
+            ContentContributor::Outgoing(attempt) => state.registry.record_piece_passed(attempt),
+            ContentContributor::Incoming(attachment) => state
+                .registry
+                .record_incoming_piece_passed(attachment.record_id()),
+        });
+        match result {
             Ok(())
             | Err(PeerRegistryError::StaleAttempt(_))
             | Err(PeerRegistryError::UnknownRecord(_)) => {}
@@ -5082,10 +5188,15 @@ async fn record_failed_piece_contributors(
                 "failed piece contributor attempt is missing",
             ))
         })?;
-        match peers
-            .peers
-            .with_state(|state| state.registry.record_piece_failed(attempt, known_bad))
-        {
+        let result = peers.peers.with_state(|state| match attempt {
+            ContentContributor::Outgoing(attempt) => {
+                state.registry.record_piece_failed(attempt, known_bad)
+            }
+            ContentContributor::Incoming(attachment) => state
+                .registry
+                .record_incoming_piece_failed(attachment.record_id(), known_bad),
+        });
+        match result {
             Ok(PeerIntegrityAction::Retain) => {}
             Ok(PeerIntegrityAction::Ban) => banned.push((connection, attempt)),
             Err(PeerRegistryError::StaleAttempt(_)) | Err(PeerRegistryError::UnknownRecord(_)) => {}
@@ -5093,13 +5204,21 @@ async fn record_failed_piece_contributors(
         }
     }
     for (connection, attempt) in banned {
-        if sockets.contains(connection) {
-            close_content_connection(peers, sockets, &mut download.state, connection, None).await?;
+        download
+            .close_content_peer(
+                peers,
+                sockets,
+                connection,
+                None,
+                ConnectionRemoval::Disconnected,
+            )
+            .await?;
+        if let ContentContributor::Outgoing(attempt) = attempt {
+            peers
+                .peers
+                .with_state(|state| state.registry.ban(attempt.record_id()))
+                .map_err(DownloadError::PeerRegistry)?;
         }
-        peers
-            .peers
-            .with_state(|state| state.registry.ban(attempt.record_id()))
-            .map_err(DownloadError::PeerRegistry)?;
     }
     download.prune_contributor_attempts();
     Ok(())
@@ -5151,10 +5270,13 @@ fn fill_content_dials(
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
     info_hash: [u8; 20],
+    incoming_established: usize,
 ) -> Result<usize, DownloadError> {
     let mut started = 0;
     while content_dial_slot_available(
-        sockets.established_len(),
+        sockets
+            .established_len()
+            .saturating_add(incoming_established),
         sockets.pending_len(),
         state.config(),
         state.replacement_candidate(peers.elapsed()).is_some(),
@@ -5332,6 +5454,7 @@ async fn cleanup_content_connections(
 #[allow(clippy::large_enum_variant)]
 enum ContentSupervisorEvent {
     Peer(PeerSetEvent),
+    Incoming(IncomingContentEvent),
     Discovery(Option<ContentDiscoveryEvent>),
     Storage(ContentStorageCompletion),
     Selection(FileSelectionUpdate),
@@ -5366,7 +5489,7 @@ impl ContentSupervisorOwner {
 impl ContentSupervisorEvent {
     const fn owner(&self) -> Option<ContentSupervisorOwner> {
         match self {
-            Self::Peer(_) => Some(ContentSupervisorOwner::Peer),
+            Self::Peer(_) | Self::Incoming(_) => Some(ContentSupervisorOwner::Peer),
             Self::Discovery(_) => Some(ContentSupervisorOwner::Discovery),
             Self::Storage(_) => Some(ContentSupervisorOwner::Storage),
             Self::Selection(_) | Self::Deadline => None,
@@ -5376,6 +5499,7 @@ impl ContentSupervisorEvent {
 
 async fn next_content_supervisor_event(
     sockets: &mut PeerSocketSet,
+    incoming: &mut mpsc::Receiver<IncomingContentEvent>,
     discovery: &mut ContentDiscovery,
     storage: &mut ContentStoragePipeline,
     wait: ContentSupervisorWait<'_>,
@@ -5442,6 +5566,11 @@ async fn next_content_supervisor_event(
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
+            event = incoming.recv() => event
+                .map(ContentSupervisorEvent::Incoming)
+                .ok_or_else(|| DownloadError::PeerTask(
+                    "incoming content route stopped unexpectedly".to_owned()
+                )),
             event = discovery.next_event(), if discovery.is_active() => {
                 Ok(ContentSupervisorEvent::Discovery(event))
             }
@@ -5458,6 +5587,11 @@ async fn next_content_supervisor_event(
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
+            event = incoming.recv() => event
+                .map(ContentSupervisorEvent::Incoming)
+                .ok_or_else(|| DownloadError::PeerTask(
+                    "incoming content route stopped unexpectedly".to_owned()
+                )),
             event = discovery.next_event(), if discovery.is_active() => {
                 Ok(ContentSupervisorEvent::Discovery(event))
             }
@@ -5483,6 +5617,11 @@ async fn next_content_supervisor_event(
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
+            event = incoming.recv() => event
+                .map(ContentSupervisorEvent::Incoming)
+                .ok_or_else(|| DownloadError::PeerTask(
+                    "incoming content route stopped unexpectedly".to_owned()
+                )),
             _ = tokio::time::sleep(wait), if until_expiry.is_some() => {
                 Ok(ContentSupervisorEvent::Deadline)
             }
@@ -5496,6 +5635,7 @@ async fn next_content_supervisor_event(
 async fn run_selective_swarm_loop(
     peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
+    incoming_events: &mut mpsc::Receiver<IncomingContentEvent>,
     discovery: &mut ContentDiscovery,
     download: &mut ContentSwarmDownload<'_>,
 ) -> Result<(), DownloadError> {
@@ -5566,6 +5706,7 @@ async fn run_selective_swarm_loop(
     }
 
     loop {
+        download.prune_closed_incoming_content()?;
         let address_families = peers.peers.address_family_policy();
         sockets.cancel_disallowed(address_families);
         peers
@@ -5629,8 +5770,9 @@ async fn run_selective_swarm_loop(
         };
         let mut failed_connections = BTreeSet::new();
         for assignment in assignments {
-            if sockets
-                .send(
+            if download
+                .send_content_message(
+                    sockets,
                     assignment.connection,
                     PeerMessage::Request(assignment.block.request()),
                 )
@@ -5691,9 +5833,11 @@ async fn run_selective_swarm_loop(
                 sockets,
                 &mut download.state,
                 download.metainfo.info_hash,
+                download.incoming_content.len(),
             )?;
         }
         if sockets.established_len() == 0
+            && download.incoming_content.is_empty()
             && sockets.pending_len() == 0
             && !discovery.is_active()
             && download.control.snapshot().storage_jobs_pending == 0
@@ -5711,6 +5855,7 @@ async fn run_selective_swarm_loop(
             let storage = download.storage_pipeline_mut()?;
             next_content_supervisor_event(
                 sockets,
+                incoming_events,
                 discovery,
                 storage,
                 ContentSupervisorWait {
@@ -5776,6 +5921,91 @@ async fn run_selective_swarm_loop(
                 peers.last_error = Some(error);
             }
             ContentSupervisorEvent::Discovery(None) => {}
+            ContentSupervisorEvent::Incoming(IncomingContentEvent::Connected {
+                attachment,
+                capabilities,
+                commands,
+            }) => {
+                let id = attachment.connection_id();
+                if download.established_content_connections(sockets)
+                    >= download.state.config().max_established_connections
+                    || download.incoming_content.contains_key(&id)
+                    || sockets.contains(id)
+                {
+                    peers.peers.cancel_incoming_content(attachment);
+                    continue;
+                }
+                download
+                    .state
+                    .add_connection(id, peers.elapsed())
+                    .map_err(DownloadError::Swarm)?;
+                download
+                    .state
+                    .set_fast_extension(id, capabilities.fast)
+                    .map_err(DownloadError::Swarm)?;
+                download.incoming_content.insert(
+                    id,
+                    IncomingContentPeer {
+                        attachment,
+                        commands,
+                    },
+                );
+                if download
+                    .send_content_message(sockets, id, PeerMessage::Interested)
+                    .await
+                    .is_err()
+                {
+                    download
+                        .close_content_peer(
+                            peers,
+                            sockets,
+                            id,
+                            Some(PeerFailure::RemoteClosed),
+                            ConnectionRemoval::Disconnected,
+                        )
+                        .await?;
+                }
+            }
+            ContentSupervisorEvent::Incoming(IncomingContentEvent::Message {
+                attachment,
+                message,
+            }) => {
+                let id = attachment.connection_id();
+                if !download
+                    .incoming_content
+                    .get(&id)
+                    .is_some_and(|peer| peer.attachment == attachment)
+                {
+                    continue;
+                }
+                let disposition = download
+                    .handle_message(peers, sockets, id, message, peers.elapsed())
+                    .await?;
+                apply_content_disposition(peers, sockets, download, Some(id), disposition).await?;
+            }
+            ContentSupervisorEvent::Incoming(IncomingContentEvent::Stopped {
+                attachment,
+                failure,
+            }) => {
+                let id = attachment.connection_id();
+                if download
+                    .incoming_content
+                    .get(&id)
+                    .is_some_and(|peer| peer.attachment == attachment)
+                {
+                    download.incoming_content.remove(&id);
+                    download
+                        .state
+                        .remove_connection(id, ConnectionRemoval::Disconnected)
+                        .map_err(DownloadError::Swarm)?;
+                    download.contributor_attempts.remove(&id);
+                }
+                if let Some(failure) = failure {
+                    peers.last_error = Some(DownloadError::PeerTask(format!(
+                        "incoming content peer stopped: {failure:?}"
+                    )));
+                }
+            }
             ContentSupervisorEvent::Peer(PeerSetEvent::DialPhase { attempt }) => {
                 peers.transport_connected(attempt)?;
             }
@@ -5805,19 +6035,21 @@ async fn run_selective_swarm_loop(
                             )
                             .await?;
                         }
-                        if sockets.established_len()
+                        if download.established_content_connections(sockets)
                             >= download.state.config().max_established_connections
                         {
                             if let Some(replaced) =
                                 download.state.replacement_candidate(peers.elapsed())
                             {
-                                replace_content_connection(
-                                    peers,
-                                    sockets,
-                                    &mut download.state,
-                                    replaced,
-                                )
-                                .await?;
+                                download
+                                    .close_content_peer(
+                                        peers,
+                                        sockets,
+                                        replaced,
+                                        None,
+                                        ConnectionRemoval::Replaced,
+                                    )
+                                    .await?;
                             } else {
                                 peers.begin_disconnect(attempt, None)?;
                                 peers.connection_closed(attempt, None)?;
@@ -5949,15 +6181,15 @@ async fn apply_content_disposition(
             let connection = connection.ok_or(DownloadError::Swarm(SwarmError::Invariant(
                 "storage completion cannot close a peer",
             )))?;
-            download.remove_outgoing_upload(connection).await;
-            close_content_connection(
-                peers,
-                sockets,
-                &mut download.state,
-                connection,
-                Some(failure),
-            )
-            .await?;
+            download
+                .close_content_peer(
+                    peers,
+                    sockets,
+                    connection,
+                    Some(failure),
+                    ConnectionRemoval::Disconnected,
+                )
+                .await?;
         }
         ContentMessageDisposition::PieceVerified(contributors) => {
             record_verified_piece_contributors(peers, download, &contributors)?;
@@ -5974,17 +6206,28 @@ async fn download_content_swarm<'a>(
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
     let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone());
+    let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
+    let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
     let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);
     let result = match download.register_active_route(peers.peers.clone()).await {
         Ok(()) => {
-            run_selective_swarm_loop(peers, &mut sockets, &mut discovery, &mut download).await
+            run_selective_swarm_loop(
+                peers,
+                &mut sockets,
+                &mut incoming_events,
+                &mut discovery,
+                &mut download,
+            )
+            .await
         }
         Err(error) => Err(error),
     };
     let failure = result.as_ref().err().and_then(content_peer_failure);
+    peers.peers.remove_incoming_content_route(incoming_route);
     let discovery_cleanup = discovery.shutdown().await;
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
+    download.shutdown_incoming_content(&peers.peers);
     let registration_cleanup = download.unregister_active_route().await;
     download.shutdown_outgoing_uploads().await;
     let connection_cleanup = match (discovery_cleanup, peer_cleanup) {

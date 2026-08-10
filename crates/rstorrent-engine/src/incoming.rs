@@ -55,7 +55,10 @@ use crate::pex::{PexReceiveContext, PexReceiveDisposition};
 use crate::piece_availability::AvailabilityDrain;
 use crate::seed_content::SeedContent;
 use crate::swarm::MAX_FAST_ADVISORY_PIECES;
-use crate::torrent_peer::{IncomingPeerAttachment, TorrentPeerHandle};
+use crate::torrent_peer::{
+    INCOMING_CONTENT_COMMAND_CAPACITY, IncomingContentCapabilities, IncomingContentCommand,
+    IncomingContentEvent, IncomingPeerAttachment, TorrentPeerHandle,
+};
 use crate::upload::{MAX_GENERATED_ALLOWED_FAST_PIECES, generate_allowed_fast_set};
 use crate::upload::{UploadAction, UploadCloseReason, UploadPeerState, UploadRead};
 use crate::upload_scheduler::{UploadGrant, UploadSchedulerConfig, UploadSchedulerSnapshot};
@@ -2458,6 +2461,57 @@ struct IncomingPeerConnectionRuntime {
     upload_peer: crate::upload_scheduler::UploadPeerId,
     grants: tokio::sync::watch::Receiver<UploadGrant>,
     peer_upload: Arc<UploadCounter>,
+    content_bridge: Option<IncomingContentBridge>,
+}
+
+struct IncomingContentBridge {
+    attachment: IncomingPeerAttachment,
+    events: tokio::sync::mpsc::Sender<IncomingContentEvent>,
+    commands: tokio::sync::mpsc::Receiver<IncomingContentCommand>,
+}
+
+impl IncomingContentBridge {
+    async fn attach(
+        registration: &SeedRegistration,
+        attachment: IncomingPeerAttachment,
+        capabilities: IncomingPeerCapabilities,
+    ) -> Option<Self> {
+        let events = registration.torrent_peers.incoming_content_route()?;
+        let (commands, command_receiver) =
+            tokio::sync::mpsc::channel(INCOMING_CONTENT_COMMAND_CAPACITY);
+        events
+            .send(IncomingContentEvent::Connected {
+                attachment,
+                capabilities: IncomingContentCapabilities {
+                    fast: capabilities.fast,
+                },
+                commands,
+            })
+            .await
+            .ok()?;
+        Some(Self {
+            attachment,
+            events,
+            commands: command_receiver,
+        })
+    }
+
+    async fn forward(&self, message: PeerMessage) -> Result<(), ()> {
+        self.events
+            .send(IncomingContentEvent::Message {
+                attachment: self.attachment,
+                message,
+            })
+            .await
+            .map_err(|_| ())
+    }
+
+    fn stopped(&self, failure: Option<PeerFailure>) {
+        let _ = self.events.try_send(IncomingContentEvent::Stopped {
+            attachment: self.attachment,
+            failure,
+        });
+    }
 }
 
 #[derive(Default)]
@@ -2591,12 +2645,16 @@ async fn run_incoming_peer(
         Ok(io) => io,
         Err(_) => return (PeerTermination::Protocol, peer_attachment),
     };
+    let content_bridge =
+        IncomingContentBridge::attach(&registration, peer_attachment.attachment, capabilities)
+            .await;
     let mut runtime = IncomingPeerConnectionRuntime {
         shared,
         attachment: peer_attachment,
         upload_peer,
         grants,
         peer_upload,
+        content_bridge,
     };
     let termination = run_incoming_peer_loop(
         &mut io,
@@ -2608,6 +2666,9 @@ async fn run_incoming_peer(
         &mut runtime,
     )
     .await;
+    if let Some(bridge) = &runtime.content_bridge {
+        bridge.stopped(termination.peer_failure());
+    }
     runtime
         .attachment
         .begin_disconnect(termination.peer_failure());
@@ -2799,6 +2860,14 @@ async fn run_incoming_peer_loop(
             _ = budget_cancellation.cancelled() => PeerEvent::Cancelled,
             _ = maintenance.tick() => PeerEvent::Maintenance,
             changed = grants.changed() => PeerEvent::Grant(changed.map(|()| *grants.borrow_and_update())),
+            command = async {
+                runtime.content_bridge
+                    .as_mut()
+                    .expect("content command branch is guarded")
+                    .commands
+                    .recv()
+                    .await
+            }, if runtime.content_bridge.is_some() => PeerEvent::ContentCommand(command),
             joined = async {
                 let (_, task) = read.as_mut().expect("read branch is guarded");
                 task.await
@@ -2894,6 +2963,17 @@ async fn run_incoming_peer_loop(
                 join_read(read.take()).await;
                 return PeerTermination::Cancelled;
             }
+            PeerEvent::ContentCommand(Some(IncomingContentCommand::Send(message))) => {
+                if io.queue_message(&message).is_err() {
+                    join_read(read.take()).await;
+                    return PeerTermination::Closed;
+                }
+                Vec::new()
+            }
+            PeerEvent::ContentCommand(None) => {
+                runtime.content_bridge = None;
+                Vec::new()
+            }
             PeerEvent::Message(Ok(None)) => Vec::new(),
             PeerEvent::Message(Err(crate::peer_io::PeerIoError::Frame(_))) => {
                 join_read(read.take()).await;
@@ -2917,6 +2997,23 @@ async fn run_incoming_peer_loop(
                 {
                     join_read(read.take()).await;
                     return PeerTermination::Protocol;
+                }
+                if matches!(
+                    message,
+                    PeerMessage::Choke
+                        | PeerMessage::Unchoke
+                        | PeerMessage::Have(_)
+                        | PeerMessage::Bitfield(_)
+                        | PeerMessage::HaveAll
+                        | PeerMessage::HaveNone
+                        | PeerMessage::RejectRequest(_)
+                        | PeerMessage::Piece { .. }
+                        | PeerMessage::SuggestPiece(_)
+                        | PeerMessage::AllowedFast(_)
+                ) && let Some(bridge) = runtime.content_bridge.as_ref()
+                    && bridge.forward(message.clone()).await.is_err()
+                {
+                    runtime.content_bridge = None;
                 }
                 if matches!(
                     message,
@@ -3116,7 +3213,7 @@ fn validate_incoming_fast_message(
         *initial_availability = true;
         return Ok(());
     }
-    if initial || matches!(message, PeerMessage::RejectRequest(_)) {
+    if initial {
         return Err(());
     }
     let target = match message {
@@ -3237,6 +3334,7 @@ async fn apply_upload_actions(
 enum PeerEvent {
     Cancelled,
     Maintenance,
+    ContentCommand(Option<IncomingContentCommand>),
     Read(Result<Result<Vec<u8>, ()>, tokio::task::JoinError>),
     Grant(Result<UploadGrant, tokio::sync::watch::error::RecvError>),
     Message(Result<Option<PeerMessage>, crate::peer_io::PeerIoError>),

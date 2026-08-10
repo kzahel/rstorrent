@@ -213,6 +213,7 @@ pub struct PeerRecord {
     integrity: PeerIntegrity,
     last_connection_attempt: Option<DialAttemptId>,
     incoming_connections: u32,
+    ban_when_idle: bool,
 }
 
 impl PeerRecord {
@@ -681,6 +682,7 @@ impl PeerRegistry {
             integrity: PeerIntegrity::default(),
             last_connection_attempt: None,
             incoming_connections: 0,
+            ban_when_idle: false,
         });
         self.next_record_id = next_record_id;
         self.next_observation_order = next_observation_order;
@@ -796,6 +798,7 @@ impl PeerRegistry {
         if let Some(failure) = failure {
             apply_failure(record, now, failure, backoff)?;
         }
+        settle_pending_ban(record);
         Ok(())
     }
 
@@ -808,12 +811,15 @@ impl PeerRegistry {
         let backoff = self.config.reconnect_backoff;
         let record = self.record_for_attempt_mut(attempt, false)?;
         record.phase = PeerPhase::Idle;
-        apply_failure(record, now, failure, backoff)
+        apply_failure(record, now, failure, backoff)?;
+        settle_pending_ban(record);
+        Ok(())
     }
 
     pub fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), PeerRegistryError> {
         let record = self.record_for_attempt_mut(attempt, false)?;
         record.phase = PeerPhase::Idle;
+        settle_pending_ban(record);
         Ok(())
     }
 
@@ -847,6 +853,7 @@ impl PeerRegistry {
         if let Some(failure) = failure {
             apply_failure(record, now, failure, backoff)?;
         }
+        settle_pending_ban(record);
         Ok(())
     }
 
@@ -862,6 +869,7 @@ impl PeerRegistry {
         match record.phase {
             PeerPhase::Idle | PeerPhase::Banned => {
                 record.phase = PeerPhase::Banned;
+                record.ban_when_idle = false;
                 Ok(())
             }
             PeerPhase::Dialing { .. } | PeerPhase::Connected { .. } => {
@@ -888,10 +896,54 @@ impl PeerRegistry {
         record.integrity.hash_failures = record.integrity.hash_failures.saturating_add(1);
         record.integrity.on_parole = true;
         if known_bad || record.integrity.trust_points <= -7 {
+            record.ban_when_idle = true;
             Ok(PeerIntegrityAction::Ban)
         } else {
             Ok(PeerIntegrityAction::Retain)
         }
+    }
+
+    pub(crate) fn record_incoming_piece_passed(
+        &mut self,
+        record_id: PeerRecordId,
+    ) -> Result<(), PeerRegistryError> {
+        let record = self.record_for_incoming_integrity_mut(record_id)?;
+        record.integrity.trust_points = record.integrity.trust_points.saturating_add(1).min(8);
+        record.integrity.valid_pieces = record.integrity.valid_pieces.saturating_add(1);
+        record.integrity.on_parole = false;
+        Ok(())
+    }
+
+    pub(crate) fn record_incoming_piece_failed(
+        &mut self,
+        record_id: PeerRecordId,
+        known_bad: bool,
+    ) -> Result<PeerIntegrityAction, PeerRegistryError> {
+        let record = self.record_for_incoming_integrity_mut(record_id)?;
+        record.integrity.trust_points = record.integrity.trust_points.saturating_sub(2).max(-7);
+        record.integrity.hash_failures = record.integrity.hash_failures.saturating_add(1);
+        record.integrity.on_parole = true;
+        if known_bad || record.integrity.trust_points <= -7 {
+            record.ban_when_idle = true;
+            Ok(PeerIntegrityAction::Ban)
+        } else {
+            Ok(PeerIntegrityAction::Retain)
+        }
+    }
+
+    fn record_for_incoming_integrity_mut(
+        &mut self,
+        record_id: PeerRecordId,
+    ) -> Result<&mut PeerRecord, PeerRegistryError> {
+        let record = self
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .ok_or(PeerRegistryError::UnknownRecord(record_id))?;
+        if record.incoming_connections == 0 {
+            return Err(PeerRegistryError::UnknownRecord(record_id));
+        }
+        Ok(record)
     }
 
     fn record_index(&self, id: PeerRecordId) -> Option<usize> {
@@ -957,6 +1009,13 @@ impl PeerRegistry {
             })
             .max_by(|(_, left), (_, right)| compare_eviction_candidates(left, right, self.config))
             .map(|(index, _)| index)
+    }
+}
+
+fn settle_pending_ban(record: &mut PeerRecord) {
+    if record.ban_when_idle && record.incoming_connections == 0 && record.phase == PeerPhase::Idle {
+        record.phase = PeerPhase::Banned;
+        record.ban_when_idle = false;
     }
 }
 
@@ -1348,6 +1407,46 @@ mod tests {
         assert_eq!(known_bad.trust_points, -3);
         assert_eq!(known_bad.hash_failures, 2);
         assert!(known_bad.on_parole);
+    }
+
+    #[test]
+    fn known_bad_incoming_contributor_is_banned_after_disconnect() {
+        let mut registry = PeerRegistry::new(config(1)).expect("registry");
+        let record_id = registry
+            .observe(
+                PeerObservation::new(endpoint(6_881), PeerSource::Incoming, false),
+                Duration::ZERO,
+            )
+            .expect("incoming observation")
+            .record_id;
+        registry
+            .incoming_connected(record_id, Duration::ZERO)
+            .expect("incoming connected");
+
+        assert_eq!(
+            registry
+                .record_incoming_piece_failed(record_id, true)
+                .expect("known bad incoming piece"),
+            PeerIntegrityAction::Ban
+        );
+        assert_eq!(
+            PeerSelector.eligibility(
+                registry.get(record_id).expect("active incoming record"),
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+                config(1),
+            ),
+            DialEligibility::Connected
+        );
+
+        registry
+            .incoming_closed(record_id, Duration::from_secs(1), None)
+            .expect("incoming closed");
+        assert_eq!(
+            registry.get(record_id).expect("banned record").phase(),
+            PeerPhase::Banned
+        );
     }
 
     #[test]
