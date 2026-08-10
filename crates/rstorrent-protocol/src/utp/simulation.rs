@@ -648,6 +648,7 @@ mod tests {
     const TRANSFER_BYTES: usize = 4 * 1024 * 1024;
     const SIMULATION_TICK_MICROS: u64 = 250;
     const MAX_SCENARIO_MICROS: u64 = 300_000_000;
+    type LossBatch = (u64, u16, Option<u16>, Vec<u16>, u64, u64);
 
     #[derive(Clone, Debug)]
     struct UtpScenario {
@@ -670,6 +671,7 @@ mod tests {
         retransmissions: u64,
         maximum_transmissions_per_sequence: u8,
         mtu_probes: u64,
+        loss_batches: Vec<LossBatch>,
         sender: crate::utp::TransportSnapshot,
         receiver: crate::utp::TransportSnapshot,
         link: LinkSnapshot,
@@ -704,6 +706,14 @@ mod tests {
                 .div_ceil(100)
                 .saturating_sub(1);
             samples[index]
+        }
+
+        fn maximum_queue_delay(&self) -> u32 {
+            self.queue_delay_samples_micros
+                .iter()
+                .copied()
+                .max()
+                .expect("scenario must observe acknowledged payload")
         }
     }
 
@@ -804,6 +814,7 @@ mod tests {
         let mut transmissions_by_sequence = BTreeMap::<SequenceNumber, u8>::new();
         let mut maximum_transmissions_per_sequence = 0;
         let mut mtu_probes = 0_u64;
+        let mut loss_batches = Vec::new();
         let mut receive_packet_high_water = 0;
         let mut receive_byte_high_water = 0;
         let deadline = started_at_micros.saturating_add(MAX_SCENARIO_MICROS);
@@ -843,6 +854,8 @@ mod tests {
                         }
                     }
                     Direction::BToA => {
+                        let acknowledgement_number = packet.header.acknowledgement_number.get();
+                        let before = sender.snapshot();
                         let outcome = sender
                             .incoming(
                                 packet,
@@ -850,6 +863,32 @@ mod tests {
                                 TimestampMicros::new(scenario.sender_clock.timestamp(now_micros)),
                             )
                             .expect("receive uTP acknowledgement");
+                        let after = sender.snapshot();
+                        if let Some(acknowledgement) = &outcome.connection.acknowledgement
+                            && !acknowledgement.loss_signals.is_empty()
+                        {
+                            loss_batches.push((
+                                now_micros,
+                                acknowledgement_number,
+                                before
+                                    .mtu
+                                    .active_probe
+                                    .map(|probe| probe.sequence_number.get()),
+                                acknowledgement
+                                    .loss_signals
+                                    .iter()
+                                    .map(|sequence| sequence.get())
+                                    .collect(),
+                                after
+                                    .congestion
+                                    .loss_reductions
+                                    .saturating_sub(before.congestion.loss_reductions),
+                                after
+                                    .congestion
+                                    .ignored_loss_events
+                                    .saturating_sub(before.congestion.ignored_loss_events),
+                            ));
+                        }
                         if outcome
                             .connection
                             .acknowledgement
@@ -971,6 +1010,7 @@ mod tests {
                     retransmissions,
                     maximum_transmissions_per_sequence,
                     mtu_probes,
+                    loss_batches,
                     sender: sender_snapshot,
                     receiver: receiver_snapshot,
                     link: link_snapshot,
@@ -1245,5 +1285,66 @@ mod tests {
         assert_eq!(report.link.pending_events, 0);
         assert_eq!(report.link.pending_event_bytes, 0);
         assert_eq!(report.link.queue_bytes, 0);
+    }
+
+    #[test]
+    fn bounded_queue_reaches_target_without_persistent_bufferbloat() {
+        let mut scenario = default_utp_scenario();
+        scenario.link.queue_capacity_bytes = 55_000;
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.maximum_queue_delay() >= 80_000, "report={report:?}");
+        assert!(
+            report.queue_delay_percentile(95) <= 150_000,
+            "report={report:?}"
+        );
+        assert!(report.link.queue_byte_high_water <= 55_000);
+    }
+
+    #[test]
+    fn clock_offset_wrap_and_drift_keep_delay_control_bounded() {
+        let mut scenario = default_utp_scenario();
+        scenario.sender_clock =
+            EndpointClock::new(i64::from(u32::MAX) - 1_000_000, -1_000).expect("sender clock");
+        scenario.receiver_clock = EndpointClock::new(-3_000_000, 1_000).expect("receiver clock");
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.started_at_micros < u64::from(u32::MAX));
+        assert!(report.completed_at_micros > 1_000_000);
+        assert!(
+            report.queue_delay_percentile(95) <= 150_000,
+            "report={report:?}"
+        );
+        assert!(report.sender.congestion.congestion_window_bytes <= MAX_SENT_BYTES);
+        assert_ne!(
+            report.sender.connection.phase,
+            crate::utp::ConnectionPhase::Reset
+        );
+    }
+
+    #[test]
+    fn df_black_hole_converges_mtu_without_congestion_reduction() {
+        let mut scenario = default_utp_scenario();
+        scenario.link.path_udp_payload_mtu = 1_280;
+        let report = run_utp_scenario(scenario);
+
+        assert_eq!(report.received_hash, report.source_hash);
+        assert!(report.link.mtu_black_hole_drops > 0, "report={report:?}");
+        assert!(report.retransmissions > 0);
+        assert!(report.sender.mtu.search_complete, "report={report:?}");
+        assert!(report.sender.mtu.probes_started <= 10, "report={report:?}");
+        assert!(report.sender.mtu.probes_failed > 0);
+        assert!(report.sender.mtu.floor_datagram_bytes <= 1_280);
+        assert!(1_280 - report.sender.mtu.floor_datagram_bytes <= 16);
+        assert_eq!(report.link.queue_drops, 0, "report={report:?}");
+        assert_eq!(
+            report.sender.congestion.loss_reductions, 0,
+            "loss batches={:?}",
+            report.loss_batches
+        );
+        assert_eq!(report.sender.congestion.timeout_collapses, 0);
+        assert!(report.sender.congestion.ignored_loss_events >= report.sender.mtu.probes_failed);
     }
 }

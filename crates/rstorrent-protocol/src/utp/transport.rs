@@ -696,13 +696,22 @@ impl TransportState {
 
             let only_loss = acknowledgement.loss_signals.len() == 1;
             for sequence_number in &acknowledgement.loss_signals {
-                self.in_flight.remove(sequence_number);
-                let is_active_probe = self
-                    .mtu
-                    .snapshot()
+                let mtu_snapshot = self.mtu.snapshot();
+                let is_active_probe = mtu_snapshot
                     .active_probe
                     .is_some_and(|probe| probe.sequence_number == *sequence_number);
-                let isolated_probe = only_loss && is_active_probe;
+                let is_fragmentable_probe_retry = mtu_snapshot
+                    .fragmentable_retry
+                    .is_some_and(|probe| probe.sequence_number == *sequence_number);
+                let isolated_probe = only_loss && (is_active_probe || is_fragmentable_probe_retry);
+                if only_loss
+                    && is_fragmentable_probe_retry
+                    && self.in_flight.contains_key(sequence_number)
+                {
+                    self.congestion.on_loss(now_micros, smoothed_rtt, true)?;
+                    continue;
+                }
+                self.in_flight.remove(sequence_number);
                 if is_active_probe {
                     self.mtu.on_probe_loss(
                         *sequence_number,
