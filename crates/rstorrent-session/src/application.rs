@@ -19,11 +19,11 @@ use rstorrent_engine::{
     NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
     PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient, PlatformStorageFailureKind,
     PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SessionDownloadResourceSnapshot,
-    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
-    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
-    StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
-    TrackerSource, TrackerTransport, decide_namespace_transition,
+    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
+    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig,
+    TrackerEndpoint, TrackerSource, TrackerTransport, decide_namespace_transition,
     download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
     torrent_storage_paths, verify_prepared_platform_files,
 };
@@ -3742,9 +3742,9 @@ fn handle_task_outcome(
                 .map_err(|error| error.to_string())
         }
         Err(DownloadError::SelectiveStorage(error))
-            if error.platform_failure_kind()
-                == Some(PlatformStorageFailureKind::GrantUnavailable) =>
+            if active_storage_failure_is_awaiting(&error) =>
         {
+            let failure_kind = error.platform_failure_kind();
             let detail = error.to_string();
             {
                 let mut store = store
@@ -3767,9 +3767,13 @@ fn handle_task_outcome(
                 .record_diagnostic(
                     DiagnosticSeverity::Warning,
                     category::PLATFORM_ADAPTER,
-                    "platform_storage_grant_unavailable",
+                    if failure_kind == Some(PlatformStorageFailureKind::GrantUnavailable) {
+                        "platform_storage_grant_unavailable"
+                    } else {
+                        "storage_temporarily_unavailable"
+                    },
                     Some(torrent_id),
-                    "Platform storage grant is unavailable",
+                    "Torrent storage is temporarily unavailable",
                     &[("detail", &detail)],
                 )
                 .map_err(|error| error.to_string())
@@ -3813,6 +3817,20 @@ fn handle_task_outcome(
             if cleanup_failed { Err(detail) } else { Ok(()) }
         }
     }
+}
+
+fn active_storage_failure_is_awaiting(error: &SelectiveStorageError) -> bool {
+    error.platform_failure_kind().is_some_and(|kind| {
+        matches!(
+            kind,
+            PlatformStorageFailureKind::GrantUnavailable
+                | PlatformStorageFailureKind::PermissionDenied
+                | PlatformStorageFailureKind::ProviderRefused
+                | PlatformStorageFailureKind::NonSeekable
+                | PlatformStorageFailureKind::Cancelled
+                | PlatformStorageFailureKind::DeadlineExceeded
+        )
+    }) || matches!(error, SelectiveStorageError::Io { .. })
 }
 
 fn is_discovery_exhaustion(error: &DownloadError) -> bool {
@@ -4433,6 +4451,7 @@ impl ViewActivitySink {
                 );
             }
             DownloadActivityEvent::FastResumeRejected {
+                generation,
                 reason,
                 committed_pieces,
                 relevant_files,
@@ -4447,6 +4466,7 @@ impl ViewActivitySink {
                     "Resume validation selected a complete torrent-local check",
                     Vec::new(),
                     vec![
+                        DiagnosticField::count("generation", generation),
                         DiagnosticField::text("reason", format!("{reason:?}")),
                         DiagnosticField::count(
                             "committed_pieces",

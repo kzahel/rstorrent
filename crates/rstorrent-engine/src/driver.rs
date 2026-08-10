@@ -6040,12 +6040,12 @@ async fn run_selective_download(
     if let (Some(resume), Some(resumed)) = (&resume, resumed_storage) {
         let validation_started = Instant::now();
         let validation = if resume.validation == ResumeValidationIntent::FastEligible {
-            Some(
-                storage
-                    .validate_fast_resume(resumed)
-                    .await
-                    .map_err(DownloadError::SelectiveStorage)?,
-            )
+            Some(tokio::select! {
+                validation = storage.validate_fast_resume(resumed) => {
+                    validation.map_err(DownloadError::SelectiveStorage)?
+                }
+                _ = control.cancelled() => return Err(DownloadError::Cancelled),
+            })
         } else {
             None
         };
@@ -6070,25 +6070,7 @@ async fn run_selective_download(
                     hash_jobs: validation.hash_jobs,
                 });
             }
-            ResumeAdmissionOutcome::NeedsFullCheck(reason) => {
-                control.emit(DownloadActivityEvent::FastResumeRejected {
-                    reason,
-                    committed_pieces: validation.as_ref().map_or_else(
-                        || verified_pieces.iter().filter(|piece| **piece).count(),
-                        |validation| validation.committed_pieces,
-                    ),
-                    relevant_files: validation
-                        .as_ref()
-                        .map_or(0, |result| result.relevant_files),
-                    artifact_observations: validation
-                        .as_ref()
-                        .map_or(0, |result| result.artifact_observations),
-                    part_header_bytes: validation
-                        .as_ref()
-                        .map_or(0, |result| result.part_header_bytes),
-                    elapsed_millis,
-                });
-            }
+            ResumeAdmissionOutcome::NeedsFullCheck(_) => {}
             ResumeAdmissionOutcome::AwaitingStorage => {
                 return Err(DownloadError::SelectiveStorage(
                     SelectiveStorageError::InvalidStorageOperation(
@@ -6111,6 +6093,27 @@ async fn run_selective_download(
                 .checkpoints
                 .recheck_started()
                 .map_err(DownloadError::Checkpoint)?;
+            let ResumeAdmissionOutcome::NeedsFullCheck(reason) = outcome else {
+                unreachable!("non-checking outcomes return before checker admission");
+            };
+            control.emit(DownloadActivityEvent::FastResumeRejected {
+                generation,
+                reason,
+                committed_pieces: validation.as_ref().map_or_else(
+                    || verified_pieces.iter().filter(|piece| **piece).count(),
+                    |validation| validation.committed_pieces,
+                ),
+                relevant_files: validation
+                    .as_ref()
+                    .map_or(0, |result| result.relevant_files),
+                artifact_observations: validation
+                    .as_ref()
+                    .map_or(0, |result| result.artifact_observations),
+                part_header_bytes: validation
+                    .as_ref()
+                    .map_or(0, |result| result.part_header_bytes),
+                elapsed_millis,
+            });
             control.checker_started(generation, layout.piece_count());
             let previous = verified_pieces.clone();
             let checked = if resumed == ResumedStorage::Created {

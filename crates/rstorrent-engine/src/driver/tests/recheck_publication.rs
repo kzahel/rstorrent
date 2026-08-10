@@ -321,6 +321,84 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
 }
 
 #[tokio::test]
+async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
+    let payload = vec![0x51; MIN_PAYLOAD_ALLOWANCE];
+    let raw_info = single_file_info_with_piece_length(&payload, MIN_PAYLOAD_ALLOWANCE);
+    let metainfo = Metainfo::from_info_bytes(&raw_info).expect("platform resume metainfo");
+    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let (client, broker) = crate::platform_storage_channel();
+    let pool = crate::StorageFilePool::new(4, Some(client)).expect("platform storage pool");
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let activity = Arc::new(RecordingActivitySink::default());
+    let control = DownloadControl::new();
+    control.set_activity_sink(activity.clone());
+    control.set_platform_storage(crate::PlatformStorageSpec {
+        pool: pool.clone(),
+        root_id: "downloads".to_owned(),
+        storage_id: hex(&metainfo.info_hash),
+        publication_name: metainfo.name.clone(),
+        publication_shape: crate::PublicationShape::from_metainfo(&metainfo),
+        namespace_generation: 1,
+        managed: true,
+        published: true,
+    });
+    let unused_peer = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind unused platform peer");
+    let peer_address = unused_peer.local_addr().expect("unused peer address");
+    let task = tokio::spawn(resume_magnet_with_control(
+        ResumableMagnetDownloadConfig {
+            magnet: format!(
+                "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
+                hex(&metainfo.info_hash)
+            ),
+            storage_root: test_path("unused-platform-root"),
+            network: loopback_network(Duration::from_secs(1)),
+            peer_budget: PeerBudget::system_default(),
+            mse_dh: crate::MseDhWorkOwner::new(),
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: None,
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            verified_info: Some(raw_info),
+            verified_pieces: vec![true; layout.piece_count()],
+            artifact_state: ResumeArtifactState::Published,
+            resume_validation: ResumeValidationIntent::FastEligible,
+            download_missing: true,
+            dht: None,
+            udp_trackers: Some(Vec::new()),
+        },
+        checkpoints.clone(),
+        control.clone(),
+    ));
+    let request = broker.next_request().await.expect("validation observation");
+    assert_eq!(request.operation, crate::PlatformStorageOperation::Observe);
+    assert_eq!(pool.snapshot().platform_pending, 1);
+    control.cancel();
+    assert!(matches!(
+        timeout(Duration::from_secs(1), task)
+            .await
+            .expect("cancelled validation timed out")
+            .expect("join cancelled validation"),
+        Err(DownloadError::Cancelled)
+    ));
+    assert_eq!(pool.snapshot().platform_pending, 0);
+    assert!(checkpoints.rechecks().is_empty());
+    let events = activity
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        DownloadActivityEvent::FastResumeAccepted { .. }
+            | DownloadActivityEvent::FastResumeRejected { .. }
+    )));
+    drop(events);
+    broker.cancel_all();
+    pool.shutdown().await.expect("shutdown platform pool");
+}
+
+#[tokio::test]
 async fn full_recheck_verifies_readable_skipped_pieces() {
     let first = vec![0x31; MIN_PAYLOAD_ALLOWANCE];
     let second = vec![0x72; MIN_PAYLOAD_ALLOWANCE];

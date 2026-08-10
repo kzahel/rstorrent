@@ -384,6 +384,27 @@ pub struct PlatformStorageClient {
     health_wake: Arc<Mutex<Option<Arc<Notify>>>>,
 }
 
+struct PlatformPendingGuard {
+    pending: Arc<AtomicUsize>,
+}
+
+impl PlatformPendingGuard {
+    fn begin(client: &PlatformStorageClient) -> Self {
+        let pending = client.pending.fetch_add(1, Ordering::AcqRel) + 1;
+        update_high_water(&client.pending_high_water, pending);
+        Self {
+            pending: client.pending.clone(),
+        }
+    }
+}
+
+impl Drop for PlatformPendingGuard {
+    fn drop(&mut self) {
+        let previous = self.pending.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0, "platform pending request count underflowed");
+    }
+}
+
 impl PlatformStorageClient {
     async fn open(
         &self,
@@ -408,10 +429,8 @@ impl PlatformStorageClient {
             .send(PendingPlatformStorageRequest { request, reply })
             .await
             .map_err(|_| StorageFilePoolError::PlatformUnavailable)?;
-        let pending = self.pending.fetch_add(1, Ordering::AcqRel) + 1;
-        update_high_water(&self.pending_high_water, pending);
+        let _pending = PlatformPendingGuard::begin(self);
         let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
-        self.pending.fetch_sub(1, Ordering::AcqRel);
         match result {
             Ok(Ok(Ok(PlatformStorageResponse::File(file)))) => Ok(file),
             Ok(Ok(Ok(PlatformStorageResponse::Deleted))) => Err(
@@ -494,10 +513,8 @@ impl PlatformStorageClient {
             .send(PendingPlatformStorageRequest { request, reply })
             .await
             .map_err(|_| StorageFilePoolError::PlatformUnavailable)?;
-        let pending = self.pending.fetch_add(1, Ordering::AcqRel) + 1;
-        update_high_water(&self.pending_high_water, pending);
+        let _pending = PlatformPendingGuard::begin(self);
         let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
-        self.pending.fetch_sub(1, Ordering::AcqRel);
         match result {
             Ok(Ok(Ok(PlatformStorageResponse::Deleted))) => Ok(()),
             Ok(Ok(Ok(PlatformStorageResponse::File(_)))) => Err(
@@ -536,10 +553,8 @@ impl PlatformStorageClient {
             .send(PendingPlatformStorageRequest { request, reply })
             .await
             .map_err(|_| StorageFilePoolError::PlatformUnavailable)?;
-        let pending = self.pending.fetch_add(1, Ordering::AcqRel) + 1;
-        update_high_water(&self.pending_high_water, pending);
+        let _pending = PlatformPendingGuard::begin(self);
         let result = timeout(PLATFORM_STORAGE_REQUEST_TIMEOUT, response).await;
-        self.pending.fetch_sub(1, Ordering::AcqRel);
         match result {
             Ok(Ok(Ok(response))) => Ok(response),
             Ok(Ok(Err(error))) => {
@@ -618,6 +633,7 @@ pub struct PlatformStorageBroker {
 impl PlatformStorageBroker {
     pub async fn next_request(&self) -> Option<PlatformStorageRequest> {
         loop {
+            self.pending_guard().retain(|_, reply| !reply.is_closed());
             let pending = self.receiver.lock().await.recv().await?;
             if pending.reply.is_closed() {
                 continue;
@@ -1490,6 +1506,61 @@ mod tests {
         assert_eq!(pool.snapshot().platform_pending, 0);
         assert_eq!(pool.snapshot().current_owned, 0);
         assert_eq!(pool.snapshot().cached_entries, 0);
+        pool.shutdown().await.expect("shutdown");
+    }
+
+    #[tokio::test]
+    async fn dropping_platform_observation_releases_pending_and_is_pruned() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 4,
+                role: StorageFileRole::Payload(2),
+                path: vec!["published".to_owned(), "payload.bin".to_owned()],
+            }),
+        );
+        let observation = tokio::spawn({
+            let reference = reference.clone();
+            async move { reference.observe().await }
+        });
+        let abandoned = broker.next_request().await.expect("abandoned observation");
+        assert_eq!(pool.snapshot().platform_pending, 1);
+        observation.abort();
+        assert!(
+            observation
+                .await
+                .expect_err("observation aborted")
+                .is_cancelled()
+        );
+        assert_eq!(pool.snapshot().platform_pending, 0);
+
+        let next = tokio::spawn(async move { reference.observe().await });
+        let active = broker.next_request().await.expect("active observation");
+        assert!(!broker.is_pending(abandoned.request_id));
+        assert!(
+            broker.complete_observation(
+                active.request_id,
+                StorageObservation::present(StorageObjectKind::File, Some(5), None)
+                    .expect("observation"),
+            )
+        );
+        assert_eq!(
+            next.await
+                .expect("join active observation")
+                .expect("active observation")
+                .length,
+            Some(5),
+        );
+        assert_eq!(pool.snapshot().platform_pending, 0);
         pool.shutdown().await.expect("shutdown");
     }
 

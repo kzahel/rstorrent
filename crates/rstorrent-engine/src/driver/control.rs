@@ -104,6 +104,7 @@ pub enum DownloadActivityEvent {
         hash_jobs: usize,
     },
     FastResumeRejected {
+        generation: u64,
         reason: ResumeValidationRejectReason,
         committed_pieces: usize,
         relevant_files: usize,
