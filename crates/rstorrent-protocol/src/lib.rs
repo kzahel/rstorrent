@@ -14,3 +14,4 @@ pub mod peer_wire;
 pub mod piece;
 pub mod storage_layout;
 pub mod udp_tracker;
+pub mod utp;
