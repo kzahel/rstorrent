@@ -1738,6 +1738,55 @@ mod tests {
         assert_eq!(config.active_download_cap, Some(2));
     }
 
+    #[tokio::test]
+    async fn product_application_accepts_bounded_torrent_bytes() {
+        let root = test_path("application-torrent-bytes");
+        let profile = root.join("profile");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            profile_root: profile.display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            network_policy: AndroidNetworkPolicy::Offline,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open product application");
+        let source = two_file_metainfo();
+        let response = client
+            .add_torrent_bytes(
+                AddTorrentBytesRequest {
+                    version: 1,
+                    request_id: "android-file-1".to_owned(),
+                    expected_revision: None,
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    selection: rstorrent_session::FileSelectionIntent::All,
+                    source_length: u32::try_from(source.len()).expect("fixture fits u32"),
+                },
+                source,
+            )
+            .await
+            .expect("submit torrent bytes");
+
+        assert!(matches!(
+            response.outcome,
+            rstorrent_session::ResponseOutcome::Success { .. }
+        ));
+        assert!(matches!(
+            response.result,
+            Some(rstorrent_session::CommandResult::AddTorrent { .. })
+        ));
+        client
+            .shutdown()
+            .await
+            .expect("shutdown product application");
+        fs::remove_dir_all(root).expect("remove product fixture");
+    }
+
     fn two_file_metainfo() -> Vec<u8> {
         let mut metainfo = b"d4:infod5:filesld6:lengthi1e4:pathl1:aee\
 d6:lengthi32768e4:pathl1:beee4:name7:fixture12:piece lengthi32768e\

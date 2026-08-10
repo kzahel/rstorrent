@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -29,7 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -244,7 +245,10 @@ internal fun LibraryScreen(
                 }
                 state.error?.takeIf { state.storageRootReady }?.let { error ->
                     item("error") {
-                        Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer)) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
+                            colors = CardDefaults.cardColors(MaterialTheme.colorScheme.errorContainer),
+                        ) {
                             Text(
                                 error,
                                 modifier = Modifier.padding(16.dp),
@@ -317,7 +321,7 @@ private fun LibraryOverflowMenu(
             leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
             onClick = { onDismiss(); onSelectStorage() },
         )
-        Divider()
+        HorizontalDivider()
         DropdownMenuItem(text = { Text("Speed") }, onClick = { onDismiss(); onSpeed() })
         DropdownMenuItem(text = { Text("DHT Info") }, onClick = { onDismiss(); onDht() })
         DropdownMenuItem(text = { Text("Logs") }, onClick = { onDismiss(); onLogs() })
@@ -333,7 +337,10 @@ private fun SetupCard(
     action: String,
     onAction: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(MaterialTheme.colorScheme.secondaryContainer)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
+        colors = CardDefaults.cardColors(MaterialTheme.colorScheme.secondaryContainer),
+    ) {
         Column(Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
@@ -385,7 +392,8 @@ private fun TorrentCard(
     val paused = torrent.operationalState == TorrentOperationalState.PAUSED
     Card(
         modifier =
-            Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            Modifier.fillMaxWidth().widthIn(max = 720.dp)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         colors =
             CardDefaults.cardColors(
                 if (selected) MaterialTheme.colorScheme.primaryContainer

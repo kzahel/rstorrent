@@ -37,7 +37,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -102,10 +102,13 @@ fun ProductApp(
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
+    stateOverride: ProductState? = null,
 ) {
     RstorrentTheme(mode = themeMode, dynamicColor = dynamicColor) {
         val state =
-            if (service == null) {
+            if (stateOverride != null) {
+                stateOverride
+            } else if (service == null) {
                 ProductState()
             } else {
                 val collected by service.state.collectAsStateWithLifecycle()
@@ -357,7 +360,7 @@ private fun ProductNavHost(
                         Switch(checked = dynamicColor, onCheckedChange = onDynamicColor)
                     },
                 )
-                Divider()
+                HorizontalDivider()
                 UnavailableSetting("Search plugins")
                 UnavailableSetting("Reset engine settings")
             }
@@ -462,7 +465,7 @@ private fun TorrentDetailScreen(
                             )
                             DropdownMenuItem(text = { Text("Remove torrent") }, onClick = { overflow = false; onRemove() })
                             DropdownMenuItem(text = { Text("Copy magnet link") }, onClick = { overflow = false; onCopyMagnet() })
-                            Divider()
+                            HorizontalDivider()
                             DropdownMenuItem(text = { Text("Speed") }, onClick = { overflow = false; onSpeed() })
                             DropdownMenuItem(text = { Text("DHT Info") }, onClick = { overflow = false; onDht() })
                             DropdownMenuItem(text = { Text("Logs") }, onClick = { overflow = false; onLogs() })
@@ -652,7 +655,7 @@ private fun LogsShell(
                 enabled = selectedTorrent != null,
             )
         }
-        Divider()
+        HorizontalDivider()
         ListItem(
             headlineContent = { Text("Delivery health") },
             supportingContent = {
@@ -662,7 +665,7 @@ private fun LogsShell(
                 )
             },
         )
-        Divider()
+        HorizontalDivider()
         if (events.isEmpty()) {
             Text(
                 "No diagnostic records match the current filter",
@@ -683,7 +686,7 @@ private fun LogsShell(
                         }
                     },
                 )
-                Divider()
+                HorizontalDivider()
             }
         }
     }
@@ -729,7 +732,7 @@ private fun SettingsDestination(
             Modifier.clickable(onClick = onClick)
                 .semantics(mergeDescendants = true) { role = Role.Button },
     )
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable
@@ -797,7 +800,7 @@ private fun ReadOnlySetting(
     detail: String,
 ) {
     ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) })
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable
@@ -810,7 +813,7 @@ private fun UnavailableSetting(title: String) {
             supportingColor = MaterialTheme.colorScheme.outline,
         ),
     )
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable
@@ -825,7 +828,7 @@ private fun SettingAction(
         supportingContent = { Text(detail) },
         trailingContent = { TextButton(onClick = onClick) { Text(action) } },
     )
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable

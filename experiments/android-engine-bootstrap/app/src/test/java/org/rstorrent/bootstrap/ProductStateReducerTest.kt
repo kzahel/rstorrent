@@ -389,6 +389,25 @@ class ProductStateReducerTest {
         )
     }
 
+    @Test
+    fun librarySortingRetainsTheFiveHundredRowBound() {
+        val torrents =
+            List(500) { index ->
+                torrent("torrent-${index.toString().padStart(3, '0')}", TorrentState.PAUSED).copy(
+                    displayName = "Torrent ${500 - index}",
+                    operationalState = TorrentOperationalState.QUEUED,
+                    downloadQueuePosition = index.toUInt(),
+                )
+            }
+
+        val sorted =
+            filteredAndSortedTorrents(torrents, LibraryFilter.ALL, LibrarySort.STABLE)
+
+        assertEquals(500, sorted.size)
+        assertEquals("torrent-000", sorted.first().torrentId)
+        assertEquals("torrent-499", sorted.last().torrentId)
+    }
+
     private fun storage(): StorageSettingsSnapshot =
         StorageSettingsSnapshot(emptyList(), null, false)
 
