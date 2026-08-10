@@ -14,7 +14,8 @@ use rstorrent_engine::eligible_global_ipv6;
 use rstorrent_engine::port_mapping::upnp::discover_igd_v2;
 use rstorrent_engine::port_mapping::upnp::{
     UpnpDiscoveredService, UpnpDiscoveryConfig, UpnpError, UpnpGateway, UpnpIpv6Firewall,
-    UpnpMapping, UpnpPinhole, UpnpPinholeCreateError, UpnpStage, discover_igd_v2_services,
+    UpnpMapping, UpnpPinhole, UpnpPinholeCreateError, UpnpStage, UpnpTransport,
+    discover_igd_v2_services,
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -712,7 +713,7 @@ async fn run_ipv4_mapping(
         };
     }
     let mut mapping = match gateway
-        .create_mapping(local_endpoint.port(), &cancellation)
+        .create_mapping(UpnpTransport::Tcp, local_endpoint.port(), &cancellation)
         .await
     {
         Ok(mapping) => mapping,

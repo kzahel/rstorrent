@@ -1,4 +1,4 @@
-//! Loopback-only controlled uTP/libtorrent interoperability roles.
+//! Controlled loopback and explicit WAN uTP/libtorrent interoperability roles.
 
 use std::collections::BTreeSet;
 use std::env;
@@ -36,11 +36,42 @@ const SEED_PEER_ID: [u8; 20] = *b"-RSUTPS-000000000000";
 const USAGE: &str = "\
 Usage:
   rstorrent-utp-interop leecher --metainfo PATH --peer 127.0.0.1:PORT --output PATH
+  rstorrent-utp-interop wan-leecher --metainfo PATH --peer PUBLIC_IPV4:PORT --output PATH
   rstorrent-utp-interop seed --metainfo PATH --storage-root PATH";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LeecherScope {
+    Loopback,
+    Wan,
+}
+
+impl LeecherScope {
+    const fn role(self) -> &'static str {
+        match self {
+            Self::Loopback => "leecher",
+            Self::Wan => "wan-leecher",
+        }
+    }
+
+    const fn bind_address(self) -> Ipv4Addr {
+        match self {
+            Self::Loopback => Ipv4Addr::LOCALHOST,
+            Self::Wan => Ipv4Addr::UNSPECIFIED,
+        }
+    }
+
+    const fn network_policy(self) -> NetworkPolicy {
+        match self {
+            Self::Loopback => NetworkPolicy::LoopbackOnly,
+            Self::Wan => NetworkPolicy::Online,
+        }
+    }
+}
 
 #[derive(Debug)]
 enum Arguments {
     Leecher {
+        scope: LeecherScope,
         metainfo: PathBuf,
         peer: SocketAddr,
         output: PathBuf,
@@ -94,18 +125,40 @@ impl Arguments {
         }
         let metainfo = metainfo.ok_or_else(|| "--metainfo is required".to_owned())?;
         match role {
-            "leecher" => {
+            "leecher" | "wan-leecher" => {
                 if storage_root.is_some() {
-                    return Err("leecher does not accept --storage-root".to_owned());
+                    return Err(format!("{role} does not accept --storage-root"));
                 }
-                let peer = peer.ok_or_else(|| "leecher requires --peer".to_owned())?;
-                if !peer.ip().is_loopback() || !peer.is_ipv4() || peer.port() == 0 {
-                    return Err("--peer must be a nonzero IPv4 loopback endpoint".to_owned());
+                let peer = peer.ok_or_else(|| format!("{role} requires --peer"))?;
+                let scope = if role == "leecher" {
+                    LeecherScope::Loopback
+                } else {
+                    LeecherScope::Wan
+                };
+                let eligible = match (scope, peer) {
+                    (LeecherScope::Loopback, SocketAddr::V4(address)) => {
+                        address.ip().is_loopback() && address.port() != 0
+                    }
+                    (LeecherScope::Wan, SocketAddr::V4(address)) => {
+                        eligible_public_ipv4(*address.ip()) && address.port() != 0
+                    }
+                    (_, SocketAddr::V6(_)) => false,
+                };
+                if !eligible {
+                    return Err(match scope {
+                        LeecherScope::Loopback => {
+                            "--peer must be a nonzero IPv4 loopback endpoint".to_owned()
+                        }
+                        LeecherScope::Wan => {
+                            "--peer must be a nonzero public IPv4 endpoint".to_owned()
+                        }
+                    });
                 }
                 Ok(Self::Leecher {
+                    scope,
                     metainfo,
                     peer,
-                    output: output.ok_or_else(|| "leecher requires --output".to_owned())?,
+                    output: output.ok_or_else(|| format!("{role} requires --output"))?,
                 })
             }
             "seed" => {
@@ -128,6 +181,22 @@ fn set_once<T>(target: &mut Option<T>, value: T, flag: &str) -> Result<(), Strin
         return Err(format!("{flag} may only be supplied once"));
     }
     Ok(())
+}
+
+fn eligible_public_ipv4(address: Ipv4Addr) -> bool {
+    let [first, second, third, _] = address.octets();
+    !matches!(first, 0 | 10 | 127)
+        && !(first == 100 && (64..=127).contains(&second))
+        && !(first == 169 && second == 254)
+        && !(first == 172 && (16..=31).contains(&second))
+        && !(first == 192 && second == 0 && third == 0)
+        && !(first == 192 && second == 0 && third == 2)
+        && !(first == 192 && second == 88 && third == 99)
+        && !(first == 192 && second == 168)
+        && !(first == 198 && (second == 18 || second == 19))
+        && !(first == 198 && second == 51 && third == 100)
+        && !(first == 203 && second == 0 && third == 113)
+        && first < 224
 }
 
 #[derive(Clone, Debug, Default)]
@@ -206,10 +275,11 @@ async fn main() {
 async fn run(arguments: Arguments) -> Result<(), Box<dyn Error>> {
     match arguments {
         Arguments::Leecher {
+            scope,
             metainfo,
             peer,
             output,
-        } => run_leecher(&metainfo, peer, &output).await,
+        } => run_leecher(scope, &metainfo, peer, &output).await,
         Arguments::Seed {
             metainfo,
             storage_root,
@@ -218,30 +288,27 @@ async fn run(arguments: Arguments) -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_leecher(
+    scope: LeecherScope,
     metainfo_path: &Path,
     peer: SocketAddr,
     output: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let (metainfo, _) = read_fixture(metainfo_path).await?;
-    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let socket = UdpSocket::bind((scope.bind_address(), 0)).await?;
     let (mut udp, dht) = SessionUdpService::start(socket)?;
     let utp = UtpService::start(&mut udp)?;
     let local_address = udp.local_address();
     write_json(json!({
         "event": "ready",
-        "role": "leecher",
+        "role": scope.role(),
         "listen": local_address.to_string(),
     }))?;
 
     let stream = utp.handle().connect(peer).await?;
-    let network = NetworkConfig::new(
-        NetworkPolicy::LoopbackOnly,
-        HANDSHAKE_TIMEOUT,
-        PEER_IO_TIMEOUT,
-    )
-    .with_address_families(AddressFamilyPolicy::ipv4_only())
-    .with_peer_id(LEECHER_PEER_ID)
-    .with_encryption(PeerEncryptionPolicy::Disabled);
+    let network = NetworkConfig::new(scope.network_policy(), HANDSHAKE_TIMEOUT, PEER_IO_TIMEOUT)
+        .with_address_families(AddressFamilyPolicy::ipv4_only())
+        .with_peer_id(LEECHER_PEER_ID)
+        .with_encryption(PeerEncryptionPolicy::Disabled);
     let (payload, report) = download_controlled_utp(stream, &metainfo, network).await?;
     let digest = hex(&Sha1::digest(&payload));
     write_new_file(output, &payload).await?;
@@ -254,7 +321,7 @@ async fn run_leecher(
     validate_terminal(&terminal_utp, &terminal_udp)?;
     write_json(json!({
         "event": "complete",
-        "role": "leecher",
+        "role": scope.role(),
         "listen": local_address.to_string(),
         "peer": peer.to_string(),
         "payload": {
@@ -496,6 +563,11 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "connection_datagrams_dropped": snapshot.connection_datagrams_dropped,
         "datagrams_sent": snapshot.datagrams_sent,
         "datagram_bytes_sent": snapshot.datagram_bytes_sent,
+        "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
+        "retransmission_bytes_sent": snapshot.retransmission_bytes_sent,
+        "retransmission_queue_high_water": snapshot.retransmission_queue_high_water,
+        "loss_reduction_high_water": snapshot.loss_reduction_high_water,
+        "timeout_collapse_high_water": snapshot.timeout_collapse_high_water,
         "delivered_byte_high_water": snapshot.delivered_byte_high_water,
         "unsent_byte_high_water": snapshot.unsent_byte_high_water,
         "sent_byte_high_water": snapshot.sent_byte_high_water,
@@ -575,5 +647,48 @@ mod tests {
             ]))
             .is_err()
         );
+        assert!(matches!(
+            Arguments::parse(strings(&[
+                "wan-leecher",
+                "--metainfo",
+                "fixture.torrent",
+                "--peer",
+                "8.8.8.8:1",
+                "--output",
+                "payload.bin",
+            ])),
+            Ok(Arguments::Leecher {
+                scope: LeecherScope::Wan,
+                ..
+            })
+        ));
+        for peer in [
+            "0.0.0.0:1",
+            "10.0.0.1:1",
+            "100.64.0.1:1",
+            "127.0.0.1:1",
+            "169.254.1.1:1",
+            "172.16.0.1:1",
+            "192.0.2.1:1",
+            "192.168.1.1:1",
+            "198.18.0.1:1",
+            "198.51.100.1:1",
+            "203.0.113.1:1",
+            "224.0.0.1:1",
+        ] {
+            assert!(
+                Arguments::parse(strings(&[
+                    "wan-leecher",
+                    "--metainfo",
+                    "fixture.torrent",
+                    "--peer",
+                    peer,
+                    "--output",
+                    "payload.bin",
+                ]))
+                .is_err(),
+                "accepted {peer}"
+            );
+        }
     }
 }

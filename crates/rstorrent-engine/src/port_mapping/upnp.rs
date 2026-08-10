@@ -177,12 +177,28 @@ pub struct UpnpMappingEntry {
     pub lease_seconds: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UpnpTransport {
+    Tcp,
+    Udp,
+}
+
+impl UpnpTransport {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Tcp => "TCP",
+            Self::Udp => "UDP",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpnpMapping {
     pub local_endpoint: SocketAddrV4,
     pub external_address: Ipv4Addr,
     pub external_port: u16,
     pub lease_seconds: u32,
+    pub transport: UpnpTransport,
 }
 
 impl UpnpMapping {
@@ -298,6 +314,7 @@ impl UpnpGateway {
     pub async fn query_mapping(
         &self,
         external_port: u16,
+        transport: UpnpTransport,
         stage: UpnpStage,
         cancellation: &CancellationToken,
     ) -> Result<Option<UpnpMappingEntry>, UpnpError> {
@@ -309,7 +326,7 @@ impl UpnpGateway {
                 &[
                     ("NewRemoteHost", ""),
                     ("NewExternalPort", &port),
-                    ("NewProtocol", "TCP"),
+                    ("NewProtocol", transport.as_str()),
                 ],
                 cancellation,
             )
@@ -352,6 +369,7 @@ impl UpnpGateway {
 
     pub async fn create_mapping(
         &self,
+        transport: UpnpTransport,
         local_port: u16,
         cancellation: &CancellationToken,
     ) -> Result<UpnpMapping, UpnpError> {
@@ -366,7 +384,7 @@ impl UpnpGateway {
         let mut last_conflict = None;
         for external_port in candidates {
             let existing = self
-                .query_mapping(external_port, UpnpStage::Add, cancellation)
+                .query_mapping(external_port, transport, UpnpStage::Add, cancellation)
                 .await?;
             if existing
                 .as_ref()
@@ -379,7 +397,13 @@ impl UpnpGateway {
             let mut transport_failure = None;
             for attempt in 0..2 {
                 match self
-                    .add_mapping(external_port, local_port, UpnpStage::Add, cancellation)
+                    .add_mapping(
+                        external_port,
+                        local_port,
+                        transport,
+                        UpnpStage::Add,
+                        cancellation,
+                    )
                     .await
                 {
                     Ok(()) => {
@@ -394,7 +418,12 @@ impl UpnpGateway {
                         transport_failure = Some(error);
                         tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
                         match self
-                            .query_mapping(external_port, UpnpStage::Verify, cancellation)
+                            .query_mapping(
+                                external_port,
+                                transport,
+                                UpnpStage::Verify,
+                                cancellation,
+                            )
                             .await
                         {
                             Ok(Some(entry)) => {
@@ -402,6 +431,7 @@ impl UpnpGateway {
                                     &entry,
                                     self.local_address,
                                     local_port,
+                                    transport,
                                     UpnpStage::Verify,
                                 )?;
                                 return Ok(UpnpMapping {
@@ -412,6 +442,7 @@ impl UpnpGateway {
                                     external_address,
                                     external_port,
                                     lease_seconds: entry.lease_seconds,
+                                    transport,
                                 });
                             }
                             Ok(None) if attempt == 0 => {
@@ -433,7 +464,7 @@ impl UpnpGateway {
             }
             tokio::time::sleep(HTTP_OPERATION_PAUSE).await;
             let entry = self
-                .query_mapping(external_port, UpnpStage::Verify, cancellation)
+                .query_mapping(external_port, transport, UpnpStage::Verify, cancellation)
                 .await?
                 .ok_or_else(|| {
                     UpnpError::new(
@@ -441,12 +472,19 @@ impl UpnpGateway {
                         "gateway did not return the mapping after add",
                     )
                 })?;
-            verify_mapping_entry(&entry, self.local_address, local_port, UpnpStage::Verify)?;
+            verify_mapping_entry(
+                &entry,
+                self.local_address,
+                local_port,
+                transport,
+                UpnpStage::Verify,
+            )?;
             return Ok(UpnpMapping {
                 local_endpoint: SocketAddrV4::new(self.local_address, local_port),
                 external_address,
                 external_port,
                 lease_seconds: entry.lease_seconds,
+                transport,
             });
         }
         Err(UpnpError::new(
@@ -472,12 +510,18 @@ impl UpnpGateway {
         self.add_mapping(
             mapping.external_port,
             mapping.local_endpoint.port(),
+            mapping.transport,
             UpnpStage::Renewal,
             cancellation,
         )
         .await?;
         let entry = self
-            .query_mapping(mapping.external_port, UpnpStage::Renewal, cancellation)
+            .query_mapping(
+                mapping.external_port,
+                mapping.transport,
+                UpnpStage::Renewal,
+                cancellation,
+            )
             .await?
             .ok_or_else(|| {
                 UpnpError::new(
@@ -489,6 +533,7 @@ impl UpnpGateway {
             &entry,
             self.local_address,
             mapping.local_endpoint.port(),
+            mapping.transport,
             UpnpStage::Renewal,
         )?;
         mapping.lease_seconds = entry.lease_seconds;
@@ -513,13 +558,18 @@ impl UpnpGateway {
             &[
                 ("NewRemoteHost", ""),
                 ("NewExternalPort", &port),
-                ("NewProtocol", "TCP"),
+                ("NewProtocol", mapping.transport.as_str()),
             ],
             cancellation,
         )
         .await?;
         if self
-            .query_mapping(mapping.external_port, UpnpStage::Delete, cancellation)
+            .query_mapping(
+                mapping.external_port,
+                mapping.transport,
+                UpnpStage::Delete,
+                cancellation,
+            )
             .await?
             .is_some()
         {
@@ -535,6 +585,7 @@ impl UpnpGateway {
         &self,
         external_port: u16,
         internal_port: u16,
+        transport: UpnpTransport,
         stage: UpnpStage,
         cancellation: &CancellationToken,
     ) -> Result<(), UpnpError> {
@@ -548,7 +599,7 @@ impl UpnpGateway {
             &[
                 ("NewRemoteHost", ""),
                 ("NewExternalPort", &external_port),
-                ("NewProtocol", "TCP"),
+                ("NewProtocol", transport.as_str()),
                 ("NewInternalPort", &internal_port),
                 ("NewInternalClient", &internal_client),
                 ("NewEnabled", "1"),
@@ -1830,12 +1881,16 @@ fn verify_mapping_entry(
     entry: &UpnpMappingEntry,
     address: Ipv4Addr,
     port: u16,
+    transport: UpnpTransport,
     stage: UpnpStage,
 ) -> Result<(), UpnpError> {
     if !mapping_entry_matches(entry, address, port) {
         return Err(UpnpError::new(
             stage,
-            "installed mapping does not match the requested finite TCP entry",
+            format!(
+                "installed mapping does not match the requested finite {} entry",
+                transport.as_str()
+            ),
         ));
     }
     Ok(())
@@ -1973,8 +2028,30 @@ mod tests {
             external_address: Ipv4Addr::new(203, 0, 113, 10),
             external_port: 48_000,
             lease_seconds: REQUESTED_LEASE_SECONDS,
+            transport: UpnpTransport::Tcp,
         };
         assert_eq!(mapping.renewal_delay(), Duration::from_secs(2_700));
+    }
+
+    #[test]
+    fn mapping_transport_has_exact_upnp_wire_values() {
+        assert_eq!(UpnpTransport::Tcp.as_str(), "TCP");
+        assert_eq!(UpnpTransport::Udp.as_str(), "UDP");
+        for transport in [UpnpTransport::Tcp, UpnpTransport::Udp] {
+            let request = soap_request(
+                WAN_IP_CONNECTION_V2,
+                "GetSpecificPortMappingEntry",
+                &[
+                    ("NewRemoteHost", ""),
+                    ("NewExternalPort", "42000"),
+                    ("NewProtocol", transport.as_str()),
+                ],
+            );
+            assert!(request.contains(&format!(
+                "<NewProtocol>{}</NewProtocol>",
+                transport.as_str()
+            )));
+        }
     }
 
     #[test]
@@ -2010,11 +2087,12 @@ mod tests {
             .expect("discover scripted IGD v2 gateway");
         assert_eq!(gateway.gateway_address(), Ipv4Addr::LOCALHOST);
         let mut mapping = gateway
-            .create_mapping(42_000, &cancellation)
+            .create_mapping(UpnpTransport::Udp, 42_000, &cancellation)
             .await
             .expect("add and verify finite mapping");
         assert_eq!(mapping.external_port, 42_000);
         assert_eq!(mapping.lease_seconds, REQUESTED_LEASE_SECONDS);
+        assert_eq!(mapping.transport, UpnpTransport::Udp);
         gateway
             .renew_mapping(&mut mapping, &cancellation)
             .await
@@ -2051,7 +2129,7 @@ mod tests {
             .await
             .expect("discover scripted gateway");
         let mapping = gateway
-            .create_mapping(42_000, &cancellation)
+            .create_mapping(UpnpTransport::Tcp, 42_000, &cancellation)
             .await
             .expect("reconcile mapping installed before transport failure");
         assert_eq!(mapping.external_port, 42_000);
@@ -2085,7 +2163,7 @@ mod tests {
             .await
             .expect("discover scripted gateway");
         let error = gateway
-            .create_mapping(42_000, &cancellation)
+            .create_mapping(UpnpTransport::Tcp, 42_000, &cancellation)
             .await
             .expect_err("fault 725 must not retry with a permanent lease");
         assert_eq!(error.stage(), UpnpStage::Add);

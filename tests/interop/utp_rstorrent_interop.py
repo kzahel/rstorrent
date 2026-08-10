@@ -220,6 +220,16 @@ def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> N
         raise InteropFailure(f"{role} did not observe exactly one uTP connection")
     if live_utp.get("datagrams_sent", 0) <= 0:
         raise InteropFailure(f"{role} sent no uTP datagrams")
+    for key in (
+        "retransmission_datagrams_sent",
+        "retransmission_bytes_sent",
+        "retransmission_queue_high_water",
+        "loss_reduction_high_water",
+        "timeout_collapse_high_water",
+    ):
+        value = live_utp.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise InteropFailure(f"{role} did not report bounded {key}: {live_utp}")
     if live_udp.get("utp_datagrams_classified", 0) <= 0:
         raise InteropFailure(f"{role} received no uTP datagrams")
     for minimum_key, maximum_key in (

@@ -60,6 +60,11 @@ pub struct UtpServiceSnapshot {
     pub connection_datagrams_dropped: u64,
     pub datagrams_sent: u64,
     pub datagram_bytes_sent: u64,
+    pub retransmission_datagrams_sent: u64,
+    pub retransmission_bytes_sent: u64,
+    pub retransmission_queue_high_water: usize,
+    pub loss_reduction_high_water: u64,
+    pub timeout_collapse_high_water: u64,
     pub delivered_byte_high_water: usize,
     pub unsent_byte_high_water: usize,
     pub sent_byte_high_water: usize,
@@ -664,6 +669,11 @@ struct UtpStats {
     connection_datagrams_dropped: AtomicU64,
     datagrams_sent: AtomicU64,
     datagram_bytes_sent: AtomicU64,
+    retransmission_datagrams_sent: AtomicU64,
+    retransmission_bytes_sent: AtomicU64,
+    retransmission_queue_high_water: AtomicUsize,
+    loss_reduction_high_water: AtomicU64,
+    timeout_collapse_high_water: AtomicU64,
     delivered_byte_high_water: AtomicUsize,
     unsent_byte_high_water: AtomicUsize,
     sent_byte_high_water: AtomicUsize,
@@ -709,6 +719,15 @@ impl UtpStats {
             connection_datagrams_dropped: self.connection_datagrams_dropped.load(Ordering::Relaxed),
             datagrams_sent: self.datagrams_sent.load(Ordering::Relaxed),
             datagram_bytes_sent: self.datagram_bytes_sent.load(Ordering::Relaxed),
+            retransmission_datagrams_sent: self
+                .retransmission_datagrams_sent
+                .load(Ordering::Relaxed),
+            retransmission_bytes_sent: self.retransmission_bytes_sent.load(Ordering::Relaxed),
+            retransmission_queue_high_water: self
+                .retransmission_queue_high_water
+                .load(Ordering::Relaxed),
+            loss_reduction_high_water: self.loss_reduction_high_water.load(Ordering::Relaxed),
+            timeout_collapse_high_water: self.timeout_collapse_high_water.load(Ordering::Relaxed),
             delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
             unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
             sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
@@ -761,6 +780,14 @@ impl UtpStats {
             .fetch_max(snapshot.transmit.byte_high_water, Ordering::Relaxed);
         self.sent_byte_high_water
             .fetch_max(snapshot.connection.send.byte_high_water, Ordering::Relaxed);
+        self.retransmission_queue_high_water.fetch_max(
+            snapshot.retransmissions.packet_high_water,
+            Ordering::Relaxed,
+        );
+        self.loss_reduction_high_water
+            .fetch_max(snapshot.congestion.loss_reductions, Ordering::Relaxed);
+        self.timeout_collapse_high_water
+            .fetch_max(snapshot.congestion.timeout_collapses, Ordering::Relaxed);
         if let Some(smoothed_rtt_micros) = snapshot.connection.send.rtt.smoothed_rtt_micros {
             self.smoothed_rtt_micros.record(smoothed_rtt_micros);
         }
@@ -1506,6 +1533,13 @@ impl UtpWorker {
                         &self.stats.datagram_bytes_sent,
                         u64::try_from(length).unwrap_or(u64::MAX),
                     );
+                    if emission.retransmission {
+                        saturating_increment(&self.stats.retransmission_datagrams_sent, 1);
+                        saturating_increment(
+                            &self.stats.retransmission_bytes_sent,
+                            u64::try_from(length).unwrap_or(u64::MAX),
+                        );
+                    }
                     DatagramSendResult::Sent
                 }
                 Ok(length) => {
