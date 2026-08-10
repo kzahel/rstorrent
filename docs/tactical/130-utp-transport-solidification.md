@@ -364,3 +364,27 @@ Validation through this stage:
 - all eight WAN controller contract tests pass; and
 - both existing forced-uTP loopback roles still transfer the exact fixture
   with terminal cleanup.
+
+### Cohort preparation and transient choke repair
+
+Commit `04aa65c` adds the three-sample-per-direction runner. It alternates
+directions after each exact cleanup, reuses one build, retains every redacted
+sample, and derives deterministic median/ranges for timing, packet/byte,
+delay, RTT/RTO, window, retransmission, MTU, queue, and oracle counters.
+
+The first cohort attempt stopped after earlier samples had cleaned up when the
+remote libtorrent seed transiently choked the RSTorrent diagnostic leecher
+after 1,043 payload bytes. Remote abort evidence still showed one uTP peer,
+zero TCP payload path, four inbound/seven outbound uTP packets, exact mapping
+deletion, and no residue. The failure exposed a diagnostic-only peer-wire gap:
+ordinary RSTorrent swarm state retains a choked peer and releases/reschedules
+its requests, and pinned libtorrent likewise treats `Choke` as a state change,
+but the single-peer uTP evidence downloader treated it as terminal.
+
+The controlled downloader now accepts a block already in flight after a
+choke, ignores the corresponding Fast-extension rejection while choked,
+waits for `Unchoke`, and resends its sole request. It permits at most 16 such
+retries across the complete fixed fixture and reports the count. Integrity,
+one-outstanding-request shape, role timeout, exact hash, and all transport and
+cleanup gates remain unchanged. A pure test proves the exact retry ceiling;
+the two-role loopback oracle passes with zero retries.

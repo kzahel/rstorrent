@@ -199,8 +199,12 @@ def validate_complete(event: dict[str, Any], role: str, expected_sha1: str) -> N
     payload = event.get("payload", {})
     if payload.get("bytes") != PAYLOAD_SIZE or payload.get("pieces") != 33:
         raise InteropFailure(f"{role} reported unexpected payload geometry: {payload}")
-    if role == "leecher" and payload.get("sha1") != expected_sha1:
+    if role in ("leecher", "wan-leecher") and payload.get("sha1") != expected_sha1:
         raise InteropFailure(f"{role} reported the wrong payload hash")
+    if role in ("leecher", "wan-leecher"):
+        choke_retries = payload.get("choke_retries")
+        if not isinstance(choke_retries, int) or not 0 <= choke_retries <= 16:
+            raise InteropFailure(f"{role} reported invalid transient choke retries")
     resources = event.get("resources", {})
     terminal_utp = resources.get("terminal_utp", {})
     terminal_udp = resources.get("terminal_udp", {})

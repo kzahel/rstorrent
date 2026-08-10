@@ -12,12 +12,14 @@ use crate::peer_socket::handshake_over_utp;
 use crate::utp_runtime::UtpStream;
 
 pub const MAX_CONTROLLED_UTP_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
+pub const MAX_CONTROLLED_UTP_CHOKE_RETRIES: u8 = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ControlledUtpDownloadReport {
     pub bytes: u64,
     pub pieces: usize,
     pub requests: u64,
+    pub choke_retries: u8,
     pub peer_id: [u8; 20],
 }
 
@@ -28,7 +30,9 @@ pub enum ControlledUtpDownloadError {
         actual: u64,
     },
     Peer(String),
-    Choked,
+    Choked {
+        maximum_retries: u8,
+    },
     Rejected(BlockRequest),
     UnexpectedBlock {
         expected: BlockRequest,
@@ -53,7 +57,10 @@ impl fmt::Display for ControlledUtpDownloadError {
                 "controlled uTP payload length {actual} exceeds {maximum} bytes"
             ),
             Self::Peer(detail) => write!(formatter, "controlled uTP peer: {detail}"),
-            Self::Choked => formatter.write_str("controlled uTP peer choked the transfer"),
+            Self::Choked { maximum_retries } => write!(
+                formatter,
+                "controlled uTP peer exceeded {maximum_retries} transient choke retries"
+            ),
             Self::Rejected(request) => write!(
                 formatter,
                 "controlled uTP peer rejected piece {} block {}+{}",
@@ -105,6 +112,7 @@ pub async fn download_controlled_utp(
         .expect("controlled uTP payload limit fits every supported target");
     let mut payload = Vec::with_capacity(capacity);
     let mut requests = 0_u64;
+    let mut choke_retries = 0_u8;
     for (piece_index, expected_hash) in metainfo.piece_hashes.iter().enumerate() {
         let index = u32::try_from(piece_index).expect("metainfo piece limit fits u32");
         let piece_length = metainfo
@@ -118,11 +126,18 @@ pub async fn download_controlled_utp(
                 begin,
                 length: (piece_length - begin).min(MAX_REQUEST_BLOCK_LENGTH),
             };
-            peer.send_message(&PeerMessage::Request(request))
-                .await
-                .map_err(|error| ControlledUtpDownloadError::Peer(error.to_string()))?;
-            requests = requests.saturating_add(1);
-            let block = wait_for_block(&mut peer, request).await?;
+            let block = loop {
+                peer.send_message(&PeerMessage::Request(request))
+                    .await
+                    .map_err(|error| ControlledUtpDownloadError::Peer(error.to_string()))?;
+                requests = requests.saturating_add(1);
+                match wait_for_block(&mut peer, request).await? {
+                    BlockWait::Received(block) => break block,
+                    BlockWait::RetryAfterChoke => {
+                        record_choke_retry(&mut choke_retries)?;
+                    }
+                }
+            };
             piece.extend(block);
             begin = begin.saturating_add(request.length);
         }
@@ -147,6 +162,7 @@ pub async fn download_controlled_utp(
             bytes: metainfo.total_length,
             pieces: metainfo.piece_count(),
             requests,
+            choke_retries,
             peer_id: handshake.peer_id,
         },
     ))
@@ -180,10 +196,16 @@ async fn wait_for_unchoke(
     }
 }
 
+enum BlockWait {
+    Received(Vec<u8>),
+    RetryAfterChoke,
+}
+
 async fn wait_for_block(
     peer: &mut crate::peer_io::PeerIo,
     expected: BlockRequest,
-) -> Result<Vec<u8>, ControlledUtpDownloadError> {
+) -> Result<BlockWait, ControlledUtpDownloadError> {
+    let mut choked = false;
     loop {
         match peer
             .next_message()
@@ -198,7 +220,7 @@ async fn wait_for_block(
                 && begin == expected.begin
                 && block.len() == expected.length as usize =>
             {
-                return Ok(block);
+                return Ok(BlockWait::Received(block));
             }
             PeerMessage::Piece {
                 index,
@@ -212,10 +234,12 @@ async fn wait_for_block(
                     length: block.len(),
                 });
             }
-            PeerMessage::RejectRequest(request) if request == expected => {
+            PeerMessage::RejectRequest(request) if request == expected && !choked => {
                 return Err(ControlledUtpDownloadError::Rejected(request));
             }
-            PeerMessage::Choke => return Err(ControlledUtpDownloadError::Choked),
+            PeerMessage::RejectRequest(request) if request == expected => {}
+            PeerMessage::Choke => choked = true,
+            PeerMessage::Unchoke if choked => return Ok(BlockWait::RetryAfterChoke),
             PeerMessage::KeepAlive
             | PeerMessage::Have(_)
             | PeerMessage::Bitfield(_)
@@ -231,5 +255,35 @@ async fn wait_for_block(
                 )));
             }
         }
+    }
+}
+
+fn record_choke_retry(retries: &mut u8) -> Result<(), ControlledUtpDownloadError> {
+    if *retries >= MAX_CONTROLLED_UTP_CHOKE_RETRIES {
+        return Err(ControlledUtpDownloadError::Choked {
+            maximum_retries: MAX_CONTROLLED_UTP_CHOKE_RETRIES,
+        });
+    }
+    *retries += 1;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_choke_retry_budget_is_exact() {
+        let mut retries = 0;
+        for expected in 1..=MAX_CONTROLLED_UTP_CHOKE_RETRIES {
+            record_choke_retry(&mut retries).expect("bounded transient choke");
+            assert_eq!(retries, expected);
+        }
+        assert!(matches!(
+            record_choke_retry(&mut retries),
+            Err(ControlledUtpDownloadError::Choked {
+                maximum_retries: MAX_CONTROLLED_UTP_CHOKE_RETRIES,
+            })
+        ));
     }
 }

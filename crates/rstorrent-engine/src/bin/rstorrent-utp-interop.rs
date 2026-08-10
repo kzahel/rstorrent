@@ -432,6 +432,7 @@ async fn run_leecher(
             "bytes": report.bytes,
             "pieces": report.pieces,
             "requests": report.requests,
+            "choke_retries": report.choke_retries,
             "sha1": digest,
         },
         "remote_peer_id": hex(&report.peer_id),

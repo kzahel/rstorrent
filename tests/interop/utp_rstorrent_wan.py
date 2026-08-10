@@ -1079,6 +1079,7 @@ def sample_metrics(sample: dict[str, Any]) -> dict[str, int | float]:
         "rstorrent_datagram_bytes_received": udp[
             "utp_datagram_bytes_classified"
         ],
+        "rstorrent_choke_retries": rstorrent["payload"].get("choke_retries", 0),
     }
     for name in (
         "smoothed_rtt_min_micros",

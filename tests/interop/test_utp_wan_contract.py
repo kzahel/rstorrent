@@ -239,6 +239,7 @@ class UtpWanContractTests(unittest.TestCase):
                 "seconds": seconds,
                 "active_transfer_seconds": seconds - 1,
                 "rstorrent": {
+                    "payload": {"choke_retries": 0},
                     "resources": {
                         "live_utp": utp,
                         "live_udp": {
