@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use rstorrent_protocol::extension::{ExtensionHandshake, ExtensionMap};
 use rstorrent_protocol::mse::{
-    DH_PRIVATE_EXPONENT_LEN, MSE_KNOWN_METHODS, MSE_MAX_PADDING_LEN, MseAction, MseHandshake,
-    MseHandshakeComplete, MseMethod, MsePadding, MseResume, MseRole, MseStep,
+    DH_PRIVATE_EXPONENT_LEN, MSE_KNOWN_METHODS, MSE_MAX_PADDING_LEN, MSE_METHOD_RC4, MseAction,
+    MseHandshake, MseHandshakeComplete, MseMethod, MsePadding, MseResume, MseRole, MseStep,
 };
 use rstorrent_protocol::peer_wire::{
     EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
@@ -253,6 +253,7 @@ async fn connect_with_progress(
             byte_metric_sink.as_ref(),
             &mse_dh,
             network.encryption,
+            network.mse_rc4_only,
         )
         .await;
         match attempt.result {
@@ -476,6 +477,7 @@ async fn run_outgoing_mse(
     byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
     mse_dh: &MseDhWorkOwner,
     policy: PeerEncryptionPolicy,
+    rc4_only: bool,
 ) -> OutgoingMseAttempt {
     let mut accounting = MseHandshakeAccounting::new(MseRole::Initiator, policy);
     let result = run_outgoing_mse_inner(
@@ -485,6 +487,7 @@ async fn run_outgoing_mse(
         io_timeout,
         byte_metric_sink,
         mse_dh,
+        rc4_only,
         &mut accounting,
     )
     .await;
@@ -498,6 +501,7 @@ async fn run_outgoing_mse_inner(
     io_timeout: Duration,
     byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
     mse_dh: &MseDhWorkOwner,
+    rc4_only: bool,
     accounting: &mut MseHandshakeAccounting,
 ) -> Result<OutgoingMse, OutgoingMseFailure> {
     let mut private_entropy = [0_u8; DH_PRIVATE_EXPONENT_LEN];
@@ -518,7 +522,11 @@ async fn run_outgoing_mse_inner(
         pad_a,
         pad_c,
         info_hash,
-        MSE_KNOWN_METHODS,
+        if rc4_only {
+            MSE_METHOD_RC4
+        } else {
+            MSE_KNOWN_METHODS
+        },
         local_handshake,
         HANDSHAKE_LENGTH,
     )
@@ -1455,6 +1463,49 @@ mod tests {
                 .expect("encrypted framed send");
             server.await.expect("server join");
         }
+    }
+
+    #[tokio::test]
+    async fn outgoing_mse_can_offer_only_rc4_for_a_forced_comparison() {
+        const INFO_HASH: [u8; 20] = [0x45; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            run_test_mse_responder(stream, MseMethod::Rc4, INFO_HASH).await;
+        });
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .with_encryption(PeerEncryptionPolicy::Required)
+        .with_mse_rc4_only(true);
+        let sink = Arc::new(RecordingMseSink::default());
+        let (mut connection, _) = connect_observed(
+            test_attempt_for(address),
+            INFO_HASH,
+            true,
+            network,
+            sink.clone(),
+        )
+        .await
+        .expect("forced RC4 connection");
+        assert_eq!(connection.mse_method(), Some(MseMethod::Rc4));
+        assert_eq!(
+            sink.handshakes.lock().expect("observations")[0].outcome,
+            MseHandshakeOutcome::Negotiated(MseMethod::Rc4)
+        );
+        assert_eq!(
+            next_message(&mut connection)
+                .await
+                .expect("carried message"),
+            PeerMessage::Unchoke
+        );
+        send_message(&mut connection, &PeerMessage::Interested)
+            .await
+            .expect("encrypted framed send");
+        server.await.expect("server join");
     }
 
     #[tokio::test]

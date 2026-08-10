@@ -9,11 +9,20 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtObservation, DhtService};
 use rstorrent_engine::{
-    AddressFamily, DownloadActivityEvent, DownloadActivitySink, DownloadControl,
-    DownloadDiagnosticSnapshot, DownloadError, DownloadReport, DownloadResourceLimits,
-    MagnetDownloadConfig, NetworkConfig, NetworkPolicy, SessionUdpService,
-    download_magnet_with_control, select_global_ipv6,
+    AddressFamily, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
+    DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadReport,
+    DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
+    PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
+    PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
+    ResumeValidationIntent, ResumedStorage, SessionUdpService, TorrentPeerActivitySink,
+    TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource, resume_magnet_with_control,
+    select_global_ipv6,
 };
+use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
+use rstorrent_protocol::metainfo::{
+    EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoTrackerTransport,
+};
+use rstorrent_protocol::mse::MseMethod;
 use serde::Serialize;
 use tokio::net::UdpSocket;
 
@@ -25,13 +34,17 @@ const MAX_CLEANUP_SECONDS: u64 = 60;
 const UTILITY_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_UTILITY_SAMPLES: usize = 1024;
 const DHT_HEALTHY_ROUTING_NODES: u16 = 8;
+const MAX_METAINFO_BYTES: u64 = 64 * 1024 * 1024;
+const DEFAULT_WIRE_PAYLOAD_LIMIT: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Target {
     Metadata,
     FirstPiece,
+    TenPercent,
     FiftyPercent,
+    NinetyPercent,
     NinetyFivePercent,
     NinetyNinePercent,
     Complete,
@@ -42,7 +55,9 @@ impl Target {
         match value {
             "metadata" => Ok(Self::Metadata),
             "first-piece" => Ok(Self::FirstPiece),
+            "10-percent" => Ok(Self::TenPercent),
             "50-percent" => Ok(Self::FiftyPercent),
+            "90-percent" => Ok(Self::NinetyPercent),
             "95-percent" => Ok(Self::NinetyFivePercent),
             "99-percent" => Ok(Self::NinetyNinePercent),
             "complete" => Ok(Self::Complete),
@@ -53,6 +68,77 @@ impl Target {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+enum Profile {
+    MatchedPlain30,
+    MatchedRc430,
+    ProductDefault,
+    DhtOnly,
+}
+
+impl Profile {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "matched-plain-30" | "common" => Ok(Self::MatchedPlain30),
+            "matched-rc4-30" => Ok(Self::MatchedRc430),
+            "product-default" | "full-reference" => Ok(Self::ProductDefault),
+            "dht-only" | "dht" => Ok(Self::DhtOnly),
+            _ => Err(format!("unknown comparison profile {value}")),
+        }
+    }
+
+    const fn discovery(self) -> Discovery {
+        match self {
+            Self::MatchedPlain30 | Self::MatchedRc430 => Discovery::Tracker,
+            Self::ProductDefault => Discovery::Full,
+            Self::DhtOnly => Discovery::Dht,
+        }
+    }
+
+    const fn encryption(self) -> PeerEncryptionPolicy {
+        match self {
+            Self::MatchedPlain30 => PeerEncryptionPolicy::Disabled,
+            Self::MatchedRc430 => PeerEncryptionPolicy::Required,
+            Self::ProductDefault | Self::DhtOnly => PeerEncryptionPolicy::Allow,
+        }
+    }
+
+    const fn peer_exchange(self) -> bool {
+        matches!(self, Self::ProductDefault | Self::DhtOnly)
+    }
+
+    const fn connection_limit(self) -> usize {
+        match self {
+            Self::MatchedPlain30 | Self::MatchedRc430 => 30,
+            Self::ProductDefault | Self::DhtOnly => 200,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::MatchedPlain30 => "matched-plain-30",
+            Self::MatchedRc430 => "matched-rc4-30",
+            Self::ProductDefault => "product-default",
+            Self::DhtOnly => "dht-only",
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ProbeInput {
+    Magnet(String),
+    Metainfo(PathBuf),
+}
+
+impl ProbeInput {
+    const fn mode(&self) -> &'static str {
+        match self {
+            Self::Magnet(_) => "magnet",
+            Self::Metainfo(_) => "metainfo",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Discovery {
     Tracker,
     Dht,
@@ -60,43 +146,49 @@ enum Discovery {
 }
 
 impl Discovery {
-    fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "tracker" => Ok(Self::Tracker),
-            "dht" => Ok(Self::Dht),
-            "full" => Ok(Self::Full),
-            _ => Err(format!("unknown discovery profile {value}")),
-        }
-    }
-
-    fn enables_dht(self) -> bool {
+    const fn enables_dht(self) -> bool {
         matches!(self, Self::Dht | Self::Full)
     }
 }
 
 #[derive(Debug)]
 struct Config {
-    magnet: String,
+    input: ProbeInput,
+    expected_info_hash: [u8; 20],
+    peer_hints: Vec<SocketAddr>,
     output: PathBuf,
     target: Target,
-    discovery: Discovery,
+    profile: Profile,
+    profile_sha256: String,
     timeout: Duration,
     cleanup_grace: Duration,
     payload_limit: usize,
+    wire_payload_limit: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
 struct Milestones {
+    process_ready: Option<f64>,
+    torrent_admitted: Option<f64>,
     metadata_verified: Option<f64>,
+    first_candidate: Option<f64>,
+    first_connection: Option<f64>,
+    first_payload_byte: Option<f64>,
     first_piece_verified: Option<f64>,
+    #[serde(rename = "10_percent_verified")]
+    ten_percent_verified: Option<f64>,
     #[serde(rename = "50_percent_verified")]
     fifty_percent_verified: Option<f64>,
+    #[serde(rename = "90_percent_verified")]
+    ninety_percent_verified: Option<f64>,
     #[serde(rename = "95_percent_verified")]
     ninety_five_percent_verified: Option<f64>,
     #[serde(rename = "99_percent_verified")]
     ninety_nine_percent_verified: Option<f64>,
     all_pieces_verified: Option<f64>,
     published: Option<f64>,
+    owner_stopped: Option<f64>,
+    shutdown_joined: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -355,7 +447,9 @@ impl ProbeSink {
         match target {
             Target::Metadata => observation.milestones.metadata_verified.is_some(),
             Target::FirstPiece => observation.milestones.first_piece_verified.is_some(),
+            Target::TenPercent => observation.milestones.ten_percent_verified.is_some(),
             Target::FiftyPercent => observation.milestones.fifty_percent_verified.is_some(),
+            Target::NinetyPercent => observation.milestones.ninety_percent_verified.is_some(),
             Target::NinetyFivePercent => observation
                 .milestones
                 .ninety_five_percent_verified
@@ -366,6 +460,47 @@ impl ProbeSink {
                 .is_some(),
             Target::Complete => observation.milestones.published.is_some(),
         }
+    }
+
+    fn mark_process_ready(&self) {
+        self.observation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .milestones
+            .process_ready = Some(self.started.elapsed().as_secs_f64());
+    }
+
+    fn mark_admitted(&self) {
+        self.observation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .milestones
+            .torrent_admitted = Some(self.started.elapsed().as_secs_f64());
+    }
+
+    fn mark_metainfo(&self, metainfo: &Metainfo) {
+        let elapsed = self.started.elapsed().as_secs_f64();
+        let mut observation = self
+            .observation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        observation.geometry = Geometry {
+            total_length: Some(metainfo.total_length),
+            piece_length: Some(metainfo.piece_length),
+            piece_count: Some(metainfo.piece_count()),
+            file_count: Some(metainfo.files.len()),
+        };
+        observation.milestones.metadata_verified = Some(elapsed);
+    }
+
+    fn mark_stopped(&self, joined: bool) {
+        let elapsed = self.started.elapsed().as_secs_f64();
+        let mut observation = self
+            .observation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        observation.milestones.owner_stopped = Some(elapsed);
+        observation.milestones.shutdown_joined = joined.then_some(elapsed);
     }
 
     fn mark_published(&self) {
@@ -427,6 +562,12 @@ impl DownloadActivitySink for ProbeSink {
                     .milestones
                     .first_piece_verified
                     .get_or_insert(elapsed);
+                if crosses(observation.verified_bytes, total, 10) {
+                    observation
+                        .milestones
+                        .ten_percent_verified
+                        .get_or_insert(elapsed);
+                }
                 if crosses(observation.verified_bytes, total, 50) {
                     observation
                         .milestones
@@ -437,6 +578,12 @@ impl DownloadActivitySink for ProbeSink {
                     observation
                         .milestones
                         .ninety_five_percent_verified
+                        .get_or_insert(elapsed);
+                }
+                if crosses(observation.verified_bytes, total, 90) {
+                    observation
+                        .milestones
+                        .ninety_percent_verified
                         .get_or_insert(elapsed);
                 }
                 if crosses(observation.verified_bytes, total, 99) {
@@ -453,6 +600,12 @@ impl DownloadActivitySink for ProbeSink {
                 }
             }
             DownloadActivityEvent::TrackerAnnounceSucceeded { peer_count, .. } => {
+                if peer_count > 0 {
+                    observation
+                        .milestones
+                        .first_candidate
+                        .get_or_insert(elapsed);
+                }
                 observation.tracker_response_batches =
                     observation.tracker_response_batches.saturating_add(1);
                 observation.tracker_reported_peers = observation
@@ -463,11 +616,36 @@ impl DownloadActivitySink for ProbeSink {
                 observation.peer_dial_attempts = observation.peer_dial_attempts.saturating_add(1);
             }
             DownloadActivityEvent::DhtLookupSucceeded { peer_count } => {
+                if peer_count > 0 {
+                    observation
+                        .milestones
+                        .first_candidate
+                        .get_or_insert(elapsed);
+                }
                 observation.dht_response_batches =
                     observation.dht_response_batches.saturating_add(1);
                 observation.dht_reported_peers = observation
                     .dht_reported_peers
                     .saturating_add(u64::from(peer_count));
+            }
+            DownloadActivityEvent::PeerConnections { peers, .. } => {
+                if peers
+                    .iter()
+                    .any(|peer| peer.lifecycle == PeerConnectionLifecycle::Connected)
+                {
+                    observation
+                        .milestones
+                        .first_connection
+                        .get_or_insert(elapsed);
+                }
+            }
+            DownloadActivityEvent::BlockReceived { length, .. } => {
+                if length > 0 {
+                    observation
+                        .milestones
+                        .first_payload_byte
+                        .get_or_insert(elapsed);
+                }
             }
             _ => {}
         }
@@ -494,13 +672,227 @@ struct ObservationSnapshot {
 #[derive(Debug, Serialize)]
 struct Capabilities {
     network_policy: &'static str,
-    udp_trackers: bool,
+    tracker: bool,
     dht: bool,
+    pex: bool,
     incoming_connections: bool,
     tcp_outgoing: bool,
     utp_outgoing: bool,
     web_seed: bool,
     websocket_trackers: bool,
+    address_families: [&'static str; 2],
+    encryption: &'static str,
+    incomplete_upload: bool,
+    upload_slots: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct EffectiveSettings {
+    network_policy: &'static str,
+    address_families: [&'static str; 2],
+    tracker: bool,
+    dht: bool,
+    pex: bool,
+    lsd: bool,
+    upnp: bool,
+    natpmp: bool,
+    web_seed: bool,
+    incoming_connections: bool,
+    outgoing_tcp: bool,
+    outgoing_utp: bool,
+    session_connection_limit: usize,
+    torrent_connection_limit: usize,
+    pending_dial_limit: usize,
+    connection_attempts_per_second: usize,
+    peer_connect_timeout_seconds: u64,
+    request_timeout_seconds: u64,
+    request_queue_time_seconds: u64,
+    max_outgoing_request_queue: usize,
+    download_rate_limit_bytes_per_second: u64,
+    upload_rate_limit_bytes_per_second: u64,
+    upload_slots: usize,
+    encryption: &'static str,
+}
+
+impl EffectiveSettings {
+    const fn for_profile(profile: Profile) -> Self {
+        Self {
+            network_policy: "online",
+            address_families: ["ipv4", "ipv6"],
+            tracker: !matches!(profile, Profile::DhtOnly),
+            dht: matches!(profile, Profile::ProductDefault | Profile::DhtOnly),
+            pex: profile.peer_exchange(),
+            lsd: false,
+            upnp: false,
+            natpmp: false,
+            web_seed: false,
+            incoming_connections: false,
+            outgoing_tcp: true,
+            outgoing_utp: false,
+            session_connection_limit: profile.connection_limit(),
+            torrent_connection_limit: 30,
+            pending_dial_limit: 30,
+            connection_attempts_per_second: 30,
+            peer_connect_timeout_seconds: 15,
+            request_timeout_seconds: 60,
+            request_queue_time_seconds: 3,
+            max_outgoing_request_queue: 500,
+            download_rate_limit_bytes_per_second: 0,
+            upload_rate_limit_bytes_per_second: 0,
+            upload_slots: 8,
+            encryption: match profile {
+                Profile::MatchedPlain30 => "disabled",
+                Profile::MatchedRc430 => "required-rc4",
+                Profile::ProductDefault | Profile::DhtOnly => "allow",
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+struct PeerMethodEvidence {
+    snapshots: u64,
+    connected_high_water: usize,
+    tcp_high_water: usize,
+    utp_high_water: usize,
+    plaintext_stream_high_water: usize,
+    plaintext_payload_high_water: usize,
+    rc4_high_water: usize,
+    payload_contributor_plaintext_stream: bool,
+    payload_contributor_plaintext_payload: bool,
+    payload_contributor_rc4: bool,
+    useful_payload_bytes_high_water: u64,
+    uploaded_payload_bytes_high_water: u64,
+}
+
+#[derive(Debug, Default)]
+struct ProbeTorrentPeerSink {
+    evidence: Mutex<PeerMethodEvidence>,
+    methods: Mutex<BTreeMap<u64, Option<MseMethod>>>,
+}
+
+impl ProbeTorrentPeerSink {
+    fn snapshot(&self, diagnostics: &DownloadDiagnosticSnapshot) -> PeerMethodEvidence {
+        let mut evidence = self
+            .evidence
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let methods = self
+            .methods
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for peer in &diagnostics.content_peers {
+            if peer.useful_payload_bytes == 0 {
+                continue;
+            }
+            match methods.get(&peer.connection_id).copied().flatten() {
+                None => evidence.payload_contributor_plaintext_stream = true,
+                Some(MseMethod::PlaintextPayload) => {
+                    evidence.payload_contributor_plaintext_payload = true;
+                }
+                Some(MseMethod::Rc4) => evidence.payload_contributor_rc4 = true,
+            }
+            evidence.useful_payload_bytes_high_water = evidence
+                .useful_payload_bytes_high_water
+                .max(peer.useful_payload_bytes as u64);
+        }
+        evidence
+    }
+}
+
+impl TorrentPeerActivitySink for ProbeTorrentPeerSink {
+    fn record_peer_connections(
+        &self,
+        _captured_at: Duration,
+        peers: Vec<PeerConnectionObservation>,
+    ) {
+        let connected = peers
+            .iter()
+            .filter(|peer| peer.lifecycle == PeerConnectionLifecycle::Connected)
+            .collect::<Vec<_>>();
+        let tcp = connected
+            .iter()
+            .filter(|peer| peer.transport == PeerTransport::Tcp)
+            .count();
+        let utp = connected
+            .iter()
+            .filter(|peer| peer.transport == PeerTransport::Utp)
+            .count();
+        let plaintext_stream = connected
+            .iter()
+            .filter(|peer| peer.mse_method.is_none())
+            .count();
+        let plaintext_payload = connected
+            .iter()
+            .filter(|peer| peer.mse_method == Some(MseMethod::PlaintextPayload))
+            .count();
+        let rc4 = connected
+            .iter()
+            .filter(|peer| peer.mse_method == Some(MseMethod::Rc4))
+            .count();
+        let useful_payload_bytes = connected
+            .iter()
+            .filter_map(|peer| {
+                peer.content
+                    .map(|content| content.useful_payload_bytes as u64)
+            })
+            .sum();
+        let uploaded_payload_bytes = connected
+            .iter()
+            .filter_map(|peer| peer.upload.map(|upload| upload.payload_bytes))
+            .sum();
+        let mut evidence = self
+            .evidence
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        evidence.snapshots = evidence.snapshots.saturating_add(1);
+        evidence.connected_high_water = evidence.connected_high_water.max(connected.len());
+        evidence.tcp_high_water = evidence.tcp_high_water.max(tcp);
+        evidence.utp_high_water = evidence.utp_high_water.max(utp);
+        evidence.plaintext_stream_high_water =
+            evidence.plaintext_stream_high_water.max(plaintext_stream);
+        evidence.plaintext_payload_high_water =
+            evidence.plaintext_payload_high_water.max(plaintext_payload);
+        evidence.rc4_high_water = evidence.rc4_high_water.max(rc4);
+        evidence.useful_payload_bytes_high_water = evidence
+            .useful_payload_bytes_high_water
+            .max(useful_payload_bytes);
+        evidence.uploaded_payload_bytes_high_water = evidence
+            .uploaded_payload_bytes_high_water
+            .max(uploaded_payload_bytes);
+        for peer in connected {
+            if peer
+                .content
+                .is_some_and(|content| content.useful_payload_bytes > 0)
+            {
+                match peer.mse_method {
+                    None => evidence.payload_contributor_plaintext_stream = true,
+                    Some(MseMethod::PlaintextPayload) => {
+                        evidence.payload_contributor_plaintext_payload = true;
+                    }
+                    Some(MseMethod::Rc4) => evidence.payload_contributor_rc4 = true,
+                }
+            }
+        }
+        drop(evidence);
+        let mut methods = self
+            .methods
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for peer in peers {
+            if peer.lifecycle == PeerConnectionLifecycle::Connected {
+                methods.insert(peer.connection_id.get(), peer.mse_method);
+            }
+        }
+    }
+
+    fn record_peer_registry(
+        &self,
+        _active: bool,
+        _snapshot: rstorrent_engine::peer::PeerRegistrySnapshot,
+    ) {
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -583,6 +975,7 @@ struct Diagnostics {
     storage_hash_service_max_micros: u64,
     storage_active_kind: Option<&'static str>,
     storage_active_age_micros: Option<u64>,
+    peer_methods: PeerMethodEvidence,
 }
 
 #[derive(Debug, Serialize)]
@@ -625,8 +1018,8 @@ struct ContentPeerDiagnostics {
 #[derive(Debug, Serialize)]
 struct DhtFamilyEvidence {
     family: &'static str,
-    local_address: String,
-    observed_external_address: Option<String>,
+    local_bound: bool,
+    external_address_observed: bool,
     lifecycle: String,
     routing_nodes: u16,
     time_to_first_valid_response_seconds: Option<f64>,
@@ -643,6 +1036,50 @@ struct DhtEvidence {
     healthy_routing_threshold: u16,
     ipv6_startup_error: Option<String>,
     families: Vec<DhtFamilyEvidence>,
+}
+
+#[derive(Debug, Default)]
+struct ProbeCheckpointSink;
+
+impl DownloadCheckpointSink for ProbeCheckpointSink {
+    fn metadata_verified(&self, _raw_info: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn storage_prepared(&self, _storage: ResumedStorage) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn recheck_started(&self) -> Result<u64, String> {
+        Ok(1)
+    }
+
+    fn have_rechecked(&self, _verified_pieces: &[bool]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn pieces_invalidated(&self, _piece_indices: &[usize]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn descriptor_prepared(
+        &self,
+        _files: &[rstorrent_engine::PreparedFileHash],
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn publication_prepared(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn published(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -676,10 +1113,8 @@ impl DhtEvidenceTracker {
                     AddressFamily::Ipv4 => "ipv4",
                     AddressFamily::Ipv6 => "ipv6",
                 },
-                local_address: family.local_address.to_string(),
-                observed_external_address: family
-                    .observed_external_address
-                    .map(|address| address.to_string()),
+                local_bound: family.local_address.port() != 0,
+                external_address_observed: family.observed_external_address.is_some(),
                 lifecycle: format!("{:?}", family.lifecycle).to_ascii_lowercase(),
                 routing_nodes: family.routing_nodes,
                 time_to_first_valid_response_seconds: self
@@ -709,6 +1144,10 @@ impl DhtEvidenceTracker {
 struct ProbeResult {
     schema_version: u32,
     implementation: &'static str,
+    profile: &'static str,
+    profile_sha256: String,
+    input_mode: &'static str,
+    info_hash: String,
     outcome: &'static str,
     target: Target,
     wall_seconds: f64,
@@ -719,6 +1158,7 @@ struct ProbeResult {
     integrity_verified: bool,
     cleanup_succeeded: bool,
     terminal_detail: Option<String>,
+    effective_settings: EffectiveSettings,
     capabilities: Capabilities,
     dht_evidence: Option<DhtEvidence>,
     diagnostics: Diagnostics,
@@ -803,10 +1243,33 @@ async fn run(config: Config) -> ProbeResult {
     let started = Instant::now();
     let control = DownloadControl::new();
     let sink = Arc::new(ProbeSink::new(started));
+    sink.mark_process_ready();
     control.set_activity_sink(sink.clone());
+    let peer_sink = Arc::new(ProbeTorrentPeerSink::default());
     let mut utility_timeline = UtilityTimeline::default();
 
-    let mut dht = if config.discovery.enables_dht() {
+    let prepared = match prepare_input(&config, &sink) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return result(
+                &config,
+                started,
+                &sink,
+                &peer_sink,
+                &control.diagnostic_snapshot(),
+                &utility_timeline,
+                None,
+                TerminalState {
+                    outcome: "error",
+                    integrity_verified: false,
+                    cleanup_succeeded: true,
+                    detail: Some(error),
+                },
+            );
+        }
+    };
+
+    let mut dht = if config.profile.discovery().enables_dht() {
         match start_live_dht().await {
             Ok(runtime) => Some(runtime),
             Err(error) => {
@@ -814,6 +1277,7 @@ async fn run(config: Config) -> ProbeResult {
                     &config,
                     started,
                     &sink,
+                    &peer_sink,
                     &control.diagnostic_snapshot(),
                     &utility_timeline,
                     None,
@@ -832,28 +1296,66 @@ async fn run(config: Config) -> ProbeResult {
 
     let mut resource_limits = DownloadResourceLimits::DESKTOP;
     resource_limits.max_buffered_payload_bytes = config.payload_limit;
-    let download_config = MagnetDownloadConfig {
-        magnet: config.magnet.clone(),
-        output_path: config.output.clone(),
+    let mut budget_config = PeerBudgetConfig::system_default();
+    budget_config.configured_limit = config.profile.connection_limit();
+    budget_config.incoming_slack = 0;
+    let encryption = PeerEncryptionPolicyHandle::new(config.profile.encryption());
+    let torrent_peers = match TorrentPeerHandle::new(peer_sink.clone()) {
+        Ok(handle) => handle,
+        Err(error) => {
+            return result(
+                &config,
+                started,
+                &sink,
+                &peer_sink,
+                &control.diagnostic_snapshot(),
+                &utility_timeline,
+                None,
+                TerminalState {
+                    outcome: "harness_error",
+                    integrity_verified: false,
+                    cleanup_succeeded: true,
+                    detail: Some(format!("create torrent peer owner: {error}")),
+                },
+            );
+        }
+    };
+    let download_config = ResumableMagnetDownloadConfig {
+        magnet: prepared.magnet,
+        storage_root: config.output.clone(),
         network: NetworkConfig::new(
             NetworkPolicy::Online,
             Duration::from_secs(15),
             Duration::from_secs(15),
-        ),
+        )
+        .with_encryption(config.profile.encryption())
+        .with_mse_rc4_only(matches!(config.profile, Profile::MatchedRc430))
+        .with_peer_exchange(config.profile.peer_exchange()),
+        peer_budget: PeerBudget::new(budget_config),
+        mse_dh: MseDhWorkOwner::new(),
+        encryption,
+        torrent_peers: Some(torrent_peers),
         resource_limits,
         skip_files: Vec::new(),
-        materialize_files: Vec::new(),
+        verified_info: prepared.verified_info,
+        verified_pieces: Vec::new(),
+        artifact_state: ResumeArtifactState::None,
+        resume_validation: ResumeValidationIntent::FastEligible,
+        download_missing: true,
         dht: dht.as_ref().map(|runtime| runtime.service.handle()),
+        udp_trackers: prepared.trackers,
     };
+    sink.mark_admitted();
     let task_control = control.clone();
-    let mut task =
-        tokio::spawn(
-            async move { download_magnet_with_control(download_config, task_control).await },
-        );
+    let checkpoints = Arc::new(ProbeCheckpointSink);
+    let mut task = tokio::spawn(async move {
+        resume_magnet_with_control(download_config, checkpoints, task_control).await
+    });
     let deadline = tokio::time::sleep(config.timeout);
     tokio::pin!(deadline);
     let mut reached = false;
     let mut timed_out = false;
+    let mut resource_limited = false;
     let mut next_utility_sample = Duration::ZERO;
     let mut joined: Option<Result<Result<DownloadReport, DownloadError>, tokio::task::JoinError>> =
         None;
@@ -872,6 +1374,12 @@ async fn run(config: Config) -> ProbeResult {
         }
         if config.target != Target::Complete && sink.reached(config.target) {
             reached = true;
+            control.cancel_when_safe();
+            break;
+        }
+        if control.diagnostic_snapshot().progress.received_bytes as u64 > config.wire_payload_limit
+        {
+            resource_limited = true;
             control.cancel_when_safe();
             break;
         }
@@ -919,10 +1427,13 @@ async fn run(config: Config) -> ProbeResult {
         }
     }
 
+    sink.mark_stopped(cleanup_succeeded);
+
     let terminal = classify_terminal(
         config.target,
         reached,
         timed_out,
+        resource_limited,
         joined,
         &sink,
         cleanup_succeeded,
@@ -938,6 +1449,7 @@ async fn run(config: Config) -> ProbeResult {
         &config,
         started,
         &sink,
+        &peer_sink,
         &control.diagnostic_snapshot(),
         &utility_timeline,
         dht_evidence,
@@ -945,10 +1457,108 @@ async fn run(config: Config) -> ProbeResult {
     )
 }
 
+#[derive(Debug)]
+struct PreparedInput {
+    magnet: String,
+    verified_info: Option<Vec<u8>>,
+    trackers: Option<Vec<TrackerConfig>>,
+}
+
+fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, String> {
+    match &config.input {
+        ProbeInput::Magnet(magnet) => {
+            let parsed = Magnet::parse(magnet).map_err(|error| format!("parse magnet: {error}"))?;
+            if parsed.info_hash != config.expected_info_hash {
+                return Err("magnet identity does not match --expected-info-hash".to_owned());
+            }
+            Ok(PreparedInput {
+                magnet: magnet.clone(),
+                verified_info: None,
+                trackers: (!matches!(
+                    config.profile.discovery(),
+                    Discovery::Tracker | Discovery::Full
+                ))
+                .then(Vec::new),
+            })
+        }
+        ProbeInput::Metainfo(path) => {
+            let metadata = std::fs::metadata(path)
+                .map_err(|error| format!("inspect metainfo {}: {error}", path.display()))?;
+            if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_METAINFO_BYTES {
+                return Err(format!(
+                    "metainfo size must be between 1 and {MAX_METAINFO_BYTES} bytes"
+                ));
+            }
+            let bytes = std::fs::read(path)
+                .map_err(|error| format!("read metainfo {}: {error}", path.display()))?;
+            let projection =
+                Metainfo::project_bytes_with_limits(&bytes, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                    .map_err(|error| format!("parse metainfo: {error}"))?;
+            if projection.metainfo.info_hash != config.expected_info_hash {
+                return Err("metainfo identity does not match --expected-info-hash".to_owned());
+            }
+            let raw_info = bytes[projection.info_span.clone()].to_vec();
+            sink.mark_metainfo(&projection.metainfo);
+            let magnet = format!(
+                "magnet:?xt=urn:btih:{}",
+                hex_info_hash(&projection.metainfo.info_hash)
+            );
+            let magnet = config.peer_hints.iter().fold(magnet, |mut magnet, peer| {
+                magnet.push_str("&x.pe=");
+                magnet.push_str(&peer.to_string());
+                magnet
+            });
+            let trackers = if matches!(config.profile.discovery(), Discovery::Dht) {
+                Vec::new()
+            } else {
+                projection
+                    .trackers
+                    .into_iter()
+                    .map(|tracker| {
+                        let endpoint = match tracker.transport {
+                            MetainfoTrackerTransport::Udp => {
+                                UdpTrackerUrl::from_metainfo_url(&tracker.url)
+                                    .map(TrackerEndpoint::Udp)
+                            }
+                            MetainfoTrackerTransport::Http | MetainfoTrackerTransport::Https => {
+                                TrackerEndpoint::from_http_url(&tracker.url)
+                            }
+                        }
+                        .ok_or_else(|| format!("unsupported tracker URL in metainfo"))?;
+                        Ok(TrackerConfig {
+                            url: tracker.url,
+                            endpoint,
+                            tier: tracker.tier,
+                            position: tracker.position,
+                            source: TrackerSource::Metainfo,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?
+            };
+            Ok(PreparedInput {
+                magnet,
+                verified_info: Some(raw_info),
+                trackers: Some(trackers),
+            })
+        }
+    }
+}
+
+fn hex_info_hash(info_hash: &[u8; 20]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(40);
+    for byte in info_hash {
+        output.push(HEX[usize::from(byte >> 4)] as char);
+        output.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    output
+}
+
 fn classify_terminal(
     target: Target,
     reached: bool,
     timed_out: bool,
+    resource_limited: bool,
     joined: Option<Result<Result<DownloadReport, DownloadError>, tokio::task::JoinError>>,
     sink: &ProbeSink,
     cleanup_succeeded: bool,
@@ -967,6 +1577,14 @@ fn classify_terminal(
             integrity_verified: false,
             cleanup_succeeded: true,
             detail: Some("target deadline expired".to_owned()),
+        };
+    }
+    if resource_limited {
+        return TerminalState {
+            outcome: "resource_bound",
+            integrity_verified: false,
+            cleanup_succeeded: true,
+            detail: Some("wire payload ceiling exceeded".to_owned()),
         };
     }
     let (outcome, integrity_verified, detail) = match joined {
@@ -1013,16 +1631,26 @@ fn result(
     config: &Config,
     started: Instant,
     sink: &ProbeSink,
+    peer_sink: &ProbeTorrentPeerSink,
     diagnostics: &DownloadDiagnosticSnapshot,
     utility_timeline: &UtilityTimeline,
     dht_evidence: Option<DhtEvidence>,
     terminal: TerminalState,
 ) -> ProbeResult {
     let observation = sink.snapshot();
-    let diagnostics = diagnostic_result(diagnostics, &observation, utility_timeline);
+    let diagnostics = diagnostic_result(
+        diagnostics,
+        &observation,
+        utility_timeline,
+        peer_sink.snapshot(diagnostics),
+    );
     ProbeResult {
-        schema_version: 1,
+        schema_version: 2,
         implementation: "rstorrent",
+        profile: config.profile.name(),
+        profile_sha256: config.profile_sha256.clone(),
+        input_mode: config.input.mode(),
+        info_hash: hex_info_hash(&config.expected_info_hash),
         outcome: terminal.outcome,
         target: config.target,
         wall_seconds: started.elapsed().as_secs_f64(),
@@ -1033,15 +1661,21 @@ fn result(
         integrity_verified: terminal.integrity_verified,
         cleanup_succeeded: terminal.cleanup_succeeded,
         terminal_detail: terminal.detail,
+        effective_settings: EffectiveSettings::for_profile(config.profile),
         capabilities: Capabilities {
             network_policy: "online",
-            udp_trackers: !matches!(config.discovery, Discovery::Dht),
-            dht: config.discovery.enables_dht(),
+            tracker: !matches!(config.profile.discovery(), Discovery::Dht),
+            dht: config.profile.discovery().enables_dht(),
+            pex: config.profile.peer_exchange(),
             incoming_connections: false,
             tcp_outgoing: true,
             utp_outgoing: false,
             web_seed: false,
             websocket_trackers: false,
+            address_families: ["ipv4", "ipv6"],
+            encryption: EffectiveSettings::for_profile(config.profile).encryption,
+            incomplete_upload: true,
+            upload_slots: 8,
         },
         dht_evidence,
         diagnostics,
@@ -1052,6 +1686,7 @@ fn diagnostic_result(
     snapshot: &DownloadDiagnosticSnapshot,
     observation: &ObservationSnapshot,
     utility_timeline: &UtilityTimeline,
+    peer_methods: PeerMethodEvidence,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
@@ -1193,17 +1828,23 @@ fn diagnostic_result(
             .progress
             .storage_active_write_micros
             .or(snapshot.progress.storage_active_hash_micros),
+        peer_methods,
     }
 }
 
 fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     let mut magnet = None;
+    let mut metainfo = None;
     let mut output = None;
+    let mut expected_info_hash = None;
+    let mut peer_hints = Vec::new();
     let mut target = Target::Complete;
-    let mut discovery = Discovery::Tracker;
+    let mut profile = Profile::MatchedPlain30;
+    let mut profile_sha256 = None;
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
     let mut cleanup_seconds = DEFAULT_CLEANUP_SECONDS;
     let mut payload_limit = DEFAULT_PAYLOAD_LIMIT;
+    let mut wire_payload_limit = DEFAULT_WIRE_PAYLOAD_LIMIT;
     let mut index = 0;
     while index < arguments.len() {
         let flag = &arguments[index];
@@ -1214,9 +1855,24 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         index += 1;
         match flag.as_str() {
             "--magnet" => set_once(&mut magnet, value.clone(), flag)?,
+            "--metainfo" => set_once(&mut metainfo, PathBuf::from(value), flag)?,
             "--output" => set_once(&mut output, PathBuf::from(value), flag)?,
+            "--expected-info-hash" => {
+                set_once(&mut expected_info_hash, parse_info_hash(value)?, flag)?;
+            }
+            "--peer-hint" => {
+                if peer_hints.len() >= 8 {
+                    return Err("--peer-hint may be specified at most eight times".to_owned());
+                }
+                peer_hints.push(
+                    value
+                        .parse::<SocketAddr>()
+                        .map_err(|_| "--peer-hint must be an IP socket address".to_owned())?,
+                );
+            }
             "--target" => target = Target::parse(value)?,
-            "--discovery" => discovery = Discovery::parse(value)?,
+            "--profile" => profile = Profile::parse(value)?,
+            "--profile-sha256" => set_once(&mut profile_sha256, value.clone(), flag)?,
             "--timeout-seconds" => {
                 timeout_seconds = bounded_u64(value, flag, 1, MAX_TIMEOUT_SECONDS)?;
             }
@@ -1231,18 +1887,54 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                     return Err(format!("{flag} is outside the supported range"));
                 }
             }
+            "--wire-payload-ceiling-bytes" => {
+                wire_payload_limit = bounded_u64(value, flag, 1, u64::MAX)?;
+            }
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
+    let input = match (magnet, metainfo) {
+        (Some(magnet), None) => ProbeInput::Magnet(magnet),
+        (None, Some(path)) => ProbeInput::Metainfo(path),
+        (None, None) => return Err("exactly one of --magnet or --metainfo is required".to_owned()),
+        (Some(_), Some(_)) => {
+            return Err("--magnet and --metainfo are mutually exclusive".to_owned());
+        }
+    };
+    let profile_sha256 = profile_sha256.ok_or_else(|| "--profile-sha256 is required".to_owned())?;
+    if profile_sha256.len() != 64 || !profile_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("--profile-sha256 must be a 64-character hexadecimal digest".to_owned());
+    }
     Ok(Config {
-        magnet: magnet.ok_or_else(|| "--magnet is required".to_owned())?,
+        input,
+        expected_info_hash: expected_info_hash
+            .ok_or_else(|| "--expected-info-hash is required".to_owned())?,
+        peer_hints,
         output: output.ok_or_else(|| "--output is required".to_owned())?,
         target,
-        discovery,
+        profile,
+        profile_sha256: profile_sha256.to_ascii_lowercase(),
         timeout: Duration::from_secs(timeout_seconds),
         cleanup_grace: Duration::from_secs(cleanup_seconds),
         payload_limit,
+        wire_payload_limit,
     })
+}
+
+fn parse_info_hash(value: &str) -> Result<[u8; 20], String> {
+    if value.len() != 40 {
+        return Err("--expected-info-hash must contain 40 hexadecimal characters".to_owned());
+    }
+    let mut output = [0_u8; 20];
+    for (index, byte) in output.iter_mut().enumerate() {
+        let start = index * 2;
+        *byte = u8::from_str_radix(&value[start..start + 2], 16)
+            .map_err(|_| "--expected-info-hash must contain lowercase hexadecimal".to_owned())?;
+    }
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err("--expected-info-hash must contain lowercase hexadecimal".to_owned());
+    }
+    Ok(output)
 }
 
 fn bounded_u64(value: &str, flag: &str, minimum: u64, maximum: u64) -> Result<u64, String> {
@@ -1279,9 +1971,46 @@ mod tests {
 
     use super::{
         DownloadActivityEvent, DownloadActivitySink, Geometry, IntegerDistribution,
-        MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeSink, UtilitySample,
-        UtilityTimeline, crosses, integer_distribution,
+        MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeInput, ProbeSink, Profile,
+        UtilitySample, UtilityTimeline, crosses, integer_distribution, parse_args,
     };
+
+    fn required_arguments() -> Vec<String> {
+        vec![
+            "--magnet".to_owned(),
+            format!("magnet:?xt=urn:btih:{}", "11".repeat(20)),
+            "--expected-info-hash".to_owned(),
+            "11".repeat(20),
+            "--output".to_owned(),
+            "out".to_owned(),
+            "--profile-sha256".to_owned(),
+            "22".repeat(32),
+        ]
+    }
+
+    #[test]
+    fn arguments_require_exactly_one_bounded_input() {
+        let config = parse_args(required_arguments()).expect("valid magnet arguments");
+        assert!(matches!(config.input, ProbeInput::Magnet(_)));
+        assert_eq!(config.profile, Profile::MatchedPlain30);
+
+        let mut both = required_arguments();
+        both.extend(["--metainfo".to_owned(), "fixture.torrent".to_owned()]);
+        assert!(parse_args(both).is_err());
+
+        let missing = required_arguments().into_iter().skip(2).collect::<Vec<_>>();
+        assert!(parse_args(missing).is_err());
+    }
+
+    #[test]
+    fn arguments_select_forced_rc4_and_bounded_peer_hints() {
+        let mut arguments = required_arguments();
+        arguments.extend(["--profile".to_owned(), "matched-rc4-30".to_owned()]);
+        arguments.extend(["--peer-hint".to_owned(), "127.0.0.1:6881".to_owned()]);
+        let config = parse_args(arguments).expect("forced RC4 arguments");
+        assert_eq!(config.profile, Profile::MatchedRc430);
+        assert_eq!(config.peer_hints.len(), 1);
+    }
 
     #[test]
     fn percentage_thresholds_do_not_round_down() {

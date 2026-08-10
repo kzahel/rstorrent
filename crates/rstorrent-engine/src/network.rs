@@ -216,6 +216,10 @@ impl fmt::Display for NetworkPolicy {
 pub struct NetworkConfig {
     pub policy: NetworkPolicy,
     pub address_families: AddressFamilyPolicy,
+    /// Whether public torrents advertise, accept, and emit BEP 11 peer exchange.
+    pub peer_exchange: bool,
+    /// Restrict initiated MSE handshakes to RC4 payload encryption.
+    pub mse_rc4_only: bool,
     pub peer_connect_timeout: Duration,
     pub peer_io_timeout: Duration,
     pub peer_id: [u8; 20],
@@ -231,6 +235,8 @@ impl NetworkConfig {
         Self {
             policy,
             address_families: AddressFamilyPolicy::dual_stack(),
+            peer_exchange: true,
+            mse_rc4_only: false,
             peer_connect_timeout,
             peer_io_timeout,
             peer_id: DEFAULT_PEER_ID,
@@ -245,6 +251,16 @@ impl NetworkConfig {
 
     pub const fn with_address_families(mut self, address_families: AddressFamilyPolicy) -> Self {
         self.address_families = address_families;
+        self
+    }
+
+    pub const fn with_peer_exchange(mut self, peer_exchange: bool) -> Self {
+        self.peer_exchange = peer_exchange;
+        self
+    }
+
+    pub const fn with_mse_rc4_only(mut self, mse_rc4_only: bool) -> Self {
+        self.mse_rc4_only = mse_rc4_only;
         self
     }
 
@@ -270,9 +286,23 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
     use super::{
-        AddressFamily, AddressFamilyPolicy, NetworkPolicy, PeerEncryptionPolicy,
+        AddressFamily, AddressFamilyPolicy, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
         PeerEncryptionPolicyHandle, is_valid_outbound_address,
     };
+
+    #[test]
+    fn comparison_toggles_are_explicit_and_default_on_product_behavior() {
+        let defaults = NetworkConfig::new(
+            NetworkPolicy::Online,
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(1),
+        );
+        assert!(defaults.peer_exchange);
+        assert!(!defaults.mse_rc4_only);
+        let matched = defaults.with_peer_exchange(false).with_mse_rc4_only(true);
+        assert!(!matched.peer_exchange);
+        assert!(matched.mse_rc4_only);
+    }
 
     #[test]
     fn address_family_policy_always_retains_ipv4() {

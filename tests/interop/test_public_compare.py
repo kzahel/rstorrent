@@ -3,28 +3,32 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 from public_compare import (
-    DHT_BOOTSTRAP_NODES,
     HarnessError,
-    MAX_UTILITY_SAMPLES,
-    append_utility_sample,
     classify_owner,
     classify_pair,
     distribution,
     implementation_order,
-    integer_distribution,
-    libtorrent_utility_sample,
-    libtorrent_settings,
     load_catalog,
-    mark_percent_milestones,
+    run_owner_process,
     scenario_magnets,
     selected_implementations,
     summarize,
+)
+from public_compare_libtorrent_worker import (
+    DHT_BOOTSTRAP_NODES,
+    MAX_UTILITY_SAMPLES,
+    append_utility_sample,
+    integer_distribution,
+    libtorrent_settings,
+    libtorrent_utility_sample,
+    mark_percent_milestones,
 )
 
 
@@ -176,6 +180,7 @@ class PublicCompareTests(unittest.TestCase):
             num_connections=2,
             num_peers=1,
             download_payload_rate=90,
+            upload_payload_rate=12,
         )
         peer = SimpleNamespace(
             flags=0,
@@ -204,6 +209,23 @@ class PublicCompareTests(unittest.TestCase):
         rendered = json.dumps(sample)
         self.assertNotIn(peer.ip, rendered)
         self.assertNotIn(peer.client, rendered)
+
+    def test_worker_supervision_hashes_stderr_without_retaining_it(self) -> None:
+        secret = "peer endpoint 203.0.113.9:6881"
+        script = (
+            "import json,sys; "
+            f"sys.stderr.write({secret!r}); "
+            "print(json.dumps({'schema_version':2,'implementation':'fixture','outcome':'error'}))"
+        )
+        result = run_owner_process([sys.executable, "-c", script], "fixture", 5)
+        self.assertEqual(result["process"]["stderr_bytes"], len(secret.encode()))
+        self.assertIsNotNone(result["process"]["stderr_sha256"])
+        self.assertNotIn(secret, json.dumps(result))
+
+    def test_orchestrator_does_not_import_libtorrent_in_process(self) -> None:
+        source = (Path(__file__).with_name("public_compare.py")).read_text(encoding="utf-8")
+        imports = [line.strip() for line in source.splitlines() if line.lstrip().startswith("import ")]
+        self.assertNotIn("import libtorrent", imports)
 
 
 if __name__ == "__main__":

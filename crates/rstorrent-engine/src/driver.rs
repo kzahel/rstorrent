@@ -2234,6 +2234,9 @@ impl TorrentPeerCoordinator {
         connection: ConnectionId,
         payload: &[u8],
     ) -> Result<ExtensionMap, DownloadError> {
+        if !self.network.peer_exchange {
+            return Ok(ExtensionMap::default());
+        }
         let handshake = parse_recognized_extension_handshake(payload)
             .map_err(|error| DownloadError::Pex(PexError::Extension(error)))?;
         Ok(self
@@ -2242,6 +2245,11 @@ impl TorrentPeerCoordinator {
     }
 
     fn install_extension_map(&mut self, connection: ConnectionId, map: ExtensionMap) {
+        let map = if self.network.peer_exchange {
+            map
+        } else {
+            ExtensionMap::default()
+        };
         self.peers
             .with_state(|state| state.pex.install_extension_map(connection, map));
     }
@@ -2252,6 +2260,9 @@ impl TorrentPeerCoordinator {
         payload: &[u8],
         verified_public: bool,
     ) -> Result<PexReceiveDisposition, DownloadError> {
+        if !self.network.peer_exchange {
+            return Ok(PexReceiveDisposition::PrivacyBlocked);
+        }
         let source_endpoint = self
             .peers
             .with_state(|state| {
@@ -5746,7 +5757,8 @@ async fn run_selective_swarm_loop(
                 send_initial_availability,
             )
             .await?;
-        if !download.metainfo.private
+        if peers.network.peer_exchange
+            && !download.metainfo.private
             && sockets
                 .send(
                     id,
@@ -6170,7 +6182,8 @@ async fn run_selective_swarm_loop(
                             .await?;
                             continue;
                         }
-                        if handshake.supports_extensions()
+                        if peers.network.peer_exchange
+                            && handshake.supports_extensions()
                             && !download.metainfo.private
                             && sockets
                                 .send(

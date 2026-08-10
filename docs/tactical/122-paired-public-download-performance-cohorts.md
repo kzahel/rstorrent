@@ -672,6 +672,41 @@ its own worker process, moves both workers to schema version 2, and integrates
 direct-metainfo input, process sampling, exact settings echo, and independent
 verification into the orchestrator.
 
+### Isolated workers and controlled schema-v2 gate: 2026-08-10
+
+- The orchestrator no longer imports libtorrent. It starts one fresh process
+  per owner, samples CPU and RSS, bounds stdout, hashes rather than retains
+  stderr, enforces an outer terminate/kill deadline, and validates settings,
+  identity, cleanup ancestry, and report privacy before retaining a result.
+- The libtorrent worker owns exactly one pinned session and applies the
+  complete symbolic profile, direct metainfo or magnet input, payload ceiling,
+  aggregate alert/peer/transport/MSE telemetry, and terminal cleanup. Raw
+  alerts, endpoints, save paths, and logs do not enter the report.
+- The RSTorrent probe now uses the production resumable owner for both input
+  modes. Direct metainfo is parsed under the explicit-import bounds, exact raw
+  `info` bytes and ordered tracker tiers are supplied to the owner, and the
+  probe supplies production-shaped peer-budget, MSE-DH, torrent-peer,
+  incomplete-upload, cancellation, and publication ownership.
+- Two explicit engine configuration switches support the matched harness
+  without changing product defaults: BEP 11 can be disabled, and an initiated
+  required-MSE stream can offer RC4 only. Focused engine tests prove both
+  defaults plus RC4-only negotiation; the product continues to enable PEX and
+  to allow both MSE payload methods unless a caller selects otherwise.
+- A release-mode 1 MiB direct-metainfo multi-file control passes full
+  publication and the independent piece verifier for both owners under
+  plaintext and forced RC4. Both RC4 workers record an actual RC4 payload
+  contributor and no plaintext contributor. This small control validates the
+  adapters; it does not replace the required 1 GiB gate.
+- Twenty focused Python tests now pass, including worker stderr privacy,
+  orchestrator process isolation, settings/profile contracts, supervision,
+  independent verification, bounds, ABBA order, classifications, and robust
+  distributions. Six probe tests cover arguments, milestones, aggregation,
+  and bounded timelines.
+
+No public network access occurred. The next checkpoint is the release-mode
+1 GiB plaintext and forced-RC4 controlled gate, followed by official catalog
+refresh only if that gate remains exact and cleanup-safe.
+
 ## Non-Goals And Next Boundary
 
 - No engine optimization, picker/scheduler retuning, new protocol capability,

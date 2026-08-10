@@ -391,15 +391,16 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: Tactical `122`'s deterministic catalog-v2, profile,
-bounds, privacy, distribution, and independent-verifier foundation passes 18
-focused tests, and the existing release-mode 79,000-byte controlled pair still
-classifies `both_reached`. Isolate libtorrent in its own worker process, move
-both workers to schema version 2, and integrate direct-metainfo input, exact
-settings echo, process sampling, and independent verification before using
-the public network. Keep uTP paused; do not install a remote oracle, change
-remote network state, contact another host, or infer product-policy,
-MSE-over-uTP, reverse-incoming, or support-claim authority.
+Next executable action: Tactical `122`'s isolated schema-v2 workers,
+direct-metainfo production owner path, exact settings echo, process sampling,
+privacy retention, independent verifier, forced-RC4 offer, and controlled
+1 MiB plaintext/RC4 adapters pass. Run the release-mode 1 GiB plaintext and
+forced-RC4 control with exact payload, actual MSE-method, resource, and cleanup
+evidence. Refresh official catalog metainfo only after that gate passes, and
+use no public payload swarm before the reviewed catalog commit. Keep uTP
+paused; do not install a remote oracle, change remote network state, contact
+another host, or infer product-policy, MSE-over-uTP, reverse-incoming, or
+support-claim authority.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

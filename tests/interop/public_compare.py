@@ -1,34 +1,43 @@
 #!/usr/bin/env python3
-"""Run bounded, alternating RSTorrent/libtorrent public-swarm comparisons."""
+"""Run bounded, alternating RSTorrent/libtorrent public-download comparisons."""
 
 from __future__ import annotations
 
 import argparse
-import gc
+import hashlib
 import json
-import math
+import os
 import platform
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import libtorrent as lt
-
 from public_compare_contract import (
     CANONICAL_PROFILES,
+    MAX_NETWORK_BYTES,
+    MAX_OWNER_TIMEOUT_SECONDS,
     MAX_PAIRS,
+    MAX_REPORT_BYTES,
     PROFILE_ALIASES,
     REPORT_SCHEMA_VERSION,
     ContractError,
     comparison_profile,
     distribution,
+    invocation_network_budget,
     load_catalog_document,
     normalize_profile,
+    parse_metainfo,
+    required_free_space,
+    validate_output_ancestry,
+    validate_retained_report,
+    verify_payload,
 )
 
 
@@ -36,34 +45,30 @@ SCHEMA_VERSION = REPORT_SCHEMA_VERSION
 TARGETS = (
     "metadata",
     "first-piece",
+    "10-percent",
     "50-percent",
+    "90-percent",
     "95-percent",
     "99-percent",
     "complete",
 )
 PROFILES = CANONICAL_PROFILES + tuple(PROFILE_ALIASES)
 OWNERS = ("both", "rstorrent", "libtorrent")
+INPUT_MODES = ("metainfo", "magnet")
+SUITES = ("smoke", "standard", "large", "product", "encryption", "breadth")
 MILESTONE_KEYS = {
     "metadata": "metadata_verified",
     "first-piece": "first_piece_verified",
+    "10-percent": "10_percent_verified",
     "50-percent": "50_percent_verified",
+    "90-percent": "90_percent_verified",
     "95-percent": "95_percent_verified",
     "99-percent": "99_percent_verified",
     "complete": "published",
 }
-MAX_RUNS = MAX_PAIRS
-MAX_TIMEOUT_SECONDS = 24 * 60 * 60
-MAX_DIAGNOSTIC_CHARS = 16_384
-POLL_SECONDS = 0.05
-UTILITY_SAMPLE_SECONDS = 1.0
-MAX_UTILITY_SAMPLES = 1024
-DHT_BOOTSTRAP_NODES = ",".join(
-    (
-        "dht.libtorrent.org:25401",
-        "router.bittorrent.com:6881",
-        "dht.transmissionbt.com:6881",
-    )
-)
+PROCESS_SAMPLE_SECONDS = 0.1
+OUTER_GRACE_SECONDS = 10
+MAX_REDIRECTS = 5
 
 
 class HarnessError(RuntimeError):
@@ -93,9 +98,18 @@ def select_torrent(catalog: dict[str, Any], slug: str) -> dict[str, Any]:
     raise HarnessError(f"unknown torrent {slug!r}; choose one of: {choices}")
 
 
+def select_role(catalog: dict[str, Any], role: str) -> dict[str, Any]:
+    candidates = [entry for entry in catalog["torrents"] if role in entry["roles"]]
+    if len(candidates) != 1:
+        raise HarnessError(f"catalog role {role!r} must select exactly one torrent")
+    return candidates[0]
+
+
 def scenario_magnets(entry: dict[str, Any], profile: str) -> tuple[str, str]:
     profile = normalize_profile(profile)
-    source = entry["magnet"]
+    source = entry.get("magnet")
+    if not isinstance(source, str):
+        source = f"magnet:?xt=urn:btih:{entry['info_hash']}"
     if profile == "product-default":
         return source, source
     split = urlsplit(source)
@@ -103,7 +117,11 @@ def scenario_magnets(entry: dict[str, Any], profile: str) -> tuple[str, str]:
     for key, value in parse_qsl(split.query, keep_blank_values=True):
         if key in ("xt", "dn"):
             retained.append((key, value))
-        elif profile in ("matched-plain-30", "matched-rc4-30") and key == "tr" and value.lower().startswith("udp://"):
+        elif (
+            profile in ("matched-plain-30", "matched-rc4-30")
+            and key == "tr"
+            and value.lower().startswith(("udp://", "http://", "https://"))
+        ):
             retained.append((key, value))
     magnet = urlunsplit((split.scheme, split.netloc, split.path, urlencode(retained), ""))
     return magnet, magnet
@@ -125,22 +143,20 @@ def classify_pair(rstorrent: dict[str, Any], libtorrent: dict[str, Any]) -> str:
     outcomes = (rstorrent.get("outcome"), libtorrent.get("outcome"))
     if "harness_error" in outcomes:
         return "harness_error"
-    rst_reached = outcomes[0] == "milestone_reached"
-    lib_reached = outcomes[1] == "milestone_reached"
-    if rst_reached and lib_reached:
+    reached = tuple(value == "milestone_reached" for value in outcomes)
+    if reached == (True, True):
         return "both_reached"
-    if lib_reached:
+    if reached[1]:
         return "reference_only"
-    if rst_reached:
+    if reached[0]:
         return "rstorrent_only"
     return "both_incomplete"
 
 
 def classify_owner(result: dict[str, Any]) -> str:
-    outcome = result.get("outcome")
-    if outcome == "harness_error":
+    if result.get("outcome") == "harness_error":
         return "harness_error"
-    return "owner_reached" if outcome == "milestone_reached" else "owner_incomplete"
+    return "owner_reached" if result.get("outcome") == "milestone_reached" else "owner_incomplete"
 
 
 def milestone_seconds(result: dict[str, Any], target: str) -> float | None:
@@ -152,10 +168,8 @@ def summarize(
     runs: list[dict[str, Any]], target: str, owner: str = "both"
 ) -> dict[str, Any]:
     if owner != "both":
-        classifications = {
-            name: sum(run["classification"] == name for run in runs)
-            for name in ("owner_reached", "owner_incomplete", "harness_error")
-        }
+        names = ("owner_reached", "owner_incomplete", "harness_error")
+        classifications = {name: sum(run["classification"] == name for run in runs) for name in names}
         times = [
             seconds
             for run in runs
@@ -170,16 +184,14 @@ def summarize(
             "milestone_samples": len(times),
             "owner_seconds": distribution(times),
         }
-    classifications = {
-        name: sum(run["classification"] == name for run in runs)
-        for name in (
-            "both_reached",
-            "reference_only",
-            "rstorrent_only",
-            "both_incomplete",
-            "harness_error",
-        )
-    }
+    names = (
+        "both_reached",
+        "reference_only",
+        "rstorrent_only",
+        "both_incomplete",
+        "harness_error",
+    )
+    classifications = {name: sum(run["classification"] == name for run in runs) for name in names}
     ratios: list[float] = []
     rst_times: list[float] = []
     lib_times: list[float] = []
@@ -203,104 +215,6 @@ def summarize(
     }
 
 
-def integer_distribution(values: list[int]) -> dict[str, int | None]:
-    if not values:
-        return {"count": 0, "min": None, "median": None, "p90": None, "max": None}
-    ordered = sorted(values)
-    p90_index = max(0, math.ceil(len(ordered) * 0.9) - 1)
-    return {
-        "count": len(ordered),
-        "min": ordered[0],
-        "median": ordered[(len(ordered) - 1) // 2],
-        "p90": ordered[p90_index],
-        "max": ordered[-1],
-    }
-
-
-def append_utility_sample(samples: list[dict[str, Any]], sample: dict[str, Any]) -> int:
-    coalesced = 0
-    if len(samples) >= MAX_UTILITY_SAMPLES:
-        retained = [
-            value for index, value in enumerate(samples) if index == 0 or index % 2 == 1
-        ]
-        coalesced = len(samples) - len(retained)
-        samples[:] = retained
-    samples.append(sample)
-    return coalesced
-
-
-def libtorrent_utility_sample(
-    status: Any,
-    peers: list[Any],
-    elapsed_seconds: float,
-    previous_verified: tuple[float, int] | None,
-) -> dict[str, Any]:
-    verified_bytes = int(status.total_wanted_done)
-    verified_rate = None
-    if previous_verified is not None:
-        previous_at, previous_bytes = previous_verified
-        interval = elapsed_seconds - previous_at
-        if interval > 0:
-            verified_rate = round(max(0, verified_bytes - previous_bytes) / interval)
-
-    connected = [
-        peer
-        for peer in peers
-        if not peer_has_flag(peer, lt.peer_info.connecting)
-        and not peer_has_flag(peer, lt.peer_info.handshake)
-    ]
-    payload_rates = [max(0, int(peer.payload_down_speed)) for peer in connected]
-    request_queues = [max(0, int(peer.download_queue_length)) for peer in connected]
-    return {
-        "elapsed_seconds": elapsed_seconds,
-        "verified_piece_count": int(status.num_pieces),
-        "verified_bytes": verified_bytes,
-        "verified_rate": verified_rate,
-        "tracker_response_batches": None,
-        "tracker_reported_peers": None,
-        "dht_response_batches": None,
-        "dht_reported_peers": None,
-        "dial_attempts": None,
-        "known_peers": int(status.list_peers),
-        "eligible_peers": int(status.connect_candidates),
-        "connecting_peers": max(0, int(status.num_connections) - int(status.num_peers)),
-        "connected_peers": int(status.num_peers),
-        "unchoked_peers": sum(
-            not peer_has_flag(peer, lt.peer_info.remote_choked) for peer in connected
-        ),
-        "wanted_peers": sum(
-            peer_has_flag(peer, lt.peer_info.interesting) for peer in connected
-        ),
-        "ever_useful_peers": sum(int(peer.total_download) > 0 for peer in connected),
-        "active_payload_peers": sum(rate > 0 for rate in payload_rates),
-        "stalled_peers": sum(peer_has_flag(peer, lt.peer_info.snubbed) for peer in connected),
-        "zero_payload_peers": sum(int(peer.total_download) == 0 for peer in connected),
-        "active_requests": sum(request_queues),
-        "request_queue_bytes": sum(max(0, int(peer.queue_bytes)) for peer in connected),
-        "request_target": None,
-        "writing_blocks": None,
-        "storage_jobs": None,
-        "storage_queue_wait_micros": None,
-        "storage_write_service_micros": None,
-        "storage_hash_service_micros": None,
-        "storage_write_blocks_completed": None,
-        "storage_write_batch_blocks_high_water": None,
-        "storage_write_batch_bytes_high_water": None,
-        "storage_active_kind": None,
-        "storage_active_age_micros": None,
-        "pending_disk_bytes": sum(
-            max(0, int(peer.pending_disk_bytes)) for peer in connected
-        ),
-        "payload_rate": max(0, int(status.download_payload_rate)),
-        "peer_payload_rates": integer_distribution(payload_rates),
-        "peer_request_queues": integer_distribution(request_queues),
-    }
-
-
-def peer_has_flag(peer: Any, flag: Any) -> bool:
-    return bool(peer.flags & flag)
-
-
 def build_probe(repository: Path) -> Path:
     completed = subprocess.run(
         [
@@ -315,7 +229,7 @@ def build_probe(repository: Path) -> Path:
         cwd=repository,
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=300,
         check=False,
     )
     if completed.returncode != 0:
@@ -329,16 +243,12 @@ def build_probe(repository: Path) -> Path:
     return binary
 
 
-def environment_snapshot(repository: Path) -> dict[str, Any]:
-    return {
-        "repository_commit": command_text(["git", "rev-parse", "HEAD"], repository),
-        "repository_dirty": bool(command_text(["git", "status", "--porcelain"], repository)),
-        "platform": platform.platform(),
-        "architecture": platform.machine(),
-        "python": platform.python_version(),
-        "rustc": command_text(["rustc", "--version"], repository),
-        "libtorrent": lt.version,
-    }
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def command_text(command: list[str], cwd: Path) -> str | None:
@@ -356,354 +266,339 @@ def command_text(command: list[str], cwd: Path) -> str | None:
     return completed.stdout.strip() if completed.returncode == 0 else None
 
 
+def environment_snapshot(repository: Path, binary: Path | None) -> dict[str, Any]:
+    worker = repository / "tests" / "interop" / "public_compare_libtorrent_worker.py"
+    return {
+        "repository_commit": command_text(["git", "rev-parse", "HEAD"], repository),
+        "repository_dirty": bool(command_text(["git", "status", "--porcelain"], repository)),
+        "platform": platform.platform(),
+        "architecture": platform.machine(),
+        "cpu_count": os.cpu_count(),
+        "python": platform.python_version(),
+        "rustc": command_text(["rustc", "--version"], repository),
+        "libtorrent": command_text(
+            [sys.executable, "-c", "import libtorrent as lt; print(lt.version)"], repository
+        ),
+        "rstorrent_release_sha256": sha256_file(binary) if binary else None,
+        "libtorrent_worker_sha256": sha256_file(worker),
+        "cargo_profile": "release",
+        "cache_policy": "ordinary-uncontrolled-os-cache",
+    }
+
+
+def _parse_cpu_seconds(value: str) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        days = 0
+        if "-" in value:
+            encoded_days, value = value.split("-", 1)
+            days = int(encoded_days)
+        parts = [float(part) for part in value.split(":")]
+        if len(parts) == 3:
+            hours, minutes, seconds = parts
+        elif len(parts) == 2:
+            hours, minutes, seconds = 0, parts[0], parts[1]
+        else:
+            return None
+        return days * 86_400 + hours * 3_600 + minutes * 60 + seconds
+    except ValueError:
+        return None
+
+
+def sample_process(pid: int) -> tuple[int | None, float | None]:
+    try:
+        completed = subprocess.run(
+            ["ps", "-o", "rss=", "-o", "time=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, None
+    fields = completed.stdout.split()
+    if completed.returncode != 0 or len(fields) < 2:
+        return None, None
+    try:
+        rss = int(fields[0]) * 1024
+    except ValueError:
+        rss = None
+    return rss, _parse_cpu_seconds(fields[1])
+
+
+def run_owner_process(
+    command: list[str], implementation: str, outer_timeout_seconds: int
+) -> dict[str, Any]:
+    started = time.monotonic()
+    peak_rss = 0
+    last_cpu: float | None = None
+    samples = 0
+    gaps = 0
+    forced_termination = False
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
+        except OSError as error:
+            return harness_failure(implementation, 0.0, f"start worker: {type(error).__name__}")
+        deadline = started + outer_timeout_seconds
+        while process.poll() is None and time.monotonic() < deadline:
+            rss, cpu = sample_process(process.pid)
+            samples += 1
+            if rss is None:
+                gaps += 1
+            else:
+                peak_rss = max(peak_rss, rss)
+            if cpu is not None:
+                last_cpu = cpu
+            time.sleep(PROCESS_SAMPLE_SECONDS)
+        if process.poll() is None:
+            forced_termination = True
+            process.terminate()
+            try:
+                process.wait(timeout=OUTER_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=OUTER_GRACE_SECONDS)
+        rss, cpu = sample_process(process.pid)
+        if rss is not None:
+            peak_rss = max(peak_rss, rss)
+        if cpu is not None:
+            last_cpu = cpu
+        stdout.seek(0, os.SEEK_END)
+        stdout_bytes = stdout.tell()
+        stderr.seek(0, os.SEEK_END)
+        stderr_bytes = stderr.tell()
+        stderr.seek(0)
+        stderr_sha256 = hashlib.sha256(stderr.read()).hexdigest() if stderr_bytes else None
+        if forced_termination:
+            result = harness_failure(
+                implementation, time.monotonic() - started, "outer worker deadline expired"
+            )
+        elif stdout_bytes > MAX_REPORT_BYTES:
+            result = harness_failure(
+                implementation, time.monotonic() - started, "worker report exceeded size limit"
+            )
+        else:
+            stdout.seek(0)
+            encoded = stdout.read()
+            lines = [line for line in encoded.splitlines() if line.strip()]
+            if len(lines) != 1:
+                result = harness_failure(
+                    implementation,
+                    time.monotonic() - started,
+                    f"worker emitted {len(lines)} nonempty report lines",
+                )
+            else:
+                try:
+                    decoded = json.loads(lines[0])
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    decoded = None
+                if not isinstance(decoded, dict) or decoded.get("schema_version") != SCHEMA_VERSION:
+                    result = harness_failure(
+                        implementation, time.monotonic() - started, "worker returned unknown schema"
+                    )
+                else:
+                    result = decoded
+        result["process"] = {
+            "exit_code": process.returncode,
+            "peak_rss_bytes": peak_rss or None,
+            "cpu_seconds": last_cpu,
+            "sample_interval_seconds": PROCESS_SAMPLE_SECONDS,
+            "samples": samples,
+            "sample_gaps": gaps,
+            "forced_termination": forced_termination,
+            "stderr_bytes": stderr_bytes,
+            "stderr_sha256": stderr_sha256,
+        }
+        return result
+
+
+def _input_request(
+    input_source: str | Path,
+    expected_info_hash: str,
+) -> tuple[dict[str, Any], Any | None]:
+    if isinstance(input_source, Path):
+        payload = input_source.read_bytes()
+        descriptor = parse_metainfo(payload)
+        if descriptor.info_hash != expected_info_hash:
+            raise HarnessError("direct metainfo identity does not match expected info hash")
+        return {
+            "mode": "metainfo",
+            "path": str(input_source.resolve()),
+            "sha256": descriptor.outer_sha256,
+        }, descriptor
+    return {"mode": "magnet", "magnet": input_source}, None
+
+
 def run_rstorrent(
     binary: Path,
-    magnet: str,
+    input_source: str | Path,
     profile: str,
     target: str,
     timeout_seconds: int,
     cleanup_seconds: int,
     output_root: Path,
+    expected_info_hash: str | None = None,
+    wire_payload_ceiling_bytes: int | None = None,
+    peer_hints: list[str] | None = None,
 ) -> dict[str, Any]:
-    profile = normalize_profile(profile)
-    discovery = {
-        "matched-plain-30": "tracker",
-        "matched-rc4-30": "tracker",
-        "dht-only": "dht",
-        "product-default": "full",
-    }[profile]
+    profile_contract = comparison_profile(profile)
+    if expected_info_hash is None:
+        expected_info_hash = magnet_info_hash(str(input_source))
+    input_request, descriptor = _input_request(input_source, expected_info_hash)
     command = [
         str(binary),
-        "--magnet",
-        magnet,
+        f"--{input_request['mode']}",
+        input_request.get("magnet", input_request.get("path")),
+        "--expected-info-hash",
+        expected_info_hash,
         "--output",
         str(output_root),
-        "--discovery",
-        discovery,
+        "--profile",
+        profile_contract["name"],
+        "--profile-sha256",
+        profile_contract["sha256"],
         "--target",
         target,
         "--timeout-seconds",
         str(timeout_seconds),
         "--cleanup-seconds",
         str(cleanup_seconds),
+        "--wire-payload-ceiling-bytes",
+        str(wire_payload_ceiling_bytes or (descriptor.payload_bytes * 2 if descriptor else 512 * 1024 * 1024)),
     ]
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds + cleanup_seconds * 2 + 10,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        return harness_failure("rstorrent", time.monotonic() - started, f"outer process timeout: {error}")
-    lines = [line for line in completed.stdout.splitlines() if line.strip()]
-    if len(lines) != 1:
-        return harness_failure(
-            "rstorrent",
-            time.monotonic() - started,
-            f"probe emitted {len(lines)} nonempty stdout lines; stderr={bounded(completed.stderr)!r}",
-        )
-    try:
-        result = json.loads(lines[0])
-    except json.JSONDecodeError as error:
-        return harness_failure("rstorrent", time.monotonic() - started, f"invalid probe JSON: {error}")
-    if not isinstance(result, dict) or result.get("schema_version") != 1:
-        return harness_failure("rstorrent", time.monotonic() - started, "probe returned an unknown schema")
-    result["process"] = {
-        "exit_code": completed.returncode,
-        "stderr": bounded(completed.stderr) or None,
-        "peak_rss_bytes": None,
-        "cpu_seconds": None,
-    }
+    for peer_hint in peer_hints or []:
+        command.extend(("--peer-hint", peer_hint))
+    result = run_owner_process(
+        command, "rstorrent", timeout_seconds + cleanup_seconds * 2 + OUTER_GRACE_SECONDS
+    )
+    validate_worker_result(result, profile_contract, expected_info_hash)
+    verify_completed_result(result, descriptor, output_root)
     return result
 
 
-def libtorrent_settings(profile: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    profile = normalize_profile(profile)
-    common = profile in ("matched-plain-30", "matched-rc4-30")
-    dht = profile in ("dht-only", "product-default")
-    contract = comparison_profile(profile)
-    settings = {
-        "listen_interfaces": "0.0.0.0:0",
-        "enable_dht": dht,
-        "dht_bootstrap_nodes": DHT_BOOTSTRAP_NODES if dht else "",
-        "enable_lsd": False,
-        "enable_upnp": False,
-        "enable_natpmp": False,
-        "enable_incoming_utp": False,
-        "enable_incoming_tcp": False,
-        "enable_outgoing_utp": not common,
-        "enable_outgoing_tcp": True,
-        "connections_limit": contract["libtorrent"]["connections_limit"],
-        "connection_speed": contract["libtorrent"]["connection_speed"],
-        "peer_connect_timeout": contract["libtorrent"]["peer_connect_timeout"],
-        "request_timeout": contract["libtorrent"]["request_timeout"],
-        "request_queue_time": contract["libtorrent"]["request_queue_time"],
-        "max_out_request_queue": contract["libtorrent"]["max_out_request_queue"],
-        "download_rate_limit": contract["libtorrent"]["download_rate_limit"],
-        "upload_rate_limit": contract["libtorrent"]["upload_rate_limit"],
-        "unchoke_slots_limit": contract["libtorrent"]["unchoke_slots_limit"],
-        "alert_queue_size": 2000,
-    }
-    capabilities = {
-        "network_policy": "online",
-        "udp_trackers": profile != "dht-only",
-        "dht": dht,
-        "incoming_connections": False,
-        "tcp_outgoing": True,
-        "utp_outgoing": not common,
-        "web_seed": profile == "product-default",
-        "websocket_trackers": False,
-        "pex": profile in ("product-default", "dht-only"),
-    }
-    return settings, capabilities
-
-
 def run_libtorrent(
-    magnet: str,
+    input_source: str | Path,
     expected_info_hash: str,
     profile: str,
     target: str,
     timeout_seconds: int,
     output_root: Path,
+    cleanup_seconds: int = 10,
+    wire_payload_ceiling_bytes: int | None = None,
+    peer_hints: list[str] | None = None,
 ) -> dict[str, Any]:
-    profile = normalize_profile(profile)
-    started = time.monotonic()
-    settings, capabilities = libtorrent_settings(profile)
-    session: lt.session | None = None
-    handle: lt.torrent_handle | None = None
-    milestones = empty_milestones()
-    geometry = empty_geometry()
-    alerts: list[str] = []
-    outcome = "error"
-    terminal: str | None = None
-    integrity = False
-    verified_pieces = 0
-    verified_bytes = 0
-    status_metrics: dict[str, Any] = {}
-    utility_timeline: list[dict[str, Any]] = []
-    utility_timeline_coalesced = 0
-    previous_utility_verified: tuple[float, int] | None = None
-    next_utility_sample = 0.0
-    last_status: Any | None = None
-    cleanup_succeeded = True
-    try:
-        output_root.mkdir(parents=True, exist_ok=False)
-        session = lt.session(settings)
-        parameters = lt.parse_magnet_uri(magnet)
-        parameters.save_path = str(output_root)
-        parameters.flags &= ~lt.torrent_flags.paused
-        parameters.flags &= ~lt.torrent_flags.auto_managed
-        if profile not in ("product-default", "dht-only"):
-            parameters.flags |= lt.torrent_flags.disable_lsd
-            parameters.flags |= lt.torrent_flags.disable_pex
-            if profile in ("matched-plain-30", "matched-rc4-30"):
-                parameters.flags |= lt.torrent_flags.disable_dht
-        handle = session.add_torrent(parameters)
-        deadline = started + timeout_seconds
-        while True:
-            now = time.monotonic()
-            status = handle.status()
-            last_status = status
-            alerts.extend(bounded(alert.message(), 512) for alert in session.pop_alerts())
-            del alerts[:-50]
-            if status.has_metadata and milestones["metadata_verified"] is None:
-                milestones["metadata_verified"] = now - started
-                info = handle.torrent_file()
-                if info is None:
-                    raise HarnessError("libtorrent reported metadata without torrent_info")
-                actual_info_hash = str(info.info_hashes().v1)
-                if actual_info_hash != expected_info_hash:
-                    outcome = "integrity_failure"
-                    terminal = (
-                        f"metadata info hash {actual_info_hash} did not match "
-                        f"{expected_info_hash}"
-                    )
-                    break
-                geometry = {
-                    "total_length": int(info.total_size()),
-                    "piece_length": int(info.piece_length()),
-                    "piece_count": int(info.num_pieces()),
-                    "file_count": int(info.files().num_files()),
-                }
-            verified_pieces = int(status.num_pieces)
-            verified_bytes = int(status.total_wanted_done)
-            if status.num_pieces > 0 and milestones["first_piece_verified"] is None:
-                milestones["first_piece_verified"] = now - started
-            total_wanted = int(status.total_wanted)
-            if total_wanted > 0:
-                mark_percent_milestones(milestones, verified_bytes, total_wanted, now - started)
-            if status.is_seeding:
-                info = handle.torrent_file()
-                if info is None:
-                    raise HarnessError("libtorrent seeded without torrent_info")
-                verify_libtorrent_publication(info, output_root)
-                milestones["all_pieces_verified"] = milestones["all_pieces_verified"] or now - started
-                milestones["published"] = milestones["published"] or now - started
-            status_metrics = {
-                "peers": int(status.num_peers),
-                "seeds": int(status.num_seeds),
-                "connect_candidates": int(status.connect_candidates),
-                "download_rate": int(status.download_payload_rate),
-                "total_payload_download": int(status.total_payload_download),
-                "failed_bytes": int(status.total_failed_bytes),
-                "redundant_bytes": int(status.total_redundant_bytes),
-            }
-            elapsed = now - started
-            if status.has_metadata and (
-                not utility_timeline or elapsed >= next_utility_sample
-            ):
-                sample = libtorrent_utility_sample(
-                    status,
-                    list(handle.get_peer_info()),
-                    elapsed,
-                    previous_utility_verified,
-                )
-                utility_timeline_coalesced += append_utility_sample(
-                    utility_timeline, sample
-                )
-                previous_utility_verified = (elapsed, int(status.total_wanted_done))
-                next_utility_sample = elapsed + UTILITY_SAMPLE_SECONDS
-            if milestones[MILESTONE_KEYS[target]] is not None:
-                outcome = "milestone_reached"
-                integrity = True
-                break
-            if now >= deadline:
-                outcome = "timeout"
-                terminal = "target deadline expired"
-                break
-            time.sleep(POLL_SECONDS)
-        if last_status is not None and last_status.has_metadata:
-            elapsed = time.monotonic() - started
-            sample = libtorrent_utility_sample(
-                last_status,
-                list(handle.get_peer_info()),
-                elapsed,
-                previous_utility_verified,
-            )
-            utility_timeline_coalesced += append_utility_sample(utility_timeline, sample)
-    except Exception as error:  # Public harness records owner errors instead of aborting its pair.
-        outcome = "harness_error" if isinstance(error, HarnessError) else "error"
-        terminal = f"{type(error).__name__}: {error}"
-    finally:
-        try:
-            if session is not None and handle is not None and handle.is_valid():
-                session.remove_torrent(handle)
-            if session is not None:
-                session.pause()
-            handle = None
-            session = None
-            gc.collect()
-        except Exception as error:
-            cleanup_succeeded = False
-            terminal = f"{terminal}; cleanup: {error}" if terminal else f"cleanup: {error}"
-            outcome = "harness_error"
-    return {
-        "schema_version": 1,
-        "implementation": "libtorrent",
-        "version": lt.version,
-        "info_hash": expected_info_hash,
-        "outcome": outcome,
+    profile_contract = comparison_profile(profile)
+    input_request, descriptor = _input_request(input_source, expected_info_hash)
+    request = {
+        "schema_version": SCHEMA_VERSION,
+        "input": input_request,
+        "expected_info_hash": expected_info_hash,
+        "profile": profile_contract["name"],
+        "profile_sha256": profile_contract["sha256"],
         "target": target,
-        "wall_seconds": time.monotonic() - started,
-        "milestones": milestones,
-        "geometry": geometry,
-        "verified_piece_count": verified_pieces,
-        "verified_bytes": verified_bytes,
-        "integrity_verified": integrity,
-        "cleanup_succeeded": cleanup_succeeded,
-        "terminal_detail": terminal,
-        "capabilities": capabilities,
-        "diagnostics": {
-            "status": status_metrics,
-            "alerts": alerts,
-            "utility_timeline": utility_timeline,
-            "utility_timeline_coalesced_samples": utility_timeline_coalesced,
-            "storage_write_operations_started": None,
-            "storage_write_operations_completed": None,
-            "storage_write_queue_wait_micros": None,
-            "storage_write_queue_wait_max_micros": None,
-            "storage_write_service_micros": None,
-            "storage_write_service_max_micros": None,
-            "storage_write_blocks_started": None,
-            "storage_write_blocks_completed": None,
-            "storage_write_batch_blocks_high_water": None,
-            "storage_write_batch_bytes_high_water": None,
-            "storage_hash_operations_started": None,
-            "storage_hash_operations_completed": None,
-            "storage_hash_queue_wait_micros": None,
-            "storage_hash_queue_wait_max_micros": None,
-            "storage_hash_service_micros": None,
-            "storage_hash_service_max_micros": None,
-            "storage_active_kind": None,
-            "storage_active_age_micros": None,
-        },
-        "process": {"peak_rss_bytes": None, "cpu_seconds": None},
+        "timeout_seconds": timeout_seconds,
+        "wire_payload_ceiling_bytes": wire_payload_ceiling_bytes
+        or (descriptor.payload_bytes * 2 if descriptor else 512 * 1024 * 1024),
+        "output_root": str(output_root),
+        "peer_hints": peer_hints or [],
     }
+    worker = repository_root() / "tests" / "interop" / "public_compare_libtorrent_worker.py"
+    with tempfile.TemporaryDirectory(prefix="rstorrent-libtorrent-request-") as temporary:
+        request_path = Path(temporary) / "request.json"
+        request_path.write_text(
+            json.dumps(request, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+        )
+        result = run_owner_process(
+            [sys.executable, str(worker), "--request", str(request_path)],
+            "libtorrent",
+            timeout_seconds + cleanup_seconds * 2 + OUTER_GRACE_SECONDS,
+        )
+    validate_worker_result(result, profile_contract, expected_info_hash)
+    verify_completed_result(result, descriptor, output_root)
+    return result
 
 
-def verify_libtorrent_publication(info: lt.torrent_info, output_root: Path) -> None:
-    files = info.files()
-    for index in range(files.num_files()):
-        if files.file_flags(index) & files.flag_pad_file:
-            continue
-        relative = Path(files.file_path(index))
-        if relative.is_absolute() or ".." in relative.parts:
-            raise HarnessError(f"libtorrent metadata exposed unsafe file path {relative}")
-        published = output_root / relative
-        expected_size = int(files.file_size(index))
-        if not published.is_file() or published.stat().st_size != expected_size:
-            raise HarnessError(
-                f"libtorrent publication mismatch for {relative}: expected {expected_size} bytes"
-            )
-
-
-def empty_milestones() -> dict[str, float | None]:
-    return {
-        "metadata_verified": None,
-        "first_piece_verified": None,
-        "50_percent_verified": None,
-        "95_percent_verified": None,
-        "99_percent_verified": None,
-        "all_pieces_verified": None,
-        "published": None,
-    }
-
-
-def empty_geometry() -> dict[str, None]:
-    return {"total_length": None, "piece_length": None, "piece_count": None, "file_count": None}
-
-
-def mark_percent_milestones(
-    milestones: dict[str, float | None], done: int, total: int, elapsed: float
+def validate_worker_result(
+    result: dict[str, Any], profile_contract: dict[str, Any], expected_info_hash: str
 ) -> None:
-    for percent, key in ((50, "50_percent_verified"), (95, "95_percent_verified"), (99, "99_percent_verified")):
-        if milestones[key] is None and done * 100 >= total * percent:
-            milestones[key] = elapsed
+    if result.get("outcome") == "harness_error":
+        return
+    implementation = result.get("implementation")
+    expected_settings = profile_contract.get(implementation)
+    if (
+        implementation not in ("rstorrent", "libtorrent")
+        or result.get("profile") != profile_contract["name"]
+        or result.get("profile_sha256") != profile_contract["sha256"]
+        or result.get("effective_settings") != expected_settings
+        or result.get("info_hash") != expected_info_hash
+    ):
+        result["outcome"] = "harness_error"
+        result["integrity_verified"] = False
+        result["terminal_detail"] = "worker contract echo mismatch"
+        return
+    if profile_contract["name"] == "matched-rc4-30" and result.get("outcome") == "milestone_reached":
+        evidence = result.get("diagnostics", {}).get("peer_methods", {})
+        if implementation == "rstorrent":
+            invalid = evidence.get("payload_contributor_plaintext_stream") or evidence.get(
+                "payload_contributor_plaintext_payload"
+            )
+            valid = evidence.get("payload_contributor_rc4")
+        else:
+            invalid = evidence.get("payload_contributor_plaintext_stream") or evidence.get(
+                "payload_contributor_plaintext_payload"
+            )
+            valid = evidence.get("payload_contributor_rc4")
+        if invalid or not valid:
+            result["outcome"] = "harness_error"
+            result["integrity_verified"] = False
+            result["terminal_detail"] = "forced-RC4 payload contributor evidence failed"
+
+
+def verify_completed_result(result: dict[str, Any], descriptor: Any | None, output_root: Path) -> None:
+    result["integrity_verified"] = False
+    if result.get("outcome") != "milestone_reached" or result.get("target") != "complete":
+        return
+    if descriptor is None:
+        result["terminal_detail"] = "complete magnet result lacks independent metainfo verifier"
+        result["outcome"] = "harness_error"
+        return
+    try:
+        result["independent_verification"] = verify_payload(descriptor, output_root)
+    except ContractError as error:
+        result["outcome"] = "integrity_failure"
+        result["terminal_detail"] = str(error)
+        return
+    result["integrity_verified"] = True
+
+
+def magnet_info_hash(magnet: str) -> str:
+    for key, value in parse_qsl(urlsplit(magnet).query):
+        if key == "xt" and value.lower().startswith("urn:btih:"):
+            info_hash = value.rsplit(":", 1)[-1].lower()
+            if len(info_hash) == 40 and all(character in "0123456789abcdef" for character in info_hash):
+                return info_hash
+    raise HarnessError("magnet lacks a lowercase hexadecimal v1 info hash")
 
 
 def harness_failure(implementation: str, wall_seconds: float, detail: str) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "implementation": implementation,
         "outcome": "harness_error",
         "wall_seconds": wall_seconds,
-        "milestones": empty_milestones(),
-        "geometry": empty_geometry(),
+        "milestones": {},
+        "geometry": {},
         "verified_piece_count": 0,
         "verified_bytes": 0,
         "integrity_verified": False,
         "cleanup_succeeded": False,
-        "terminal_detail": bounded(detail),
+        "terminal_detail": detail[:16_384],
         "capabilities": {},
         "diagnostics": {},
     }
-
-
-def bounded(value: str, maximum: int = MAX_DIAGNOSTIC_CHARS) -> str:
-    return value[:maximum]
 
 
 def validate_catalog_observation(result: dict[str, Any], torrent: dict[str, Any]) -> None:
@@ -712,6 +607,7 @@ def validate_catalog_observation(result: dict[str, Any], torrent: dict[str, Any]
     geometry = result.get("geometry", {})
     for catalog_key, result_key in (
         ("payload_bytes", "total_length"),
+        ("piece_length", "piece_length"),
         ("piece_count", "piece_count"),
         ("file_count", "file_count"),
     ):
@@ -719,133 +615,291 @@ def validate_catalog_observation(result: dict[str, Any], torrent: dict[str, Any]
         if expected is not None and geometry.get(result_key) != expected:
             result["outcome"] = "integrity_failure"
             result["integrity_verified"] = False
-            result["terminal_detail"] = (
-                f"catalog {catalog_key}={expected} did not match "
-                f"observed {geometry.get(result_key)!r}"
-            )
+            result["terminal_detail"] = f"catalog {catalog_key} did not match observed geometry"
             return
+
+
+class BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allowed_hosts: set[str]) -> None:
+        super().__init__()
+        self.allowed_hosts = allowed_hosts
+        self.redirects = 0
+
+    def redirect_request(self, request: Any, file_pointer: Any, code: int, message: str, headers: Any, new_url: str) -> Any:
+        self.redirects += 1
+        if self.redirects > MAX_REDIRECTS:
+            raise HarnessError("metainfo source exceeded redirect limit")
+        split = urlsplit(new_url)
+        if split.scheme != "https" or split.hostname not in self.allowed_hosts:
+            raise HarnessError("metainfo redirect escaped the catalog HTTPS host allowlist")
+        return super().redirect_request(request, file_pointer, code, message, headers, new_url)
+
+
+def fetch_catalog_metainfo(entry: dict[str, Any], destination: Path) -> Any:
+    recipe = entry.get("metainfo")
+    if not isinstance(recipe, dict):
+        raise HarnessError(f"catalog entry {entry['slug']} has no direct-metainfo recipe")
+    allowed_hosts = set(recipe["allowed_hosts"])
+    split = urlsplit(recipe["url"])
+    if split.scheme != "https" or split.hostname not in allowed_hosts:
+        raise HarnessError("metainfo source is outside its HTTPS host allowlist")
+    opener = urllib.request.build_opener(BoundedRedirectHandler(allowed_hosts))
+    try:
+        with opener.open(recipe["url"], timeout=30) as response:
+            payload = response.read(64 * 1024 * 1024 + 1)
+    except (OSError, urllib.error.URLError) as error:
+        raise HarnessError(f"metainfo retrieval failed: {type(error).__name__}") from error
+    descriptor = parse_metainfo(payload)
+    if descriptor.outer_sha256 != recipe["sha256"] or descriptor.info_hash != entry["info_hash"]:
+        raise HarnessError("official metainfo changed from the reviewed catalog identity")
+    expected = entry["expected"]
+    if descriptor.normalized_geometry() != expected:
+        raise HarnessError("official metainfo geometry or discovery set changed from catalog")
+    if descriptor.private:
+        raise HarnessError("private torrents are outside this harness")
+    destination.write_bytes(payload)
+    return descriptor
+
+
+def suite_scenarios(catalog: dict[str, Any], suite: str) -> list[dict[str, Any]]:
+    small = select_role(catalog, "small-primary")
+    medium = select_role(catalog, "medium-distro") if suite == "standard" else None
+    large = select_role(catalog, "large-distro") if suite in ("large", "product") else None
+    if suite == "smoke":
+        return [{"torrent": small, "profile": "matched-plain-30", "target": "complete", "runs": 1}]
+    if suite == "standard":
+        return [
+            {"torrent": small, "profile": "matched-plain-30", "target": "complete", "runs": 4},
+            {"torrent": medium, "profile": "matched-plain-30", "target": "complete", "runs": 4},
+        ]
+    if suite == "large":
+        return [{"torrent": large, "profile": "matched-plain-30", "target": "complete", "runs": 2}]
+    if suite == "product":
+        return [
+            {"torrent": small, "profile": "product-default", "target": "complete", "runs": 2},
+            {"torrent": large, "profile": "product-default", "target": "complete", "runs": 2},
+        ]
+    if suite == "encryption":
+        return [{"torrent": small, "profile": "matched-rc4-30", "target": "first-piece", "runs": 1}]
+    if suite == "breadth":
+        return [
+            {
+                "torrent": entry,
+                "profile": "dht-only" if "dht-only" in entry["roles"] else "matched-plain-30",
+                "target": entry["limits"]["max_target"],
+                "runs": 1,
+            }
+            for entry in catalog["torrents"]
+            if "small-primary" not in entry["roles"]
+        ]
+    raise HarnessError(f"unknown suite {suite!r}")
 
 
 def parse_args(arguments: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--suite", choices=SUITES)
     parser.add_argument("--torrent", default="big-buck-bunny")
     parser.add_argument("--profile", choices=PROFILES, default="matched-plain-30")
-    parser.add_argument(
-        "--owner",
-        choices=OWNERS,
-        default="both",
-        help="run the alternating pair or one owner under the same harness",
-    )
+    parser.add_argument("--owner", choices=OWNERS, default="both")
+    parser.add_argument("--input-mode", choices=INPUT_MODES, default="metainfo")
     parser.add_argument("--target", choices=TARGETS, default="metadata")
     parser.add_argument("--runs", type=int, default=1)
-    parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument("--timeout-seconds", type=int)
     parser.add_argument("--cleanup-seconds", type=int, default=10)
     parser.add_argument("--catalog", type=Path, default=default_catalog_path())
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--quiet", action="store_true", help="write only --output")
+    parser.add_argument("--max-network-gib", type=float)
+    parser.add_argument("--allow-public-network", action="store_true")
+    parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--inspect-candidate", type=Path)
     args = parser.parse_args(arguments)
-    if not 1 <= args.runs <= MAX_RUNS:
-        parser.error(f"--runs must be between 1 and {MAX_RUNS}")
-    if not 1 <= args.timeout_seconds <= MAX_TIMEOUT_SECONDS:
-        parser.error(f"--timeout-seconds must be between 1 and {MAX_TIMEOUT_SECONDS}")
+    if not 1 <= args.runs <= MAX_PAIRS:
+        parser.error(f"--runs must be between 1 and {MAX_PAIRS}")
+    if args.timeout_seconds is not None and not 1 <= args.timeout_seconds <= MAX_OWNER_TIMEOUT_SECONDS:
+        parser.error(f"--timeout-seconds must be between 1 and {MAX_OWNER_TIMEOUT_SECONDS}")
     if not 1 <= args.cleanup_seconds <= 60:
         parser.error("--cleanup-seconds must be between 1 and 60")
+    if args.inspect_candidate is None and (
+        not args.allow_public_network or args.output is None or args.max_network_gib is None
+    ):
+        parser.error(
+            "public execution requires --allow-public-network, --output, and --max-network-gib"
+        )
     return args
+
+
+def run_one_scenario(
+    scenario: dict[str, Any],
+    args: argparse.Namespace,
+    binary: Path,
+    owned_root: Path,
+    metainfo_path: Path | None,
+) -> dict[str, Any]:
+    torrent = scenario["torrent"]
+    profile = normalize_profile(scenario["profile"])
+    target = scenario["target"]
+    runs = scenario["runs"]
+    timeout_seconds = args.timeout_seconds or torrent["limits"]["owner_timeout_seconds"]
+    wire_ceiling = torrent["limits"]["wire_payload_ceiling_bytes"]
+    rst_magnet, lib_magnet = scenario_magnets(torrent, profile)
+    runs_report: list[dict[str, Any]] = []
+    for ordinal in range(runs):
+        implementations: dict[str, Any] = {}
+        order = selected_implementations(ordinal, args.owner)
+        for implementation in order:
+            output_root = owned_root / torrent["slug"] / f"pair-{ordinal}" / implementation
+            output_root.parent.mkdir(parents=True, exist_ok=True)
+            input_source: str | Path = (
+                metainfo_path
+                if args.input_mode == "metainfo"
+                else (rst_magnet if implementation == "rstorrent" else lib_magnet)
+            )
+            if input_source is None:
+                raise HarnessError("direct metainfo input was not prepared")
+            if implementation == "rstorrent":
+                result = run_rstorrent(
+                    binary,
+                    input_source,
+                    profile,
+                    target,
+                    timeout_seconds,
+                    args.cleanup_seconds,
+                    output_root,
+                    torrent["info_hash"],
+                    wire_ceiling,
+                )
+            else:
+                result = run_libtorrent(
+                    input_source,
+                    torrent["info_hash"],
+                    profile,
+                    target,
+                    timeout_seconds,
+                    output_root,
+                    args.cleanup_seconds,
+                    wire_ceiling,
+                )
+            validate_catalog_observation(result, torrent)
+            implementations[implementation] = result
+            resolved = validate_output_ancestry(owned_root, output_root)
+            shutil.rmtree(resolved, ignore_errors=True)
+        classification = (
+            classify_pair(implementations["rstorrent"], implementations["libtorrent"])
+            if args.owner == "both"
+            else classify_owner(implementations[args.owner])
+        )
+        runs_report.append(
+            {
+                "ordinal": ordinal,
+                "order": order,
+                "classification": classification,
+                "implementations": implementations,
+            }
+        )
+    return {
+        "torrent": {
+            "slug": torrent["slug"],
+            "name": torrent["name"],
+            "info_hash": torrent["info_hash"],
+            "roles": torrent["roles"],
+            "expected": torrent["expected"],
+            "source": torrent["source"],
+        },
+        "profile": profile,
+        "profile_sha256": comparison_profile(profile)["sha256"],
+        "target": target,
+        "input_mode": args.input_mode,
+        "runs": runs_report,
+        "summary": summarize(runs_report, target, args.owner),
+    }
 
 
 def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     repository = repository_root()
     catalog = load_catalog(args.catalog.resolve())
-    torrent = select_torrent(catalog, args.torrent)
-    rst_magnet, lib_magnet = scenario_magnets(torrent, args.profile)
+    scenarios = (
+        suite_scenarios(catalog, args.suite)
+        if args.suite
+        else [
+            {
+                "torrent": select_torrent(catalog, args.torrent),
+                "profile": args.profile,
+                "target": args.target,
+                "runs": args.runs,
+            }
+        ]
+    )
+    owners = 2 if args.owner == "both" else 1
+    budget = sum(
+        invocation_network_budget(
+            scenario["torrent"]["expected"]["payload_bytes"], scenario["runs"], owners
+        )
+        for scenario in scenarios
+    )
+    authorized = int(args.max_network_gib * 1024**3)
+    if authorized < budget or authorized > MAX_NETWORK_BYTES:
+        raise HarnessError(
+            f"authorized network budget must be at least {budget} and at most {MAX_NETWORK_BYTES} bytes"
+        )
+    total_payload = max(scenario["torrent"]["expected"]["payload_bytes"] for scenario in scenarios)
+    output_parent = args.output.resolve().parent
+    output_parent.mkdir(parents=True, exist_ok=True)
+    if shutil.disk_usage(output_parent).free < required_free_space(total_payload):
+        raise HarnessError("insufficient free space for the largest selected owner")
     binary = repository / "target" / "release" / "rstorrent-public-probe"
     if args.owner != "libtorrent" and not args.no_build:
         binary = build_probe(repository)
     elif args.owner != "libtorrent" and not binary.is_file():
         raise HarnessError(f"--no-build probe does not exist at {binary}")
-
-    runs: list[dict[str, Any]] = []
-    environment = environment_snapshot(repository)
+    started = time.time()
+    cohorts: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="rstorrent-public-compare-") as temporary:
         owned_root = Path(temporary).resolve()
-        for ordinal in range(args.runs):
-            order = selected_implementations(ordinal, args.owner)
-            implementations: dict[str, Any] = {}
-            for implementation in order:
-                output_root = owned_root / f"run-{ordinal}" / implementation
-                output_root.parent.mkdir(parents=True, exist_ok=True)
-                if implementation == "rstorrent":
-                    implementations[implementation] = run_rstorrent(
-                        binary,
-                        rst_magnet,
-                        args.profile,
-                        args.target,
-                        args.timeout_seconds,
-                        args.cleanup_seconds,
-                        output_root,
-                    )
-                else:
-                    implementations[implementation] = run_libtorrent(
-                        lib_magnet,
-                        torrent["info_hash"],
-                        args.profile,
-                        args.target,
-                        args.timeout_seconds,
-                        output_root,
-                    )
-                validate_catalog_observation(implementations[implementation], torrent)
-                resolved = output_root.resolve()
-                if resolved != owned_root and owned_root in resolved.parents:
-                    shutil.rmtree(resolved, ignore_errors=True)
-            classification = (
-                classify_pair(implementations["rstorrent"], implementations["libtorrent"])
-                if args.owner == "both"
-                else classify_owner(implementations[args.owner])
+        for scenario in scenarios:
+            metainfo_path: Path | None = None
+            if args.input_mode == "metainfo":
+                metainfo_path = owned_root / f"{scenario['torrent']['slug']}.torrent"
+                fetch_catalog_metainfo(scenario["torrent"], metainfo_path)
+            cohorts.append(
+                run_one_scenario(scenario, args, binary, owned_root, metainfo_path)
             )
-            runs.append(
-                {
-                    "ordinal": ordinal,
-                    "order": order,
-                    "classification": classification,
-                    "implementations": implementations,
-                }
-            )
-    return {
+    report = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at_unix_seconds": time.time(),
-        "environment": environment,
+        "generated_at_unix_seconds": started,
+        "environment": environment_snapshot(repository, binary if binary.is_file() else None),
         "config": {
-            "torrent": args.torrent,
-            "profile": args.profile,
+            "suite": args.suite,
             "owner": args.owner,
-            "target": args.target,
-            "runs": args.runs,
-            "timeout_seconds": args.timeout_seconds,
+            "input_mode": args.input_mode,
             "cleanup_seconds": args.cleanup_seconds,
-            "order": (
-                "alternating-rstorrent-first" if args.owner == "both" else "single-owner"
-            ),
-            "libtorrent_settings": libtorrent_settings(args.profile)[0],
-            "rstorrent_magnet": rst_magnet,
-            "libtorrent_magnet": lib_magnet,
+            "authorized_network_bytes": authorized,
+            "worst_case_network_bytes": budget,
+            "order": "ABBA" if args.owner == "both" else "single-owner",
         },
-        "catalog": {
-            "schema_version": catalog["schema_version"],
-            "source": catalog.get("source"),
-            "retrieved": catalog.get("retrieved"),
-            "torrent": torrent,
-        },
-        "runs": runs,
-        "summary": summarize(runs, args.target, args.owner),
+        "catalog_schema_version": catalog["schema_version"],
+        "cohorts": cohorts,
+    }
+    validate_retained_report(report)
+    return report
+
+
+def inspect_candidate(args: argparse.Namespace) -> dict[str, Any]:
+    descriptor = parse_metainfo(args.inspect_candidate.read_bytes())
+    return {
+        "sha256": descriptor.outer_sha256,
+        "info_hash": descriptor.info_hash,
+        "name": descriptor.name,
+        "expected": descriptor.normalized_geometry(),
     }
 
 
 def main(arguments: list[str]) -> int:
     args = parse_args(arguments)
     try:
-        report = run_campaign(args)
-    except HarnessError as error:
+        report = inspect_candidate(args) if args.inspect_candidate else run_campaign(args)
+        validate_retained_report(report)
+    except (HarnessError, ContractError, OSError) as error:
         print(f"harness error: {error}", file=sys.stderr)
         return 2
     rendered = json.dumps(report, indent=2, sort_keys=True)

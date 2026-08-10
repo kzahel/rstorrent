@@ -11,6 +11,13 @@ matched encryption/connection profiles, independent piece verification,
 process resources, and balanced real-torrent cohorts. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
 
+The schema-v2 comparator now isolates each owner in a fresh process and the
+orchestrator itself does not import libtorrent. A release-mode direct-metainfo
+multi-file control passes plaintext and forced-RC4 publication for both owners
+with independent piece verification, actual RC4 payload-contributor evidence,
+bounded process telemetry, and cleanup. The retained small fixture is an
+adapter gate; the 1 GiB controlled and public cohort evidence remains pending.
+
 ## Purpose
 
 Real swarms expose discovery, scheduling, timeout, completion, CPU, memory, and
