@@ -1,8 +1,8 @@
 # Tactical 121: Deterministic uTP Loss, Congestion, And MTU
 
-Status: Approved and in progress on 2026-08-10 after the Tactical `119`
-human-review checkpoint selected recommendation A. This tactical authorizes
-only the runtime-free Stage 2 work below; uTP remains unsupported.
+Status: Complete at the runtime-free Stage 2 stopping condition on 2026-08-10;
+awaiting the required human review before any Stage 3 shared-UDP or runtime
+work. uTP remains unsupported.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`, `peer-lifecycle`
@@ -357,6 +357,84 @@ any real/external network.
 
 ## Execution Record
 
-Implementation has not started. Record each coherent commit, exact scenario
-results, observed high-water marks, implementation findings, validation, and
-deliberate deferrals here before closing the tactical.
+Stage 2 landed in these coherent commits:
+
+- `ccb93a5` fixed this tactical's controller, resource, MTU, impairment, and
+  acceptance contracts before implementation;
+- `1795b66` added the bounded bidirectional serializing link, scripted
+  impairments, endpoint clocks, and Reno-like foreground controller;
+- `93de3e6` made the 1-MiB receive credit exact across reordered and delivered-
+  but-unconsumed bytes;
+- `fbed590`, `73624ad`, and `5213edf` added bounded packetization/ACK/recovery,
+  RFC 6817 fixed-point congestion and pacing, and binary path-MTU state;
+- `cdbceb1` composed those owners into one runtime-independent transport poll
+  and datagram-result API;
+- `f7d1d7a` and `c58db59` drove exact encoded transfers through the link and
+  added clean, jitter/reorder/duplicate, and scripted-loss evidence;
+- `a585668` added queue, clock, and MTU black-hole evidence and fixed stale
+  SACK handling for a fragmentable probe retry;
+- `d485a65` proved exact zero-window pressure and reopening; and
+- `360dde2` added the shared-bottleneck TCP-like foreground result.
+
+The composed implementation retains the Stage 1 connection ledger as the
+sole packet/reliability owner. `utp::transport` additionally owns the 1-MiB
+unsent stream queue, exact local and remote receive-window admission, delayed
+ACK state, one-datagram polls, retransmission work, pacing, congestion, and
+MTU composition. `utp::congestion` uses ten one-minute base buckets, at most
+32 current samples, saturating fixed-point RFC 6817 gain, no slow start, one
+loss reduction per RTT, and one-MSS timeout collapse. `utp::mtu` uses UDP-
+payload units, one active binary probe, the 548-byte IPv4 floor, a 1,472-byte
+ceiling, and same-sequence fragmentable retry. No socket, task, channel,
+runtime, entropy source, unsafe code, manifest change, or foreign source was
+added.
+
+One integration failure was found and repaired. After an oversized probe was
+identified from three later acknowledgements, already-in-flight ACKs could
+repeat the same SACK loss signal after the fragmentable retry had been sent.
+Treating the retry as ordinary DATA produced duplicate retries, duplicate
+ACKs, and a false congestion reduction for the next packet. The transport now
+coalesces such a repeated signal while that exact retry remains in flight and
+keeps it MTU-isolated; a genuinely lost fragmentable retry still reaches the
+ordinary timeout owner. The fixed 1,280-byte black-hole test covers this
+transition.
+
+### Fixed Scenario Results
+
+All byte-stream scenarios compare exact length and SHA-1 identity. Virtual
+durations and high-water values below come from the final deterministic run:
+
+| Scenario | Result |
+| --- | --- |
+| Clean 20-ms RTT, 4 MiB | Completed in 8.7235 s with zero drops/retransmissions and 98.34% post-first-second utilization. Queue-delay p95 was 86.75 ms; queue high-water was 47,721 bytes. |
+| Jitter/reorder/duplicate, 4 MiB | Completed in 9.2875 s with 36 reordered and 16 duplicated link datagrams, zero retransmissions, and receive reorder high-waters of six packets/9,175 bytes. |
+| Fixed 1% ordinal loss, 4 MiB | Recovered 58 scripted drops with 229 retransmissions, no timeout, and at most seven transmissions for one sequence, below the eight-attempt limit. All terminal byte/event owners were zero. |
+| Bounded queue, 4 MiB | Maximum controller queue delay was 89.25 ms and p95 was 86.75 ms against the 150-ms gate; link queue high-water was 47,721 of 55,000 bytes. |
+| Clock offset/wrap/drift, 4 MiB | Completed in 8.722 s across wrapping endpoint timestamps and opposing 1,000-ppm drift. Queue-delay p95/max were 96.225/98.806 ms and congestion state remained bounded. |
+| DF black hole at 1,280 bytes, 4 MiB | Six outcomes (three black holes and three acknowledgements) converged to `1269..=1282`, a 13-byte interval containing the path limit. Three same-sequence retries completed; all six probe/retry loss signals were congestion-isolated, with zero congestion reductions or timeout collapses. |
+| Receive pressure, 2 MiB | Receive ownership reached exactly 1,048,576 bytes and a zero advertised window. Releasing 65,536 bytes reopened exactly that credit; no new DATA was emitted while the sender observed zero, and all retained bytes drained. |
+| Established TCP-like foreground, 8 MiB uTP stream | During the fixed overlap the foreground received 77.0876% of payload bytes and its queue-delay p95 was 124.144 ms. Twelve drop-tail losses exercised both controllers; the foreground recorded ten retransmissions/two loss reductions and uTP recorded two loss reductions. After foreground stop, uTP reached 70% utilization in 475.25 ms, 3.27 of the measured 145.134-ms RTT and below the ten-RTT gate. |
+
+Across these scenarios, the observed per-connection unsent-byte high-water was
+the exact 1-MiB limit; sent-ledger high-water was 59 packets/61,338 bytes;
+receive high-water was 26 reordered packets and the exact 1-MiB pressure
+limit; retransmission-work high-water was one; link queue high-water was
+74,824 of 75,000 bytes; and pending-link high-water was 81 datagrams/80,239
+bytes. These are below the explicit 1,024-packet, 1-MiB sent, 64-packet,
+1-MiB receive, 1,024-retransmission, 131,072-event, 8-MiB event-byte, and
+4-MiB link-queue bounds. Every scenario finishes with zero unsent, sent,
+in-flight, retransmission, receive, pending-event, pending-event-byte, and
+link-queue ownership.
+
+### Validation And Deliberate Deferrals
+
+The focused deterministic scenario suite and protocol-crate clippy gate pass.
+The final workspace formatting, clippy, and test commands are recorded after
+the documentation reconciliation commit. No Python oracle, client, Android,
+WAN, public swarm, `pimom`, or physical device was run.
+
+The stopping condition is met. Stage 3 still needs a separately reviewed
+tactical for shared-UDP classification, connection/runtime ownership,
+ordered-stream adaptation, DHT coexistence, loopback interoperability in both
+roles, cancellation, generation replacement, and terminal task/resource
+evidence. Active zero-window probes remain deferred as specified. This result
+does not change TCP-only execution or the BEP 29 **Unsupported** claim.
