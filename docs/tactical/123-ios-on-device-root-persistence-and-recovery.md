@@ -1,9 +1,11 @@
 # Tactical 123: iOS On-Device Root Persistence And Recovery
 
-Status: Planned on 2026-08-10. Maintainer review accepts an on-device-only
-payload-root policy for the first eventual iOS implementation. Implementation
-and physical-device execution have not started; this document does not change
-the authoritative queue, and it does not authorize a complete iOS client.
+Status: Complete on 2026-08-10 with the accepted app-owned-only outcome.
+Maintainer review accepts an on-device-only payload-root policy for the first
+eventual iOS implementation. The physical app-owned matrix passes; picker-root
+registration is compiled off because the required local/iCloud controls could
+not be exercised on the authorized device. This does not authorize or claim a
+complete iOS client.
 
 Topics: `product-direction`, `product-surfaces-and-migration`,
 `client-surfaces`, `download-roots`, `client-persistence`,
@@ -457,7 +459,9 @@ performance or durability.
 ### RSTorrent starting point
 
 The planning survey used RSTorrent commit
-`5213edf44a1de32f4226012e9753495532cef44d` and these exact sources:
+`5213edf44a1de32f4226012e9753495532cef44d`. Implementation refreshed the same
+sources at starting commit
+`df038d922f946df2298d126ef0ee1b0b70ea3ecd` and used these exact sources:
 
 - `experiments/ios-storage-probe/App/ProbeView.swift` for the real folder
   picker;
@@ -592,6 +596,158 @@ An unavailable picker automation path, ambiguous classification, permission
 denial, stale bookmark, coordination error, test failure, or negative
 background result is not permission to weaken the gate. Manual picker evidence
 and an app-owned-only conclusion are valid outcomes.
+
+## Execution Record
+
+Implementation began from RSTorrent
+`df038d922f946df2298d126ef0ee1b0b70ea3ecd` and JSTorrent
+`9895410beeed6aff554053769bd006a3fbd373ef`. Xcode 26.6 build
+`17F113`, the iPhoneOS 26.5 SDK, Rust 1.97, XcodeGen 2.45.3, and installed
+`aarch64-apple-ios` plus `aarch64-apple-ios-sim` targets formed the refreshed
+toolchain. The physical target remained an owned iPhone SE (3rd generation)
+running iOS 26.6. No stable device identifier is retained.
+
+The active SDK headers reconfirmed the planned public API boundary:
+
+- `Foundation.framework/Headers/NSURL.h` lines 336, 338, and 375 expose
+  optional internal-volume, local-volume, and ubiquitous-item values;
+- the same header lines 426--428 expose `.minimalBookmark` on iOS and mark
+  security-scope bookmark creation unavailable on iOS;
+- `FileProvider.framework/Headers/NSFileProviderManager.h` line 138 exposes
+  the asynchronous item/domain identifier lookup but no generic
+  local-provider classification; and
+- the picker and file-coordinator contracts remain the outer Swift adapter's
+  authority. No Apple sample source was imported.
+
+### Landed probe boundary
+
+The repository-owned probe now has a task-free eligibility decision and a
+versioned platform-local root registry. The registry accepts at most one
+app-owned record and one selected-local record, bounds bookmark data to 64
+KiB and labels to 256 UTF-8 bytes, uses random opaque IDs, advances generation
+on repair, validates corrupt or future state, and fences one pending recovery
+operation by root ID and generation. Bookmark bytes and identifiers never
+enter Rust or retained JSON evidence.
+
+`ProbeRootAccess` owns one serial root operation, one security scope, one file
+coordinator, and one bounded File Provider lookup. Picker and restored URLs
+start scope before resource observation; every read or write uses the URL
+supplied to a per-operation coordinator; bookmark creation uses
+`.minimalBookmark`; and the Rust call completes synchronously before
+coordination and scope end. Non-file URLs, wrong kinds, symlinks, overlap with
+the app-owned root, ubiquitous items, non-local or external volumes, missing
+values, provider identity, lookup failure, and lookup timeout all fail closed.
+Error evidence contains typed codes or bounded domain/code pairs rather than
+paths or localized descriptions.
+
+The real Rust probe retains the Tactical `116` storage seam and adds a
+controlled interrupted workspace. Preparation creates and syncs only
+`.rstorrent-ios-storage-probe`, closes the one engine file lease, records a
+generation-fenced pending fact, and deliberately leaves that workspace.
+Relaunch reruns the ordinary storage operation, which removes the exact owned
+partial workspace before rebuilding, verifies the deterministic payload, and
+clears the pending fact only after successful cleanup. Stale selected-bookmark
+refresh and pending completion have one atomic store transition.
+
+The root-selection implementation is deliberately present but disabled by
+`ProbeRootPolicy.selectedRootRegistrationEnabled == false`. A system-picked
+folder can only run the bounded, scope-balanced classifier. It cannot create a
+bookmark, selected-root record, or Rust payload operation even if the pure
+candidate values would say `selected_on_device`. Startup never restores an
+older selected record while this gate is off, and no app-owned fallback can
+reinterpret it. This is the final product-policy result of this tactical, not
+a temporary success claim for picker-backed storage.
+
+### Deterministic, host, and simulator evidence
+
+The following focused gates pass:
+
+```text
+cargo fmt --manifest-path experiments/ios-storage-probe/Cargo.toml -- --check
+cargo clippy --manifest-path experiments/ios-storage-probe/Cargo.toml -- -D warnings
+cargo test --manifest-path experiments/ios-storage-probe/Cargo.toml
+cargo build --release --manifest-path experiments/ios-storage-probe/Cargo.toml --target aarch64-apple-ios
+cargo build --release --manifest-path experiments/ios-storage-probe/Cargo.toml --target aarch64-apple-ios-sim
+cd experiments/ios-storage-probe && xcodegen generate
+xcodebuild -project RSTorrentIOSStorageProbe.xcodeproj \
+  -scheme RSTorrentIOSStorageProbe \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' \
+  -only-testing:RSTorrentIOSStorageProbeTests test
+```
+
+Four Rust host tests pass. They cover exact fixture geometry, direct TCP/UDP
+loopback, ordinary engine-pool I/O and cleanup, and interrupted-workspace
+reconciliation. Twelve Swift tests pass on the iOS 26.2 simulator. They cover
+the fail-closed truth table, optional and conflicting observations, future
+enum rejection, evidence redaction, the disabled registration policy,
+registry corruption and bounds, stable IDs, repair generation advancement,
+pending-operation fencing, and atomic stale refresh/completion.
+
+A direct simulator install/launch also passed app-owned storage and Rust
+loopback networking. A controlled force-close left one pending workspace and
+then recovered it on launch with generation 1, pending state `none`, and all
+tracked current Swift resources zero. The simulator UI-test runner itself
+failed to launch because Xcode reported no debugger version; this did not
+replace the direct non-picker smoke or the passing standalone Swift tests.
+
+### Physical app-owned matrix
+
+The final development-signed build installed and launched without changing
+signing or account state. Initial storage produced the exact SHA-1
+`48b6fdf2fd3b77c14cc54f54891dc6aed1eeec3a`, retained 65,536 initial and
+40,960 truncated bytes, rejected the no-replace collision, reopened the
+publication, and removed its exact workspace. Direct Rust TCP and UDP each
+echoed 30 bytes through the controlled in-process loopback endpoint.
+
+The ordinary operation peaked at one of eight Rust file leases, two
+probe-created files, and sampled process descriptors 7/8/7
+(baseline/high/final). The interrupted preparation peaked at one file and the
+same descriptor and engine-handle counts. Engine cached and owned handles
+returned to zero. Swift root-operation and coordinator high water were each
+one; security-scope and eligibility-request high water were zero because no
+picker operation graduated or ran. Every current Swift resource count was
+zero after each recorded terminal state.
+
+The force-close run persisted generation 1 and phase
+`prepared_partial_workspace`, synced a 40,960-byte partial file, closed all
+leases, and was killed without an expiration callback. Relaunch removed the
+partial namespace, repeated the full Rust check, preserved generation 1,
+cleared the pending fact, and changed the armed/recovered facts from
+`true/false` to `false/true`. Three further ordinary launch/run/terminate
+cycles reached launch count 6 with generation 1, exact cleanup, descriptor
+7/8/7, and no increasing Swift high water.
+
+One final lifecycle launch registered and submitted the finite iOS 26
+continued-processing task, armed one ordinary UIKit background assertion,
+and entered the background when another application became active. Within 20
+seconds the continued task reported `completed`, the ordinary assertion
+reported `expired`, and tracked resources remained at zero. This is finite
+lifecycle evidence, not indefinite torrent background authority.
+
+### Picker gate and accepted negative result
+
+The authorized physical UI-test attempt failed before application interaction
+because the device timed out while enabling XCTest automation mode, reproducing
+the Tactical `116` limitation. Apple iPhone Mirroring was also unavailable for
+this Mac/device pairing. Therefore neither a distinct empty **On My iPhone**
+directory nor an empty iCloud Drive directory was selected. No cloud directory
+was created, read, bookmarked, registered, or mutated, and no provider
+identifier was retained.
+
+This absent control cannot graduate selected-local storage. The implementation
+responds by disabling picker-root registration entirely, so there is no need
+to run bookmark relaunch, permission, repair, rename/move, or selected-root
+force-close cases. Those cases are inapplicable until a future tactical first
+obtains both physical classification controls and deliberately changes the
+compiled policy. App-owned Documents is consequently the sole supported root
+result for the first iOS client tactical.
+
+The final signed build was installed fresh after that policy was compiled in.
+It reported one app-owned root at generation 1, selected roots disabled with
+`fallback=false`, passing Rust storage and networking, descriptors 7/8/7, and
+zero terminal Swift resources. The probe app was then uninstalled. Temporary
+evidence and build output were removed, the simulator copy was uninstalled,
+and no cloud control directory or other provider content required cleanup.
 
 ## Deliberate Non-Goals And Next Boundary
 

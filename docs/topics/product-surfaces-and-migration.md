@@ -83,7 +83,7 @@ The likely successor has these useful compositions:
 | ChromeOS | Rust application service in Crostini | Browser extension | Owns a Linux profile and roots |
 | ChromeOS | Rust application service in the Android app | Browser extension | Shares the Android profile |
 | ChromeOS or Android | Same Android application service | Android Compose | Shares the Android backend and profile |
-| iOS/iPadOS (eventual) | Rust application service in the native app | Native platform UI, toolkit to be selected later | Owns an iOS profile and capability-backed roots |
+| iOS/iPadOS (eventual) | Rust application service in the native app | Native platform UI, toolkit to be selected later | Owns an iOS profile and initially one app-owned Documents root |
 
 ChromeOS therefore has **two backends and three presentation
 configurations**:
@@ -103,6 +103,11 @@ lifecycle. An Apple bookmark or File Provider identity cannot be shared with
 Android SAF or a desktop path, and matching filenames do not imply shared
 verified state. Tactical `116` tests this shape on a physical device without
 choosing the final UI toolkit, release channel, minimum OS, or migration path.
+Tactical
+[`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
+further fixes the first client boundary at a freshly resolved app-owned
+Documents payload root. Picker bookmarks, iCloud, and other File Provider
+roots are not migration destinations or active storage capabilities.
 
 ## Desktop Extension And Embedded UI
 
@@ -457,9 +462,9 @@ fixture, or wire contract from either sibling project.
 - Physical ChromeOS TCP and UDP torrent behavior and representative Android
   versus Crostini resource and throughput measurements.
 - The eventual iOS product's UI toolkit, minimum OS, background policy,
-  packaging/distribution, migration source, and supported app-owned versus
-  external File Provider roots. Tactical `116` supplies feasibility evidence,
-  not these product decisions.
+  packaging/distribution, migration source, and any future reconsideration of
+  external File Provider roots. Tacticals `116` and `123` supply feasibility
+  and app-owned recovery evidence, not these product decisions.
 
 ## Recommended Next Work
 

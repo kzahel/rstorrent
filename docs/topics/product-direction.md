@@ -13,6 +13,10 @@ Maintainer direction on 2026-08-09 additionally makes Android a
 non-deferrable engine parity gate and accepts iOS as an eventual first-party
 in-process product, beginning with the bounded physical-device feasibility in
 Tactical [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
+Completed Tactical
+[`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
+settles the initial iOS payload policy at app-owned, user-visible Documents
+only; system-picked and File Provider roots remain disabled.
 
 ## Scope
 
@@ -84,9 +88,10 @@ On an eventual iOS product, Swift may own native presentation, directory
 selection, bookmarks and security-scope lifetime, File Provider coordination,
 background-task integration, and other Apple lifecycle work. Rust still owns
 peer networking, hashing, scheduling, persistence, and payload I/O. Tactical
-`116` must determine on a physical device whether coordinated external-root
-access can lend a bounded direct-I/O capability safely; payload callbacks
-through Swift are not the fallback if it cannot.
+`116` proves the bounded direct-I/O seam, and Tactical `123` proves app-owned
+Documents persistence and recovery on a physical device. Because the required
+local/iCloud classification controls could not run, picker-root registration
+is compiled off. Payload callbacks through Swift are not the fallback.
 
 ### Generated Kotlin boundary
 
@@ -108,9 +113,9 @@ that UniFFI cannot express safely. It is not a parallel application API or a
 payload path.
 
 The eventual Rust/Swift binding technology is deliberately unselected.
-Tactical `116` may use the smallest bridge required for the physical probe,
-but that experiment does not establish the full product API, UI toolkit, or a
-second application contract.
+Tacticals `116` and `123` use the smallest bridge required for the physical
+probe, but those experiments do not establish the full product API, UI toolkit,
+or a second application contract.
 
 ### In-process by default
 
@@ -141,7 +146,9 @@ release sequence, but platform constraints that can change engine ownership
 or storage/lifecycle seams should be tested early on a physical device rather
 than discovered after path and Android behavior harden. Tactical `116` owns
 the first bounded storage, direct-networking, and lifecycle feasibility probe;
-it does not authorize a complete iOS client or distribution path.
+Tactical `123` adds app-owned root persistence, interrupted recovery, and the
+app-owned-only decision. Neither authorizes a complete iOS client or
+distribution path.
 
 ### Android engine parity gate
 
@@ -366,9 +373,10 @@ testing evidence justifies it.
 - Chrome extension or Chrome native-messaging integration.
 - Android companion HTTP/WebSocket service.
 - A generic socket or filesystem daemon.
-- A complete iOS product during initial bring-up. Tactical `116` deliberately
-  front-loads bounded physical-device feasibility without changing this
-  release-sequencing non-goal.
+- A complete iOS product during initial bring-up. Tacticals `116` and `123`
+  deliberately front-load bounded physical-device feasibility and the
+  app-owned-only root policy without changing this release-sequencing
+  non-goal.
 - Search plugins, streaming playback, or remote administration in the first
   useful client.
 - Exact JSTorrent API, engine, persistence, or feature parity. Completed

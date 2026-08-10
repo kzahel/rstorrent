@@ -166,8 +166,11 @@ An eventual iOS client is accepted as a first-party native product using the
 same in-process Rust engine and typed application semantics. It is not one of
 the currently implemented surfaces. Its presentation toolkit, minimum OS,
 distribution, background policy, and UI reuse strategy wait for a dedicated
-product tactical after Tactical `116` records physical storage, direct TCP/UDP,
-and lifecycle feasibility.
+product tactical. Tactical `116` records physical storage, direct TCP/UDP, and
+lifecycle feasibility; Tactical
+[`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
+records app-owned root persistence and recovery and disables picker-backed
+roots. The first client tactical may assume only app-owned Documents.
 
 Desktop product content is web UI. Native desktop code is limited to the
 application shell and operating-system integration such as process and window
@@ -525,9 +528,11 @@ future server.
   compatibility/debug use and remains visibly unauthenticated in tracker
   rows; custom roots, pins, and certificate-management UI are absent.
 - No HTTP playback server exists.
-- No RSTorrent iOS product exists. Current evidence is limited to local
-  toolchain/device availability; Tactical `116` requires a minimal physical
-  probe and explicitly stops before product UI, packaging, or support claims.
+- No RSTorrent iOS product exists. Tacticals `116` and `123` prove the
+  in-process Rust seam plus app-owned Documents persistence, bounded
+  interruption recovery, networking, and finite lifecycle behavior on an
+  iPhone. They explicitly stop before product UI, packaging, or support
+  claims; system-picked and File Provider roots are disabled.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed

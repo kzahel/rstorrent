@@ -35,6 +35,13 @@ capability survives app-owned bookmark restoration, Apple security scope,
 coordination, and lifecycle constraints. It does not add another payload
 runtime, external File Provider support, or a fast-resume policy.
 Completed Tactical
+[`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
+repeats that real Rust seam under per-operation coordination, persists one
+app-owned root generation, recovers an exact synced partial workspace after
+process death, and records one-of-eight handles plus process descriptors
+7/8/7 on the physical iPhone. Picker-backed roots remain disabled, so no slow
+provider concurrency profile is inferred.
+Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) now owns that
 policy without changing the checkpoint order or hot-path owners: matching
 per-torrent structural evidence admits synchronized committed bits with zero
@@ -594,13 +601,13 @@ capability, cancellation, part-file, and provider lifecycle is owned by
 [`android-saf-storage.md`](android-saf-storage.md).
 
 An eventual iOS adapter follows the same ownership direction proven by the
-Tactical `116` physical harness: Swift owns security-scoped root access and
-coordination, while Rust owns bounded positional payload operations and the
-common handle/resource accounting. App-owned bookmark restoration encloses a
-Rust operation in a balanced coordination window with no payload callback.
-Selection of a separate local directory and external File Provider behavior
-remain unproven; successful uncoordinated POSIX calls would not establish that
-contract.
+Tacticals `116` and `123` physical harness: Swift owns root capability and
+coordination lifetime, while Rust owns bounded positional payload operations
+and common handle/resource accounting. The initial adapter resolves app-owned
+Documents on launch and encloses each Rust operation in a per-operation
+coordination window with no payload callback. Picker-backed local and external
+File Provider behavior remain disabled; successful uncoordinated POSIX calls
+would not establish that contract.
 
 The hash path should stop duplicating each wanted-file handle for every piece
 once handles are safely shareable for positional access;

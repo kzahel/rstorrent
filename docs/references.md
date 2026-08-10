@@ -226,9 +226,11 @@ references; no documentation sample source was imported.
 
 ## Apple iOS Platform References
 
-Planned Tactical
-[`116`](tactical/116-platform-storage-coherence-and-ios-feasibility.md) uses
-Apple's official platform documentation as the normative SDK boundary:
+Completed Tacticals
+[`116`](tactical/116-platform-storage-coherence-and-ios-feasibility.md) and
+[`123`](tactical/123-ios-on-device-root-persistence-and-recovery.md) use
+Apple's official platform documentation and the active SDK headers as the
+normative platform boundary:
 
 - [Providing access to directories](https://developer.apple.com/documentation/uikit/providing-access-to-directories)
   defines user-selected recursive directory access, security-scoped URLs,
@@ -239,6 +241,12 @@ Apple's official platform documentation as the normative SDK boundary:
 - [`NSFileCoordinator`](https://developer.apple.com/documentation/foundation/nsfilecoordinator)
   is the coordination primitive whose correct relationship to bounded direct
   Rust descriptor I/O must be established on-device;
+- [`URLResourceValues`](https://developer.apple.com/documentation/foundation/urlresourcevalues)
+  exposes optional directory, symlink, ubiquitous-item, and volume facts;
+  missing values remain unknown rather than false;
+- [`NSFileProviderManager`](https://developer.apple.com/documentation/fileprovider/nsfileprovidermanager)
+  can identify a user-visible File Provider item/domain but does not establish
+  a generic local-versus-remote payload classification;
 - [Extending your app's background execution time](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)
   defines the brief, expiring completion window around ordinary background
   transition; and
@@ -247,8 +255,10 @@ Apple's official platform documentation as the normative SDK boundary:
   cancellation, and force-close limits.
 
 These references establish obligations and candidate APIs, not RSTorrent iOS
-feasibility or support. Tactical `116` requires a physical-device matrix and
-imports no Apple sample source, fixture, asset, entitlement, or project file.
+product support. The physical probes import no Apple sample source, fixture,
+asset, entitlement, or project file. Tactical `123` retains only app-owned
+Documents as a supported root result and keeps system-picked roots
+classification-only.
 
 ## TLS Platform Trust References
 

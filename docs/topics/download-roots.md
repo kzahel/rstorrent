@@ -26,12 +26,17 @@ configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
 Windows remains unimplemented, and Android already proves one
 user-selected persisted SAF root but not general multi-root management.
-Eventual iOS root behavior is accepted in shape but unimplemented. Tactical
+Eventual iOS product root behavior is accepted in shape but unimplemented.
+Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 physically proves app-owned Documents and coordinated, security-scoped
 restoration of an app-owned bookmarked fixture. System-picker automation did
 not reach a separate local-provider root, so external **On My iPhone** and File
-Provider support remain unproven before a complete iOS product is planned.
+Provider support remained unproven. Completed Tactical
+[`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
+therefore proves stable app-owned persistence and interrupted recovery and
+compiles picker-root registration off. App-owned Documents is the sole root
+assumption for the first complete iOS product tactical.
 
 ## Scope
 
@@ -282,10 +287,14 @@ because the display name or path is unavailable.
 
 Tactical `116` proves app-owned Documents plus non-stale bookmark restoration,
 balanced security scope, and coordination around Rust-owned I/O on a physical
-device. Its system-picker attempts do not prove a separate local **On My
-iPhone** directory. That external local-provider case, iCloud, offloaded
-items, third-party File Providers, general root-management UI, and a support
-claim remain out of scope until separate evidence exists.
+device. Tactical `123` adds a versioned opaque app-owned record, generation-
+fenced interrupted-workspace recovery, exact resource accounting, and a
+fail-closed classifier. Physical UI automation still could not reach a
+separate local **On My iPhone** directory, and the required iCloud negative
+control did not run. Picker selection is consequently classification-only:
+it cannot persist a bookmark or root or invoke Rust. External local-provider,
+iCloud, offloaded-item, third-party-provider, relocation, and cloud-export
+behavior require separate tacticals.
 
 ## User-Visible Publication Layout
 
@@ -396,3 +405,6 @@ without moving file selection out of the Files tab.
 Completed Tactical `116` adds backend-neutral observations and root-health
 semantics, closes SAF published reads, and records bounded physical iOS root
 feasibility without implementing fast resume or a complete iOS client.
+Completed Tactical `123` records the app-owned-only iOS result and leaves
+completed-file cloud export as a separate copy/verification tactical rather
+than an active torrent-root feature.
