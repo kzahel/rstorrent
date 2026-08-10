@@ -48,9 +48,12 @@ performance diagnosis Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) as the single
 authoritative **Now**. Tactical `128` completed and selected bounded storage
 intake watermark Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md) as the new
-authoritative **Now**. Tactical `122`'s classified Ubuntu result leaves
-focused-driver HTTP(S) tracker dispatch available after that optimization. The
+[`129`](../tactical/129-bounded-storage-intake-watermark.md). Before its
+implementation, explicit maintainer priority resumed uTP and activated
+Tactical [`130`](../tactical/130-utp-transport-solidification.md) as the new
+authoritative **Now**; Tactical `129` remains ready and queued intact. Tactical
+`122`'s classified Ubuntu result leaves focused-driver HTTP(S) tracker dispatch
+available after those items. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -370,7 +373,8 @@ evidence-limited at its superseded direct-interface preflight; Tactical `122`
 completed paired public download performance evidence; and mapped-WAN uTP
 Tactical `127` completed one exact direct-public-path leecher transfer and
 cleanup; human review paused uTP; Tactical `128` completed controlled TCP
-diagnosis; and Tactical `129` is ready**.
+diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
+Tactical `130` is active**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -404,12 +408,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute Tactical `129`'s source-first storage intake
-watermark slice. Hold resident safety ceilings constant, sweep a separate
-hysteretic queue watermark, preserve large-piece and session-fair progress,
-and repeat the controlled plaintext/RC4 gate before selecting any remaining
-TCP hot-path work. No local gateway operation, further uTP work, public swarm,
-dependency, product setting, or support-claim change is implicit.
+Next executable action: execute Tactical `130` end to end. Prove the local-
+mapped RSTorrent-sender direction, run three fresh samples in both authorized
+WAN directions with exact cleanup, add fixed real-socket impairment and
+hostile lifecycle gates, and integrate diagnostic-only MTU search when its
+feedback is truthful. Commit bounded stages and stop at the pre-product review.
+Tactical `129` remains the first ready non-uTP item. No product uTP, public
+swarm, dependency, permanent network change, or support-claim authority is
+implicit.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -436,6 +442,10 @@ Last completed evidence:
   bounded resources, terminal zero ownership, exact mapping deletion, and an
   independent zero-residue audit. Product uTP remains disabled at human
   review;
+- Tactical `130` is active under explicit maintainer authorization for the
+  complementary mapped-WAN direction, bounded bidirectional cohort, real-
+  socket impairment/lifecycle hardening, and diagnostic MTU evidence. It has
+  no product or support-claim authority;
 - commit `302d840` fixes Tactical `126`'s direct-route, exact-oracle,
   outbound-only, evidence, and cleanup contract. Its authorized 4.5-second
   read-only `pimom` preflight finds only loopback, RFC 1918 LAN, and

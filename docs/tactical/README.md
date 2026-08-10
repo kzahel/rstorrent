@@ -604,9 +604,14 @@ that scope and its cleanup or compatibility rules explicitly.
   identifies sustained large-transfer storage admission/backlog as the first
   optimization owner without resuming uTP or public-swarm work.
 - [`129-bounded-storage-intake-watermark.md`](129-bounded-storage-intake-watermark.md):
-  ready bounded optimization selected by Tactical `128`; separates storage
-  queue pressure from the larger resident-payload ceiling, validates
+  ready and queued bounded optimization selected by Tactical `128`; separates
+  storage queue pressure from the larger resident-payload ceiling, validates
   hysteresis and session fairness, and remeasures the remaining TCP ceiling.
+- [`130-utp-transport-solidification.md`](130-utp-transport-solidification.md):
+  active bounded uTP solidification campaign; proves the complementary
+  local-mapped WAN sender direction, runs a small bidirectional cohort, adds
+  real-socket impairment and hostile lifecycle gates, and integrates
+  diagnostic-only MTU search before the pre-product review.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

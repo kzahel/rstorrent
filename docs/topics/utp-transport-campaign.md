@@ -20,9 +20,12 @@ corrected that precondition and authorized Tactical
 oracle on the NATed host, try remote UDP UPnP first, and use a local UDP mapping
 with reversed roles only if remote reachability capability is absent. Tactical
 `127` is complete after one exact remote-mapped direct-public-path transfer and
-verified cleanup; the campaign is now at its required post-Stage 4 human-review
-checkpoint. uTP remains **Unsupported** and no product transport policy or
-dependency is accepted.
+verified cleanup. Human review then authorized active Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) to complete the
+complementary WAN direction, a small bidirectional cohort, real-socket
+impairment/lifecycle hardening, and diagnostic-only MTU integration before the
+pre-product review. uTP remains **Unsupported** and no product transport policy
+or dependency is accepted.
 
 ## Scope And Ownership
 
@@ -126,6 +129,12 @@ the single authoritative **Now**.
   peers, exact SHA-1, zero loss/retransmission counters, bounded queues, and
   terminal zero ownership. Independent post-run audit found no mapping,
   process, or per-run artifact residue.
+- Active Tactical `130` now owns the remaining pre-product transport baseline:
+  RSTorrent bulk sending through one exact temporary local UDP mapping, three
+  fresh samples in each WAN direction, fixed real-socket impairment and
+  hostile lifecycle gates, and an explicit diagnostic MTU configuration. It
+  leaves ordinary runtime fixed at 548 bytes unless truthful portable probe
+  feedback is proven and separately reviewed for product use.
 
 ## Why The Campaign Must Be Adaptive
 
@@ -485,6 +494,14 @@ gateway mapping even though Tactical `127`'s capability-gated fallback was not
 triggered. None of the choices authorizes a permanent network change, another
 remote host, IPv6 uTP, a public swarm, a dependency, or a support-claim change.
 
+Human review selected choice A and additionally authorized the bounded
+bidirectional cohort, real-socket impairment/lifecycle work, and evidence-led
+diagnostic MTU stage. Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) fixes those route,
+lease, resource, cleanup, hostile-runtime, and stopping contracts. It may
+repair evidence-backed defects autonomously and commits by stage, then stops
+at the pre-product review.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -581,12 +598,13 @@ Campaign state: **Stage 0 Tactical `118`, deterministic Stage 1 Tactical
 `119`, deterministic Stage 2 Tactical `121`, shared-UDP/runtime Stage 3
 Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
-direct-interface preflight; the campaign is at the post-Stage 4 human-review
-checkpoint**.
+direct-interface preflight; post-Stage 4 solidification Tactical `130` is
+active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). There is no executable
-uTP action until human review selects the recommended complementary local-
-mapped sender evidence, pauses for the readiness queue, or chooses product-
-policy planning. No permanent network change, different host, product
-enablement, dependency, public swarm, or support-claim authority is implied.
+[`capability-readiness.md`](capability-readiness.md). Execute Tactical `130`
+through complementary WAN, cohort, impairment/lifecycle, diagnostic MTU,
+cleanup, and repository evidence, committing each bounded stage. Then stop at
+the pre-product human review. No permanent network change, different host,
+product enablement, dependency, public swarm, or support-claim authority is
+implied.

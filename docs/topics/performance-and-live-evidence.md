@@ -12,6 +12,10 @@ checkpoints, and a bounded quick real-torrent comparison. Public-swarm speed
 remains a measured baseline, not a CI pass threshold.
 Completed Tactical `127` additionally records one 82.239-second remote-mapped
 uTP WAN transfer as a bounded observation, not a throughput threshold.
+Active Tactical `130` owns the complementary bulk-send direction, three fresh
+samples per WAN direction, fixed real-socket impairment profiles, and
+diagnostic MTU measurements. These remain controlled observations rather than
+public-swarm or product performance claims.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

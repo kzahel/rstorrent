@@ -51,6 +51,13 @@ the engine's UDP mapping path remains diagnostic-only and was not invoked.
 The result adds no persisted setting, advertisement, or ordinary product
 listener policy.
 
+Active diagnostic-only Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) may now exercise the
+engine's explicit UDP mapping path once on the authorized local gateway, then
+in a bounded cohort, with RSTorrent as the seed/bulk sender. Every product
+reachability call remains TCP, and every diagnostic UDP lease must be queried,
+deleted, and independently confirmed absent before the next sample.
+
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
 Schema version 11 persists a preferred listen port, default `6881`; one

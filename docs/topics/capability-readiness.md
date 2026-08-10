@@ -325,18 +325,23 @@ peer, bounded resources, cleanup, and alternating orders passed.
 
 ### Now
 
-- Tactical
-  [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the single
-  authoritative work item selected by Tactical `128`. It separates the
-  storage intake high/low watermark from the larger resident-payload safety
-  ceiling, preserves large-piece liveness and session fairness, and remeasures
-  the remaining TCP ceiling. No setting, public swarm, local gateway, or uTP
-  work is authorized by this choice.
+- Active Tactical
+  [`130`](../tactical/130-utp-transport-solidification.md) is the single
+  authoritative work item selected at the post-Stage 4 review. It proves the
+  complementary local-mapped RSTorrent-sender WAN direction, runs a three-
+  sample cohort in both directions, composes the runtime with fixed real-socket
+  impairment and hostile lifecycle gates, and integrates diagnostic-only MTU
+  search when truthful feedback is available. Product uTP stays disabled.
 
 ### Next
 
+- Ready Tactical
+  [`129`](../tactical/129-bounded-storage-intake-watermark.md) retains the
+  storage-intake optimization selected by Tactical `128`; explicit maintainer
+  priority queues it intact behind the bounded uTP campaign.
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager remains available after Tactical `129`.
+  download driver's nested manager remains available after Tactical `130` and
+  queued Tactical `129`.
   Completed Tactical
   [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
   proves that the long-lived application tracker owner is not composed into
@@ -366,9 +371,10 @@ The uTP topic records the adaptive campaign. Tacticals `118`, `119`, `121`,
 `125`, and `127` are complete; bounded deterministic state, both loopback
 roles, and one remote-mapped direct-public-path leecher transfer pass. Tactical
 `126` remains the evidence-limited record of its superseded direct-interface
-preflight. The campaign is at post-Stage 4 human review before any intentional
-local mapping, reverse WAN direction, product policy, or support graduation.
-uTP remains unsupported and disabled in products.
+preflight. Active Tactical `130` owns the explicitly authorized local-mapped
+reverse WAN direction, bounded cohort, runtime impairment/lifecycle hardening,
+and diagnostic MTU work before the pre-product review. uTP remains unsupported
+and disabled in products.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

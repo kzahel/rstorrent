@@ -43,6 +43,10 @@ remote-mapped direct-public-path transfer with RSTorrent as leecher. The BEP 29
 claim remains **Unsupported** because ordinary product dialing/listening and
 UDP reachability, the reverse WAN bulk-send direction, IPv6 uTP, MSE
 composition, transport policy, and product presentation are not implemented.
+Active Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) owns that reverse
+controlled direction plus runtime hardening and diagnostic MTU evidence; it
+does not authorize changing this claim.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.

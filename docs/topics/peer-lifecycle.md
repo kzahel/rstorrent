@@ -484,7 +484,11 @@ product execution. Completed Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md) observes the same
 single generation and terminal removal while RSTorrent downloads over a
 direct public path from a remotely mapped pinned-libtorrent seed; product
-selection remains unchanged. Completed Tactical
+selection remains unchanged. Active Tactical
+[`130`](../tactical/130-utp-transport-solidification.md) owns bounded hostile
+real-socket pressure, cancellation, generation replacement, repeated
+start/stop, and the complementary mapped RSTorrent-sender direction before
+product policy. Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical
 [`094`](../tactical/094-bounded-bep11-peer-exchange.md) now completes PEX after
