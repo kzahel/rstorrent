@@ -41,6 +41,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-incomplete-duplex",
     "product-saf-grant-repair",
     "product-https-tracker",
     "product-https-platform-trust",
@@ -100,7 +101,7 @@ def ensure_interop_environment() -> None:
         os.execvpe(command[0], command, environment)
 
 
-def load_support() -> tuple[ModuleType, ModuleType, ModuleType]:
+def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
     interop_root = repository_root() / "tests" / "interop"
     if str(interop_root) not in sys.path:
         sys.path.insert(0, str(interop_root))
@@ -116,7 +117,11 @@ def load_support() -> tuple[ModuleType, ModuleType, ModuleType]:
         "rstorrent_http_tracker_support",
         interop_root / "http_tracker_application.py",
     )
-    return probe, interop, tracker
+    duplex = load_module(
+        "rstorrent_incomplete_duplex_support",
+        interop_root / "incomplete_duplex.py",
+    )
+    return probe, interop, tracker, duplex
 
 
 def build_apk() -> Path:
@@ -2189,6 +2194,322 @@ def run_product_saf_grant_repair_profile(
         probe.remove_grant_folder(target, grant_storage)
 
 
+def run_product_incomplete_duplex_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    duplex: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-incomplete-duplex requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    run_path = Path(tempfile.mkdtemp(prefix="rstorrent-android-incomplete-duplex-"))
+    fixture = duplex.create_fixture(run_path / "fixture")
+    stage_session: Any | None = None
+    stage_handle: Any | None = None
+    stage_transport: ReverseTransport | None = None
+    stage_proxy: Any | None = None
+    stage_diagnostics: list[str] = []
+    retained_pieces: tuple[int, ...] = ()
+    complement_session: Any | None = None
+    complement_handle: Any | None = None
+    complement_transport: ReverseTransport | None = None
+    proxy: Any | None = None
+    baseline_fds = 0
+    output_root = f"{probe.grant_path(grant_storage)}/duplex-tree"
+    staging_root = f"{probe.grant_path(grant_storage)}/.duplex-tree.rstorrent-staging"
+    part_path = f"{probe.grant_path(grant_storage)}/.duplex-tree.rstorrent-parts"
+
+    def close_partial(session: Any | None, handle: Any | None) -> None:
+        if session is None:
+            return
+        if handle is not None:
+            try:
+                if handle.is_valid():
+                    session.remove_torrent(handle)
+            except RuntimeError:
+                pass
+        session.pause()
+        session.pop_alerts()
+
+    def wait_partial_verified() -> str:
+        deadline = time.monotonic() + 60
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = product_logs(target)
+            if any(
+                f"torrent={fixture.info_hash}" in line
+                and "state=DOWNLOADING" in line
+                and "verified=2 " in line
+                for line in logs.splitlines()
+            ):
+                return logs
+            if "product service initialization failed" in logs:
+                break
+            time.sleep(0.1)
+        stage_status = stage_handle.status() if stage_handle is not None else None
+        if stage_session is not None:
+            stage_diagnostics.extend(
+                alert.message() for alert in stage_session.pop_alerts()
+            )
+        proxy_detail = stage_proxy.retained_pieces if stage_proxy is not None else ()
+        raise BootstrapFailure(
+            "Android SAF torrent did not retain the controlled partial set\n"
+            f"stage_status={stage_status}\n"
+            f"stage_alerts={stage_diagnostics}\n"
+            f"stage_proxy={proxy_detail}\n"
+            + logs
+        )
+
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+
+        stage_session = duplex.create_session()
+        duplex.configure_encryption(stage_session, "disabled")
+        stage_port = duplex.wait_for_listener(stage_session, stage_diagnostics)
+        stage_handle = duplex.add_seed(
+            stage_session,
+            fixture.torrent_info,
+            fixture.source_root,
+            stage_diagnostics,
+        )
+        stage_proxy = duplex.CappedPieceProxy(("127.0.0.1", stage_port))
+        stage_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            stage_proxy.endpoint[1],
+            ordinal,
+        )
+        magnet = (
+            f"magnet:?xt=urn:btih:{fixture.info_hash}&dn=duplex-tree"
+            f"&x.pe=127.0.0.1:{stage_transport.device_port}"
+        )
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_encryption_policy",
+                "disabled",
+                "--es",
+                "product_skip_files",
+                ",".join(str(index) for index in duplex.SKIP_FILES),
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            raise BootstrapFailure("could not start Android incomplete SAF torrent")
+        wait_partial_verified()
+        time.sleep(3)
+        retained_pieces = stage_proxy.retained_pieces
+        if len(retained_pieces) != 2:
+            raise BootstrapFailure(
+                f"staging proxy retained {retained_pieces}, expected two pieces"
+            )
+        if not stage_handle.status().is_seeding:
+            raise BootstrapFailure("the staging oracle left seed state")
+
+        close_partial(stage_session, stage_handle)
+        stage_session = None
+        stage_handle = None
+        gc.collect()
+        stage_transport.close()
+        stage_transport = None
+        stage_proxy.close()
+        stage_proxy = None
+
+        target.run(["logcat", "-c"], check=False)
+        released = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_release_saf_grant",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in released.stdout:
+            raise BootstrapFailure("could not inject incomplete SAF grant loss")
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        restarted = target.shell(
+            ["am", "start", "-W", "-n", ACTIVITY],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart incomplete torrent after grant loss")
+        unavailable_logs = wait_product_log(
+            target,
+            "saf_root_health source=startup available=false",
+            "incomplete SAF root failure",
+        )
+        unavailable_logs = wait_product_log(
+            target,
+            f"torrent={fixture.info_hash}",
+            "incomplete torrent after SAF root failure",
+        )
+        if "state=AWAITING_STORAGE" not in unavailable_logs:
+            raise BootstrapFailure(
+                "incomplete SAF root failure did not fence the torrent\n" + unavailable_logs
+            )
+        if not app_text(target, "shared_prefs/product-saf.xml"):
+            raise BootstrapFailure("incomplete SAF grant loss erased stable root identity")
+
+        complement_session = duplex.create_session()
+        duplex.configure_encryption(complement_session, "disabled")
+        complement_port = duplex.wait_for_listener(complement_session, [])
+        complement_root = run_path / "complement-peer"
+        complement_pieces = tuple(
+            piece
+            for piece in range(fixture.torrent_info.num_pieces())
+            if piece not in retained_pieces
+        )
+        complement_handle = duplex.add_partial(
+            complement_session,
+            fixture,
+            complement_root,
+            complement_pieces,
+        )
+        proxy = duplex.PlaintextDuplexProxy(
+            ("127.0.0.1", complement_port), piece_delay_seconds=0.25
+        )
+        complement_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            proxy.endpoint[1],
+            ordinal,
+        )
+
+        target.run(["logcat", "-c"], check=False)
+        selected = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--ez",
+                "product_select_saf",
+                "true",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in selected.stdout:
+            raise BootstrapFailure("could not relaunch incomplete SAF repair picker")
+        probe.automate_tree_grant(target, grant_storage)
+        wait_product_log(
+            target,
+            "saf_root_health source=selection available=true",
+            "repaired incomplete SAF root",
+        )
+        metrics, fd_high_water = wait_product_publication(
+            target,
+            fixture.info_hash,
+            baseline_fds,
+        )
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            status = complement_handle.status()
+            if status.errc.value() != 0:
+                raise BootstrapFailure(
+                    f"Android complementary peer failed: {status.errc.message()}"
+                )
+            if status.is_seeding:
+                break
+            time.sleep(0.05)
+        else:
+            raise BootstrapFailure("Android complementary peer did not complete")
+
+        evidence = duplex.assert_plaintext(
+            proxy,
+            fast=True,
+            client_initial=retained_pieces,
+            upstream_initial=complement_pieces,
+        )
+        duplex.verify_files(complement_root, fixture, skipped_absent=False)
+        for file_index, spec in enumerate(duplex.FILES):
+            path = f"{output_root}/{spec.path.as_posix()}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if spec.padding or file_index in duplex.SKIP_FILES:
+                if exists:
+                    raise BootstrapFailure(
+                        f"Android incomplete SAF published excluded file {spec.path}"
+                    )
+                continue
+            if not exists:
+                raise BootstrapFailure(
+                    f"Android incomplete SAF omitted wanted file {spec.path}"
+                )
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != fixture.expected_hashes[spec.path]:
+                raise BootstrapFailure(
+                    f"Android incomplete SAF hash differs for {spec.path}"
+                )
+        if metrics["limit"] != 40 or metrics["owned_high_water"] > 40:
+            raise BootstrapFailure(f"Android incomplete SAF handle bound failed: {metrics}")
+        if metrics["pending_high_water"] > 16:
+            raise BootstrapFailure(f"Android incomplete SAF broker bound failed: {metrics}")
+
+        request_product_torrent_action(target, fixture.info_hash, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            "incomplete SAF removal",
+        )
+        return {
+            "target": target_kind,
+            "profile": "product-incomplete-duplex",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": fixture.info_hash,
+            "provider_failure": "awaiting_storage",
+            "provider_repair": "resumed",
+            "staged_pieces": retained_pieces,
+            "piece_evidence": evidence,
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "cleanup": "exact",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        if complement_transport is not None:
+            complement_transport.close()
+        if stage_transport is not None:
+            stage_transport.close()
+        if stage_proxy is not None:
+            stage_proxy.close()
+        if proxy is not None:
+            proxy.close()
+        close_partial(complement_session, complement_handle)
+        close_partial(stage_session, stage_handle)
+        for exact_path in (output_root, staging_root, part_path):
+            target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        shutil.rmtree(run_path, ignore_errors=True)
+
+
 def run_product_mse_profile(
     target: Any,
     target_kind: str,
@@ -2776,7 +3097,7 @@ def main() -> int:
         print("SAF removable storage is available only on motox4", file=sys.stderr)
         return 1
     ensure_interop_environment()
-    probe, interop, tracker_support = load_support()
+    probe, interop, tracker_support, duplex_support = load_support()
     apk = (
         bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
@@ -2822,6 +3143,7 @@ def main() -> int:
                 in (
                     "success",
                     "product-dynamic-saf",
+                    "product-incomplete-duplex",
                     "product-https-tracker",
                     "product-mse",
                     "product-concurrent-downloads",
@@ -2863,6 +3185,16 @@ def main() -> int:
                         arguments.target,
                         identity,
                         probe,
+                        arguments.storage,
+                    )
+                elif profile == "product-incomplete-duplex":
+                    result = run_product_incomplete_duplex_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        duplex_support,
+                        ordinal,
                         arguments.storage,
                     )
                 elif profile == "product-https-tracker":

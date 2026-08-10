@@ -212,9 +212,11 @@ class PlaintextDuplexProxy:
         *,
         clear_fast: bool = False,
         hold_until_release: bool = False,
+        piece_delay_seconds: float = 0.01,
     ) -> None:
         self.target = target
         self.clear_fast = clear_fast
+        self.piece_delay_seconds = piece_delay_seconds
         self.release = threading.Event()
         if not hold_until_release:
             self.release.set()
@@ -327,7 +329,7 @@ class PlaintextDuplexProxy:
                         (piece, begin, len(body) - 9, self._piece_sequence)
                     )
                     destination.sendall(prefix + body)
-                time.sleep(0.01)
+                time.sleep(self.piece_delay_seconds)
                 continue
             destination.sendall(prefix + body)
 
@@ -354,6 +356,173 @@ class PlaintextDuplexProxy:
                 f"pieces={self.client.pieces}; upstream messages={self.upstream.message_ids} "
                 f"handshake={self.upstream.handshake!r} pieces={self.upstream.pieces}"
             )
+
+
+class CappedPieceProxy:
+    """Relay repeated peer connections until two complete pieces reach the client."""
+
+    def __init__(self, target: tuple[str, int], piece_limit: int = 2) -> None:
+        self.target = target
+        self.piece_limit = piece_limit
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(8)
+        self.listener.settimeout(0.2)
+        self.endpoint = ("127.0.0.1", int(self.listener.getsockname()[1]))
+        self._closing = threading.Event()
+        self._capped = threading.Event()
+        self._lock = threading.Lock()
+        self._blocks: dict[int, set[tuple[int, int]]] = {}
+        self._retained: list[int] = []
+        self._expected_bytes = required_piece_payload_bytes()
+        self._sockets: list[socket.socket] = []
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    @property
+    def retained_pieces(self) -> tuple[int, ...]:
+        with self._lock:
+            return tuple(sorted(self._retained))
+
+    def _run(self) -> None:
+        try:
+            while not self._closing.is_set() and not self._capped.is_set():
+                try:
+                    downstream, _ = self.listener.accept()
+                except TimeoutError:
+                    continue
+                upstream = socket.create_connection(self.target, timeout=5)
+                self._sockets.extend((downstream, upstream))
+                self._relay_connection(downstream, upstream)
+        except BaseException as error:
+            if not (self._closing.is_set() and isinstance(error, OSError)):
+                self._failure = error
+        finally:
+            self._shutdown_sockets()
+
+    def _relay_connection(
+        self, downstream: socket.socket, upstream: socket.socket
+    ) -> None:
+        stop = threading.Event()
+        workers = (
+            threading.Thread(
+                target=self._relay_guard,
+                args=(downstream, upstream, stop, False),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=self._relay_guard,
+                args=(upstream, downstream, stop, True),
+                daemon=True,
+            ),
+        )
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+        for stream in (downstream, upstream):
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    def _relay_guard(
+        self,
+        source: socket.socket,
+        destination: socket.socket,
+        stop: threading.Event,
+        observe_pieces: bool,
+    ) -> None:
+        try:
+            self._relay(source, destination, stop, observe_pieces)
+        except (ConnectionError, EOFError, OSError):
+            pass
+        except BaseException as error:
+            self._failure = error
+        finally:
+            stop.set()
+            for stream in (source, destination):
+                try:
+                    stream.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def _relay(
+        self,
+        source: socket.socket,
+        destination: socket.socket,
+        stop: threading.Event,
+        observe_pieces: bool,
+    ) -> None:
+        handshake = recv_exact(source, HANDSHAKE_LENGTH)
+        if not handshake.startswith(b"\x13BitTorrent protocol"):
+            raise ScenarioFailure("capped proxy received a non-BitTorrent handshake")
+        destination.sendall(handshake)
+        while not stop.is_set():
+            prefix = recv_maybe_exact(source, 4)
+            if prefix is None:
+                return
+            length = struct.unpack(">I", prefix)[0]
+            body = recv_exact(source, length) if length else b""
+            destination.sendall(prefix + body)
+            if observe_pieces and len(body) >= 9 and body[0] == 7:
+                piece, begin = struct.unpack(">II", body[1:9])
+                if self._observe_piece(piece, begin, len(body) - 9):
+                    self._capped.set()
+                    time.sleep(1)
+                    return
+
+    def _observe_piece(self, piece: int, begin: int, length: int) -> bool:
+        with self._lock:
+            blocks = self._blocks.setdefault(piece, set())
+            blocks.add((begin, length))
+            covered = sum(block_length for _, block_length in blocks)
+            if (
+                covered >= self._expected_bytes[piece]
+                and piece not in self._retained
+            ):
+                self._retained.append(piece)
+            return len(self._retained) >= self.piece_limit
+
+    def _shutdown_sockets(self) -> None:
+        for stream in self._sockets:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        self._closing.set()
+        try:
+            self.listener.close()
+        except OSError:
+            pass
+        self._shutdown_sockets()
+        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            raise ScenarioFailure("capped proxy did not join")
+        if self._failure is not None:
+            raise ScenarioFailure(f"capped proxy failed: {self._failure}")
+
+
+def required_piece_payload_bytes() -> dict[int, int]:
+    expected = {piece: 0 for piece in range(4)}
+    torrent_offset = 0
+    for spec in FILES:
+        file_start = torrent_offset
+        file_end = file_start + spec.length
+        torrent_offset = file_end
+        if spec.padding:
+            continue
+        for piece in expected:
+            piece_start = piece * PIECE_SIZE
+            piece_end = piece_start + PIECE_SIZE
+            expected[piece] += max(
+                0, min(file_end, piece_end) - max(file_start, piece_start)
+            )
+    return expected
 
 
 def recv_exact(stream: socket.socket, length: int) -> bytes:
@@ -587,7 +756,10 @@ def assert_plaintext(
     if completions and max(first_client, first_upstream) >= min(completions):
         raise ScenarioFailure(
             "Piece frames were not observed in both directions before either peer "
-            "received all missing payload"
+            "received all missing payload: "
+            f"client_first={first_client} upstream_first={first_upstream} "
+            f"client_complete={client_completion} "
+            f"upstream_complete={upstream_completion}"
         )
     return {
         "fast": fast,

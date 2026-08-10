@@ -328,6 +328,7 @@ class ProductEngineService : Service() {
     fun addMagnetWithEncryptionPolicyForTest(
         magnet: String,
         policyName: String,
+        skipFiles: List<UInt> = emptyList(),
     ) {
         check(ProductSafDocuments.isDebuggable(this)) {
             "peer encryption injection is debug-only"
@@ -365,7 +366,7 @@ class ProductEngineService : Service() {
                 )
                 awaitEncryptionPolicy(policy)
                 dispatchAwait(
-                    Command.AddMagnet(magnet.trim(), "downloads", true, emptyList()),
+                    Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles),
                 )
             } catch (error: Throwable) {
                 reportError(error)

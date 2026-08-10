@@ -97,7 +97,11 @@ class MainActivity : ComponentActivity() {
                             pendingProductStartContent,
                         )
                         encryption != null ->
-                            service.addMagnetWithEncryptionPolicyForTest(it, encryption)
+                            service.addMagnetWithEncryptionPolicyForTest(
+                                it,
+                                encryption,
+                                pendingProductSkipFiles,
+                            )
                         else -> service.addMagnet(it, pendingProductSkipFiles)
                     }
                     pendingProductStartContent = true
@@ -360,7 +364,7 @@ class MainActivity : ComponentActivity() {
                     policy != null ->
                         service.addMagnetWithTrackerPolicyForTest(it, policy, startContent)
                     encryption != null ->
-                        service.addMagnetWithEncryptionPolicyForTest(it, encryption)
+                        service.addMagnetWithEncryptionPolicyForTest(it, encryption, skipFiles)
                     else -> service.addMagnet(it, skipFiles)
                 }
             }
