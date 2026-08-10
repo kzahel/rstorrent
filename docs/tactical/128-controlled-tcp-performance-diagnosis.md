@@ -324,6 +324,15 @@ not erase the remaining sustained TCP ceiling.
 Raw JSON reports and payloads were summarized here and removed. These values
 are same-host controlled evidence, not CI thresholds or public-swarm claims.
 
+Final repository validation passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- the eight controlled-diagnosis Python contract tests and 23 retained
+  public-comparator contract tests under the locked interop environment; and
+- `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-android --lib`.
+
 ## Decision
 
 The first optimization owner is storage intake admission, specifically the
