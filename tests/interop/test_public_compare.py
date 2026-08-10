@@ -94,7 +94,8 @@ class PublicCompareTests(unittest.TestCase):
     def test_order_alternates(self) -> None:
         self.assertEqual(implementation_order(0), ["rstorrent", "libtorrent"])
         self.assertEqual(implementation_order(1), ["libtorrent", "rstorrent"])
-        self.assertEqual(implementation_order(2), ["rstorrent", "libtorrent"])
+        self.assertEqual(implementation_order(2), ["libtorrent", "rstorrent"])
+        self.assertEqual(implementation_order(3), ["rstorrent", "libtorrent"])
         self.assertEqual(selected_implementations(1, "both"), ["libtorrent", "rstorrent"])
         self.assertEqual(selected_implementations(1, "rstorrent"), ["rstorrent"])
 

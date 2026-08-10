@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source": "https://webtorrent.io/free-torrents",
   "retrieved": "2026-07-30",
   "license_note": "WebTorrent describes these torrents as public-domain or Creative Commons works; verify the individual work license before redistribution.",
@@ -8,46 +8,171 @@
       "slug": "big-buck-bunny",
       "name": "Big Buck Bunny",
       "info_hash": "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c",
-      "payload_bytes": 276445467,
-      "piece_count": 1055,
-      "file_count": 3,
-      "magnet": "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent"
+      "roles": [
+        "small-primary"
+      ],
+      "source": {
+        "organization": "WebTorrent",
+        "page": "https://webtorrent.io/free-torrents",
+        "retrieved": "2026-07-30",
+        "license_note": "WebTorrent lists Big Buck Bunny as a freely distributable Blender Foundation film; payload redistribution is outside this harness."
+      },
+      "input_modes": [
+        "magnet"
+      ],
+      "magnet": "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fbig-buck-bunny.torrent",
+      "metainfo": null,
+      "expected": {
+        "payload_bytes": 276445467,
+        "piece_length": 262144,
+        "piece_count": 1055,
+        "file_count": 3,
+        "private": false,
+        "padding_bytes": null,
+        "tracker_tiers": null,
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "complete",
+        "owner_timeout_seconds": 1800,
+        "wire_payload_ceiling_bytes": 544880923
+      }
     },
     {
       "slug": "cosmos-laundromat",
       "name": "Cosmos Laundromat",
       "info_hash": "c9e15763f722f23e98a29decdfae341b98d53056",
-      "payload_bytes": null,
-      "piece_count": null,
-      "file_count": null,
-      "magnet": "magnet:?xt=urn:btih:c9e15763f722f23e98a29decdfae341b98d53056&dn=Cosmos+Laundromat&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fcosmos-laundromat.torrent"
+      "roles": [
+        "small-breadth"
+      ],
+      "source": {
+        "organization": "WebTorrent",
+        "page": "https://webtorrent.io/free-torrents",
+        "retrieved": "2026-07-30",
+        "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
+      },
+      "input_modes": [
+        "magnet"
+      ],
+      "magnet": "magnet:?xt=urn:btih:c9e15763f722f23e98a29decdfae341b98d53056&dn=Cosmos+Laundromat&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fcosmos-laundromat.torrent",
+      "metainfo": null,
+      "expected": {
+        "payload_bytes": null,
+        "piece_length": null,
+        "piece_count": null,
+        "file_count": null,
+        "private": null,
+        "padding_bytes": null,
+        "tracker_tiers": null,
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 600,
+        "wire_payload_ceiling_bytes": null
+      }
     },
     {
       "slug": "sintel",
       "name": "Sintel",
       "info_hash": "08ada5a7a6183aae1e09d831df6748d566095a10",
-      "payload_bytes": null,
-      "piece_count": null,
-      "file_count": null,
-      "magnet": "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent"
+      "roles": [
+        "small-breadth"
+      ],
+      "source": {
+        "organization": "WebTorrent",
+        "page": "https://webtorrent.io/free-torrents",
+        "retrieved": "2026-07-30",
+        "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
+      },
+      "input_modes": [
+        "magnet"
+      ],
+      "magnet": "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent",
+      "metainfo": null,
+      "expected": {
+        "payload_bytes": null,
+        "piece_length": null,
+        "piece_count": null,
+        "file_count": null,
+        "private": null,
+        "padding_bytes": null,
+        "tracker_tiers": null,
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 600,
+        "wire_payload_ceiling_bytes": null
+      }
     },
     {
       "slug": "tears-of-steel",
       "name": "Tears of Steel",
       "info_hash": "209c8226b299b308beaf2b9cd3fb49212dbd13ec",
-      "payload_bytes": null,
-      "piece_count": null,
-      "file_count": null,
-      "magnet": "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent"
+      "roles": [
+        "small-breadth"
+      ],
+      "source": {
+        "organization": "WebTorrent",
+        "page": "https://webtorrent.io/free-torrents",
+        "retrieved": "2026-07-30",
+        "license_note": "WebTorrent lists this Blender Foundation film for free-torrent testing; payload redistribution is outside this harness."
+      },
+      "input_modes": [
+        "magnet"
+      ],
+      "magnet": "magnet:?xt=urn:btih:209c8226b299b308beaf2b9cd3fb49212dbd13ec&dn=Tears+of+Steel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Ftears-of-steel.torrent",
+      "metainfo": null,
+      "expected": {
+        "payload_bytes": null,
+        "piece_length": null,
+        "piece_count": null,
+        "file_count": null,
+        "private": null,
+        "padding_bytes": null,
+        "tracker_tiers": null,
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 600,
+        "wire_payload_ceiling_bytes": null
+      }
     },
     {
       "slug": "wired-cd",
       "name": "The WIRED CD — Rip. Sample. Mash. Share",
       "info_hash": "a88fda5954e89178c372716a6a78b8180ed4dad3",
-      "payload_bytes": null,
-      "piece_count": null,
-      "file_count": null,
-      "magnet": "magnet:?xt=urn:btih:a88fda5954e89178c372716a6a78b8180ed4dad3&dn=The+WIRED+CD+-+Rip.+Sample.+Mash.+Share&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fwired-cd.torrent"
+      "roles": [
+        "small-breadth"
+      ],
+      "source": {
+        "organization": "WebTorrent",
+        "page": "https://webtorrent.io/free-torrents",
+        "retrieved": "2026-07-30",
+        "license_note": "WebTorrent lists this Creative Commons compilation for free-torrent testing; payload redistribution is outside this harness."
+      },
+      "input_modes": [
+        "magnet"
+      ],
+      "magnet": "magnet:?xt=urn:btih:a88fda5954e89178c372716a6a78b8180ed4dad3&dn=The+WIRED+CD+-+Rip.+Sample.+Mash.+Share&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fwired-cd.torrent",
+      "metainfo": null,
+      "expected": {
+        "payload_bytes": null,
+        "piece_length": null,
+        "piece_count": null,
+        "file_count": null,
+        "private": null,
+        "padding_bytes": null,
+        "tracker_tiers": null,
+        "web_seeds": null
+      },
+      "limits": {
+        "max_target": "first-piece",
+        "owner_timeout_seconds": 600,
+        "wire_payload_ceiling_bytes": null
+      }
     }
   ]
 }

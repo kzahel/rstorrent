@@ -2,9 +2,12 @@
 
 Topic: `public-torrent-testing`
 
-Status: Initial catalog and first post-fix Ubuntu evidence recorded on
-2026-08-06 from official project download pages and downloaded metainfo.
-Public runs remain opt-in, headless, bounded, and supporting evidence only.
+Status: Initial catalog and first post-fix Ubuntu evidence recorded from
+official project download pages and downloaded metainfo. Tactical `122` has
+migrated the five retained WebTorrent entries to provenance-bearing catalog
+schema version 2; official distribution refresh and exact metainfo pinning
+remain pending. Public runs remain opt-in, headless, bounded, and supporting
+evidence only.
 
 ## Scope
 
@@ -57,6 +60,14 @@ shape not already covered above.
 - Do not commit third-party metainfo unless its origin, license, redistribution
   permission, and attribution are explicitly reviewed. The normal live
   catalog stores official source URLs and observations, not copied fixtures.
+
+Tactical `122`'s schema-v2 catalog separates stable magnet-only entries from
+exact metainfo inputs. An entry records source organization/page/date/license,
+roles, allowed input modes, expected geometry, and per-owner limits. Metainfo
+mode additionally requires an HTTPS official-host allowlist, outer SHA-256,
+v1 info hash, full geometry, tracker tiers, and web seeds before payload work.
+The current WebTorrent migration deliberately leaves all five entries
+magnet-only until those exact source bytes are refreshed and reviewed.
 
 ## Live Run Contract
 

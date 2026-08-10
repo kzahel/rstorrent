@@ -6,7 +6,10 @@ Status: Active measurement contract. The catalog-backed paired
 RSTorrent/libtorrent comparator emits milestone, geometry, diagnostic,
 cleanup, and classification JSON without opening a product surface. Its first
 controlled and public full-download baselines are recorded below.
-Public-swarm speed remains a measured baseline, not a CI pass threshold.
+Tactical `122` is extending that foundation with direct-metainfo inputs,
+matched encryption/connection profiles, independent piece verification,
+process resources, and balanced real-torrent cohorts. Public-swarm speed
+remains a measured baseline, not a CI pass threshold.
 
 ## Purpose
 

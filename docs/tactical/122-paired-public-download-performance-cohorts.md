@@ -18,10 +18,11 @@ Dependencies: completed Tacticals
 [`091`](091-availability-ranked-piece-activation.md),
 [`111`](111-mse-peer-stream-encryption.md),
 [`112`](112-dual-stack-transport-and-ipv6-dht.md), and
-[`114`](114-session-wide-concurrent-torrent-admission.md) own the headless
+[`114`](114-session-wide-concurrent-torrent-admission.md), and
+[`124`](124-duplex-verified-piece-upload.md) own the headless
 public comparator, bounded timeline, local throughput and hardware evidence,
 piece scheduling, MSE policies, dual-stack networking, and session resource
-authority this tactical consumes.
+and incomplete-torrent upload authority this tactical consumes.
 
 ## Decision And Desired Outcome
 
@@ -193,8 +194,8 @@ This is the primary common-denominator profile:
   queue is 500 where the owner exposes that setting;
 - download is unlimited unless the invocation gives one identical positive
   byte-per-second cap; and
-- RSTorrent's current absence of incomplete-torrent uploading is matched by a
-  libtorrent per-torrent payload upload limit of 1 byte per second. Both
+- both owners use eight session-wide upload slots and unlimited payload upload,
+  consuming Tactical `124`'s completed incomplete-torrent uploader; both
   workers stop without post-completion seeding and report actual uploaded
   payload and protocol bytes.
 
@@ -224,9 +225,10 @@ Each owner uses the outgoing capabilities presently supported by its product
 configuration. Incoming peer connections remain disabled so NAT, firewall,
 and port-mapping reachability do not dominate a downloader comparison.
 Libtorrent may use TCP, uTP, tracker, DHT, PEX, web seeds, ordinary compatible
-MSE, and incomplete-torrent upload; RSTorrent uses only the corresponding
-capabilities it currently supports when this tactical starts. The exact lists,
-including address families and MSE method counts, are part of every result.
+MSE, and incomplete-torrent upload; RSTorrent may use TCP, tracker, DHT, PEX,
+ordinary compatible MSE, and its completed incomplete-torrent uploader. The
+exact lists, including address families, MSE method counts, and actual upload
+slots/bytes, are part of every result.
 
 This profile measures the user-visible capability gap. A result is never
 described as a scheduler, picker, TCP, or storage comparison unless telemetry
@@ -484,8 +486,9 @@ tactical. The following source and tests were inspected:
 - `include/libtorrent/torrent_handle.hpp::set_upload_limit`,
   `set_max_uploads`, and `set_max_connections`, plus
   `src/torrent.cpp::set_max_uploads`, which show that zero max uploads means
-  unlimited rather than disabled and justify the explicit 1-byte/s matched
-  payload-upload limit;
+  unlimited rather than disabled; `src/settings_pack.cpp` confirms the default
+  eight session-wide unchoke slots adopted by RSTorrent and retained by the
+  matched profile;
 - `include/libtorrent/torrent_status.hpp` wanted/downloaded bytes, state,
   completion, piece-count, peer-count, half-open-inclusive connection, failed,
   redundant, and payload-rate meanings;
@@ -514,9 +517,9 @@ Adopted behavior is an explicit settings snapshot, separately reported nominal
 and observed connection concurrency, exact encryption-method assertion,
 status/peer/session-stat meanings, and `null` for unavailable fields.
 Intentional differences are RSTorrent's own scheduler and resource owners,
-sequential rather than simulated public runs, a common-denominator upload
-restriction, and product-default capability reporting. Libtorrent is a
-subprocess oracle, never an RSTorrent runtime dependency.
+sequential rather than simulated public runs, and product-default capability
+reporting. Libtorrent is a subprocess oracle, never an RSTorrent runtime
+dependency.
 
 The GPL libtorrent simulator is not initialized, linked, run, copied, or
 distributed. No reference source, fixture, test vector, or topology is copied;
@@ -634,6 +637,40 @@ hard-bound defect until that harness defect is fixed and the affected suite is
 rerun. Ordinary timeout, reference unavailability, or a measured RSTorrent gap
 does not authorize tuning in this tactical and does not invalidate healthy
 earlier observations.
+
+## Implementation Progress
+
+### Deterministic foundation: 2026-08-10
+
+- `tests/interop/public_compare_contract.py` now owns a runtime-independent
+  catalog-v2 validator, hostile bounded v1 bencode/metainfo parser, exact raw
+  info-hash and outer SHA-256 identity, normalized tracker/web-seed geometry,
+  hashed comparison profiles, ABBA ordering inputs, network/disk math, cleanup
+  ancestry, retained-report privacy checks, robust distributions, and the
+  independent 1-MiB-buffer publication verifier.
+- `tests/live/torrents.json` is schema version 2. Its five existing WebTorrent
+  entries now carry source/license records, roles, allowed input modes,
+  expected geometry, and per-entry limits. They remain magnet-only until the
+  source-refresh stage pins exact metainfo; no third-party bytes were fetched
+  or retained in this checkpoint.
+- The matched profiles were reconciled with completed Tactical `124`: both
+  owners use eight upload slots and unlimited upload rather than suppressing
+  libtorrent upload. The explicit snapshots still record actual payload and
+  protocol upload.
+- Eighteen focused Python tests pass for the old comparator behavior and new
+  contract, including cross-file/padding verification, corruption, unsafe
+  paths, catalog identity, profile hashes, ABBA order, resource overflow,
+  cleanup escape, privacy fields, and distribution math.
+- The existing controlled release-mode adapter pair still publishes and
+  independently file-hash-checks its 79,000-byte multi-file fixture for both
+  owners, classifies `both_reached`, and cleans both roots. This compatibility
+  run does not yet exercise direct-metainfo input or the new independent piece
+  verifier through the orchestrator.
+
+No public network access occurred. The next checkpoint isolates libtorrent in
+its own worker process, moves both workers to schema version 2, and integrates
+direct-metainfo input, process sampling, exact settings echo, and independent
+verification into the orchestrator.
 
 ## Non-Goals And Next Boundary
 
