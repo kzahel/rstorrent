@@ -1096,13 +1096,13 @@ mod tests {
             .register_torrent(TorrentTransferRateLimits::default())
             .expect("register");
         let mut wait = Box::pin(torrent.acquire_download(1_024));
-        tokio::select! {
-            _ = &mut wait => panic!("new finite bucket unexpectedly had quota"),
-            _ = tokio::task::yield_now() => {}
-        }
+        std::future::poll_fn(|context| {
+            assert!(std::future::Future::poll(wait.as_mut(), context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
         assert_eq!(session.snapshot().download.waiting_requests, 1);
         drop(wait);
-        tokio::task::yield_now().await;
         assert_eq!(session.snapshot().download.waiting_requests, 0);
         assert_eq!(session.snapshot().download.cancelled_requests, 1);
         drop(torrent);
