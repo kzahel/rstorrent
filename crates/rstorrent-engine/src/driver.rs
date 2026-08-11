@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -27,18 +27,12 @@ use rstorrent_protocol::peer_wire::{
 };
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
-use rstorrent_protocol::udp_tracker::{
-    AnnounceEvent, AnnounceRequest, AnnounceResponse, CompactPeer, MAX_ANNOUNCE_RESPONSE_LENGTH,
-    MAX_COMPACT_PEERS, TrackerAddressFamily, TransactionId, UdpTrackerError,
-    encode_announce_request, encode_connect_request, parse_announce_response,
-    parse_connect_response,
-};
+use rstorrent_protocol::udp_tracker::{CompactPeer, MAX_COMPACT_PEERS, UdpTrackerError};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use tokio::net::{UdpSocket, lookup_host};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{Instant as TokioInstant, timeout, timeout_at};
+use tokio::time::Instant as TokioInstant;
 use tokio_util::sync::CancellationToken;
 
 use crate::active_seed_content::{ActiveSeedContent, ActiveUploadFailureSignal};
@@ -90,8 +84,7 @@ use crate::torrent_peer::{
     IncomingPeerAttachment, TorrentPeerError, TorrentPeerHandle,
 };
 use crate::tracker::{
-    TrackerAction, TrackerConfig, TrackerConnectionFamily, TrackerEndpoint, TrackerId,
-    TrackerSchedule, TrackerWaitKind,
+    TrackerAction, TrackerConfig, TrackerEndpoint, TrackerId, TrackerSchedule, TrackerWaitKind,
 };
 use crate::upload::{
     MAX_GENERATED_ALLOWED_FAST_PIECES, UploadAction, UploadCloseReason, UploadPeerState,
@@ -101,13 +94,19 @@ use crate::upload_scheduler::UploadGrant;
 
 mod control;
 mod storage_pipeline;
+mod tracker_operation;
+
+#[cfg(test)]
+pub(crate) use tracker_operation::announce_udp_tracker_address;
+pub(crate) use tracker_operation::{
+    TrackerAnnounceInput, TrackerAnnounceOutcome, TrackerOperationFailure, TrackerOperationSources,
+    UdpTrackerAnnounce, UdpTrackerAnnounceResult, UdpTrackerExchange, UdpTrackerTiming,
+    UdpTrackerTokenCache, announce_udp_tracker, compact_peer_address, execute_tracker_operation,
+    random_nonzero_u32, redacted_tracker_label, resolve_host,
+};
 
 #[cfg(test)]
 const CLIENT_PEER_ID: [u8; 20] = DEFAULT_PEER_ID;
-const NETWORK_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(10);
-const UDP_TRACKER_RETRANSMIT_AFTER: Duration = Duration::from_secs(15);
-const UDP_TRACKER_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
-const UDP_TRACKER_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
 
 fn admission_rejection_failure(outcome: PeerAdmissionOutcome) -> Option<PeerFailure> {
     match outcome {
@@ -121,13 +120,10 @@ fn admission_rejection_failure(outcome: PeerAdmissionOutcome) -> Option<PeerFail
     }
 }
 
-const MAX_UDP_TRACKER_TOKENS: usize = 64;
 const MAX_CONCURRENT_TRACKER_OPERATIONS: usize = 8;
 const TRACKER_RESULT_QUEUE: usize = 4;
 const CONTENT_DISCOVERY_QUEUE: usize = 8;
-const MAX_RESOLVED_ADDRESSES: usize = 32;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
-const UDP_TRACKER_RECEIVE_LENGTH: usize = MAX_ANNOUNCE_RESPONSE_LENGTH + 1;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
 const DHT_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const DHT_SUCCESS_REQUERY_DELAY: Duration = Duration::from_secs(60);
@@ -1160,88 +1156,6 @@ impl PremetadataPeerState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct UdpTrackerTiming {
-    pub(crate) retransmit_after: Duration,
-    pub(crate) completion_timeout: Duration,
-}
-
-impl UdpTrackerTiming {
-    pub(crate) const PRODUCTION: Self = Self {
-        retransmit_after: UDP_TRACKER_RETRANSMIT_AFTER,
-        completion_timeout: UDP_TRACKER_COMPLETION_TIMEOUT,
-    };
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct UdpTrackerAnnounce {
-    pub(crate) info_hash: [u8; 20],
-    pub(crate) peer_id: [u8; 20],
-    pub(crate) key: u32,
-    pub(crate) downloaded: u64,
-    pub(crate) left: u64,
-    pub(crate) uploaded: u64,
-    pub(crate) event: AnnounceEvent,
-    pub(crate) num_want: i32,
-    pub(crate) port: u16,
-    pub(crate) ipv6_port: u16,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct UdpTrackerExchange<'a> {
-    pub(crate) timing: UdpTrackerTiming,
-    pub(crate) control: &'a DownloadControl,
-    pub(crate) tracker_label: &'a str,
-    pub(crate) source_ipv4: Option<IpAddr>,
-    pub(crate) source_ipv6: Option<IpAddr>,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct UdpTrackerToken {
-    connection_id: u64,
-    expires_at: Instant,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct UdpTrackerTokenCache {
-    tokens: BTreeMap<SocketAddr, UdpTrackerToken>,
-}
-
-impl UdpTrackerTokenCache {
-    fn get(&mut self, address: SocketAddr, now: Instant) -> Option<u64> {
-        self.prune(now);
-        self.tokens
-            .get(&address)
-            .filter(|token| token.expires_at > now)
-            .map(|token| token.connection_id)
-    }
-
-    fn insert(&mut self, address: SocketAddr, connection_id: u64, now: Instant) {
-        self.prune(now);
-        if self.tokens.len() == MAX_UDP_TRACKER_TOKENS && !self.tokens.contains_key(&address) {
-            let first = self.tokens.keys().next().copied();
-            if let Some(first) = first {
-                self.tokens.remove(&first);
-            }
-        }
-        self.tokens.insert(
-            address,
-            UdpTrackerToken {
-                connection_id,
-                expires_at: now + UDP_TRACKER_TOKEN_LIFETIME,
-            },
-        );
-    }
-
-    fn remove(&mut self, address: SocketAddr) {
-        self.tokens.remove(&address);
-    }
-
-    fn prune(&mut self, now: Instant) {
-        self.tokens.retain(|_, token| token.expires_at > now);
-    }
-}
-
 #[derive(Debug)]
 enum TrackerUpdate {
     Peers {
@@ -1256,12 +1170,6 @@ struct TrackerOperationResult {
     tracker: String,
     token_cache: UdpTrackerTokenCache,
     result: Result<UdpTrackerAnnounceResult, DownloadError>,
-}
-
-#[derive(Debug)]
-pub(crate) struct UdpTrackerAnnounceResult {
-    pub response: AnnounceResponse,
-    pub connection_family: TrackerConnectionFamily,
 }
 
 #[derive(Debug)]
@@ -3274,260 +3182,6 @@ async fn cleanup_metadata_attempts(
     match first_error {
         Some(error) => Err(error),
         None => Ok(()),
-    }
-}
-
-pub(crate) fn random_nonzero_u32() -> Result<u32, DownloadError> {
-    let mut bytes = [0; 4];
-    getrandom::fill(&mut bytes).map_err(DownloadError::Entropy)?;
-    Ok(u32::from_ne_bytes(bytes).max(1))
-}
-
-pub(crate) fn compact_peer_address(peer: CompactPeer) -> SocketAddr {
-    match peer {
-        CompactPeer::Ipv4 { address, port } => SocketAddr::from((Ipv4Addr::from(address), port)),
-        CompactPeer::Ipv6 { address, port } => SocketAddr::from((Ipv6Addr::from(address), port)),
-    }
-}
-
-async fn resolve_host(
-    host: &str,
-    port: u16,
-    operation: &'static str,
-) -> Result<Vec<SocketAddr>, DownloadError> {
-    timeout(NETWORK_RESOLUTION_TIMEOUT, lookup_host((host, port)))
-        .await
-        .map_err(|_| DownloadError::NetworkTimedOut {
-            operation,
-            timeout: NETWORK_RESOLUTION_TIMEOUT,
-        })?
-        .map(|addresses| addresses.take(MAX_RESOLVED_ADDRESSES).collect())
-        .map_err(|source| DownloadError::Io { operation, source })
-}
-
-pub(crate) async fn announce_udp_tracker(
-    tracker: &UdpTrackerUrl,
-    network_policy: NetworkPolicy,
-    address_families: crate::network::AddressFamilyPolicy,
-    token_cache: &mut UdpTrackerTokenCache,
-    announce: UdpTrackerAnnounce,
-    exchange: UdpTrackerExchange<'_>,
-) -> Result<UdpTrackerAnnounceResult, DownloadError> {
-    if !network_policy.permits_dns() {
-        return Err(DownloadError::NetworkDisabled);
-    }
-    let addresses = resolve_host(&tracker.host, tracker.port, "resolve UDP tracker").await?;
-    let mut last_error = None;
-    let mut found_allowed = false;
-    for address in addresses {
-        if !address_families.permits(address.ip()) || !network_policy.allows(address) {
-            continue;
-        }
-        found_allowed = true;
-        match announce_udp_tracker_address(address, token_cache, announce, exchange).await {
-            Ok(response) => return Ok(response),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(last_error.unwrap_or({
-        if found_allowed {
-            DownloadError::NoUsablePeer
-        } else {
-            DownloadError::NoUsableTrackerAddress
-        }
-    }))
-}
-
-async fn announce_udp_tracker_address(
-    address: SocketAddr,
-    token_cache: &mut UdpTrackerTokenCache,
-    mut announce: UdpTrackerAnnounce,
-    exchange: UdpTrackerExchange<'_>,
-) -> Result<UdpTrackerAnnounceResult, DownloadError> {
-    let bind_address = match address {
-        SocketAddr::V4(_) => exchange
-            .source_ipv4
-            .filter(IpAddr::is_ipv4)
-            .map_or(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)), |source| {
-                SocketAddr::new(source, 0)
-            }),
-        SocketAddr::V6(_) => {
-            announce.port = announce.ipv6_port;
-            exchange
-                .source_ipv6
-                .filter(IpAddr::is_ipv6)
-                .map_or(SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)), |source| {
-                    SocketAddr::new(source, 0)
-                })
-        }
-    };
-    let socket = UdpSocket::bind(bind_address)
-        .await
-        .map_err(|source| DownloadError::Io {
-            operation: "bind UDP tracker socket",
-            source,
-        })?;
-    socket
-        .connect(address)
-        .await
-        .map_err(|source| DownloadError::Io {
-            operation: "connect UDP tracker socket",
-            source,
-        })?;
-
-    let connection_id = match token_cache.get(address, Instant::now()) {
-        Some(connection_id) => connection_id,
-        None => {
-            let connect_transaction = TransactionId::new(random_nonzero_u32()?);
-            let connect_request = encode_connect_request(connect_transaction);
-            let connection_id = exchange_udp_tracker_packet(
-                &socket,
-                &connect_request,
-                "connect response",
-                exchange.timing,
-                exchange.control,
-                exchange.tracker_label,
-                |bytes| parse_connect_response(bytes, connect_transaction),
-            )
-            .await?;
-            token_cache.insert(address, connection_id, Instant::now());
-            connection_id
-        }
-    };
-
-    let announce_transaction = TransactionId::new(random_nonzero_u32()?);
-    let request = encode_announce_request(AnnounceRequest {
-        connection_id,
-        transaction_id: announce_transaction,
-        info_hash: announce.info_hash,
-        peer_id: announce.peer_id,
-        downloaded: announce.downloaded,
-        left: announce.left,
-        uploaded: announce.uploaded,
-        event: announce.event,
-        ip_address: 0,
-        key: announce.key,
-        num_want: announce.num_want,
-        port: announce.port,
-    });
-    let family = match address {
-        SocketAddr::V4(_) => TrackerAddressFamily::Ipv4,
-        SocketAddr::V6(_) => TrackerAddressFamily::Ipv6,
-    };
-    let result = exchange_udp_tracker_packet(
-        &socket,
-        &request,
-        "announce response",
-        exchange.timing,
-        exchange.control,
-        exchange.tracker_label,
-        |bytes| parse_announce_response(bytes, announce_transaction, family),
-    )
-    .await;
-    if result.is_err() {
-        token_cache.remove(address);
-    }
-    result.map(|response| UdpTrackerAnnounceResult {
-        response,
-        connection_family: match family {
-            TrackerAddressFamily::Ipv4 => TrackerConnectionFamily::Ipv4,
-            TrackerAddressFamily::Ipv6 => TrackerConnectionFamily::Ipv6,
-        },
-    })
-}
-
-async fn send_udp_tracker_packet(
-    socket: &UdpSocket,
-    packet: &[u8],
-    operation: &'static str,
-    timeout_duration: Duration,
-) -> Result<(), DownloadError> {
-    let sent = socket.send(packet);
-    let sent = timeout(timeout_duration, sent)
-        .await
-        .map_err(|_| DownloadError::NetworkTimedOut {
-            operation,
-            timeout: timeout_duration,
-        })?
-        .map_err(|source| DownloadError::Io { operation, source })?;
-    if sent != packet.len() {
-        return Err(DownloadError::Io {
-            operation,
-            source: io::Error::new(io::ErrorKind::WriteZero, "short UDP tracker send"),
-        });
-    }
-    Ok(())
-}
-
-async fn exchange_udp_tracker_packet<T>(
-    socket: &UdpSocket,
-    packet: &[u8],
-    operation: &'static str,
-    timing: UdpTrackerTiming,
-    control: &DownloadControl,
-    tracker_label: &str,
-    parse: impl Fn(&[u8]) -> Result<T, UdpTrackerError>,
-) -> Result<T, DownloadError> {
-    send_udp_tracker_packet(
-        socket,
-        packet,
-        "send UDP tracker request",
-        timing.completion_timeout,
-    )
-    .await?;
-    control.record_bytes(ByteMetric::TrackerSent, packet.len());
-    let started = TokioInstant::now();
-    let retransmit_at = started + timing.retransmit_after;
-    let deadline = started + timing.completion_timeout;
-    let mut retransmitted = false;
-    let mut buffer = [0; UDP_TRACKER_RECEIVE_LENGTH];
-    loop {
-        let next_deadline = if retransmitted {
-            deadline
-        } else {
-            retransmit_at.min(deadline)
-        };
-        let received = match timeout_at(next_deadline, socket.recv(&mut buffer)).await {
-            Ok(result) => result.map_err(|source| DownloadError::Io {
-                operation: "receive UDP tracker response",
-                source,
-            })?,
-            Err(_) if !retransmitted && next_deadline < deadline => {
-                send_udp_tracker_packet(
-                    socket,
-                    packet,
-                    "retransmit UDP tracker request",
-                    timing.completion_timeout,
-                )
-                .await?;
-                control.record_bytes(ByteMetric::TrackerSent, packet.len());
-                retransmitted = true;
-                control.emit(DownloadActivityEvent::TrackerUdpRetransmitted {
-                    tracker: tracker_label.to_owned(),
-                    operation,
-                });
-                continue;
-            }
-            Err(_) => {
-                return Err(DownloadError::UdpTrackerTimedOut {
-                    operation,
-                    timeout: timing.completion_timeout,
-                });
-            }
-        };
-        control.record_bytes(ByteMetric::TrackerReceived, received);
-        if received > MAX_ANNOUNCE_RESPONSE_LENGTH {
-            return Err(DownloadError::UdpTrackerResponseTooLarge {
-                maximum: MAX_ANNOUNCE_RESPONSE_LENGTH,
-            });
-        }
-        if received < 8 {
-            continue;
-        }
-        match parse(&buffer[..received]) {
-            Err(UdpTrackerError::UnexpectedTransaction { .. }) => {}
-            result => return result.map_err(DownloadError::UdpTracker),
-        }
     }
 }
 

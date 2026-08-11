@@ -15,12 +15,11 @@ use tokio_util::sync::CancellationToken;
 use crate::dht::{DhtAnnouncePorts, DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
 use crate::driver::{
     DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadError,
-    UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-    announce_udp_tracker, compact_peer_address, random_nonzero_u32,
+    TrackerAnnounceInput, TrackerAnnounceOutcome, TrackerOperationFailure, TrackerOperationSources,
+    UdpTrackerTokenCache, execute_tracker_operation, random_nonzero_u32, redacted_tracker_label,
 };
 use crate::http_tracker::{
-    HTTP_TRACKER_TIMEOUT, HttpTrackerAnnounce, HttpTrackerClients, HttpTrackerError,
-    HttpTrackerResponse, TrackerRetryDirective, announce_http_tracker_with_address_families,
+    HTTP_TRACKER_TIMEOUT, HttpTrackerClients, HttpTrackerError, TrackerRetryDirective,
 };
 use crate::network::{
     AddressFamily, AddressFamilyPolicy, NetworkConfig, NetworkPolicy, PeerEncryptionPolicy,
@@ -628,27 +627,6 @@ struct TrackerOperationResult {
 }
 
 #[derive(Debug)]
-struct TrackerAnnounceOutcome {
-    interval: Duration,
-    seeders: Option<u32>,
-    leechers: Option<u32>,
-    connection_family: Option<crate::tracker::TrackerConnectionFamily>,
-    peers: Vec<SocketAddr>,
-    tracker_id: Option<Vec<u8>>,
-    warnings: Vec<String>,
-}
-
-#[derive(Debug)]
-enum TrackerOperationFailure {
-    Cancelled,
-    Transport(String),
-    Declared {
-        reason: String,
-        retry: Option<TrackerRetryDirective>,
-    },
-}
-
-#[derive(Debug)]
 enum DhtOperationSuccess {
     Lookup(Vec<std::net::SocketAddr>),
     Announce(DhtAnnounceResult),
@@ -1183,169 +1161,61 @@ fn fill_tracker_operations(
                     let schedule_epoch = entry.schedule_epoch;
                     let cancellation = entry.tracker_cancellation.clone();
                     let tracker_key = entry.tracker_key;
-                    match tracker_endpoint {
-                        TrackerEndpoint::Udp(url) => {
-                            let mut token_cache =
-                                entry.token_caches.remove(&id).unwrap_or_default();
-                            operations.spawn(async move {
-                                let result = tokio::select! {
-                                    biased;
-                                    _ = cancellation.cancelled() => {
-                                        Err(TrackerOperationFailure::Cancelled)
-                                    }
-                                    response = announce_udp_tracker(
-                                        &url,
-                                        network.policy,
-                                        network.address_families,
-                                        &mut token_cache,
-                                        UdpTrackerAnnounce {
-                                            info_hash,
-                                            peer_id: network.peer_id,
-                                            key: tracker_key,
-                                            downloaded: counters.downloaded,
-                                            left: counters.left,
-                                            uploaded: counters.uploaded,
-                                            event,
-                                            num_want,
-                                            port: ports.ipv4,
-                                            ipv6_port: ports.ipv6,
-                                        },
-                                        UdpTrackerExchange {
-                                            timing: UdpTrackerTiming::PRODUCTION,
-                                            control: &control,
-                                            tracker_label: &tracker,
-                                            source_ipv4: endpoint.ipv4.source_address,
-                                            source_ipv6: endpoint.ipv6.source_address,
-                                        },
-                                    ) => response
-                                        .map(|result| {
-                                            let response = result.response;
-                                            TrackerAnnounceOutcome {
-                                                interval: Duration::from_secs(u64::from(response.interval)),
-                                                seeders: Some(response.seeders),
-                                                leechers: Some(response.leechers),
-                                                connection_family: Some(result.connection_family),
-                                                peers: response
-                                                    .peers
-                                                    .into_iter()
-                                                    .map(compact_peer_address)
-                                                    .collect(),
-                                                tracker_id: None,
-                                                warnings: Vec::new(),
-                                            }
-                                        })
-                                        .map_err(|error| {
-                                            TrackerOperationFailure::Transport(error.to_string())
-                                        }),
-                                };
-                                TrackerOperationResult {
-                                    info_hash,
-                                    registration_generation,
-                                    schedule_epoch,
-                                    endpoint_generation: endpoint.generation,
-                                    id,
-                                    tracker,
-                                    token_cache: Some(token_cache),
-                                    result,
-                                }
-                            });
+                    let is_udp = matches!(tracker_endpoint, TrackerEndpoint::Udp(_));
+                    let mut token_cache = if is_udp {
+                        entry.token_caches.remove(&id).unwrap_or_default()
+                    } else {
+                        UdpTrackerTokenCache::default()
+                    };
+                    let tracker_id = entry.http_tracker_ids.get(&id).cloned();
+                    let clients = http_clients.clone();
+                    let timeout = if event == AnnounceEvent::Stopped {
+                        TRACKER_STOP_TIMEOUT
+                    } else {
+                        HTTP_TRACKER_TIMEOUT
+                    };
+                    operations.spawn(async move {
+                        let result = execute_tracker_operation(
+                            tracker_endpoint,
+                            &url,
+                            &tracker,
+                            network,
+                            TrackerOperationSources {
+                                ipv4: endpoint.ipv4.source_address,
+                                ipv6: endpoint.ipv6.source_address,
+                            },
+                            Some(clients),
+                            TrackerAnnounceInput {
+                                info_hash,
+                                peer_id: network.peer_id,
+                                key: tracker_key,
+                                downloaded: counters.downloaded,
+                                left: counters.left,
+                                uploaded: counters.uploaded,
+                                event,
+                                num_want,
+                                port: ports.ipv4,
+                                ipv6_port: ports.ipv6,
+                                support_crypto: network.encryption.accepts_incoming_mse(),
+                            },
+                            timeout,
+                            &mut token_cache,
+                            tracker_id,
+                            &control,
+                            &cancellation,
+                        )
+                        .await;
+                        TrackerOperationResult {
+                            info_hash,
+                            registration_generation,
+                            schedule_epoch,
+                            endpoint_generation: endpoint.generation,
+                            id,
+                            tracker,
+                            token_cache: is_udp.then_some(token_cache),
+                            result,
                         }
-                        TrackerEndpoint::Http { .. } => {
-                            let clients = http_clients.clone();
-                            let tracker_id = entry.http_tracker_ids.get(&id).cloned();
-                            let timeout = if event == AnnounceEvent::Stopped {
-                                TRACKER_STOP_TIMEOUT
-                            } else {
-                                HTTP_TRACKER_TIMEOUT
-                            };
-                            operations.spawn(async move {
-                                let announce = HttpTrackerAnnounce {
-                                    info_hash,
-                                    peer_id: network.peer_id,
-                                    port: ports.ipv4,
-                                    ipv6_port: ports.ipv6,
-                                    uploaded: counters.uploaded,
-                                    downloaded: counters.downloaded,
-                                    left: counters.left,
-                                    event,
-                                    key: tracker_key,
-                                    num_want: u32::try_from(num_want).unwrap_or(0),
-                                    support_crypto: network.encryption.accepts_incoming_mse(),
-                                    tracker_id,
-                                };
-                                let response = tokio::select! {
-                                    biased;
-                                    _ = cancellation.cancelled() => {
-                                        return TrackerOperationResult {
-                                            info_hash,
-                                            registration_generation,
-                                            schedule_epoch,
-                                            endpoint_generation: endpoint.generation,
-                                            id,
-                                            tracker,
-                                            token_cache: None,
-                                            result: Err(TrackerOperationFailure::Cancelled),
-                                        };
-                                    }
-                                    response = announce_http_tracker_with_address_families(
-                                        &clients,
-                                        &url,
-                                        network.policy,
-                                        network.address_families,
-                                        false,
-                                        &announce,
-                                        timeout,
-                                    ) => response,
-                                };
-                                let result = match response {
-                                    Ok(HttpTrackerResponse::Success(success)) => {
-                                        let mut warnings = success.diagnostics;
-                                        if let Some(warning) = success.warning {
-                                            warnings.insert(0, warning);
-                                        }
-                                        Ok(TrackerAnnounceOutcome {
-                                            interval: success.interval,
-                                            seeders: success.seeders,
-                                            leechers: success.leechers,
-                                            connection_family: success.connection_family,
-                                            peers: success
-                                                .peers
-                                                .into_iter()
-                                                .filter_map(|peer| {
-                                                    match peer {
-                                                    crate::http_tracker::TrackerPeer::Address(
-                                                        address,
-                                                    ) => Some(address),
-                                                    crate::http_tracker::TrackerPeer::Hostname {
-                                                        ..
-                                                    } => None,
-                                                }
-                                                })
-                                                .collect(),
-                                            tracker_id: success.tracker_id,
-                                            warnings,
-                                        })
-                                    }
-                                    Ok(HttpTrackerResponse::Failure { reason, retry }) => {
-                                        Err(TrackerOperationFailure::Declared { reason, retry })
-                                    }
-                                    Err(error) => {
-                                        Err(TrackerOperationFailure::Transport(error.to_string()))
-                                    }
-                                };
-                                TrackerOperationResult {
-                                    info_hash,
-                                    registration_generation,
-                                    schedule_epoch,
-                                    endpoint_generation: endpoint.generation,
-                                    id,
-                                    tracker,
-                                    token_cache: None,
-                                    result,
-                                }
-                            });
-                        }
-                    }
+                    });
                     spawned = true;
                 }
                 TrackerAction::Wait {
@@ -1725,24 +1595,6 @@ fn shuffle_tracker_configs(trackers: &mut [TrackerConfig]) -> Result<(), Downloa
         first = end;
     }
     Ok(())
-}
-
-fn redacted_tracker_label(value: &str) -> String {
-    let Ok(url) = url::Url::parse(value) else {
-        return "tracker".to_owned();
-    };
-    let Some(host) = url.host_str() else {
-        return "tracker".to_owned();
-    };
-    let host = if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.to_owned()
-    };
-    match url.port() {
-        Some(port) => format!("{}://{host}:{port}", url.scheme()),
-        None => format!("{}://{host}", url.scheme()),
-    }
 }
 
 #[cfg(test)]
