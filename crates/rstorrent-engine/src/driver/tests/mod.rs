@@ -928,7 +928,10 @@ async fn serve_adverse_content_peer(
                 operation: "read peer message",
                 ..
             }) => return,
-            Ok(PeerMessage::Interested) => {}
+            Ok(PeerMessage::Interested | PeerMessage::Have(_)) => {
+                // Verified-piece announcements are independent from the choked
+                // peer's released request ownership.
+            }
             Ok(PeerMessage::Request(_)) => {
                 // Requests queued before the choke crossed the wire are harmless.
             }
