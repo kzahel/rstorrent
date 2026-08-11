@@ -2326,21 +2326,19 @@ mod tests {
     #[tokio::test]
     async fn incoming_stream_queue_saturation_drops_new_syns() {
         let (udp, dht, utp) = service().await;
-        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let remote = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         for index in 0..=UTP_INCOMING_STREAM_QUEUE {
-            remote
-                .send_to(
-                    &packet(
-                        PacketType::Syn,
-                        u16::try_from(100 + index).unwrap(),
-                        u16::try_from(200 + index).unwrap(),
-                        0,
-                        &[],
-                    ),
-                    udp.local_address(),
-                )
-                .await
-                .unwrap();
+            let syn = packet(
+                PacketType::Syn,
+                u16::try_from(100 + index).unwrap(),
+                u16::try_from(200 + index).unwrap(),
+                0,
+                &[],
+            );
+            assert_eq!(
+                remote.send_to(&syn, udp.local_address()).unwrap(),
+                syn.len()
+            );
         }
         wait_for(|| {
             let snapshot = utp.snapshot();

@@ -2407,6 +2407,9 @@ mod tests {
         const INFO_HASH: [u8; 20] = [0xe5; 20];
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
         let target = listener.local_addr().expect("TCP target");
+        let server_socket = UdpSocket::bind(target)
+            .await
+            .expect("reserve coordinated server UDP");
         let server = tokio::spawn(async move {
             for peer_id in [[0xf6; 20], [0xf7; 20]] {
                 let (mut stream, _) = listener.accept().await.expect("accept TCP");
@@ -2605,7 +2608,14 @@ mod tests {
             crate::peer::UtpEndpointState::Suppressed { retry_at, .. } => retry_at,
             state => panic!("expected suppressed uTP endpoint, got {state:?}"),
         };
-        let server_socket = UdpSocket::bind(target).await.expect("bind server UDP");
+        let mut stale_datagram = [0_u8; 2_048];
+        loop {
+            match server_socket.try_recv_from(&mut stale_datagram) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("drain suppressed uTP attempts: {error}"),
+            }
+        }
         let (mut server_udp, _) =
             SessionUdpService::start(server_socket).expect("server session UDP");
         let mut server_utp = UtpService::start(&mut server_udp).expect("server uTP");
