@@ -80,6 +80,7 @@ pub struct BandwidthDirectionSnapshot {
     pub cancelled_requests: u64,
     pub throttle_wait_micros: u64,
     pub throttle_wait_high_water_micros: u64,
+    pub current_burst_credit_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -172,6 +173,26 @@ pub struct SessionBandwidth {
     closed: AtomicBool,
 }
 
+#[derive(Clone, Debug)]
+pub struct SessionBandwidthHandle {
+    upload: Arc<DirectionInner>,
+    download: Arc<DirectionInner>,
+}
+
+impl SessionBandwidthHandle {
+    pub fn set_session_limits(&self, limits: TorrentTransferRateLimits) {
+        self.upload.set_session_limit(limits.upload);
+        self.download.set_session_limit(limits.download);
+    }
+
+    pub fn snapshot(&self) -> SessionBandwidthSnapshot {
+        SessionBandwidthSnapshot {
+            upload: self.upload.snapshot(),
+            download: self.download.snapshot(),
+        }
+    }
+}
+
 impl SessionBandwidth {
     pub fn start(limits: TorrentTransferRateLimits) -> Self {
         Self {
@@ -185,6 +206,13 @@ impl SessionBandwidth {
     pub fn set_session_limits(&self, limits: TorrentTransferRateLimits) {
         self.upload.set_session_limit(limits.upload);
         self.download.set_session_limit(limits.download);
+    }
+
+    pub fn handle(&self) -> SessionBandwidthHandle {
+        SessionBandwidthHandle {
+            upload: self.upload.inner.clone(),
+            download: self.download.inner.clone(),
+        }
     }
 
     pub fn register_torrent(
@@ -471,7 +499,14 @@ impl DirectionInner {
     }
 
     fn snapshot(&self) -> BandwidthDirectionSnapshot {
-        self.state().snapshot
+        let mut state = self.state();
+        state.advance_to_now();
+        let mut snapshot = state.snapshot;
+        snapshot.current_burst_credit_bytes =
+            state.session.limit.bytes_per_second().map_or(0, |_| {
+                u64::try_from(state.session.available()).unwrap_or(u64::MAX)
+            });
+        snapshot
     }
 
     fn stop(&self) {

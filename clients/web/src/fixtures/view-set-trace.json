@@ -32,6 +32,14 @@
                 "state": "downloading",
                 "operational_state": "downloading",
                 "download_queue_position": 1,
+                "transfer_limits": {
+                  "upload": {
+                    "type": "unlimited"
+                  },
+                  "download": {
+                    "type": "unlimited"
+                  }
+                },
                 "storage_state": "staging",
                 "metadata_available": true,
                 "piece_count": 3,
@@ -74,6 +82,12 @@
                 "peer_connection_limit": 200,
                 "upload_slots": 8,
                 "active_downloads": 3,
+                "upload_rate_limit": {
+                  "type": "unlimited"
+                },
+                "download_rate_limit": {
+                  "type": "unlimited"
+                },
                 "encryption": "allow",
                 "ipv6_enabled": true,
                 "tracker_https_server_authentication": "system_trust"
@@ -88,6 +102,12 @@
               "effective_peer_connection_limit": 200,
               "effective_upload_slots": 8,
               "effective_active_downloads": 3,
+              "effective_upload_rate_limit": {
+                "type": "unlimited"
+              },
+              "effective_download_rate_limit": {
+                "type": "unlimited"
+              },
               "active_download_count": 0,
               "checking_count": 0,
               "effective_encryption": "allow",
@@ -104,6 +124,33 @@
               },
               "upload_slots_application": {
                 "type": "applied"
+              },
+              "bandwidth_application": {
+                "type": "applied"
+              },
+              "bandwidth": {
+                "upload": {
+                  "registered_torrents": 0,
+                  "active_waiters": 0,
+                  "queued_requested_bytes": "0",
+                  "granted_bytes": "0",
+                  "returned_bytes": "0",
+                  "cancelled_requests": "0",
+                  "throttle_wait_micros": "0",
+                  "throttle_wait_high_water_micros": "0",
+                  "current_burst_credit_bytes": "0"
+                },
+                "download": {
+                  "registered_torrents": 0,
+                  "active_waiters": 0,
+                  "queued_requested_bytes": "0",
+                  "granted_bytes": "0",
+                  "returned_bytes": "0",
+                  "cancelled_requests": "0",
+                  "throttle_wait_micros": "0",
+                  "throttle_wait_high_water_micros": "0",
+                  "current_burst_credit_bytes": "0"
+                }
               },
               "encryption_application": {
                 "type": "applied"
@@ -157,6 +204,14 @@
                 "state": "downloading",
                 "operational_state": "downloading",
                 "download_queue_position": 1,
+                "transfer_limits": {
+                  "upload": {
+                    "type": "unlimited"
+                  },
+                  "download": {
+                    "type": "unlimited"
+                  }
+                },
                 "storage_state": "staging",
                 "metadata_available": true,
                 "piece_count": 3,
@@ -213,6 +268,14 @@
                 "display_name": "Fixture torrent",
                 "state": "complete",
                 "operational_state": "seeding",
+                "transfer_limits": {
+                  "upload": {
+                    "type": "unlimited"
+                  },
+                  "download": {
+                    "type": "unlimited"
+                  }
+                },
                 "storage_state": "published",
                 "metadata_available": true,
                 "piece_count": 3,
@@ -254,6 +317,12 @@
                 "peer_connection_limit": 200,
                 "upload_slots": 8,
                 "active_downloads": 3,
+                "upload_rate_limit": {
+                  "type": "unlimited"
+                },
+                "download_rate_limit": {
+                  "type": "unlimited"
+                },
                 "encryption": "allow",
                 "ipv6_enabled": true,
                 "tracker_https_server_authentication": "system_trust"
@@ -268,6 +337,12 @@
               "effective_peer_connection_limit": 200,
               "effective_upload_slots": 8,
               "effective_active_downloads": 3,
+              "effective_upload_rate_limit": {
+                "type": "unlimited"
+              },
+              "effective_download_rate_limit": {
+                "type": "unlimited"
+              },
               "active_download_count": 0,
               "checking_count": 0,
               "effective_encryption": "allow",
@@ -284,6 +359,33 @@
               },
               "upload_slots_application": {
                 "type": "applied"
+              },
+              "bandwidth_application": {
+                "type": "applied"
+              },
+              "bandwidth": {
+                "upload": {
+                  "registered_torrents": 0,
+                  "active_waiters": 0,
+                  "queued_requested_bytes": "0",
+                  "granted_bytes": "0",
+                  "returned_bytes": "0",
+                  "cancelled_requests": "0",
+                  "throttle_wait_micros": "0",
+                  "throttle_wait_high_water_micros": "0",
+                  "current_burst_credit_bytes": "0"
+                },
+                "download": {
+                  "registered_torrents": 0,
+                  "active_waiters": 0,
+                  "queued_requested_bytes": "0",
+                  "granted_bytes": "0",
+                  "returned_bytes": "0",
+                  "cancelled_requests": "0",
+                  "throttle_wait_micros": "0",
+                  "throttle_wait_high_water_micros": "0",
+                  "current_burst_credit_bytes": "0"
+                }
               },
               "encryption_application": {
                 "type": "applied"

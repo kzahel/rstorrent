@@ -79,6 +79,64 @@
   padding: var(--ui-space-lg);
 }
 
+.rateLimits {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) repeat(2, minmax(11rem, 0.72fr));
+  gap: var(--ui-space-md);
+  align-items: start;
+  margin-top: var(--ui-space-lg);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.72rem;
+  padding: var(--ui-space-lg);
+  background: var(--surface-secondary);
+}
+
+.rateLimits h3,
+.rateLimits p {
+  margin: 0 0 var(--ui-space-xs);
+}
+
+.rateLimitField {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--ui-space-sm);
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+
+.rateLimitField legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  font-weight: 650;
+}
+
+.rateLimitField input[type="number"] {
+  min-width: 0;
+}
+
+.rateLimitField small {
+  grid-column: 1 / -1;
+  color: var(--danger);
+}
+
+.rateLimitActions {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: var(--ui-space-md);
+}
+
+@media (max-width: 760px) {
+  .rateLimits {
+    grid-template-columns: 1fr;
+  }
+
+  .rateLimitActions {
+    grid-column: 1;
+  }
+}
+
 .summaryCard {
   display: flex;
   align-items: center;

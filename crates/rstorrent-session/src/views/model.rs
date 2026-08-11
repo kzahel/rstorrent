@@ -692,6 +692,7 @@ impl TorrentModel {
                 state: snapshot.state,
                 operational_state: operational_state(snapshot, progress_inputs),
                 download_queue_position: snapshot.download_queue_position,
+                transfer_limits: snapshot.transfer_limits,
                 storage_state: snapshot.storage_state,
                 metadata_available: snapshot.metadata_available,
                 piece_count: snapshot.piece_count,

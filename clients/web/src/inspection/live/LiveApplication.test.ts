@@ -342,6 +342,8 @@ describe("LiveApplication", () => {
       peer_connection_limit: 2_000,
       upload_slots: 0,
       active_downloads: 3,
+      upload_rate_limit: { type: "limited" as const, bytes_per_second: 65_536 },
+      download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,
       ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
@@ -360,6 +362,32 @@ describe("LiveApplication", () => {
     expect(client.requests[0]?.command).toEqual({
       type: "set_client_settings",
       settings,
+    });
+    await application.close();
+  });
+
+  it("maps one atomic torrent transfer-limit pair through the generic command path", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+    const limits = {
+      upload: { type: "limited" as const, bytes_per_second: 32_768 },
+      download: { type: "unlimited" as const },
+    };
+
+    await expect(
+      application.dispatch({
+        type: "set_torrent_transfer_limits",
+        torrentId: TORRENT_ID,
+        limits,
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: "Torrent transfer limits saved",
+    });
+    expect(client.requests[0]?.command).toEqual({
+      type: "set_torrent_transfer_limits",
+      torrent_id: TORRENT_ID,
+      limits,
     });
     await application.close();
   });
@@ -1120,6 +1148,10 @@ function torrent(): TorrentView {
     display_name: "movie.mkv",
     state: "downloading",
     operational_state: "downloading",
+    transfer_limits: {
+      upload: { type: "unlimited" },
+      download: { type: "unlimited" },
+    },
     storage_state: "prepared",
     metadata_available: true,
     piece_count: 8,

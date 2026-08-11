@@ -472,6 +472,12 @@ impl TorrentPeerHandle {
             })
     }
 
+    pub fn set_transfer_rate_limits(&self, limits: TorrentTransferRateLimits) {
+        if let Some(bandwidth) = self.bandwidth() {
+            bandwidth.set_limits(limits);
+        }
+    }
+
     pub(crate) fn download_rate_limited(&self) -> bool {
         self.bandwidth()
             .is_some_and(|bandwidth| bandwidth.download_limited())

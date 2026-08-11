@@ -167,6 +167,57 @@ describe("inspection application", () => {
     expect(progress).toHaveAttribute("data-indeterminate", "true");
   });
 
+  it("saves one atomic per-torrent upload and download limit pair", async () => {
+    const user = userEvent.setup();
+    const snapshot = {
+      ...buildScenarioSnapshot("healthy-download", 42_000, false, 1),
+      demo: null,
+    };
+    const application = new RecordingLiveApplication({ type: "snapshot", snapshot });
+    renderApplication(application);
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    const detail = screen.getByRole("region", { name: "Torrent details" });
+
+    await user.click(
+      within(detail).getByRole("checkbox", {
+        name: "Torrent upload limit unlimited",
+      }),
+    );
+    const upload = within(detail).getByRole("spinbutton", {
+      name: "Torrent upload limit in KiB per second",
+    });
+    await user.clear(upload);
+    await user.type(upload, "32");
+    await user.click(
+      within(detail).getByRole("checkbox", {
+        name: "Torrent download limit unlimited",
+      }),
+    );
+    const download = within(detail).getByRole("spinbutton", {
+      name: "Torrent download limit in KiB per second",
+    });
+    await user.clear(download);
+    await user.type(download, "96");
+    await user.click(
+      within(detail).getByRole("button", { name: "Save torrent limits" }),
+    );
+
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "set_torrent_transfer_limits",
+        torrentId: snapshot.torrentOrder[0],
+        limits: {
+          upload: { type: "limited", bytes_per_second: 32_768 },
+          download: { type: "limited", bytes_per_second: 98_304 },
+        },
+      }),
+    );
+    expect(
+      within(detail).getByText("Torrent peer transfer limits saved."),
+    ).toBeVisible();
+  });
+
   it("renders the responsive hierarchy and changes detail tabs", async () => {
     const user = userEvent.setup();
     renderScenario("healthy-download", 42_000);
@@ -1774,6 +1825,26 @@ describe("inspection application", () => {
     await user.type(activeDownloads, "4");
     await user.click(
       within(dialog).getByRole("checkbox", {
+        name: "All torrents upload limit unlimited",
+      }),
+    );
+    const uploadRate = within(dialog).getByRole("spinbutton", {
+      name: "All torrents upload limit in KiB per second",
+    });
+    await user.clear(uploadRate);
+    await user.type(uploadRate, "64");
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: "All torrents download limit unlimited",
+      }),
+    );
+    const downloadRate = within(dialog).getByRole("spinbutton", {
+      name: "All torrents download limit in KiB per second",
+    });
+    await user.clear(downloadRate);
+    await user.type(downloadRate, "256");
+    await user.click(
+      within(dialog).getByRole("checkbox", {
         name: /Map incoming TCP with UPnP/,
       }),
     );
@@ -1800,6 +1871,14 @@ describe("inspection application", () => {
           peer_connection_limit: 2000,
           upload_slots: 0,
           active_downloads: 4,
+          upload_rate_limit: {
+            type: "limited",
+            bytes_per_second: 65_536,
+          },
+          download_rate_limit: {
+            type: "limited",
+            bytes_per_second: 262_144,
+          },
           encryption: "prefer",
           ipv6_enabled: false,
           tracker_https_server_authentication: "disabled",
@@ -1867,6 +1946,8 @@ describe("inspection application", () => {
       peer_connection_limit: 200,
       upload_slots: 8,
       active_downloads: 3,
+      upload_rate_limit: { type: "unlimited" as const },
+      download_rate_limit: { type: "unlimited" as const },
       encryption: "allow" as const,
       ipv6_enabled: true,
       tracker_https_server_authentication: "system_trust" as const,
@@ -1885,6 +1966,8 @@ describe("inspection application", () => {
           effective_peer_connection_limit: 200,
           effective_upload_slots: 8,
           effective_active_downloads: 3,
+          effective_upload_rate_limit: { type: "unlimited" },
+          effective_download_rate_limit: { type: "unlimited" },
           active_download_count: 0,
           checking_count: 0,
           effective_encryption: "allow",
@@ -1898,6 +1981,31 @@ describe("inspection application", () => {
           port_mapping_application: { type: "applied" },
           peer_connections_application: { type: "applied" },
           upload_slots_application: { type: "applied" },
+          bandwidth_application: { type: "applied" },
+          bandwidth: {
+            upload: {
+              registered_torrents: 0,
+              active_waiters: 0,
+              queued_requested_bytes: "0",
+              granted_bytes: "0",
+              returned_bytes: "0",
+              cancelled_requests: "0",
+              throttle_wait_micros: "0",
+              throttle_wait_high_water_micros: "0",
+              current_burst_credit_bytes: "0",
+            },
+            download: {
+              registered_torrents: 0,
+              active_waiters: 0,
+              queued_requested_bytes: "0",
+              granted_bytes: "0",
+              returned_bytes: "0",
+              cancelled_requests: "0",
+              throttle_wait_micros: "0",
+              throttle_wait_high_water_micros: "0",
+              current_burst_credit_bytes: "0",
+            },
+          },
           encryption_application: { type: "applied" },
           ipv6_application: { type: "applied" },
           tracker_https_authentication_application: { type: "applied" },

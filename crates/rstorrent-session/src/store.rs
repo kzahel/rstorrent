@@ -38,13 +38,14 @@ use crate::durable_state::{
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
 use crate::settings::{
     ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot, create_client_settings, migrate_client_settings_to_v10,
-    migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
-    migrate_client_settings_to_v16, read_client_settings, replace_client_settings,
+    StorageSettingsSnapshot, TorrentTransferLimits, TransferRateLimit, create_client_settings,
+    migrate_client_settings_to_v10, migrate_client_settings_to_v11, migrate_client_settings_to_v12,
+    migrate_client_settings_to_v15, migrate_client_settings_to_v16, read_client_settings,
+    replace_client_settings,
 };
 use crate::store_schema::{
     DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
-    migrate_to_v17,
+    migrate_to_v17, migrate_to_v18,
 };
 
 const DATABASE_FILENAME: &str = "session.db";
@@ -2349,6 +2350,14 @@ fn migrate(
                 selection_default TEXT NOT NULL DEFAULT 'wanted'
                     CHECK (selection_default IN ('wanted', 'skipped')),
                 download_queue_position INTEGER,
+                upload_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+                    upload_rate_limit = 0 OR
+                    upload_rate_limit BETWEEN 1024 AND 4294967295
+                ),
+                download_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+                    download_rate_limit = 0 OR
+                    download_rate_limit BETWEEN 1024 AND 4294967295
+                ),
                 created_revision INTEGER NOT NULL,
                 updated_revision INTEGER NOT NULL,
                 CHECK (
@@ -2610,6 +2619,9 @@ fn migrate(
     }
     if (1..=16).contains(&version) {
         migrate_to_v17(connection)?;
+    }
+    if (1..=17).contains(&version) {
+        migrate_to_v18(connection)?;
     }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
@@ -3563,6 +3575,9 @@ fn apply_mutation(
             set_show_add_options(transaction, *show, current_revision)
         }
         Command::SetClientSettings { .. } => unreachable!("settings are handled atomically above"),
+        Command::SetTorrentTransferLimits { torrent_id, limits } => {
+            set_torrent_transfer_limits(transaction, torrent_id, *limits, current_revision)
+        }
         Command::RemoveStorageRoot { storage_root } => {
             remove_storage_root(transaction, storage_root, current_revision)
         }
@@ -4866,6 +4881,63 @@ fn next_revision(
     Ok(revision)
 }
 
+fn set_torrent_transfer_limits(
+    transaction: &Transaction<'_>,
+    torrent_id: &str,
+    limits: TorrentTransferLimits,
+    current_revision: u64,
+) -> Result<u64, (ErrorCode, String)> {
+    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+        (
+            ErrorCode::InvalidRequest,
+            "invalid torrent identity".to_owned(),
+        )
+    })?;
+    let current = transaction
+        .query_row(
+            "SELECT upload_rate_limit, download_rate_limit
+             FROM torrents WHERE info_hash = ?1",
+            [info_hash.as_slice()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                ErrorCode::UnknownTorrent,
+                format!(
+                    "torrent {} is not in the profile",
+                    torrent_id.to_ascii_lowercase()
+                ),
+            )
+        })?;
+    let desired = (limits.upload.persisted(), limits.download.persisted());
+    if current == desired {
+        return Ok(current_revision);
+    }
+    let revision = next_revision(transaction, current_revision)?;
+    let changed = transaction
+        .execute(
+            "UPDATE torrents
+             SET upload_rate_limit = ?2, download_rate_limit = ?3,
+                 updated_revision = ?4
+             WHERE info_hash = ?1",
+            params![
+                info_hash.as_slice(),
+                desired.0,
+                desired.1,
+                i64::try_from(revision).map_err(|_| internal_message("revision overflow"))?,
+            ],
+        )
+        .map_err(internal_error)?;
+    if changed != 1 {
+        return Err(internal_message(
+            "torrent transfer-limit update changed an unexpected row count",
+        ));
+    }
+    Ok(revision)
+}
+
 fn next_revision_strict(
     transaction: &Transaction<'_>,
     current_revision: u64,
@@ -4889,7 +4961,8 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         "SELECT t.info_hash, t.storage_root, t.raw_info, t.piece_count,
                 t.have_state, t.error, t.archived, r.state, r.error,
                 t.desired_state, t.payload_state, t.verification_requested,
-                t.verification_completed, t.quarantine_reason
+                t.verification_completed, t.quarantine_reason,
+                t.upload_rate_limit, t.download_rate_limit
          FROM torrents t
          LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
          ORDER BY t.info_hash",
@@ -4910,6 +4983,8 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             row.get::<_, i64>(11)?,
             row.get::<_, i64>(12)?,
             row.get::<_, Option<String>>(13)?,
+            row.get::<_, i64>(14)?,
+            row.get::<_, i64>(15)?,
         ))
     })?;
     let mut torrents = Vec::new();
@@ -4997,6 +5072,14 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 .map_err(|_| StoreError::DurableState("verified count overflow".to_owned()))?,
             desired_running: row.9 == "running",
             download_queue_position: queue_ordinals.get(&info_hash).copied(),
+            transfer_limits: TorrentTransferLimits {
+                upload: TransferRateLimit::from_persisted(row.14).map_err(|error| {
+                    StoreError::DurableState(format!("invalid torrent upload rate: {error}"))
+                })?,
+                download: TransferRateLimit::from_persisted(row.15).map_err(|error| {
+                    StoreError::DurableState(format!("invalid torrent download rate: {error}"))
+                })?,
+            },
             skip_files: if selection_default == FilePriority::Normal {
                 selection_exceptions.clone()
             } else {
@@ -5585,7 +5668,8 @@ mod tests {
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
         FileSelectionIntent, ListenerPolicy, MagnetExportSource, RemovalDataPolicy, RemovalState,
-        RequestEnvelope, ResponseOutcome, StorageState, TorrentState,
+        RequestEnvelope, ResponseOutcome, StorageState, TorrentState, TorrentTransferLimits,
+        TransferRateLimit,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -8726,6 +8810,132 @@ mod tests {
     }
 
     #[test]
+    fn migrates_version_seventeen_to_unlimited_session_and_torrent_rates() {
+        let root = test_root("schema-v17-transfer-rates");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&add_hash_request("add-rate-migration", 7))
+            .expect("add torrent");
+        let database_path = store.database_path().expect("database path").to_owned();
+        drop(store);
+
+        let connection = Connection::open(&database_path).expect("open raw database");
+        connection
+            .execute_batch(
+                "ALTER TABLE torrents DROP COLUMN upload_rate_limit;
+                 ALTER TABLE torrents DROP COLUMN download_rate_limit;
+                 ALTER TABLE client_settings DROP COLUMN upload_rate_limit;
+                 ALTER TABLE client_settings DROP COLUMN download_rate_limit;
+                 PRAGMA user_version = 17;",
+            )
+            .expect("downgrade fixture to version seventeen");
+        drop(connection);
+
+        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate");
+        let snapshot = migrated.snapshot().expect("migrated snapshot");
+        assert_eq!(
+            snapshot.client_settings.upload_rate_limit,
+            TransferRateLimit::Unlimited
+        );
+        assert_eq!(
+            snapshot.client_settings.download_rate_limit,
+            TransferRateLimit::Unlimited
+        );
+        assert_eq!(
+            snapshot.torrents[0].transfer_limits,
+            TorrentTransferLimits::default()
+        );
+        let version: i64 = migrated
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("schema version");
+        assert_eq!(version, SCHEMA_VERSION);
+        drop(migrated);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn torrent_transfer_limits_are_atomic_replayable_and_durable() {
+        let root = test_root("torrent-transfer-limits");
+        let configured = configured_root(&root);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        store
+            .handle_durable(&add_hash_request("add-rate-target", 8))
+            .expect("add torrent");
+        let torrent_id = format!("{:02x}", 8).repeat(20);
+        let limits = TorrentTransferLimits {
+            upload: TransferRateLimit::Limited {
+                bytes_per_second: 24 * 1_024,
+            },
+            download: TransferRateLimit::Limited {
+                bytes_per_second: u32::MAX,
+            },
+        };
+        let request = RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "set-torrent-transfer-limits".to_owned(),
+            expected_revision: Some("1".to_owned()),
+            command: Command::SetTorrentTransferLimits {
+                torrent_id: torrent_id.clone(),
+                limits,
+            },
+        };
+        let accepted = store.handle_durable(&request).expect("set torrent limits");
+        assert_eq!(accepted.revision, "2");
+        let ResponseOutcome::Success { snapshot } = &accepted.outcome else {
+            panic!("torrent limit mutation must succeed");
+        };
+        assert_eq!(snapshot.torrents[0].transfer_limits, limits);
+        assert_eq!(store.handle_durable(&request).expect("replay"), accepted);
+
+        let no_op = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "torrent-transfer-limits-no-op".to_owned(),
+                expected_revision: Some("2".to_owned()),
+                command: Command::SetTorrentTransferLimits {
+                    torrent_id: torrent_id.clone(),
+                    limits,
+                },
+            })
+            .expect("no-op torrent limits");
+        assert_eq!(no_op.revision, "2");
+        let stale = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "torrent-transfer-limits-stale".to_owned(),
+                expected_revision: Some("1".to_owned()),
+                command: Command::SetTorrentTransferLimits {
+                    torrent_id,
+                    limits: TorrentTransferLimits::default(),
+                },
+            })
+            .expect("stale torrent limits");
+        assert!(matches!(
+            stale.outcome,
+            ResponseOutcome::Error {
+                error: crate::ErrorResponse {
+                    code: ErrorCode::StaleRevision,
+                    ..
+                }
+            }
+        ));
+        let database_path = store.database_path().expect("database path").to_owned();
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        assert_eq!(
+            reopened.snapshot().expect("restart snapshot").torrents[0].transfer_limits,
+            limits
+        );
+        drop(reopened);
+        assert!(database_path.exists());
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
     fn client_settings_are_atomic_replayable_and_profile_scoped() {
         let root = test_root("client-settings-command");
         let configured_root = configured_root(&root);
@@ -8739,6 +8949,12 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 3,
             active_downloads: 3,
+            upload_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: 64 * 1_024,
+            },
+            download_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: u32::MAX,
+            },
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),

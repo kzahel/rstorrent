@@ -14,7 +14,7 @@ use ts_rs::TS;
 use crate::control::{RemovalState, StorageState, TorrentState};
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
-use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot};
+use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot, TorrentTransferLimits};
 use crate::speed::{SpeedHistoryView, SpeedMetric, SpeedRange};
 use crate::tracker_views::{TrackerCatalogState, TrackerView};
 
@@ -1033,6 +1033,8 @@ pub struct TorrentView {
     pub operational_state: TorrentOperationalState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_queue_position: Option<u32>,
+    #[serde(default)]
+    pub transfer_limits: TorrentTransferLimits,
     pub storage_state: StorageState,
     pub metadata_available: bool,
     pub piece_count: u32,

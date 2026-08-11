@@ -224,6 +224,7 @@ export class LiveApplication implements InspectionApplication {
       command.type !== "set_default_download_root" &&
       command.type !== "set_show_add_options" &&
       command.type !== "set_client_settings" &&
+      command.type !== "set_torrent_transfer_limits" &&
       command.type !== "remove_download_root" &&
       command.type !== "export_magnet" &&
       command.type !== "pause" &&
@@ -278,6 +279,12 @@ export class LiveApplication implements InspectionApplication {
               ? { type: "set_show_add_options", show: command.show }
               : command.type === "set_client_settings"
                 ? { type: "set_client_settings", settings: command.settings }
+              : command.type === "set_torrent_transfer_limits"
+                ? {
+                    type: "set_torrent_transfer_limits",
+                    torrent_id: command.torrentId,
+                    limits: command.limits,
+                  }
               : command.type === "remove_download_root"
                 ? {
                     type: "remove_storage_root",
@@ -318,7 +325,10 @@ export class LiveApplication implements InspectionApplication {
     if (command.type === "export_magnet") {
       return magnetCommandResult(response);
     }
-    if (command.type === "set_client_settings") {
+    if (
+      command.type === "set_client_settings" ||
+      command.type === "set_torrent_transfer_limits"
+    ) {
       this.controller?.requestImmediatePoll();
     }
     this.snapshot = {
@@ -348,6 +358,8 @@ export class LiveApplication implements InspectionApplication {
                 : "Add options will be skipped when a default is available"
               : command.type === "set_client_settings"
                 ? "Connection and seeding settings saved"
+              : command.type === "set_torrent_transfer_limits"
+                ? "Torrent transfer limits saved"
               : command.type === "remove_download_root"
                 ? "Download folder removed"
                 : command.type === "pause"
@@ -1026,6 +1038,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     status: mapTorrentState(torrent.state),
     operationalState: torrent.operational_state,
     queuePosition: torrent.download_queue_position ?? null,
+    transferLimits: torrent.transfer_limits,
     sizeBytes: null,
     progress:
       pieceCount === 0 ? null : torrent.verified_piece_count / pieceCount,

@@ -8,6 +8,8 @@ import org.rstorrent.session.uniffi.ActivePieceStageView
 import org.rstorrent.session.uniffi.AdvertisedPeerEndpointStatus
 import org.rstorrent.session.uniffi.CatalogPageRequest
 import org.rstorrent.session.uniffi.CatalogPageView
+import org.rstorrent.session.uniffi.BandwidthDirectionRuntimeView
+import org.rstorrent.session.uniffi.BandwidthRuntimeView
 import org.rstorrent.session.uniffi.ClientSettings
 import org.rstorrent.session.uniffi.ClientSettingsApplicationState
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
@@ -42,7 +44,9 @@ import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TorrentView
+import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.ViewPatch
 import org.rstorrent.session.uniffi.ViewProjection
 import org.rstorrent.session.uniffi.ViewSelector
@@ -52,6 +56,8 @@ import org.rstorrent.session.uniffi.ViewUpdatePayload
 import org.rstorrent.bootstrap.ui.LibraryFilter
 import org.rstorrent.bootstrap.ui.LibrarySort
 import org.rstorrent.bootstrap.ui.filteredAndSortedTorrents
+import org.rstorrent.bootstrap.ui.parseRateLimit
+import org.rstorrent.bootstrap.ui.rateLimitLabel
 
 class ProductStateReducerTest {
     @Test
@@ -64,6 +70,8 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 2_000U,
                 uploadSlots = 50U.toUShort(),
                 activeDownloads = 20U.toUShort(),
+                uploadRateLimit = TransferRateLimit.Limited(1_024U),
+                downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.REQUIRED,
                 ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.DISABLED,
@@ -71,6 +79,23 @@ class ProductStateReducerTest {
 
         assertEquals(settings, Command.SetClientSettings(settings).settings)
         assertEquals(settings, clientSettings(settings).configured)
+    }
+
+    @Test
+    fun transferRateLimitsRemainSemanticAndAtomicAcrossTheKotlinContract() {
+        assertEquals(null, parseRateLimit("0.5"))
+        assertEquals(TransferRateLimit.Limited(1_024U), parseRateLimit("1"))
+        assertEquals(TransferRateLimit.Limited(UInt.MAX_VALUE), parseRateLimit("4194303.9990234375"))
+        assertEquals("Unlimited", rateLimitLabel(TransferRateLimit.Unlimited))
+
+        val limits =
+            TorrentTransferLimits(
+                upload = TransferRateLimit.Limited(64U * 1_024U),
+                download = TransferRateLimit.Unlimited,
+            )
+        val command = Command.SetTorrentTransferLimits(TORRENT_ID, limits)
+        assertEquals(TORRENT_ID, command.torrentId)
+        assertEquals(limits, command.limits)
     }
 
     @Test
@@ -438,6 +463,8 @@ class ProductStateReducerTest {
                 peerConnectionLimit = 200U,
                 uploadSlots = 8U.toUShort(),
                 activeDownloads = 3U.toUShort(),
+                uploadRateLimit = TransferRateLimit.Unlimited,
+                downloadRateLimit = TransferRateLimit.Unlimited,
                 encryption = EncryptionPolicy.ALLOW,
                 ipv6Enabled = true,
                 trackerHttpsServerAuthentication = HttpsServerAuthenticationPolicy.SYSTEM_TRUST,
@@ -454,6 +481,8 @@ class ProductStateReducerTest {
             effectivePeerConnectionLimit = 200U,
             effectiveUploadSlots = 8U.toUShort(),
             effectiveActiveDownloads = configured.activeDownloads,
+            effectiveUploadRateLimit = configured.uploadRateLimit,
+            effectiveDownloadRateLimit = configured.downloadRateLimit,
             activeDownloadsClampReason = null,
             activeDownloadCount = 0U.toUShort(),
             checkingCount = 0U.toUShort(),
@@ -470,6 +499,12 @@ class ProductStateReducerTest {
             portMappingApplication = ClientSettingsApplicationState.Applied,
             peerConnectionsApplication = ClientSettingsApplicationState.Applied,
             uploadSlotsApplication = ClientSettingsApplicationState.Applied,
+            bandwidthApplication = ClientSettingsApplicationState.Applied,
+            bandwidth =
+                BandwidthRuntimeView(
+                    upload = bandwidthDirection(),
+                    download = bandwidthDirection(),
+                ),
             encryptionApplication = ClientSettingsApplicationState.Applied,
             ipv6Application = ClientSettingsApplicationState.Applied,
             trackerHttpsAuthenticationApplication = ClientSettingsApplicationState.Applied,
@@ -479,6 +514,19 @@ class ProductStateReducerTest {
             ipv6PinholeStatus = Ipv6PinholeStatus.Disabled,
             advertisedPeerEndpoint = AdvertisedPeerEndpointStatus.Unavailable,
             transportFamilies = emptyList(),
+        )
+
+    private fun bandwidthDirection(): BandwidthDirectionRuntimeView =
+        BandwidthDirectionRuntimeView(
+            registeredTorrents = 0U,
+            activeWaiters = 0U,
+            queuedRequestedBytes = "0",
+            grantedBytes = "0",
+            returnedBytes = "0",
+            cancelledRequests = "0",
+            throttleWaitMicros = "0",
+            throttleWaitHighWaterMicros = "0",
+            currentBurstCreditBytes = "0",
         )
 
     private fun update(
@@ -507,6 +555,11 @@ class ProductStateReducerTest {
             state = state,
             operationalState = TorrentOperationalState.DOWNLOADING,
             downloadQueuePosition = null,
+            transferLimits =
+                TorrentTransferLimits(
+                    TransferRateLimit.Unlimited,
+                    TransferRateLimit.Unlimited,
+                ),
             storageState = StorageState.STAGING,
             metadataAvailable = true,
             pieceCount = 100_000U,

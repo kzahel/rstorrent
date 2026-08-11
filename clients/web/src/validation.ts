@@ -1133,6 +1133,8 @@ function validateClientSettings(value: unknown): void {
   );
   boundedInteger(settings.upload_slots, "upload slots", 0, 50);
   boundedInteger(settings.active_downloads, "active downloads", 1, 20);
+  validateTransferRateLimit(settings.upload_rate_limit, "upload rate limit");
+  validateTransferRateLimit(settings.download_rate_limit, "download rate limit");
   oneOf(settings.encryption, "encryption policy", [
     "disabled",
     "allow",
@@ -1192,6 +1194,14 @@ function validateClientSettingsRuntime(value: unknown): void {
     1,
     20,
   );
+  validateTransferRateLimit(
+    runtime.effective_upload_rate_limit,
+    "effective upload rate limit",
+  );
+  validateTransferRateLimit(
+    runtime.effective_download_rate_limit,
+    "effective download rate limit",
+  );
   if (
     runtime.active_downloads_clamp_reason !== undefined &&
     runtime.active_downloads_clamp_reason !== null
@@ -1226,6 +1236,7 @@ function validateClientSettingsRuntime(value: unknown): void {
     [runtime.port_mapping_application, "port mapping application"],
     [runtime.peer_connections_application, "peer connections application"],
     [runtime.upload_slots_application, "upload slots application"],
+    [runtime.bandwidth_application, "bandwidth application"],
     [runtime.encryption_application, "encryption application"],
     [runtime.ipv6_application, "IPv6 application"],
     [
@@ -1233,6 +1244,7 @@ function validateClientSettingsRuntime(value: unknown): void {
       "tracker HTTPS authentication application",
     ],
   ].forEach(([value, label]) => validateSettingsApplicationState(value, String(label)));
+  validateBandwidthRuntime(runtime.bandwidth);
 
   const transportFamilies = array(
     runtime.transport_families,
@@ -1579,6 +1591,7 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
     "download queue position",
     MAX_U32,
   );
+  validateTorrentTransferLimits(torrent.transfer_limits, "torrent transfer limits");
   boolean(torrent.metadata_available, "metadata available");
   boundedInteger(torrent.piece_count, "piece count", 0, MAX_U32);
   boundedInteger(
@@ -1736,6 +1749,58 @@ function validateTorrentView(value: unknown): asserts value is TorrentView {
     }
   }
   optionalString(torrent.error, "torrent error", 1_024);
+}
+
+function validateTorrentTransferLimits(value: unknown, label: string): void {
+  const limits = asRecord(value, label);
+  validateTransferRateLimit(limits.upload, `${label} upload`);
+  validateTransferRateLimit(limits.download, `${label} download`);
+}
+
+function validateTransferRateLimit(value: unknown, label: string): void {
+  const limit = asRecord(value, label);
+  const type = oneOf(limit.type, `${label} type`, ["unlimited", "limited"]);
+  if (type === "limited") {
+    boundedInteger(limit.bytes_per_second, `${label} bytes per second`, 1_024, MAX_U32);
+  }
+}
+
+function validateBandwidthRuntime(value: unknown): void {
+  const bandwidth = asRecord(value, "bandwidth runtime");
+  for (const directionName of ["upload", "download"] as const) {
+    const direction = asRecord(
+      bandwidth[directionName],
+      `${directionName} bandwidth runtime`,
+    );
+    boundedInteger(
+      direction.registered_torrents,
+      `${directionName} registered torrents`,
+      0,
+      1_024,
+    );
+    boundedInteger(
+      direction.active_waiters,
+      `${directionName} active waiters`,
+      0,
+      4_096,
+    );
+    decimal(direction.queued_requested_bytes, `${directionName} queued requested bytes`);
+    decimal(direction.granted_bytes, `${directionName} granted bytes`);
+    decimal(direction.returned_bytes, `${directionName} returned bytes`);
+    decimal(direction.cancelled_requests, `${directionName} cancelled requests`);
+    decimal(direction.throttle_wait_micros, `${directionName} throttle wait`);
+    decimal(
+      direction.throttle_wait_high_water_micros,
+      `${directionName} throttle wait high water`,
+    );
+    const credit = decimal(
+      direction.current_burst_credit_bytes,
+      `${directionName} burst credit`,
+    );
+    if (BigInt(credit) > 1_048_576n) {
+      throw new ContractError(`${directionName} burst credit exceeds its bound`);
+    }
+  }
 }
 
 function validateFileView(value: unknown): void {

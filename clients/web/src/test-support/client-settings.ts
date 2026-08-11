@@ -8,6 +8,8 @@ export function clientSettingsFixture(): ClientSettings {
     peer_connection_limit: 200,
     upload_slots: 8,
     active_downloads: 3,
+    upload_rate_limit: { type: "unlimited" },
+    download_rate_limit: { type: "unlimited" },
     encryption: "allow",
     ipv6_enabled: true,
     tracker_https_server_authentication: "system_trust",
@@ -25,6 +27,8 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     effective_peer_connection_limit: 200,
     effective_upload_slots: 8,
     effective_active_downloads: 3,
+    effective_upload_rate_limit: { type: "unlimited" },
+    effective_download_rate_limit: { type: "unlimited" },
     active_download_count: 0,
     checking_count: 0,
     effective_encryption: "allow",
@@ -34,6 +38,11 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
     port_mapping_application: { type: "applied" },
     peer_connections_application: { type: "applied" },
     upload_slots_application: { type: "applied" },
+    bandwidth_application: { type: "applied" },
+    bandwidth: {
+      upload: bandwidthDirectionFixture(),
+      download: bandwidthDirectionFixture(),
+    },
     encryption_application: { type: "applied" },
     ipv6_application: { type: "applied" },
     tracker_https_authentication_application: { type: "applied" },
@@ -58,5 +67,19 @@ export function clientSettingsRuntimeFixture(): ClientSettingsRuntimeView {
         advertised_endpoint: null,
       },
     ],
+  };
+}
+
+function bandwidthDirectionFixture() {
+  return {
+    registered_torrents: 0,
+    active_waiters: 0,
+    queued_requested_bytes: "0",
+    granted_bytes: "0",
+    returned_bytes: "0",
+    cancelled_requests: "0",
+    throttle_wait_micros: "0",
+    throttle_wait_high_water_micros: "0",
+    current_burst_credit_bytes: "0",
   };
 }

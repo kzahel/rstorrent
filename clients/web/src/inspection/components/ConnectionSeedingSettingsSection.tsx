@@ -10,7 +10,16 @@ import type {
   ListenerPolicy,
   PortMappingPolicy,
   PortMappingStatus,
+  TransferRateLimit,
 } from "../../api";
+import {
+  RATE_LIMIT_MAXIMUM_BYTES,
+  rateLimitDraftValue,
+  rateLimitLabel,
+  sameRateLimit,
+  validateRateLimit,
+  type RateLimitValidation,
+} from "../transfer-rate";
 import styles from "./SettingsDialog.module.css";
 
 const FIXED_PORT_MINIMUM = 1_024;
@@ -21,6 +30,8 @@ const UPLOAD_SLOTS_MINIMUM = 0;
 const UPLOAD_SLOTS_MAXIMUM = 50;
 const ACTIVE_DOWNLOADS_MINIMUM = 1;
 const ACTIVE_DOWNLOADS_MAXIMUM = 20;
+const DEFAULT_UPLOAD_RATE_KIB = "1024";
+const DEFAULT_DOWNLOAD_RATE_KIB = "4096";
 
 type ListenerMode = "automatic" | "fixed";
 
@@ -37,6 +48,8 @@ interface DraftValidation {
   readonly peerLimitError: string | null;
   readonly uploadSlotsError: string | null;
   readonly activeDownloadsError: string | null;
+  readonly uploadRateError: string | null;
+  readonly downloadRateError: string | null;
 }
 
 export function ConnectionSeedingSettingsSection({
@@ -68,6 +81,18 @@ export function ConnectionSeedingSettingsSection({
   const [activeDownloads, setActiveDownloads] = useState(
     String(configured.active_downloads),
   );
+  const [uploadRateUnlimited, setUploadRateUnlimited] = useState(
+    configured.upload_rate_limit.type === "unlimited",
+  );
+  const [uploadRateKiB, setUploadRateKiB] = useState(
+    rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB),
+  );
+  const [downloadRateUnlimited, setDownloadRateUnlimited] = useState(
+    configured.download_rate_limit.type === "unlimited",
+  );
+  const [downloadRateKiB, setDownloadRateKiB] = useState(
+    rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB),
+  );
   const [encryption, setEncryption] = useState<EncryptionPolicy>(
     configured.encryption,
   );
@@ -89,6 +114,14 @@ export function ConnectionSeedingSettingsSection({
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setActiveDownloads(String(configured.active_downloads));
+    setUploadRateUnlimited(configured.upload_rate_limit.type === "unlimited");
+    if (configured.upload_rate_limit.type === "limited") {
+      setUploadRateKiB(rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB));
+    }
+    setDownloadRateUnlimited(configured.download_rate_limit.type === "unlimited");
+    if (configured.download_rate_limit.type === "limited") {
+      setDownloadRateKiB(rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB));
+    }
     setEncryption(configured.encryption);
     setIpv6Enabled(configured.ipv6_enabled);
   }, [
@@ -101,13 +134,17 @@ export function ConnectionSeedingSettingsSection({
     configured.peer_connection_limit,
     configured.upload_slots,
     configured.active_downloads,
+    configured.upload_rate_limit,
+    configured.download_rate_limit,
     configured.encryption,
     configured.ipv6_enabled,
   ]);
 
   const validation = useMemo(
-    () =>
-      validateDraft(
+    () => {
+      const uploadRate = validateRateLimit(uploadRateUnlimited, uploadRateKiB);
+      const downloadRate = validateRateLimit(downloadRateUnlimited, downloadRateKiB);
+      return validateDraft(
         listenerMode,
         preferredPort,
         fixedPort,
@@ -115,10 +152,13 @@ export function ConnectionSeedingSettingsSection({
         peerLimit,
         uploadSlots,
         activeDownloads,
+        uploadRate,
+        downloadRate,
         encryption,
         ipv6Enabled,
         configured.tracker_https_server_authentication,
-      ),
+      );
+    },
     [
       configured.tracker_https_server_authentication,
       fixedPort,
@@ -128,6 +168,10 @@ export function ConnectionSeedingSettingsSection({
       preferredPort,
       uploadSlots,
       activeDownloads,
+      uploadRateUnlimited,
+      uploadRateKiB,
+      downloadRateUnlimited,
+      downloadRateKiB,
       encryption,
       ipv6Enabled,
     ],
@@ -153,6 +197,14 @@ export function ConnectionSeedingSettingsSection({
     setPeerLimit(String(configured.peer_connection_limit));
     setUploadSlots(String(configured.upload_slots));
     setActiveDownloads(String(configured.active_downloads));
+    setUploadRateUnlimited(configured.upload_rate_limit.type === "unlimited");
+    if (configured.upload_rate_limit.type === "limited") {
+      setUploadRateKiB(rateLimitDraftValue(configured.upload_rate_limit, DEFAULT_UPLOAD_RATE_KIB));
+    }
+    setDownloadRateUnlimited(configured.download_rate_limit.type === "unlimited");
+    if (configured.download_rate_limit.type === "limited") {
+      setDownloadRateKiB(rateLimitDraftValue(configured.download_rate_limit, DEFAULT_DOWNLOAD_RATE_KIB));
+    }
     setEncryption(configured.encryption);
     setIpv6Enabled(configured.ipv6_enabled);
     setSaveStatus(null);
@@ -286,6 +338,44 @@ export function ConnectionSeedingSettingsSection({
           disabled={!manageable || pending}
           onChange={(value) => updateDraft(() => setActiveDownloads(value))}
         />
+
+        <div
+          className={styles.settingGroup}
+          role="group"
+          aria-labelledby="peer-transfer-limits-heading"
+        >
+          <div className={styles.settingHeading}>
+            <strong id="peer-transfer-limits-heading">All torrents peer transfer limits</strong>
+            <span>
+              Caps established BitTorrent peer traffic across the session. Trackers, DHT,
+              connection handshakes, and network headers are not counted.
+            </span>
+          </div>
+          <RateLimitField
+            id="all-torrents-upload-rate"
+            label="All torrents upload limit"
+            unlimited={uploadRateUnlimited}
+            valueKiB={uploadRateKiB}
+            error={validation.uploadRateError}
+            disabled={!manageable || pending}
+            onUnlimitedChange={(unlimited) =>
+              updateDraft(() => setUploadRateUnlimited(unlimited))
+            }
+            onValueChange={(value) => updateDraft(() => setUploadRateKiB(value))}
+          />
+          <RateLimitField
+            id="all-torrents-download-rate"
+            label="All torrents download limit"
+            unlimited={downloadRateUnlimited}
+            valueKiB={downloadRateKiB}
+            error={validation.downloadRateError}
+            disabled={!manageable || pending}
+            onUnlimitedChange={(unlimited) =>
+              updateDraft(() => setDownloadRateUnlimited(unlimited))
+            }
+            onValueChange={(value) => updateDraft(() => setDownloadRateKiB(value))}
+          />
+        </div>
 
         <NumberField
           id="peer-connection-limit"
@@ -482,6 +572,67 @@ function NumberField({
   );
 }
 
+interface RateLimitFieldProps {
+  readonly id: string;
+  readonly label: string;
+  readonly unlimited: boolean;
+  readonly valueKiB: string;
+  readonly error: string | null;
+  readonly disabled: boolean;
+  readonly onUnlimitedChange: (unlimited: boolean) => void;
+  readonly onValueChange: (value: string) => void;
+}
+
+function RateLimitField({
+  id,
+  label,
+  unlimited,
+  valueKiB,
+  error,
+  disabled,
+  onUnlimitedChange,
+  onValueChange,
+}: RateLimitFieldProps) {
+  const descriptionId = `${id}-description`;
+  const errorId = `${id}-error`;
+  return (
+    <div className={styles.numberField}>
+      <span>
+        <strong>{label}</strong>
+        <small id={descriptionId}>KiB/s of established peer traffic.</small>
+      </span>
+      <label className={styles.option}>
+        <input
+          type="checkbox"
+          aria-label={`${label} unlimited`}
+          checked={unlimited}
+          disabled={disabled}
+          onChange={(event) => onUnlimitedChange(event.currentTarget.checked)}
+        />
+        <span><strong>Unlimited</strong></span>
+      </label>
+      <input
+        id={id}
+        aria-label={`${label} in KiB per second`}
+        type="number"
+        inputMode="decimal"
+        min={1}
+        max={RATE_LIMIT_MAXIMUM_BYTES / 1_024}
+        step={1 / 1_024}
+        required={!unlimited}
+        value={valueKiB}
+        disabled={disabled || unlimited}
+        aria-invalid={error !== null}
+        aria-describedby={`${descriptionId}${error === null ? "" : ` ${errorId}`}`}
+        onChange={(event) => onValueChange(event.currentTarget.value)}
+      />
+      {error === null ? null : (
+        <small id={errorId} className={styles.fieldError}>{error}</small>
+      )}
+    </div>
+  );
+}
+
 function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeView }) {
   const listener = settings.listener_status;
   return (
@@ -556,6 +707,7 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         label="Upload slots"
         state={settings.upload_slots_application}
       />
+      <ApplicationState label="Peer transfer limits" state={settings.bandwidth_application} />
       <ApplicationState
         label="Protocol obfuscation"
         state={settings.encryption_application}
@@ -574,6 +726,12 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
         </span>
       )}
       <span>Effective payload upload slots: {settings.effective_upload_slots}.</span>
+      <span>
+        Effective peer upload limit: {rateLimitLabel(settings.effective_upload_rate_limit)}.
+      </span>
+      <span>
+        Effective peer download limit: {rateLimitLabel(settings.effective_download_rate_limit)}.
+      </span>
       <span>
         Active downloads: {settings.active_download_count} of {settings.effective_active_downloads}
         {settings.checking_count === 0
@@ -803,6 +961,8 @@ function validateDraft(
   peerLimit: string,
   uploadSlots: string,
   activeDownloads: string,
+  uploadRate: RateLimitValidation,
+  downloadRate: RateLimitValidation,
   encryption: EncryptionPolicy,
   ipv6Enabled: boolean,
   trackerHttpsServerAuthentication: ClientSettings["tracker_https_server_authentication"],
@@ -859,7 +1019,7 @@ function validateDraft(
     fixedPortError !== null ||
     peerLimitError !== null ||
     uploadSlotsError !== null
-    || activeDownloadsError !== null
+    || activeDownloadsError !== null || uploadRate.error !== null || downloadRate.error !== null
   ) {
     return {
       settings: null,
@@ -868,6 +1028,8 @@ function validateDraft(
       peerLimitError,
       uploadSlotsError,
       activeDownloadsError,
+      uploadRateError: uploadRate.error,
+      downloadRateError: downloadRate.error,
     };
   }
   const listener: ListenerPolicy = listenerMode === "automatic"
@@ -881,6 +1043,8 @@ function validateDraft(
       peer_connection_limit: peers as number,
       upload_slots: slots as number,
       active_downloads: downloads as number,
+      upload_rate_limit: uploadRate.limit as TransferRateLimit,
+      download_rate_limit: downloadRate.limit as TransferRateLimit,
       encryption,
       ipv6_enabled: ipv6Enabled,
       tracker_https_server_authentication: trackerHttpsServerAuthentication,
@@ -890,6 +1054,8 @@ function validateDraft(
     peerLimitError: null,
     uploadSlotsError: null,
     activeDownloadsError: null,
+    uploadRateError: null,
+    downloadRateError: null,
   };
 }
 
@@ -916,6 +1082,8 @@ function sameClientSettings(left: ClientSettings, right: ClientSettings): boolea
     left.peer_connection_limit === right.peer_connection_limit &&
     left.upload_slots === right.upload_slots &&
     left.active_downloads === right.active_downloads &&
+    sameRateLimit(left.upload_rate_limit, right.upload_rate_limit) &&
+    sameRateLimit(left.download_rate_limit, right.download_rate_limit) &&
     left.encryption === right.encryption &&
     left.ipv6_enabled === right.ipv6_enabled &&
     left.tracker_https_server_authentication ===

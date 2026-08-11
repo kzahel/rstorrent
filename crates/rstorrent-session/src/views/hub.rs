@@ -493,6 +493,7 @@ impl ViewHub {
         hub.client_settings.port_mapping_application = ClientSettingsApplicationState::Applying;
         hub.client_settings.peer_connections_application = ClientSettingsApplicationState::Applying;
         hub.client_settings.upload_slots_application = ClientSettingsApplicationState::Applying;
+        hub.client_settings.bandwidth_application = ClientSettingsApplicationState::Applying;
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
     }
 
@@ -574,6 +575,23 @@ impl ViewHub {
         let previous_torrents = hub.torrents.clone();
         hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
         Ok(true)
+    }
+
+    pub(crate) fn set_bandwidth_runtime(
+        &self,
+        bandwidth: crate::BandwidthRuntimeView,
+    ) -> Result<(), SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings.bandwidth == bandwidth {
+            return Ok(());
+        }
+        let previous_client_settings = hub.client_settings.clone();
+        hub.client_settings.bandwidth = bandwidth;
+        let previous_torrents = hub.torrents.clone();
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))
     }
 
     pub(crate) fn set_download_admission_state(

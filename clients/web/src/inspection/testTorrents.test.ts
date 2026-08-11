@@ -11,7 +11,7 @@ interface SourceCatalog {
     readonly slug: string;
     readonly name: string;
     readonly info_hash: string;
-    readonly magnet: string;
+    readonly magnet: string | null;
   }[];
 }
 
@@ -24,7 +24,7 @@ describe("WebTorrent test torrent shortcuts", () => {
       ),
     ) as SourceCatalog;
 
-    expect(source.schema_version).toBe(1);
+    expect(source.schema_version).toBe(2);
     expect(
       WEBTORRENT_TEST_TORRENTS.map((torrent) => ({
         slug: torrent.id,
@@ -33,7 +33,7 @@ describe("WebTorrent test torrent shortcuts", () => {
         magnet: torrent.magnet,
       })),
     ).toEqual(
-      source.torrents.map((torrent) => ({
+      source.torrents.filter((torrent) => torrent.magnet !== null).map((torrent) => ({
         slug: torrent.slug,
         name: torrent.name,
         info_hash: torrent.info_hash,

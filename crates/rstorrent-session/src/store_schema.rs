@@ -6,10 +6,10 @@
 
 use rusqlite::Connection;
 
-use crate::settings::migrate_client_settings_to_v17;
+use crate::settings::{migrate_client_settings_to_v17, migrate_client_settings_to_v18};
 use crate::store::StoreError;
 
-pub(crate) const SCHEMA_VERSION: i64 = 17;
+pub(crate) const SCHEMA_VERSION: i64 = 18;
 
 pub(crate) const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -131,6 +131,31 @@ pub(crate) fn migrate_to_v17(connection: &mut Connection) -> Result<(), StoreErr
         )?;
     }
     transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+pub(crate) fn migrate_to_v18(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection.transaction()?;
+    migrate_client_settings_to_v18(&transaction)?;
+    let columns = {
+        let mut statement = transaction.prepare("PRAGMA table_info(torrents)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns.collect::<Result<Vec<_>, _>>()?
+    };
+    if !columns.iter().any(|column| column == "upload_rate_limit") {
+        transaction.execute_batch(
+            "ALTER TABLE torrents ADD COLUMN upload_rate_limit INTEGER NOT NULL DEFAULT 0
+             CHECK (upload_rate_limit = 0 OR upload_rate_limit BETWEEN 1024 AND 4294967295);",
+        )?;
+    }
+    if !columns.iter().any(|column| column == "download_rate_limit") {
+        transaction.execute_batch(
+            "ALTER TABLE torrents ADD COLUMN download_rate_limit INTEGER NOT NULL DEFAULT 0
+             CHECK (download_rate_limit = 0 OR download_rate_limit BETWEEN 1024 AND 4294967295);",
+        )?;
+    }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())

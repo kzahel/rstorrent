@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::settings::{ClientSettings, StorageSettingsSnapshot};
+use crate::settings::{ClientSettings, StorageSettingsSnapshot, TorrentTransferLimits};
 
 pub const CONTROL_VERSION: u16 = 1;
 pub const MAX_REQUEST_ID_LENGTH: usize = 128;
@@ -100,6 +100,10 @@ pub enum Command {
     SetClientSettings {
         settings: ClientSettings,
     },
+    SetTorrentTransferLimits {
+        torrent_id: String,
+        limits: TorrentTransferLimits,
+    },
     RemoveStorageRoot {
         storage_root: String,
     },
@@ -137,6 +141,7 @@ impl Command {
                 | Self::SetDefaultStorageRoot { .. }
                 | Self::SetShowAddOptions { .. }
                 | Self::SetClientSettings { .. }
+                | Self::SetTorrentTransferLimits { .. }
                 | Self::RemoveStorageRoot { .. }
                 | Self::Pause { .. }
                 | Self::Resume { .. }
@@ -378,6 +383,8 @@ pub struct TorrentSnapshot {
     pub desired_running: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_queue_position: Option<u32>,
+    #[serde(default)]
+    pub transfer_limits: TorrentTransferLimits,
     pub skip_files: Vec<u32>,
     #[serde(default)]
     pub selection_default: FilePriority,
@@ -529,6 +536,12 @@ pub(crate) fn validate_request(request: &RequestEnvelope) -> Result<(), (ErrorCo
         | Command::RemoveTorrent { torrent_id, .. }
         | Command::ExportMagnet { torrent_id } => {
             validate_torrent_id(torrent_id)?;
+        }
+        Command::SetTorrentTransferLimits { torrent_id, limits } => {
+            validate_torrent_id(torrent_id)?;
+            limits
+                .validate()
+                .map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
         }
         Command::SetDefaultStorageRoot { storage_root }
         | Command::RemoveStorageRoot { storage_root } => {

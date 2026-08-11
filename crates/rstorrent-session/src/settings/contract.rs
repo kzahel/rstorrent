@@ -1,7 +1,11 @@
 use std::error::Error;
 use std::fmt;
 
-use rstorrent_engine::{DEFAULT_CONNECTION_LIMIT, DEFAULT_UNCHOKE_SLOTS, PeerEncryptionPolicy};
+use rstorrent_engine::{
+    DEFAULT_CONNECTION_LIMIT, DEFAULT_UNCHOKE_SLOTS, PeerEncryptionPolicy,
+    TorrentTransferRateLimits as EngineTorrentTransferRateLimits,
+    TransferRateLimit as EngineTransferRateLimit,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -15,7 +19,85 @@ pub const MAX_UPLOAD_SLOTS: u16 = 50;
 pub const DEFAULT_ACTIVE_DOWNLOADS: u16 = 3;
 pub const MIN_ACTIVE_DOWNLOADS: u16 = 1;
 pub const MAX_ACTIVE_DOWNLOADS: u16 = 20;
+pub const MIN_TRANSFER_RATE_BYTES_PER_SECOND: u32 = 1_024;
 pub(crate) const MAX_RUNTIME_DETAIL_BYTES: usize = 512;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TransferRateLimit {
+    #[default]
+    Unlimited,
+    Limited {
+        #[schemars(range(min = 1_024))]
+        bytes_per_second: u32,
+    },
+}
+
+impl TransferRateLimit {
+    pub(crate) fn validate(self) -> Result<(), ClientSettingsError> {
+        if let Self::Limited { bytes_per_second } = self
+            && bytes_per_second < MIN_TRANSFER_RATE_BYTES_PER_SECOND
+        {
+            return Err(ClientSettingsError::TransferRateLimit {
+                value: bytes_per_second,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn into_engine(self) -> EngineTransferRateLimit {
+        match self {
+            Self::Unlimited => EngineTransferRateLimit::UNLIMITED,
+            Self::Limited { bytes_per_second } => {
+                EngineTransferRateLimit::limited(bytes_per_second)
+                    .expect("validated application transfer rate fits engine policy")
+            }
+        }
+    }
+
+    pub(crate) const fn persisted(self) -> i64 {
+        match self {
+            Self::Unlimited => 0,
+            Self::Limited { bytes_per_second } => bytes_per_second as i64,
+        }
+    }
+
+    pub(crate) fn from_persisted(value: i64) -> Result<Self, ClientSettingsError> {
+        let limit = if value == 0 {
+            Self::Unlimited
+        } else {
+            Self::Limited {
+                bytes_per_second: u32::try_from(value)
+                    .map_err(|_| ClientSettingsError::TransferRateLimit { value: u32::MAX })?,
+            }
+        };
+        limit.validate()?;
+        Ok(limit)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct TorrentTransferLimits {
+    pub upload: TransferRateLimit,
+    pub download: TransferRateLimit,
+}
+
+impl TorrentTransferLimits {
+    pub(crate) fn validate(self) -> Result<(), ClientSettingsError> {
+        self.upload.validate()?;
+        self.download.validate()
+    }
+
+    pub(crate) fn into_engine(self) -> EngineTorrentTransferRateLimits {
+        EngineTorrentTransferRateLimits {
+            upload: self.upload.into_engine(),
+            download: self.download.into_engine(),
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -107,6 +189,10 @@ pub struct ClientSettings {
     #[serde(default = "default_active_downloads")]
     #[schemars(range(min = 1, max = 20))]
     pub active_downloads: u16,
+    #[serde(default)]
+    pub upload_rate_limit: TransferRateLimit,
+    #[serde(default)]
+    pub download_rate_limit: TransferRateLimit,
     pub encryption: EncryptionPolicy,
     pub ipv6_enabled: bool,
     pub tracker_https_server_authentication: HttpsServerAuthenticationPolicy,
@@ -123,6 +209,8 @@ impl Default for ClientSettings {
             upload_slots: u16::try_from(DEFAULT_UNCHOKE_SLOTS)
                 .expect("engine upload-slot default fits the settings contract"),
             active_downloads: DEFAULT_ACTIVE_DOWNLOADS,
+            upload_rate_limit: TransferRateLimit::Unlimited,
+            download_rate_limit: TransferRateLimit::Unlimited,
             encryption: EncryptionPolicy::Allow,
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
@@ -131,6 +219,13 @@ impl Default for ClientSettings {
 }
 
 impl ClientSettings {
+    pub(crate) const fn transfer_limits(&self) -> TorrentTransferLimits {
+        TorrentTransferLimits {
+            upload: self.upload_rate_limit,
+            download: self.download_rate_limit,
+        }
+    }
+
     pub fn fresh_profile_default() -> Self {
         Self {
             listener: ListenerPolicy::AutomaticLocalNetwork,
@@ -168,6 +263,8 @@ impl ClientSettings {
                 value: self.active_downloads,
             });
         }
+        self.upload_rate_limit.validate()?;
+        self.download_rate_limit.validate()?;
         Ok(())
     }
 }
@@ -183,6 +280,7 @@ pub enum ClientSettingsError {
     PeerConnectionLimit { value: u32 },
     UploadSlots { value: u16 },
     ActiveDownloads { value: u16 },
+    TransferRateLimit { value: u32 },
 }
 
 impl fmt::Display for ClientSettingsError {
@@ -206,6 +304,11 @@ impl fmt::Display for ClientSettingsError {
             Self::ActiveDownloads { .. } => write!(
                 formatter,
                 "active downloads must be {MIN_ACTIVE_DOWNLOADS}..={MAX_ACTIVE_DOWNLOADS}"
+            ),
+            Self::TransferRateLimit { .. } => write!(
+                formatter,
+                "finite transfer rate must be {MIN_TRANSFER_RATE_BYTES_PER_SECOND}..={} bytes per second",
+                u32::MAX
             ),
         }
     }
@@ -510,6 +613,45 @@ pub enum ActiveDownloadsClampReason {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[serde(deny_unknown_fields)]
+pub struct BandwidthDirectionRuntimeView {
+    pub registered_torrents: u32,
+    pub active_waiters: u32,
+    pub queued_requested_bytes: String,
+    pub granted_bytes: String,
+    pub returned_bytes: String,
+    pub cancelled_requests: String,
+    pub throttle_wait_micros: String,
+    pub throttle_wait_high_water_micros: String,
+    pub current_burst_credit_bytes: String,
+}
+
+impl Default for BandwidthDirectionRuntimeView {
+    fn default() -> Self {
+        Self {
+            registered_torrents: 0,
+            active_waiters: 0,
+            queued_requested_bytes: "0".to_owned(),
+            granted_bytes: "0".to_owned(),
+            returned_bytes: "0".to_owned(),
+            cancelled_requests: "0".to_owned(),
+            throttle_wait_micros: "0".to_owned(),
+            throttle_wait_high_water_micros: "0".to_owned(),
+            current_burst_credit_bytes: "0".to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
+pub struct BandwidthRuntimeView {
+    pub upload: BandwidthDirectionRuntimeView,
+    pub download: BandwidthDirectionRuntimeView,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[serde(deny_unknown_fields)]
 pub struct ClientSettingsRuntimeView {
     pub configured: ClientSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -518,6 +660,8 @@ pub struct ClientSettingsRuntimeView {
     pub effective_peer_connection_limit: u32,
     pub effective_upload_slots: u16,
     pub effective_active_downloads: u16,
+    pub effective_upload_rate_limit: TransferRateLimit,
+    pub effective_download_rate_limit: TransferRateLimit,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_downloads_clamp_reason: Option<ActiveDownloadsClampReason>,
     pub active_download_count: u16,
@@ -530,6 +674,8 @@ pub struct ClientSettingsRuntimeView {
     pub port_mapping_application: ClientSettingsApplicationState,
     pub peer_connections_application: ClientSettingsApplicationState,
     pub upload_slots_application: ClientSettingsApplicationState,
+    pub bandwidth_application: ClientSettingsApplicationState,
+    pub bandwidth: BandwidthRuntimeView,
     pub encryption_application: ClientSettingsApplicationState,
     pub ipv6_application: ClientSettingsApplicationState,
     pub tracker_https_authentication_application: ClientSettingsApplicationState,
@@ -550,6 +696,8 @@ impl Default for ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_active_downloads: settings.active_downloads,
+            effective_upload_rate_limit: settings.upload_rate_limit,
+            effective_download_rate_limit: settings.download_rate_limit,
             active_downloads_clamp_reason: None,
             active_download_count: 0,
             checking_count: 0,
@@ -563,6 +711,8 @@ impl Default for ClientSettingsRuntimeView {
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            bandwidth_application: ClientSettingsApplicationState::Applied,
+            bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
@@ -588,6 +738,8 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_active_downloads: settings.active_downloads,
+            effective_upload_rate_limit: settings.upload_rate_limit,
+            effective_download_rate_limit: settings.download_rate_limit,
             active_downloads_clamp_reason: None,
             active_download_count: 0,
             checking_count: 0,
@@ -601,6 +753,8 @@ impl ClientSettingsRuntimeView {
             port_mapping_application: ClientSettingsApplicationState::Applying,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            bandwidth_application: ClientSettingsApplicationState::Applied,
+            bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applying,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,

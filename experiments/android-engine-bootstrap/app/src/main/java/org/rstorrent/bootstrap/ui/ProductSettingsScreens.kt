@@ -25,6 +25,7 @@ import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.PortMappingPolicy
+import org.rstorrent.session.uniffi.TransferRateLimit
 
 @Composable
 internal fun ConnectionLimitsSettings(
@@ -32,6 +33,8 @@ internal fun ConnectionLimitsSettings(
     onPeerConnections: (UInt) -> Unit,
     onUploadSlots: (UShort) -> Unit,
     onActiveDownloads: (UShort) -> Unit,
+    onUploadRateLimit: (TransferRateLimit) -> Unit,
+    onDownloadRateLimit: (TransferRateLimit) -> Unit,
 ) {
     NumericSetting(
         "Peer connections",
@@ -57,8 +60,109 @@ internal fun ConnectionLimitsSettings(
             "Effective on Android: ${settings.effectiveActiveDownloads}" +
                 (settings.activeDownloadsClampReason?.let { " · ${it.name.lowercase()}" } ?: ""),
     ) { onActiveDownloads(it.toUShort()) }
-    DisabledSetting("Download rate limit")
-    DisabledSetting("Upload rate limit")
+    RateLimitSetting(
+        title = "All torrents download limit",
+        configured = settings.configured.downloadRateLimit,
+        effective = settings.effectiveDownloadRateLimit,
+        application = settingsApplicationLabel(settings.bandwidthApplication),
+        onValue = onDownloadRateLimit,
+    )
+    RateLimitSetting(
+        title = "All torrents upload limit",
+        configured = settings.configured.uploadRateLimit,
+        effective = settings.effectiveUploadRateLimit,
+        application = settingsApplicationLabel(settings.bandwidthApplication),
+        onValue = onUploadRateLimit,
+    )
+}
+
+@Composable
+internal fun RateLimitSetting(
+    title: String,
+    configured: TransferRateLimit,
+    effective: TransferRateLimit? = null,
+    application: String? = null,
+    onValue: (TransferRateLimit) -> Unit,
+) {
+    var dialog by remember { mutableStateOf(false) }
+    val supporting =
+        buildList {
+            add("Established peer traffic · ${rateLimitLabel(configured)}")
+            effective?.let { add("effective ${rateLimitLabel(it)}") }
+            application?.let(::add)
+        }.joinToString(" · ")
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(supporting) },
+        trailingContent = { Text(rateLimitLabel(configured), color = MaterialTheme.colorScheme.primary) },
+        modifier = Modifier.clickable { dialog = true },
+    )
+    HorizontalDivider()
+    if (dialog) {
+        var unlimited by remember(configured) { mutableStateOf(configured is TransferRateLimit.Unlimited) }
+        var text by remember(configured) {
+            mutableStateOf(
+                (configured as? TransferRateLimit.Limited)?.let {
+                    rateLimitKiBValue(it.bytesPerSecond)
+                } ?: "1024",
+            )
+        }
+        val parsed = if (unlimited) TransferRateLimit.Unlimited else parseRateLimit(text)
+        AlertDialog(
+            onDismissRequest = { dialog = false },
+            title = { Text(title) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    ListItem(
+                        headlineContent = { Text("Unlimited") },
+                        trailingContent = {
+                            Switch(
+                                checked = unlimited,
+                                onCheckedChange = { unlimited = it },
+                            )
+                        },
+                    )
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filter { character -> character.isDigit() || character == '.' } },
+                        enabled = !unlimited,
+                        singleLine = true,
+                        label = { Text("KiB/s") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        supportingText = { Text("1 KiB/s minimum; one-byte precision") },
+                        isError = !unlimited && parsed == null,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onValue(requireNotNull(parsed)); dialog = false },
+                    enabled = parsed != null,
+                ) { Text("Apply") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+internal fun parseRateLimit(valueKiB: String): TransferRateLimit.Limited? {
+    if (!Regex("^\\d+(?:\\.\\d+)?$").matches(valueKiB)) return null
+    val bytes = (valueKiB.toDoubleOrNull() ?: return null) * 1024.0
+    if (!bytes.isFinite() || bytes % 1.0 != 0.0 || bytes < 1_024.0 || bytes > UInt.MAX_VALUE.toDouble()) {
+        return null
+    }
+    return TransferRateLimit.Limited(bytes.toLong().toUInt())
+}
+
+internal fun rateLimitLabel(limit: TransferRateLimit): String =
+    when (limit) {
+        TransferRateLimit.Unlimited -> "Unlimited"
+        is TransferRateLimit.Limited -> "${rateLimitKiBValue(limit.bytesPerSecond)} KiB/s"
+    }
+
+private fun rateLimitKiBValue(bytesPerSecond: UInt): String {
+    val kib = bytesPerSecond.toDouble() / 1024.0
+    return if (kib % 1.0 == 0.0) kib.toLong().toString() else kib.toString()
 }
 
 @Composable

@@ -72,6 +72,8 @@ import org.rstorrent.session.uniffi.SpeedMetric
 import org.rstorrent.session.uniffi.SpeedRange
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentState
+import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.ViewProjection
 import org.rstorrent.session.uniffi.ViewSelector
 import org.rstorrent.session.uniffi.ViewPatch
@@ -308,6 +310,8 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             activeDownloads = 3U.toUShort(),
+                            uploadRateLimit = TransferRateLimit.Unlimited,
+                            downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = EncryptionPolicy.ALLOW,
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication = policy,
@@ -357,6 +361,8 @@ class ProductEngineService : Service() {
                             peerConnectionLimit = 200U,
                             uploadSlots = 8U.toUShort(),
                             activeDownloads = 3U.toUShort(),
+                            uploadRateLimit = TransferRateLimit.Unlimited,
+                            downloadRateLimit = TransferRateLimit.Unlimited,
                             encryption = policy,
                             ipv6Enabled = true,
                             trackerHttpsServerAuthentication =
@@ -860,6 +866,13 @@ class ProductEngineService : Service() {
             return
         }
         dispatch(Command.SetClientSettings(transform(configured)))
+    }
+
+    fun setTorrentTransferLimits(
+        torrentId: String,
+        limits: TorrentTransferLimits,
+    ) {
+        dispatch(Command.SetTorrentTransferLimits(torrentId, limits))
     }
 
     fun copyMagnet(torrentId: String) {

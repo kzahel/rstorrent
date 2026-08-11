@@ -1145,6 +1145,70 @@
         }
       ]
     },
+    "BandwidthDirectionRuntimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "active_waiters": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cancelled_requests": {
+          "type": "string"
+        },
+        "current_burst_credit_bytes": {
+          "type": "string"
+        },
+        "granted_bytes": {
+          "type": "string"
+        },
+        "queued_requested_bytes": {
+          "type": "string"
+        },
+        "registered_torrents": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "returned_bytes": {
+          "type": "string"
+        },
+        "throttle_wait_high_water_micros": {
+          "type": "string"
+        },
+        "throttle_wait_micros": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "registered_torrents",
+        "active_waiters",
+        "queued_requested_bytes",
+        "granted_bytes",
+        "returned_bytes",
+        "cancelled_requests",
+        "throttle_wait_micros",
+        "throttle_wait_high_water_micros",
+        "current_burst_credit_bytes"
+      ],
+      "type": "object"
+    },
+    "BandwidthRuntimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "download": {
+          "$ref": "#/$defs/BandwidthDirectionRuntimeView"
+        },
+        "upload": {
+          "$ref": "#/$defs/BandwidthDirectionRuntimeView"
+        }
+      },
+      "required": [
+        "upload",
+        "download"
+      ],
+      "type": "object"
+    },
     "CapabilityStatus": {
       "enum": [
         "available",
@@ -1327,6 +1391,12 @@
           "minimum": 1,
           "type": "integer"
         },
+        "download_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit",
+          "default": {
+            "type": "unlimited"
+          }
+        },
         "encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
         },
@@ -1353,6 +1423,12 @@
         },
         "tracker_https_server_authentication": {
           "$ref": "#/$defs/HttpsServerAuthenticationPolicy"
+        },
+        "upload_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit",
+          "default": {
+            "type": "unlimited"
+          }
         },
         "upload_slots": {
           "format": "uint16",
@@ -1460,6 +1536,12 @@
         "advertised_peer_endpoint": {
           "$ref": "#/$defs/AdvertisedPeerEndpointStatus"
         },
+        "bandwidth": {
+          "$ref": "#/$defs/BandwidthRuntimeView"
+        },
+        "bandwidth_application": {
+          "$ref": "#/$defs/ClientSettingsApplicationState"
+        },
         "checking_count": {
           "format": "uint16",
           "maximum": 65535,
@@ -1474,6 +1556,9 @@
           "maximum": 65535,
           "minimum": 0,
           "type": "integer"
+        },
+        "effective_download_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
         },
         "effective_encryption": {
           "$ref": "#/$defs/EncryptionPolicy"
@@ -1508,6 +1593,9 @@
               "type": "null"
             }
           ]
+        },
+        "effective_upload_rate_limit": {
+          "$ref": "#/$defs/TransferRateLimit"
         },
         "effective_upload_slots": {
           "format": "uint16",
@@ -1561,6 +1649,8 @@
         "effective_peer_connection_limit",
         "effective_upload_slots",
         "effective_active_downloads",
+        "effective_upload_rate_limit",
+        "effective_download_rate_limit",
         "active_download_count",
         "checking_count",
         "effective_encryption",
@@ -1569,6 +1659,8 @@
         "port_mapping_application",
         "peer_connections_application",
         "upload_slots_application",
+        "bandwidth_application",
+        "bandwidth",
         "encryption_application",
         "ipv6_application",
         "tracker_https_authentication_application",
@@ -1774,6 +1866,26 @@
           "required": [
             "type",
             "settings"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "limits": {
+              "$ref": "#/$defs/TorrentTransferLimits"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "set_torrent_transfer_limits",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "limits"
           ],
           "type": "object"
         },
@@ -4572,6 +4684,9 @@
           "$ref": "#/$defs/ClientSettings",
           "default": {
             "active_downloads": 3,
+            "download_rate_limit": {
+              "type": "unlimited"
+            },
             "encryption": "allow",
             "ipv6_enabled": true,
             "listener": {
@@ -4581,6 +4696,9 @@
             "port_mapping": "disabled",
             "preferred_listen_port": 6881,
             "tracker_https_server_authentication": "system_trust",
+            "upload_rate_limit": {
+              "type": "unlimited"
+            },
             "upload_slots": 8
           }
         },
@@ -5236,6 +5354,17 @@
         "torrent_id": {
           "type": "string"
         },
+        "transfer_limits": {
+          "$ref": "#/$defs/TorrentTransferLimits",
+          "default": {
+            "download": {
+              "type": "unlimited"
+            },
+            "upload": {
+              "type": "unlimited"
+            }
+          }
+        },
         "verified_piece_count": {
           "format": "uint32",
           "minimum": 0,
@@ -5267,6 +5396,22 @@
         "error"
       ],
       "type": "string"
+    },
+    "TorrentTransferLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "download": {
+          "$ref": "#/$defs/TransferRateLimit"
+        },
+        "upload": {
+          "$ref": "#/$defs/TransferRateLimit"
+        }
+      },
+      "required": [
+        "upload",
+        "download"
+      ],
+      "type": "object"
     },
     "TorrentView": {
       "properties": {
@@ -5384,6 +5529,17 @@
         },
         "torrent_id": {
           "type": "string"
+        },
+        "transfer_limits": {
+          "$ref": "#/$defs/TorrentTransferLimits",
+          "default": {
+            "download": {
+              "type": "unlimited"
+            },
+            "upload": {
+              "type": "unlimited"
+            }
+          }
         },
         "verified_piece_count": {
           "format": "uint32",
@@ -5615,6 +5771,42 @@
         "consecutive_failures"
       ],
       "type": "object"
+    },
+    "TransferRateLimit": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "unlimited",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "bytes_per_second": {
+              "format": "uint32",
+              "minimum": 1024,
+              "type": "integer"
+            },
+            "type": {
+              "const": "limited",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "bytes_per_second"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "TransportAddressFamily": {
       "enum": [
@@ -6161,9 +6353,39 @@
                 "advertised_peer_endpoint": {
                   "type": "unavailable"
                 },
+                "bandwidth": {
+                  "download": {
+                    "active_waiters": 0,
+                    "cancelled_requests": "0",
+                    "current_burst_credit_bytes": "0",
+                    "granted_bytes": "0",
+                    "queued_requested_bytes": "0",
+                    "registered_torrents": 0,
+                    "returned_bytes": "0",
+                    "throttle_wait_high_water_micros": "0",
+                    "throttle_wait_micros": "0"
+                  },
+                  "upload": {
+                    "active_waiters": 0,
+                    "cancelled_requests": "0",
+                    "current_burst_credit_bytes": "0",
+                    "granted_bytes": "0",
+                    "queued_requested_bytes": "0",
+                    "registered_torrents": 0,
+                    "returned_bytes": "0",
+                    "throttle_wait_high_water_micros": "0",
+                    "throttle_wait_micros": "0"
+                  }
+                },
+                "bandwidth_application": {
+                  "type": "applied"
+                },
                 "checking_count": 0,
                 "configured": {
                   "active_downloads": 3,
+                  "download_rate_limit": {
+                    "type": "unlimited"
+                  },
                   "encryption": "allow",
                   "ipv6_enabled": true,
                   "listener": {
@@ -6173,9 +6395,15 @@
                   "port_mapping": "disabled",
                   "preferred_listen_port": 6881,
                   "tracker_https_server_authentication": "system_trust",
+                  "upload_rate_limit": {
+                    "type": "unlimited"
+                  },
                   "upload_slots": 8
                 },
                 "effective_active_downloads": 3,
+                "effective_download_rate_limit": {
+                  "type": "unlimited"
+                },
                 "effective_encryption": "allow",
                 "effective_ipv6_enabled": true,
                 "effective_listener": {
@@ -6187,6 +6415,9 @@
                 "effective_peer_connection_limit": 200,
                 "effective_port_mapping": "disabled",
                 "effective_tracker_https_server_authentication": "system_trust",
+                "effective_upload_rate_limit": {
+                  "type": "unlimited"
+                },
                 "effective_upload_slots": 8,
                 "encryption_application": {
                   "type": "applied"

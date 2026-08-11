@@ -10,7 +10,7 @@ use super::{
     ClientSettings, ClientSettingsApplicationState, ClientSettingsError, ClientSettingsRuntimeView,
     EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
     Ipv6PinholeStatus, ListenerPolicy, ListenerStatus, PortMappingPolicy, PortMappingStatus,
-    SessionUdpStatus, SettingsPersistenceError, classify_listener_bind_failure,
+    SessionUdpStatus, SettingsPersistenceError, TransferRateLimit, classify_listener_bind_failure,
     create_client_settings, read_client_settings, replace_client_settings,
 };
 
@@ -62,6 +62,31 @@ fn fresh_profile_defaults_enable_incoming_reachability() {
     assert_eq!(
         runtime.port_mapping_application,
         ClientSettingsApplicationState::Applying
+    );
+}
+
+#[test]
+fn transfer_rate_limits_are_semantic_and_validate_finite_bounds() {
+    assert_eq!(
+        serde_json::to_value(TransferRateLimit::Unlimited).unwrap(),
+        serde_json::json!({"type": "unlimited"})
+    );
+    assert_eq!(
+        serde_json::to_value(TransferRateLimit::Limited {
+            bytes_per_second: 1_024,
+        })
+        .unwrap(),
+        serde_json::json!({"type": "limited", "bytes_per_second": 1024})
+    );
+    assert!(
+        ClientSettings {
+            upload_rate_limit: TransferRateLimit::Limited {
+                bytes_per_second: 1_023,
+            },
+            ..ClientSettings::default()
+        }
+        .validate()
+        .is_err()
     );
 }
 
@@ -185,6 +210,12 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         peer_connection_limit: 500,
         upload_slots: 1,
         active_downloads: 3,
+        upload_rate_limit: TransferRateLimit::Limited {
+            bytes_per_second: 32 * 1_024,
+        },
+        download_rate_limit: TransferRateLimit::Limited {
+            bytes_per_second: u32::MAX,
+        },
         encryption: EncryptionPolicy::Required,
         ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
@@ -199,6 +230,8 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         effective_peer_connection_limit: 120,
         effective_upload_slots: 8,
         effective_active_downloads: 2,
+        effective_upload_rate_limit: Default::default(),
+        effective_download_rate_limit: Default::default(),
         active_downloads_clamp_reason: Some(ActiveDownloadsClampReason::PlatformLimit),
         active_download_count: 2,
         checking_count: 1,
@@ -211,6 +244,8 @@ fn runtime_view_distinguishes_configured_effective_domains_and_observed_facts() 
         port_mapping_application: ClientSettingsApplicationState::Applied,
         peer_connections_application: ClientSettingsApplicationState::Applied,
         upload_slots_application: ClientSettingsApplicationState::Applied,
+        bandwidth_application: ClientSettingsApplicationState::Applied,
+        bandwidth: Default::default(),
         encryption_application: ClientSettingsApplicationState::Applied,
         ipv6_application: ClientSettingsApplicationState::Applying,
         tracker_https_authentication_application: ClientSettingsApplicationState::Applying,
@@ -280,6 +315,7 @@ fn version_fourteen_settings_migrate_to_allow_and_ipv6_enabled() {
     super::migrate_client_settings_to_v15(&transaction).unwrap();
     super::migrate_client_settings_to_v16(&transaction).unwrap();
     super::migrate_client_settings_to_v17(&transaction).unwrap();
+    super::migrate_client_settings_to_v18(&transaction).unwrap();
     transaction.commit().unwrap();
     assert_eq!(
         read_client_settings(&connection).unwrap().encryption,
@@ -324,6 +360,7 @@ fn version_fifteen_settings_preserve_encryption_and_enable_ipv6() {
     let transaction = connection.transaction().unwrap();
     super::migrate_client_settings_to_v16(&transaction).unwrap();
     super::migrate_client_settings_to_v17(&transaction).unwrap();
+    super::migrate_client_settings_to_v18(&transaction).unwrap();
     transaction.commit().unwrap();
 
     let settings = read_client_settings(&connection).unwrap();
@@ -385,6 +422,12 @@ fn typed_persistence_round_trips_one_atomic_group() {
         peer_connection_limit: 1,
         upload_slots: 0,
         active_downloads: 3,
+        upload_rate_limit: TransferRateLimit::Limited {
+            bytes_per_second: 32 * 1_024,
+        },
+        download_rate_limit: TransferRateLimit::Limited {
+            bytes_per_second: u32::MAX,
+        },
         encryption: Default::default(),
         ipv6_enabled: false,
         tracker_https_server_authentication: HttpsServerAuthenticationPolicy::Disabled,
@@ -425,6 +468,8 @@ fn version_nine_settings_migrate_without_enabling_mapping() {
             peer_connection_limit: 321,
             upload_slots: 3,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,
@@ -462,6 +507,8 @@ fn version_ten_settings_migrate_with_the_preferred_port_default() {
             peer_connection_limit: 444,
             upload_slots: 5,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: HttpsServerAuthenticationPolicy::SystemTrust,

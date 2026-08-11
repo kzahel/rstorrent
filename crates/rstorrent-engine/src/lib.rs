@@ -58,8 +58,9 @@ pub use artifact_layout::{
 pub use bandwidth::{
     BandwidthDirectionSnapshot, BandwidthError, BandwidthPermit, MAX_BANDWIDTH_BURST_BYTES,
     MAX_BANDWIDTH_GRANT_BYTES, MAX_BANDWIDTH_REGISTRATIONS, MAX_BANDWIDTH_WAITERS,
-    MIN_TRANSFER_RATE_BYTES_PER_SECOND, SessionBandwidth, SessionBandwidthSnapshot,
-    TorrentBandwidth, TorrentTransferRateLimits, TransferRateLimit, TransferRateLimitError,
+    MIN_TRANSFER_RATE_BYTES_PER_SECOND, SessionBandwidth, SessionBandwidthHandle,
+    SessionBandwidthSnapshot, TorrentBandwidth, TorrentTransferRateLimits, TransferRateLimit,
+    TransferRateLimitError,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,

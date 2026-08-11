@@ -1642,6 +1642,10 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     operationalState:
       input.operationalState ?? operationalStateForStatus(input.status),
     queuePosition: input.queuePosition ?? null,
+    transferLimits: input.transferLimits ?? {
+      upload: { type: "unlimited" },
+      download: { type: "unlimited" },
+    },
     sizeBytes: size,
     progress,
     checking: input.checking ?? null,

@@ -344,6 +344,10 @@ function row(id: string, status: TorrentRow["status"]): TorrentRow {
           ? "seeding"
           : status,
     queuePosition: null,
+    transferLimits: {
+      upload: { type: "unlimited" },
+      download: { type: "unlimited" },
+    },
     sizeBytes: 100,
     progress: 0.5,
     checking: null,

@@ -84,6 +84,10 @@ function row(id: string, overrides: Partial<TorrentRow> = {}): TorrentRow {
     status: "downloading",
     operationalState: "downloading",
     queuePosition: 1,
+    transferLimits: {
+      upload: { type: "unlimited" },
+      download: { type: "unlimited" },
+    },
     sizeBytes: 100,
     progress: 0.5,
     checking: null,

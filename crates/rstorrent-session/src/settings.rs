@@ -12,14 +12,15 @@ mod runtime;
 pub(crate) use contract::MAX_RUNTIME_DETAIL_BYTES;
 pub use contract::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,
-    AdvertisedPeerEndpointUnavailableReason, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsError, ClientSettingsRuntimeView,
-    DEFAULT_ACTIVE_DOWNLOADS, EffectiveListenerSettings, EncryptionPolicy,
-    HttpsServerAuthenticationPolicy, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
-    ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MAX_ACTIVE_DOWNLOADS,
-    MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy,
-    PortMappingStatus, SessionUdpStatus, StorageRootAvailability, StorageRootSnapshot,
-    StorageSettingsSnapshot, TransportAddressFamily, TransportFamilyRuntimeView,
+    AdvertisedPeerEndpointUnavailableReason, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
+    ClientSettingsError, ClientSettingsRuntimeView, DEFAULT_ACTIVE_DOWNLOADS,
+    EffectiveListenerSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy,
+    Ipv6PinholeFailureStage, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, MAX_ACTIVE_DOWNLOADS, MIN_ACTIVE_DOWNLOADS, PortMappingFailureStage,
+    PortMappingMechanism, PortMappingPolicy, PortMappingStatus, SessionUdpStatus,
+    StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, TorrentTransferLimits,
+    TransferRateLimit, TransportAddressFamily, TransportFamilyRuntimeView,
 };
 pub(crate) use convergence::{
     SettingsAttempt, SettingsConvergenceModel, SettingsDomain, SettingsDomainGeneration,
@@ -27,8 +28,8 @@ pub(crate) use convergence::{
 pub(crate) use persistence::{
     SettingsPersistenceError, create_client_settings, migrate_client_settings_to_v10,
     migrate_client_settings_to_v11, migrate_client_settings_to_v12, migrate_client_settings_to_v15,
-    migrate_client_settings_to_v16, migrate_client_settings_to_v17, read_client_settings,
-    replace_client_settings,
+    migrate_client_settings_to_v16, migrate_client_settings_to_v17, migrate_client_settings_to_v18,
+    read_client_settings, replace_client_settings,
 };
 pub(crate) use runtime::{bounded_utf8, classify_listener_bind_failure};
 

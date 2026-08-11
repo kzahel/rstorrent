@@ -19,7 +19,10 @@ use rstorrent_engine::{
     SessionUdpHandle, SessionUdpService, TorrentBandwidth, TorrentTransferRateLimits, UtpHandle,
     UtpRuntimeError, UtpService,
 };
-use rstorrent_engine::{BandwidthError, SessionBandwidth};
+use rstorrent_engine::{
+    BandwidthDirectionSnapshot, BandwidthError, SessionBandwidth, SessionBandwidthHandle,
+    SessionBandwidthSnapshot,
+};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -37,11 +40,12 @@ use crate::reachability::{
 };
 use crate::session_utp::SessionUtpPeerService;
 use crate::settings::{
-    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsDegradedReason, ClientSettingsRuntimeView, EffectiveListenerSettings,
-    EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy,
-    ListenerStatus, PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel,
-    SettingsDomain, SettingsDomainGeneration, TransportAddressFamily, TransportFamilyRuntimeView,
+    AdvertisedPeerEndpointStatus, BandwidthDirectionRuntimeView, BandwidthRuntimeView,
+    ClientSettings, ClientSettingsApplicationState, ClientSettingsDegradedReason,
+    ClientSettingsRuntimeView, EffectiveListenerSettings, EncryptionPolicy,
+    HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
+    PortMappingPolicy, SessionUdpStatus, SettingsAttempt, SettingsConvergenceModel, SettingsDomain,
+    SettingsDomainGeneration, TransportAddressFamily, TransportFamilyRuntimeView,
     classify_listener_bind_failure,
 };
 use crate::views::{DhtInspectionView, ViewHub};
@@ -325,6 +329,7 @@ struct SessionNetworkOwner {
     uncertain_pinhole: Option<UncertainPinholeLease>,
     mapping_runtime_error: Option<String>,
     effective_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
+    bandwidth: SessionBandwidthHandle,
 }
 
 impl SessionNetworkRuntime {
@@ -616,7 +621,8 @@ impl SessionNetworkRuntime {
             }),
         };
         let reachability_evidence = ReachabilityEvidenceProbe::default();
-        let bandwidth = SessionBandwidth::start(TorrentTransferRateLimits::default());
+        let bandwidth = SessionBandwidth::start(settings.transfer_limits().into_engine());
+        let bandwidth_handle = bandwidth.handle();
         let pending_owner = SessionNetworkOwner {
             effective_settings,
             effective_listener,
@@ -645,6 +651,7 @@ impl SessionNetworkRuntime {
             uncertain_pinhole: None,
             mapping_runtime_error: None,
             effective_tracker_https_authentication: initial_tracker_https_authentication,
+            bandwidth: bandwidth_handle,
         };
         let mut convergence = SettingsConvergenceModel::default();
         let initial_attempt = convergence
@@ -658,6 +665,7 @@ impl SessionNetworkRuntime {
             SettingsDomain::PortMapping,
             SettingsDomain::PeerConnections,
             SettingsDomain::UploadSlots,
+            SettingsDomain::Bandwidth,
             SettingsDomain::Encryption,
         ] {
             assert!(convergence.apply(
@@ -755,6 +763,13 @@ impl SessionNetworkRuntime {
             self.initial_tracker_https_authentication;
         view.tracker_https_authentication_application =
             self.initial_tracker_https_application.clone();
+        view.bandwidth = self
+            .pending_owner
+            .as_ref()
+            .expect("session network owner exists before reconciliation")
+            .bandwidth
+            .snapshot()
+            .into();
         view
     }
 
@@ -1023,6 +1038,8 @@ async fn run_session_network(
     peer_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut mapping_poll = tokio::time::interval(Duration::from_millis(100));
     mapping_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut bandwidth_poll = tokio::time::interval(Duration::from_secs(1));
+    bandwidth_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             biased;
@@ -1079,6 +1096,9 @@ async fn run_session_network(
                         .await
                         .map(|deadline| PendingMappingExpiry { attempt, deadline });
                 }
+            }
+            _ = bandwidth_poll.tick() => {
+                let _ = views.set_bandwidth_runtime(owner.bandwidth.snapshot().into());
             }
         }
     }
@@ -1218,6 +1238,26 @@ impl SessionNetworkOwner {
             let _ = views.update_client_settings_runtime_for(upload_generation, |runtime| {
                 runtime.effective_upload_slots = slots;
                 runtime.upload_slots_application = ClientSettingsApplicationState::Applied;
+            });
+        }
+
+        let bandwidth_generation = attempt.domain(SettingsDomain::Bandwidth);
+        let limits = attempt.settings.transfer_limits();
+        self.bandwidth.set_session_limits(limits.into_engine());
+        self.effective_settings.upload_rate_limit = limits.upload;
+        self.effective_settings.download_rate_limit = limits.download;
+        if apply_state(
+            convergence,
+            bandwidth_generation,
+            ClientSettingsApplicationState::Applied,
+        )
+        .is_some()
+        {
+            let _ = views.update_client_settings_runtime_for(bandwidth_generation, |runtime| {
+                runtime.effective_upload_rate_limit = limits.upload;
+                runtime.effective_download_rate_limit = limits.download;
+                runtime.bandwidth_application = ClientSettingsApplicationState::Applied;
+                runtime.bandwidth = self.bandwidth.snapshot().into();
             });
         }
 
@@ -2197,6 +2237,31 @@ impl SessionNetworkOwner {
             dht_snapshot,
             dht_error,
             join_error,
+        }
+    }
+}
+
+impl From<SessionBandwidthSnapshot> for BandwidthRuntimeView {
+    fn from(snapshot: SessionBandwidthSnapshot) -> Self {
+        Self {
+            upload: snapshot.upload.into(),
+            download: snapshot.download.into(),
+        }
+    }
+}
+
+impl From<BandwidthDirectionSnapshot> for BandwidthDirectionRuntimeView {
+    fn from(snapshot: BandwidthDirectionSnapshot) -> Self {
+        Self {
+            registered_torrents: u32::try_from(snapshot.registered_torrents).unwrap_or(u32::MAX),
+            active_waiters: u32::try_from(snapshot.waiting_requests).unwrap_or(u32::MAX),
+            queued_requested_bytes: snapshot.queued_bytes.to_string(),
+            granted_bytes: snapshot.granted_bytes.to_string(),
+            returned_bytes: snapshot.returned_bytes.to_string(),
+            cancelled_requests: snapshot.cancelled_requests.to_string(),
+            throttle_wait_micros: snapshot.throttle_wait_micros.to_string(),
+            throttle_wait_high_water_micros: snapshot.throttle_wait_high_water_micros.to_string(),
+            current_burst_credit_bytes: snapshot.current_burst_credit_bytes.to_string(),
         }
     }
 }

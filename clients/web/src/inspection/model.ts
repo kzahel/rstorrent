@@ -15,6 +15,7 @@ import type {
   SwarmCountsView,
   SwarmPeerState,
   TorrentOperationalState,
+  TorrentTransferLimits,
 } from "../api";
 
 export type TorrentStatus =
@@ -176,6 +177,7 @@ export interface TorrentRow {
   readonly status: TorrentStatus;
   readonly operationalState: TorrentOperationalState;
   readonly queuePosition: number | null;
+  readonly transferLimits: TorrentTransferLimits;
   readonly sizeBytes: number | null;
   readonly progress: number | null;
   readonly checking: TorrentCheckingProgress | null;
@@ -575,6 +577,11 @@ export type InspectionCommand =
   | { readonly type: "set_default_download_root"; readonly rootId: string }
   | { readonly type: "set_show_add_options"; readonly show: boolean }
   | { readonly type: "set_client_settings"; readonly settings: ClientSettings }
+  | {
+      readonly type: "set_torrent_transfer_limits";
+      readonly torrentId: string;
+      readonly limits: TorrentTransferLimits;
+    }
   | { readonly type: "remove_download_root"; readonly rootId: string }
   | { readonly type: "export_magnet"; readonly torrentId: string }
   | { readonly type: "pause"; readonly torrentId: string }

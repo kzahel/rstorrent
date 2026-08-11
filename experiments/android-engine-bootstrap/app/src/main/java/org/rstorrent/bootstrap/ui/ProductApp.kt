@@ -88,6 +88,7 @@ import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
 import org.rstorrent.session.uniffi.RemovalDataPolicy
 import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TorrentView
 
 @Composable
@@ -196,6 +197,7 @@ private fun ProductNavHost(
                 onRestore = { service?.restoreArchive(torrentId) },
                 onRemove = { removeTargets = setOf(torrentId) },
                 onCopyMagnet = { service?.copyMagnet(torrentId) },
+                onTransferLimits = { service?.setTorrentTransferLimits(torrentId, it) },
                 onSpeed = { navController.navigate(ProductRoutes.SPEED) },
                 onDht = { navController.navigate(ProductRoutes.DHT) },
                 onLogs = { navController.navigate(ProductRoutes.LOGS) },
@@ -277,6 +279,12 @@ private fun ProductNavHost(
                         },
                         onActiveDownloads = { value ->
                             service?.updateClientSettings { it.copy(activeDownloads = value) }
+                        },
+                        onUploadRateLimit = { value ->
+                            service?.updateClientSettings { it.copy(uploadRateLimit = value) }
+                        },
+                        onDownloadRateLimit = { value ->
+                            service?.updateClientSettings { it.copy(downloadRateLimit = value) }
                         },
                     )
                 }
@@ -397,6 +405,7 @@ private fun TorrentDetailScreen(
     onRestore: () -> Unit,
     onRemove: () -> Unit,
     onCopyMagnet: () -> Unit,
+    onTransferLimits: (TorrentTransferLimits) -> Unit,
     onSpeed: () -> Unit,
     onDht: () -> Unit,
     onLogs: () -> Unit,
@@ -496,6 +505,7 @@ private fun TorrentDetailScreen(
                     onOpenFile,
                     onFilePage,
                     onTrackerPage,
+                    onTransferLimits,
                 )
             }
         }
@@ -512,6 +522,7 @@ private fun DetailTabContent(
     onOpenFile: (org.rstorrent.session.uniffi.FileView) -> Unit,
     onFilePage: (UInt) -> Unit,
     onTrackerPage: (UInt) -> Unit,
+    onTransferLimits: (TorrentTransferLimits) -> Unit,
 ) {
     if (torrent == null) {
         CenterMessage("Torrent is no longer available")
@@ -519,7 +530,9 @@ private fun DetailTabContent(
     }
     when (tab) {
         TorrentDetailTab.DETAILS ->
-            DetailList(
+            TorrentDetails(
+                torrent,
+                onTransferLimits,
                 "Info hash" to torrent.torrentId,
                 "State" to operationalLabel(torrent.operationalState),
                 "Required" to formatBytes(torrent.requiredPayloadBytes),
@@ -564,6 +577,35 @@ private fun DetailTabContent(
                 state.peers[torrent.torrentId]?.values,
                 state.swarms[torrent.torrentId],
             )
+    }
+}
+
+@Composable
+private fun TorrentDetails(
+    torrent: TorrentView,
+    onTransferLimits: (TorrentTransferLimits) -> Unit,
+    vararg rows: Pair<String, String>,
+) {
+    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+        items(rows.toList()) { (label, value) -> ReadOnlySetting(label, value) }
+        item("download-rate-limit") {
+            RateLimitSetting(
+                title = "Torrent download limit",
+                configured = torrent.transferLimits.download,
+                onValue = { limit ->
+                    onTransferLimits(torrent.transferLimits.copy(download = limit))
+                },
+            )
+        }
+        item("upload-rate-limit") {
+            RateLimitSetting(
+                title = "Torrent upload limit",
+                configured = torrent.transferLimits.upload,
+                onValue = { limit ->
+                    onTransferLimits(torrent.transferLimits.copy(upload = limit))
+                },
+            )
+        }
     }
 }
 

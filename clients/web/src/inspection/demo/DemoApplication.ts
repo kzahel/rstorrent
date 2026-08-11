@@ -1,5 +1,10 @@
 import type { InspectionApplication } from "../application";
-import type { SpeedHistoryView, SpeedMetric, SpeedRange } from "../../api";
+import type {
+  SpeedHistoryView,
+  SpeedMetric,
+  SpeedRange,
+  TorrentTransferLimits,
+} from "../../api";
 import type {
   CommandResult,
   DesiredInspectionViews,
@@ -48,6 +53,7 @@ export class DemoApplication implements InspectionApplication {
   private paused = new Set<string>();
   private archived = new Set<string>();
   private removed = new Set<string>();
+  private transferLimits = new Map<string, TorrentTransferLimits>();
   private extraTorrentCount = 0;
   private commandLogs: LogRow[] = [];
   private snapshot: InspectionSnapshot;
@@ -181,6 +187,18 @@ export class DemoApplication implements InspectionApplication {
         return rejected("File actions are unavailable in demo scenarios");
       case "force_recheck":
         return rejected("Force recheck is unavailable in demo scenarios");
+      case "set_torrent_transfer_limits":
+        if (this.snapshot.torrents[command.torrentId] === undefined) {
+          return rejected("Torrent is not present");
+        }
+        this.transferLimits.set(command.torrentId, command.limits);
+        this.addCommandLog(
+          "policy",
+          "Torrent peer transfer limits changed in demo mode",
+          command.torrentId,
+        );
+        this.advance(0);
+        return accepted("Torrent transfer limits saved");
       case "choose_download_root":
       case "set_default_download_root":
       case "set_show_add_options":
@@ -230,6 +248,7 @@ export class DemoApplication implements InspectionApplication {
         this.removed,
         this.extraTorrentCount,
         this.commandLogs,
+        this.transferLimits,
       ),
       this.desiredViews,
     );
@@ -257,6 +276,7 @@ export class DemoApplication implements InspectionApplication {
     this.paused = new Set();
     this.archived = new Set();
     this.removed = new Set();
+    this.transferLimits = new Map();
     this.extraTorrentCount = 0;
     this.commandLogs = [];
   }
@@ -561,6 +581,7 @@ function applyOverlays(
   removed: ReadonlySet<string>,
   extraTorrentCount: number,
   commandLogs: readonly LogRow[],
+  transferLimits: ReadonlyMap<string, TorrentTransferLimits>,
 ): InspectionSnapshot {
   const torrents: Record<string, TorrentRow> = {};
   for (const id of source.torrentOrder) {
@@ -569,6 +590,7 @@ function applyOverlays(
     if (row === undefined) continue;
     torrents[id] = {
       ...row,
+      transferLimits: transferLimits.get(id) ?? row.transferLimits,
       status: paused.has(id) ? "paused" : row.status,
       operationalState: paused.has(id) ? "paused" : row.operationalState,
       archived: archived.has(id),
@@ -589,6 +611,10 @@ function applyOverlays(
       status: "downloading",
       operationalState: "downloading",
       queuePosition: null,
+      transferLimits: {
+        upload: { type: "unlimited" },
+        download: { type: "unlimited" },
+      },
       sizeBytes: 734_003_200 + index * 104_857_600,
       progress: 0.08 + index * 0.03,
       checking: null,

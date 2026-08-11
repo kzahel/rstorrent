@@ -5,10 +5,10 @@ use rstorrent_engine::{
 };
 
 use super::contract::{
-    AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
-    ClientSettingsRuntimeView, EffectiveListenerSettings, HttpsServerAuthenticationPolicy,
-    Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-    MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
+    AdvertisedPeerEndpointStatus, BandwidthRuntimeView, ClientSettings,
+    ClientSettingsApplicationState, ClientSettingsRuntimeView, EffectiveListenerSettings,
+    HttpsServerAuthenticationPolicy, Ipv6PinholeStatus, ListenerBindFailureReason, ListenerPolicy,
+    ListenerStatus, MAX_RUNTIME_DETAIL_BYTES, PortMappingStatus, SessionUdpStatus,
 };
 use crate::reachability::ReachabilityState;
 
@@ -69,6 +69,8 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit: settings.peer_connection_limit,
             effective_upload_slots: settings.upload_slots,
             effective_active_downloads: settings.active_downloads,
+            effective_upload_rate_limit: settings.upload_rate_limit,
+            effective_download_rate_limit: settings.download_rate_limit,
             active_downloads_clamp_reason: None,
             active_download_count: 0,
             checking_count: 0,
@@ -82,6 +84,8 @@ impl ClientSettingsRuntimeView {
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            bandwidth_application: ClientSettingsApplicationState::Applied,
+            bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,
@@ -103,6 +107,7 @@ impl ClientSettingsRuntimeView {
         self.port_mapping_application = ClientSettingsApplicationState::Applying;
         self.peer_connections_application = ClientSettingsApplicationState::Applying;
         self.upload_slots_application = ClientSettingsApplicationState::Applying;
+        self.bandwidth_application = ClientSettingsApplicationState::Applying;
         self.encryption_application = ClientSettingsApplicationState::Applying;
         self.ipv6_application = ClientSettingsApplicationState::Applying;
         self.tracker_https_authentication_application = ClientSettingsApplicationState::Applying;
@@ -132,6 +137,8 @@ impl ClientSettingsRuntimeView {
             effective_peer_connection_limit,
             effective_upload_slots: active.upload_slots,
             effective_active_downloads: active.active_downloads,
+            effective_upload_rate_limit: active.upload_rate_limit,
+            effective_download_rate_limit: active.download_rate_limit,
             active_downloads_clamp_reason: None,
             active_download_count: 0,
             checking_count: 0,
@@ -154,6 +161,8 @@ impl ClientSettingsRuntimeView {
             port_mapping_application: ClientSettingsApplicationState::Applied,
             peer_connections_application: ClientSettingsApplicationState::Applied,
             upload_slots_application: ClientSettingsApplicationState::Applied,
+            bandwidth_application: ClientSettingsApplicationState::Applied,
+            bandwidth: BandwidthRuntimeView::default(),
             encryption_application: ClientSettingsApplicationState::Applied,
             ipv6_application: ClientSettingsApplicationState::Applied,
             tracker_https_authentication_application: ClientSettingsApplicationState::Applied,

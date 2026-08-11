@@ -5,7 +5,7 @@ use rusqlite::{Connection, Transaction, params};
 
 use super::contract::{
     ClientSettings, EncryptionPolicy, HttpsServerAuthenticationPolicy, ListenerPolicy,
-    PortMappingPolicy,
+    PortMappingPolicy, TransferRateLimit,
 };
 
 const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
@@ -29,6 +29,14 @@ const CLIENT_SETTINGS_TABLE_SQL: &str = "CREATE TABLE client_settings (
         upload_slots INTEGER NOT NULL CHECK (upload_slots BETWEEN 0 AND 50),
         active_downloads INTEGER NOT NULL DEFAULT 3 CHECK (
             active_downloads BETWEEN 1 AND 20
+        ),
+        upload_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+            upload_rate_limit = 0 OR
+            upload_rate_limit BETWEEN 1024 AND 4294967295
+        ),
+        download_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+            download_rate_limit = 0 OR
+            download_rate_limit BETWEEN 1024 AND 4294967295
         ),
         encryption TEXT NOT NULL DEFAULT 'allow' CHECK (
             encryption IN ('disabled', 'allow', 'prefer', 'required')
@@ -148,9 +156,10 @@ pub(crate) fn create_client_settings(
         "INSERT INTO client_settings(
             singleton, listener_mode, listener_port, preferred_listen_port,
             port_mapping_mode, peer_connection_limit, upload_slots,
-            active_downloads, encryption, ipv6_enabled,
+            active_downloads, upload_rate_limit, download_rate_limit,
+            encryption, ipv6_enabled,
             tracker_https_server_authentication
-         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             mode,
             port.map(i64::from),
@@ -159,6 +168,8 @@ pub(crate) fn create_client_settings(
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
             i64::from(settings.active_downloads),
+            settings.upload_rate_limit.persisted(),
+            settings.download_rate_limit.persisted(),
             encryption,
             settings.ipv6_enabled,
             tracker_https_authentication,
@@ -185,13 +196,15 @@ pub(crate) fn read_client_settings(
         peer_connection_limit,
         upload_slots,
         active_downloads,
+        upload_rate_limit,
+        download_rate_limit,
         encryption,
         ipv6_enabled,
         tracker_https_authentication,
     ) = connection.query_row(
         "SELECT listener_mode, listener_port, preferred_listen_port, port_mapping_mode,
                 peer_connection_limit, upload_slots, active_downloads,
-                encryption, ipv6_enabled,
+                upload_rate_limit, download_rate_limit, encryption, ipv6_enabled,
                 tracker_https_server_authentication
          FROM client_settings WHERE singleton = 1",
         [],
@@ -204,9 +217,11 @@ pub(crate) fn read_client_settings(
                 row.get::<_, i64>(4)?,
                 row.get::<_, i64>(5)?,
                 row.get::<_, i64>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, bool>(8)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(8)?,
                 row.get::<_, String>(9)?,
+                row.get::<_, bool>(10)?,
+                row.get::<_, String>(11)?,
             ))
         },
     )?;
@@ -260,6 +275,10 @@ pub(crate) fn read_client_settings(
                 "active download limit cannot be represented".to_owned(),
             )
         })?,
+        upload_rate_limit: TransferRateLimit::from_persisted(upload_rate_limit)
+            .map_err(|error| SettingsPersistenceError::Corrupt(error.to_string()))?,
+        download_rate_limit: TransferRateLimit::from_persisted(download_rate_limit)
+            .map_err(|error| SettingsPersistenceError::Corrupt(error.to_string()))?,
         encryption: match encryption.as_str() {
             "disabled" => EncryptionPolicy::Disabled,
             "allow" => EncryptionPolicy::Allow,
@@ -308,8 +327,9 @@ pub(crate) fn replace_client_settings(
          SET listener_mode = ?1, listener_port = ?2,
              preferred_listen_port = ?3, port_mapping_mode = ?4,
              peer_connection_limit = ?5, upload_slots = ?6,
-             active_downloads = ?7, encryption = ?8, ipv6_enabled = ?9,
-             tracker_https_server_authentication = ?10
+             active_downloads = ?7, upload_rate_limit = ?8,
+             download_rate_limit = ?9, encryption = ?10, ipv6_enabled = ?11,
+             tracker_https_server_authentication = ?12
          WHERE singleton = 1",
         params![
             mode,
@@ -319,6 +339,8 @@ pub(crate) fn replace_client_settings(
             i64::from(settings.peer_connection_limit),
             i64::from(settings.upload_slots),
             i64::from(settings.active_downloads),
+            settings.upload_rate_limit.persisted(),
+            settings.download_rate_limit.persisted(),
             encryption,
             settings.ipv6_enabled,
             tracker_https_authentication,
@@ -425,6 +447,29 @@ pub(crate) fn migrate_client_settings_to_v17(
         "ALTER TABLE client_settings ADD COLUMN active_downloads INTEGER NOT NULL DEFAULT 3
          CHECK (active_downloads BETWEEN 1 AND 20);",
     )?;
+    Ok(())
+}
+
+pub(crate) fn migrate_client_settings_to_v18(
+    transaction: &Transaction<'_>,
+) -> Result<(), SettingsPersistenceError> {
+    let columns = {
+        let mut statement = transaction.prepare("PRAGMA table_info(client_settings)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns.collect::<Result<Vec<_>, _>>()?
+    };
+    if !columns.iter().any(|column| column == "upload_rate_limit") {
+        transaction.execute_batch(
+            "ALTER TABLE client_settings ADD COLUMN upload_rate_limit INTEGER NOT NULL DEFAULT 0
+             CHECK (upload_rate_limit = 0 OR upload_rate_limit BETWEEN 1024 AND 4294967295);",
+        )?;
+    }
+    if !columns.iter().any(|column| column == "download_rate_limit") {
+        transaction.execute_batch(
+            "ALTER TABLE client_settings ADD COLUMN download_rate_limit INTEGER NOT NULL DEFAULT 0
+             CHECK (download_rate_limit = 0 OR download_rate_limit BETWEEN 1024 AND 4294967295);",
+        )?;
+    }
     Ok(())
 }
 

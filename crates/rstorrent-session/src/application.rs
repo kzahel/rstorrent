@@ -50,7 +50,7 @@ use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
-use crate::settings::StorageRootSnapshot;
+use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
 use crate::store::{
     ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, RemovalRecord, ResumeRecord,
@@ -475,7 +475,7 @@ impl ApplicationService {
                 views.clone(),
                 advertised_endpoint.clone(),
                 session_network
-                    .register_torrent_bandwidth(Default::default())
+                    .register_torrent_bandwidth(torrent.transfer_limits.into_engine())
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
@@ -604,7 +604,7 @@ impl ApplicationService {
                 self.views.clone(),
                 self.session_network().advertised_endpoint(),
                 self.session_network()
-                    .register_torrent_bandwidth(Default::default())
+                    .register_torrent_bandwidth(TorrentTransferLimits::default().into_engine())
                     .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
@@ -1042,6 +1042,12 @@ impl ApplicationService {
                     .as_mut()
                     .expect("session network exists while settings are accepted")
                     .submit_settings(settings)?;
+            }
+            Command::SetTorrentTransferLimits { torrent_id, limits } => {
+                let torrent_id = torrent_id.to_ascii_lowercase();
+                self.ensure_torrent_runtime(&torrent_id)?
+                    .peers()
+                    .set_transfer_rate_limits(limits.into_engine());
             }
             Command::Shutdown => {
                 self.shutdown().await?;
@@ -7922,6 +7928,12 @@ mod tests {
             listener: ListenerPolicy::AutomaticLoopback,
             peer_connection_limit: 17,
             upload_slots: 0,
+            upload_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: 12 * 1_024,
+            },
+            download_rate_limit: crate::TransferRateLimit::Limited {
+                bytes_per_second: 48 * 1_024,
+            },
             ..ClientSettings::default()
         };
         let response = service
@@ -7943,10 +7955,19 @@ mod tests {
                     == crate::ClientSettingsApplicationState::Applied
                 && runtime.upload_slots_application
                     == crate::ClientSettingsApplicationState::Applied
+                && runtime.bandwidth_application == crate::ClientSettingsApplicationState::Applied
         })
         .await;
         assert_eq!(runtime.effective_peer_connection_limit, 17);
         assert_eq!(runtime.effective_upload_slots, 0);
+        assert_eq!(
+            runtime.effective_upload_rate_limit,
+            settings.upload_rate_limit
+        );
+        assert_eq!(
+            runtime.effective_download_rate_limit,
+            settings.download_rate_limit
+        );
         assert!(service.incoming_peer_snapshot().is_some());
         assert_eq!(service.revision().expect("ephemeral revision"), 1);
         assert!(!absent_profile.exists());
@@ -7964,6 +7985,80 @@ mod tests {
             0
         );
         fs::remove_dir_all(root).expect("remove offline ephemeral test root");
+    }
+
+    #[tokio::test]
+    async fn torrent_transfer_limits_apply_live_and_restore_with_the_registration() {
+        let root = test_root("torrent-transfer-limit-runtime");
+        let configuration = config(&root);
+        let torrent_id = "ab".repeat(20);
+        let mut service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open application");
+        service
+            .dispatch(add_request("add-transfer-limit-runtime", &torrent_id))
+            .await
+            .expect("add torrent");
+        let limits = crate::TorrentTransferLimits {
+            upload: crate::TransferRateLimit::Limited {
+                bytes_per_second: 24 * 1_024,
+            },
+            download: crate::TransferRateLimit::Limited {
+                bytes_per_second: 96 * 1_024,
+            },
+        };
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "set-transfer-limit-runtime".to_owned(),
+                expected_revision: None,
+                command: Command::SetTorrentTransferLimits {
+                    torrent_id: torrent_id.clone(),
+                    limits,
+                },
+            })
+            .await
+            .expect("set live torrent limits");
+        let ResponseOutcome::Success { snapshot } = response.outcome else {
+            panic!("torrent limit command must succeed");
+        };
+        assert_eq!(snapshot.torrents[0].transfer_limits, limits);
+        let active = service
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("torrent runtime")
+            .peers()
+            .transfer_rate_limits();
+        assert_eq!(active.upload.bytes_per_second(), Some(24 * 1_024));
+        assert_eq!(active.download.bytes_per_second(), Some(96 * 1_024));
+        let observed = wait_for_client_settings(&service, |runtime| {
+            runtime.bandwidth.upload.registered_torrents == 1
+                && runtime.bandwidth.download.registered_torrents == 1
+        })
+        .await;
+        assert_eq!(observed.bandwidth.upload.active_waiters, 0);
+        assert_eq!(observed.bandwidth.download.active_waiters, 0);
+        assert_eq!(observed.bandwidth.upload.queued_requested_bytes, "0");
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(configuration)
+            .await
+            .expect("reopen application");
+        let restored = reopened
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("restored torrent runtime")
+            .peers()
+            .transfer_rate_limits();
+        assert_eq!(restored.upload.bytes_per_second(), Some(24 * 1_024));
+        assert_eq!(restored.download.bytes_per_second(), Some(96 * 1_024));
+        reopened
+            .shutdown()
+            .await
+            .expect("shutdown reopened application");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
     }
 
     async fn answer_dht_query(router: &UdpSocket) -> SocketAddr {
@@ -8842,6 +8937,8 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 3,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
@@ -11711,6 +11808,8 @@ mod tests {
                 peer_connection_limit: 1,
                 upload_slots: 1,
                 active_downloads: 3,
+                upload_rate_limit: Default::default(),
+                download_rate_limit: Default::default(),
                 encryption: Default::default(),
                 ipv6_enabled: true,
                 tracker_https_server_authentication: Default::default(),
@@ -11894,6 +11993,8 @@ mod tests {
             peer_connection_limit: 1,
             upload_slots: 1,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
@@ -11984,6 +12085,8 @@ mod tests {
         let zero_slots = ClientSettings {
             upload_slots: 0,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             ..handover_settings
         };
         first
@@ -12358,6 +12461,8 @@ mod tests {
             peer_connection_limit: 321,
             upload_slots: 0,
             active_downloads: 3,
+            upload_rate_limit: Default::default(),
+            download_rate_limit: Default::default(),
             encryption: Default::default(),
             ipv6_enabled: true,
             tracker_https_server_authentication: Default::default(),
