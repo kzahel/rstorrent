@@ -53,8 +53,9 @@ pub use have::{HaveError, HaveState};
 pub use media::{
     MAX_MEDIA_CAPABILITIES, MAX_MEDIA_READ_JOBS, MAX_MEDIA_REQUESTS,
     MAX_MEDIA_REQUESTS_PER_CAPABILITY, MEDIA_CAPABILITY_ABSOLUTE_TIMEOUT,
-    MEDIA_CAPABILITY_IDLE_TIMEOUT, MEDIA_CAPABILITY_LENGTH, MediaCapabilityLease,
-    MediaFileAvailability, MediaOriginError, MediaResolveError, MediaUrlOutcome, MediaUrlResponse,
+    MEDIA_CAPABILITY_IDLE_TIMEOUT, MEDIA_CAPABILITY_LENGTH, MEDIA_STREAMING_NO_PROGRESS_TIMEOUT,
+    MediaCapabilityLease, MediaFileAvailability, MediaOriginError, MediaRangeError, MediaReadError,
+    MediaResolveError, MediaUrlOutcome, MediaUrlResponse,
 };
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{

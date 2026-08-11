@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use rstorrent_engine::dht::{DhtConfig, DhtError};
 use rstorrent_engine::{
-    DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
+    ActiveFileError, DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
     DEFAULT_INCOMING_PEER_ACTIVITY_TIMEOUT, DEFAULT_PEER_ID, DEFAULT_STORAGE_FILE_LIMIT,
     DEFAULT_UPLOAD_READ_JOBS, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
@@ -92,6 +92,20 @@ fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvaila
         | VerifiedFileError::ArtifactLayout(_)
         | VerifiedFileError::StoragePlan(_)
         | VerifiedFileError::TaskJoin(_) => MediaFileAvailability::NotPublished,
+    }
+}
+
+fn active_media_reader_unavailable_reason(error: &ActiveFileError) -> MediaFileAvailability {
+    match error {
+        ActiveFileError::InvalidFileIndex(_) => MediaFileAvailability::InvalidFile,
+        ActiveFileError::PaddingFile(_) => MediaFileAvailability::Padding,
+        ActiveFileError::UnselectedFile(_) => MediaFileAvailability::Unverified,
+        ActiveFileError::Closed | ActiveFileError::Unavailable | ActiveFileError::Storage(_) => {
+            MediaFileAvailability::StorageUnavailable
+        }
+        ActiveFileError::InvalidRange { .. }
+        | ActiveFileError::ReadTooLarge { .. }
+        | ActiveFileError::ArithmeticOverflow => MediaFileAvailability::NotPublished,
     }
 }
 
@@ -647,23 +661,6 @@ impl ApplicationService {
                 MediaFileAvailability::Checking,
             ));
         }
-        if resume.storage_state != StorageState::Published
-            || !matches!(
-                resume.payload_state,
-                crate::durable_state::PayloadState::LegacyOwned
-                    | crate::durable_state::PayloadState::FinalOwned
-            )
-            || matches!(
-                resume.state,
-                TorrentState::NeedsRepair | TorrentState::Error
-            )
-        {
-            return Ok(MediaUrlResponse::unavailable(
-                torrent_id,
-                file_index,
-                MediaFileAvailability::NotPublished,
-            ));
-        }
         let Some(raw_info) = resume.raw_info.as_deref() else {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
@@ -681,13 +678,6 @@ impl ApplicationService {
                 ));
             }
         };
-        if resume.publication_name.as_deref() != Some(metainfo.name.as_str()) {
-            return Ok(MediaUrlResponse::unavailable(
-                torrent_id,
-                file_index,
-                MediaFileAvailability::NotPublished,
-            ));
-        }
         let file_index_usize = usize::try_from(file_index).map_err(|_| {
             ApplicationError::Configuration("media file index overflows usize".to_owned())
         })?;
@@ -703,6 +693,68 @@ impl ApplicationService {
                 torrent_id,
                 file_index,
                 MediaFileAvailability::Padding,
+            ));
+        }
+        if let Some(active) = self.active_download_for(&torrent_id) {
+            let control = active.control.clone();
+            let reader = match control.active_file_reader(file_index_usize) {
+                Ok(reader) => reader,
+                Err(error) => {
+                    return Ok(MediaUrlResponse::unavailable(
+                        torrent_id,
+                        file_index,
+                        active_media_reader_unavailable_reason(&error),
+                    ));
+                }
+            };
+            let outcome =
+                match self
+                    .media
+                    .create_active(torrent_id.clone(), file_index, reader, control)
+                {
+                    Ok(outcome) => outcome,
+                    Err(MediaRegistryError::ServerUnavailable) => {
+                        return Ok(MediaUrlResponse::unavailable(
+                            torrent_id,
+                            file_index,
+                            MediaFileAvailability::ServerUnavailable,
+                        ));
+                    }
+                    Err(MediaRegistryError::ResourceLimit) => {
+                        return Ok(MediaUrlResponse::unavailable(
+                            torrent_id,
+                            file_index,
+                            MediaFileAvailability::ResourceLimit,
+                        ));
+                    }
+                    Err(MediaRegistryError::Random(error)) => {
+                        return Err(ApplicationError::Configuration(format!(
+                            "allocate media capability: {error}"
+                        )));
+                    }
+                };
+            return Ok(MediaUrlResponse {
+                torrent_id,
+                file_index,
+                outcome,
+            });
+        }
+        if resume.storage_state != StorageState::Published
+            || !matches!(
+                resume.payload_state,
+                crate::durable_state::PayloadState::LegacyOwned
+                    | crate::durable_state::PayloadState::FinalOwned
+            )
+            || matches!(
+                resume.state,
+                TorrentState::NeedsRepair | TorrentState::Error
+            )
+            || resume.publication_name.as_deref() != Some(metainfo.name.as_str())
+        {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::NotPublished,
             ));
         }
         let Some(have) = resume.have.as_ref() else {
@@ -978,9 +1030,10 @@ impl ApplicationService {
             _ => None,
         };
         let media_fence = match &command {
-            Command::ForceRecheck { torrent_id } | Command::RemoveTorrent { torrent_id, .. } => {
-                Some(torrent_id.to_ascii_lowercase())
-            }
+            Command::Pause { torrent_id }
+            | Command::ForceRecheck { torrent_id }
+            | Command::Archive { torrent_id }
+            | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
             _ => None,
         };
         if let Some(torrent_id) = media_fence.as_deref() {
@@ -5636,8 +5689,8 @@ mod tests {
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
     };
     use rstorrent_protocol::peer_wire::{
-        EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX, FrameDecoder,
-        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake,
+        BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
+        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake,
         encode_handshake_with_reserved, encode_message,
     };
     use rusqlite::Connection;
@@ -5654,14 +5707,14 @@ mod tests {
         CatalogPageRequest, ClientSettings, Command, ConfiguredStorageRoot, DeliveryPolicy,
         DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
         EncryptionPolicy, FilePriority, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
-        ListenerPolicy, ListenerStatus, MediaResolveError, MediaUrlOutcome, OpenViewSetOptions,
-        OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView,
-        PeerTransportKind, PeerView, ProgressDisposition, ProgressReason, RemovalDataPolicy,
-        RemovalState, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
-        SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView, TorrentState,
-        TrackerConnectionFamilyView, TrackerSecurityView, TrackerView, ViewDeliveryPolicy,
-        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
-        ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        ListenerPolicy, ListenerStatus, MediaRangeError, MediaResolveError, MediaUrlOutcome,
+        OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
+        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
+        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
+        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
+        TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
+        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
+        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -9396,11 +9449,7 @@ mod tests {
             .expect("resolve media capability");
         assert!(lease.is_live());
         assert_eq!(
-            lease
-                .reader()
-                .read_range(9, 5)
-                .await
-                .expect("read media range"),
+            lease.read_range(9, 5).await.expect("read media range"),
             b"media"
         );
         drop(lease);
@@ -9454,6 +9503,196 @@ mod tests {
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn active_media_waits_for_verified_range_and_pause_revokes_it() {
+        let root = test_root("active-media-capability");
+        let configuration = config(&root);
+        let payload = (0..32_768)
+            .map(|offset| ((offset * 19 + offset / 7) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("active-media.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind active media peer");
+        let address = listener.local_addr().expect("active media address");
+        let release_first = Arc::new(tokio::sync::Notify::new());
+        let peer_release = Arc::clone(&release_first);
+        let peer_payload = payload.clone();
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept active media peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read active media handshake");
+            decode_handshake(&handshake, info_hash).expect("active media identity");
+            stream
+                .write_all(&encode_handshake(info_hash, [0x4d; 20]))
+                .await
+                .expect("write active media handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).expect("bitfield"))
+                .await
+                .expect("write active media bitfield");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).expect("unchoke"))
+                .await
+                .expect("write active media unchoke");
+            let mut decoder = FrameDecoder::new();
+            let mut input = [0_u8; 64 * 1024];
+            let mut pending = Vec::<BlockRequest>::new();
+            let mut released = false;
+            loop {
+                tokio::select! {
+                    _ = peer_release.notified(), if !released => {
+                        released = true;
+                        for request in pending.drain(..) {
+                            let start = request.begin as usize;
+                            let end = start + request.length as usize;
+                            stream.write_all(&encode_message(&PeerMessage::Piece {
+                                index: 0,
+                                begin: request.begin,
+                                block: peer_payload[start..end].to_vec(),
+                            }).expect("piece response")).await.expect("write active media piece");
+                        }
+                    }
+                    read = stream.read(&mut input) => {
+                        let read = read.expect("read active media message");
+                        if read == 0 {
+                            break;
+                        }
+                        for message in decoder.push(&input[..read]).expect("decode active media message") {
+                            if let PeerMessage::Request(request) = message
+                                && request.index == 0
+                            {
+                                if released {
+                                    let start = request.begin as usize;
+                                    let end = start + request.length as usize;
+                                    stream.write_all(&encode_message(&PeerMessage::Piece {
+                                        index: 0,
+                                        begin: request.begin,
+                                        block: peer_payload[start..end].to_vec(),
+                                    }).expect("piece response")).await.expect("write active media piece");
+                                } else {
+                                    pending.push(request);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open active media store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-active-media".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add active media torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record active media metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open active media application");
+        service
+            .configure_media_origin("http://127.0.0.1:43121")
+            .expect("configure active media origin");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let url = loop {
+            let response = service
+                .create_media_url(&torrent_id, 0)
+                .await
+                .expect("probe active media URL");
+            if let MediaUrlOutcome::Created { url, .. } = response.outcome {
+                break url;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "active media did not become streamable"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        let capability = url
+            .rsplit('/')
+            .next()
+            .expect("active capability")
+            .to_owned();
+        let mut first = service
+            .resolve_media_capability(&capability)
+            .expect("resolve active capability");
+        let first_task = tokio::spawn(async move {
+            first
+                .wait_for_range(0, 8)
+                .await
+                .expect("wait for first active range");
+            first
+                .read_range(0, 8)
+                .await
+                .expect("read first active range")
+        });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(!first_task.is_finished());
+        release_first.notify_one();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), first_task)
+                .await
+                .expect("first active range timed out")
+                .expect("join first active range"),
+            payload[..8]
+        );
+
+        let mut second = service
+            .resolve_media_capability(&capability)
+            .expect("resolve second active capability");
+        let second_task = tokio::spawn(async move { second.wait_for_range(16_384, 8).await });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "pause-active-media".to_owned(),
+                expected_revision: None,
+                command: Command::Pause {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("pause active media");
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), second_task)
+                .await
+                .expect("revoked active range timed out")
+                .expect("join revoked active range"),
+            Err(MediaRangeError::Revoked)
+        ));
+        tokio::time::timeout(Duration::from_secs(2), peer_task)
+            .await
+            .expect("active media peer did not close")
+            .expect("join active media peer");
+        service.shutdown().await.expect("shutdown active media");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove active media root");
     }
 
     #[tokio::test]

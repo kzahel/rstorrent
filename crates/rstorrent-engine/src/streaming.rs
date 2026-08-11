@@ -114,10 +114,6 @@ impl StreamingDemand {
             None
         }
     }
-
-    fn contains(&self, piece: u32) -> bool {
-        self.urgency(piece).is_some()
-    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -250,7 +246,7 @@ impl StreamingDemandSet {
     pub fn record_progress(&mut self, piece: u32) -> bool {
         let mut changed = false;
         for demand in self.demands.values_mut() {
-            if demand.contains(piece) {
+            if demand.current.contains(piece) {
                 demand.progress_revision = demand.progress_revision.saturating_add(1);
                 changed = true;
             }

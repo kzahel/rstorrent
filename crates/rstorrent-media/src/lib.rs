@@ -11,7 +11,9 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header}
 use axum::response::Response;
 use axum::routing::any;
 use futures_util::stream;
-use rstorrent_session::{ApplicationService, MediaCapabilityLease, MediaResolveError};
+use rstorrent_session::{
+    ApplicationService, MediaCapabilityLease, MediaRangeError, MediaReadError, MediaResolveError,
+};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -135,7 +137,7 @@ async fn media_request(
     {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    let lease = {
+    let mut lease = {
         let mut service = state.service.lock().await;
         match service.resolve_media_capability(&capability) {
             Ok(lease) => lease,
@@ -156,13 +158,13 @@ async fn media_request(
             .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
         return response;
     }
-    let file_length = lease.reader().length();
+    let file_length = lease.length();
     let range = match requested_range(&headers, file_length) {
         Ok(range) => range,
         Err(()) => return range_not_satisfiable(file_length),
     };
     let content_length = range.end_exclusive - range.start;
-    let content_type = mime_type(lease.reader().file_name());
+    let content_type = mime_type(lease.file_name());
     let status = if range.partial {
         StatusCode::PARTIAL_CONTENT
     } else {
@@ -170,8 +172,21 @@ async fn media_request(
     };
     let body = if method == Method::HEAD || content_length == 0 {
         Body::empty()
+    } else if lease.is_active() {
+        let first_length =
+            usize::try_from(content_length.min(64 * 1024)).expect("chunk fits usize");
+        if let Err(error) = lease.wait_for_range(range.start, first_length).await {
+            return active_preflight_range_error(error);
+        }
+        let first = match lease.read_range(range.start, first_length).await {
+            Ok(bytes) if bytes.len() == first_length => bytes,
+            Ok(_) => return empty_response(StatusCode::NOT_FOUND),
+            Err(error) => return active_preflight_read_error(error),
+        };
+        lease.touch();
+        media_body(lease, range.start, content_length, Some(first))
     } else {
-        media_body(lease, range.start, content_length)
+        media_body(lease, range.start, content_length, None)
     };
     let mut response = Response::new(body);
     *response.status_mut() = status;
@@ -199,26 +214,75 @@ async fn media_request(
     response
 }
 
-fn media_body(lease: MediaCapabilityLease, offset: u64, length: u64) -> Body {
+fn active_preflight_range_error(error: MediaRangeError) -> Response {
+    match error {
+        MediaRangeError::NoProgress => empty_response(StatusCode::GATEWAY_TIMEOUT),
+        MediaRangeError::Saturated => {
+            let mut response = empty_response(StatusCode::SERVICE_UNAVAILABLE);
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+            response
+        }
+        MediaRangeError::Revoked | MediaRangeError::Active(_) => {
+            empty_response(StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+fn active_preflight_read_error(error: MediaReadError) -> Response {
+    match error {
+        MediaReadError::Closed | MediaReadError::Active(_) | MediaReadError::Published(_) => {
+            empty_response(StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+fn media_body(
+    lease: MediaCapabilityLease,
+    offset: u64,
+    length: u64,
+    first: Option<Vec<u8>>,
+) -> Body {
     struct BodyState {
         lease: MediaCapabilityLease,
         offset: u64,
         remaining: u64,
+        first: Option<Vec<u8>>,
     }
 
     let state = BodyState {
         lease,
         offset,
         remaining: length,
+        first,
     };
     Body::from_stream(stream::unfold(Some(state), |state| async move {
         let mut state = state?;
         if state.remaining == 0 || !state.lease.is_live() {
             return None;
         }
+        if let Some(bytes) = state.first.take() {
+            state.offset += bytes.len() as u64;
+            state.remaining -= bytes.len() as u64;
+            return Some((Ok::<Bytes, io::Error>(Bytes::from(bytes)), Some(state)));
+        }
         let length = usize::try_from(state.remaining.min(64 * 1024)).expect("chunk fits usize");
         let cancellation = state.lease.cancellation().clone();
-        let read = state.lease.reader().read_range(state.offset, length);
+        let ready = state.lease.wait_for_range(state.offset, length);
+        let ready = tokio::select! {
+            _ = cancellation.cancelled() => return None,
+            result = ready => result,
+        };
+        if let Err(error) = ready {
+            return Some((
+                Err(io::Error::other(format!(
+                    "active media range unavailable: {error:?}"
+                ))),
+                None,
+            ));
+        }
+        let read = state.lease.read_range(state.offset, length);
         let bytes = tokio::select! {
             _ = cancellation.cancelled() => return None,
             result = read => match result {
@@ -231,6 +295,13 @@ fn media_body(lease: MediaCapabilityLease, offset: u64, length: u64) -> Body {
                 }
             },
         };
+        if bytes.len() != length {
+            return Some((
+                Err(io::Error::other("media read returned a short range")),
+                None,
+            ));
+        }
+        state.lease.touch();
         state.offset += bytes.len() as u64;
         state.remaining -= bytes.len() as u64;
         Some((Ok::<Bytes, io::Error>(Bytes::from(bytes)), Some(state)))
@@ -386,7 +457,8 @@ mod tests {
     use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
     use rstorrent_session::{
         ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, ConfiguredStorageRoot,
-        MediaUrlOutcome, NetworkConfig, NetworkPolicy, RequestEnvelope, SessionStore, StorageState,
+        MediaRangeError, MediaUrlOutcome, NetworkConfig, NetworkPolicy, RequestEnvelope,
+        SessionStore, StorageState,
     };
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -394,7 +466,8 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::{
-        ByteRange, LoopbackMediaServer, MediaState, media_request, mime_type, parse_range,
+        ByteRange, LoopbackMediaServer, MediaState, active_preflight_range_error, media_request,
+        mime_type, parse_range,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -591,6 +664,21 @@ mod tests {
         assert_eq!(mime_type("captions.vtt"), "text/plain; charset=utf-8");
         assert_eq!(mime_type("unknown.bin"), "application/octet-stream");
         assert_eq!(mime_type("no-extension"), "application/octet-stream");
+    }
+
+    #[test]
+    fn maps_active_preflight_timeout_saturation_and_revocation() {
+        assert_eq!(
+            active_preflight_range_error(MediaRangeError::NoProgress).status(),
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        let saturated = active_preflight_range_error(MediaRangeError::Saturated);
+        assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(saturated.headers()[header::RETRY_AFTER], "1");
+        assert_eq!(
+            active_preflight_range_error(MediaRangeError::Revoked).status(),
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
