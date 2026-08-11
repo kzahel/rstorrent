@@ -673,6 +673,26 @@ async fn direct_http_cancellation_joins_and_closes_socket() {
     server.await.expect("stalled HTTP tracker task");
 }
 
+#[tokio::test]
+async fn finalizing_an_exhausted_tracker_owner_is_clean() {
+    let mut manager = TrackerManager::start_with_configs(
+        Vec::new(),
+        [0x7c; 20],
+        loopback_network(Duration::from_secs(1)),
+        DownloadControl::new(),
+    )
+    .expect("start empty tracker manager");
+
+    let result = timeout(Duration::from_secs(1), manager.next_peers())
+        .await
+        .expect("empty tracker manager deadline");
+    assert!(matches!(result, Err(DownloadError::TrackerTask(_))));
+    timeout(Duration::from_secs(1), manager.finish())
+        .await
+        .expect("exhausted tracker finalization deadline")
+        .expect("join exhausted tracker manager");
+}
+
 #[cfg(feature = "test-platform-root")]
 #[tokio::test]
 #[ignore = "opt-in pinned-libtorrent direct HTTPS interoperability harness"]

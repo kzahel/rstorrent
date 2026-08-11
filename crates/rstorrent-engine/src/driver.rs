@@ -1285,17 +1285,19 @@ impl TrackerManager {
     }
 
     async fn finish(mut self) -> Result<(), DownloadError> {
-        self.command_sender
-            .send(TrackerManagerCommand::Finish)
-            .await
-            .map_err(|_| {
-                DownloadError::TrackerTask(
-                    "tracker owner terminated before final announces".to_owned(),
-                )
-            })?;
         let Some(mut task) = self.task.take() else {
             return Ok(());
         };
+        if self
+            .command_sender
+            .send(TrackerManagerCommand::Finish)
+            .await
+            .is_err()
+        {
+            return task
+                .await
+                .map_err(|error| DownloadError::TrackerTask(error.to_string()));
+        }
         let deadline = tokio::time::sleep(DIRECT_TRACKER_FINISH_TIMEOUT);
         tokio::pin!(deadline);
         loop {
