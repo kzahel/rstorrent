@@ -560,6 +560,7 @@ impl SessionNetworkRuntime {
             }
         };
         let advertised_endpoint = AdvertisedPeerEndpointSelector::new(&listener_status);
+        advertised_endpoint.replace_udp_listener(ipv4_udp_endpoint(&session_udp_status));
         advertised_endpoint.replace_ipv6_listener(incoming_ipv6_acceptor.as_ref().and_then(
             |acceptor| match acceptor.listen_address() {
                 std::net::SocketAddr::V6(address) => Some(address),
@@ -1520,6 +1521,7 @@ impl SessionNetworkOwner {
         };
         self.advertised_endpoint
             .replace_listener(&ListenerStatus::Disabled);
+        self.advertised_endpoint.replace_udp_listener(None);
         self.advertised_endpoint.replace_ipv6_listener(None);
         let _ = views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
         if let Some(reachability) = self.reachability.take() {
@@ -1528,6 +1530,8 @@ impl SessionNetworkOwner {
         if cancellation.is_cancelled() || !is_current(convergence, generation) {
             self.advertised_endpoint
                 .replace_listener(&self.listener_status);
+            self.advertised_endpoint
+                .replace_udp_listener(ipv4_udp_endpoint(&self.session_udp_status));
             self.advertised_endpoint.replace_ipv6_listener(
                 self.incoming_ipv6_acceptor
                     .as_ref()
@@ -1588,6 +1592,8 @@ impl SessionNetworkOwner {
                 Err(error) => {
                     self.advertised_endpoint
                         .replace_listener(&self.listener_status);
+                    self.advertised_endpoint
+                        .replace_udp_listener(ipv4_udp_endpoint(&self.session_udp_status));
                     self.advertised_endpoint.replace_ipv6_listener(
                         self.incoming_ipv6_acceptor
                             .as_ref()
@@ -1692,6 +1698,8 @@ impl SessionNetworkOwner {
         self.address_families = desired_address_families;
         self.advertised_endpoint
             .replace_listener(&self.listener_status);
+        self.advertised_endpoint
+            .replace_udp_listener(ipv4_udp_endpoint(&self.session_udp_status));
         self.advertised_endpoint.replace_ipv6_listener(
             self.incoming_ipv6_acceptor
                 .as_ref()
@@ -2001,6 +2009,7 @@ impl SessionNetworkOwner {
         if self.reachability.is_some() {
             self.advertised_endpoint
                 .replace_listener(&ListenerStatus::Disabled);
+            self.advertised_endpoint.replace_udp_listener(None);
             let _ =
                 views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
             if let Some(reachability) = self.reachability.take() {
@@ -2009,6 +2018,8 @@ impl SessionNetworkOwner {
         }
         self.advertised_endpoint
             .replace_listener(&self.listener_status);
+        self.advertised_endpoint
+            .replace_udp_listener(ipv4_udp_endpoint(&self.session_udp_status));
         let _ = views.set_advertised_peer_endpoint(self.advertised_endpoint.status(Instant::now()));
         let now = Instant::now();
         if self
@@ -2370,6 +2381,14 @@ fn ipv6_acceptor_address(acceptor: &IncomingPeerAcceptor) -> Option<std::net::So
         std::net::SocketAddr::V6(address) => Some(address),
         std::net::SocketAddr::V4(_) => None,
     }
+}
+
+fn ipv4_udp_endpoint(status: &SessionUdpStatus) -> Option<std::net::SocketAddrV4> {
+    let SessionUdpStatus::Bound { address, port, .. } = status else {
+        return None;
+    };
+    let address = address.parse::<std::net::Ipv4Addr>().ok()?;
+    (*port != 0).then_some(std::net::SocketAddrV4::new(address, *port))
 }
 
 fn transport_family_runtime_views(

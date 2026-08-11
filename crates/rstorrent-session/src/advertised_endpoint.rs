@@ -1,4 +1,4 @@
-//! Task-free selection of the TCP endpoint used in tracker and DHT messages.
+//! Task-free selection of the TCP tracker and UDP/uTP DHT endpoints.
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -80,6 +80,8 @@ impl AdvertisedPeerEndpointState {
 struct SelectorState {
     endpoint: AdvertisedPeerEndpointState,
     local_endpoint: Option<(SocketAddrV4, EndpointScope)>,
+    udp_endpoint: AdvertisedPeerEndpointState,
+    udp_local_endpoint: Option<(SocketAddrV4, EndpointScope)>,
     ipv6_local_endpoint: Option<SocketAddrV6>,
     ipv6_scope: Option<PeerAdvertisementEndpointScope>,
     incoming_observed: bool,
@@ -99,6 +101,11 @@ impl AdvertisedPeerEndpointSelector {
         let state = SelectorState {
             endpoint,
             local_endpoint,
+            udp_endpoint: AdvertisedPeerEndpointState::OutboundOnly {
+                generation: 1,
+                reason: AdvertisedPeerEndpointUnavailableReason::ListenerDisabled,
+            },
+            udp_local_endpoint: None,
             ipv6_local_endpoint: None,
             ipv6_scope: None,
             incoming_observed: false,
@@ -166,6 +173,55 @@ impl AdvertisedPeerEndpointSelector {
             state.endpoint.generation()
         };
         state.endpoint = AdvertisedPeerEndpointState::Mapped {
+            generation,
+            local_endpoint,
+            external_endpoint,
+            mapping_generation,
+            valid_until,
+            renewal_health: RenewalHealth::Healthy,
+        };
+        self.publish(&state);
+        endpoint_changed
+    }
+
+    pub(crate) fn udp_mapping_verified(
+        &self,
+        mapping_generation: u64,
+        external_endpoint: SocketAddrV4,
+        lease: Duration,
+        now: Instant,
+    ) -> bool {
+        let Some(valid_until) = now.checked_add(lease) else {
+            return false;
+        };
+        let mut state = self.selector_state();
+        let Some((local_endpoint, _)) = state.udp_local_endpoint else {
+            return false;
+        };
+        if matches!(
+            state.udp_endpoint,
+            AdvertisedPeerEndpointState::Stopping { .. }
+        ) || mapping_generation < state.latest_mapping_generation
+        {
+            return false;
+        }
+        state.latest_mapping_generation = mapping_generation;
+        let endpoint_changed = !matches!(
+            &state.udp_endpoint,
+            AdvertisedPeerEndpointState::Mapped {
+                external_endpoint: current,
+                ..
+            } if *current == external_endpoint
+        );
+        let generation = if endpoint_changed {
+            next_generation(state.endpoint.generation())
+        } else {
+            state.endpoint.generation()
+        };
+        if endpoint_changed {
+            state.endpoint = replace_generation(state.endpoint.clone(), generation);
+        }
+        state.udp_endpoint = AdvertisedPeerEndpointState::Mapped {
             generation,
             local_endpoint,
             external_endpoint,
@@ -254,6 +310,44 @@ impl AdvertisedPeerEndpointSelector {
         true
     }
 
+    pub(crate) fn udp_renewal_failed(
+        &self,
+        mapping_generation: u64,
+        detail: String,
+        now: Instant,
+    ) -> bool {
+        let mut state = self.selector_state();
+        let AdvertisedPeerEndpointState::Mapped {
+            generation,
+            local_endpoint,
+            external_endpoint,
+            mapping_generation: current_generation,
+            valid_until,
+            ..
+        } = &state.udp_endpoint
+        else {
+            return false;
+        };
+        if *current_generation != mapping_generation || now >= *valid_until {
+            drop(state);
+            return self.expire_udp_mapping(now);
+        }
+        let next = AdvertisedPeerEndpointState::Mapped {
+            generation: *generation,
+            local_endpoint: *local_endpoint,
+            external_endpoint: *external_endpoint,
+            mapping_generation: *current_generation,
+            valid_until: *valid_until,
+            renewal_health: RenewalHealth::Unhealthy { detail },
+        };
+        if state.udp_endpoint == next {
+            return false;
+        }
+        state.udp_endpoint = next;
+        self.publish(&state);
+        true
+    }
+
     pub(crate) fn expire(&self, now: Instant) -> bool {
         let mut state = self.selector_state();
         let AdvertisedPeerEndpointState::Mapped { valid_until, .. } = &state.endpoint else {
@@ -267,6 +361,28 @@ impl AdvertisedPeerEndpointSelector {
         };
         state.endpoint = AdvertisedPeerEndpointState::Local {
             generation: next_generation(state.endpoint.generation()),
+            local_endpoint,
+            scope,
+        };
+        self.publish(&state);
+        true
+    }
+
+    pub(crate) fn expire_udp_mapping(&self, now: Instant) -> bool {
+        let mut state = self.selector_state();
+        let AdvertisedPeerEndpointState::Mapped { valid_until, .. } = &state.udp_endpoint else {
+            return false;
+        };
+        if now < *valid_until {
+            return false;
+        }
+        let Some((local_endpoint, scope)) = state.udp_local_endpoint else {
+            return false;
+        };
+        let generation = next_generation(state.endpoint.generation());
+        state.endpoint = replace_generation(state.endpoint.clone(), generation);
+        state.udp_endpoint = AdvertisedPeerEndpointState::Local {
+            generation,
             local_endpoint,
             scope,
         };
@@ -294,6 +410,45 @@ impl AdvertisedPeerEndpointSelector {
             state.ipv6_scope = Some(PeerAdvertisementEndpointScope::GlobalUnicast);
         }
         state.endpoint = with_generation(endpoint, generation);
+        self.publish(&state);
+        true
+    }
+
+    pub(crate) fn replace_udp_listener(&self, endpoint: Option<SocketAddrV4>) -> bool {
+        let mut state = self.selector_state();
+        if matches!(
+            state.udp_endpoint,
+            AdvertisedPeerEndpointState::Stopping { .. }
+        ) {
+            return false;
+        }
+        let local_endpoint = endpoint.map(|endpoint| {
+            let scope = if endpoint.ip().is_loopback() {
+                EndpointScope::Loopback
+            } else {
+                EndpointScope::LocalNetwork
+            };
+            (endpoint, scope)
+        });
+        let next = match local_endpoint {
+            Some((local_endpoint, scope)) => AdvertisedPeerEndpointState::Local {
+                generation: state.udp_endpoint.generation(),
+                local_endpoint,
+                scope,
+            },
+            None => AdvertisedPeerEndpointState::OutboundOnly {
+                generation: state.udp_endpoint.generation(),
+                reason: AdvertisedPeerEndpointUnavailableReason::ListenerDisabled,
+            },
+        };
+        if state.udp_local_endpoint == local_endpoint && state.udp_endpoint == next {
+            return false;
+        }
+        let generation = next_generation(state.endpoint.generation());
+        state.endpoint = replace_generation(state.endpoint.clone(), generation);
+        state.udp_endpoint = replace_generation(next, generation);
+        state.udp_local_endpoint = local_endpoint;
+        state.latest_mapping_generation = next_generation(state.latest_mapping_generation);
         self.publish(&state);
         true
     }
@@ -330,6 +485,11 @@ impl AdvertisedPeerEndpointSelector {
         state.endpoint = AdvertisedPeerEndpointState::Stopping {
             generation: next_generation(state.endpoint.generation()),
             last_endpoint,
+        };
+        let last_udp_endpoint = state.udp_endpoint.wire_endpoint(now);
+        state.udp_endpoint = AdvertisedPeerEndpointState::Stopping {
+            generation: state.endpoint.generation(),
+            last_endpoint: last_udp_endpoint,
         };
         self.publish(&state);
         true
@@ -377,12 +537,13 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
             scope: state.ipv6_scope,
         },
     );
+    let dht_ipv4 = project_family_endpoint(&state.udp_endpoint);
     match &state.endpoint {
         AdvertisedPeerEndpointState::OutboundOnly { generation, .. } => PeerAdvertisementEndpoint {
             generation: *generation,
             ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
             ipv6,
-            dht_ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv4,
             dht_ipv6: ipv6,
             stopping: false,
         },
@@ -401,14 +562,7 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
                 }),
             },
             ipv6,
-            dht_ipv4: PeerAdvertisementFamilyEndpoint {
-                endpoint: Some(SocketAddr::V4(*local_endpoint)),
-                source_address: Some((*local_endpoint.ip()).into()),
-                scope: Some(match scope {
-                    EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
-                    EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
-                }),
-            },
+            dht_ipv4,
             dht_ipv6: ipv6,
             stopping: false,
         },
@@ -425,16 +579,44 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
                 scope: Some(PeerAdvertisementEndpointScope::Mapped),
             },
             ipv6,
-            dht_ipv4: PeerAdvertisementFamilyEndpoint {
-                endpoint: Some(SocketAddr::V4(*external_endpoint)),
-                source_address: Some((*local_endpoint.ip()).into()),
-                scope: Some(PeerAdvertisementEndpointScope::Mapped),
-            },
+            dht_ipv4,
             dht_ipv6: ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Stopping { generation, .. } => {
             PeerAdvertisementEndpoint::stopping(*generation)
+        }
+    }
+}
+
+fn project_family_endpoint(
+    endpoint: &AdvertisedPeerEndpointState,
+) -> PeerAdvertisementFamilyEndpoint {
+    match endpoint {
+        AdvertisedPeerEndpointState::Local {
+            local_endpoint,
+            scope,
+            ..
+        } => PeerAdvertisementFamilyEndpoint {
+            endpoint: Some(SocketAddr::V4(*local_endpoint)),
+            source_address: Some((*local_endpoint.ip()).into()),
+            scope: Some(match scope {
+                EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
+                EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
+            }),
+        },
+        AdvertisedPeerEndpointState::Mapped {
+            local_endpoint,
+            external_endpoint,
+            ..
+        } => PeerAdvertisementFamilyEndpoint {
+            endpoint: Some(SocketAddr::V4(*external_endpoint)),
+            source_address: Some((*local_endpoint.ip()).into()),
+            scope: Some(PeerAdvertisementEndpointScope::Mapped),
+        },
+        AdvertisedPeerEndpointState::OutboundOnly { .. }
+        | AdvertisedPeerEndpointState::Stopping { .. } => {
+            PeerAdvertisementFamilyEndpoint::outbound_only()
         }
     }
 }
@@ -679,6 +861,68 @@ mod tests {
         assert_eq!(
             selector.subscribe_wire().borrow().ipv6,
             PeerAdvertisementFamilyEndpoint::outbound_only()
+        );
+    }
+
+    #[test]
+    fn udp_listener_and_mapping_are_independent_from_tcp() {
+        let selector = local_selector();
+        let udp_local = SocketAddrV4::new(Ipv4Addr::new(192, 168, 50, 12), 41_235);
+        assert!(selector.replace_udp_listener(Some(udp_local)));
+        let local_wire = *selector.subscribe_wire().borrow();
+        assert_eq!(
+            local_wire.ipv4.endpoint,
+            Some("192.168.50.12:41234".parse().unwrap())
+        );
+        assert_eq!(
+            local_wire.dht_ipv4.endpoint,
+            Some(SocketAddr::V4(udp_local))
+        );
+
+        let now = Instant::now();
+        let mapping_generation = selector.begin_mapping_generation();
+        let udp_external = SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 20), 48_002);
+        assert!(selector.udp_mapping_verified(
+            mapping_generation,
+            udp_external,
+            Duration::from_secs(60),
+            now,
+        ));
+        let mapped_wire = *selector.subscribe_wire().borrow();
+        assert_eq!(mapped_wire.ipv4, local_wire.ipv4);
+        assert_eq!(
+            mapped_wire.dht_ipv4.endpoint,
+            Some(SocketAddr::V4(udp_external))
+        );
+        assert_eq!(
+            mapped_wire.dht_ipv4.scope,
+            Some(PeerAdvertisementEndpointScope::Mapped)
+        );
+
+        let tcp_external = SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 20), 48_001);
+        assert!(selector.mapping_verified(
+            mapping_generation,
+            tcp_external,
+            Duration::from_secs(60),
+            now,
+        ));
+        let both_mapped = *selector.subscribe_wire().borrow();
+        assert_eq!(
+            both_mapped.ipv4.endpoint,
+            Some(SocketAddr::V4(tcp_external))
+        );
+        assert_eq!(
+            both_mapped.dht_ipv4.endpoint,
+            Some(SocketAddr::V4(udp_external))
+        );
+
+        assert!(selector.udp_renewal_failed(mapping_generation, "timeout".to_owned(), now,));
+        assert!(selector.expire_udp_mapping(now + Duration::from_secs(60)));
+        let expired_wire = *selector.subscribe_wire().borrow();
+        assert_eq!(expired_wire.ipv4.endpoint, both_mapped.ipv4.endpoint);
+        assert_eq!(
+            expired_wire.dht_ipv4.endpoint,
+            Some(SocketAddr::V4(udp_local))
         );
     }
 
