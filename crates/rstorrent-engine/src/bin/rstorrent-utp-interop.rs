@@ -26,7 +26,7 @@ use rstorrent_engine::{
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo, MetainfoMode};
 use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +48,7 @@ Usage:
   rstorrent-utp-interop impairment-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop product-mtu-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop diagnostic-mtu-seed --metainfo PATH --storage-root PATH
+  rstorrent-utp-interop platform-mtu-probe
   rstorrent-utp-interop wan-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop wan-mapping-audit --local-port PORT --external-port PORT";
 
@@ -118,6 +119,7 @@ enum Arguments {
         local_port: u16,
         external_port: u16,
     },
+    PlatformMtuProbe,
 }
 
 impl Arguments {
@@ -135,6 +137,7 @@ impl Arguments {
                 scope: SeedScope::Loopback,
                 ..
             }
+            | Self::PlatformMtuProbe
             | Self::MappingAudit { .. } => LOOPBACK_ROLE_TIMEOUT,
             Self::Seed {
                 scope:
@@ -274,6 +277,18 @@ impl Arguments {
                         .ok_or_else(|| "wan-mapping-audit requires --external-port".to_owned())?,
                 })
             }
+            "platform-mtu-probe" => {
+                if metainfo.is_some()
+                    || peer.is_some()
+                    || output.is_some()
+                    || storage_root.is_some()
+                    || local_port.is_some()
+                    || external_port.is_some()
+                {
+                    return Err("platform-mtu-probe received an argument".to_owned());
+                }
+                Ok(Self::PlatformMtuProbe)
+            }
             _ => Err(format!("unknown role {role}")),
         }
     }
@@ -409,6 +424,7 @@ async fn run(arguments: Arguments) -> Result<(), Box<dyn Error>> {
             local_port,
             external_port,
         } => run_mapping_audit(local_port, external_port).await,
+        Arguments::PlatformMtuProbe => run_platform_mtu_probe().await,
     }
 }
 
@@ -777,6 +793,115 @@ async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Bo
     Ok(())
 }
 
+async fn run_platform_mtu_probe() -> Result<(), Box<dyn Error>> {
+    const PROBE_PAYLOAD_BYTES: usize = 64 * 1024;
+
+    let left_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let right_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    let (mut left_udp, left_dht) = SessionUdpService::start(left_socket)?;
+    let (mut right_udp, right_dht) = SessionUdpService::start(right_socket)?;
+    let initial_generation = left_udp.generation();
+    let initial_endpoint = left_udp.local_address();
+    let initial_capability = format!("{:?}", left_udp.snapshot().ipv4_fragmentation_protection);
+
+    let replacement_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    left_udp.replace_socket(replacement_socket).await?;
+    let replacement_generation = left_udp.generation();
+    let replacement_endpoint = left_udp.local_address();
+    let replacement_capability = format!("{:?}", left_udp.snapshot().ipv4_fragmentation_protection);
+    if initial_capability != "Verified"
+        || replacement_capability != "Verified"
+        || replacement_generation == initial_generation
+        || replacement_endpoint == initial_endpoint
+    {
+        return Err(format!(
+            "platform MTU replacement was not verified: initial={initial_capability} "
+        )
+        .into());
+    }
+
+    let left_utp = UtpService::start(&mut left_udp)?;
+    let mut right_utp = UtpService::start(&mut right_udp)?;
+    let right_endpoint = right_udp.local_address();
+    let left_handle = left_utp.handle();
+    let (left_stream, right_stream) =
+        tokio::join!(left_handle.connect(right_endpoint), right_utp.accept());
+    let mut left_stream = left_stream?;
+    let mut right_stream = right_stream.ok_or("platform probe accepted no uTP stream")?;
+    let payload = (0..PROBE_PAYLOAD_BYTES)
+        .map(|index| u8::try_from(index % 251).expect("probe byte is bounded"))
+        .collect::<Vec<_>>();
+    let expected_sha1 = hex(&Sha1::digest(&payload));
+    let (send, receive) = tokio::join!(
+        async {
+            left_stream.write_all(&payload).await?;
+            left_stream.shutdown().await
+        },
+        async {
+            let mut received = Vec::new();
+            right_stream.read_to_end(&mut received).await?;
+            let digest = hex(&Sha1::digest(&received));
+            right_stream.shutdown().await?;
+            Ok::<_, std::io::Error>((received.len(), digest))
+        }
+    );
+    send?;
+    let (received_bytes, received_sha1) = receive?;
+    if received_bytes != payload.len() || received_sha1 != expected_sha1 {
+        return Err("platform MTU probe payload verification failed".into());
+    }
+    drop(left_stream);
+    drop(right_stream);
+
+    let live_left_utp = left_utp.snapshot();
+    let live_left_udp = left_udp.snapshot();
+    if live_left_utp.path_mtu_profile.as_str() != "dynamic_ipv4"
+        || live_left_utp
+            .selected_mtu_max_bytes
+            .is_none_or(|mtu| mtu < 1_456)
+        || live_left_utp.mtu_probes_acknowledged_high_water == 0
+        || live_left_udp.protected_sends_sent == 0
+        || live_left_udp.protected_sends_sent != live_left_utp.mtu_probe_datagrams_sent
+        || live_left_udp.fragmentation_restore_failures != 0
+    {
+        return Err("platform MTU probe did not confirm protected dynamic sends".into());
+    }
+
+    let terminal_left_utp = left_utp.shutdown().await?;
+    let terminal_right_utp = right_utp.shutdown().await?;
+    drop(left_dht);
+    drop(right_dht);
+    let terminal_left_udp = left_udp.shutdown().await?;
+    let terminal_right_udp = right_udp.shutdown().await?;
+    validate_terminal(&terminal_left_utp, &terminal_left_udp)?;
+    validate_terminal(&terminal_right_utp, &terminal_right_udp)?;
+
+    write_json(json!({
+        "event": "complete",
+        "role": "platform-mtu-probe",
+        "platform": env::consts::OS,
+        "capability": {
+            "initial": initial_capability,
+            "replacement": replacement_capability,
+            "generation_changed": replacement_generation != initial_generation,
+            "endpoint_changed": replacement_endpoint != initial_endpoint,
+        },
+        "payload": {
+            "bytes": received_bytes,
+            "sha1": received_sha1,
+        },
+        "resources": {
+            "live_udp": udp_json(live_left_udp),
+            "live_utp": utp_json(live_left_utp),
+            "terminal_udp": udp_json(terminal_left_udp),
+            "terminal_utp": utp_json(terminal_left_utp),
+            "terminal_peer_udp": udp_json(terminal_right_udp),
+            "terminal_peer_utp": utp_json(terminal_right_utp),
+        },
+    }))?;
+    Ok(())
+}
+
 fn diagnostic_upnp_error(error: UpnpError) -> Box<dyn Error> {
     format!("UPnP {:?}: {}", error.stage(), error.detail()).into()
 }
@@ -1119,6 +1244,10 @@ mod tests {
                 ..
             }
         ));
+        let platform_mtu_probe = Arguments::parse(strings(&["platform-mtu-probe"])).unwrap();
+        assert_eq!(platform_mtu_probe.timeout(), LOOPBACK_ROLE_TIMEOUT);
+        assert!(matches!(platform_mtu_probe, Arguments::PlatformMtuProbe));
+        assert!(Arguments::parse(strings(&["platform-mtu-probe", "--output", "x"])).is_err());
         let diagnostic_mtu_seed = Arguments::parse(strings(&[
             "diagnostic-mtu-seed",
             "--metainfo",
