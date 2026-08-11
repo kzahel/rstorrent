@@ -26,10 +26,12 @@ complementary WAN direction, a small bidirectional cohort, real-socket
 impairment/lifecycle hardening, and diagnostic-only MTU integration before the
 pre-product review. Tactical `130` is now closed with its WAN cohort evidence-
 limited and every controlled gate passing. Human review selected bounded
-product-composition recommendation A, now active as Tactical
+product-composition recommendation A as Tactical
 [`131`](../tactical/131-bounded-product-utp-composition.md): IPv4/plaintext,
 fixed 548, and default off, with source-first uTP/TCP selection and sequential
-fallback. Default enablement and BEP 29 graduation remain later gates.
+fallback. Tactical `131` is complete, and its required product-enablement
+review selected the bounded default-readiness recommendation. Default
+enablement and BEP 29 graduation remain later gates.
 
 ## Scope And Ownership
 
@@ -53,11 +55,13 @@ the single authoritative **Now**.
 
 ## Current Truth
 
-- Ordinary product peer dialing, listening, selection, and advertisement
-  remain TCP only. Tactical `125` adds a controlled engine-only uTP injection
-  in both directions and records it as another connection generation in the
-  existing transport-neutral peer lifecycle rather than creating a second
-  peer model.
+- Every shipped/default product client remains TCP only. Completed Tactical
+  `131` adds one construction-only `PreferUtp` application path: the session
+  accepts incoming IPv4 plaintext uTP, eligible outgoing dials prefer uTP and
+  fall back sequentially to TCP after joined transport failure, and the
+  existing peer lifecycle reports the actual selected/final transport. There
+  is no persisted setting, presentation, UDP mapping, uTP advertisement, or
+  default change.
 - The session's one bounded UDP receive owner per family now classifies shallow
   uTP shape before DHT and feeds independent 256-entry uTP and 64-entry DHT
   routes. Each connection has a separate 64-datagram queue; generation-tagged
@@ -87,6 +91,14 @@ the single authoritative **Now**.
   pinned libtorrent. Completed Tactical `127` additionally proves the leecher
   role over one mapped direct public path. No reverse WAN result, product
   policy, public product listener, or public-swarm support evidence exists.
+- The retained
+  [`utp_product_integration.py`](../../tests/interop/utp_product_integration.py)
+  proves the default-off application composition against pinned libtorrent in
+  incoming uTP, outgoing uTP, and TCP-only fallback roles. All three transfer
+  and independently hash the exact 2,097,883-byte fixture with one application
+  peer, actual transport views, bounded fixed-runtime counters, and joined
+  shutdown. The unchanged default-TCP/Fast/MSE application regression also
+  passes with no uTP service.
 - Completed Tactical `119` now supplies the independently authored,
   dependency-free v1 codec and deterministic bounded connection/reliability
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
@@ -551,6 +563,53 @@ lease, resource, cleanup, hostile-runtime, and stopping contracts. It may
 repair evidence-backed defects autonomously and commits by stage, then stops
 at the pre-product review.
 
+## Bounded Stage 5 Composition Result And Review Choices
+
+Human review selected bounded composition recommendation A after Tactical
+`130`. Completed Tactical `131` now supplies one explicit, default-off
+application policy without claiming the rest of broad Stage 5:
+
+- one fixed-548 uTP service shares the session UDP owner and joins before UDP
+  shutdown;
+- incoming streams reuse the ordinary handshake, peer budget, torrent route,
+  upload, identity, view, and cancellation owners;
+- IPv4 plaintext outgoing dials prefer uTP, while IPv6 and encryption
+  `prefer`/`required` stay on TCP;
+- uTP transport failure joins to zero before one sequential TCP fallback under
+  the same logical dial, peer generation, and permit; and
+- shipped/default clients, mapping, advertisement, settings, presentation,
+  and the BEP 29 claim are unchanged.
+
+The controlled application gate passes against pinned libtorrent `2.0.13.0`
+in both uTP roles and against a TCP-only seed. Every case independently
+verifies the exact 2,097,883-byte fixture and one final application peer. The
+uTP cases retain fixed 548-byte MTU observations and zero worker panics. The
+fallback case sends three uTP datagrams, joins that worker to zero, reports one
+final TCP peer, and completes after 5.314 seconds. The unchanged default path
+passes ordinary initiated TCP, accepted Fast TCP, RSTorrent Fast TCP, and
+forced MSE with no uTP service. Formatting, workspace clippy, and the complete
+workspace test baseline pass.
+
+The fallback result exposes the next product risk: a first TCP-only endpoint
+pays the full five-second uTP timeout, and the result is not remembered across
+later logical attempts. The review considered these choices:
+
+1. **A — bounded default-readiness evidence (recommended):** keep shipped
+   defaults TCP-only and draft a source-first tactical for endpoint-scoped uTP
+   success/failure memory, retry/backoff semantics, a mixed TCP/uTP controlled
+   cohort, and an explicitly authorized opt-in ordinary-swarm observation.
+   Return to review before settings, default enablement, mapping,
+   advertisement, or claim graduation.
+2. **B — enable `PreferUtp` by default now:** this is not recommended because
+   the controlled TCP-only endpoint pays five seconds, repeated failures are
+   uncached, and no ordinary-swarm product cohort exists.
+3. **C — close the active campaign at default-off composition:** retain the
+   programmatic capability and return the readiness queue to Tactical `129`.
+
+The maintainer selected choice A on 2026-08-11. A new bounded tactical may
+execute the default-readiness work and its explicitly bounded public
+observation. Choice B remains a separate human product-policy decision.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -669,12 +728,14 @@ Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
 direct-interface preflight; post-Stage 4 solidification Tactical `130` is
 closed with the WAN cohort evidence-limited and every controlled gate
-passing; bounded default-off product composition Tactical `131` is active**.
+passing; bounded default-off product composition Tactical `131` is complete,
+and its product-enablement review selected recommendation A**.
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). The next action is to
-execute Tactical `131` through its product-enablement review. It composes only
-fixed-548 IPv4/plaintext uTP behind an explicit default-off policy and one
-sequential TCP fallback. Reachability, advertisement, presentation, default
-enablement, permanent network change, different host, dependency, public
-swarm, and support-claim authority remain outside this checkpoint.
+create and execute the default-readiness evidence tactical selected at
+Tactical `131`'s review while shipped defaults remain TCP-only. Reachability,
+advertisement, presentation, default enablement, permanent network change,
+different host, dependency, and support-claim authority remain outside this
+checkpoint; public-swarm work is limited to the new tactical's explicit
+bounded observation.

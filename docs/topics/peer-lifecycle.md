@@ -224,7 +224,8 @@ peer records failed.
 Tactical `035` makes the active lifecycle vocabulary transport-neutral:
 
 - direction is incoming or outgoing;
-- transport is TCP initially and later uTP without a new peer noun;
+- transport is the selected TCP or uTP subattempt and may change to TCP on
+  sequential fallback without a new peer noun;
 - lifecycle is transport connecting, protocol handshaking, connected, or
   disconnecting; and
 - choke, interest, metadata capability, availability, request, stall, and
@@ -253,10 +254,14 @@ socket tasks into deterministic registry or scheduler logic. Completed
 Tactical
 [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) now
 proves that controlled incoming uTP enters that same identity, duplicate-
-resolution, upload, and terminal-generation vocabulary. Ordinary product
-dialing/listening remains TCP and no second peer model was introduced.
+resolution, upload, and terminal-generation vocabulary. Completed Tactical
+[`131`](../tactical/131-bounded-product-utp-composition.md) composes that path
+into the application behind a default-off constructor policy. Selected uTP is
+published atomically with an outgoing connecting generation; joined fallback
+updates that same generation to TCP. Every shipped/default client remains TCP-
+only and no second peer model was introduced.
 
-Outgoing observation begins before TCP work, advances through transport and
+Outgoing observation begins before transport work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
 content handoff, and exposes disconnecting until the socket/worker, scheduler,
 request, payload, and registry owners finish exact cleanup. Stale completions
@@ -479,8 +484,7 @@ adaptive source, transport-owner, and evidence direction. Completed Tacticals
 the runtime-free bounded transport state. Completed Tactical `125` adds the
 controlled shared-UDP runtime and enters incoming uTP into this peer-
 connection-generation owner; one pinned-libtorrent seed run observes exactly
-one uTP generation and terminal removal. It does not change ordinary TCP-only
-product execution. Completed Tactical
+one uTP generation and terminal removal. Completed Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md) observes the same
 single generation and terminal removal while RSTorrent downloads over a
 direct public path from a remotely mapped pinned-libtorrent seed; product
@@ -494,6 +498,16 @@ connection caps, independent 64/256 datagram queues, consumer drop during
 retransmission, socket generations, and eight complete restarts. Every case
 and the complementary WAN sample end with zero terminal incoming, uTP, UDP,
 half-open, connection, and queue ownership and no worker panic.
+Completed Tactical
+[`131`](../tactical/131-bounded-product-utp-composition.md) adds the default-
+off application composition. One incoming and one outgoing product-backed uTP
+case each expose exactly one uTP generation; the TCP-only oracle exposes one
+outgoing generation that begins with selected uTP, joins that worker to zero,
+then reports TCP through handshake and completion. The same attempt, record,
+peer-budget permit, cancellation owner, trust result, and terminal cleanup
+span both transports. Default TCP/Fast/MSE application regressions still pass
+without a uTP service.
+
 Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records
 mature peer-ID duplicate resolution, and planned Tactical

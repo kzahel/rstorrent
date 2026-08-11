@@ -1,10 +1,11 @@
 # Tactical 131: Bounded Product uTP Composition
 
-Status: **Active**. Human review selected recommendation A on 2026-08-11:
-compose the proven uTP runtime into the ordinary application behind an
-explicit, default-off policy, initially IPv4, plaintext, and fixed at 548
-bytes. Default enablement and BEP 29 support graduation remain later human
-gates.
+Status: **Complete; follow-on recommendation A accepted**. Human review
+selected bounded product composition on 2026-08-11 and accepted the resulting
+default-readiness recommendation A. Commits `8d56a55`, `98e02cc`, and
+`7f2ba5e` plan, compose, and prove the default-off IPv4/plaintext fixed-548
+application path. Default enablement and BEP 29 support graduation remain
+later human gates.
 
 Topics: `utp-transport-campaign`, `peer-lifecycle`,
 `incoming-reachability-and-seeding`, `protocol-support`,
@@ -134,7 +135,7 @@ autonomously.
 - Ordinary runtime uses `UtpRuntimeConfig::fixed()` and a 548-byte IPv4 UDP
   payload. Tactical `130`'s diagnostic MTU constructor is not reachable from
   product composition.
-- The uTP admission supervisor has at most the existing 64 queued streams and
+- The uTP admission supervisor has at most the existing 16 queued streams and
   the incoming runtime's existing bounded pending-handshake permits. It owns
   and joins every task it starts.
 - One outgoing logical attempt owns exactly one peer-budget permit across uTP
@@ -252,3 +253,89 @@ cargo test --workspace
 6. Reconcile every owning topic, retain default-off behavior and the
    **Unsupported** BEP 29 claim, commit the result, and stop at the product-
    enablement human review.
+
+## Execution Result
+
+The stopping condition is met without widening the accepted policy:
+
+- `PeerTransportPolicy::TcpOnly` remains the `ApplicationConfig` default.
+  `PreferUtp` is construction-only and has no persisted setting, generated
+  contract, UI, or shipped-client default.
+- One `SessionUtpPeerService` starts the fixed uTP runtime from the existing
+  session UDP owner, admits its 16-entry incoming stream queue through the
+  existing pending-handshake and peer-budget gates, and joins the runtime and
+  every admission before incoming-peer and UDP shutdown.
+- Eligible outgoing IPv4 `disabled`/`allow` dials select uTP. IPv6 and
+  `prefer`/`required` encryption select TCP. The selected transport is
+  published atomically with the one peer generation and replaced by the
+  actual TCP transport only if fallback occurs.
+- A connect timeout now cancels and joins its uTP worker before returning.
+  Dropping the logical dial future also cancels the worker. TCP fallback starts
+  only after the uTP active-connection count is zero and retains the same
+  attempt, peer generation, cancellation owner, and peer-budget permit.
+- The controlled seed diagnostic alone accepts `--utp`, reports the shared
+  session UDP endpoint, and emits bounded uTP counters. Its ordinary path
+  reports `utp: null`; no product endpoint advertisement or UDP mapping was
+  added.
+
+The exact product integration gate passed all three cases against pinned
+libtorrent `2.0.13.0`:
+
+| Case | Exact result | Transport and ownership evidence |
+| --- | --- | --- |
+| Application seed, libtorrent leecher | 2,097,883 bytes, 33 pieces, SHA-1 `cdce24126a8e65854d876c0b83ad3ba19748f6dc`, 1.255 seconds | one incoming uTP peer; zero libtorrent TCP peers; 4,084 application uTP datagrams; fixed 548-byte MTU; zero worker panics; joined shutdown |
+| Libtorrent seed, application leecher | same exact bytes, pieces, and SHA-1, 0.303 seconds | one outgoing uTP peer; zero libtorrent TCP peers; 913 application uTP datagrams; fixed 548-byte MTU; zero worker panics; joined shutdown |
+| TCP-only libtorrent seed, application leecher | same exact bytes, pieces, and SHA-1, 5.314 seconds | three unanswered uTP datagrams including two retransmissions; uTP active count zero before TCP; one final outgoing TCP peer; one logical connection high-water; joined shutdown |
+
+The fallback case makes one deferred risk concrete: a first encounter with a
+TCP-only endpoint pays the full five-second uTP connect timeout. No endpoint
+capability memory exists, so a later logical attempt can pay it again. This
+does not violate the current default-off scope, but it is evidence for the
+recommended next slice before default enablement.
+
+## Validation Evidence
+
+The following gates pass on 2026-08-11:
+
+```text
+cargo test -p rstorrent-engine connect_timeout_joins_worker_before_returning
+cargo test -p rstorrent-engine dropped_connect_future_cancels_worker
+cargo test -p rstorrent-engine utp_selection_is_ipv4_and_plaintext_only
+cargo test -p rstorrent-engine socket_set_selects_utp_under_one_peer_budget_permit
+cargo test -p rstorrent-engine utp_connect_timeout_falls_back_to_tcp_in_same_attempt
+cargo test -p rstorrent-session session_utp_is_default_off_and_explicitly_joined
+cargo test -p rstorrent-session --bin rstorrent-incoming-seed
+tests/interop/.venv/bin/python tests/interop/utp_product_integration.py
+tests/interop/.venv/bin/python tests/interop/incomplete_duplex.py
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
+
+The default-TCP regression passed ordinary initiated TCP, accepted Fast TCP,
+RSTorrent-to-RSTorrent Fast TCP, and forced MSE with `utp: null` throughout.
+The complete workspace passed with only its existing opt-in ignored tests. No
+temporary fixture, profile, log, capture, mapping, or process was retained.
+
+## Product-Enablement Review Decision
+
+1. **A — bounded default-readiness evidence (recommended):** keep all shipped
+   defaults TCP-only and draft one source-first tactical for endpoint-scoped
+   uTP success/failure memory, bounded retry/backoff semantics, a mixed
+   TCP/uTP controlled cohort, and an explicitly authorized opt-in ordinary-
+   swarm observation. Return to human review before a setting, default,
+   mapping, advertisement, or support claim.
+2. **B — enable `PreferUtp` by default now:** make eligible IPv4 plaintext
+   product dials and the application listener use uTP immediately. This is not
+   recommended because the controlled TCP-only peer incurred a five-second
+   first-attempt delay, repeated-attempt behavior is uncached, and no ordinary-
+   swarm product cohort exists.
+3. **C — close the active uTP campaign at default-off composition:** retain
+   this proven programmatic capability, return the authoritative queue to
+   Tactical `129`, and leave default readiness, reachability, presentation,
+   and claim graduation for a later campaign.
+
+The maintainer selected choice A on 2026-08-11. A new bounded tactical may now
+plan and execute that default-readiness evidence. Its opt-in public observation
+must remain explicitly bounded; any later default, persisted setting, UDP
+mapping, advertisement, or protocol-claim change remains a human gate.

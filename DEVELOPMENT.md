@@ -461,6 +461,17 @@ uv run --project tests/interop --locked \
   python tests/interop/incomplete_duplex.py
 ```
 
+The default-off product uTP profile explicitly opts the application diagnostic
+into fixed-548 IPv4/plaintext uTP. It verifies incoming and outgoing exact
+transfers against pinned libtorrent, then proves a joined uTP timeout and
+sequential TCP fallback against a TCP-only seed. Ordinary product defaults are
+unchanged:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/utp_product_integration.py
+```
+
 The concurrent-torrent profile downloads independent deterministic fixtures
 from separate pinned-libtorrent source sessions. It alternates recorded case
 order, checks the single-torrent and two-torrent throughput gates, and reports

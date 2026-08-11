@@ -414,8 +414,12 @@ and DHT transport consumption. Completed Tactical
 [`125`](../tactical/125-shared-udp-utp-runtime-and-loopback-interop.md) now
 adds a separate bounded uTP route to that receive owner and proves one
 explicitly injected incoming IPv4 loopback stream through the existing peer-
-budget, registration, identity, upload, content-read, and cleanup path. The
-ordinary product listener remains TCP-only, uTP is not advertised, and UDP
+budget, registration, identity, upload, content-read, and cleanup path.
+Completed Tactical
+[`131`](../tactical/131-bounded-product-utp-composition.md) construction-only
+policy now starts that fixed-548 service in the application and proves one
+incoming IPv4 loopback transfer through the same ordinary admission owner.
+Every shipped/default client remains TCP-only, uTP is not advertised, and UDP
 mapping still waits for an advertisable product capability. Tactical `127`'s
 temporary remote diagnostic UDP lease was deliberately not that product
 capability: it existed only for one controlled WAN evidence direction and its

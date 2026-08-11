@@ -377,7 +377,10 @@ Tactical `127` completed one exact direct-public-path leecher transfer and
 cleanup; human review paused uTP; Tactical `128` completed controlled TCP
 diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
 Tactical `130` is closed with its WAN cohort evidence-limited and every
-controlled gate passing. The campaign is at pre-product review**.
+controlled gate passing; and Tactical `131` completes bounded default-off
+application composition, exact incoming/outgoing/fallback product interop, and
+the default-TCP regression. Its product-enablement review selected bounded
+default-readiness recommendation A**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -390,17 +393,26 @@ bookmark coordination, direct Rust TCP/UDP, ordinary expiration, finite
 continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
-Latest closed tactical:
+Latest completed tactical:
+[`131`](../tactical/131-bounded-product-utp-composition.md). One construction-
+only policy composes fixed-548 IPv4/plaintext uTP into the application while
+every shipped/default client remains TCP-only. Exact pinned-libtorrent
+application transfers pass with one incoming uTP peer, one outgoing uTP peer,
+and one final TCP peer after a joined uTP timeout. The exact 2,097,883-byte
+fixture, actual peer transport views, one logical permit/generation, bounded
+runtime counters, default TCP/Fast/MSE regressions, and terminal cleanup pass.
+
+Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
 complementary locally mapped WAN direction, exact six-profile real-socket
 impairment transfers, hostile endpoint/connection/queue/generation/cancellation
 bounds, and controlled diagnostic-MTU convergence to 1,269 bytes under a
 1,280-byte black hole without congestion reduction. The fresh bidirectional
 WAN cohort remains explicitly evidence-limited after its attempt budget
-expired; ordinary runtime remains fixed at 548 bytes and product uTP remains
-disabled.
+expired; ordinary runtime remains fixed at 548 bytes and shipped/default
+product uTP remains disabled.
 
-Latest completed tactical:
+Earlier completed mapped-WAN tactical:
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md). A reusable isolated
 libtorrent `2.0.13.0` oracle on `pimom` exposed one query-confirmed finite UDP
 UPnP mapping. RSTorrent downloaded the exact 2,097,883-byte fixture over the
@@ -412,20 +424,19 @@ unmeasured. Tactical `130` subsequently completed its first reverse sample:
 the exact fixture passed from a locally mapped RSTorrent seed to the pinned
 remote leecher in 92.140 seconds with one uTP/zero TCP peers, exact joined
 lease deletion, and an independent zero-residue audit. Two bounded diagnostic
-retries also passed, but the full fresh cohort did not; product uTP stays
-disabled.
+retries also passed, but the full fresh cohort did not; shipped/default product
+uTP stays disabled.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute active Tactical `131` through its product-
-enablement review. Human review selected bounded recommendation A: compose
-fixed-548 IPv4/plaintext uTP behind an explicit default-off application policy,
-with source-first selection and one sequential TCP fallback under the existing
-logical dial owner. Do not run another external sample without later human
-authority. Default enablement, reachability/advertisement, presentation,
-public swarm, dependency, permanent network change, and support-claim
-authority remain outside the tactical.
+Next executable action: create the bounded default-readiness tactical selected
+at completed Tactical `131`'s product-enablement review. It covers endpoint-
+scoped uTP capability memory, retry/backoff semantics, a mixed controlled
+cohort, and an explicitly bounded opt-in ordinary-swarm observation while
+shipped defaults remain TCP-only. Default enablement, reachability/
+advertisement, presentation, dependency, permanent network change, and
+support-claim authority remain separate gates.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -446,6 +457,15 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `8d56a55`, `98e02cc`, and `7f2ba5e` complete Tactical `131`'s
+  source-first plan, joined default-off session composition, eligible
+  transport selection, cancellation-safe sequential TCP fallback, actual
+  transport views, and controlled product harness. Incoming uTP, outgoing uTP,
+  and TCP-only fallback each hash-verify the exact 2,097,883-byte fixture with
+  one final application peer, fixed 548-byte uTP where established, zero
+  worker panics, and joined shutdown. The unchanged default path passes
+  ordinary TCP, Fast, RSTorrent-to-RSTorrent, and forced-MSE cases with no uTP
+  service; formatting, workspace clippy, and the complete workspace pass;
 - Tactical `127` establishes the exact isolated `pimom` oracle, one verified
   finite remote UDP mapping, and a direct-public-path transfer of the exact
   fixture to RSTorrent in 82.239 seconds with one uTP peer, zero TCP peers,
@@ -478,8 +498,10 @@ Last completed evidence:
 - 87 focused protocol uTP, 14 runtime lifecycle, 11 shared-UDP, 18 UPnP, and
   ten WAN contract tests pass alongside both controlled loopback roles, both
   real-socket profile sets, and the complete Rust workspace; and
-- no dependency, manifest, unsafe code, foreign source, public swarm, visible
-  client, product transport policy, or support claim was added;
+- Tactical `131` adds no dependency, manifest, unsafe code, foreign source,
+  public swarm, visible-client change, persisted setting, mapping,
+  advertisement, default change, or support claim; its construction-only
+  transport policy remains default off;
 - commits `b9e86f5`, `c4c2459`, `a5e2829`, and `a83d226` add Tactical `119`'s
   independently authored, dependency-free uTP codec, receive ordering, send
   reliability, and connection lifecycle under the protocol crate's inward
