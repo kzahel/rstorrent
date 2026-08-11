@@ -34,9 +34,11 @@ review selected the bounded default-readiness recommendation. Default
 readiness Tactical
 [`132`](../tactical/132-utp-default-readiness-evidence.md) is now complete
 after bounded endpoint memory, mixed real-socket evidence, retained product
-interop, and one successful metadata-only public observation. The campaign is
-at its product-default human review. Default enablement and BEP 29 graduation
-remain separate decisions at that review.
+interop, and one successful metadata-only public observation. Human review
+selected bounded default enablement recommendation A. Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) is active to change
+the common application default, validate desktop/Android lifecycle and
+fallback, and graduate only the implemented BEP 29 subset to **Partial**.
 
 ## Scope And Ownership
 
@@ -668,7 +670,10 @@ The review choices are:
    outbound selection and fallback are now independently ready, while NAT
    reachability and announce-port semantics require a broader product policy.
 
-No choice is implicit. Shipped/default clients remain TCP-only at this stop.
+The maintainer selected choice A on 2026-08-11. Active Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) owns that bounded
+change. Shipped/default clients remain TCP-only and BEP 29 remains
+**Unsupported** until the tactical's gates pass and its implementation lands.
 
 ## Validation Contract
 
@@ -788,14 +793,14 @@ Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
 direct-interface preflight; post-Stage 4 solidification Tactical `130` is
 closed with the WAN cohort evidence-limited and every controlled gate
-passing; bounded default-off product composition Tactical `131` is complete;
-and default-readiness Tactical `132` is complete with the campaign at its
-product-default human review**.
+passing; bounded default-off product composition Tactical `131` and
+default-readiness Tactical `132` are complete; and product-default Tactical
+`133` is active after human selection of recommendation A**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is the
-human choice among the default-readiness review options above. Reachability,
-tracker/DHT incoming-endpoint advertisement, presentation, default enablement,
-permanent network change, different host, dependency, and support-claim
-authority remain outside the completed tactical; no further public-swarm
-attempt is authorized.
+[`capability-readiness.md`](capability-readiness.md). The next action is to
+execute Tactical `133`'s common construction-default, platform lifecycle,
+controlled fallback, and exact **Partial** claim gates. Reachability,
+tracker/DHT incoming-endpoint advertisement, presentation, permanent network
+change, different host, dependency, and a broader support claim remain outside
+the tactical; no further public-swarm attempt is authorized.

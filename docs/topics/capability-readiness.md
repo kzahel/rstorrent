@@ -338,12 +338,12 @@ ownership. Shipped/default clients and the BEP 29 claim remain unchanged.
 ### Now
 
 - Tactical [`132`](../tactical/132-utp-default-readiness-evidence.md) is
-  complete, and its **product-default human review** is the single
-  authoritative work item. Recommendation A is one bounded tactical to make
-  the existing `PreferUtp` construction policy the shipped application
-  default, validate affected desktop/Android lifecycle and fallback, and
-  graduate only the implemented BEP 29 subset to **Partial**. No choice is
-  implicit; shipped clients remain TCP-only until the review decides.
+  complete and its product-default review selected recommendation A. Active
+  Tactical [`133`](../tactical/133-utp-product-default-enablement.md) is the
+  single authoritative work item: make the existing `PreferUtp` construction
+  policy the shipped application default, validate desktop/Android lifecycle
+  and fallback, and graduate only the implemented BEP 29 subset to **Partial**.
+  Defaults and the support claim remain unchanged until that tactical lands.
 
 ### Next
 

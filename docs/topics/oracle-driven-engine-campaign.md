@@ -56,7 +56,9 @@ cohort evidence-limited. Human review selected default-off composition
 Tactical [`131`](../tactical/131-bounded-product-utp-composition.md), then
 default-readiness Tactical
 [`132`](../tactical/132-utp-default-readiness-evidence.md); both are complete.
-The authoritative **Now** is Tactical `132`'s product-default human review.
+The review selected recommendation A, making uTP product-default Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) the authoritative
+**Now**.
 Tactical `129` remains ready and queued intact, and Tactical `122`'s classified
 Ubuntu result leaves focused-driver HTTP(S) tracker dispatch available after
 that queued item. The
@@ -439,15 +441,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: conduct Tactical
-[`132`](../tactical/132-utp-default-readiness-evidence.md)'s product-default
-human review. Recommendation A is a bounded tactical to make the existing
-`PreferUtp` construction policy the shipped default, validate affected
-desktop/Android lifecycle and fallback, and graduate only the implemented BEP
-29 subset to **Partial**. Shipped defaults remain TCP-only until that choice.
-Reachability and tracker/DHT incoming-endpoint advertisement, presentation,
-dependency, permanent network change, and broader support authority remain
-separate gates.
+Next executable action: execute active Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md). Change only the
+common application construction default to existing `PreferUtp`, validate
+desktop/Android inheritance and lifecycle plus controlled fallback, retain
+explicit TCP-only diagnostic gates, and graduate only the implemented BEP 29
+subset to **Partial**. Reachability, tracker/DHT incoming-endpoint
+advertisement, presentation, dependency, permanent network change, and a
+broader support claim remain separate gates.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

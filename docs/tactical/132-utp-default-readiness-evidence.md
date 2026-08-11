@@ -1,9 +1,11 @@
 # Tactical 132: uTP Default-Readiness Evidence
 
-Status: **Complete**. Tactical `131`'s product-enablement review selected this
-bounded recommendation A on 2026-08-11. The stopping condition is satisfied
-and the campaign is at its product-default human review. Shipped/default
-clients remain TCP-only.
+Status: **Complete; follow-on recommendation A accepted**. Tactical `131`'s
+product-enablement review selected this bounded recommendation A on
+2026-08-11. Its stopping condition was satisfied, and the subsequent
+product-default review selected Tactical
+[`133`](133-utp-product-default-enablement.md). Shipped/default clients remain
+TCP-only until that tactical lands.
 
 Topics: `utp-transport-campaign`, `peer-lifecycle`, `protocol-support`,
 `public-torrent-testing`, `performance-and-live-evidence`,
@@ -326,8 +328,9 @@ The evidence supports recommendation A:
    while mapping, announce-port semantics, and product status have distinct
    owners and risk.
 
-No choice is implicit. Recommendation A requires the human review because it
-changes every shipped client's construction policy and protocol claim.
+The maintainer selected choice A on 2026-08-11. Tactical
+[`133`](133-utp-product-default-enablement.md) now owns the bounded default and
+**Partial** claim change. No broader product or protocol authority follows.
 
 ## Execution Order
 
