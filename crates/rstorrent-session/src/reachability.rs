@@ -32,6 +32,21 @@ use crate::views::ViewHub;
 const DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 const RENEWAL_RETRY_DELAY: Duration = Duration::from_secs(60);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ipv4MappingKind {
+    Tcp,
+    Udp,
+}
+
+impl Ipv4MappingKind {
+    const fn transport(self) -> UpnpTransport {
+        match self {
+            Self::Tcp => UpnpTransport::Tcp,
+            Self::Udp => UpnpTransport::Udp,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ReachabilityEvent {
     Discovering,
@@ -62,7 +77,8 @@ pub(crate) struct ReachabilityOwnerCounts {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ReachabilityBlocks {
-    pub mapping: bool,
+    pub tcp_mapping: bool,
+    pub udp_mapping: bool,
     pub pinhole: bool,
 }
 
@@ -132,6 +148,7 @@ impl ReachabilityEvidenceProbe {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReachabilityStartInputs {
+    pub ipv4_udp_listener: Option<SocketAddrV4>,
     pub ipv6_listener: Option<SocketAddrV6>,
     pub blocks: ReachabilityBlocks,
     pub evidence: ReachabilityEvidenceProbe,
@@ -139,6 +156,7 @@ pub(crate) struct ReachabilityStartInputs {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct UncertainMappingLease {
+    pub transport: UpnpTransport,
     pub external_address: Ipv4Addr,
     pub external_port: u16,
     pub expires_at: Instant,
@@ -174,7 +192,8 @@ impl UncertainPinholeLease {
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct ReachabilityRunOutcome {
-    uncertain_mapping: Option<UncertainMappingLease>,
+    uncertain_tcp_mapping: Option<UncertainMappingLease>,
+    uncertain_udp_mapping: Option<UncertainMappingLease>,
     uncertain_pinhole: Option<UncertainPinholeLease>,
     error: Option<String>,
 }
@@ -182,7 +201,8 @@ struct ReachabilityRunOutcome {
 #[derive(Debug)]
 pub(crate) struct ReachabilityGenerationShutdown {
     pub terminal: ReachabilityOwnerCounts,
-    pub uncertain_mapping: Option<UncertainMappingLease>,
+    pub uncertain_tcp_mapping: Option<UncertainMappingLease>,
+    pub uncertain_udp_mapping: Option<UncertainMappingLease>,
     pub uncertain_pinhole: Option<UncertainPinholeLease>,
     pub error: Option<String>,
 }
@@ -234,28 +254,41 @@ impl ReachabilityCoordinator {
         settings_generation: SettingsDomainGeneration,
     ) -> Self {
         let ReachabilityStartInputs {
+            ipv4_udp_listener,
             ipv6_listener,
             blocks,
             evidence,
         } = inputs;
         let generation = endpoint_selector.begin_mapping_generation();
-        let mut mapping_state = ReachabilityState::new(generation, settings, listener_status);
+        let mut tcp_mapping_state = ReachabilityState::new(generation, settings, listener_status);
+        let mut udp_mapping_state =
+            ReachabilityState::new_udp(generation, settings, ipv4_udp_listener);
         let mut pinhole_state = Ipv6PinholeState::new(generation, settings, ipv6_listener);
-        let discovery_endpoint = mapping_state.local_endpoint();
-        if blocks.mapping {
-            mapping_state.block();
+        let discovery_endpoint = tcp_mapping_state
+            .local_endpoint()
+            .or_else(|| udp_mapping_state.local_endpoint());
+        if blocks.tcp_mapping {
+            tcp_mapping_state.block();
+        }
+        if blocks.udp_mapping {
+            udp_mapping_state.block();
         }
         if blocks.pinhole {
             pinhole_state.block();
         }
-        let _ =
-            views.set_port_mapping_status_for(settings_generation, mapping_state.status().clone());
+        let _ = views
+            .set_port_mapping_status_for(settings_generation, tcp_mapping_state.status().clone());
+        let _ = views.set_udp_port_mapping_status_for(
+            settings_generation,
+            udp_mapping_state.status().clone(),
+        );
         let _ =
             views.set_ipv6_pinhole_status_for(settings_generation, pinhole_state.status().clone());
         let cancellation = CancellationToken::new();
         let counters = Arc::new(ReachabilityCounters::default());
-        let has_work =
-            mapping_state.local_endpoint().is_some() || pinhole_state.internal_endpoint().is_some();
+        let has_work = tcp_mapping_state.local_endpoint().is_some()
+            || udp_mapping_state.local_endpoint().is_some()
+            || pinhole_state.internal_endpoint().is_some();
         let task = has_work.then(|| {
             counters.tasks.store(1, Ordering::Release);
             let task_cancellation = cancellation.clone();
@@ -264,7 +297,8 @@ impl ReachabilityCoordinator {
             let task_views = views.clone();
             tokio::spawn(async move {
                 let result = run_reachability(
-                    mapping_state,
+                    tcp_mapping_state,
+                    udp_mapping_state,
                     pinhole_state,
                     discovery_endpoint,
                     ReachabilityTaskContext {
@@ -305,10 +339,17 @@ impl ReachabilityCoordinator {
     pub(crate) async fn shutdown(mut self) -> Result<ReachabilityOwnerCounts, String> {
         let shutdown = self.shutdown_inner(true).await?;
         let mut errors = shutdown.error.into_iter().collect::<Vec<_>>();
-        if let Some(uncertain) = shutdown.uncertain_mapping {
+        for uncertain in [
+            shutdown.uncertain_tcp_mapping,
+            shutdown.uncertain_udp_mapping,
+        ]
+        .into_iter()
+        .flatten()
+        {
             errors.push(format!(
-                "{}; external endpoint {}:{} may remain for {} seconds",
+                "{}; external {:?} endpoint {}:{} may remain for {} seconds",
                 uncertain.detail,
+                uncertain.transport,
                 uncertain.external_address,
                 uncertain.external_port,
                 uncertain.remaining_lease_seconds(Instant::now()),
@@ -361,7 +402,8 @@ impl ReachabilityCoordinator {
         }
         Ok(ReachabilityGenerationShutdown {
             terminal,
-            uncertain_mapping: outcome.uncertain_mapping,
+            uncertain_tcp_mapping: outcome.uncertain_tcp_mapping,
+            uncertain_udp_mapping: outcome.uncertain_udp_mapping,
             uncertain_pinhole: outcome.uncertain_pinhole,
             error: outcome.error,
         })
@@ -388,7 +430,8 @@ async fn run_mapping(
         settings_generation,
         discovery_config,
     } = context;
-    if let Err(error) = publish(
+    if let Err(error) = publish_mapping_status(
+        Ipv4MappingKind::Tcp,
         &mut state,
         &views,
         settings_generation,
@@ -406,7 +449,14 @@ async fn run_mapping(
         Ok(config) => config,
         Err(error) => {
             return ReachabilityRunOutcome {
-                error: publish_failure(&mut state, &views, settings_generation, error).err(),
+                error: publish_failure(
+                    Ipv4MappingKind::Tcp,
+                    &mut state,
+                    &views,
+                    settings_generation,
+                    error,
+                )
+                .err(),
                 ..ReachabilityRunOutcome::default()
             };
         }
@@ -415,12 +465,20 @@ async fn run_mapping(
         Ok(gateway) => gateway,
         Err(error) => {
             return ReachabilityRunOutcome {
-                error: publish_failure(&mut state, &views, settings_generation, error).err(),
+                error: publish_failure(
+                    Ipv4MappingKind::Tcp,
+                    &mut state,
+                    &views,
+                    settings_generation,
+                    error,
+                )
+                .err(),
                 ..ReachabilityRunOutcome::default()
             };
         }
     };
     run_ipv4_mapping(
+        Ipv4MappingKind::Tcp,
         state,
         local_endpoint,
         gateway,
@@ -455,16 +513,33 @@ fn context_without_discovery(
 }
 
 async fn run_reachability(
-    mut mapping_state: ReachabilityState,
+    mut tcp_mapping_state: ReachabilityState,
+    mut udp_mapping_state: ReachabilityState,
     mut pinhole_state: Ipv6PinholeState,
     discovery_endpoint: Option<SocketAddrV4>,
     context: ReachabilityTaskContext,
 ) -> ReachabilityRunOutcome {
-    let mapping_active = mapping_state.local_endpoint().is_some();
+    let tcp_mapping_active = tcp_mapping_state.local_endpoint().is_some();
+    let udp_mapping_active = udp_mapping_state.local_endpoint().is_some();
     let pinhole_active = pinhole_state.internal_endpoint().is_some();
-    if mapping_active
-        && let Err(error) = publish(
-            &mut mapping_state,
+    if tcp_mapping_active
+        && let Err(error) = publish_mapping_status(
+            Ipv4MappingKind::Tcp,
+            &mut tcp_mapping_state,
+            &context.views,
+            context.settings_generation,
+            ReachabilityEvent::Discovering,
+        )
+    {
+        return ReachabilityRunOutcome {
+            error: Some(error),
+            ..ReachabilityRunOutcome::default()
+        };
+    }
+    if udp_mapping_active
+        && let Err(error) = publish_mapping_status(
+            Ipv4MappingKind::Udp,
+            &mut udp_mapping_state,
             &context.views,
             context.settings_generation,
             ReachabilityEvent::Discovering,
@@ -491,9 +566,24 @@ async fn run_reachability(
     let Some(discovery_endpoint) = discovery_endpoint else {
         let detail = "UPnP discovery requires the current IPv4 listener address".to_owned();
         let mut errors = Vec::new();
-        if mapping_active
-            && let Err(error) = publish(
-                &mut mapping_state,
+        if tcp_mapping_active
+            && let Err(error) = publish_mapping_status(
+                Ipv4MappingKind::Tcp,
+                &mut tcp_mapping_state,
+                &context.views,
+                context.settings_generation,
+                ReachabilityEvent::Failed {
+                    stage: PortMappingFailureStage::Discovery,
+                    detail: detail.clone(),
+                },
+            )
+        {
+            errors.push(error);
+        }
+        if udp_mapping_active
+            && let Err(error) = publish_mapping_status(
+                Ipv4MappingKind::Udp,
+                &mut udp_mapping_state,
                 &context.views,
                 context.settings_generation,
                 ReachabilityEvent::Failed {
@@ -531,10 +621,9 @@ async fn run_reachability(
         Ok(config) => config,
         Err(error) => {
             return publish_shared_discovery_failure(
-                mapping_state,
+                tcp_mapping_state,
+                udp_mapping_state,
                 pinhole_state,
-                mapping_active,
-                pinhole_active,
                 &context,
                 error,
             );
@@ -547,37 +636,65 @@ async fn run_reachability(
                 return ReachabilityRunOutcome::default();
             }
             return publish_shared_discovery_failure(
-                mapping_state,
+                tcp_mapping_state,
+                udp_mapping_state,
                 pinhole_state,
-                mapping_active,
-                pinhole_active,
                 &context,
                 error,
             );
         }
     };
 
-    let mapping = match (mapping_active, services.ipv4_mapping) {
+    let any_mapping_active = tcp_mapping_active || udp_mapping_active;
+    let mapping = match (any_mapping_active, services.ipv4_mapping) {
         (true, UpnpDiscoveredService::Available(gateway)) => Some(gateway),
         (true, UpnpDiscoveredService::Absent) => {
-            let _ = publish(
-                &mut mapping_state,
-                &context.views,
-                context.settings_generation,
-                ReachabilityEvent::Failed {
-                    stage: PortMappingFailureStage::Description,
-                    detail: "gateway did not advertise WANIPConnection:2".to_owned(),
-                },
-            );
+            let detail = "gateway did not advertise WANIPConnection:2".to_owned();
+            if tcp_mapping_active {
+                let _ = publish_mapping_status(
+                    Ipv4MappingKind::Tcp,
+                    &mut tcp_mapping_state,
+                    &context.views,
+                    context.settings_generation,
+                    ReachabilityEvent::Failed {
+                        stage: PortMappingFailureStage::Description,
+                        detail: detail.clone(),
+                    },
+                );
+            }
+            if udp_mapping_active {
+                let _ = publish_mapping_status(
+                    Ipv4MappingKind::Udp,
+                    &mut udp_mapping_state,
+                    &context.views,
+                    context.settings_generation,
+                    ReachabilityEvent::Failed {
+                        stage: PortMappingFailureStage::Description,
+                        detail,
+                    },
+                );
+            }
             None
         }
         (true, UpnpDiscoveredService::Unavailable(error)) => {
-            let _ = publish_failure(
-                &mut mapping_state,
-                &context.views,
-                context.settings_generation,
-                error,
-            );
+            if tcp_mapping_active {
+                let _ = publish_failure(
+                    Ipv4MappingKind::Tcp,
+                    &mut tcp_mapping_state,
+                    &context.views,
+                    context.settings_generation,
+                    error.clone(),
+                );
+            }
+            if udp_mapping_active {
+                let _ = publish_failure(
+                    Ipv4MappingKind::Udp,
+                    &mut udp_mapping_state,
+                    &context.views,
+                    context.settings_generation,
+                    error,
+                );
+            }
             None
         }
         (false, _) => None,
@@ -608,39 +725,89 @@ async fn run_reachability(
         (false, _) => None,
     };
 
-    let mapping_future = async {
-        match (mapping_state.local_endpoint(), mapping) {
+    let tcp_gateway = mapping.clone();
+    let udp_gateway = mapping;
+    let tcp_context = context.clone();
+    let udp_context = context.clone();
+    let pinhole_context = context;
+    let tcp_mapping_future = async move {
+        match (tcp_mapping_state.local_endpoint(), tcp_gateway) {
             (Some(local_endpoint), Some(gateway)) => {
-                run_ipv4_mapping(mapping_state, local_endpoint, gateway, context.clone()).await
+                run_ipv4_mapping(
+                    Ipv4MappingKind::Tcp,
+                    tcp_mapping_state,
+                    local_endpoint,
+                    gateway,
+                    tcp_context,
+                )
+                .await
             }
             _ => ReachabilityRunOutcome::default(),
         }
     };
-    let pinhole_future = async {
+    let udp_mapping_future = async move {
+        match (udp_mapping_state.local_endpoint(), udp_gateway) {
+            (Some(local_endpoint), Some(gateway)) => {
+                run_ipv4_mapping(
+                    Ipv4MappingKind::Udp,
+                    udp_mapping_state,
+                    local_endpoint,
+                    gateway,
+                    udp_context,
+                )
+                .await
+            }
+            _ => ReachabilityRunOutcome::default(),
+        }
+    };
+    let pinhole_future = async move {
         match (pinhole_state.internal_endpoint(), firewall) {
             (Some(internal_endpoint), Some(firewall)) => {
-                run_ipv6_pinhole(pinhole_state, internal_endpoint, firewall, context.clone()).await
+                run_ipv6_pinhole(pinhole_state, internal_endpoint, firewall, pinhole_context).await
             }
             _ => ReachabilityRunOutcome::default(),
         }
     };
-    let (mapping_outcome, pinhole_outcome) = tokio::join!(mapping_future, pinhole_future);
-    combine_outcomes(mapping_outcome, pinhole_outcome)
+    let (tcp_mapping_outcome, udp_mapping_outcome, pinhole_outcome) =
+        tokio::join!(tcp_mapping_future, udp_mapping_future, pinhole_future);
+    combine_outcomes(tcp_mapping_outcome, udp_mapping_outcome, pinhole_outcome)
 }
 
 fn publish_shared_discovery_failure(
-    mut mapping_state: ReachabilityState,
+    mut tcp_mapping_state: ReachabilityState,
+    mut udp_mapping_state: ReachabilityState,
     mut pinhole_state: Ipv6PinholeState,
-    mapping_active: bool,
-    pinhole_active: bool,
     context: &ReachabilityTaskContext,
     error: UpnpError,
 ) -> ReachabilityRunOutcome {
-    record_failure_diagnostic(&context.views, &error);
+    let tcp_mapping_active = tcp_mapping_state.local_endpoint().is_some();
+    let udp_mapping_active = udp_mapping_state.local_endpoint().is_some();
+    let pinhole_active = pinhole_state.internal_endpoint().is_some();
+    if tcp_mapping_active {
+        record_failure_diagnostic(Ipv4MappingKind::Tcp, &context.views, &error);
+    }
+    if udp_mapping_active {
+        record_failure_diagnostic(Ipv4MappingKind::Udp, &context.views, &error);
+    }
     let mut errors = Vec::new();
-    if mapping_active
-        && let Err(publish_error) = publish(
-            &mut mapping_state,
+    if tcp_mapping_active
+        && let Err(publish_error) = publish_mapping_status(
+            Ipv4MappingKind::Tcp,
+            &mut tcp_mapping_state,
+            &context.views,
+            context.settings_generation,
+            ReachabilityEvent::Failed {
+                stage: failure_stage(error.stage()),
+                detail: error.detail().to_owned(),
+            },
+        )
+    {
+        errors.push(publish_error);
+    }
+    if udp_mapping_active
+        && let Err(publish_error) = publish_mapping_status(
+            Ipv4MappingKind::Udp,
+            &mut udp_mapping_state,
             &context.views,
             context.settings_generation,
             ReachabilityEvent::Failed {
@@ -671,22 +838,24 @@ fn publish_shared_discovery_failure(
 }
 
 fn combine_outcomes(
-    mapping: ReachabilityRunOutcome,
+    tcp_mapping: ReachabilityRunOutcome,
+    udp_mapping: ReachabilityRunOutcome,
     pinhole: ReachabilityRunOutcome,
 ) -> ReachabilityRunOutcome {
-    let error = match (mapping.error, pinhole.error) {
-        (Some(mapping), Some(pinhole)) => Some(format!("{mapping}; {pinhole}")),
-        (Some(error), None) | (None, Some(error)) => Some(error),
-        (None, None) => None,
-    };
+    let errors = [tcp_mapping.error, udp_mapping.error, pinhole.error]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     ReachabilityRunOutcome {
-        uncertain_mapping: mapping.uncertain_mapping,
+        uncertain_tcp_mapping: tcp_mapping.uncertain_tcp_mapping,
+        uncertain_udp_mapping: udp_mapping.uncertain_udp_mapping,
         uncertain_pinhole: pinhole.uncertain_pinhole,
-        error,
+        error: (!errors.is_empty()).then(|| errors.join("; ")),
     }
 }
 
 async fn run_ipv4_mapping(
+    kind: Ipv4MappingKind,
     mut state: ReachabilityState,
     local_endpoint: SocketAddrV4,
     gateway: UpnpGateway,
@@ -701,7 +870,8 @@ async fn run_ipv4_mapping(
         discovery_config: _,
         evidence: _,
     } = context;
-    if let Err(error) = publish(
+    if let Err(error) = publish_mapping_status(
+        kind,
         &mut state,
         &views,
         settings_generation,
@@ -713,19 +883,20 @@ async fn run_ipv4_mapping(
         };
     }
     let mut mapping = match gateway
-        .create_mapping(UpnpTransport::Tcp, local_endpoint.port(), &cancellation)
+        .create_mapping(kind.transport(), local_endpoint.port(), &cancellation)
         .await
     {
         Ok(mapping) => mapping,
         Err(error) => {
             return ReachabilityRunOutcome {
-                error: publish_failure(&mut state, &views, settings_generation, error).err(),
+                error: publish_failure(kind, &mut state, &views, settings_generation, error).err(),
                 ..ReachabilityRunOutcome::default()
             };
         }
     };
-    counters.mappings.store(1, Ordering::Release);
+    counters.mappings.fetch_add(1, Ordering::AcqRel);
     let mut run_error = publish_mapped(
+        kind,
         &mut state,
         &views,
         &endpoint_selector,
@@ -744,7 +915,11 @@ async fn run_ipv4_mapping(
         tokio::select! {
             _ = cancellation.cancelled() => break,
             _ = tokio::time::sleep(renewal_delay) => {
-                if endpoint_selector.expire(Instant::now())
+                let endpoint_expired = match kind {
+                    Ipv4MappingKind::Tcp => endpoint_selector.expire(Instant::now()),
+                    Ipv4MappingKind::Udp => endpoint_selector.expire_udp_mapping(Instant::now()),
+                };
+                if endpoint_expired
                     && let Err(error) = publish_selected_endpoint(&endpoint_selector, &views)
                 {
                     run_error = Some(error);
@@ -753,6 +928,7 @@ async fn run_ipv4_mapping(
                 match gateway.renew_mapping(&mut mapping, &cancellation).await {
                     Ok(()) => {
                         if let Err(error) = publish_mapped(
+                            kind,
                             &mut state,
                             &views,
                             &endpoint_selector,
@@ -772,7 +948,8 @@ async fn run_ipv4_mapping(
                         renewal_delay = mapping.renewal_delay();
                     }
                     Err(error) => {
-                        if let Err(publish_error) = publish(
+                        if let Err(publish_error) = publish_mapping_status(
+                            kind,
                             &mut state,
                             &views,
                             settings_generation,
@@ -785,17 +962,25 @@ async fn run_ipv4_mapping(
                             run_error = Some(publish_error);
                             continue;
                         }
-                        if endpoint_selector.renewal_failed(
-                            state.generation(),
-                            error.detail().to_owned(),
-                            Instant::now(),
-                        ) && let Err(publish_error) =
+                        let endpoint_changed = match kind {
+                            Ipv4MappingKind::Tcp => endpoint_selector.renewal_failed(
+                                state.generation(),
+                                error.detail().to_owned(),
+                                Instant::now(),
+                            ),
+                            Ipv4MappingKind::Udp => endpoint_selector.udp_renewal_failed(
+                                state.generation(),
+                                error.detail().to_owned(),
+                                Instant::now(),
+                            ),
+                        };
+                        if endpoint_changed && let Err(publish_error) =
                             publish_selected_endpoint(&endpoint_selector, &views)
                         {
                             run_error = Some(publish_error);
                             continue;
                         }
-                        record_failure_diagnostic(&views, &error);
+                        record_failure_diagnostic(kind, &views, &error);
                         let remaining =
                             lease_deadline.saturating_duration_since(Instant::now());
                         renewal_delay = if remaining.is_zero() {
@@ -808,7 +993,8 @@ async fn run_ipv4_mapping(
             }
         }
     }
-    if let Err(error) = publish(
+    if let Err(error) = publish_mapping_status(
+        kind,
         &mut state,
         &views,
         settings_generation,
@@ -823,12 +1009,13 @@ async fn run_ipv4_mapping(
         gateway.delete_mapping(&mapping, &cleanup_cancellation),
     )
     .await;
-    counters.mappings.store(0, Ordering::Release);
+    counters.mappings.fetch_sub(1, Ordering::AcqRel);
     let uncertain_mapping = match delete {
         Ok(Ok(())) => None,
         Ok(Err(error)) => {
-            record_failure_diagnostic(&views, &error);
+            record_failure_diagnostic(kind, &views, &error);
             Some(UncertainMappingLease {
+                transport: kind.transport(),
                 external_address: mapping.external_address,
                 external_port: mapping.external_port,
                 expires_at: lease_deadline,
@@ -836,16 +1023,24 @@ async fn run_ipv4_mapping(
             })
         }
         Err(_) => Some(UncertainMappingLease {
+            transport: kind.transport(),
             external_address: mapping.external_address,
             external_port: mapping.external_port,
             expires_at: lease_deadline,
             detail: "delete UPnP mapping: cleanup deadline elapsed".to_owned(),
         }),
     };
-    ReachabilityRunOutcome {
-        uncertain_mapping,
-        error: run_error,
-        ..ReachabilityRunOutcome::default()
+    match kind {
+        Ipv4MappingKind::Tcp => ReachabilityRunOutcome {
+            uncertain_tcp_mapping: uncertain_mapping,
+            error: run_error,
+            ..ReachabilityRunOutcome::default()
+        },
+        Ipv4MappingKind::Udp => ReachabilityRunOutcome {
+            uncertain_udp_mapping: uncertain_mapping,
+            error: run_error,
+            ..ReachabilityRunOutcome::default()
+        },
     }
 }
 
@@ -1131,13 +1326,15 @@ async fn run_ipv6_pinhole(
 }
 
 fn publish_mapped(
+    kind: Ipv4MappingKind,
     state: &mut ReachabilityState,
     views: &ViewHub,
     endpoint_selector: &AdvertisedPeerEndpointSelector,
     mapping: &UpnpMapping,
     settings_generation: SettingsDomainGeneration,
 ) -> Result<(), String> {
-    let current = publish(
+    let current = publish_mapping_status(
+        kind,
         state,
         views,
         settings_generation,
@@ -1150,23 +1347,35 @@ fn publish_mapped(
     if !current {
         return Ok(());
     }
-    endpoint_selector.mapping_verified(
-        state.generation(),
-        SocketAddrV4::new(mapping.external_address, mapping.external_port),
-        Duration::from_secs(u64::from(mapping.lease_seconds)),
-        Instant::now(),
-    );
+    let external_endpoint = SocketAddrV4::new(mapping.external_address, mapping.external_port);
+    let lease = Duration::from_secs(u64::from(mapping.lease_seconds));
+    match kind {
+        Ipv4MappingKind::Tcp => endpoint_selector.mapping_verified(
+            state.generation(),
+            external_endpoint,
+            lease,
+            Instant::now(),
+        ),
+        Ipv4MappingKind::Udp => endpoint_selector.udp_mapping_verified(
+            state.generation(),
+            external_endpoint,
+            lease,
+            Instant::now(),
+        ),
+    };
     publish_selected_endpoint(endpoint_selector, views)
 }
 
 fn publish_failure(
+    kind: Ipv4MappingKind,
     state: &mut ReachabilityState,
     views: &ViewHub,
     settings_generation: SettingsDomainGeneration,
     error: UpnpError,
 ) -> Result<(), String> {
-    record_failure_diagnostic(views, &error);
-    publish(
+    record_failure_diagnostic(kind, views, &error);
+    publish_mapping_status(
+        kind,
         state,
         views,
         settings_generation,
@@ -1232,16 +1441,23 @@ fn publish_pinhole(
     Ok(true)
 }
 
-fn publish(
+fn publish_mapping_status(
+    kind: Ipv4MappingKind,
     state: &mut ReachabilityState,
     views: &ViewHub,
     settings_generation: SettingsDomainGeneration,
     event: ReachabilityEvent,
 ) -> Result<bool, String> {
     if state.apply(state.generation(), event) {
-        return views
-            .set_port_mapping_status_for(settings_generation, state.status().clone())
-            .map_err(|error| error.to_string());
+        return match kind {
+            Ipv4MappingKind::Tcp => {
+                views.set_port_mapping_status_for(settings_generation, state.status().clone())
+            }
+            Ipv4MappingKind::Udp => {
+                views.set_udp_port_mapping_status_for(settings_generation, state.status().clone())
+            }
+        }
+        .map_err(|error| error.to_string());
     }
     Ok(true)
 }
@@ -1255,15 +1471,20 @@ fn publish_selected_endpoint(
         .map_err(|error| error.to_string())
 }
 
-fn record_failure_diagnostic(views: &ViewHub, error: &UpnpError) {
+fn record_failure_diagnostic(kind: Ipv4MappingKind, views: &ViewHub, error: &UpnpError) {
     let stage = failure_stage_name(error.stage());
+    let transport = kind.transport().as_str();
     let _ = views.record_diagnostic(
         DiagnosticSeverity::Warning,
         category::DISCOVERY_REACHABILITY,
         "upnp_mapping_failed",
         None,
-        "Automatic incoming TCP mapping failed; the local listener remains available",
-        &[("stage", stage), ("detail", error.detail())],
+        "Automatic incoming port mapping failed; the local listener remains available",
+        &[
+            ("transport", transport),
+            ("stage", stage),
+            ("detail", error.detail()),
+        ],
     );
 }
 
@@ -1545,6 +1766,27 @@ impl ReachabilityState {
         }
     }
 
+    pub(crate) fn new_udp(
+        generation: u64,
+        settings: &ClientSettings,
+        listener: Option<SocketAddrV4>,
+    ) -> Self {
+        let local_endpoint = eligible_udp_endpoint(settings, listener);
+        let status = if settings.port_mapping == PortMappingPolicy::Disabled {
+            PortMappingStatus::Disabled
+        } else if local_endpoint.is_some() {
+            PortMappingStatus::Discovering
+        } else {
+            PortMappingStatus::Ineligible
+        };
+        Self {
+            generation,
+            local_endpoint,
+            status,
+            stopping: false,
+        }
+    }
+
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
@@ -1649,6 +1891,31 @@ fn eligible_local_endpoint(
     Some(SocketAddrV4::new(address, *port))
 }
 
+fn eligible_udp_endpoint(
+    settings: &ClientSettings,
+    endpoint: Option<SocketAddrV4>,
+) -> Option<SocketAddrV4> {
+    if settings.port_mapping != PortMappingPolicy::Upnp
+        || !matches!(
+            settings.listener,
+            ListenerPolicy::AutomaticLocalNetwork | ListenerPolicy::FixedLocalNetwork { .. }
+        )
+    {
+        return None;
+    }
+    let endpoint = endpoint?;
+    let address = *endpoint.ip();
+    if endpoint.port() < 1_024
+        || address.is_unspecified()
+        || address.is_loopback()
+        || address.is_multicast()
+        || address == Ipv4Addr::BROADCAST
+    {
+        return None;
+    }
+    Some(endpoint)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1713,6 +1980,29 @@ mod tests {
             )
             .status(),
             &PortMappingStatus::Ineligible
+        );
+        let udp = SocketAddrV4::new(Ipv4Addr::new(192, 168, 50, 12), 41_235);
+        assert_eq!(
+            ReachabilityState::new_udp(4, &eligible_settings(), Some(udp)).local_endpoint(),
+            Some(udp),
+        );
+        assert_eq!(
+            ReachabilityState::new_udp(
+                5,
+                &eligible_settings(),
+                Some(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 41_235)),
+            )
+            .status(),
+            &PortMappingStatus::Ineligible,
+        );
+        assert_eq!(
+            ReachabilityState::new_udp(
+                6,
+                &eligible_settings(),
+                Some(SocketAddrV4::new(Ipv4Addr::new(192, 168, 50, 12), 1_023)),
+            )
+            .status(),
+            &PortMappingStatus::Ineligible,
         );
 
         let eligible = ReachabilityState::new(4, &eligible_settings(), &listening());
@@ -1859,6 +2149,7 @@ mod tests {
     fn uncertain_mapping_blocks_until_its_finite_lease_expires() {
         let now = Instant::now();
         let mapping = UncertainMappingLease {
+            transport: UpnpTransport::Tcp,
             external_address: Ipv4Addr::new(203, 0, 113, 10),
             external_port: 48_001,
             expires_at: now + Duration::from_millis(1_500),
@@ -1880,6 +2171,7 @@ mod tests {
         BothAvailable,
         PinholeDisallowed,
         MappingUnavailable,
+        UdpMappingUnavailable,
     }
 
     async fn exercise_scripted_dual_generation(
@@ -1887,6 +2179,7 @@ mod tests {
     ) -> (
         usize,
         usize,
+        PortMappingStatus,
         PortMappingStatus,
         Ipv6PinholeStatus,
         Vec<String>,
@@ -1897,12 +2190,20 @@ mod tests {
             port: 42_000,
         };
         let selector = AdvertisedPeerEndpointSelector::new(&listener);
+        let udp_endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 42_001);
+        selector.replace_udp_listener(Some(udp_endpoint));
         let ipv6 = ipv6_listener();
         selector.replace_ipv6_listener(Some(ipv6));
         let reachability_generation = selector.begin_mapping_generation();
         let mapping_state = ReachabilityState {
             generation: reachability_generation,
             local_endpoint: Some(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 42_000)),
+            status: PortMappingStatus::Discovering,
+            stopping: false,
+        };
+        let udp_mapping_state = ReachabilityState {
+            generation: reachability_generation,
+            local_endpoint: Some(udp_endpoint),
             status: PortMappingStatus::Discovering,
             stopping: false,
         };
@@ -1933,6 +2234,7 @@ mod tests {
         let evidence = ReachabilityEvidenceProbe::default();
         let task = tokio::spawn(run_reachability(
             mapping_state,
+            udp_mapping_state,
             pinhole_state,
             Some(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 42_000)),
             ReachabilityTaskContext {
@@ -1952,13 +2254,18 @@ mod tests {
                     selector.current(),
                     AdvertisedPeerEndpointState::Mapped { .. }
                 );
+                let udp_mapping_active = wire.dht_ipv4.scope
+                    == Some(rstorrent_engine::PeerAdvertisementEndpointScope::Mapped);
                 let pinhole_active = wire.ipv6.scope
                     == Some(rstorrent_engine::PeerAdvertisementEndpointScope::Pinholed);
                 let runtime = views.client_settings_for_testing();
                 let ready = match behavior {
-                    ScriptedDualBehavior::BothAvailable => mapping_active && pinhole_active,
+                    ScriptedDualBehavior::BothAvailable => {
+                        mapping_active && udp_mapping_active && pinhole_active
+                    }
                     ScriptedDualBehavior::PinholeDisallowed => {
                         mapping_active
+                            && udp_mapping_active
                             && runtime.ipv6_pinhole_status
                                 == Ipv6PinholeStatus::InboundPinholeDisallowed
                     }
@@ -1966,6 +2273,18 @@ mod tests {
                         pinhole_active
                             && matches!(
                                 runtime.port_mapping_status,
+                                PortMappingStatus::Failed { .. }
+                            )
+                            && matches!(
+                                runtime.udp_port_mapping_status,
+                                PortMappingStatus::Failed { .. }
+                            )
+                    }
+                    ScriptedDualBehavior::UdpMappingUnavailable => {
+                        mapping_active
+                            && pinhole_active
+                            && matches!(
+                                runtime.udp_port_mapping_status,
                                 PortMappingStatus::Failed { .. }
                             )
                     }
@@ -1990,7 +2309,12 @@ mod tests {
 
         cancellation.cancel();
         let outcome = task.await.expect("join combined reachability");
-        assert_eq!(outcome, ReachabilityRunOutcome::default());
+        assert_eq!(
+            outcome,
+            ReachabilityRunOutcome::default(),
+            "scripted transcript: {:?}",
+            transcript.lock().unwrap(),
+        );
         assert_eq!(counters.mappings.load(Ordering::Acquire), 0);
         assert_eq!(counters.pinholes.load(Ordering::Acquire), 0);
         if active_pinholes == 1 {
@@ -2016,6 +2340,7 @@ mod tests {
             active_mappings,
             active_pinholes,
             runtime.port_mapping_status,
+            runtime.udp_port_mapping_status,
             runtime.ipv6_pinhole_status,
             transcript,
         )
@@ -2023,10 +2348,14 @@ mod tests {
 
     #[tokio::test]
     async fn one_generation_owns_mapping_and_pinhole_with_joined_cleanup() {
-        let (mappings, pinholes, mapping_status, pinhole_status, transcript) =
+        let (mappings, pinholes, mapping_status, udp_mapping_status, pinhole_status, transcript) =
             exercise_scripted_dual_generation(ScriptedDualBehavior::BothAvailable).await;
-        assert_eq!((mappings, pinholes), (1, 1));
+        assert_eq!((mappings, pinholes), (2, 1));
         assert!(matches!(mapping_status, PortMappingStatus::Mapped { .. }));
+        assert!(matches!(
+            udp_mapping_status,
+            PortMappingStatus::Mapped { .. }
+        ));
         assert!(matches!(pinhole_status, Ipv6PinholeStatus::Pinholed { .. }));
         for expected in [
             "AddPortMapping",
@@ -2039,7 +2368,11 @@ mod tests {
                     .iter()
                     .filter(|entry| entry.as_str() == expected)
                     .count(),
-                1,
+                if expected == "AddPortMapping" || expected == "DeletePortMapping" {
+                    2
+                } else {
+                    1
+                },
                 "unexpected {expected} count in {transcript:?}",
             );
         }
@@ -2047,21 +2380,53 @@ mod tests {
 
     #[tokio::test]
     async fn mapping_and_pinhole_fail_independently() {
-        let (mappings, pinholes, mapping_status, pinhole_status, transcript) =
+        let (mappings, pinholes, mapping_status, udp_mapping_status, pinhole_status, transcript) =
             exercise_scripted_dual_generation(ScriptedDualBehavior::PinholeDisallowed).await;
-        assert_eq!((mappings, pinholes), (1, 0));
+        assert_eq!((mappings, pinholes), (2, 0));
         assert!(matches!(mapping_status, PortMappingStatus::Mapped { .. }));
+        assert!(matches!(
+            udp_mapping_status,
+            PortMappingStatus::Mapped { .. }
+        ));
         assert_eq!(pinhole_status, Ipv6PinholeStatus::InboundPinholeDisallowed);
         assert!(transcript.iter().any(|entry| entry == "AddPortMapping"));
         assert!(!transcript.iter().any(|entry| entry == "AddPinhole"));
 
-        let (mappings, pinholes, mapping_status, pinhole_status, transcript) =
+        let (mappings, pinholes, mapping_status, udp_mapping_status, pinhole_status, transcript) =
             exercise_scripted_dual_generation(ScriptedDualBehavior::MappingUnavailable).await;
         assert_eq!((mappings, pinholes), (0, 1));
         assert!(matches!(mapping_status, PortMappingStatus::Failed { .. }));
+        assert!(matches!(
+            udp_mapping_status,
+            PortMappingStatus::Failed { .. }
+        ));
         assert!(matches!(pinhole_status, Ipv6PinholeStatus::Pinholed { .. }));
         assert!(!transcript.iter().any(|entry| entry == "AddPortMapping"));
         assert!(transcript.iter().any(|entry| entry == "AddPinhole"));
+
+        let (mappings, pinholes, mapping_status, udp_mapping_status, pinhole_status, transcript) =
+            exercise_scripted_dual_generation(ScriptedDualBehavior::UdpMappingUnavailable).await;
+        assert_eq!((mappings, pinholes), (1, 1));
+        assert!(matches!(mapping_status, PortMappingStatus::Mapped { .. }));
+        assert!(matches!(
+            udp_mapping_status,
+            PortMappingStatus::Failed { .. }
+        ));
+        assert!(matches!(pinhole_status, Ipv6PinholeStatus::Pinholed { .. }));
+        assert_eq!(
+            transcript
+                .iter()
+                .filter(|entry| entry.as_str() == "AddPortMapping")
+                .count(),
+            2,
+        );
+        assert_eq!(
+            transcript
+                .iter()
+                .filter(|entry| entry.as_str() == "DeletePortMapping")
+                .count(),
+            1,
+        );
     }
 
     #[tokio::test]
@@ -2127,8 +2492,9 @@ mod tests {
         cancellation.cancel();
         let outcome = mapping_task.await.expect("join scripted mapping");
         let uncertain = outcome
-            .uncertain_mapping
+            .uncertain_tcp_mapping
             .expect("failed delete retains uncertain lease");
+        assert_eq!(uncertain.transport, UpnpTransport::Tcp);
         assert_eq!(uncertain.external_address, Ipv4Addr::new(203, 0, 113, 10));
         assert_eq!(uncertain.external_port, 42_000);
         assert!(uncertain.remaining_lease_seconds(Instant::now()) <= 1);
@@ -2168,12 +2534,14 @@ mod tests {
         let udp_transcript = transcript.clone();
         let http_transcript = transcript.clone();
         let response_count = match behavior {
-            ScriptedDualBehavior::BothAvailable => 14,
-            ScriptedDualBehavior::PinholeDisallowed => 10,
+            ScriptedDualBehavior::BothAvailable => 20,
+            ScriptedDualBehavior::PinholeDisallowed => 16,
             ScriptedDualBehavior::MappingUnavailable => 8,
+            ScriptedDualBehavior::UdpMappingUnavailable => 17,
         };
         let http_task = tokio::spawn(async move {
-            let mut mapped = false;
+            let mut tcp_mapped = false;
+            let mut udp_mapped = false;
             let mut pinhole_present = false;
             for _ in 0..response_count {
                 let (mut stream, _) = listener.accept().await.unwrap();
@@ -2216,23 +2584,53 @@ mod tests {
                                 "<NewExternalIPAddress>203.0.113.10</NewExternalIPAddress>",
                             ),
                         ),
-                        "GetSpecificPortMappingEntry" if mapped => (
-                            "200 OK",
-                            soap_response(
-                                action,
-                                "<NewInternalPort>42000</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>RSTorrent</NewPortMappingDescription><NewLeaseDuration>3600</NewLeaseDuration>",
-                            ),
-                        ),
+                        "GetSpecificPortMappingEntry"
+                            if (request.contains("<NewProtocol>TCP</NewProtocol>")
+                                && tcp_mapped)
+                                || (request.contains("<NewProtocol>UDP</NewProtocol>")
+                                    && udp_mapped) =>
+                        {
+                            let internal_port =
+                                if request.contains("<NewProtocol>UDP</NewProtocol>") {
+                                    42_001
+                                } else {
+                                    42_000
+                                };
+                            (
+                                "200 OK",
+                                soap_response(
+                                    action,
+                                    &format!(
+                                        "<NewInternalPort>{internal_port}</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>RSTorrent</NewPortMappingDescription><NewLeaseDuration>3600</NewLeaseDuration>"
+                                    ),
+                                ),
+                            )
+                        }
                         "GetSpecificPortMappingEntry" => (
                             "500 Internal Server Error",
                             soap_fault(714, "NoSuchEntryInArray"),
                         ),
                         "AddPortMapping" => {
-                            mapped = true;
-                            ("200 OK", soap_response(action, ""))
+                            if request.contains("<NewProtocol>UDP</NewProtocol>") {
+                                if behavior == ScriptedDualBehavior::UdpMappingUnavailable {
+                                    ("500 Internal Server Error", soap_fault(501, "UdpDenied"))
+                                } else {
+                                    udp_mapped = true;
+                                    ("200 OK", soap_response(action, ""))
+                                }
+                            } else {
+                                assert!(request.contains("<NewProtocol>TCP</NewProtocol>"));
+                                tcp_mapped = true;
+                                ("200 OK", soap_response(action, ""))
+                            }
                         }
                         "DeletePortMapping" => {
-                            mapped = false;
+                            if request.contains("<NewProtocol>UDP</NewProtocol>") {
+                                udp_mapped = false;
+                            } else {
+                                assert!(request.contains("<NewProtocol>TCP</NewProtocol>"));
+                                tcp_mapped = false;
+                            }
                             ("200 OK", soap_response(action, ""))
                         }
                         "GetFirewallStatus" => (

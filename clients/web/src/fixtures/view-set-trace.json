@@ -170,6 +170,9 @@
               "port_mapping_status": {
                 "type": "disabled"
               },
+              "udp_port_mapping_status": {
+                "type": "disabled"
+              },
               "ipv6_pinhole_status": {
                 "type": "disabled"
               },
@@ -403,6 +406,9 @@
                 "type": "unavailable"
               },
               "port_mapping_status": {
+                "type": "disabled"
+              },
+              "udp_port_mapping_status": {
                 "type": "disabled"
               },
               "ipv6_pinhole_status": {

@@ -92,6 +92,7 @@ impl ClientSettingsRuntimeView {
             listener_status: ListenerStatus::Disabled,
             session_udp_status: SessionUdpStatus::Unavailable,
             port_mapping_status: PortMappingStatus::Disabled,
+            udp_port_mapping_status: PortMappingStatus::Disabled,
             ipv6_pinhole_status: Ipv6PinholeStatus::Disabled,
             advertised_peer_endpoint: AdvertisedPeerEndpointStatus::Unavailable,
             transport_families: Vec::new(),
@@ -124,6 +125,10 @@ impl ClientSettingsRuntimeView {
         let port_mapping_status = ReachabilityState::new(1, &active, &listener_status)
             .status()
             .clone();
+        let udp_port_mapping_status = match active.port_mapping {
+            super::contract::PortMappingPolicy::Disabled => PortMappingStatus::Disabled,
+            super::contract::PortMappingPolicy::Upnp => PortMappingStatus::Ineligible,
+        };
         Self {
             configured,
             effective_listener: if listener_status == ListenerStatus::Disabled
@@ -169,6 +174,7 @@ impl ClientSettingsRuntimeView {
             listener_status,
             session_udp_status,
             port_mapping_status,
+            udp_port_mapping_status,
             ipv6_pinhole_status: if active.port_mapping
                 == super::contract::PortMappingPolicy::Disabled
             {
@@ -183,6 +189,10 @@ impl ClientSettingsRuntimeView {
 
     pub(crate) fn set_port_mapping_status(&mut self, status: PortMappingStatus) {
         self.port_mapping_status = status;
+    }
+
+    pub(crate) fn set_udp_port_mapping_status(&mut self, status: PortMappingStatus) {
+        self.udp_port_mapping_status = status;
     }
 
     pub(crate) fn set_ipv6_pinhole_status(&mut self, status: Ipv6PinholeStatus) {

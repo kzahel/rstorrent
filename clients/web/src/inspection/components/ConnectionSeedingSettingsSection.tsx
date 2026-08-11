@@ -319,10 +319,10 @@ export function ConnectionSeedingSettingsSection({
             }
           />
           <span>
-            <strong>Map incoming TCP with UPnP</strong>
+            <strong>Map incoming TCP and uTP with UPnP</strong>
             <small>
-              Request a temporary IGD v2 gateway mapping when a compatible
-              gateway is available.
+              Request independent temporary TCP and UDP IGD v2 mappings when
+              a compatible gateway is available.
             </small>
           </span>
         </label>
@@ -681,7 +681,11 @@ function RuntimeState({ settings }: { readonly settings: ClientSettingsRuntimeVi
       <span>
         Effective gateway mapping policy: {settings.effective_port_mapping === "upnp" ? "UPnP IGD v2" : "off"}.
       </span>
-      <PortMappingRuntime status={settings.port_mapping_status} />
+      <PortMappingRuntime label="TCP" status={settings.port_mapping_status} />
+      <PortMappingRuntime
+        label="UDP/uTP"
+        status={settings.udp_port_mapping_status}
+      />
       <Ipv6PinholeRuntime status={settings.ipv6_pinhole_status} />
       <AdvertisedEndpointRuntime status={settings.advertised_peer_endpoint} />
       {settings.transport_families.map((family) => (
@@ -831,47 +835,53 @@ function AdvertisedEndpointRuntime({
   }
 }
 
-function PortMappingRuntime({ status }: { readonly status: PortMappingStatus }) {
+function PortMappingRuntime({
+  label,
+  status,
+}: {
+  readonly label: string;
+  readonly status: PortMappingStatus;
+}) {
   switch (status.type) {
     case "disabled":
-      return <span>Automatic gateway mapping is off.</span>;
+      return <span>Automatic {label} gateway mapping is off.</span>;
     case "ineligible":
       return (
         <span className={styles.runtimeWarning}>
-          Gateway mapping requires an active incoming listener and a usable local network.
+          {label} gateway mapping requires an active listener and a usable local network.
         </span>
       );
     case "discovering":
-      return <span>Discovering a compatible UPnP IGD v2 gateway…</span>;
+      return <span>Discovering a compatible UPnP IGD v2 gateway for {label}…</span>;
     case "mapping":
-      return <span>Requesting and verifying the temporary TCP mapping…</span>;
+      return <span>Requesting and verifying the temporary {label} mapping…</span>;
     case "mapped":
       return (
         <span>
-          UPnP mapped {status.external_address}:{status.external_port} to{" "}
+          UPnP {label} mapped {status.external_address}:{status.external_port} to{" "}
           {status.local_address}:{status.local_port} for {status.lease_seconds} seconds.
         </span>
       );
     case "failed":
       return (
         <span className={styles.runtimeWarning}>
-          Gateway mapping failed during {status.stage.replaceAll("_", " ")}: {status.detail}
+          {label} gateway mapping failed during {status.stage.replaceAll("_", " ")}: {status.detail}
         </span>
       );
     case "renewal_failed":
       return (
         <span className={styles.runtimeWarning}>
-          The mapping at {status.external_address}:{status.external_port} could not be renewed: {status.detail}
+          The {label} mapping at {status.external_address}:{status.external_port} could not be renewed: {status.detail}
         </span>
       );
     case "cleanup_failed":
       return (
         <span className={styles.runtimeWarning}>
-          The old mapping at {status.external_address}:{status.external_port} could not be confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
+          The old {label} mapping at {status.external_address}:{status.external_port} could not be confirmed removed and may remain for {status.remaining_lease_seconds} seconds: {status.detail}
         </span>
       );
     case "stopping":
-      return <span>Removing the gateway mapping…</span>;
+      return <span>Removing the {label} gateway mapping…</span>;
   }
 }
 

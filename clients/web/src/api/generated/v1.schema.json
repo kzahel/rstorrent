@@ -1677,6 +1677,12 @@
           },
           "type": "array"
         },
+        "udp_port_mapping_status": {
+          "$ref": "#/$defs/PortMappingStatus",
+          "default": {
+            "type": "disabled"
+          }
+        },
         "upload_slots_application": {
           "$ref": "#/$defs/ClientSettingsApplicationState"
         }
@@ -6590,6 +6596,9 @@
                   "type": "applied"
                 },
                 "transport_families": [],
+                "udp_port_mapping_status": {
+                  "type": "disabled"
+                },
                 "upload_slots_application": {
                   "type": "applied"
                 }

@@ -326,6 +326,7 @@ struct SessionNetworkOwner {
     reachability_evidence: ReachabilityEvidenceProbe,
     listener_active: Arc<AtomicBool>,
     uncertain_mapping: Option<UncertainMappingLease>,
+    uncertain_udp_mapping: Option<UncertainMappingLease>,
     uncertain_pinhole: Option<UncertainPinholeLease>,
     mapping_runtime_error: Option<String>,
     effective_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
@@ -649,6 +650,7 @@ impl SessionNetworkRuntime {
             reachability_evidence: reachability_evidence.clone(),
             listener_active: listener_active.clone(),
             uncertain_mapping: None,
+            uncertain_udp_mapping: None,
             uncertain_pinhole: None,
             mapping_runtime_error: None,
             effective_tracker_https_authentication: initial_tracker_https_authentication,
@@ -859,6 +861,7 @@ impl SessionNetworkRuntime {
             &owner.effective_settings,
             &owner.listener_status,
             ReachabilityStartInputs {
+                ipv4_udp_listener: ipv4_udp_endpoint(&owner.session_udp_status),
                 ipv6_listener: owner
                     .incoming_ipv6_acceptor
                     .as_ref()
@@ -1208,8 +1211,11 @@ impl SessionNetworkOwner {
                 if let Some(error) = shutdown.error {
                     self.mapping_runtime_error = Some(error);
                 }
-                if let Some(uncertain_mapping) = shutdown.uncertain_mapping {
+                if let Some(uncertain_mapping) = shutdown.uncertain_tcp_mapping {
                     self.uncertain_mapping = Some(uncertain_mapping);
+                }
+                if let Some(uncertain_mapping) = shutdown.uncertain_udp_mapping {
+                    self.uncertain_udp_mapping = Some(uncertain_mapping);
                 }
                 if let Some(uncertain_pinhole) = shutdown.uncertain_pinhole {
                     self.uncertain_pinhole = Some(uncertain_pinhole);
@@ -1543,12 +1549,14 @@ impl SessionNetworkOwner {
                 &self.effective_settings,
                 &self.listener_status,
                 ReachabilityStartInputs {
+                    ipv4_udp_listener: ipv4_udp_endpoint(&self.session_udp_status),
                     ipv6_listener: self
                         .incoming_ipv6_acceptor
                         .as_ref()
                         .and_then(ipv6_acceptor_address),
                     blocks: ReachabilityBlocks {
-                        mapping: self.uncertain_mapping.is_some(),
+                        tcp_mapping: self.uncertain_mapping.is_some(),
+                        udp_mapping: self.uncertain_udp_mapping.is_some(),
                         pinhole: self.uncertain_pinhole.is_some(),
                     },
                     evidence: self.reachability_evidence.clone(),
@@ -1609,12 +1617,14 @@ impl SessionNetworkOwner {
                         &self.effective_settings,
                         &self.listener_status,
                         ReachabilityStartInputs {
+                            ipv4_udp_listener: ipv4_udp_endpoint(&self.session_udp_status),
                             ipv6_listener: self
                                 .incoming_ipv6_acceptor
                                 .as_ref()
                                 .and_then(ipv6_acceptor_address),
                             blocks: ReachabilityBlocks {
-                                mapping: self.uncertain_mapping.is_some(),
+                                tcp_mapping: self.uncertain_mapping.is_some(),
+                                udp_mapping: self.uncertain_udp_mapping.is_some(),
                                 pinhole: self.uncertain_pinhole.is_some(),
                             },
                             evidence: self.reachability_evidence.clone(),
@@ -1993,6 +2003,7 @@ impl SessionNetworkOwner {
         if !policy_changed
             && !transport_changed
             && self.uncertain_mapping.is_none()
+            && self.uncertain_udp_mapping.is_none()
             && self.uncertain_pinhole.is_none()
             && self.mapping_runtime_error.is_none()
             && !reachability_finished
@@ -2030,6 +2041,13 @@ impl SessionNetworkOwner {
             self.uncertain_mapping = None;
         }
         if self
+            .uncertain_udp_mapping
+            .as_ref()
+            .is_some_and(|mapping| mapping.remaining_lease_seconds(now) == 0)
+        {
+            self.uncertain_udp_mapping = None;
+        }
+        if self
             .uncertain_pinhole
             .as_ref()
             .is_some_and(|pinhole| pinhole.remaining_lease_seconds(now) == 0)
@@ -2050,9 +2068,10 @@ impl SessionNetworkOwner {
             return None;
         }
         let mapping_blocked = self.uncertain_mapping.is_some();
+        let udp_mapping_blocked = self.uncertain_udp_mapping.is_some();
         let pinhole_blocked = self.uncertain_pinhole.is_some();
         let cleanup_blocks_disable = attempt.settings.port_mapping == PortMappingPolicy::Disabled
-            && (mapping_blocked || pinhole_blocked);
+            && (mapping_blocked || udp_mapping_blocked || pinhole_blocked);
         let mut coordinator_settings = self.effective_settings.clone();
         coordinator_settings.port_mapping = attempt.settings.port_mapping;
         if !cleanup_blocks_disable {
@@ -2062,12 +2081,14 @@ impl SessionNetworkOwner {
             &coordinator_settings,
             &self.listener_status,
             ReachabilityStartInputs {
+                ipv4_udp_listener: ipv4_udp_endpoint(&self.session_udp_status),
                 ipv6_listener: self
                     .incoming_ipv6_acceptor
                     .as_ref()
                     .and_then(ipv6_acceptor_address),
                 blocks: ReachabilityBlocks {
-                    mapping: mapping_blocked,
+                    tcp_mapping: mapping_blocked,
+                    udp_mapping: udp_mapping_blocked,
                     pinhole: pinhole_blocked,
                 },
                 evidence: self.reachability_evidence.clone(),
@@ -2095,6 +2116,29 @@ impl SessionNetworkOwner {
             );
             cleanup_application_detail = Some(detail);
             expiry = Some(mapping.expires_at);
+        }
+        if let Some(mapping) = &self.uncertain_udp_mapping {
+            let remaining_lease_seconds = mapping.remaining_lease_seconds(now);
+            let detail = format!(
+                "{}; the prior external UDP lease may remain for {remaining_lease_seconds} seconds",
+                mapping.detail,
+            );
+            let _ = views.set_udp_port_mapping_status_for(
+                generation,
+                crate::PortMappingStatus::CleanupFailed {
+                    external_address: mapping.external_address.to_string(),
+                    external_port: mapping.external_port,
+                    remaining_lease_seconds,
+                    detail: detail.clone(),
+                },
+            );
+            cleanup_application_detail = Some(match cleanup_application_detail {
+                Some(current) => format!("{current}; {detail}"),
+                None => detail,
+            });
+            expiry = Some(expiry.map_or(mapping.expires_at, |current| {
+                current.max(mapping.expires_at)
+            }));
         }
         if let Some(pinhole) = &self.uncertain_pinhole {
             let remaining_lease_seconds = pinhole.remaining_lease_seconds(now);
@@ -2191,6 +2235,18 @@ impl SessionNetworkOwner {
                 &mut join_error,
                 format!(
                     "uncertain UPnP mapping {}:{} may remain for {} seconds: {}",
+                    mapping.external_address,
+                    mapping.external_port,
+                    mapping.remaining_lease_seconds(Instant::now()),
+                    mapping.detail,
+                ),
+            );
+        }
+        if let Some(mapping) = self.uncertain_udp_mapping.take() {
+            remember_error(
+                &mut join_error,
+                format!(
+                    "uncertain UDP UPnP mapping {}:{} may remain for {} seconds: {}",
                     mapping.external_address,
                     mapping.external_port,
                     mapping.remaining_lease_seconds(Instant::now()),

@@ -1888,7 +1888,7 @@ describe("inspection application", () => {
     await user.type(downloadRate, "256");
     await user.click(
       within(dialog).getByRole("checkbox", {
-        name: /Map incoming TCP with UPnP/,
+        name: /Map incoming TCP and uTP with UPnP/,
       }),
     );
     await user.click(
@@ -2064,6 +2064,7 @@ describe("inspection application", () => {
             coordinated_with_tcp: false,
           },
           port_mapping_status: { type: "disabled" },
+          udp_port_mapping_status: { type: "disabled" },
           ipv6_pinhole_status: { type: "disabled" },
           advertised_peer_endpoint: {
             type: "outbound_only",
@@ -2161,7 +2162,7 @@ describe("inspection application", () => {
 
     expect(
       within(dialog).getByRole("checkbox", {
-        name: /Map incoming TCP with UPnP/,
+        name: /Map incoming TCP and uTP with UPnP/,
       }),
     ).not.toBeChecked();
     expect(

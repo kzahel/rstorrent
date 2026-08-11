@@ -533,6 +533,42 @@ impl ViewHub {
         Ok(true)
     }
 
+    pub(crate) fn set_udp_port_mapping_status_for(
+        &self,
+        generation: SettingsDomainGeneration,
+        status: PortMappingStatus,
+    ) -> Result<bool, SubscriptionError> {
+        let mut hub = self
+            .inner
+            .lock()
+            .map_err(|_| SubscriptionError::Internal("view hub lock is poisoned".to_owned()))?;
+        if hub.client_settings_mapping_generation != Some(generation) {
+            return Ok(false);
+        }
+        if hub.client_settings.udp_port_mapping_status == status {
+            return Ok(true);
+        }
+        let previous_torrents = hub.torrents.clone();
+        let previous_client_settings = hub.client_settings.clone();
+        let degraded = match &status {
+            PortMappingStatus::Failed { detail, .. }
+            | PortMappingStatus::RenewalFailed { detail, .. }
+            | PortMappingStatus::CleanupFailed { detail, .. } => {
+                Some(ClientSettingsApplicationState::Degraded {
+                    reason: ClientSettingsDegradedReason::PortMappingFailed,
+                    detail: bounded_utf8(detail, MAX_RUNTIME_DETAIL_BYTES),
+                })
+            }
+            _ => None,
+        };
+        hub.client_settings.set_udp_port_mapping_status(status);
+        if let Some(degraded) = degraded {
+            hub.client_settings.port_mapping_application = degraded;
+        }
+        hub.publish_changes(&previous_torrents, None, Some(&previous_client_settings))?;
+        Ok(true)
+    }
+
     pub(crate) fn set_ipv6_pinhole_status_for(
         &self,
         generation: SettingsDomainGeneration,

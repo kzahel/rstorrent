@@ -513,6 +513,7 @@ class ProductStateReducerTest {
             listenerStatus = ListenerStatus.Disabled,
             sessionUdpStatus = SessionUdpStatus.Unavailable,
             portMappingStatus = PortMappingStatus.Disabled,
+            udpPortMappingStatus = PortMappingStatus.Disabled,
             ipv6PinholeStatus = Ipv6PinholeStatus.Disabled,
             advertisedPeerEndpoint = AdvertisedPeerEndpointStatus.Unavailable,
             transportFamilies = emptyList(),
