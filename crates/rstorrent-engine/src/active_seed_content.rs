@@ -377,6 +377,12 @@ impl ActiveFileReader {
         self.cancellation.clone()
     }
 
+    #[must_use]
+    pub fn is_generation_current(&self) -> bool {
+        !self.cancellation.is_cancelled()
+            && self.availability.snapshot().epoch == self.expected_epoch
+    }
+
     pub fn demand_intervals(
         &self,
         offset: u64,

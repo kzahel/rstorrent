@@ -464,6 +464,7 @@ struct DownloadControlInner {
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
     streaming_demands: Arc<StreamingDemandOwner>,
+    content_published: watch::Sender<bool>,
     checking_paused: watch::Sender<bool>,
     selection_applied_revision: AtomicU64,
     safe_cancel_state: AtomicUsize,
@@ -773,6 +774,7 @@ impl DownloadControl {
     pub fn new() -> Self {
         let (selection_updates, _) = watch::channel(None);
         let (streaming_updates, _) = watch::channel(StreamingDemandSnapshot::default());
+        let (content_published, _) = watch::channel(false);
         let (checking_paused, _) = watch::channel(false);
         Self {
             inner: Arc::new(DownloadControlInner {
@@ -829,6 +831,7 @@ impl DownloadControl {
                     state: Mutex::new(StreamingDemandSet::default()),
                     updates: streaming_updates,
                 }),
+                content_published,
                 checking_paused,
                 selection_applied_revision: AtomicU64::new(0),
                 safe_cancel_state: AtomicUsize::new(0),
@@ -1047,6 +1050,18 @@ impl DownloadControl {
         let snapshot = state.snapshot();
         drop(state);
         owner.updates.send_replace(snapshot);
+    }
+
+    pub(super) fn mark_content_published(&self) {
+        self.inner.content_published.send_replace(true);
+    }
+
+    pub fn content_is_published(&self) -> bool {
+        *self.inner.content_published.borrow()
+    }
+
+    pub fn content_publication_updates(&self) -> watch::Receiver<bool> {
+        self.inner.content_published.subscribe()
     }
 
     pub(super) fn selection_updates(&self) -> watch::Receiver<Option<FileSelectionUpdate>> {

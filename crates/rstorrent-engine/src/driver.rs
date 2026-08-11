@@ -7319,6 +7319,7 @@ async fn run_selective_download(
             .checkpoints
             .published()
             .map_err(DownloadError::Checkpoint)?;
+        control.mark_content_published();
     }
     let part_slots_before_materialization = storage.part_slots();
     let part_reopened = storage.has_part_file();

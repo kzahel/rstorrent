@@ -255,7 +255,9 @@ impl FileProgressModel {
             verified_bytes: counters.verified.to_string(),
             media_availability: match self.catalog.media_availability {
                 _ if file.padding => MediaFileAvailability::Padding,
-                MediaFileAvailability::Streamable if self.catalog.selection.is_wanted(index) => {
+                MediaFileAvailability::Streamable
+                    if file.length != 0 && self.catalog.selection.is_wanted(index) =>
+                {
                     MediaFileAvailability::Streamable
                 }
                 MediaFileAvailability::Streamable => MediaFileAvailability::Unverified,
@@ -625,7 +627,7 @@ mod tests {
         let rows = model.rows();
         assert_eq!(
             rows[0].media_availability,
-            MediaFileAvailability::Streamable
+            MediaFileAvailability::Unverified
         );
         assert_eq!(
             rows[1].media_availability,

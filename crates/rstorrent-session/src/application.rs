@@ -52,7 +52,7 @@ use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
 use crate::media::{
     MediaCapabilities, MediaFileAvailability, MediaOriginError, MediaRegistryError,
-    MediaResolveError, MediaUrlResponse,
+    MediaResolveError, MediaUrlResponse, PublishedMediaSource,
 };
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
 use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
@@ -695,6 +695,13 @@ impl ApplicationService {
                 MediaFileAvailability::Padding,
             ));
         }
+        if file.length == 0 && self.active_download_for(&torrent_id).is_some() {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::Unverified,
+            ));
+        }
         if let Some(active) = self.active_download_for(&torrent_id) {
             let control = active.control.clone();
             let reader = match control.active_file_reader(file_index_usize) {
@@ -707,32 +714,71 @@ impl ApplicationService {
                     ));
                 }
             };
-            let outcome =
-                match self
-                    .media
-                    .create_active(torrent_id.clone(), file_index, reader, control)
+            let Some(storage_root) = self.storage_roots.get(&resume.storage_root) else {
+                return Ok(MediaUrlResponse::unavailable(
+                    torrent_id,
+                    file_index,
+                    MediaFileAvailability::StorageUnavailable,
+                ));
+            };
+            let published = match storage_root {
+                StorageRootLocation::Path(root) => Some(PublishedMediaSource::path(
+                    root.clone(),
+                    metainfo.clone(),
+                    file_index_usize,
+                    self.storage_file_pool.clone(),
+                    torrent_id.clone(),
+                    self.media.read_jobs(),
+                )),
+                StorageRootLocation::PlatformCapability
+                    if resume.storage_state == StorageState::Published =>
                 {
-                    Ok(outcome) => outcome,
-                    Err(MediaRegistryError::ServerUnavailable) => {
-                        return Ok(MediaUrlResponse::unavailable(
-                            torrent_id,
-                            file_index,
-                            MediaFileAvailability::ServerUnavailable,
-                        ));
-                    }
-                    Err(MediaRegistryError::ResourceLimit) => {
-                        return Ok(MediaUrlResponse::unavailable(
-                            torrent_id,
-                            file_index,
-                            MediaFileAvailability::ResourceLimit,
-                        ));
-                    }
-                    Err(MediaRegistryError::Random(error)) => {
-                        return Err(ApplicationError::Configuration(format!(
-                            "allocate media capability: {error}"
-                        )));
-                    }
-                };
+                    Some(PublishedMediaSource::platform(
+                        PlatformStorageSpec {
+                            pool: self.storage_file_pool.clone(),
+                            root_id: resume.storage_root.clone(),
+                            storage_id: torrent_id.clone(),
+                            publication_shape: PublicationShape::from_metainfo(&metainfo),
+                            publication_name: metainfo.name.clone(),
+                            namespace_generation: 1,
+                            managed: true,
+                            published: true,
+                        },
+                        metainfo.clone(),
+                        file_index_usize,
+                        self.media.read_jobs(),
+                    ))
+                }
+                StorageRootLocation::PlatformCapability => None,
+            };
+            let outcome = match self.media.create_active(
+                torrent_id.clone(),
+                file_index,
+                reader,
+                control,
+                published,
+            ) {
+                Ok(outcome) => outcome,
+                Err(MediaRegistryError::ServerUnavailable) => {
+                    return Ok(MediaUrlResponse::unavailable(
+                        torrent_id,
+                        file_index,
+                        MediaFileAvailability::ServerUnavailable,
+                    ));
+                }
+                Err(MediaRegistryError::ResourceLimit) => {
+                    return Ok(MediaUrlResponse::unavailable(
+                        torrent_id,
+                        file_index,
+                        MediaFileAvailability::ResourceLimit,
+                    ));
+                }
+                Err(MediaRegistryError::Random(error)) => {
+                    return Err(ApplicationError::Configuration(format!(
+                        "allocate media capability: {error}"
+                    )));
+                }
+            };
             return Ok(MediaUrlResponse {
                 torrent_id,
                 file_index,
@@ -9695,6 +9741,202 @@ mod tests {
         service.shutdown().await.expect("shutdown active media");
         drop(service);
         fs::remove_dir_all(root).expect("remove active media root");
+    }
+
+    #[tokio::test]
+    async fn active_media_capability_hands_off_to_exact_publication() {
+        let root = test_root("active-media-publication-handoff");
+        let configuration = config(&root);
+        let payload = (0..16_384)
+            .map(|offset| ((offset * 23 + offset / 11) & 0xff) as u8)
+            .collect::<Vec<_>>();
+        let raw_info = single_file_info("handoff.bin", &payload, 16_384);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind handoff peer");
+        let address = listener.local_addr().expect("handoff peer address");
+        let release = Arc::new(tokio::sync::Notify::new());
+        let peer_release = Arc::clone(&release);
+        let peer_payload = payload.clone();
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept handoff peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read handoff handshake");
+            decode_handshake(&handshake, info_hash).expect("handoff peer identity");
+            stream
+                .write_all(&encode_handshake(info_hash, [0x5e; 20]))
+                .await
+                .expect("write handoff handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0x80])).expect("bitfield"))
+                .await
+                .expect("write handoff bitfield");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).expect("unchoke"))
+                .await
+                .expect("write handoff unchoke");
+            let mut decoder = FrameDecoder::new();
+            let mut input = [0_u8; 64 * 1024];
+            let mut pending = Vec::<BlockRequest>::new();
+            let mut released = false;
+            loop {
+                tokio::select! {
+                    _ = peer_release.notified(), if !released => {
+                        released = true;
+                        for request in pending.drain(..) {
+                            let start = request.begin as usize;
+                            let end = start + request.length as usize;
+                            stream.write_all(&encode_message(&PeerMessage::Piece {
+                                index: 0,
+                                begin: request.begin,
+                                block: peer_payload[start..end].to_vec(),
+                            }).expect("handoff piece response")).await.expect("write handoff piece");
+                        }
+                    }
+                    read = stream.read(&mut input) => {
+                        let read = read.expect("read handoff message");
+                        if read == 0 {
+                            break;
+                        }
+                        for message in decoder.push(&input[..read]).expect("decode handoff message") {
+                            if let PeerMessage::Request(request) = message {
+                                if released {
+                                    let start = request.begin as usize;
+                                    let end = start + request.length as usize;
+                                    stream.write_all(&encode_message(&PeerMessage::Piece {
+                                        index: 0,
+                                        begin: request.begin,
+                                        block: peer_payload[start..end].to_vec(),
+                                    }).expect("handoff piece response")).await.expect("write handoff piece");
+                                } else {
+                                    pending.push(request);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open handoff store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-media-handoff".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={address}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add handoff torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record handoff metadata");
+        drop(store);
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open handoff application");
+        service
+            .configure_media_origin("http://127.0.0.1:43121")
+            .expect("configure handoff media origin");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let url = loop {
+            let response = service
+                .create_media_url(&torrent_id, 0)
+                .await
+                .expect("probe handoff media URL");
+            if let MediaUrlOutcome::Created { url, .. } = response.outcome {
+                break url;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "handoff media did not become streamable"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        let capability = url
+            .rsplit('/')
+            .next()
+            .expect("handoff capability")
+            .to_owned();
+        let mut active = service
+            .resolve_media_capability(&capability)
+            .expect("resolve active handoff capability");
+        let active_task = tokio::spawn(async move {
+            active
+                .wait_for_range(0, 64)
+                .await
+                .expect("wait for handoff range");
+            active
+                .read_range(0, 64)
+                .await
+                .expect("read active handoff range")
+        });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(!active_task.is_finished());
+        release.notify_one();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), active_task)
+                .await
+                .expect("active handoff range timed out")
+                .expect("join active handoff range"),
+            payload[..64]
+        );
+
+        let completion_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while service
+            .active_download_for(&torrent_id)
+            .is_some_and(|active| !active.task.is_finished())
+        {
+            assert!(
+                tokio::time::Instant::now() < completion_deadline,
+                "handoff torrent did not publish"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        service
+            .reap_finished()
+            .await
+            .expect("reap handoff download");
+        let mut published = service
+            .resolve_media_capability(&capability)
+            .expect("resolve published handoff capability");
+        assert!(published.is_active());
+        published
+            .wait_for_range(100, 64)
+            .await
+            .expect("handoff to published reader");
+        assert!(!published.is_active());
+        assert_eq!(
+            published
+                .read_range(100, 64)
+                .await
+                .expect("read published handoff range"),
+            payload[100..164]
+        );
+        tokio::time::timeout(Duration::from_secs(2), peer_task)
+            .await
+            .expect("handoff peer did not close")
+            .expect("join handoff peer");
+        service.shutdown().await.expect("shutdown handoff service");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove handoff root");
     }
 
     #[tokio::test]

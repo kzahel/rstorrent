@@ -2,15 +2,18 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rstorrent_engine::{
-    ActiveFileError, ActiveFileReader, DownloadControl, StreamingDemandError, StreamingDemandLease,
-    VerifiedFileError, VerifiedFileReader,
+    ActiveFileError, ActiveFileReader, DownloadControl, PlatformStorageSpec, StorageFilePool,
+    StreamingDemandError, StreamingDemandLease, VerifiedFileError, VerifiedFileReader,
 };
+use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::storage_layout::TorrentLayout;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
@@ -98,7 +101,122 @@ enum MediaCapabilityReader {
     Active {
         reader: ActiveFileReader,
         control: DownloadControl,
+        published: Option<PublishedMediaSource>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PublishedMediaSource {
+    Path {
+        root: PathBuf,
+        metainfo: Arc<Metainfo>,
+        file_index: usize,
+        pool: StorageFilePool,
+        storage_id: String,
+        read_jobs: Arc<Semaphore>,
+    },
+    Platform {
+        spec: PlatformStorageSpec,
+        metainfo: Arc<Metainfo>,
+        file_index: usize,
+        read_jobs: Arc<Semaphore>,
+    },
+}
+
+impl PublishedMediaSource {
+    pub(crate) fn path(
+        root: PathBuf,
+        metainfo: Metainfo,
+        file_index: usize,
+        pool: StorageFilePool,
+        storage_id: String,
+        read_jobs: Arc<Semaphore>,
+    ) -> Self {
+        Self::Path {
+            root,
+            metainfo: Arc::new(metainfo),
+            file_index,
+            pool,
+            storage_id,
+            read_jobs,
+        }
+    }
+
+    pub(crate) fn platform(
+        spec: PlatformStorageSpec,
+        metainfo: Metainfo,
+        file_index: usize,
+        read_jobs: Arc<Semaphore>,
+    ) -> Self {
+        Self::Platform {
+            spec,
+            metainfo: Arc::new(metainfo),
+            file_index,
+            read_jobs,
+        }
+    }
+
+    async fn open(&self) -> Result<VerifiedFileReader, VerifiedFileError> {
+        let (metainfo, file_index) = match self {
+            Self::Path {
+                metainfo,
+                file_index,
+                ..
+            }
+            | Self::Platform {
+                metainfo,
+                file_index,
+                ..
+            } => (metainfo, *file_index),
+        };
+        let layout = TorrentLayout::from_metainfo(metainfo);
+        let mut verified = vec![false; metainfo.piece_hashes.len()];
+        for piece in layout
+            .file_piece_range(file_index)
+            .map_err(VerifiedFileError::Layout)?
+            .into_iter()
+            .flatten()
+        {
+            verified
+                [usize::try_from(piece).map_err(|_| VerifiedFileError::ArithmeticOverflow)?] = true;
+        }
+        match self {
+            Self::Path {
+                root,
+                metainfo,
+                file_index,
+                pool,
+                storage_id,
+                read_jobs,
+            } => {
+                VerifiedFileReader::open_published_with_pool(
+                    root,
+                    metainfo,
+                    &verified,
+                    *file_index,
+                    pool.clone(),
+                    storage_id,
+                    read_jobs.clone(),
+                )
+                .await
+            }
+            Self::Platform {
+                spec,
+                metainfo,
+                file_index,
+                read_jobs,
+            } => {
+                VerifiedFileReader::open_published_with_platform(
+                    spec,
+                    metainfo,
+                    &verified,
+                    *file_index,
+                    read_jobs.clone(),
+                )
+                .await
+            }
+        }
+    }
 }
 
 impl MediaCapabilityLease {
@@ -141,9 +259,17 @@ impl MediaCapabilityLease {
         offset: u64,
         length: usize,
     ) -> Result<(), MediaRangeError> {
-        let MediaCapabilityReader::Active { reader, control } = &self.reader else {
+        if self.handoff_if_published().await? {
+            return Ok(());
+        }
+        let MediaCapabilityReader::Active {
+            reader, control, ..
+        } = &self.reader
+        else {
             return Ok(());
         };
+        let reader = reader.clone();
+        let control = control.clone();
         if !self.is_live() {
             return Err(MediaRangeError::Revoked);
         }
@@ -162,15 +288,24 @@ impl MediaCapabilityLease {
                 );
             }
         }
-        let demand = self
-            .streaming_demand
-            .as_ref()
-            .expect("active range installed a demand");
-        let mut updates = demand.subscribe();
-        let mut progress_revision = demand.progress_revision().ok_or(MediaRangeError::Revoked)?;
+        let (demand_id, mut updates, mut progress_revision) = {
+            let demand = self
+                .streaming_demand
+                .as_ref()
+                .expect("active range installed a demand");
+            (
+                demand.id(),
+                demand.subscribe(),
+                demand.progress_revision().ok_or(MediaRangeError::Revoked)?,
+            )
+        };
         let mut deadline = Instant::now() + MEDIA_STREAMING_NO_PROGRESS_TIMEOUT;
         let active_cancellation = reader.cancellation();
+        let mut publication = control.content_publication_updates();
         loop {
+            if self.handoff_if_published().await? {
+                return Ok(());
+            }
             if !self.is_live() || reader.cancellation().is_cancelled() {
                 return Err(MediaRangeError::Revoked);
             }
@@ -187,15 +322,27 @@ impl MediaCapabilityLease {
             tokio::select! {
                 biased;
                 _ = self.cancellation.cancelled() => return Err(MediaRangeError::Revoked),
-                _ = active_cancellation.cancelled() => return Err(MediaRangeError::Revoked),
+                _ = active_cancellation.cancelled() => {
+                    return if self.handoff_if_published().await? {
+                        Ok(())
+                    } else {
+                        Err(MediaRangeError::Revoked)
+                    };
+                },
                 _ = &mut sleep => return Err(MediaRangeError::NoProgress),
+                changed = publication.changed() => {
+                    changed.map_err(|_| MediaRangeError::Revoked)?;
+                    if self.handoff_if_published().await? {
+                        return Ok(());
+                    }
+                }
                 changed = updates.changed() => {
                     changed.map_err(|_| MediaRangeError::Revoked)?;
                     let next = updates
                         .borrow_and_update()
                         .demands()
                         .iter()
-                        .find(|candidate| candidate.id() == demand.id())
+                        .find(|candidate| candidate.id() == demand_id)
                         .map(|candidate| candidate.progress_revision())
                         .ok_or(MediaRangeError::Revoked)?;
                     if next != progress_revision {
@@ -205,6 +352,35 @@ impl MediaCapabilityLease {
                 }
             }
         }
+    }
+
+    async fn handoff_if_published(&mut self) -> Result<bool, MediaRangeError> {
+        let MediaCapabilityReader::Active {
+            reader,
+            control,
+            published,
+        } = &self.reader
+        else {
+            return Ok(true);
+        };
+        if !control.content_is_published() {
+            return Ok(false);
+        }
+        let reader = reader.clone();
+        let source = published.clone().ok_or(MediaRangeError::Revoked)?;
+        if !reader.is_generation_current() {
+            return Err(MediaRangeError::Revoked);
+        }
+        let published = source.open().await.map_err(|_| MediaRangeError::Revoked)?;
+        if !reader.is_generation_current()
+            || published.length() != reader.length()
+            || published.file_name() != reader.file_name()
+        {
+            return Err(MediaRangeError::Revoked);
+        }
+        self.streaming_demand = None;
+        self.reader = MediaCapabilityReader::Published(published);
+        Ok(true)
     }
 
     pub async fn read_range(&self, offset: u64, length: usize) -> Result<Vec<u8>, MediaReadError> {
@@ -376,11 +552,16 @@ impl MediaCapabilities {
         file_index: u32,
         reader: ActiveFileReader,
         control: DownloadControl,
+        published: Option<PublishedMediaSource>,
     ) -> Result<MediaUrlOutcome, MediaRegistryError> {
         self.create_reader(
             torrent_id,
             file_index,
-            MediaCapabilityReader::Active { reader, control },
+            MediaCapabilityReader::Active {
+                reader,
+                control,
+                published,
+            },
         )
     }
 
