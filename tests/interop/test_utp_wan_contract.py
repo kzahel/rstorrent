@@ -51,6 +51,11 @@ class UtpWanContractTests(unittest.TestCase):
             validate_udp_mapping(ready),
             ("192.168.1.20", 42001, "8.8.8.8", 48001, 3600),
         )
+        ready["utp_listen"] = "0.0.0.0:42001"
+        self.assertEqual(
+            validate_udp_mapping(ready),
+            ("192.168.1.20", 42001, "8.8.8.8", 48001, 3600),
+        )
         ready["utp_listen"] = "192.168.1.20:42002"
         with self.assertRaises(WanFailure):
             validate_udp_mapping(ready)

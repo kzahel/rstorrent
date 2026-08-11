@@ -156,7 +156,7 @@ def validate_udp_mapping(
     ):
         raise WanFailure("product UDP mapping fields are invalid")
     utp_address, utp_port = parse_endpoint(ready.get("utp_listen"), "utp_listen")
-    if (utp_address, utp_port) != (local_address, local_port):
+    if utp_port != local_port or utp_address not in (local_address, "0.0.0.0"):
         raise WanFailure("product UDP mapping does not target its uTP listener")
     return local_address, local_port, external_address, external_port, lease_seconds
 
