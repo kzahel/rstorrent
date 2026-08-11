@@ -33,6 +33,10 @@ use crate::session_resources::{
     SessionExecutionPermit, SessionSemaphorePermit, SessionTorrentResources,
 };
 use crate::storage_file_pool::StorageFilePool;
+use crate::streaming::{
+    StreamingDemandError, StreamingDemandId, StreamingDemandSet, StreamingDemandSnapshot,
+    StreamingPieceInterval,
+};
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
 use crate::torrent_peer::TorrentPeerActivitySink;
 use crate::tracker::TrackerRuntimeSnapshot;
@@ -391,6 +395,19 @@ pub struct DownloadControl {
 }
 
 #[derive(Debug)]
+struct StreamingDemandOwner {
+    state: Mutex<StreamingDemandSet>,
+    updates: watch::Sender<StreamingDemandSnapshot>,
+}
+
+/// One independently removable streaming demand owned by an active response.
+#[derive(Debug)]
+pub struct StreamingDemandLease {
+    owner: Arc<StreamingDemandOwner>,
+    id: StreamingDemandId,
+}
+
+#[derive(Debug)]
 struct DownloadControlInner {
     started_at: Instant,
     cancellation: CancellationToken,
@@ -440,6 +457,7 @@ struct DownloadControlInner {
     incoming_route_wake: Mutex<Option<Arc<Notify>>>,
     session_resources: Mutex<Option<SessionTorrentResources>>,
     selection_updates: watch::Sender<Option<FileSelectionUpdate>>,
+    streaming_demands: Arc<StreamingDemandOwner>,
     checking_paused: watch::Sender<bool>,
     selection_applied_revision: AtomicU64,
     safe_cancel_state: AtomicUsize,
@@ -748,6 +766,7 @@ struct CheckpointProgressSnapshot {
 impl DownloadControl {
     pub fn new() -> Self {
         let (selection_updates, _) = watch::channel(None);
+        let (streaming_updates, _) = watch::channel(StreamingDemandSnapshot::default());
         let (checking_paused, _) = watch::channel(false);
         Self {
             inner: Arc::new(DownloadControlInner {
@@ -799,6 +818,10 @@ impl DownloadControl {
                 incoming_route_wake: Mutex::new(None),
                 session_resources: Mutex::new(None),
                 selection_updates,
+                streaming_demands: Arc::new(StreamingDemandOwner {
+                    state: Mutex::new(StreamingDemandSet::default()),
+                    updates: streaming_updates,
+                }),
                 checking_paused,
                 selection_applied_revision: AtomicU64::new(0),
                 safe_cancel_state: AtomicUsize::new(0),
@@ -957,6 +980,45 @@ impl DownloadControl {
 
     pub fn update_file_selection(&self, update: FileSelectionUpdate) {
         self.inner.selection_updates.send_replace(Some(update));
+    }
+
+    pub fn acquire_streaming_demand(
+        &self,
+        current: StreamingPieceInterval,
+        ahead: Option<StreamingPieceInterval>,
+    ) -> Result<StreamingDemandLease, StreamingDemandError> {
+        let owner = Arc::clone(&self.inner.streaming_demands);
+        let mut state = owner
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let id = state.insert(current, ahead)?;
+        let snapshot = state.snapshot();
+        drop(state);
+        owner.updates.send_replace(snapshot);
+        Ok(StreamingDemandLease { owner, id })
+    }
+
+    pub(super) fn streaming_demand_updates(&self) -> watch::Receiver<StreamingDemandSnapshot> {
+        self.inner.streaming_demands.updates.subscribe()
+    }
+
+    pub(super) fn streaming_demand_snapshot(&self) -> StreamingDemandSnapshot {
+        self.inner.streaming_demands.updates.borrow().clone()
+    }
+
+    pub(super) fn record_streaming_progress(&self, piece: u32) {
+        let owner = &self.inner.streaming_demands;
+        let mut state = owner
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.record_progress(piece) {
+            return;
+        }
+        let snapshot = state.snapshot();
+        drop(state);
+        owner.updates.send_replace(snapshot);
     }
 
     pub(super) fn selection_updates(&self) -> watch::Receiver<Option<FileSelectionUpdate>> {
@@ -3077,5 +3139,125 @@ fn push_recent_metadata_attempt(state: &mut MetadataDiagnosticState, peer: Metad
 impl Default for DownloadControl {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl StreamingDemandLease {
+    #[must_use]
+    pub fn id(&self) -> StreamingDemandId {
+        self.id
+    }
+
+    pub fn update(
+        &self,
+        current: StreamingPieceInterval,
+        ahead: Option<StreamingPieceInterval>,
+    ) -> Result<(), StreamingDemandError> {
+        let mut state = self
+            .owner
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous_revision = state.snapshot().revision();
+        state.update(self.id, current, ahead)?;
+        let snapshot = state.snapshot();
+        if snapshot.revision() == previous_revision {
+            return Ok(());
+        }
+        drop(state);
+        self.owner.updates.send_replace(snapshot);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn progress_revision(&self) -> Option<u64> {
+        self.owner
+            .updates
+            .borrow()
+            .demands()
+            .iter()
+            .find(|demand| demand.id() == self.id)
+            .map(|demand| demand.progress_revision())
+    }
+
+    #[must_use]
+    pub fn subscribe(&self) -> watch::Receiver<StreamingDemandSnapshot> {
+        self.owner.updates.subscribe()
+    }
+}
+
+impl Drop for StreamingDemandLease {
+    fn drop(&mut self) {
+        let mut state = self
+            .owner
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.remove(self.id) {
+            return;
+        }
+        let snapshot = state.snapshot();
+        drop(state);
+        self.owner.updates.send_replace(snapshot);
+    }
+}
+
+#[cfg(test)]
+mod streaming_demand_tests {
+    use super::*;
+
+    fn interval(first: u32, last: u32) -> StreamingPieceInterval {
+        StreamingPieceInterval::new(first, last).unwrap()
+    }
+
+    #[test]
+    fn leases_publish_updates_progress_and_independent_drop() {
+        let control = DownloadControl::new();
+        let first = control
+            .acquire_streaming_demand(interval(2, 3), Some(interval(4, 6)))
+            .unwrap();
+        let second = control
+            .acquire_streaming_demand(interval(20, 21), None)
+            .unwrap();
+        let updates = first.subscribe();
+        assert_eq!(updates.borrow().demands().len(), 2);
+
+        let progress = first.progress_revision().unwrap();
+        control.record_streaming_progress(4);
+        assert!(updates.has_changed().unwrap());
+        assert_eq!(first.progress_revision(), Some(progress + 1));
+        assert_eq!(second.progress_revision(), Some(0));
+
+        first.update(interval(7, 8), None).unwrap();
+        assert_eq!(
+            control.streaming_demand_snapshot().demands()[0].current(),
+            interval(7, 8)
+        );
+        drop(first);
+        assert_eq!(control.streaming_demand_snapshot().demands().len(), 1);
+        assert_eq!(
+            control.streaming_demand_snapshot().demands()[0].id(),
+            second.id()
+        );
+    }
+
+    #[test]
+    fn lease_capacity_is_recovered_on_drop() {
+        let control = DownloadControl::new();
+        let leases = (0..crate::streaming::MAX_STREAMING_DEMANDS)
+            .map(|piece| {
+                control
+                    .acquire_streaming_demand(interval(piece as u32, piece as u32), None)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            control.acquire_streaming_demand(interval(100, 100), None),
+            Err(StreamingDemandError::Capacity)
+        ));
+        drop(leases);
+        control
+            .acquire_streaming_demand(interval(100, 100), None)
+            .unwrap();
     }
 }

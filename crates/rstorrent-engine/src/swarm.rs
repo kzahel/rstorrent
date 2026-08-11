@@ -1232,6 +1232,20 @@ impl SwarmState {
         }
     }
 
+    /// Reserve a wanted, available piece selected by a time-critical caller.
+    pub fn reserve_specific_piece_for_planning(
+        &mut self,
+        piece: u32,
+        maximum_planned_pieces: usize,
+    ) -> bool {
+        if self.pieces.len() >= maximum_planned_pieces {
+            return false;
+        }
+        usize::try_from(piece)
+            .ok()
+            .is_some_and(|piece| self.picker.reserve_specific(piece))
+    }
+
     pub fn cancel_piece_planning(&mut self, piece: u32) -> Result<(), SwarmError> {
         self.picker
             .cancel_reserved(piece as usize)

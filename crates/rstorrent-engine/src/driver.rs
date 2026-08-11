@@ -77,6 +77,9 @@ use crate::selective_storage::{
     remove_selective_staging_if_present, torrent_storage_paths_for_output_with_shape,
     validate_publication_name,
 };
+use crate::streaming::{
+    MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
+};
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
     PieceHashFailure, PiecePlan, ReceiveDisposition, RejectDisposition, RequestAssignment,
@@ -338,7 +341,7 @@ pub use control::{
     DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink, DownloadControl,
     DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate, MetadataAcquisitionPhase,
     MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
-    SwarmActivitySnapshot,
+    StreamingDemandLease, SwarmActivitySnapshot,
 };
 use control::{CheckerPieceOutcome, StorageCommandKind};
 
@@ -4039,6 +4042,7 @@ struct ContentSwarmDownload<'a> {
     last_piece: Option<VerifiedPiece>,
     contributor_attempts: BTreeMap<ConnectionId, ContentContributor>,
     selection: FileSelection,
+    streaming_cursor: StreamingCandidateCursor,
     maximum_planned_bytes: usize,
     storage_limits: ContentStorageLimits,
     selection_revision: u64,
@@ -4195,6 +4199,7 @@ impl<'a> ContentSwarmDownload<'a> {
             storage_pipeline.active_upload_planner(),
         );
         let active_upload_failure = active_content.failure_signal();
+        let streaming_cursor = StreamingCandidateCursor::new(&control.streaming_demand_snapshot());
         Ok(Self {
             state,
             storage_pipeline: Some(storage_pipeline),
@@ -4216,6 +4221,7 @@ impl<'a> ContentSwarmDownload<'a> {
             last_piece: None,
             contributor_attempts: BTreeMap::new(),
             selection: selection.selection,
+            streaming_cursor,
             maximum_planned_bytes,
             storage_limits,
             selection_revision: selection.revision,
@@ -4623,13 +4629,7 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(())
     }
 
-    fn prepare_next_piece(&mut self) -> Result<bool, DownloadError> {
-        let Some(piece) = self
-            .state
-            .reserve_piece_for_planning(MAX_PLANNED_CONTENT_PIECES)
-        else {
-            return Ok(false);
-        };
+    fn prepare_reserved_piece(&mut self, piece: u32) -> Result<bool, DownloadError> {
         let (plan, blocks, bytes) =
             match build_content_piece_plan(self.layout, &self.selection, piece) {
                 Ok(plan) => plan,
@@ -4658,7 +4658,50 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(true)
     }
 
+    fn prepare_next_piece(&mut self) -> Result<bool, DownloadError> {
+        let Some(piece) = self
+            .state
+            .reserve_piece_for_planning(MAX_PLANNED_CONTENT_PIECES)
+        else {
+            return Ok(false);
+        };
+        self.prepare_reserved_piece(piece)
+    }
+
+    fn prepare_streaming_pieces(
+        &mut self,
+        snapshot: &StreamingDemandSnapshot,
+    ) -> Result<(), DownloadError> {
+        if self.streaming_cursor.revision() != snapshot.revision()
+            || (self.streaming_cursor.take(0, |_| false).finished && !snapshot.is_empty())
+        {
+            self.streaming_cursor = StreamingCandidateCursor::new(snapshot);
+        }
+        let availability = self.availability.snapshot();
+        let batch = self
+            .streaming_cursor
+            .take(MAX_STREAMING_CANDIDATE_INSPECTIONS, |piece| {
+                usize::try_from(piece)
+                    .ok()
+                    .is_some_and(|piece| !availability.is_available(piece))
+            });
+        for candidate in batch.candidates {
+            if !self
+                .state
+                .reserve_specific_piece_for_planning(candidate.piece, MAX_PLANNED_CONTENT_PIECES)
+            {
+                continue;
+            }
+            if !self.prepare_reserved_piece(candidate.piece)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, DownloadError> {
+        let streaming = self.control.streaming_demand_snapshot();
+        self.prepare_streaming_pieces(&streaming)?;
         while self.state.planned_piece_count() < MAX_PLANNED_CONTENT_PIECES {
             if !self.prepare_next_piece()? {
                 break;
@@ -4926,6 +4969,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     .piece_length_at(block.piece)
                     .map_err(DownloadError::Layout)?;
                 self.control.disk_block_stored(block, piece_length);
+                self.control.record_streaming_progress(block.piece);
                 self.control
                     .record_bytes(ByteMetric::StagedWrite, block.length as usize);
                 self.control.emit(DownloadActivityEvent::BlockStored {
@@ -5016,6 +5060,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     self.availability
                         .publish(piece_index, self.availability.snapshot().epoch)
                         .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+                    self.control.record_streaming_progress(piece);
                     self.last_piece = Some(VerifiedPiece {
                         index: piece,
                         hash: actual,
@@ -5520,6 +5565,7 @@ enum ContentSupervisorEvent {
     Discovery(Option<ContentDiscoveryEvent>),
     Storage(ContentStorageCompletion),
     Selection(FileSelectionUpdate),
+    Streaming,
     Deadline,
 }
 
@@ -5529,6 +5575,7 @@ struct ContentSupervisorWait<'a> {
     cancellation: &'a CancellationToken,
     active_upload_failure: &'a ActiveUploadFailureSignal,
     selection_updates: &'a mut watch::Receiver<Option<FileSelectionUpdate>>,
+    streaming_updates: &'a mut watch::Receiver<StreamingDemandSnapshot>,
     priority: ContentSupervisorOwner,
 }
 
@@ -5573,7 +5620,7 @@ impl ContentSupervisorEvent {
             Self::Peer(_) | Self::Incoming(_) => Some(ContentSupervisorOwner::Peer),
             Self::Discovery(_) => Some(ContentSupervisorOwner::Discovery),
             Self::Storage(_) => Some(ContentSupervisorOwner::Storage),
-            Self::Selection(_) | Self::Deadline => None,
+            Self::Selection(_) | Self::Streaming | Self::Deadline => None,
         }
     }
 }
@@ -5591,6 +5638,7 @@ async fn next_content_supervisor_event(
         cancellation,
         active_upload_failure,
         selection_updates,
+        streaming_updates,
         priority,
     } = wait;
     if selection_updates.has_changed().map_err(|_| {
@@ -5604,6 +5652,12 @@ async fn next_content_supervisor_event(
             })?;
         return Ok(ContentSupervisorEvent::Selection(update));
     }
+    if streaming_updates.has_changed().map_err(|_| {
+        DownloadError::StorageTask("streaming-demand controller stopped unexpectedly".to_owned())
+    })? {
+        streaming_updates.borrow_and_update();
+        return Ok(ContentSupervisorEvent::Streaming);
+    }
     if until_expiry.is_some_and(|wait| wait.is_zero()) {
         return Ok(ContentSupervisorEvent::Deadline);
     }
@@ -5612,6 +5666,11 @@ async fn next_content_supervisor_event(
             ContentSupervisorOwner::Storage => tokio::select! {
                 biased;
                 error = content_shutdown(cancellation, active_upload_failure) => Err(error),
+                changed = streaming_updates.changed() => changed
+                    .map(|()| ContentSupervisorEvent::Streaming)
+                    .map_err(|_| DownloadError::StorageTask(
+                        "streaming-demand controller stopped unexpectedly".to_owned()
+                    )),
                 completion = storage.next_completion() => {
                     completion.map(ContentSupervisorEvent::Storage)
                 }
@@ -5625,6 +5684,11 @@ async fn next_content_supervisor_event(
             ContentSupervisorOwner::Peer | ContentSupervisorOwner::Discovery => tokio::select! {
                 biased;
                 error = content_shutdown(cancellation, active_upload_failure) => Err(error),
+                changed = streaming_updates.changed() => changed
+                    .map(|()| ContentSupervisorEvent::Streaming)
+                    .map_err(|_| DownloadError::StorageTask(
+                        "streaming-demand controller stopped unexpectedly".to_owned()
+                    )),
                 event = discovery.next_event(), if discovery.is_active() => {
                     Ok(ContentSupervisorEvent::Discovery(event))
                 }
@@ -5642,6 +5706,11 @@ async fn next_content_supervisor_event(
         ContentSupervisorOwner::Storage => tokio::select! {
             biased;
             error = content_shutdown(cancellation, active_upload_failure) => Err(error),
+            changed = streaming_updates.changed() => changed
+                .map(|()| ContentSupervisorEvent::Streaming)
+                .map_err(|_| DownloadError::StorageTask(
+                    "streaming-demand controller stopped unexpectedly".to_owned()
+                )),
             completion = storage.next_completion() => {
                 completion.map(ContentSupervisorEvent::Storage)
             }
@@ -5666,6 +5735,11 @@ async fn next_content_supervisor_event(
         ContentSupervisorOwner::Peer => tokio::select! {
             biased;
             error = content_shutdown(cancellation, active_upload_failure) => Err(error),
+            changed = streaming_updates.changed() => changed
+                .map(|()| ContentSupervisorEvent::Streaming)
+                .map_err(|_| DownloadError::StorageTask(
+                    "streaming-demand controller stopped unexpectedly".to_owned()
+                )),
             event = sockets.next_event() => event
                 .map(ContentSupervisorEvent::Peer)
                 .map_err(download_peer_set_error),
@@ -5690,6 +5764,11 @@ async fn next_content_supervisor_event(
         ContentSupervisorOwner::Discovery => tokio::select! {
             biased;
             error = content_shutdown(cancellation, active_upload_failure) => Err(error),
+            changed = streaming_updates.changed() => changed
+                .map(|()| ContentSupervisorEvent::Streaming)
+                .map_err(|_| DownloadError::StorageTask(
+                    "streaming-demand controller stopped unexpectedly".to_owned()
+                )),
             event = discovery.next_event(), if discovery.is_active() => {
                 Ok(ContentSupervisorEvent::Discovery(event))
             }
@@ -5723,6 +5802,7 @@ async fn run_selective_swarm_loop(
 ) -> Result<(), DownloadError> {
     let mut next_owner = ContentSupervisorOwner::Storage;
     let mut selection_updates = download.control.selection_updates();
+    let mut streaming_updates = download.control.streaming_demand_updates();
     let mut storage_pressure_started = None;
     let mut rate_limit_started = None;
     let mut next_maintenance_at = Duration::ZERO;
@@ -5961,6 +6041,7 @@ async fn run_selective_swarm_loop(
                     cancellation: &cancellation,
                     active_upload_failure: &active_upload_failure,
                     selection_updates: &mut selection_updates,
+                    streaming_updates: &mut streaming_updates,
                     priority: next_owner,
                 },
             )
@@ -5972,6 +6053,7 @@ async fn run_selective_swarm_loop(
 
         match event {
             ContentSupervisorEvent::Deadline => continue,
+            ContentSupervisorEvent::Streaming => continue,
             ContentSupervisorEvent::Selection(update) => {
                 while download.control.snapshot().storage_jobs_pending != 0 {
                     download.flush_pending_storage()?;
