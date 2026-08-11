@@ -5735,10 +5735,10 @@ mod tests {
     use rstorrent_engine::dht::BootstrapNode;
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
-        NetworkPolicy, PeerBudgetDirection, PlatformStorageFailure, PlatformStorageFailureKind,
-        PlatformStorageOperation, PublicationShape, StorageFileKey, StorageFileLocator,
-        StorageFileReference, StorageFileRole, StorageObjectKind, StorageObservation,
-        platform_storage_channel, torrent_storage_paths,
+        NetworkPolicy, PathPublicationStage, PeerBudgetDirection, PlatformStorageFailure,
+        PlatformStorageFailureKind, PlatformStorageOperation, PublicationShape, StorageFileKey,
+        StorageFileLocator, StorageFileReference, StorageFileRole, StorageObjectKind,
+        StorageObservation, platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -9541,7 +9541,7 @@ mod tests {
             panic!("verified publication was unavailable")
         };
         let capability = url.rsplit('/').next().expect("capability path").to_owned();
-        let lease = service
+        let mut lease = service
             .resolve_media_capability(&capability)
             .expect("resolve media capability");
         assert!(lease.is_live());
@@ -9795,7 +9795,10 @@ mod tests {
     #[tokio::test]
     async fn active_media_capability_hands_off_to_exact_publication() {
         let root = test_root("active-media-publication-handoff");
-        let configuration = config(&root);
+        let mut configuration = config(&root);
+        configuration.publication_delay_stage_for_testing =
+            Some(PathPublicationStage::IntentDurable);
+        configuration.publication_delay_for_testing = Duration::from_millis(200);
         let payload = (0..16_384)
             .map(|offset| ((offset * 23 + offset / 11) & 0xff) as u8)
             .collect::<Vec<_>>();
@@ -9932,6 +9935,7 @@ mod tests {
                 .wait_for_range(0, 64)
                 .await
                 .expect("wait for handoff range");
+            tokio::time::sleep(Duration::from_millis(50)).await;
             active
                 .read_range(0, 64)
                 .await
@@ -9991,7 +9995,7 @@ mod tests {
         assert_eq!(completed_resources.streaming_read_high_water, 1);
         assert_eq!(completed_resources.demanded_bytes_read, 128);
         assert_eq!(completed_resources.demanded_bytes_served, 64);
-        assert_eq!(completed_resources.publication_handoffs, 1);
+        assert_eq!(completed_resources.publication_handoffs, 2);
         drop(published);
         assert_eq!(service.media_resource_snapshot().active_bodies, 0);
         tokio::time::timeout(Duration::from_secs(2), peer_task)

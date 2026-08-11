@@ -457,33 +457,113 @@ impl MediaCapabilityLease {
         Ok(true)
     }
 
-    pub async fn read_range(&self, offset: u64, length: usize) -> Result<Vec<u8>, MediaReadError> {
-        let result = match &self.reader {
-            MediaCapabilityReader::Published(reader) => reader
-                .read_range(offset, length)
-                .await
-                .map_err(MediaReadError::Published),
-            MediaCapabilityReader::Active { reader, .. } => {
-                let _permit = self
-                    .read_jobs
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .map_err(|_| MediaReadError::Closed)?;
-                MediaMetrics::increment(
-                    &self.metrics.active_streaming_reads,
-                    &self.metrics.streaming_read_high_water,
-                );
+    pub async fn read_range(
+        &mut self,
+        offset: u64,
+        length: usize,
+    ) -> Result<Vec<u8>, MediaReadError> {
+        let active_reader = match &self.reader {
+            MediaCapabilityReader::Published(reader) => {
                 let result = reader
                     .read_range(offset, length)
                     .await
-                    .map_err(MediaReadError::Active);
-                self.metrics
-                    .active_streaming_reads
-                    .fetch_sub(1, Ordering::AcqRel);
-                result
+                    .map_err(MediaReadError::Published);
+                return self.record_read_result(result);
             }
+            MediaCapabilityReader::Active { reader, .. } => reader.clone(),
         };
+        let active_result = {
+            let _permit = self
+                .read_jobs
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| MediaReadError::Closed)?;
+            MediaMetrics::increment(
+                &self.metrics.active_streaming_reads,
+                &self.metrics.streaming_read_high_water,
+            );
+            let result = active_reader
+                .read_range(offset, length)
+                .await
+                .map_err(MediaReadError::Active);
+            self.metrics
+                .active_streaming_reads
+                .fetch_sub(1, Ordering::AcqRel);
+            result
+        };
+        if !matches!(
+            active_result,
+            Err(MediaReadError::Active(ActiveFileError::Closed))
+        ) {
+            return self.record_read_result(active_result);
+        }
+
+        self.wait_for_publication_after_active_close().await?;
+        let MediaCapabilityReader::Published(reader) = &self.reader else {
+            return Err(MediaReadError::Closed);
+        };
+        let result = reader
+            .read_range(offset, length)
+            .await
+            .map_err(MediaReadError::Published);
+        self.record_read_result(result)
+    }
+
+    async fn wait_for_publication_after_active_close(&mut self) -> Result<(), MediaReadError> {
+        let MediaCapabilityReader::Active {
+            reader, control, ..
+        } = &self.reader
+        else {
+            return Ok(());
+        };
+        let active_cancellation = reader.cancellation();
+        let control = control.clone();
+        let mut publication = control.content_publication_updates();
+        let deadline = Instant::now() + MEDIA_STREAMING_NO_PROGRESS_TIMEOUT;
+        loop {
+            match self.handoff_if_published().await {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(MediaRangeError::Active(error)) => {
+                    return Err(MediaReadError::Active(error));
+                }
+                Err(
+                    MediaRangeError::NoProgress
+                    | MediaRangeError::Revoked
+                    | MediaRangeError::Saturated,
+                ) => return Err(MediaReadError::Closed),
+            }
+            if !self.is_live() {
+                return Err(MediaReadError::Closed);
+            }
+            let sleep = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));
+            tokio::pin!(sleep);
+            tokio::select! {
+                biased;
+                _ = self.cancellation.cancelled() => return Err(MediaReadError::Closed),
+                _ = active_cancellation.cancelled() => {
+                    return if self.handoff_if_published().await.unwrap_or(false) {
+                        Ok(())
+                    } else {
+                        Err(MediaReadError::Closed)
+                    };
+                },
+                _ = &mut sleep => {
+                    self.metrics.streaming_stall_timeouts.fetch_add(1, Ordering::AcqRel);
+                    return Err(MediaReadError::Closed);
+                },
+                changed = publication.changed() => {
+                    changed.map_err(|_| MediaReadError::Closed)?;
+                }
+            }
+        }
+    }
+
+    fn record_read_result(
+        &self,
+        result: Result<Vec<u8>, MediaReadError>,
+    ) -> Result<Vec<u8>, MediaReadError> {
         if self.streaming_origin
             && let Ok(bytes) = &result
         {

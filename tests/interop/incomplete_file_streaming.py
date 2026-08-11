@@ -301,7 +301,6 @@ def run(output: Path | None) -> dict[str, object]:
                     "the first post-range peer request did not target a demanded piece"
                 )
 
-            publication_seconds = wait_published(gateway, fixture)
             try:
                 with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as response:
                     full = response.read()
@@ -314,6 +313,7 @@ def run(output: Path | None) -> dict[str, object]:
                     f"received={len(error.partial)} missing={error.expected} "
                     f"snapshot={snapshot}"
                 ) from error
+            publication_seconds = wait_published(gateway, fixture)
 
             all_requests = [
                 request
@@ -346,7 +346,7 @@ def run(output: Path | None) -> dict[str, object]:
                         )
                     ],
                     "full_sha1": hashlib.sha1(full).hexdigest(),
-                    "publication_seconds_after_ranges": publication_seconds,
+                    "publication_seconds_after_full": publication_seconds,
                 },
                 "peer_requests": {
                     "baseline_count": baseline,
