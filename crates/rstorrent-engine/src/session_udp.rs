@@ -5,17 +5,20 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use rstorrent_protocol::dht::MAX_DATAGRAM_SIZE;
 use rstorrent_protocol::utp::{IPV4_UDP_PAYLOAD_CEILING, UTP_HEADER_SIZE, UTP_VERSION};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Mutex, MutexGuard, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::network::AddressFamily;
+use crate::udp_fragmentation::{
+    Ipv4FragmentationProtectionStatus, verify_ipv4_fragmentation_protection,
+};
 
 pub const SESSION_UDP_DHT_QUEUE: usize = 64;
 pub const SESSION_UDP_UTP_QUEUE: usize = 256;
@@ -38,6 +41,10 @@ pub struct SessionUdpSnapshot {
     pub utp_datagrams_classified: u64,
     pub utp_datagram_bytes_classified: u64,
     pub utp_datagrams_dropped: u64,
+    pub egress_waiters: usize,
+    pub egress_waiter_high_water: usize,
+    pub retired_egress_rejections: u64,
+    pub ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
 }
 
 #[derive(Debug)]
@@ -48,6 +55,10 @@ pub enum SessionUdpError {
         family: AddressFamily,
         requested: u64,
         current: Option<u64>,
+    },
+    RetiredGeneration {
+        family: AddressFamily,
+        generation: u64,
     },
     UtpTransportTaken,
     TaskJoin(String),
@@ -68,6 +79,10 @@ impl fmt::Display for SessionUdpError {
                 formatter,
                 "session UDP {family} generation {requested} is stale; current generation is {current:?}"
             ),
+            Self::RetiredGeneration { family, generation } => write!(
+                formatter,
+                "session UDP {family} generation {generation} retired before send"
+            ),
             Self::UtpTransportTaken => write!(formatter, "session uTP transport was already taken"),
             Self::TaskJoin(error) => write!(formatter, "session UDP task join failed: {error}"),
         }
@@ -80,6 +95,7 @@ impl Error for SessionUdpError {
             Self::Io(error) => Some(error),
             Self::MissingFamily(_)
             | Self::StaleGeneration { .. }
+            | Self::RetiredGeneration { .. }
             | Self::UtpTransportTaken
             | Self::TaskJoin(_) => None,
         }
@@ -154,8 +170,96 @@ struct SessionUdpCurrent {
 #[derive(Debug)]
 struct SessionUdpFamilyCurrent {
     generation: u64,
-    socket: Arc<UdpSocket>,
+    egress: Arc<SessionUdpEgress>,
     local_address: SocketAddr,
+}
+
+#[derive(Debug)]
+struct SessionUdpEgress {
+    generation: u64,
+    family: AddressFamily,
+    socket: Arc<UdpSocket>,
+    exclusion: Mutex<()>,
+    active: AtomicBool,
+    ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
+    stats: Arc<SessionUdpStats>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SessionUdpEgressError {
+    Retired {
+        family: AddressFamily,
+        generation: u64,
+    },
+}
+
+impl SessionUdpEgress {
+    fn new(
+        generation: u64,
+        family: AddressFamily,
+        socket: Arc<UdpSocket>,
+        stats: Arc<SessionUdpStats>,
+    ) -> Result<Self, SessionUdpError> {
+        let ipv4_fragmentation_protection = if family == AddressFamily::Ipv4 {
+            verify_ipv4_fragmentation_protection(&socket).map_err(SessionUdpError::Io)?
+        } else {
+            Ipv4FragmentationProtectionStatus::UnsupportedPlatform
+        };
+        Ok(Self {
+            generation,
+            family,
+            socket,
+            exclusion: Mutex::new(()),
+            active: AtomicBool::new(true),
+            ipv4_fragmentation_protection,
+            stats,
+        })
+    }
+
+    async fn send_to(
+        &self,
+        bytes: &[u8],
+        target: SocketAddr,
+    ) -> Result<Result<usize, io::Error>, SessionUdpEgressError> {
+        let _guard = self.lock().await;
+        if !self.active.load(Ordering::Acquire) {
+            self.stats.record_retired_egress_rejection();
+            return Err(SessionUdpEgressError::Retired {
+                family: self.family,
+                generation: self.generation,
+            });
+        }
+        Ok(self.socket.send_to(bytes, target).await)
+    }
+
+    async fn lock(&self) -> MutexGuard<'_, ()> {
+        match self.exclusion.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                let waiter = EgressWaiter::new(&self.stats);
+                let guard = self.exclusion.lock().await;
+                drop(waiter);
+                guard
+            }
+        }
+    }
+}
+
+struct EgressWaiter<'a> {
+    stats: &'a SessionUdpStats,
+}
+
+impl<'a> EgressWaiter<'a> {
+    fn new(stats: &'a SessionUdpStats) -> Self {
+        stats.record_egress_waiter_started();
+        Self { stats }
+    }
+}
+
+impl Drop for EgressWaiter<'_> {
+    fn drop(&mut self) {
+        self.stats.record_egress_waiter_finished();
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -210,8 +314,19 @@ impl SessionUdpHandle {
     }
 
     pub fn snapshot(&self) -> SessionUdpSnapshot {
-        self.stats
-            .snapshot(&self.ingress_sender, &self.utp_ingress_sender)
+        let ipv4_fragmentation_protection = self
+            .current_guard()
+            .families
+            .get(&AddressFamily::Ipv4)
+            .map_or(
+                Ipv4FragmentationProtectionStatus::UnsupportedPlatform,
+                |entry| entry.egress.ipv4_fragmentation_protection,
+            );
+        self.stats.snapshot(
+            &self.ingress_sender,
+            &self.utp_ingress_sender,
+            ipv4_fragmentation_protection,
+        )
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -281,16 +396,22 @@ impl SessionUdpTransport {
         target: SocketAddr,
     ) -> Result<usize, SessionUdpError> {
         let family = AddressFamily::of(target.ip());
-        let socket = self
-            .current_guard()
-            .families
-            .get(&family)
-            .map(|entry| entry.socket.clone())
-            .ok_or(SessionUdpError::MissingFamily(family))?;
-        socket
-            .send_to(bytes, target)
-            .await
-            .map_err(SessionUdpError::Io)
+        for attempt in 0..2 {
+            let egress = self
+                .current_guard()
+                .families
+                .get(&family)
+                .map(|entry| entry.egress.clone())
+                .ok_or(SessionUdpError::MissingFamily(family))?;
+            match egress.send_to(bytes, target).await {
+                Ok(result) => return result.map_err(SessionUdpError::Io),
+                Err(SessionUdpEgressError::Retired { .. }) if attempt == 0 => {}
+                Err(SessionUdpEgressError::Retired { family, generation }) => {
+                    return Err(SessionUdpError::RetiredGeneration { family, generation });
+                }
+            }
+        }
+        unreachable!("session UDP send attempts are statically bounded")
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -364,7 +485,7 @@ impl SessionUtpSendHandle {
         target: SocketAddr,
     ) -> Result<usize, SessionUdpError> {
         let family = AddressFamily::of(target.ip());
-        let socket = {
+        let egress = {
             let current = self.current_guard();
             let Some(entry) = current.families.get(&family) else {
                 return Err(SessionUdpError::MissingFamily(family));
@@ -376,12 +497,23 @@ impl SessionUtpSendHandle {
                     current: Some(entry.generation),
                 });
             }
-            entry.socket.clone()
+            entry.egress.clone()
         };
-        socket
-            .send_to(bytes, target)
-            .await
-            .map_err(SessionUdpError::Io)
+        match egress.send_to(bytes, target).await {
+            Ok(result) => result.map_err(SessionUdpError::Io),
+            Err(SessionUdpEgressError::Retired { .. }) => {
+                let current = self
+                    .current_guard()
+                    .families
+                    .get(&family)
+                    .map(|entry| entry.generation);
+                Err(SessionUdpError::StaleGeneration {
+                    family,
+                    requested: generation,
+                    current,
+                })
+            }
+        }
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -404,6 +536,9 @@ struct SessionUdpStats {
     utp_datagrams_classified: AtomicU64,
     utp_datagram_bytes_classified: AtomicU64,
     utp_datagrams_dropped: AtomicU64,
+    egress_waiters: AtomicUsize,
+    egress_waiter_high_water: AtomicUsize,
+    retired_egress_rejections: AtomicU64,
 }
 
 impl SessionUdpStats {
@@ -411,6 +546,7 @@ impl SessionUdpStats {
         &self,
         dht_sender: &mpsc::Sender<SessionUdpIngress>,
         utp_sender: &mpsc::Sender<SessionUtpIngress>,
+        ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
     ) -> SessionUdpSnapshot {
         SessionUdpSnapshot {
             tasks: self.tasks.load(Ordering::Relaxed),
@@ -428,7 +564,26 @@ impl SessionUdpStats {
                 .utp_datagram_bytes_classified
                 .load(Ordering::Relaxed),
             utp_datagrams_dropped: self.utp_datagrams_dropped.load(Ordering::Relaxed),
+            egress_waiters: self.egress_waiters.load(Ordering::Relaxed),
+            egress_waiter_high_water: self.egress_waiter_high_water.load(Ordering::Relaxed),
+            retired_egress_rejections: self.retired_egress_rejections.load(Ordering::Relaxed),
+            ipv4_fragmentation_protection,
         }
+    }
+
+    fn record_egress_waiter_started(&self) {
+        let waiters = self.egress_waiters.fetch_add(1, Ordering::Relaxed) + 1;
+        self.egress_waiter_high_water
+            .fetch_max(waiters, Ordering::Relaxed);
+    }
+
+    fn record_egress_waiter_finished(&self) {
+        let previous = self.egress_waiters.fetch_sub(1, Ordering::Relaxed);
+        debug_assert!(previous > 0, "session UDP egress waiter underflow");
+    }
+
+    fn record_retired_egress_rejection(&self) {
+        saturating_add(&self.retired_egress_rejections, 1);
     }
 
     fn record_datagram(&self, bytes: usize) {
@@ -523,12 +678,18 @@ impl SessionUdpService {
         let (utp_ingress_sender, utp_ingress) = mpsc::channel(SESSION_UDP_UTP_QUEUE);
         let stats = Arc::new(SessionUdpStats::default());
         let generation = 1;
+        let egress = Arc::new(SessionUdpEgress::new(
+            generation,
+            family,
+            socket.clone(),
+            stats.clone(),
+        )?);
         let current = Arc::new(RwLock::new(SessionUdpCurrent {
             families: BTreeMap::from([(
                 family,
                 SessionUdpFamilyCurrent {
                     generation,
-                    socket: socket.clone(),
+                    egress,
                     local_address,
                 },
             )]),
@@ -595,8 +756,7 @@ impl SessionUdpService {
     }
 
     pub fn snapshot(&self) -> SessionUdpSnapshot {
-        self.stats
-            .snapshot(&self.ingress_sender, &self.utp_ingress_sender)
+        self.handle.snapshot()
     }
 
     pub(crate) fn take_utp_transport(&mut self) -> Result<SessionUtpTransport, SessionUdpError> {
@@ -619,6 +779,12 @@ impl SessionUdpService {
             SessionUdpError::Io(io::Error::other("session UDP generation exhausted"))
         })?;
         let socket = Arc::new(socket);
+        let egress = Arc::new(SessionUdpEgress::new(
+            generation,
+            family,
+            socket.clone(),
+            self.stats.clone(),
+        )?);
         let candidate = start_generation(
             generation,
             family,
@@ -627,17 +793,32 @@ impl SessionUdpService {
             self.utp_ingress_sender.clone(),
             self.stats.clone(),
         );
+        let previous_egress = self
+            .handle
+            .current_guard()
+            .families
+            .get(&family)
+            .map(|entry| entry.egress.clone());
+        let retirement = match &previous_egress {
+            Some(previous) => {
+                let guard = previous.lock().await;
+                previous.active.store(false, Ordering::Release);
+                Some(guard)
+            }
+            None => None,
+        };
         {
             let mut current = self.current_guard();
             current.families.insert(
                 family,
                 SessionUdpFamilyCurrent {
                     generation,
-                    socket,
+                    egress,
                     local_address,
                 },
             );
         }
+        drop(retirement);
         self.publish_generations();
         let previous = self.active.insert(family, candidate);
         match previous {
@@ -647,7 +828,22 @@ impl SessionUdpService {
     }
 
     pub async fn remove_family(&mut self, family: AddressFamily) -> Result<(), SessionUdpError> {
+        let previous_egress = self
+            .handle
+            .current_guard()
+            .families
+            .get(&family)
+            .map(|entry| entry.egress.clone());
+        let retirement = match &previous_egress {
+            Some(previous) => {
+                let guard = previous.lock().await;
+                previous.active.store(false, Ordering::Release);
+                Some(guard)
+            }
+            None => None,
+        };
         self.current_guard().families.remove(&family);
+        drop(retirement);
         self.publish_generations();
         match self.active.remove(&family) {
             Some(previous) => previous.shutdown().await,
@@ -656,6 +852,17 @@ impl SessionUdpService {
     }
 
     pub async fn shutdown(mut self) -> Result<SessionUdpSnapshot, SessionUdpError> {
+        let egress = self
+            .handle
+            .current_guard()
+            .families
+            .values()
+            .map(|entry| entry.egress.clone())
+            .collect::<Vec<_>>();
+        for entry in egress {
+            let _guard = entry.lock().await;
+            entry.active.store(false, Ordering::Release);
+        }
         let active = std::mem::take(&mut self.active);
         for (_, generation) in active {
             generation.shutdown().await?;
@@ -846,6 +1053,19 @@ mod tests {
         SessionUdpService::start(socket).unwrap()
     }
 
+    async fn wait_for_egress_waiters(handle: &SessionUdpHandle, expected: usize) {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if handle.snapshot().egress_waiters == expected {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("session UDP egress waiter count reached the expected value");
+    }
+
     #[test]
     fn long_lived_counters_saturate() {
         let stats = SessionUdpStats::default();
@@ -898,6 +1118,90 @@ mod tests {
         assert_eq!(terminal.task_high_water, 1);
         assert_eq!(terminal.datagrams_received, 1);
         assert_eq!(terminal.datagrams_dropped, 0);
+        assert_eq!(terminal.egress_waiters, 0);
+    }
+
+    #[tokio::test]
+    async fn dht_and_utp_sends_share_one_bounded_egress_exclusion() {
+        let (mut service, dht) = service().await;
+        let utp = service.take_utp_transport().unwrap();
+        let generation = utp.generation_for(AddressFamily::Ipv4).unwrap();
+        let send = utp.send_handle();
+        let handle = service.handle();
+        let egress = handle
+            .current_guard()
+            .families
+            .get(&AddressFamily::Ipv4)
+            .unwrap()
+            .egress
+            .clone();
+        let exclusion = egress.exclusion.lock().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = remote.local_addr().unwrap();
+
+        let dht_send = tokio::spawn(async move { dht.send_to(b"dht", target).await });
+        let utp_send = tokio::spawn(async move { send.send_to(generation, b"utp", target).await });
+        wait_for_egress_waiters(&handle, 2).await;
+        assert_eq!(handle.snapshot().egress_waiter_high_water, 2);
+
+        dht_send.abort();
+        utp_send.abort();
+        assert!(dht_send.await.unwrap_err().is_cancelled());
+        assert!(utp_send.await.unwrap_err().is_cancelled());
+        wait_for_egress_waiters(&handle, 0).await;
+        drop(exclusion);
+        drop(utp);
+        let terminal = service.shutdown().await.unwrap();
+        assert_eq!(terminal.egress_waiters, 0);
+        assert_eq!(terminal.egress_waiter_high_water, 2);
+    }
+
+    #[tokio::test]
+    async fn replacement_waits_for_egress_and_retires_the_old_generation() {
+        let (mut service, dht) = service().await;
+        let handle = service.handle();
+        let old_egress = handle
+            .current_guard()
+            .families
+            .get(&AddressFamily::Ipv4)
+            .unwrap()
+            .egress
+            .clone();
+        let exclusion = old_egress.exclusion.lock().await;
+        let replacement = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let replacement_address = replacement.local_addr().unwrap();
+
+        let replacing = tokio::spawn(async move {
+            service.replace_socket(replacement).await.unwrap();
+            service
+        });
+        wait_for_egress_waiters(&handle, 1).await;
+        assert!(!replacing.is_finished());
+        assert!(old_egress.active.load(Ordering::Acquire));
+
+        drop(exclusion);
+        let service = replacing.await.unwrap();
+        assert_eq!(service.generation(), 2);
+        assert_eq!(service.local_address(), replacement_address);
+        assert!(!old_egress.active.load(Ordering::Acquire));
+        assert_eq!(handle.snapshot().egress_waiters, 0);
+        drop(dht);
+        service.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn construction_reports_fragmentation_protection_capability() {
+        let (service, dht) = service().await;
+        let status = service.snapshot().ipv4_fragmentation_protection;
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        assert_eq!(status, Ipv4FragmentationProtectionStatus::Verified);
+        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        assert_eq!(
+            status,
+            Ipv4FragmentationProtectionStatus::UnsupportedPlatform
+        );
+        drop(dht);
+        service.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -1170,7 +1474,11 @@ mod tests {
                 bytes: vec![255],
             },
         ));
-        let snapshot = stats.snapshot(&sender, &utp_sender);
+        let snapshot = stats.snapshot(
+            &sender,
+            &utp_sender,
+            Ipv4FragmentationProtectionStatus::UnsupportedPlatform,
+        );
         assert_eq!(snapshot.queued, SESSION_UDP_DHT_QUEUE);
         assert_eq!(snapshot.queue_high_water, SESSION_UDP_DHT_QUEUE);
         assert_eq!(snapshot.datagrams_dropped, 1);
@@ -1228,7 +1536,11 @@ mod tests {
             dht_receiver.recv().await,
             Some(SessionUdpIngress::Datagram { bytes, .. }) if bytes == b"dht"
         ));
-        let snapshot = stats.snapshot(&dht_sender, &utp_sender);
+        let snapshot = stats.snapshot(
+            &dht_sender,
+            &utp_sender,
+            Ipv4FragmentationProtectionStatus::UnsupportedPlatform,
+        );
         assert_eq!(snapshot.utp_queued, SESSION_UDP_UTP_QUEUE);
         assert_eq!(snapshot.utp_queue_high_water, SESSION_UDP_UTP_QUEUE);
         assert_eq!(snapshot.utp_datagrams_dropped, 1);

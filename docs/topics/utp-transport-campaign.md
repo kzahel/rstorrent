@@ -77,14 +77,19 @@ the single authoritative **Now**.
   explicit diagnostic construction override. There is no persisted setting,
   presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
   public incoming-reachability claim.
-- Superseded-before-implementation Tactical `137` defines the next bounded uTP
-  candidate: activate the existing
+- Reactivated Tactical `137` defines and has begun the next bounded uTP slice:
+  activate the existing
   548--1,472-byte IPv4 search only behind positively verified fragmentation-
   protected sends and one shared DHT/uTP egress exclusion boundary. It adds
   path revalidation, conservative fixed-548 fallback, controlled packet-count
   and pinned-libtorrent evidence, macOS proof, and Android build/AVD parity.
-  No implementation, dependency, unsafe code, product setting, external run,
-  or protocol-claim change has landed.
+  Its dependency-free seam now serializes all DHT/uTP sends per family, fences
+  retired generations, reports contention and capability, and uses existing
+  `rustix` for safe Linux/Android option verification; both Android ABIs
+  cross-build. macOS remains fixed at 548 pending the required review for a
+  focused safe socket-option dependency. No protected product probe, new
+  dependency, unsafe project code, setting, external run, or protocol-claim
+  change has landed.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -834,13 +839,14 @@ closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
-Partial; product Tactical `138` completed, and Tactical `137` is reactivated
-with Stage 2 platform/shared-egress feasibility in progress.**
+Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
+its dependency-free Stage 2 seam passes and the required macOS dependency
+review is current.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
-safe fragmentation-option/shared-egress feasibility stage, stopping before
-any new dependency or unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
+[`capability-readiness.md`](capability-readiness.md). Resolve Tactical `137`'s
+macOS dependency review, with target-specific `dontfrag 1.0.1` recommended
+and existing `rustix` retained for Linux/Android. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

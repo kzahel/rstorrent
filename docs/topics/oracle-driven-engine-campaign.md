@@ -416,8 +416,9 @@ and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
 lifecycle, controlled interoperability, and the public dispatch rerun.
 Product Tactical `138` is complete; Tactical `137` is reactivated as the sole
-authoritative **Now** with Stage 2 platform/shared-egress feasibility in
-progress.
+authoritative **Now**. Its dependency-free Stage 2 shared-egress seam and safe
+Linux/Android option path pass, and it is at the required macOS dependency
+review before protected product sends begin.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -470,10 +471,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `137` Stage 2 by proving the
-safe fragmentation-option and shared-socket egress boundary. Stop before adding a
-dependency, unsafe isolation, or relaxing
-`forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
+Next engine-campaign action: resolve Tactical `137`'s required macOS dependency
+review. The recommendation is target-specific `dontfrag 1.0.1` with its Tokio
+feature, while Linux/Android retain existing `rustix`; do not add it, introduce
+unsafe isolation, or relax `forbid(unsafe_code)` before approval. The
+post-discovery Ubuntu stall remains one
 non-reproducible changing-swarm observation and is not authority for changes in
 that tactical.
 

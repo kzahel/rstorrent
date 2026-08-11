@@ -3,9 +3,11 @@
 Status: **Active on 2026-08-11.** Maintainer direction reactivated this
 decision-complete tactical after verified HTTP file-serving Tactical `138`
 completed and authorized end-to-end implementation with logical commits.
-Stage 2 safe fragmentation-option and shared-egress feasibility is in
-progress. No dependency, unsafe code, public-network activity, or physical-
-device work is authorized.
+Stage 2's dependency-free shared-egress seam is complete. Existing `rustix`
+support proves the safe Linux/Android option shape and both Android native
+ABIs cross-build; macOS remains fixed at 548 pending the mandatory dependency
+review recorded below. No new dependency, unsafe project code, public-network
+activity, or physical-device work has been authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -352,6 +354,54 @@ transport. Its archived architecture and release status record TCP-only
 behavior, while its BEP 29 copy confirms packet-based sequence numbers. There
 is no first-party dynamic-MTU behavior or compatibility setting to preserve.
 
+## Stage 2 Feasibility Evidence
+
+The dependency-free seam now gives every current IPv4 and IPv6 session socket
+generation one egress exclusion shared by DHT and uTP. A generation is retired
+under that exclusion before replacement, removal, or shutdown can publish the
+transition. A queued old-generation uTP send becomes an exact stale-generation
+failure; DHT retries once against the current generation. Cancellation drops
+its waiter accounting, and snapshots report live/high-water waiters, rejected
+retired sends, and IPv4 fragmentation-protection capability. No independent
+queue or task was introduced, and ordinary product packetization remains fixed
+at 548 bytes.
+
+Enabling the existing workspace `rustix 1.1.4` dependency's `net` feature
+provides safe Linux/Android `IP_MTU_DISCOVER` access. Construction reads the
+exact prior enum, verifies `IP_PMTUDISC_PROBE`, restores and rereads the prior
+value, and refuses to publish a socket if restoration is uncertain. macOS
+reports `UnsupportedPlatform`, which leaves the conservative fixed profile in
+place. Both Android native ABI checks compile this platform-specific path; an
+actual option/send run remains part of the later AVD gate.
+
+No safe macOS IPv4 setter/getter exists in the current dependency graph. Two
+current registry candidates were inspected without adding either:
+
+- `dontfrag 1.0.1`, `src/lib.rs` and `src/sys/unix/bsd.rs`, supplies a sealed
+  safe extension for Tokio UDP sockets, reads and writes Darwin
+  `IP_DONTFRAG`, is licensed `MIT OR Apache-2.0`, and adds only focused
+  platform bindings already represented transitively in this workspace. It
+  is the recommended target-specific macOS dependency; Linux/Android would
+  continue using `rustix` so their exact `IP_MTU_DISCOVER` enum is preserved.
+- `nix 0.31.3`, `src/sys/socket/sockopt.rs::IpDontFrag`, supplies safe Apple
+  get/set operations under the MIT license, but is a broader general-purpose
+  Unix API dependency than this one option requires.
+
+The recommendation is therefore to authorize target-specific
+`dontfrag 1.0.1` with its `tokio` feature and retain the repository's existing
+`forbid(unsafe_code)` rules. This is the declared human review boundary: no
+macOS dependency or protected product send will land before approval.
+
+Focused evidence at this checkpoint:
+
+- `cargo fmt --all -- --check`;
+- `cargo test -p rstorrent-engine --lib`: 504 passed, 7 ignored;
+- `cargo clippy -p rstorrent-engine --all-targets -- -D warnings`;
+- `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-engine --lib`
+  with the configured NDK; and
+- macOS focused tests prove unsupported fallback, shared DHT/uTP exclusion,
+  cancellation cleanup, and generation replacement fencing.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -379,7 +429,9 @@ requires diagnosis, not threshold relaxation.
 2. Prove the safe platform option boundary and exact shared-socket exclusion
    design with focused tests. Stop for human review before adding a dependency,
    unsafe isolation, or a materially different socket owner. Commit the
-   accepted feasibility seam separately.
+   accepted feasibility seam separately. The dependency-free portion is
+   complete; review is now required for the recommended target-specific macOS
+   dependency.
 3. Extend pure MTU state with explicit revalidation/downward recovery and add
    hostile deterministic cases. Commit without enabling product behavior.
 4. Carry protected-send intent and typed feedback through the generation-

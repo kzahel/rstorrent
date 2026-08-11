@@ -38,6 +38,7 @@ mod storage_file_pool;
 pub mod swarm;
 mod torrent_peer;
 mod tracker;
+mod udp_fragmentation;
 mod upload;
 mod upload_scheduler;
 mod utp_diagnostic;
@@ -184,6 +185,7 @@ pub use tracker::{
     TrackerHttpsAuthentication, TrackerNextAction, TrackerRuntimeRecordSnapshot,
     TrackerRuntimeSnapshot, TrackerRuntimeStatus, TrackerSource, TrackerTransport,
 };
+pub use udp_fragmentation::Ipv4FragmentationProtectionStatus;
 pub use upload::{
     MAX_GENERATED_ALLOWED_FAST_PIECES, MAX_QUEUED_UPLOAD_BYTES, MAX_QUEUED_UPLOAD_REQUESTS,
     UploadAction, UploadCloseReason, UploadPeerSnapshot, UploadPeerState, UploadRead,
