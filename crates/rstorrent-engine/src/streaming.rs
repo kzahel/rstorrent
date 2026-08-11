@@ -104,8 +104,19 @@ impl StreamingDemand {
         self.progress_revision
     }
 
+    #[must_use]
+    pub fn urgency(&self, piece: u32) -> Option<StreamingUrgency> {
+        if self.current.contains(piece) {
+            Some(StreamingUrgency::Current)
+        } else if self.ahead.is_some_and(|interval| interval.contains(piece)) {
+            Some(StreamingUrgency::Ahead)
+        } else {
+            None
+        }
+    }
+
     fn contains(&self, piece: u32) -> bool {
-        self.current.contains(piece) || self.ahead.is_some_and(|interval| interval.contains(piece))
+        self.urgency(piece).is_some()
     }
 }
 
@@ -129,6 +140,17 @@ impl StreamingDemandSnapshot {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.demands.is_empty()
+    }
+
+    #[must_use]
+    pub fn urgency(&self, piece: u32) -> Option<StreamingUrgency> {
+        self.demands
+            .iter()
+            .filter_map(|demand| demand.urgency(piece))
+            .min_by_key(|urgency| match urgency {
+                StreamingUrgency::Current => 0,
+                StreamingUrgency::Ahead => 1,
+            })
     }
 }
 

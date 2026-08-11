@@ -4686,12 +4686,21 @@ impl<'a> ContentSwarmDownload<'a> {
                     .is_some_and(|piece| !availability.is_available(piece))
             });
         for candidate in batch.candidates {
-            if !self
+            let Some(preemption) = self
                 .state
-                .reserve_specific_piece_for_planning(candidate.piece, MAX_PLANNED_CONTENT_PIECES)
-            {
+                .reserve_specific_piece_for_planning(
+                    candidate.piece,
+                    MAX_PLANNED_CONTENT_PIECES,
+                    snapshot,
+                )
+                .map_err(DownloadError::Swarm)?
+            else {
                 continue;
-            }
+            };
+            self.total_blocks = self.total_blocks.saturating_sub(preemption.block_count);
+            self.total_bytes = self
+                .total_bytes
+                .saturating_sub(preemption.working_set_bytes);
             if !self.prepare_reserved_piece(candidate.piece)? {
                 break;
             }
@@ -4707,7 +4716,9 @@ impl<'a> ContentSwarmDownload<'a> {
                 break;
             }
         }
-        self.state.schedule(now).map_err(DownloadError::Swarm)
+        self.state
+            .schedule_with_streaming(now, &streaming)
+            .map_err(DownloadError::Swarm)
     }
 
     async fn handle_message(

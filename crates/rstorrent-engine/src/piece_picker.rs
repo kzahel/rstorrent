@@ -239,6 +239,19 @@ impl AvailabilityPicker {
         Ok(())
     }
 
+    pub(crate) fn restore_unstarted(&mut self, piece: usize) -> Result<(), &'static str> {
+        let position = self
+            .positions
+            .get_mut(piece)
+            .ok_or("restored piece is outside picker geometry")?;
+        if *position != POSITION_PLANNED {
+            return Err("restored piece is not planned");
+        }
+        *position = POSITION_DETACHED;
+        self.push_detached(piece as u32);
+        Ok(())
+    }
+
     pub(crate) fn mark_completed(&mut self, piece: usize) -> Result<(), &'static str> {
         let position = *self
             .positions

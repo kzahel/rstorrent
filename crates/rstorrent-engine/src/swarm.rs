@@ -10,6 +10,7 @@ use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
 use crate::session_resources::SessionTorrentResources;
+use crate::streaming::{StreamingDemandSnapshot, StreamingUrgency};
 
 pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
 pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
@@ -28,6 +29,11 @@ const REQUEST_RATE_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 const SLOW_START_RATE_SLACK_BYTES: usize = 5_000;
 const MAX_REQUEST_TIME_SAMPLES: usize = 20;
 const MIN_ADAPTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const STREAMING_QUEUE_HORIZON: Duration = Duration::from_secs(2);
+const STREAMING_NEW_PEER_MIN_BYTES: usize = 32 * 1024;
+const STREAMING_NEW_PEER_MIN_AGE: Duration = Duration::from_secs(5);
+const STREAMING_RECENT_RATE_AGE: Duration = Duration::from_secs(30);
+const STREAMING_CONSERVATIVE_RATE: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConnectionId(u64);
@@ -258,6 +264,20 @@ pub enum RequestDisposition {
     Cancelled,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RequestPurpose {
+    Ordinary,
+    Endgame,
+    StreamingPrimary,
+    StreamingDuplicate,
+}
+
+impl RequestPurpose {
+    const fn is_duplicate(self) -> bool {
+        matches!(self, Self::Endgame | Self::StreamingDuplicate)
+    }
+}
+
 impl RequestDisposition {
     const fn is_active(self) -> bool {
         matches!(self, Self::Requested)
@@ -270,6 +290,7 @@ pub struct RequestAttempt {
     pub block: BlockKey,
     pub connection: ConnectionId,
     pub issued_at: Duration,
+    pub purpose: RequestPurpose,
     pub disposition: RequestDisposition,
 }
 
@@ -278,6 +299,13 @@ pub struct RequestAssignment {
     pub attempt: RequestAttemptId,
     pub connection: ConnectionId,
     pub block: BlockKey,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PiecePlanPreemption {
+    pub piece: Option<u32>,
+    pub block_count: usize,
+    pub working_set_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -381,6 +409,10 @@ pub struct SwarmSnapshot {
     pub useful_payload_bytes: usize,
     pub observed_payload_rate: usize,
     pub endgame_assignments: usize,
+    pub streaming_assignments: usize,
+    pub streaming_duplicate_assignments: usize,
+    pub streaming_candidate_inspections: u64,
+    pub streaming_queue_rejections: u64,
     pub cancelled_request_attempts: usize,
     pub redundant_payload_bytes: usize,
     pub piece_hash_failures: usize,
@@ -562,6 +594,8 @@ struct RequestWindow {
     sample_payload_bytes: usize,
     previous_payload_rate: Option<usize>,
     observed_payload_rate: usize,
+    peak_payload_rate: usize,
+    last_rate_at: Option<Duration>,
     useful_payload_bytes: usize,
     last_payload_at: Option<Duration>,
     request_time_samples: VecDeque<Duration>,
@@ -576,6 +610,8 @@ impl RequestWindow {
             sample_payload_bytes: 0,
             previous_payload_rate: None,
             observed_payload_rate: 0,
+            peak_payload_rate: 0,
+            last_rate_at: None,
             useful_payload_bytes: 0,
             last_payload_at: None,
             request_time_samples: VecDeque::new(),
@@ -594,6 +630,8 @@ impl RequestWindow {
             .unwrap_or(0))
         .min(usize::MAX as u128) as usize;
         self.observed_payload_rate = rate;
+        self.peak_payload_rate = self.peak_payload_rate.max(rate);
+        self.last_rate_at = Some(now);
 
         if self.phase == RequestWindowPhase::SlowStart {
             if self.previous_payload_rate.is_some_and(|previous| {
@@ -697,6 +735,19 @@ impl RequestWindow {
             .checked_add(self.request_timeout(config))
             .unwrap_or(Duration::MAX)
     }
+
+    fn streaming_rate(&self, now: Duration, new_peer_fallback: Option<usize>) -> usize {
+        if let Some(fallback) = new_peer_fallback {
+            return fallback.max(STREAMING_CONSERVATIVE_RATE);
+        }
+        let recent = self
+            .last_rate_at
+            .filter(|sampled_at| now.saturating_sub(*sampled_at) <= STREAMING_RECENT_RATE_AGE)
+            .map_or(0, |_| self.observed_payload_rate);
+        recent
+            .max(self.peak_payload_rate)
+            .max(STREAMING_CONSERVATIVE_RATE)
+    }
 }
 
 fn rate_target(payload_rate: usize, config: SwarmConfig) -> usize {
@@ -715,6 +766,27 @@ fn rate_target(payload_rate: usize, config: SwarmConfig) -> usize {
         MIN_HEALTHY_REQUESTS_PER_CONNECTION,
         config.max_requests_per_connection,
     )
+}
+
+fn append_round_robin_streaming_pieces(
+    output: &mut Vec<(u32, StreamingUrgency)>,
+    per_demand: &[Vec<u32>],
+    urgency: StreamingUrgency,
+) {
+    let mut offsets = vec![0; per_demand.len()];
+    loop {
+        let mut progress = false;
+        for (pieces, offset) in per_demand.iter().zip(&mut offsets) {
+            if let Some(&piece) = pieces.get(*offset) {
+                output.push((piece, urgency));
+                *offset += 1;
+                progress = true;
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -929,6 +1001,10 @@ pub struct SwarmState {
     active_piece_visits: u64,
     inactive_planned_piece_visits: u64,
     endgame_assignments: usize,
+    streaming_assignments: usize,
+    streaming_duplicate_assignments: usize,
+    streaming_candidate_inspections: u64,
+    streaming_queue_rejections: u64,
     cancelled_request_attempts: usize,
     redundant_payload_bytes: usize,
     piece_hash_failures: usize,
@@ -1007,6 +1083,10 @@ impl SwarmState {
             active_piece_visits: 0,
             inactive_planned_piece_visits: 0,
             endgame_assignments: 0,
+            streaming_assignments: 0,
+            streaming_duplicate_assignments: 0,
+            streaming_candidate_inspections: 0,
+            streaming_queue_rejections: 0,
             cancelled_request_attempts: 0,
             redundant_payload_bytes: 0,
             piece_hash_failures: 0,
@@ -1233,17 +1313,78 @@ impl SwarmState {
     }
 
     /// Reserve a wanted, available piece selected by a time-critical caller.
+    ///
+    /// When the planning window is full, one untouched ordinary plan may be
+    /// restored to the picker. Received, writing, hashed, and verified work is
+    /// never eligible for this preemption.
     pub fn reserve_specific_piece_for_planning(
         &mut self,
         piece: u32,
         maximum_planned_pieces: usize,
-    ) -> bool {
-        if self.pieces.len() >= maximum_planned_pieces {
-            return false;
+        demands: &StreamingDemandSnapshot,
+    ) -> Result<Option<PiecePlanPreemption>, SwarmError> {
+        let mut preemption = PiecePlanPreemption::default();
+        let piece_index =
+            usize::try_from(piece).map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+        if self.pieces.contains_key(&piece)
+            || !self.picker.is_wanted(piece_index)
+            || self.picker.availability(piece_index) == Some(0)
+        {
+            return Ok(None);
         }
-        usize::try_from(piece)
-            .ok()
-            .is_some_and(|piece| self.picker.reserve_specific(piece))
+        if self.pieces.len() >= maximum_planned_pieces {
+            let candidate = self.pieces.iter().rev().find_map(|(candidate, state)| {
+                (*candidate != piece
+                    && demands.urgency(*candidate).is_none()
+                    && state.blocks.iter().all(|block| {
+                        self.blocks
+                            .get(block)
+                            .is_some_and(|state| matches!(state.phase, BlockPhase::Missing))
+                    }))
+                .then_some(*candidate)
+            });
+            let Some(candidate) = candidate else {
+                return Ok(None);
+            };
+            let state = self
+                .pieces
+                .remove(&candidate)
+                .ok_or(SwarmError::UnknownPiece(candidate))?;
+            let candidate_index = usize::try_from(candidate)
+                .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+            if self.active_pieces.contains(&candidate_index) {
+                return Err(SwarmError::Invariant(
+                    "untouched planning preemption selected active work",
+                ));
+            }
+            if !self.incomplete_pieces.remove(&candidate_index) {
+                return Err(SwarmError::Invariant(
+                    "untouched planning preemption selected complete work",
+                ));
+            }
+            for block in &state.blocks {
+                self.blocks
+                    .remove(block)
+                    .ok_or(SwarmError::UnknownBlock(*block))?;
+            }
+            self.missing_blocks = self
+                .missing_blocks
+                .checked_sub(state.missing_blocks)
+                .ok_or(SwarmError::Invariant("missing block count underflow"))?;
+            self.inactive_ranked_pieces
+                .retain(|planned| *planned != candidate);
+            self.picker
+                .restore_unstarted(candidate_index)
+                .map_err(SwarmError::Invariant)?;
+            preemption = PiecePlanPreemption {
+                piece: Some(candidate),
+                block_count: state.blocks.len(),
+                working_set_bytes: state.working_set_bytes,
+            };
+        }
+        let reserved = self.picker.reserve_specific(piece_index);
+        debug_assert!(reserved, "eligible specific reservation must succeed");
+        Ok(reserved.then_some(preemption))
     }
 
     pub fn cancel_piece_planning(&mut self, piece: u32) -> Result<(), SwarmError> {
@@ -1598,8 +1739,37 @@ impl SwarmState {
     }
 
     pub fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, SwarmError> {
+        self.schedule_ordinary(now, false, true, true)
+    }
+
+    pub fn schedule_with_streaming(
+        &mut self,
+        now: Duration,
+        demands: &StreamingDemandSnapshot,
+    ) -> Result<Vec<RequestAssignment>, SwarmError> {
+        if demands.is_empty() {
+            return self.schedule(now);
+        }
         for connection in self.connections.values_mut() {
             connection.request_window.refresh(now, self.config);
+        }
+        let mut assignments = self.schedule_streaming_urgent(now, demands)?;
+        let mut ordinary = self.schedule_ordinary(now, true, false, false)?;
+        assignments.append(&mut ordinary);
+        Ok(assignments)
+    }
+
+    fn schedule_ordinary(
+        &mut self,
+        now: Duration,
+        limit_each_peer_to_one: bool,
+        allow_endgame: bool,
+        refresh_windows: bool,
+    ) -> Result<Vec<RequestAssignment>, SwarmError> {
+        if refresh_windows {
+            for connection in self.connections.values_mut() {
+                connection.request_window.refresh(now, self.config);
+            }
         }
         let mut assignments = Vec::new();
         loop {
@@ -1608,7 +1778,12 @@ impl SwarmState {
             ordered.retain(|connection| {
                 self.connections.get(connection).is_some_and(|state| {
                     (!state.choking || state.has_choked_fast_work())
-                        && state.active_request_count < state.request_window.target
+                        && state.active_request_count
+                            < if limit_each_peer_to_one {
+                                1
+                            } else {
+                                state.request_window.target
+                            }
                 })
             });
             if ordered.is_empty() {
@@ -1621,7 +1796,8 @@ impl SwarmState {
                 if !self.request_budget_allows(block)? {
                     continue;
                 }
-                let assignment = match self.assign(connection, block, now, false) {
+                let assignment = match self.assign(connection, block, now, RequestPurpose::Ordinary)
+                {
                     Ok(assignment) => assignment,
                     Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
                     Err(error) => return Err(error),
@@ -1639,7 +1815,7 @@ impl SwarmState {
             let Some((connection, block)) = self.next_inactive_assignment(&ordered)? else {
                 break;
             };
-            let assignment = match self.assign(connection, block, now, false) {
+            let assignment = match self.assign(connection, block, now, RequestPurpose::Ordinary) {
                 Ok(assignment) => assignment,
                 Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
                 Err(error) => return Err(error),
@@ -1650,7 +1826,7 @@ impl SwarmState {
                 return Ok(assignments);
             }
         }
-        if self.missing_blocks == 0 {
+        if allow_endgame && self.missing_blocks == 0 {
             for connection in self.ordered_connection_ids() {
                 if self.connection_request_count(connection) != 0 {
                     continue;
@@ -1667,7 +1843,8 @@ impl SwarmState {
                 {
                     continue;
                 }
-                let assignment = match self.assign(connection, block, now, true) {
+                let assignment = match self.assign(connection, block, now, RequestPurpose::Endgame)
+                {
                     Ok(assignment) => assignment,
                     Err(SwarmError::SessionResourceUnavailable) => break,
                     Err(error) => return Err(error),
@@ -1680,6 +1857,233 @@ impl SwarmState {
             }
         }
         Ok(assignments)
+    }
+
+    fn schedule_streaming_urgent(
+        &mut self,
+        now: Duration,
+        demands: &StreamingDemandSnapshot,
+    ) -> Result<Vec<RequestAssignment>, SwarmError> {
+        let ordered = self.streaming_piece_order(demands);
+        let mut assignments = Vec::new();
+        for urgency in [StreamingUrgency::Current, StreamingUrgency::Ahead] {
+            loop {
+                let mut progress = false;
+                for &(piece, candidate_urgency) in &ordered {
+                    if candidate_urgency != urgency {
+                        continue;
+                    }
+                    let Some(block) = self.first_missing_block(piece) else {
+                        continue;
+                    };
+                    let piece_index = usize::try_from(piece)
+                        .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+                    if !self.active_pieces.contains(&piece_index)
+                        && !self.can_activate_piece(piece_index)
+                    {
+                        continue;
+                    }
+                    if !self.request_budget_allows(block)? {
+                        continue;
+                    }
+                    let Some(connection) = self.best_streaming_connection(piece, block, now) else {
+                        continue;
+                    };
+                    let assignment =
+                        match self.assign(connection, block, now, RequestPurpose::StreamingPrimary)
+                        {
+                            Ok(assignment) => assignment,
+                            Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
+                            Err(error) => return Err(error),
+                        };
+                    assignments.push(assignment);
+                    self.last_scheduled_connection = Some(connection);
+                    progress = true;
+                    if self.session_resources.is_some() {
+                        return Ok(assignments);
+                    }
+                }
+                if !progress {
+                    break;
+                }
+            }
+
+            for &(piece, candidate_urgency) in &ordered {
+                if candidate_urgency != urgency {
+                    continue;
+                }
+                let blocks = self
+                    .pieces
+                    .get(&piece)
+                    .map(|state| state.blocks.clone())
+                    .unwrap_or_default();
+                for block in blocks {
+                    if !self.streaming_duplicate_due(block, now)?
+                        || !self.request_budget_allows(block)?
+                    {
+                        continue;
+                    }
+                    let Some(connection) = self.best_streaming_connection(piece, block, now) else {
+                        continue;
+                    };
+                    let assignment = match self.assign(
+                        connection,
+                        block,
+                        now,
+                        RequestPurpose::StreamingDuplicate,
+                    ) {
+                        Ok(assignment) => assignment,
+                        Err(SwarmError::SessionResourceUnavailable) => return Ok(assignments),
+                        Err(error) => return Err(error),
+                    };
+                    assignments.push(assignment);
+                    self.last_scheduled_connection = Some(connection);
+                    if self.session_resources.is_some() {
+                        return Ok(assignments);
+                    }
+                }
+            }
+
+            if urgency == StreamingUrgency::Current
+                && ordered.iter().any(|(piece, candidate_urgency)| {
+                    *candidate_urgency == StreamingUrgency::Current
+                        && self.first_missing_block(*piece).is_some()
+                })
+            {
+                break;
+            }
+        }
+        Ok(assignments)
+    }
+
+    fn streaming_piece_order(
+        &mut self,
+        demands: &StreamingDemandSnapshot,
+    ) -> Vec<(u32, StreamingUrgency)> {
+        let mut current = vec![Vec::new(); demands.demands().len()];
+        let mut ahead = vec![Vec::new(); demands.demands().len()];
+        for &piece in self.pieces.keys().take(256) {
+            self.streaming_candidate_inspections =
+                self.streaming_candidate_inspections.saturating_add(1);
+            if let Some(index) = demands
+                .demands()
+                .iter()
+                .position(|demand| demand.current().contains(piece))
+            {
+                current[index].push(piece);
+            } else if let Some(index) = demands.demands().iter().position(|demand| {
+                demand
+                    .ahead()
+                    .is_some_and(|interval| interval.contains(piece))
+            }) {
+                ahead[index].push(piece);
+            }
+        }
+        let mut ordered = Vec::new();
+        append_round_robin_streaming_pieces(&mut ordered, &current, StreamingUrgency::Current);
+        append_round_robin_streaming_pieces(&mut ordered, &ahead, StreamingUrgency::Ahead);
+        ordered
+    }
+
+    fn streaming_duplicate_due(&self, block: BlockKey, now: Duration) -> Result<bool, SwarmError> {
+        let state = self
+            .blocks
+            .get(&block)
+            .ok_or(SwarmError::UnknownBlock(block))?;
+        if !matches!(state.phase, BlockPhase::Requested) {
+            return Ok(false);
+        }
+        let active = state
+            .attempts
+            .iter()
+            .filter(|attempt| attempt.disposition.is_active())
+            .collect::<Vec<_>>();
+        if active.len() != 1 {
+            return Ok(false);
+        }
+        let attempt = active[0];
+        let timeout = self
+            .connection(attempt.connection)?
+            .request_window
+            .request_timeout(self.config);
+        Ok(now.saturating_sub(attempt.issued_at) >= timeout)
+    }
+
+    fn best_streaming_connection(
+        &mut self,
+        piece: u32,
+        block: BlockKey,
+        now: Duration,
+    ) -> Option<ConnectionId> {
+        let piece = usize::try_from(piece).ok()?;
+        let mature_rates = self
+            .connections
+            .values()
+            .filter(|connection| {
+                connection.request_window.useful_payload_bytes >= STREAMING_NEW_PEER_MIN_BYTES
+                    && now.saturating_sub(connection.connected_at) >= STREAMING_NEW_PEER_MIN_AGE
+            })
+            .map(|connection| connection.request_window.streaming_rate(now, None))
+            .collect::<Vec<_>>();
+        let fallback = if mature_rates.is_empty() {
+            STREAMING_CONSERVATIVE_RATE
+        } else {
+            mature_rates.iter().copied().sum::<usize>() / mature_rates.len()
+        };
+        let mut eligible = self
+            .connections
+            .iter()
+            .filter(|(id, connection)| {
+                connection.request_window.phase != RequestWindowPhase::Stalled
+                    && connection.can_request_piece(piece)
+                    && connection.active_request_count < self.config.max_requests_per_connection
+                    && !self.active_attempts.values().any(|attempt| {
+                        attempt.block == block
+                            && attempt.connection == **id
+                            && attempt.disposition.is_active()
+                    })
+            })
+            .map(|(id, connection)| {
+                let new_peer = connection.request_window.useful_payload_bytes
+                    < STREAMING_NEW_PEER_MIN_BYTES
+                    || now.saturating_sub(connection.connected_at) < STREAMING_NEW_PEER_MIN_AGE;
+                let rate = connection
+                    .request_window
+                    .streaming_rate(now, new_peer.then_some(fallback));
+                let queued = self
+                    .active_attempts
+                    .values()
+                    .filter(|attempt| attempt.connection == *id && attempt.disposition.is_active())
+                    .map(|attempt| attempt.block.length as usize)
+                    .sum::<usize>();
+                (*id, rate, queued)
+            })
+            .collect::<Vec<_>>();
+        if eligible.len() >= 10 {
+            eligible.sort_unstable_by_key(|(id, rate, _)| (*rate, *id));
+            let avoid = eligible.len() / 10;
+            eligible.drain(..avoid);
+        }
+        let block_length = block.length as usize;
+        let mut best = None;
+        for (id, rate, queued) in eligible {
+            let projected = queued.saturating_add(block_length);
+            if (projected as u128).saturating_mul(1_000)
+                > (rate as u128).saturating_mul(STREAMING_QUEUE_HORIZON.as_millis())
+            {
+                self.streaming_queue_rejections = self.streaming_queue_rejections.saturating_add(1);
+                continue;
+            }
+            let estimate = (queued as u128)
+                .saturating_mul(1_000_000)
+                .checked_div(rate as u128)
+                .unwrap_or(u128::MAX);
+            if best.is_none_or(|(best_estimate, best_id)| (estimate, id) < (best_estimate, best_id))
+            {
+                best = Some((estimate, id));
+            }
+        }
+        best.map(|(_, id)| id)
     }
 
     pub fn expire_requests(&mut self, now: Duration) -> Result<Vec<ExpiredRequest>, SwarmError> {
@@ -2477,6 +2881,10 @@ impl SwarmState {
                 .map(|connection| connection.request_window.observed_payload_rate)
                 .sum(),
             endgame_assignments: self.endgame_assignments,
+            streaming_assignments: self.streaming_assignments,
+            streaming_duplicate_assignments: self.streaming_duplicate_assignments,
+            streaming_candidate_inspections: self.streaming_candidate_inspections,
+            streaming_queue_rejections: self.streaming_queue_rejections,
             cancelled_request_attempts: self.cancelled_request_attempts,
             redundant_payload_bytes: self.redundant_payload_bytes,
             piece_hash_failures: self.piece_hash_failures,
@@ -2803,7 +3211,7 @@ impl SwarmState {
         connection: ConnectionId,
         block: BlockKey,
         now: Duration,
-        endgame: bool,
+        purpose: RequestPurpose,
     ) -> Result<RequestAssignment, SwarmError> {
         let attempt_id = RequestAttemptId(self.next_attempt_id);
         self.next_attempt_id = self
@@ -2814,7 +3222,7 @@ impl SwarmState {
             .blocks
             .get(&block)
             .ok_or(SwarmError::UnknownBlock(block))?;
-        let valid_phase = if endgame {
+        let valid_phase = if purpose.is_duplicate() {
             matches!(state.phase, BlockPhase::Requested)
                 && state
                     .attempts
@@ -2827,8 +3235,8 @@ impl SwarmState {
             matches!(state.phase, BlockPhase::Missing)
         };
         if !valid_phase {
-            return Err(SwarmError::InvalidTransition(if endgame {
-                "block cannot accept this endgame request"
+            return Err(SwarmError::InvalidTransition(if purpose.is_duplicate() {
+                "block cannot accept this duplicate request"
             } else {
                 "block is not missing"
             }));
@@ -2843,7 +3251,7 @@ impl SwarmState {
             ),
             None => None,
         };
-        let mut piece_reservation = if !endgame
+        let mut piece_reservation = if !purpose.is_duplicate()
             && usize::try_from(block.piece)
                 .ok()
                 .is_some_and(|piece| !self.active_pieces.contains(&piece))
@@ -2880,10 +3288,11 @@ impl SwarmState {
             block,
             connection,
             issued_at: now,
+            purpose,
             disposition: RequestDisposition::Requested,
         });
         state.phase = BlockPhase::Requested;
-        if !endgame {
+        if !purpose.is_duplicate() {
             self.missing_blocks = self
                 .missing_blocks
                 .checked_sub(1)
@@ -2903,6 +3312,7 @@ impl SwarmState {
             block,
             connection,
             issued_at: now,
+            purpose,
             disposition: RequestDisposition::Requested,
         };
         if self.active_attempts.insert(attempt_id, attempt).is_some() {
@@ -2925,8 +3335,19 @@ impl SwarmState {
         if let Some(reservation) = request_reservation.take() {
             reservation.commit();
         }
-        if endgame {
-            self.endgame_assignments = self.endgame_assignments.saturating_add(1);
+        match purpose {
+            RequestPurpose::Endgame => {
+                self.endgame_assignments = self.endgame_assignments.saturating_add(1);
+            }
+            RequestPurpose::StreamingPrimary => {
+                self.streaming_assignments = self.streaming_assignments.saturating_add(1);
+            }
+            RequestPurpose::StreamingDuplicate => {
+                self.streaming_assignments = self.streaming_assignments.saturating_add(1);
+                self.streaming_duplicate_assignments =
+                    self.streaming_duplicate_assignments.saturating_add(1);
+            }
+            RequestPurpose::Ordinary => {}
         }
         Ok(RequestAssignment {
             attempt: attempt_id,
@@ -3462,6 +3883,7 @@ impl Error for SwarmError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::streaming::{StreamingDemandSet, StreamingPieceInterval};
 
     const BLOCK: u32 = MAX_REQUEST_BLOCK_LENGTH;
 
@@ -3498,6 +3920,170 @@ mod tests {
         }
         state.set_bitfield(id, availability).expect("bitfield");
         state.set_choking(id, choking).expect("choke state");
+    }
+
+    fn streaming_demands(
+        current: (u32, u32),
+        ahead: Option<(u32, u32)>,
+    ) -> StreamingDemandSnapshot {
+        let mut demands = StreamingDemandSet::default();
+        demands
+            .insert(
+                StreamingPieceInterval::new(current.0, current.1).expect("current interval"),
+                ahead.map(|(first, last)| {
+                    StreamingPieceInterval::new(first, last).expect("ahead interval")
+                }),
+            )
+            .expect("streaming demand");
+        demands.snapshot()
+    }
+
+    #[test]
+    fn streaming_schedules_current_before_ahead_and_suppresses_ordinary_fill() {
+        let mut state = state(3, vec![plan(0, 1), plan(1, 1), plan(2, 1)], 8);
+        add_peer(&mut state, connection(1), &[0, 1, 2], false);
+        add_peer(&mut state, connection(2), &[0, 1, 2], false);
+        let demands = streaming_demands((2, 2), Some((1, 1)));
+
+        let assigned = state
+            .schedule_with_streaming(Duration::ZERO, &demands)
+            .expect("streaming schedule");
+
+        assert_eq!(
+            assigned
+                .iter()
+                .map(|assignment| assignment.block.piece)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert!(assigned.iter().all(|assignment| {
+            state.active_attempts[&assignment.attempt].purpose == RequestPurpose::StreamingPrimary
+        }));
+        assert_eq!(
+            state.block_status(plan(0, 1).blocks[0]),
+            Ok(BlockStatus::Missing)
+        );
+        assert_cached_indexes(&state);
+    }
+
+    #[test]
+    fn streaming_queue_horizon_bounds_a_new_peer() {
+        let mut state = state(1, vec![plan(0, 4)], 8);
+        add_peer(&mut state, connection(1), &[0], false);
+        let demands = streaming_demands((0, 0), None);
+
+        let assigned = state
+            .schedule_with_streaming(Duration::ZERO, &demands)
+            .expect("bounded streaming schedule");
+
+        assert_eq!(assigned.len(), 2);
+        let snapshot = state.snapshot(Duration::ZERO);
+        assert_eq!(snapshot.streaming_assignments, 2);
+        assert!(snapshot.streaming_queue_rejections > 0);
+        assert_eq!(snapshot.outstanding_request_bytes, 2 * BLOCK as usize);
+    }
+
+    #[test]
+    fn streaming_timeout_duplicates_once_and_first_response_cancels_loser() {
+        let mut state = state(1, vec![plan(0, 1)], 4);
+        add_peer(&mut state, connection(1), &[0], false);
+        add_peer(&mut state, connection(2), &[0], false);
+        let demands = streaming_demands((0, 0), None);
+        let first = state
+            .schedule_with_streaming(Duration::ZERO, &demands)
+            .expect("primary request")[0];
+        assert!(
+            state
+                .schedule_with_streaming(Duration::from_secs(29), &demands)
+                .expect("before timeout")
+                .is_empty()
+        );
+
+        let duplicate = state
+            .schedule_with_streaming(Duration::from_secs(30), &demands)
+            .expect("duplicate request")[0];
+        assert_ne!(first.connection, duplicate.connection);
+        assert_eq!(
+            state.active_attempts[&duplicate.attempt].purpose,
+            RequestPurpose::StreamingDuplicate
+        );
+        assert!(
+            state
+                .schedule_with_streaming(Duration::from_secs(31), &demands)
+                .expect("maximum duplicate count")
+                .is_empty()
+        );
+        assert_eq!(
+            state
+                .receive_block(
+                    duplicate.connection,
+                    duplicate.block,
+                    Duration::from_secs(31)
+                )
+                .expect("winning duplicate"),
+            ReceiveDisposition::Accept {
+                evidence: duplicate.attempt,
+                cancellations: vec![RequestCancellation {
+                    attempt: first.attempt,
+                    connection: first.connection,
+                    block: first.block,
+                }],
+                late: false,
+            }
+        );
+        assert_eq!(
+            state
+                .snapshot(Duration::from_secs(31))
+                .streaming_duplicate_assignments,
+            1
+        );
+    }
+
+    #[test]
+    fn streaming_avoids_the_slowest_decile_with_ten_holders() {
+        let mut state = state(1, vec![plan(0, 1)], 4);
+        for value in 1..=10 {
+            let id = connection(value);
+            add_peer(&mut state, id, &[0], false);
+            let peer = state.connections.get_mut(&id).expect("peer state");
+            peer.request_window.useful_payload_bytes = STREAMING_NEW_PEER_MIN_BYTES;
+            peer.request_window.peak_payload_rate = value as usize * 100_000;
+            peer.request_window.last_rate_at = Some(Duration::from_secs(10));
+        }
+        let demands = streaming_demands((0, 0), None);
+
+        let assigned = state
+            .schedule_with_streaming(Duration::from_secs(10), &demands)
+            .expect("streaming schedule");
+
+        assert_eq!(assigned[0].connection, connection(2));
+    }
+
+    #[test]
+    fn streaming_plan_preempts_only_untouched_ordinary_work() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(4 * BLOCK as usize),
+            3,
+            vec![0, 1, 2],
+            vec![plan(0, 1), plan(1, 1)],
+            0,
+        )
+        .expect("planned swarm");
+        add_peer(&mut state, connection(1), &[0, 1, 2], false);
+        let demands = streaming_demands((2, 2), None);
+
+        let preemption = state
+            .reserve_specific_piece_for_planning(2, 2, &demands)
+            .expect("preemption")
+            .expect("specific reservation");
+        assert!(matches!(preemption.piece, Some(0 | 1)));
+        assert_eq!(preemption.block_count, 1);
+        state
+            .append_piece_plans(vec![plan(2, 1)])
+            .expect("streaming plan");
+        assert_eq!(state.planned_piece_count(), 2);
+        assert!(state.pieces.contains_key(&2));
+        assert_cached_indexes(&state);
     }
 
     fn assert_cached_indexes(state: &SwarmState) {
