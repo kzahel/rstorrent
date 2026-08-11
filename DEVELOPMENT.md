@@ -420,6 +420,22 @@ uv run --project tests/interop --locked \
   --cleanup-seconds 10 --output /tmp/rstorrent-public-ipv6.json
 ```
 
+The uTP default-readiness observation is a separate one-shot profile. It uses
+the catalogued Big Buck Bunny magnet, verifies metadata only, starts fixed uTP
+on the shared session UDP owner, permits at most 30 peers, and removes its fresh
+temporary root. It never maps or advertises an incoming endpoint. Run it only
+when a tactical explicitly authorizes the public attempt:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/utp_public_observation.py \
+  --allow-public-network
+```
+
+The report contains endpoint-free TCP/uTP capability aggregates and terminal
+UDP/uTP resource counters. A safely cleaned timeout or lack of a uTP-capable
+peer is evidence-limited rather than a deterministic test failure.
+
 The advertisement profile independently discovers a completed RSTorrent seed
 through either a controlled UDP tracker or DHT and hash-verifies both
 libtorrent downloads without an explicit peer hint:

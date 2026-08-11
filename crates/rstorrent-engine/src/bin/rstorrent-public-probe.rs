@@ -14,9 +14,10 @@ use rstorrent_engine::{
     DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumeValidationIntent, ResumedStorage, SessionUdpService, TorrentPeerActivitySink,
-    TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
-    download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
+    ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot,
+    TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
+    UtpService, UtpServiceSnapshot, download_verified_piece_with_peer_state,
+    resume_magnet_with_control, select_global_ipv6,
 };
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -72,6 +73,7 @@ enum Profile {
     MatchedPlain30,
     MatchedRc430,
     ProductDefault,
+    ProductUtp,
     DhtOnly,
 }
 
@@ -81,6 +83,7 @@ impl Profile {
             "matched-plain-30" | "common" => Ok(Self::MatchedPlain30),
             "matched-rc4-30" => Ok(Self::MatchedRc430),
             "product-default" | "full-reference" => Ok(Self::ProductDefault),
+            "product-utp" => Ok(Self::ProductUtp),
             "dht-only" | "dht" => Ok(Self::DhtOnly),
             _ => Err(format!("unknown comparison profile {value}")),
         }
@@ -89,7 +92,7 @@ impl Profile {
     const fn discovery(self) -> Discovery {
         match self {
             Self::MatchedPlain30 | Self::MatchedRc430 => Discovery::Tracker,
-            Self::ProductDefault => Discovery::Full,
+            Self::ProductDefault | Self::ProductUtp => Discovery::Full,
             Self::DhtOnly => Discovery::Dht,
         }
     }
@@ -98,18 +101,22 @@ impl Profile {
         match self {
             Self::MatchedPlain30 => PeerEncryptionPolicy::Disabled,
             Self::MatchedRc430 => PeerEncryptionPolicy::Required,
-            Self::ProductDefault | Self::DhtOnly => PeerEncryptionPolicy::Allow,
+            Self::ProductDefault | Self::ProductUtp | Self::DhtOnly => PeerEncryptionPolicy::Allow,
         }
     }
 
     const fn peer_exchange(self) -> bool {
-        matches!(self, Self::ProductDefault | Self::DhtOnly)
+        matches!(
+            self,
+            Self::ProductDefault | Self::ProductUtp | Self::DhtOnly
+        )
     }
 
     const fn connection_limit(self) -> usize {
         match self {
             Self::MatchedPlain30 | Self::MatchedRc430 => 30,
             Self::ProductDefault | Self::DhtOnly => 200,
+            Self::ProductUtp => 30,
         }
     }
 
@@ -118,8 +125,13 @@ impl Profile {
             Self::MatchedPlain30 => "matched-plain-30",
             Self::MatchedRc430 => "matched-rc4-30",
             Self::ProductDefault => "product-default",
+            Self::ProductUtp => "product-utp",
             Self::DhtOnly => "dht-only",
         }
+    }
+
+    const fn enables_utp(self) -> bool {
+        matches!(self, Self::ProductUtp)
     }
 }
 
@@ -764,7 +776,10 @@ impl EffectiveSettings {
             network_policy: "online",
             address_families: ["ipv4", "ipv6"],
             tracker: !matches!(profile, Profile::DhtOnly),
-            dht: matches!(profile, Profile::ProductDefault | Profile::DhtOnly),
+            dht: matches!(
+                profile,
+                Profile::ProductDefault | Profile::ProductUtp | Profile::DhtOnly
+            ),
             pex: profile.peer_exchange(),
             lsd: false,
             upnp: false,
@@ -772,7 +787,7 @@ impl EffectiveSettings {
             web_seed: false,
             incoming_connections: false,
             outgoing_tcp: true,
-            outgoing_utp: false,
+            outgoing_utp: profile.enables_utp(),
             session_connection_limit: profile.connection_limit(),
             torrent_connection_limit: 30,
             pending_dial_limit: 30,
@@ -787,7 +802,7 @@ impl EffectiveSettings {
             encryption: match profile {
                 Profile::MatchedPlain30 => "disabled",
                 Profile::MatchedRc430 => "required-rc4",
-                Profile::ProductDefault | Profile::DhtOnly => "allow",
+                Profile::ProductDefault | Profile::ProductUtp | Profile::DhtOnly => "allow",
             },
         }
     }
@@ -807,6 +822,12 @@ struct PeerMethodEvidence {
     payload_contributor_rc4: bool,
     useful_payload_bytes_high_water: u64,
     uploaded_payload_bytes_high_water: u64,
+    utp_endpoint_snapshots: u64,
+    utp_unknown_high_water: usize,
+    utp_advertised_high_water: usize,
+    utp_confirmed_high_water: usize,
+    utp_suppressed_high_water: usize,
+    utp_suppression_failures_high_water: u8,
 }
 
 #[derive(Debug, Default)]
@@ -934,8 +955,38 @@ impl TorrentPeerActivitySink for ProbeTorrentPeerSink {
     fn record_peer_registry(
         &self,
         _active: bool,
-        _snapshot: rstorrent_engine::peer::PeerRegistrySnapshot,
+        snapshot: rstorrent_engine::peer::PeerRegistrySnapshot,
     ) {
+        use rstorrent_engine::peer::UtpEndpointState;
+
+        let mut unknown = 0;
+        let mut advertised = 0;
+        let mut confirmed = 0;
+        let mut suppressed = 0;
+        let mut suppression_failures = 0;
+        for record in snapshot.records {
+            match record.history.utp_endpoint {
+                UtpEndpointState::Unknown => unknown += 1,
+                UtpEndpointState::Advertised => advertised += 1,
+                UtpEndpointState::Confirmed => confirmed += 1,
+                UtpEndpointState::Suppressed { failures, .. } => {
+                    suppressed += 1;
+                    suppression_failures = suppression_failures.max(failures);
+                }
+            }
+        }
+        let mut evidence = self
+            .evidence
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        evidence.utp_endpoint_snapshots = evidence.utp_endpoint_snapshots.saturating_add(1);
+        evidence.utp_unknown_high_water = evidence.utp_unknown_high_water.max(unknown);
+        evidence.utp_advertised_high_water = evidence.utp_advertised_high_water.max(advertised);
+        evidence.utp_confirmed_high_water = evidence.utp_confirmed_high_water.max(confirmed);
+        evidence.utp_suppressed_high_water = evidence.utp_suppressed_high_water.max(suppressed);
+        evidence.utp_suppression_failures_high_water = evidence
+            .utp_suppression_failures_high_water
+            .max(suppression_failures);
     }
 }
 
@@ -1093,6 +1144,96 @@ struct DhtEvidence {
     families: Vec<DhtFamilyEvidence>,
 }
 
+#[derive(Debug, Serialize)]
+struct UtpEvidence {
+    active_connections_after_shutdown: usize,
+    connection_high_water: usize,
+    incoming_half_open_after_shutdown: usize,
+    incoming_half_open_high_water: usize,
+    incoming_stream_queue_high_water: usize,
+    connection_datagram_queue_high_water: usize,
+    malformed_datagrams: u64,
+    unknown_connection_datagrams: u64,
+    stale_generation_datagrams: u64,
+    connection_datagrams_dropped: u64,
+    datagrams_sent: u64,
+    datagram_bytes_sent: u64,
+    retransmission_datagrams_sent: u64,
+    retransmission_bytes_sent: u64,
+    retransmission_queue_high_water: usize,
+    delivered_byte_high_water: usize,
+    unsent_byte_high_water: usize,
+    sent_byte_high_water: usize,
+    selected_mtu_min_bytes: Option<usize>,
+    selected_mtu_max_bytes: Option<usize>,
+    worker_panics: u64,
+}
+
+impl From<UtpServiceSnapshot> for UtpEvidence {
+    fn from(snapshot: UtpServiceSnapshot) -> Self {
+        Self {
+            active_connections_after_shutdown: snapshot.active_connections,
+            connection_high_water: snapshot.connection_high_water,
+            incoming_half_open_after_shutdown: snapshot.incoming_half_open,
+            incoming_half_open_high_water: snapshot.incoming_half_open_high_water,
+            incoming_stream_queue_high_water: snapshot.incoming_stream_queue_high_water,
+            connection_datagram_queue_high_water: snapshot.connection_datagram_queue_high_water,
+            malformed_datagrams: snapshot.malformed_datagrams,
+            unknown_connection_datagrams: snapshot.unknown_connection_datagrams,
+            stale_generation_datagrams: snapshot.stale_generation_datagrams,
+            connection_datagrams_dropped: snapshot.connection_datagrams_dropped,
+            datagrams_sent: snapshot.datagrams_sent,
+            datagram_bytes_sent: snapshot.datagram_bytes_sent,
+            retransmission_datagrams_sent: snapshot.retransmission_datagrams_sent,
+            retransmission_bytes_sent: snapshot.retransmission_bytes_sent,
+            retransmission_queue_high_water: snapshot.retransmission_queue_high_water,
+            delivered_byte_high_water: snapshot.delivered_byte_high_water,
+            unsent_byte_high_water: snapshot.unsent_byte_high_water,
+            sent_byte_high_water: snapshot.sent_byte_high_water,
+            selected_mtu_min_bytes: snapshot.selected_mtu_min_bytes,
+            selected_mtu_max_bytes: snapshot.selected_mtu_max_bytes,
+            worker_panics: snapshot.worker_panics,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct UdpEvidence {
+    tasks_after_shutdown: usize,
+    task_high_water: usize,
+    queued_after_shutdown: usize,
+    queue_high_water: usize,
+    datagrams_received: u64,
+    datagram_bytes_received: u64,
+    datagrams_dropped: u64,
+    dht_datagrams_dropped: u64,
+    utp_queued_after_shutdown: usize,
+    utp_queue_high_water: usize,
+    utp_datagrams_classified: u64,
+    utp_datagram_bytes_classified: u64,
+    utp_datagrams_dropped: u64,
+}
+
+impl From<SessionUdpSnapshot> for UdpEvidence {
+    fn from(snapshot: SessionUdpSnapshot) -> Self {
+        Self {
+            tasks_after_shutdown: snapshot.tasks,
+            task_high_water: snapshot.task_high_water,
+            queued_after_shutdown: snapshot.queued,
+            queue_high_water: snapshot.queue_high_water,
+            datagrams_received: snapshot.datagrams_received,
+            datagram_bytes_received: snapshot.datagram_bytes_received,
+            datagrams_dropped: snapshot.datagrams_dropped,
+            dht_datagrams_dropped: snapshot.dht_datagrams_dropped,
+            utp_queued_after_shutdown: snapshot.utp_queued,
+            utp_queue_high_water: snapshot.utp_queue_high_water,
+            utp_datagrams_classified: snapshot.utp_datagrams_classified,
+            utp_datagram_bytes_classified: snapshot.utp_datagram_bytes_classified,
+            utp_datagrams_dropped: snapshot.utp_datagrams_dropped,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct ProbeCheckpointSink;
 
@@ -1216,6 +1357,8 @@ struct ProbeResult {
     effective_settings: EffectiveSettings,
     capabilities: Capabilities,
     dht_evidence: Option<DhtEvidence>,
+    utp_evidence: Option<UtpEvidence>,
+    udp_evidence: Option<UdpEvidence>,
     diagnostics: Diagnostics,
 }
 
@@ -1253,11 +1396,12 @@ async fn main() -> ExitCode {
 
 struct LiveDhtRuntime {
     service: DhtService,
+    utp: Option<UtpService>,
     udp: SessionUdpService,
     evidence: DhtEvidenceTracker,
 }
 
-async fn start_live_dht() -> Result<LiveDhtRuntime, String> {
+async fn start_live_dht(enable_utp: bool) -> Result<LiveDhtRuntime, String> {
     let ipv4 = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
         .await
         .map_err(|error| format!("bind IPv4 DHT socket: {error}"))?;
@@ -1270,7 +1414,7 @@ async fn start_live_dht() -> Result<LiveDhtRuntime, String> {
                 Ok(socket) => socket,
                 Err(error) => {
                     let _ = udp.shutdown().await;
-                    return Err(format!("bind selected IPv6 DHT socket {address}: {error}"));
+                    return Err(format!("bind selected IPv6 DHT socket: {error}"));
                 }
             };
             if let Err(error) = udp.replace_socket(ipv6).await {
@@ -1278,16 +1422,34 @@ async fn start_live_dht() -> Result<LiveDhtRuntime, String> {
                 return Err(format!("start IPv6 session UDP generation: {error}"));
             }
         }
-        Err(error) => evidence.ipv6_startup_error = Some(error.to_string()),
+        Err(_) => {
+            evidence.ipv6_startup_error =
+                Some("global IPv6 session generation unavailable".to_owned());
+        }
     }
+    let mut utp = if enable_utp {
+        match UtpService::start(&mut udp) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                let _ = udp.shutdown().await;
+                return Err(format!("start fixed uTP service: {error}"));
+            }
+        }
+    } else {
+        None
+    };
     let config = DhtConfig::for_network(NetworkPolicy::Online);
     match DhtService::start_with_transport(config, transport).await {
         Ok(service) => Ok(LiveDhtRuntime {
             service,
+            utp,
             udp,
             evidence,
         }),
         Err(error) => {
+            if let Some(utp) = utp.take() {
+                let _ = utp.shutdown().await;
+            }
             let _ = udp.shutdown().await;
             Err(error.to_string())
         }
@@ -1317,6 +1479,8 @@ async fn run(config: Config) -> ProbeResult {
                     utility_timeline: &utility_timeline,
                 },
                 None,
+                None,
+                None,
                 TerminalState {
                     outcome: "error",
                     integrity_verified: false,
@@ -1327,38 +1491,6 @@ async fn run(config: Config) -> ProbeResult {
         }
     };
 
-    let mut dht = if config.profile.discovery().enables_dht() {
-        match start_live_dht().await {
-            Ok(runtime) => Some(runtime),
-            Err(error) => {
-                return result(
-                    &config,
-                    started,
-                    ProbeResultSources {
-                        sink: sink.as_ref(),
-                        peer_sink: peer_sink.as_ref(),
-                        diagnostics: &control.diagnostic_snapshot(),
-                        utility_timeline: &utility_timeline,
-                    },
-                    None,
-                    TerminalState {
-                        outcome: "error",
-                        integrity_verified: false,
-                        cleanup_succeeded: false,
-                        detail: Some(format!("DHT startup failed: {error}")),
-                    },
-                );
-            }
-        }
-    } else {
-        None
-    };
-
-    let mut resource_limits = DownloadResourceLimits::DESKTOP;
-    resource_limits.max_buffered_payload_bytes = config.payload_limit;
-    let mut budget_config = PeerBudgetConfig::system_default();
-    budget_config.configured_limit = config.profile.connection_limit();
-    budget_config.incoming_slack = 0;
     let torrent_peers = match TorrentPeerHandle::new(peer_sink.clone()) {
         Ok(handle) => handle,
         Err(error) => {
@@ -1372,6 +1504,8 @@ async fn run(config: Config) -> ProbeResult {
                     utility_timeline: &utility_timeline,
                 },
                 None,
+                None,
+                None,
                 TerminalState {
                     outcome: "harness_error",
                     integrity_verified: false,
@@ -1381,6 +1515,47 @@ async fn run(config: Config) -> ProbeResult {
             );
         }
     };
+
+    let mut dht = if config.profile.discovery().enables_dht() {
+        match start_live_dht(config.profile.enables_utp()).await {
+            Ok(runtime) => Some(runtime),
+            Err(error) => {
+                return result(
+                    &config,
+                    started,
+                    ProbeResultSources {
+                        sink: sink.as_ref(),
+                        peer_sink: peer_sink.as_ref(),
+                        diagnostics: &control.diagnostic_snapshot(),
+                        utility_timeline: &utility_timeline,
+                    },
+                    None,
+                    None,
+                    None,
+                    TerminalState {
+                        outcome: "error",
+                        integrity_verified: false,
+                        cleanup_succeeded: false,
+                        detail: Some(format!("DHT startup failed: {error}")),
+                    },
+                );
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(handle) = dht
+        .as_ref()
+        .and_then(|runtime| runtime.utp.as_ref().map(UtpService::handle))
+    {
+        control.set_utp_handle(handle);
+    }
+
+    let mut resource_limits = DownloadResourceLimits::DESKTOP;
+    resource_limits.max_buffered_payload_bytes = config.payload_limit;
+    let mut budget_config = PeerBudgetConfig::system_default();
+    budget_config.configured_limit = config.profile.connection_limit();
+    budget_config.incoming_slack = 0;
     let network = NetworkConfig::new(
         NetworkPolicy::Online,
         Duration::from_secs(15),
@@ -1484,8 +1659,10 @@ async fn run(config: Config) -> ProbeResult {
     }
 
     let mut cleanup_succeeded = true;
+    let cleanup_deadline = Instant::now() + config.cleanup_grace;
+    let remaining_cleanup = || cleanup_deadline.saturating_duration_since(Instant::now());
     if joined.is_none() {
-        match tokio::time::timeout(config.cleanup_grace, &mut task).await {
+        match tokio::time::timeout(remaining_cleanup(), &mut task).await {
             Ok(result) => joined = Some(result),
             Err(_) => {
                 task.abort();
@@ -1498,18 +1675,24 @@ async fn run(config: Config) -> ProbeResult {
         let observations = runtime.service.subscribe_observations();
         std::mem::take(&mut runtime.evidence).finish(&observations.borrow(), started.elapsed())
     });
-    if let Some(runtime) = dht.take() {
-        if tokio::time::timeout(config.cleanup_grace, runtime.service.shutdown())
+    let mut utp_evidence = None;
+    let mut udp_evidence = None;
+    if let Some(mut runtime) = dht.take() {
+        if let Some(utp) = runtime.utp.take() {
+            match tokio::time::timeout(remaining_cleanup(), utp.shutdown()).await {
+                Ok(Ok(snapshot)) => utp_evidence = Some(snapshot.into()),
+                Ok(Err(_)) | Err(_) => cleanup_succeeded = false,
+            }
+        }
+        if tokio::time::timeout(remaining_cleanup(), runtime.service.shutdown())
             .await
             .map_or(true, |result| result.is_err())
         {
             cleanup_succeeded = false;
         }
-        if tokio::time::timeout(config.cleanup_grace, runtime.udp.shutdown())
-            .await
-            .map_or(true, |result| result.is_err())
-        {
-            cleanup_succeeded = false;
+        match tokio::time::timeout(remaining_cleanup(), runtime.udp.shutdown()).await {
+            Ok(Ok(snapshot)) => udp_evidence = Some(snapshot.into()),
+            Ok(Err(_)) | Err(_) => cleanup_succeeded = false,
         }
     }
 
@@ -1541,6 +1724,8 @@ async fn run(config: Config) -> ProbeResult {
             utility_timeline: &utility_timeline,
         },
         dht_evidence,
+        utp_evidence,
+        udp_evidence,
         terminal,
     )
 }
@@ -1734,6 +1919,8 @@ fn result(
     started: Instant,
     sources: ProbeResultSources<'_>,
     dht_evidence: Option<DhtEvidence>,
+    utp_evidence: Option<UtpEvidence>,
+    udp_evidence: Option<UdpEvidence>,
     terminal: TerminalState,
 ) -> ProbeResult {
     let ProbeResultSources {
@@ -1777,7 +1964,7 @@ fn result(
             pex: config.profile.peer_exchange(),
             incoming_connections: false,
             tcp_outgoing: true,
-            utp_outgoing: false,
+            utp_outgoing: config.profile.enables_utp(),
             web_seed: false,
             websocket_trackers: false,
             address_families: ["ipv4", "ipv6"],
@@ -1786,6 +1973,8 @@ fn result(
             upload_slots: 8,
         },
         dht_evidence,
+        utp_evidence,
+        udp_evidence,
         diagnostics,
     }
 }
@@ -2154,9 +2343,10 @@ mod tests {
     };
 
     use super::{
-        DownloadActivityEvent, DownloadActivitySink, Geometry, IntegerDistribution,
-        MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeInput, ProbeSink, Profile,
-        UtilitySample, UtilityTimeline, crosses, integer_distribution, parse_args,
+        DownloadActivityEvent, DownloadActivitySink, EffectiveSettings, Geometry,
+        IntegerDistribution, MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeInput,
+        ProbeSink, Profile, UtilitySample, UtilityTimeline, crosses, integer_distribution,
+        parse_args,
     };
 
     fn required_arguments() -> Vec<String> {
@@ -2194,6 +2384,22 @@ mod tests {
         let config = parse_args(arguments).expect("forced RC4 arguments");
         assert_eq!(config.profile, Profile::MatchedRc430);
         assert_eq!(config.peer_hints.len(), 1);
+    }
+
+    #[test]
+    fn product_utp_profile_is_explicit_and_fixed_to_thirty_peers() {
+        let mut arguments = required_arguments();
+        arguments.extend(["--profile".to_owned(), "product-utp".to_owned()]);
+        let config = parse_args(arguments).expect("product uTP arguments");
+        assert_eq!(config.profile, Profile::ProductUtp);
+        assert!(config.profile.enables_utp());
+        assert_eq!(config.profile.connection_limit(), 30);
+        let settings = EffectiveSettings::for_profile(config.profile);
+        assert!(settings.outgoing_utp);
+        assert!(settings.outgoing_tcp);
+        assert!(!settings.incoming_connections);
+        assert!(!settings.upnp);
+        assert!(!EffectiveSettings::for_profile(Profile::ProductDefault).outgoing_utp);
     }
 
     #[test]
