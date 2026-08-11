@@ -2403,7 +2403,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn suppressed_endpoint_retries_tcp_without_another_utp_datagram() {
+    async fn suppressed_endpoint_retries_tcp_then_recovers_utp_after_expiry() {
         const INFO_HASH: [u8; 20] = [0xe5; 20];
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
         let target = listener.local_addr().expect("TCP target");
@@ -2429,12 +2429,13 @@ mod tests {
         let utp = UtpService::start(&mut udp).expect("client uTP");
         let endpoint = PeerEndpoint::new(target).expect("endpoint");
         let mut registry = PeerRegistry::new(PeerRegistryConfig::default()).expect("registry");
-        registry
+        let record_id = registry
             .observe(
                 PeerObservation::dialable(endpoint, PeerSource::Manual),
                 Duration::ZERO,
             )
-            .expect("observe endpoint");
+            .expect("observe endpoint")
+            .record_id;
         let budget = PeerBudget::new(PeerBudgetConfig {
             configured_limit: 1,
             incoming_slack: 0,
@@ -2580,7 +2581,13 @@ mod tests {
         };
         assert_eq!(utp.snapshot().datagrams_sent, sent_after_probe);
         assert_eq!(budget.snapshot().total_high_water, 1);
+        registry
+            .dial_succeeded(second_attempt, Duration::from_millis(1_001))
+            .expect("second dial succeeded");
         drop(second_connection);
+        registry
+            .connection_closed(second_attempt, Duration::from_millis(1_002), None)
+            .expect("second connection closed");
         assert!(
             second_sockets
                 .shutdown()
@@ -2588,9 +2595,124 @@ mod tests {
                 .expect("second shutdown")
                 .is_empty()
         );
-        let terminal = utp.shutdown().await.expect("uTP shutdown");
+
+        let retry_at = match registry
+            .get(record_id)
+            .expect("retained endpoint")
+            .history()
+            .utp_endpoint
+        {
+            crate::peer::UtpEndpointState::Suppressed { retry_at, .. } => retry_at,
+            state => panic!("expected suppressed uTP endpoint, got {state:?}"),
+        };
+        let server_socket = UdpSocket::bind(target).await.expect("bind server UDP");
+        let (mut server_udp, _) =
+            SessionUdpService::start(server_socket).expect("server session UDP");
+        let mut server_utp = UtpService::start(&mut server_udp).expect("server uTP");
+        let utp_server = tokio::spawn(async move {
+            let mut stream = timeout(Duration::from_secs(2), server_utp.accept())
+                .await
+                .expect("recovery accept deadline")
+                .expect("recovery uTP stream");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read recovery handshake");
+            decode_handshake(&handshake, INFO_HASH).expect("decode recovery handshake");
+            stream
+                .write_all(&encode_handshake(INFO_HASH, [0xf8; 20]))
+                .await
+                .expect("write recovery handshake");
+            stream.flush().await.expect("flush recovery handshake");
+            server_utp
+        });
+
+        let third_candidate = PeerSelector
+            .select(&registry, PeerSelectionContext { now: retry_at })
+            .expect("expired candidate");
+        let third_attempt = registry
+            .begin_dial(third_candidate, PeerSelectionContext { now: retry_at })
+            .expect("expired attempt");
+        assert_eq!(
+            third_attempt.utp_decision(),
+            crate::peer::UtpDialDecision::Try
+        );
+        let mut third_sockets = PeerSocketSet::with_budget(budget.clone());
+        third_sockets
+            .begin_dial(
+                third_attempt,
+                INFO_HASH,
+                false,
+                network,
+                PeerDialServices {
+                    utp: Some(utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin expired uTP retry");
+        assert!(matches!(
+            timeout(Duration::from_secs(2), third_sockets.next_event())
+                .await
+                .expect("recovery phase deadline")
+                .expect("recovery phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Utp,
+                ..
+            }
+        ));
+        let third_connection = match timeout(Duration::from_secs(2), third_sockets.next_event())
+            .await
+            .expect("recovery completion deadline")
+            .expect("recovery completion")
+        {
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Connected));
+                registry
+                    .record_utp_outcome(
+                        third_attempt,
+                        retry_at,
+                        utp_outcome.expect("recovery uTP outcome"),
+                    )
+                    .expect("record recovered uTP");
+                result.expect("expired uTP retry succeeds").0
+            }
+            event => panic!("unexpected recovery event {event:?}"),
+        };
+        assert_eq!(third_connection.transport(), PeerTransport::Utp);
+        registry
+            .dial_succeeded(third_attempt, retry_at)
+            .expect("third dial succeeded");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("confirmed endpoint")
+                .history()
+                .utp_endpoint,
+            crate::peer::UtpEndpointState::Confirmed
+        );
+        drop(third_connection);
+        registry
+            .connection_closed(third_attempt, retry_at, None)
+            .expect("third connection closed");
+        assert!(
+            third_sockets
+                .shutdown()
+                .await
+                .expect("third shutdown")
+                .is_empty()
+        );
+        let server_utp = utp_server.await.expect("recovery server task");
+        let terminal = utp.shutdown().await.expect("client uTP shutdown");
+        let server_terminal = server_utp.shutdown().await.expect("server uTP shutdown");
         assert_eq!(terminal.active_connections, 0);
+        assert_eq!(server_terminal.active_connections, 0);
         udp.shutdown().await.expect("UDP shutdown");
+        server_udp.shutdown().await.expect("server UDP shutdown");
         server.await.expect("TCP server task");
     }
 
