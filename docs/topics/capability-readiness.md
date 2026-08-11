@@ -325,12 +325,12 @@ peer, bounded resources, cleanup, and alternating orders passed.
 
 ### Now
 
-- Completed Tactical
-  [`131`](../tactical/131-bounded-product-utp-composition.md) passed its required
-  product-enablement review, where the maintainer selected recommendation A as
-  the single authoritative next action. Create and execute one bounded
-  default-readiness tactical for endpoint capability memory and mixed
-  controlled/opt-in evidence while shipped defaults remain TCP-only. Default
+- Active Tactical
+  [`132`](../tactical/132-utp-default-readiness-evidence.md) is the single
+  authoritative work item selected at Tactical `131`'s product-enablement
+  review. It adds bounded per-torrent endpoint capability memory, retry/
+  recovery policy, mixed controlled evidence, and one explicit metadata-only
+  public observation while shipped defaults remain TCP-only. Default
   enablement, settings, mapping, advertisement, and support graduation remain
   later human gates.
 

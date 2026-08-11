@@ -31,7 +31,9 @@ product-composition recommendation A as Tactical
 fixed 548, and default off, with source-first uTP/TCP selection and sequential
 fallback. Tactical `131` is complete, and its required product-enablement
 review selected the bounded default-readiness recommendation. Default
-enablement and BEP 29 graduation remain later gates.
+readiness is now active as Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md). Default enablement
+and BEP 29 graduation remain later gates.
 
 ## Scope And Ownership
 
@@ -608,7 +610,9 @@ later logical attempts. The review considered these choices:
 
 The maintainer selected choice A on 2026-08-11. A new bounded tactical may
 execute the default-readiness work and its explicitly bounded public
-observation. Choice B remains a separate human product-policy decision.
+observation. Active Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md) owns that work.
+Choice B remains a separate human product-policy decision.
 
 ## Validation Contract
 
@@ -728,14 +732,13 @@ Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
 direct-interface preflight; post-Stage 4 solidification Tactical `130` is
 closed with the WAN cohort evidence-limited and every controlled gate
-passing; bounded default-off product composition Tactical `131` is complete,
-and its product-enablement review selected recommendation A**.
+passing; bounded default-off product composition Tactical `131` is complete;
+and default-readiness Tactical `132` is active**.
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). The next action is to
-create and execute the default-readiness evidence tactical selected at
-Tactical `131`'s review while shipped defaults remain TCP-only. Reachability,
+execute Tactical `132` while shipped defaults remain TCP-only. Reachability,
 advertisement, presentation, default enablement, permanent network change,
 different host, dependency, and support-claim authority remain outside this
-checkpoint; public-swarm work is limited to the new tactical's explicit
-bounded observation.
+checkpoint; public-swarm work is limited to Tactical `132`'s explicit bounded
+observation.

@@ -608,10 +608,17 @@ that scope and its cleanup or compatibility rules explicitly.
   storage queue pressure from the larger resident-payload ceiling, validates
   hysteresis and session fairness, and remeasures the remaining TCP ceiling.
 - [`130-utp-transport-solidification.md`](130-utp-transport-solidification.md):
-  active bounded uTP solidification campaign; proves the complementary
+  closed bounded uTP solidification campaign; proves the complementary
   local-mapped WAN sender direction, runs a small bidirectional cohort, adds
   real-socket impairment and hostile lifecycle gates, and integrates
   diagnostic-only MTU search before the pre-product review.
+- [`131-bounded-product-utp-composition.md`](131-bounded-product-utp-composition.md):
+  complete default-off application composition with exact incoming/outgoing
+  uTP and TCP-fallback product evidence under one logical dial owner.
+- [`132-utp-default-readiness-evidence.md`](132-utp-default-readiness-evidence.md):
+  active bounded endpoint capability memory, retry/recovery policy, mixed
+  controlled cohort, and one metadata-only ordinary-swarm observation before
+  the product-default review.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

@@ -379,8 +379,8 @@ diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
 Tactical `130` is closed with its WAN cohort evidence-limited and every
 controlled gate passing; and Tactical `131` completes bounded default-off
 application composition, exact incoming/outgoing/fallback product interop, and
-the default-TCP regression. Its product-enablement review selected bounded
-default-readiness recommendation A**.
+the default-TCP regression; and active Tactical `132` executes its selected
+bounded endpoint-memory and default-readiness evidence follow-on**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -430,13 +430,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: create the bounded default-readiness tactical selected
-at completed Tactical `131`'s product-enablement review. It covers endpoint-
-scoped uTP capability memory, retry/backoff semantics, a mixed controlled
-cohort, and an explicitly bounded opt-in ordinary-swarm observation while
-shipped defaults remain TCP-only. Default enablement, reachability/
-advertisement, presentation, dependency, permanent network change, and
-support-claim authority remain separate gates.
+Next executable action: execute active Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md) from its pure endpoint
+capability transitions through controlled mixed evidence and one bounded
+metadata-only public observation. Shipped defaults remain TCP-only. Default
+enablement, reachability/advertisement, presentation, dependency, permanent
+network change, and support-claim authority remain separate gates.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
