@@ -102,6 +102,12 @@ set used for the implementation decision:
   `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06`. RFC 6817 sections 1--5 are the
   LEDBAT reference. Both are summarized independently; no specification text
   or fixture is imported.
+- [RFC 8899](https://www.rfc-editor.org/rfc/rfc8899.html) is the Datagram
+  Packetization Layer PMTU reference for ready Tactical `137`, especially its
+  base, protected-probe, confirmation, search-completion, revalidation, and
+  black-hole requirements. RSTorrent records an intentional compatibility
+  difference for uTP's packet-sequenced fragmentable retry and does not claim
+  complete RFC 8899 conformance.
 - Rasterbar libtorrent `2.0.13` at
   `7d7fc38fac61177fa5e02148f791b2f65250b09d` is the primary completeness and
   executable interoperability oracle. The inspected uTP library files are

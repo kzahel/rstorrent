@@ -10,7 +10,8 @@ path. In the long-lived application owner, UDP, HTTP, and HTTPS trackers share
 the selected family-correct advertisement lifecycle; DHT advertises each
 selected real-family TCP endpoint for an eligible verified-public incoming
 route independently of completion. The focused resumable download driver's
-nested tracker manager remains UDP-only.
+nested tracker manager now calls the same task-free UDP/HTTP/HTTPS operation
+executor with authenticated system trust and bounded lifecycle.
 Completed Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) proves exact sparse
 availability and bidirectional payload over initiated and accepted TCP
@@ -22,7 +23,7 @@ gateway returns typed `606` to `AddPinhole`, so positive physical capability is
 unknown on the current hardware and its off-LAN proof does not pass. It does
 not claim complete
 BEP 3 or BEP 5 support, full BEP 7 announcing, public-swarm advertisement
-reliability on public incomplete swarms, uTP, or v2 support.
+reliability on public incomplete swarms, complete BEP 29/uTP, or v2 support.
 HTTPS now defaults to authenticated desktop/Android platform trust; one explicit hidden
 compatibility policy remains encrypted but unauthenticated.
 Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
@@ -64,7 +65,11 @@ fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction
 default, retains explicit `TcpOnly` isolation, and graduates that exact BEP 29
 subset to **Partial**. It does not add persisted policy, UDP mapping,
 tracker/DHT incoming-endpoint advertisement, public incoming reachability,
-IPv6 uTP, MSE-over-uTP, racing, or dynamic product MTU.
+IPv6 uTP, MSE-over-uTP, racing, or dynamic product MTU. Ready Tactical
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md) plans safe
+fragmentation-protected dynamic IPv4 product MTU and fixed-548 platform
+fallback. No implementation or evidence has landed, so the **Partial** claim
+and every listed limit remain unchanged.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.

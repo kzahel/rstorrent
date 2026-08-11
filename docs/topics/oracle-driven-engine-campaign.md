@@ -73,7 +73,12 @@ operation executor serves the separate application and direct owners, and the
 focused driver now supports authenticated HTTP(S) plus bounded final
 lifecycle. Its authorized Ubuntu rerun closes the original dispatch gap and
 records one later post-discovery stall after six pieces without inferring a
-new implementation direction. The campaign is at a selection checkpoint. The
+new implementation direction. Maintainer direction then selected ready
+Tactical
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md) as the sole
+authoritative **Now**. It plans fragmentation-protected dynamic IPv4 product
+uTP with fixed-548 fallback, shared-socket isolation, path revalidation, and
+controlled desktop/Android evidence; implementation has not started. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -409,8 +414,8 @@ implementation; Tactical `135` completes controlled plaintext/RC4 near parity
 and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
 lifecycle, controlled interoperability, and the public dispatch rerun. The
-sole authoritative Now is the campaign selection checkpoint recorded in
-`capability-readiness.md`.
+sole authoritative Now is ready product-uTP path-MTU Tactical `137`; no
+implementation has started.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -456,16 +461,18 @@ the exact fixture passed from a locally mapped RSTorrent seed to the pinned
 remote leecher in 92.140 seconds with one uTP/zero TCP peers, exact joined
 lease deletion, and an independent zero-residue audit. Two bounded diagnostic
 retries also passed, but the full fresh cohort did not; shipped/default product
-uTP stays disabled.
+uTP was disabled at that checkpoint and was subsequently enabled in the
+bounded fixed-548 subset by Tactical `133`.
 Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: perform the campaign selection checkpoint. Review the
-post-discovery Ubuntu stall as one non-reproducible changing-swarm observation;
-do not implement against it without a deterministic reproduction. Select that
-bounded diagnosis or the existing durable-seeding candidate before creating
-and activating another tactical.
+Next executable action: after explicit implementation authorization, execute
+Tactical `137` Stage 2 by proving the safe fragmentation-option and shared-
+socket egress boundary. Stop before adding a dependency, unsafe isolation, or
+relaxing `forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
+non-reproducible changing-swarm observation and is not authority for changes in
+this tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

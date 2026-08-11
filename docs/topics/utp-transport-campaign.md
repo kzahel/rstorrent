@@ -39,7 +39,11 @@ selected bounded default enablement recommendation A. Tactical
 [`133`](../tactical/133-utp-product-default-enablement.md) is complete: the
 common application default is now `PreferUtp`, desktop/Android lifecycle and
 build gates plus controlled fallback pass, and the implemented BEP 29 subset
-is **Partial**. Tactical `129` resumes as the authoritative **Now**.
+is **Partial**. Tacticals `134`, `135`, and `136` subsequently completed their
+independent rate-policy, storage, and tracker work. Maintainer direction now
+selects ready Tactical
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md) as the authoritative
+**Now**; its dynamic product-MTU implementation has not started.
 
 ## Scope And Ownership
 
@@ -71,6 +75,13 @@ the single authoritative **Now**.
   explicit diagnostic construction override. There is no persisted setting,
   presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
   public incoming-reachability claim.
+- Ready Tactical `137` owns the next bounded uTP slice: activate the existing
+  548--1,472-byte IPv4 search only behind positively verified fragmentation-
+  protected sends and one shared DHT/uTP egress exclusion boundary. It adds
+  path revalidation, conservative fixed-548 fallback, controlled packet-count
+  and pinned-libtorrent evidence, macOS proof, and Android build/AVD parity.
+  No implementation, dependency, unsafe code, product setting, external run,
+  or protocol-claim change has landed.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -261,6 +272,13 @@ The normative starting points are BEP 29 for the wire protocol and
 [RFC 6817](https://www.rfc-editor.org/rfc/rfc6817.html) for LEDBAT. Deployed
 behavior and mature failure cases still require implementation and
 interoperability oracles.
+
+Ready Tactical `137` additionally uses
+[RFC 8899](https://www.rfc-editor.org/rfc/rfc8899.html) for Datagram
+Packetization Layer PMTU base, protected-probe, confirmation, revalidation,
+and black-hole behavior. It records uTP's packet-sequenced fragmentable retry
+as an intentional compatibility difference rather than claiming complete RFC
+8899 conformance.
 
 ### Pinned Rasterbar libtorrent
 
@@ -813,12 +831,14 @@ closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
-Partial.**
+Partial; ready Tactical `137` is the sole authoritative Now and has not begun
+implementation.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). The next action is to
-execute queued Tactical `129`'s bounded storage-intake watermark campaign.
-Reachability, tracker/DHT incoming-endpoint advertisement, presentation,
-permanent network change, different host, dependency, and a broader uTP
-support claim remain separate decisions; no further public-swarm attempt is
-authorized by this completed campaign.
+execute Tactical `137`'s safe fragmentation-option/shared-egress feasibility
+stage after implementation authorization, stopping before any new dependency
+or unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
+presentation, permanent network change, different host, and a broader uTP
+support claim remain separate decisions; no public-swarm attempt is authorized
+by this tactical.
