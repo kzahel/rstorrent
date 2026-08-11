@@ -65,11 +65,11 @@ superseded before implementation by active Tactical
 slice now separates a hysteretic storage-intake watermark from the larger
 resident safety ceiling and storage-channel capacity. A four-run controlled
 sweep selects a 1 MiB high point and two-thirds low point for desktop and
-Android while preserving their 32 and 16 MiB resident ceilings. The campaign
-next tests bounded write-batch fill selected by the same-cohort write-job
-shape, then uses measured pending-hash controls only if needed to pursue at
-least `0.95x` pinned-libtorrent throughput without reopening durability
-authority.
+Android while preserving their 32 and 16 MiB resident ceilings. A subsequent
+control nearly halves write-job count without improving throughput, rejecting
+opportunistic batch fill as the residual owner. The campaign next tests the
+write-complete hash fence and pending-write input while pursuing at least
+`0.95x` pinned-libtorrent throughput without reopening durability authority.
 
 ## Purpose And Scope
 

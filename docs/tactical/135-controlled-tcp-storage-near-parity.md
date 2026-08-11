@@ -280,6 +280,24 @@ the other runs used 10,647--10,794 jobs and were slower. This selects bounded
 write-batch fill as the next causal control. It does not select more workers,
 filesystem changes, or pending-write hashing yet.
 
+### Rejected cooperative batch fill
+
+Two bounded cooperative-fill controls tested whether more consistent job
+packing caused the remaining gap. Filling only while another write was active
+left the ordinary 6.0--6.1 blocks/job shape unchanged and reached `0.875x`
+libtorrent. Giving every partial batch up to 16 scheduler turns increased fill
+to 11.7--13.2 blocks/job and reduced write jobs to 4,954--5,618, but its
+four-run plaintext median was 449.5 MiB/s against 500.9 MiB/s (`0.897x`). That
+does not improve the retained 449.3 MiB/s/`0.908x` baseline and remains below
+the gate. Both candidates were removed completely.
+
+This rejects write-job count and opportunistic coalescing as the primary
+residual owner. RSTorrent's retained baseline consumes about 1.21 CPU cores
+against libtorrent's 1.86, while every 16 MiB piece still waits for all write
+completions before a separate full-file read/hash job. The campaign therefore
+advances to generation-safe pending-write hash input; more workers, wider
+batches, and a persistent write dispatcher remain unselected.
+
 ## Validation Matrix
 
 | Layer | Required evidence |

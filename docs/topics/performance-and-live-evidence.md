@@ -117,6 +117,14 @@ used 10,647--10,794 jobs (about 6.1 blocks/job) and were slower. Tactical `135`
 therefore tests bounded cooperative batch fill next; it does not infer that
 the filesystem or SHA-1 arithmetic is the bottleneck.
 
+That control is now rejected. A stronger version reduced write jobs from
+roughly 10,700 to 4,954--5,618 and raised fill from about 6.1 to 11.7--13.2
+blocks/job, yet its four-run median was 449.5 MiB/s against libtorrent at
+500.9 MiB/s (`0.897x`). This was no improvement over the retained 449.3 MiB/s
+baseline, and all candidate code was removed. Tactical `135` next tests the
+write-complete hash fence and pending-write read-through rather than treating
+small-write dispatch as the established bottleneck.
+
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo
 multi-file control passes plaintext and forced-RC4 publication for both owners
