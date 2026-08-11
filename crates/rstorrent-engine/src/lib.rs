@@ -5,6 +5,7 @@
 mod active_seed_content;
 mod advertisement;
 mod artifact_layout;
+mod bandwidth;
 mod checkpoint;
 pub mod dht;
 mod driver;
@@ -53,6 +54,12 @@ pub use advertisement::{
 };
 pub use artifact_layout::{
     ArtifactLayoutError, LogicalPayloadArtifact, PublicationShape, PublishedArtifactLayout,
+};
+pub use bandwidth::{
+    BandwidthDirectionSnapshot, BandwidthError, BandwidthPermit, MAX_BANDWIDTH_BURST_BYTES,
+    MAX_BANDWIDTH_GRANT_BYTES, MAX_BANDWIDTH_REGISTRATIONS, MAX_BANDWIDTH_WAITERS,
+    MIN_TRANSFER_RATE_BYTES_PER_SECOND, SessionBandwidth, SessionBandwidthSnapshot,
+    TorrentBandwidth, TorrentTransferRateLimits, TransferRateLimit, TransferRateLimitError,
 };
 pub use driver::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
