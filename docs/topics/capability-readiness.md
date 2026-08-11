@@ -349,14 +349,18 @@ reachability, persisted presentation, IPv6, and MSE-over-uTP remain absent.
 ### Now
 
 - Ready Tactical
-  [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the single
-  authoritative work item. Separate the ordinary storage-intake high/low
-  watermark from the larger resident-payload safety ceiling, prove bounded
-  backpressure and large-piece liveness, then select or reject a default from
-  its controlled alternating performance matrix.
+  [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) is the
+  single authoritative work item selected explicitly by the maintainer. Add
+  durable live All torrents and per-torrent upload/download policy through one
+  torrent-first fair session owner, enforce it across ordinary TCP/uTP duplex
+  I/O, and complete generated web/Android controls and bounded evidence.
 
 ### Next
 
+- Ready Tactical
+  [`129`](../tactical/129-bounded-storage-intake-watermark.md) remains intact
+  and queued. It resumes after Tactical `134` unless the maintainer changes
+  priority again.
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
   download driver's nested manager remains available after queued Tactical
   `129`.
@@ -366,15 +370,13 @@ reachability, persisted presentation, IPv6, and MSE-over-uTP remain absent.
   this standalone path: the official HTTPS-only Ubuntu torrent found no peers
   while libtorrent reached 10%. No implementation is authorized until a
   bounded tactical records the ownership and interoperability contract.
-- Finite session/per-torrent bandwidth enforcement and durable seeding goals
-  are the next policy-planning candidates. They remain separate tacticals:
-  rate allocation owns hot-path fairness and cancellation, while ratio/time
-  goals own durable accounting and torrent lifecycle. Neither is authorized
-  for implementation by Tactical `124`'s completion.
+- Durable seeding goals remain a separate policy-planning candidate. Tactical
+  `134` now owns finite rate allocation, hot-path fairness, and cancellation;
+  ratio/time goals still own durable accounting and torrent lifecycle.
 
 ### Later
 
-Finite bandwidth and seeding goals,
+Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,
 NAT traversal, v2 and hybrid torrents,

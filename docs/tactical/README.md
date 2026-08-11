@@ -623,6 +623,11 @@ that scope and its cleanup or compatibility rules explicitly.
   complete bounded enablement of the existing fixed-548 IPv4/plaintext uTP
   path as the common application construction default, with desktop/Android,
   fallback, lifecycle, and **Partial** protocol-claim evidence.
+- [`134-hierarchical-transfer-rate-enforcement.md`](134-hierarchical-transfer-rate-enforcement.md):
+  ready authoritative product-policy tactical for live durable All torrents
+  and per-torrent upload/download limits, torrent-first fair allocation,
+  TCP/uTP duplex enforcement, generated web/Android controls, and bounded
+  controlled evidence. Tactical `129` remains ready and queued behind it.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

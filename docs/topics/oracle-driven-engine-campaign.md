@@ -389,7 +389,8 @@ application composition; Tactical `132` completes bounded endpoint memory,
 mixed socket recovery, and one successful metadata-only public observation;
 and Tactical `133` completes the fixed-548 IPv4/plaintext product default,
 desktop/Android lifecycle and build evidence, controlled fallback, and the
-bounded Partial BEP 29 claim. Tactical `129` is the authoritative Now.**
+bounded Partial BEP 29 claim. The maintainer explicitly selected product-
+policy Tactical `134`; Tactical `129` remains ready and queued.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -444,12 +445,12 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Next executable action: execute ready Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md). Separate the
-storage-intake high/low watermark from the resident-payload emergency ceiling,
-front-load deterministic delayed-storage, cancellation, large-piece liveness,
-and multi-torrent fairness gates, then select or reject a default using its
-alternating 1/2/4/6/8-MiB controlled matrix. Do not change total memory caps,
-request-window policy, write/hash concurrency, settings, or uTP behavior.
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md). Implement
+the task-free deterministic quota core and one joined upload/download session
+owner first, then integrate torrent registrations at established TCP/uTP peer
+I/O without coupling local quota waits to network-stall clocks. Preserve
+Tactical `129` unchanged and queued; do not combine its storage-watermark
+optimization with bandwidth policy.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
