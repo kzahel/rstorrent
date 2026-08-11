@@ -455,10 +455,11 @@ Next executable action: execute active Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md). Preserve the
 resident-payload safety ceiling and selected 1 MiB storage-intake watermark.
 The retained per-span hash-read dispatch change raises the primary plaintext
-median to `1.146x` pinned libtorrent. Run its forced-RC4, small-piece,
-failure/liveness/resource, repository, and Android gates; add pending-write
-input only if those measurements leave a causal gap. Do not combine further
-bandwidth policy, public-swarm work, or protocol breadth with this campaign.
+median to `1.146x` pinned libtorrent, forced RC4 to `1.225x`, and every
+smaller-piece row to at least `1.213x`. Pending-write input is not selected.
+Run the remaining failure/liveness/resource, repository, and Android gates.
+Do not combine further bandwidth policy, public-swarm work, or protocol
+breadth with this campaign.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

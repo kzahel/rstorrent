@@ -135,8 +135,22 @@ RSTorrent outlier reached 298.1 MiB/s when write service doubled; the declared
 median remained above parity. Every output independently verified, used one
 TCP and zero uTP peers, published, joined, and cleaned up with no failed or
 redundant payload. Tactical `135` retains this causal change and proceeds to
-forced RC4, small-piece, failure/liveness/resource, repository, and Android
-gates before deciding whether pending-write read-through is still material.
+the remaining gates.
+
+Clean commit `25e3761` clears the full controlled performance matrix. Four-run
+alternating medians were 461.1 versus 376.5 MiB/s (`1.225x`) for forced RC4 at
+16 MiB pieces. Plaintext 256 KiB, 1 MiB, and 4 MiB pieces reached 653.2 versus
+489.1 (`1.336x`), 589.3 versus 485.8 (`1.213x`), and 628.9 versus 509.5 MiB/s
+(`1.234x`). Together with the primary `1.146x` plaintext result, every
+required performance row is above its gate and above the applicable
+pre-change control. All 40 outputs retained exact independent verification,
+method and TCP-only evidence, publication, joined shutdown, cleanup, and zero
+failed/redundant bytes. RSTorrent's intake remained exactly 1 MiB, storage-job
+high water was at most 72, command/completion queues at most 49/69, and RSS at
+most 32,440,320 bytes. Raw reports and payloads were removed after recording
+the result. Pending-write read-through is not selected without a remaining
+causal gap; correctness/liveness, repository, and Android gates still precede
+Tactical `135` closure.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo

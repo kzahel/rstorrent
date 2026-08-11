@@ -72,9 +72,10 @@ each logical piece hash creates one blocking task and allocation per 16 KiB
 read. Amortizing that work into one fixed-buffer blocking task per physical
 span raises the primary plaintext median from 449.3 to 565.7 MiB/s, or
 `1.146x` the paired libtorrent median, while retaining sequential handle
-acquisition and the session pool bound. The campaign retains this change and
-continues its forced-RC4, geometry, failure, resource, repository, and Android
-gates before deciding whether pending-write input is still material.
+acquisition and the session pool bound. Forced RC4 and all three smaller-piece
+rows subsequently reach `1.213x`--`1.336x`. The campaign therefore does not
+select pending-write input; failure, resource, repository, and Android gates
+remain before closure.
 
 ## Purpose And Scope
 

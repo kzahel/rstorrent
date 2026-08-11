@@ -367,9 +367,10 @@ accounting, and ratio/time seeding goals remain separate.
   unimplemented Tactical `129` with a measured near-parity campaign: first
   separate storage-intake pressure from the resident safety ceiling, then use
   causal controls to select hot-path work. The retained per-physical-span hash
-  dispatch change raises matched plaintext to `1.146x` pinned libtorrent;
-  forced RC4, small-piece, failure/resource, repository, and Android gates
-  remain before closure or any decision to add pending-write hash input.
+  dispatch change raises matched plaintext to `1.146x`, forced RC4 to
+  `1.225x`, and every smaller-piece row to at least `1.213x` pinned
+  libtorrent. Pending-write input is unselected; failure/resource, repository,
+  and Android gates remain before closure.
 
 ### Next
 

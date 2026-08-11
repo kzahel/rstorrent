@@ -328,11 +328,28 @@ it. All eight outputs retained exact independent verification, one TCP/zero
 uTP peers, zero failed/redundant bytes, publication, joined shutdown, and
 cleanup.
 
-The candidate clears the primary plaintext gate and is retained. Forced RC4,
-the three small-piece rows, full failure/liveness/resource validation, and
-both Android builds remain before closure. Pending-write read-through is no
-longer presumed necessary; it will be considered only if those measurements
-leave a causal gap.
+The retained candidate clears every controlled performance gate:
+
+| Profile / piece size | RSTorrent MiB/s | Libtorrent MiB/s | Ratio |
+| --- | ---: | ---: | ---: |
+| plaintext / 16 MiB | 565.7 | 493.6 | `1.146x` |
+| forced RC4 / 16 MiB | 461.1 | 376.5 | `1.225x` |
+| plaintext / 256 KiB | 653.2 | 489.1 | `1.336x` |
+| plaintext / 1 MiB | 589.3 | 485.8 | `1.213x` |
+| plaintext / 4 MiB | 628.9 | 509.5 | `1.234x` |
+
+Each row is a four-run alternating median. All 40 owner outputs pass
+independent piece and whole-file verification, the exact plaintext or RC4
+method, one TCP/zero uTP peers, zero failed/redundant bytes, publication,
+joined shutdown, and cleanup. RSTorrent retained its 64 MiB diagnostic
+resident ceiling and exact 1 MiB intake high water. Across the retained
+RSTorrent runs, storage-job high water was at most 72, command/completion
+queues at most 49/69, and RSS at most 32,440,320 bytes. The selected code is
+clean commit `25e3761`; raw JSON and payload artifacts are not retained.
+
+Pending-write read-through is not selected: the measured gap it was meant to
+address is gone. Full failure/liveness/resource validation, complete
+repository gates, and both Android builds remain before closure.
 
 ## Validation Matrix
 
