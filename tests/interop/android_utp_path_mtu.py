@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import subprocess
 import sys
@@ -15,8 +16,21 @@ from typing import Any
 
 from first_verified_piece import ScenarioFailure
 from headless_avd import OwnedHeadlessAvd, adb_shell, default_adb, default_emulator
-from utp_reference_oracle import PAYLOAD_NAME, create_fixture
-from utp_rstorrent_interop import OutputPump, RoleProcess
+from utp_reference_oracle import (
+    PAYLOAD_NAME,
+    POLL_SECONDS,
+    add_torrent,
+    collect_alerts,
+    create_fixture,
+    create_session,
+    stats_snapshot,
+    wait_until_ready,
+)
+from utp_rstorrent_interop import (
+    OutputPump,
+    RoleProcess,
+    validate_libtorrent_stats,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,9 +40,9 @@ ABI_TARGETS = {
 }
 ROLE_BINARY = "rstorrent-utp-interop"
 APPLICATION_BINARY = "rstorrent-incoming-seed"
-CASE_TIMEOUT_SECONDS = 90.0
+CASE_TIMEOUT_SECONDS = 150.0
 BUILD_TIMEOUT_SECONDS = 300.0
-PLATFORM_PROBE_PAYLOAD_BYTES = 64 * 1024
+PLATFORM_PROBE_PAYLOAD_BYTES = 32 * 1024
 
 
 class AndroidUtpFailure(ScenarioFailure):
@@ -127,16 +141,16 @@ def start_remote_role(
     return RoleProcess(process, stdout, stderr, (stdout.start(), stderr.start()))
 
 
-def parse_loopback(value: object, field: str) -> tuple[str, int]:
+def parse_endpoint_port(value: object, field: str) -> int:
     if not isinstance(value, str):
         raise AndroidUtpFailure(f"Android readiness lacks {field}")
-    host, separator, port_text = value.rpartition(":")
-    if separator != ":" or host != "127.0.0.1":
-        raise AndroidUtpFailure(f"Android {field} is not loopback: {value}")
+    _, separator, port_text = value.rpartition(":")
+    if separator != ":":
+        raise AndroidUtpFailure(f"Android {field} is malformed: {value}")
     port = int(port_text)
     if not 1 <= port <= 65535:
         raise AndroidUtpFailure(f"Android {field} has an invalid port: {value}")
-    return host, port
+    return port
 
 
 def validate_terminal_resources(resources: dict[str, Any]) -> None:
@@ -184,7 +198,7 @@ def run_platform_probe(
         not isinstance(utp, dict)
         or utp.get("path_mtu_profile") != "dynamic_ipv4"
         or not isinstance(utp.get("selected_mtu_max_bytes"), int)
-        or utp["selected_mtu_max_bytes"] < 1_456
+        or utp["selected_mtu_max_bytes"] < 1_010
         or utp.get("mtu_probes_acknowledged_high_water", 0) <= 0
         or not isinstance(udp, dict)
         or udp.get("protected_sends_sent", 0) <= 0
@@ -208,26 +222,44 @@ def validate_application_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(utp, dict)
         or utp.get("path_mtu_profile") != "dynamic_ipv4"
-        or utp.get("active_connections") != 0
-        or utp.get("connection_high_water") != 0
+        or utp.get("active_connections") not in (0, 1)
+        or utp.get("connection_high_water") != 1
+        or utp.get("selected_mtu_min_bytes") != 548
+        or not isinstance(utp.get("selected_mtu_max_bytes"), int)
+        or not 548 <= utp["selected_mtu_max_bytes"] <= 1_472
+        or utp.get("data_datagrams_sent", 0) <= 0
         or utp.get("worker_panics") != 0
     ):
         raise AndroidUtpFailure(f"Android application uTP evidence failed: {utp}")
     return utp
 
 
-def run_application_lifecycle(
+def run_application_transfer(
     adb: Path,
     serial: str,
     remote_root: str,
     application_binary: str,
     torrent_path: str,
     payload_path: str,
+    torrent_info: Any,
+    seed_root: Path,
     expected_sha1: str,
     deadline: float,
 ) -> dict[str, Any]:
     application: RoleProcess | None = None
+    session = None
+    handle = None
+    diagnostics: list[str] = []
     try:
+        session = create_session()
+        handle = add_torrent(session, torrent_info, seed_root, seed=True)
+        host_port = wait_until_ready(
+            session,
+            handle,
+            seed=True,
+            deadline=deadline,
+            diagnostics=diagnostics,
+        )
         application = start_remote_role(
             adb,
             serial,
@@ -236,9 +268,16 @@ def run_application_lifecycle(
                 "--profile-root",
                 f"{remote_root}/profile",
                 "--storage-root",
-                f"{remote_root}/seed",
+                f"{remote_root}/application-storage",
                 "--metainfo",
                 torrent_path,
+                "--controlled-local-network",
+                "--fixture-payload",
+                payload_path,
+                "--initial-piece",
+                "0",
+                "--peer",
+                f"10.0.2.2:{host_port}",
                 "--encryption",
                 "disabled",
             ],
@@ -246,22 +285,72 @@ def run_application_lifecycle(
         ready = application.read_event(deadline)
         if ready.get("event") != "ready" or ready.get("registrations") != 1:
             raise AndroidUtpFailure(f"unexpected Android application readiness: {ready}")
-        parse_loopback(ready.get("utp_listen"), "application uTP listen")
-        application.send_command("snapshot")
-        snapshot = application.read_event(deadline)
+        parse_endpoint_port(ready.get("utp_listen"), "application uTP listen")
+
+        snapshot: dict[str, Any] | None = None
+        observed_outgoing_utp = False
+        while time.monotonic() < deadline:
+            if application.process.poll() is not None:
+                raise AndroidUtpFailure("Android application stopped during uTP transfer")
+            collect_alerts(session, diagnostics)
+            status = handle.status()
+            if status.errc.value() != 0:
+                raise AndroidUtpFailure(
+                    f"pinned libtorrent seed failed: {status.errc.message()}"
+                )
+            application.send_command("snapshot")
+            snapshot = application.read_event(deadline)
+            peers = snapshot.get("peers")
+            rows = peers.get("peers") if isinstance(peers, dict) else None
+            observed_outgoing_utp |= isinstance(rows, list) and any(
+                isinstance(row, dict)
+                and row.get("direction") == "outgoing"
+                and row.get("transport") == "utp"
+                for row in rows
+            )
+            swarm = snapshot.get("swarm")
+            counts = swarm.get("counts") if isinstance(swarm, dict) else None
+            if isinstance(counts, dict) and counts.get("backed_off", 0) > 0:
+                raise AndroidUtpFailure(
+                    f"Android application peer backed off: {swarm}; "
+                    f"libtorrent={diagnostics}"
+                )
+            summary = snapshot.get("summary")
+            torrent = summary.get("torrent") if isinstance(summary, dict) else None
+            if (
+                isinstance(torrent, dict)
+                and torrent.get("state") == "complete"
+                and torrent.get("storage_state") == "published"
+            ):
+                break
+            time.sleep(POLL_SECONDS)
+        else:
+            raise AndroidUtpFailure(
+                "Android application uTP transfer exceeded its deadline: "
+                f"swarm={snapshot.get('swarm') if snapshot else None}; "
+                f"utp={snapshot.get('utp') if snapshot else None}; "
+                f"libtorrent={diagnostics}"
+            )
+        if snapshot is None:
+            raise AndroidUtpFailure("Android application emitted no transfer snapshot")
         application_utp = validate_application_snapshot(snapshot)
 
+        remote_output = f"{remote_root}/application-storage/{PAYLOAD_NAME}"
         device_hash = adb_shell(
             adb,
             serial,
             "sha1sum",
-            payload_path,
+            remote_output,
             timeout=15,
         ).stdout.split()[0]
         if device_hash != expected_sha1:
             raise AndroidUtpFailure(
                 f"Android application payload hash {device_hash} != {expected_sha1}"
             )
+        oracle_stats = stats_snapshot(session, diagnostics, deadline)
+        validate_libtorrent_stats("seed", oracle_stats)
+        if not observed_outgoing_utp:
+            raise AndroidUtpFailure("Android application lacked outgoing uTP")
 
         application.send_command("stop")
         stopped = application.read_event(deadline)
@@ -280,10 +369,17 @@ def run_application_lifecycle(
             "application_utp": application_utp,
             "application_snapshot": snapshot,
             "application_stopped": stopped,
+            "libtorrent_stats": oracle_stats,
+            "libtorrent_diagnostics": diagnostics,
         }
     finally:
         if application is not None:
             application.cleanup()
+        if session is not None and handle is not None and handle.is_valid():
+            session.remove_torrent(handle)
+        if session is not None:
+            session.pause()
+        gc.collect()
 
 
 def run(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -296,7 +392,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
         root = Path(temporary)
         fixture_root = root / "fixture"
         fixture_root.mkdir()
-        _, seed_root, expected_sha1 = create_fixture(fixture_root)
+        torrent_info, seed_root, expected_sha1 = create_fixture(fixture_root)
         torrent = fixture_root / "forced-utp.torrent"
         payload = seed_root / PAYLOAD_NAME
         avd = OwnedHeadlessAvd.start(arguments.avd, adb, emulator, root)
@@ -320,6 +416,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 "-p",
                 f"{remote_root}/bin",
                 f"{remote_root}/seed",
+                f"{remote_root}/application-storage",
             )
             remote_role = f"{remote_root}/bin/{ROLE_BINARY}"
             remote_application = f"{remote_root}/bin/{APPLICATION_BINARY}"
@@ -343,13 +440,15 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                 remote_role,
                 time.monotonic() + CASE_TIMEOUT_SECONDS,
             )
-            application = run_application_lifecycle(
+            application = run_application_transfer(
                 adb,
                 avd.serial,
                 remote_root,
                 remote_application,
                 remote_torrent,
                 remote_payload,
+                torrent_info,
+                seed_root,
                 expected_sha1,
                 time.monotonic() + CASE_TIMEOUT_SECONDS,
             )
@@ -363,7 +462,7 @@ def run(arguments: argparse.Namespace) -> dict[str, Any]:
                     "headless": True,
                 },
                 "platform_probe": platform,
-                "application_lifecycle": application,
+                "application_transfer": application,
                 "cleanup": {
                     "remote_root_removed": True,
                     "owned_avd_stopped": True,

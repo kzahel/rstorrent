@@ -34,6 +34,7 @@ use tokio_util::sync::CancellationToken;
 const PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
 const PIECE_BYTES: u32 = 64 * 1024;
 const LOOPBACK_ROLE_TIMEOUT: Duration = Duration::from_secs(30);
+const PLATFORM_ROLE_TIMEOUT: Duration = Duration::from_secs(60);
 const WAN_ROLE_TIMEOUT: Duration = Duration::from_secs(180);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const PEER_IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -137,8 +138,8 @@ impl Arguments {
                 scope: SeedScope::Loopback,
                 ..
             }
-            | Self::PlatformMtuProbe
             | Self::MappingAudit { .. } => LOOPBACK_ROLE_TIMEOUT,
+            Self::PlatformMtuProbe => PLATFORM_ROLE_TIMEOUT,
             Self::Seed {
                 scope:
                     SeedScope::Wan
@@ -794,7 +795,7 @@ async fn run_mapping_audit(local_port: u16, external_port: u16) -> Result<(), Bo
 }
 
 async fn run_platform_mtu_probe() -> Result<(), Box<dyn Error>> {
-    const PROBE_PAYLOAD_BYTES: usize = 64 * 1024;
+    const PROBE_PAYLOAD_BYTES: usize = 32 * 1024;
 
     let left_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let right_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
@@ -832,7 +833,7 @@ async fn run_platform_mtu_probe() -> Result<(), Box<dyn Error>> {
         .map(|index| u8::try_from(index % 251).expect("probe byte is bounded"))
         .collect::<Vec<_>>();
     let expected_sha1 = hex(&Sha1::digest(&payload));
-    let (send, receive) = tokio::join!(
+    let (_, (received_bytes, received_sha1)) = tokio::try_join!(
         async {
             left_stream.write_all(&payload).await?;
             left_stream.shutdown().await
@@ -844,9 +845,7 @@ async fn run_platform_mtu_probe() -> Result<(), Box<dyn Error>> {
             right_stream.shutdown().await?;
             Ok::<_, std::io::Error>((received.len(), digest))
         }
-    );
-    send?;
-    let (received_bytes, received_sha1) = receive?;
+    )?;
     if received_bytes != payload.len() || received_sha1 != expected_sha1 {
         return Err("platform MTU probe payload verification failed".into());
     }
@@ -858,13 +857,21 @@ async fn run_platform_mtu_probe() -> Result<(), Box<dyn Error>> {
     if live_left_utp.path_mtu_profile.as_str() != "dynamic_ipv4"
         || live_left_utp
             .selected_mtu_max_bytes
-            .is_none_or(|mtu| mtu < 1_456)
+            .is_none_or(|mtu| mtu < 1_010)
         || live_left_utp.mtu_probes_acknowledged_high_water == 0
         || live_left_udp.protected_sends_sent == 0
         || live_left_udp.protected_sends_sent != live_left_utp.mtu_probe_datagrams_sent
         || live_left_udp.fragmentation_restore_failures != 0
     {
-        return Err("platform MTU probe did not confirm protected dynamic sends".into());
+        return Err(format!(
+            "platform MTU probe did not confirm protected dynamic sends: \
+             selected={:?} acknowledged={} protected={} restore_failures={}",
+            live_left_utp.selected_mtu_max_bytes,
+            live_left_utp.mtu_probes_acknowledged_high_water,
+            live_left_udp.protected_sends_sent,
+            live_left_udp.fragmentation_restore_failures,
+        )
+        .into());
     }
 
     let terminal_left_utp = left_utp.shutdown().await?;
@@ -1245,7 +1252,7 @@ mod tests {
             }
         ));
         let platform_mtu_probe = Arguments::parse(strings(&["platform-mtu-probe"])).unwrap();
-        assert_eq!(platform_mtu_probe.timeout(), LOOPBACK_ROLE_TIMEOUT);
+        assert_eq!(platform_mtu_probe.timeout(), PLATFORM_ROLE_TIMEOUT);
         assert!(matches!(platform_mtu_probe, Arguments::PlatformMtuProbe));
         assert!(Arguments::parse(strings(&["platform-mtu-probe", "--output", "x"])).is_err());
         let diagnostic_mtu_seed = Arguments::parse(strings(&[

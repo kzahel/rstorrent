@@ -84,6 +84,9 @@ async fn run() -> Result<(), SeedHarnessError> {
             Duration::from_secs(5),
         ),
     );
+    if arguments.controlled_local_network {
+        config.dht.bootstrap_nodes.clear();
+    }
     if let Some(bootstrap) = arguments.dht_bootstrap {
         config.dht.bootstrap_nodes = vec![BootstrapNode::Address(bootstrap)];
     }
@@ -571,6 +574,7 @@ struct Arguments {
     metainfo: PathBuf,
     upnp: bool,
     staged_ipv6_pinhole: bool,
+    controlled_local_network: bool,
     utp: bool,
     tcp_only: bool,
     encryption: EncryptionPolicy,
@@ -596,6 +600,7 @@ impl Arguments {
         let mut metainfo = None;
         let mut upnp = false;
         let mut staged_ipv6_pinhole = false;
+        let mut controlled_local_network = false;
         let mut utp = false;
         let mut tcp_only = false;
         let mut encryption = None;
@@ -627,6 +632,15 @@ impl Arguments {
                 if std::mem::replace(&mut staged_ipv6_pinhole, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--staged-ipv6-pinhole may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--controlled-local-network" {
+                if std::mem::replace(&mut controlled_local_network, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--controlled-local-network may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -792,6 +806,11 @@ impl Arguments {
                 "--upnp and --staged-ipv6-pinhole are mutually exclusive".to_owned(),
             ));
         }
+        if controlled_local_network && (upnp || staged_ipv6_pinhole) {
+            return Err(SeedHarnessError::Arguments(
+                "--controlled-local-network cannot request a port mapping".to_owned(),
+            ));
+        }
         if utp && tcp_only {
             return Err(SeedHarnessError::Arguments(
                 "--utp and --tcp-only are mutually exclusive".to_owned(),
@@ -808,6 +827,7 @@ impl Arguments {
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
             staged_ipv6_pinhole,
+            controlled_local_network,
             utp,
             tcp_only,
             encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
@@ -825,7 +845,7 @@ impl Arguments {
     }
 
     fn local_network_listener(&self) -> bool {
-        self.upnp || self.staged_ipv6_pinhole
+        self.upnp || self.staged_ipv6_pinhole || self.controlled_local_network
     }
 }
 
@@ -1228,6 +1248,22 @@ mod tests {
         .expect("parse staged IPv6 pinhole harness");
         assert!(staged.staged_ipv6_pinhole);
         assert!(staged.local_network_listener());
+        let controlled = Arguments::parse(
+            [
+                "--controlled-local-network",
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse controlled local-network harness");
+        assert!(controlled.controlled_local_network);
+        assert!(controlled.local_network_listener());
         assert!(
             Arguments::parse(
                 [
