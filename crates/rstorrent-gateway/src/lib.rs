@@ -323,6 +323,7 @@ struct GatewayState {
     authentication: Arc<GatewayAuthentication>,
     allowed_origin: Arc<str>,
     allowed_host: Arc<str>,
+    media_host: Arc<str>,
     service: Arc<Mutex<ApplicationService>>,
     connections: Arc<Semaphore>,
     torrent_uploads: Arc<Semaphore>,
@@ -438,6 +439,25 @@ async fn bind_with_picker_and_assets(
         .await
         .map_err(GatewayError::Bind)?;
     let local_addr = listener.local_addr().map_err(GatewayError::Bind)?;
+    let media_origin = match &config.authentication {
+        GatewayAuthentication::Basic(_) | GatewayAuthentication::Web(_) => {
+            config.allowed_origin.trim_end_matches('/').to_owned()
+        }
+        GatewayAuthentication::Bearer { .. }
+        | GatewayAuthentication::UnauthenticatedLoopbackDevelopment => {
+            format!("http://{local_addr}")
+        }
+    };
+    let media_host = media_origin
+        .parse::<Uri>()
+        .ok()
+        .and_then(|uri| uri.authority().map(ToString::to_string))
+        .ok_or_else(|| GatewayError::Configuration("media origin has no authority".to_owned()))?;
+    service
+        .lock()
+        .await
+        .configure_media_origin(&media_origin)
+        .map_err(|error| GatewayError::Configuration(error.to_string()))?;
     let web_auth = match &config.authentication {
         GatewayAuthentication::Web(config) => Some(Arc::new(std::sync::Mutex::new(
             web_auth_http::WebAuthRuntime::open(config)?,
@@ -448,6 +468,7 @@ async fn bind_with_picker_and_assets(
         authentication: Arc::new(config.authentication),
         allowed_origin: Arc::from(config.allowed_origin),
         allowed_host: Arc::from(local_addr.to_string()),
+        media_host: Arc::from(media_host),
         service,
         connections: Arc::new(Semaphore::new(config.max_connections)),
         torrent_uploads: Arc::new(Semaphore::new(1)),
@@ -562,6 +583,10 @@ impl GatewayServer {
             ))
             .layer(cors)
             .with_state(self.state.clone());
+        router = router.merge(rstorrent_media::media_router(
+            self.state.service.clone(),
+            self.state.media_host.clone(),
+        ));
         if let Some(assets) = &self.state.hosted_assets {
             router = router.fallback_service(ServeDir::new(&assets.root));
         }
@@ -1190,10 +1215,10 @@ mod tests {
     use rstorrent_platform::DownloadDirectoryPicker;
     use rstorrent_session::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, ApplicationConfig,
-        ApplicationService, Command, ConfiguredStorageRoot, FileSelectionIntent, NetworkConfig,
-        NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse,
-        RequestEnvelope, ResponseOutcome, SessionStore, UpdateBatch, UpdateViewSetRequest,
-        ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
+        ApplicationService, Command, ConfiguredStorageRoot, FileSelectionIntent, MediaUrlOutcome,
+        NetworkConfig, NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse,
+        RequestEnvelope, ResponseOutcome, SessionStore, StorageState, UpdateBatch,
+        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
     use tokio::sync::Mutex;
@@ -1255,6 +1280,84 @@ mod tests {
             .await
             .expect("open service"),
         ))
+    }
+
+    fn single_file_info(name: &str, payload: &[u8], piece_length: usize) -> Vec<u8> {
+        let hashes = payload
+            .chunks(piece_length)
+            .flat_map(|piece| Sha1::digest(piece).to_vec())
+            .collect::<Vec<_>>();
+        let mut info = format!(
+            "d6:lengthi{}e4:name{}:{}12:piece lengthi{}e6:pieces{}:",
+            payload.len(),
+            name.len(),
+            name,
+            piece_length,
+            hashes.len()
+        )
+        .into_bytes();
+        info.extend_from_slice(&hashes);
+        info.push(b'e');
+        info
+    }
+
+    fn encode_info_hash(info_hash: [u8; 20]) -> String {
+        info_hash.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    async fn published_media_service(
+        root: &Path,
+    ) -> (Arc<Mutex<ApplicationService>>, String, Vec<u8>) {
+        let payload = b"gateway verified media".to_vec();
+        let raw_info = single_file_info("gateway.mp4", &payload, 7);
+        let torrent_id = encode_info_hash(Sha1::digest(&raw_info).into());
+        let roots = vec![ConfiguredStorageRoot::path(
+            "downloads",
+            root.join("payload"),
+        )];
+        let profile = root.join("profile");
+        let mut store = SessionStore::open(&profile, "test", &roots).expect("open media store");
+        store
+            .handle_durable(&RequestEnvelope {
+                version: rstorrent_session::CONTROL_VERSION,
+                request_id: "add-gateway-media".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add media torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record media metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1, 2, 3])
+            .expect("record media pieces");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("publish media");
+        store.mark_complete(&torrent_id).expect("complete media");
+        drop(store);
+        std::fs::create_dir_all(root.join("payload")).expect("create media root");
+        std::fs::write(root.join("payload/gateway.mp4"), &payload).expect("write media");
+        let service = Arc::new(Mutex::new(
+            ApplicationService::open(ApplicationConfig::new(
+                profile,
+                "test".to_owned(),
+                roots,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+            ))
+            .await
+            .expect("open media service"),
+        ));
+        (service, torrent_id, payload)
     }
 
     async fn read_application_message(
@@ -1539,6 +1642,81 @@ mod tests {
         assert!(GatewayAuthentication::basic("", "doorstop").is_err());
         assert!(GatewayAuthentication::basic("bad:name", "doorstop").is_err());
         assert!(GatewayAuthentication::basic("preview", "").is_err());
+    }
+
+    #[tokio::test]
+    async fn loopback_gateway_mounts_capability_media_without_api_bearer_or_cors() {
+        let root = test_root("gateway-media");
+        let (service, torrent_id, payload) = published_media_service(&root).await;
+        let server = bind(
+            GatewayConfig {
+                bind: "127.0.0.1:0".parse().expect("address"),
+                authentication: GatewayAuthentication::Bearer {
+                    token: "application-token".to_owned(),
+                },
+                allowed_origin: "http://127.0.0.1:5173".to_owned(),
+                max_connections: 2,
+            },
+            service.clone(),
+        )
+        .await
+        .expect("bind gateway");
+        let address = server.local_addr();
+        let response = service
+            .lock()
+            .await
+            .create_media_url(&torrent_id, 0)
+            .await
+            .expect("create media URL");
+        let MediaUrlOutcome::Created { url, .. } = response.outcome else {
+            panic!("gateway media unavailable")
+        };
+        assert!(url.starts_with(&format!("http://{address}/media/v1/")));
+        let path = url
+            .strip_prefix(&format!("http://{address}"))
+            .expect("same listener URL")
+            .to_owned();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+
+        let (status, headers, body) =
+            raw_http_request(address, "GET", &path, None, None, None, None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(body, payload);
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("accept-ranges: bytes")
+        );
+        assert!(
+            !headers
+                .to_ascii_lowercase()
+                .contains("access-control-allow-origin")
+        );
+
+        let (status, _, _) = raw_http_request(
+            address,
+            "GET",
+            "/media/v1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, 404);
+
+        shutdown.cancel();
+        task.await.expect("gateway task").expect("gateway shutdown");
+        service
+            .lock()
+            .await
+            .shutdown()
+            .await
+            .expect("shutdown service");
+        drop(service);
+        std::fs::remove_dir_all(root).expect("remove root");
     }
 
     #[tokio::test]

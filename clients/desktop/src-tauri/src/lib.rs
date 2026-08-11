@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
+use rstorrent_media::LoopbackMediaServer;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, FileIndexRange,
@@ -44,6 +45,7 @@ struct DesktopState {
     subscriptions: Arc<Mutex<BTreeMap<(String, String), DesktopSubscription>>>,
     view_resources: Arc<DesktopViewResources>,
     torrent_uploads: Arc<Semaphore>,
+    media_server: Mutex<Option<LoopbackMediaServer>>,
     window_generation: AtomicU64,
     allow_exit: AtomicBool,
 }
@@ -342,13 +344,23 @@ async fn application_shutdown(
         stop_subscription(subscription).await;
     }
     state.view_resources.close_all().await;
-    state
+    let service_result = state
         .service
         .lock()
         .await
         .shutdown()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string());
+    let media_result = if let Some(mut media_server) = state.media_server.lock().await.take() {
+        media_server
+            .shutdown()
+            .await
+            .map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    };
+    service_result?;
+    media_result?;
     app.exit(0);
     Ok(())
 }
@@ -458,11 +470,15 @@ pub fn run() {
             .map_err(|error| error.to_string())?;
             let service = Arc::new(Mutex::new(service));
             tauri::async_runtime::block_on(ApplicationService::ensure_maintenance_owner(&service));
+            let media_server =
+                tauri::async_runtime::block_on(LoopbackMediaServer::bind(service.clone()))
+                    .map_err(|error| error.to_string())?;
             let state = DesktopState {
                 service,
                 subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 view_resources: Arc::new(DesktopViewResources::new()),
                 torrent_uploads: Arc::new(Semaphore::new(1)),
+                media_server: Mutex::new(Some(media_server)),
                 window_generation: AtomicU64::new(1),
                 allow_exit: AtomicBool::new(false),
             };

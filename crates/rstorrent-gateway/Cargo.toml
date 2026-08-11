@@ -12,6 +12,7 @@ base64.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 getrandom.workspace = true
 rstorrent-session = { path = "../rstorrent-session" }
+rstorrent-media = { path = "../rstorrent-media" }
 rstorrent-platform = { path = "../rstorrent-platform" }
 rusqlite.workspace = true
 schemars = { workspace = true }
