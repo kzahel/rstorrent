@@ -35,6 +35,7 @@ mod session_resources;
 mod session_socket;
 mod session_udp;
 mod storage_file_pool;
+mod streaming;
 pub mod swarm;
 mod torrent_peer;
 mod tracker;
@@ -177,6 +178,12 @@ pub use storage_file_pool::{
     StorageFileHandle, StorageFileKey, StorageFileLease, StorageFileLocator, StorageFilePool,
     StorageFilePoolError, StorageFilePoolSnapshot, StorageFileReference, StorageFileRole,
     StorageObjectKind, StorageObservation, platform_storage_channel,
+};
+pub use streaming::{
+    MAX_STREAMING_CANDIDATE_INSPECTIONS, MAX_STREAMING_DEMANDS, StreamingCandidate,
+    StreamingCandidateBatch, StreamingCandidateCursor, StreamingDemand, StreamingDemandError,
+    StreamingDemandId, StreamingDemandSet, StreamingDemandSnapshot, StreamingPieceInterval,
+    StreamingUrgency,
 };
 pub use torrent_peer::{
     IncomingPeerAttachment, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle,
