@@ -91,12 +91,31 @@ plaintext cohort measured libtorrent at 487.9 MiB/s, 64 MiB RSTorrent at 332.9
 371.3, 283.0 (`0.762x`), and 315.4 MiB/s (`0.849x`). The lower-backlog control
 also roughly halved RSTorrent RSS without increasing median CPU demand.
 
-This does not select an 8 MiB total memory limit. The current engine couples
-its resident-payload ceiling, a 75% intake watermark, and a block-count job
-limit. Tactical `135` will hold the safety ceiling constant while selecting a
-separate hysteretic storage intake watermark, then use causal controls for the
-remaining write/task and hash-input costs until its near-parity gate. Raw JSON
-and payload artifacts were removed after this summary.
+This did not select an 8 MiB total memory limit. Tactical `135` subsequently
+held a 64 MiB diagnostic resident ceiling and its 4,096-block channel capacity
+constant while varying only the separate intake high point. Four alternating
+1 GiB/16 MiB-piece plaintext repetitions measured libtorrent at 494.8 MiB/s;
+RSTorrent reached 449.3/443.8/415.4/402.1/413.3 MiB/s at 1/2/4/6/8 MiB, or
+`0.908x`/`0.897x`/`0.840x`/`0.813x`/`0.835x`. The 1 MiB control bounded payload
+at exactly 1 MiB and jobs at 79, versus 527 jobs at 8 MiB.
+
+The selected 1 MiB value then reached 341.9 MiB/s against 375.1 MiB/s forced
+RC4 (`0.911x`). Plaintext 256 KiB, 1 MiB, and 4 MiB-piece controls reached
+`0.945x`, `1.001x`, and `0.933x`, clearing the tactical's `0.90x` secondary
+floor. Every case retained exact payload, one TCP and zero uTP peers,
+publication, joined cleanup, zero failed/redundant bytes, and rotating order.
+The release evidence is clean commit `b7dadad` on the Apple M4 Pro/APFS host
+with pinned libtorrent `2.0.13.0`; raw JSON and payload artifacts were removed
+after recording the results.
+
+This selects a 1 MiB high and two-thirds low point without changing the 32 MiB
+desktop or 16 MiB Android resident ceilings, request target, or channel cap.
+It does not yet satisfy near parity. One same-config 1 MiB run naturally
+packed 65,536 blocks into 6,294 write jobs (10.4 blocks/job) and reached 480.6
+MiB/s against that run's 491.2 MiB/s libtorrent result. The other repetitions
+used 10,647--10,794 jobs (about 6.1 blocks/job) and were slower. Tactical `135`
+therefore tests bounded cooperative batch fill next; it does not infer that
+the filesystem or SHA-1 arithmetic is the bottleneck.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo

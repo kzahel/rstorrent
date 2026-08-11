@@ -158,7 +158,7 @@ impl DownloadResourceLimits {
     pub const DESKTOP: Self = Self {
         max_outstanding_request_bytes: 256 * 1024 * 1024,
         max_buffered_payload_bytes: 32 * 1024 * 1024,
-        storage_intake_high_watermark_bytes: 24 * 1024 * 1024,
+        storage_intake_high_watermark_bytes: 1024 * 1024,
         max_active_piece_bytes: 256 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
@@ -166,7 +166,7 @@ impl DownloadResourceLimits {
     pub const ANDROID: Self = Self {
         max_outstanding_request_bytes: 128 * 1024 * 1024,
         max_buffered_payload_bytes: 16 * 1024 * 1024,
-        storage_intake_high_watermark_bytes: 12 * 1024 * 1024,
+        storage_intake_high_watermark_bytes: 1024 * 1024,
         max_active_piece_bytes: 128 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
@@ -179,16 +179,19 @@ impl DownloadResourceLimits {
         Self {
             max_outstanding_request_bytes,
             max_buffered_payload_bytes,
-            storage_intake_high_watermark_bytes: {
-                let derived = max_buffered_payload_bytes.saturating_mul(3) / 4;
-                if derived < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
-                    rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE
-                } else {
-                    derived
-                }
-            },
+            storage_intake_high_watermark_bytes: Self::default_storage_intake_high_watermark(
+                max_buffered_payload_bytes,
+            ),
             max_active_piece_bytes,
             max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
+        }
+    }
+
+    pub const fn default_storage_intake_high_watermark(max_buffered_payload_bytes: usize) -> usize {
+        if max_buffered_payload_bytes < 1024 * 1024 {
+            max_buffered_payload_bytes
+        } else {
+            1024 * 1024
         }
     }
 

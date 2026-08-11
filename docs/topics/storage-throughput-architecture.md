@@ -63,12 +63,12 @@ Tactical [`129`](../tactical/129-bounded-storage-intake-watermark.md) was
 superseded before implementation by active Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md). The broader
 slice now separates a hysteretic storage-intake watermark from the larger
-resident safety ceiling and storage-channel capacity. The initial desktop and
-Android values preserve the previous three-quarter high and one-half low
-behavior; the controlled harness can vary only the intake high point while
-holding the resident ceiling fixed. The campaign next selects that value from
-measurement, then uses measured write/task and pending-hash controls to pursue
-at least `0.95x` pinned-libtorrent throughput without reopening durability
+resident safety ceiling and storage-channel capacity. A four-run controlled
+sweep selects a 1 MiB high point and two-thirds low point for desktop and
+Android while preserving their 32 and 16 MiB resident ceilings. The campaign
+next tests bounded write-batch fill selected by the same-cohort write-job
+shape, then uses measured pending-hash controls only if needed to pursue at
+least `0.95x` pinned-libtorrent throughput without reopening durability
 authority.
 
 ## Purpose And Scope
@@ -653,11 +653,11 @@ accepted buffers exceed their owner, but does not stop discovery, peer control,
 write completions, hash completions or checkpoint completions. Existing
 promised requests may overshoot only within their separately declared bound.
 The ordinary intake high point is now an independent byte policy. Its low
-point is two thirds of the configured high point, preserving the former
-24/16 MiB desktop and 12/8 MiB Android hysteresis. The larger buffered-payload
-allowance continues to own emergency resident acceptance and storage-channel
-capacity; changing the intake point neither shrinks that cap nor changes the
-request target.
+point is two thirds of the configured high point. Controlled Tactical `135`
+evidence selects 1 MiB high and 699,050 bytes low for both desktop and Android.
+The larger buffered-payload allowance continues to own emergency resident
+acceptance and storage-channel capacity; changing the intake point neither
+shrinks that cap nor changes the request target.
 
 Batch coalescing must not double the whole batch by default. Where a contiguous
 copy is measurably useful, its temporary bytes receive their own cap. Vectored

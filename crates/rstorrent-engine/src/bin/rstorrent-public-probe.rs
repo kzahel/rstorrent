@@ -2291,7 +2291,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         );
     }
     let storage_intake_high_watermark = storage_intake_high_watermark.unwrap_or_else(|| {
-        (payload_limit.saturating_mul(3) / 4).max(rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE)
+        DownloadResourceLimits::default_storage_intake_high_watermark(payload_limit)
     });
     if storage_intake_high_watermark > payload_limit {
         return Err(
@@ -2364,7 +2364,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use rstorrent_engine::{
-        DownloadDiagnosticSnapshot, DownloadProgress, MetadataAcquisitionSnapshot,
+        DownloadDiagnosticSnapshot, DownloadProgress, DownloadResourceLimits,
+        MetadataAcquisitionSnapshot,
     };
 
     use super::{
@@ -2394,7 +2395,7 @@ mod tests {
         assert_eq!(config.profile, Profile::MatchedPlain30);
         assert_eq!(
             config.storage_intake_high_watermark,
-            config.payload_limit * 3 / 4
+            DownloadResourceLimits::default_storage_intake_high_watermark(config.payload_limit)
         );
 
         let mut both = required_arguments();

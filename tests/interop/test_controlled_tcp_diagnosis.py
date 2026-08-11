@@ -60,7 +60,10 @@ def result(owner: str, throughput: float, run: int = 1) -> DiagnosisResult:
                 "resumable-intake-4m": 4 * 1024 * 1024,
                 "resumable-intake-6m": 6 * 1024 * 1024,
                 "resumable-intake-8m": 8 * 1024 * 1024,
-            }.get(owner, 48 * 1024 * 1024)
+                "resumable-buffer-8m": 6 * 1024 * 1024,
+                "resumable-buffer-16m": 12 * 1024 * 1024,
+                "resumable-buffer-32m": 24 * 1024 * 1024,
+            }.get(owner, 1 * 1024 * 1024)
             if owner.startswith("resumable") or owner == "probe-nonresumable"
             else None
         ),

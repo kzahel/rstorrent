@@ -452,7 +452,10 @@ def run_owner(
                 "resumable-intake-4m": 4 * MIB,
                 "resumable-intake-6m": 6 * MIB,
                 "resumable-intake-8m": 8 * MIB,
-            }.get(owner, payload_allowance_bytes * 3 // 4)
+                "resumable-buffer-8m": 6 * MIB,
+                "resumable-buffer-16m": 12 * MIB,
+                "resumable-buffer-32m": 24 * MIB,
+            }.get(owner, 1 * MIB)
             raw = run_resumable_rstorrent(
                 resumable_binary,
                 torrent_path,

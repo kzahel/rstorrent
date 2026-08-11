@@ -85,7 +85,9 @@ fn product_profiles_are_generous_and_fill_every_initial_peer_window() {
         assert!(limits.max_buffered_payload_bytes >= MIN_PAYLOAD_ALLOWANCE);
         assert_eq!(
             limits.storage_intake_high_watermark_bytes,
-            limits.max_buffered_payload_bytes * 3 / 4
+            DownloadResourceLimits::default_storage_intake_high_watermark(
+                limits.max_buffered_payload_bytes
+            )
         );
         assert!(limits.max_active_piece_bytes >= initial_window_bytes);
         limits.validate().expect("valid product profile");

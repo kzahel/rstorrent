@@ -232,10 +232,9 @@ collapse into one commit.
 The first implementation stage is complete. `DownloadResourceLimits` now
 names a storage-intake high watermark separately from the buffered-payload
 resident ceiling. The low point is two thirds of high. Existing product
-behavior is initially unchanged: desktop remains 32 MiB resident with 24/16
-MiB intake hysteresis, while Android remains 16 MiB resident with 12/8 MiB
-hysteresis. The storage command and completion channel capacity continues to
-derive from the resident ceiling, not the new ordinary pressure point.
+behavior was initially unchanged for the isolating sweep. The storage command
+and completion channel capacity continues to derive from the resident ceiling,
+not the new ordinary pressure point.
 
 The resumable diagnostic accepts an internal
 `--storage-intake-high-watermark-bytes` control, records the resident/high/low
@@ -249,8 +248,37 @@ desktop/Android defaults, invalid bounds, restart propagation, and existing
 storage saturation/cancellation paths. Focused engine Clippy and tests pass;
 one full 502-test engine run had a pre-existing bandwidth timing failure that
 passed immediately in exact isolation. The locked controlled-harness and
-public-comparator unit suites pass. Performance selection remains pending the
-release sweep, so no new default or speed claim is made yet.
+public-comparator unit suites pass.
+
+### Intake sweep and selection
+
+Clean release commit `b7dadad` ran on the Apple M4 Pro/APFS host with pinned
+libtorrent `2.0.13.0`, a 64 MiB diagnostic resident allowance, 4/4 storage
+concurrency, one TCP peer, zero uTP peers, and rotating order. Four plaintext
+1 GiB/16 MiB-piece repetitions produced:
+
+| Intake high | Median MiB/s | Libtorrent ratio | Payload/job high water |
+| --- | ---: | ---: | ---: |
+| libtorrent | 494.8 | `1.000x` | n/a |
+| 1 MiB | 449.3 | `0.908x` | 1 MiB / 79 |
+| 2 MiB | 443.8 | `0.897x` | 2 MiB / 143 |
+| 4 MiB | 415.4 | `0.840x` | 4 MiB / 271 |
+| 6 MiB | 402.1 | `0.813x` | 6 MiB / 399 |
+| 8 MiB | 413.3 | `0.835x` | 8 MiB / 527 |
+
+The 1 MiB point is the fastest stable candidate. Its forced-RC4 median is
+341.9 MiB/s against 375.1 MiB/s (`0.911x`). Plaintext 256 KiB, 1 MiB, and 4
+MiB-piece rows reach `0.945x`, `1.001x`, and `0.933x`, so each clears the
+secondary `0.90x` floor. All 56 outputs passed independent piece/whole-file
+verification, exact transport/method evidence, publication, joined shutdown,
+and cleanup with no failed or redundant payload.
+
+Desktop and Android therefore adopt 1 MiB high and 699,050-byte low intake
+hysteresis while retaining 32 and 16 MiB resident ceilings. One 1 MiB run
+packed 65,536 logical blocks into 6,294 write jobs and reached 480.6 MiB/s;
+the other runs used 10,647--10,794 jobs and were slower. This selects bounded
+write-batch fill as the next causal control. It does not select more workers,
+filesystem changes, or pending-write hashing yet.
 
 ## Validation Matrix
 

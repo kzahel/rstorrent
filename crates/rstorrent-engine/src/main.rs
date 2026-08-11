@@ -303,8 +303,9 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
                     ));
                 }
                 resource_limits.storage_intake_high_watermark_bytes =
-                    (resource_limits.max_buffered_payload_bytes.saturating_mul(3) / 4)
-                        .max(MIN_PAYLOAD_ALLOWANCE);
+                    DownloadResourceLimits::default_storage_intake_high_watermark(
+                        resource_limits.max_buffered_payload_bytes,
+                    );
             }
             "--encryption" => {
                 encryption = match value
