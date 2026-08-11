@@ -12,6 +12,8 @@ use rstorrent_protocol::storage_layout::{
     FileSelection, LayoutError, RequiredPayloadGeometry, TorrentLayout,
 };
 
+use crate::MediaFileAvailability;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -43,6 +45,7 @@ pub struct FileView {
     pub padding: bool,
     pub done_bytes: String,
     pub verified_bytes: String,
+    pub media_availability: MediaFileAvailability,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +53,7 @@ struct FileCatalog {
     layout: TorrentLayout,
     selection: FileSelection,
     filesystem_content_base: Option<String>,
+    media_availability: MediaFileAvailability,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -111,11 +115,28 @@ impl From<LayoutError> for FileProgressError {
 }
 
 impl FileProgressModel {
+    #[cfg(test)]
     pub(crate) fn new(
         metainfo: &Metainfo,
         skipped: &[u32],
         verified_pieces: &[u32],
         filesystem_content_base: Option<String>,
+    ) -> Result<Self, FileProgressError> {
+        Self::new_with_media(
+            metainfo,
+            skipped,
+            verified_pieces,
+            filesystem_content_base,
+            MediaFileAvailability::NotPublished,
+        )
+    }
+
+    pub(crate) fn new_with_media(
+        metainfo: &Metainfo,
+        skipped: &[u32],
+        verified_pieces: &[u32],
+        filesystem_content_base: Option<String>,
+        media_availability: MediaFileAvailability,
     ) -> Result<Self, FileProgressError> {
         let layout = TorrentLayout::from_metainfo(metainfo);
         let skipped = skipped
@@ -130,6 +151,7 @@ impl FileProgressModel {
                 layout,
                 selection,
                 filesystem_content_base,
+                media_availability,
             }),
             counters: vec![FileCounters::default(); file_count],
             verified_pieces: BTreeSet::new(),
@@ -231,6 +253,15 @@ impl FileProgressModel {
             padding: file.padding,
             done_bytes: counters.done.to_string(),
             verified_bytes: counters.verified.to_string(),
+            media_availability: if file.padding {
+                MediaFileAvailability::Padding
+            } else if self.catalog.media_availability != MediaFileAvailability::Available {
+                self.catalog.media_availability
+            } else if counters.verified == file.length {
+                MediaFileAvailability::Available
+            } else {
+                MediaFileAvailability::Unverified
+            },
         }
     }
 
@@ -552,7 +583,30 @@ mod tests {
         assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
         assert_eq!(rows[3].selection, None);
         assert!(rows[3].padding);
+        assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
+        assert_eq!(
+            rows[1].media_availability,
+            MediaFileAvailability::NotPublished
+        );
         assert_eq!(model.filesystem_content_base(), Some("/tmp/content"));
+    }
+
+    #[test]
+    fn published_media_availability_requires_verified_pieces_but_not_wanted_selection() {
+        let model = FileProgressModel::new_with_media(
+            &fixture(),
+            &[2],
+            &[0, 1, 2, 3],
+            None,
+            MediaFileAvailability::Available,
+        )
+        .expect("published model");
+        let rows = model.rows();
+        assert_eq!(rows[0].media_availability, MediaFileAvailability::Available);
+        assert_eq!(rows[1].media_availability, MediaFileAvailability::Available);
+        assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
+        assert_eq!(rows[2].media_availability, MediaFileAvailability::Available);
+        assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
     }
 
     #[test]

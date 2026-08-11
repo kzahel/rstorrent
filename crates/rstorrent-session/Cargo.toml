@@ -10,6 +10,7 @@ publish = false
 uniffi = ["dep:uniffi"]
 
 [dependencies]
+base64 = { workspace = true }
 rstorrent-engine = { path = "../rstorrent-engine" }
 rstorrent-protocol = { path = "../rstorrent-protocol" }
 getrandom = { workspace = true }
@@ -23,8 +24,8 @@ tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "sy
 tokio-util = { workspace = true, features = ["rt"] }
 ts-rs = { workspace = true }
 uniffi = { version = "=0.31.0", default-features = false, optional = true }
+url = { workspace = true }
 
 [dev-dependencies]
-base64 = { workspace = true }
 rstorrent-engine = { path = "../rstorrent-engine", features = ["test-platform-root"] }
 tokio-rustls = "0.26.4"

@@ -22,6 +22,331 @@ use crate::storage_file_pool::{
     StorageFileRole, StorageObjectKind,
 };
 
+/// Maximum payload prepared by one verified logical-file read.
+pub const MAX_VERIFIED_FILE_READ_BYTES: usize = 64 * 1024;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VerifiedFileSnapshot {
+    pub current_reads: usize,
+    pub read_high_water: usize,
+    pub current_file_leases: usize,
+    pub file_lease_high_water: usize,
+}
+
+/// Immutable authority for bounded reads from one verified published file.
+#[derive(Clone, Debug)]
+pub struct VerifiedFileReader {
+    file_index: usize,
+    file_name: String,
+    expected_length: u64,
+    reference: StorageFileReference,
+    read_jobs: Arc<tokio::sync::Semaphore>,
+    metrics: Arc<ReadMetrics>,
+}
+
+impl VerifiedFileReader {
+    pub async fn open_published_with_pool(
+        storage_root: &Path,
+        metainfo: &Metainfo,
+        verified: &[bool],
+        file_index: usize,
+        pool: StorageFilePool,
+        storage_id: &str,
+        read_jobs: Arc<tokio::sync::Semaphore>,
+    ) -> Result<Self, VerifiedFileError> {
+        let layout = TorrentLayout::from_metainfo(metainfo);
+        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+            .map_err(VerifiedFileError::StoragePlan)?;
+        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+            .map_err(VerifiedFileError::ArtifactLayout)?;
+        let logical = artifact
+            .files
+            .get(file_index)
+            .ok_or(VerifiedFileError::InvalidFileIndex(file_index))?;
+        let namespace_reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: storage_id.to_owned(),
+                namespace_generation: 1,
+                role: StorageFileRole::Namespace,
+            },
+            StorageFileLocator::Path(paths.output),
+        );
+        let path = logical
+            .qualified_components
+            .iter()
+            .fold(storage_root.to_path_buf(), |path, part| path.join(part));
+        let reference = StorageFileReference::new(
+            pool,
+            StorageFileKey {
+                storage_id: storage_id.to_owned(),
+                namespace_generation: 1,
+                role: StorageFileRole::Payload(file_index),
+            },
+            StorageFileLocator::Path(path),
+        );
+        Self::open_with_reference(
+            metainfo,
+            verified,
+            file_index,
+            layout,
+            artifact,
+            namespace_reference,
+            reference,
+            read_jobs,
+        )
+        .await
+    }
+
+    pub async fn open_published_with_platform(
+        spec: &PlatformStorageSpec,
+        metainfo: &Metainfo,
+        verified: &[bool],
+        file_index: usize,
+        read_jobs: Arc<tokio::sync::Semaphore>,
+    ) -> Result<Self, VerifiedFileError> {
+        if !spec.published
+            || spec.publication_name != metainfo.name
+            || spec.publication_shape != PublicationShape::from_metainfo(metainfo)
+        {
+            return Err(VerifiedFileError::InvalidPlatformNamespace);
+        }
+        let layout = TorrentLayout::from_metainfo(metainfo);
+        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+            .map_err(VerifiedFileError::ArtifactLayout)?;
+        let logical = artifact
+            .files
+            .get(file_index)
+            .ok_or(VerifiedFileError::InvalidFileIndex(file_index))?;
+        let reference = |role, path| {
+            let target = PlatformStorageTarget {
+                root_id: spec.root_id.clone(),
+                storage_id: spec.storage_id.clone(),
+                namespace_generation: spec.namespace_generation,
+                role,
+                path,
+            };
+            StorageFileReference::new(
+                spec.pool.clone(),
+                StorageFileKey {
+                    storage_id: spec.storage_id.clone(),
+                    namespace_generation: spec.namespace_generation,
+                    role,
+                },
+                StorageFileLocator::Platform(target),
+            )
+        };
+        let namespace_reference =
+            reference(StorageFileRole::Namespace, vec![artifact.namespace.clone()]);
+        let file_reference = reference(
+            StorageFileRole::Payload(file_index),
+            logical.qualified_components.clone(),
+        );
+        Self::open_with_reference(
+            metainfo,
+            verified,
+            file_index,
+            layout,
+            artifact,
+            namespace_reference,
+            file_reference,
+            read_jobs,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn open_with_reference(
+        metainfo: &Metainfo,
+        verified: &[bool],
+        file_index: usize,
+        layout: TorrentLayout,
+        artifact: PublishedArtifactLayout,
+        namespace_reference: StorageFileReference,
+        reference: StorageFileReference,
+        read_jobs: Arc<tokio::sync::Semaphore>,
+    ) -> Result<Self, VerifiedFileError> {
+        if read_jobs.is_closed() {
+            return Err(VerifiedFileError::ReadOwnerClosed);
+        }
+        if verified.len() != layout.piece_count() {
+            return Err(VerifiedFileError::InvalidHaveLength {
+                actual: verified.len(),
+                expected: layout.piece_count(),
+            });
+        }
+        let file = layout
+            .files()
+            .get(file_index)
+            .ok_or(VerifiedFileError::InvalidFileIndex(file_index))?;
+        if file.padding {
+            return Err(VerifiedFileError::PaddingFile(file_index));
+        }
+        let all_verified = layout
+            .file_piece_range(file_index)
+            .map_err(VerifiedFileError::Layout)?
+            .into_iter()
+            .flatten()
+            .all(|piece| {
+                usize::try_from(piece)
+                    .ok()
+                    .and_then(|piece| verified.get(piece))
+                    .copied()
+                    .unwrap_or(false)
+            });
+        if !all_verified {
+            return Err(VerifiedFileError::UnverifiedFile(file_index));
+        }
+        let namespace =
+            namespace_reference
+                .observe()
+                .await
+                .map_err(|source| VerifiedFileError::Storage {
+                    artifact: "published namespace".to_owned(),
+                    source,
+                })?;
+        let expected_namespace_kind = match artifact.shape {
+            PublicationShape::File => StorageObjectKind::File,
+            PublicationShape::Tree => StorageObjectKind::Directory,
+        };
+        if !namespace.exists || namespace.kind != Some(expected_namespace_kind) {
+            return Err(VerifiedFileError::UnexpectedArtifact(
+                "published namespace".to_owned(),
+            ));
+        }
+        let label = format!("payload file {file_index}");
+        observe_exact_file(&reference, file.length, &label).await?;
+        let file_name = metainfo.files[file_index]
+            .path
+            .last()
+            .cloned()
+            .unwrap_or_else(|| metainfo.name.clone());
+        Ok(Self {
+            file_index,
+            file_name,
+            expected_length: file.length,
+            reference,
+            read_jobs,
+            metrics: Arc::new(ReadMetrics::default()),
+        })
+    }
+
+    pub fn file_index(&self) -> usize {
+        self.file_index
+    }
+
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+
+    pub fn length(&self) -> u64 {
+        self.expected_length
+    }
+
+    pub fn snapshot(&self) -> VerifiedFileSnapshot {
+        VerifiedFileSnapshot {
+            current_reads: self.metrics.current_reads.load(Ordering::Acquire),
+            read_high_water: self.metrics.read_high_water.load(Ordering::Acquire),
+            current_file_leases: self.metrics.current_file_leases.load(Ordering::Acquire),
+            file_lease_high_water: self.metrics.file_lease_high_water.load(Ordering::Acquire),
+        }
+    }
+
+    pub async fn read_range(
+        &self,
+        offset: u64,
+        length: usize,
+    ) -> Result<Vec<u8>, VerifiedFileError> {
+        if length > MAX_VERIFIED_FILE_READ_BYTES {
+            return Err(VerifiedFileError::ReadTooLarge {
+                actual: length,
+                maximum: MAX_VERIFIED_FILE_READ_BYTES,
+            });
+        }
+        let length_u64 =
+            u64::try_from(length).map_err(|_| VerifiedFileError::ArithmeticOverflow)?;
+        let end = offset
+            .checked_add(length_u64)
+            .ok_or(VerifiedFileError::ArithmeticOverflow)?;
+        if offset > self.expected_length || end > self.expected_length {
+            return Err(VerifiedFileError::InvalidRange {
+                offset,
+                length,
+                file_length: self.expected_length,
+            });
+        }
+        if length == 0 {
+            return Ok(Vec::new());
+        }
+        let permit = self
+            .read_jobs
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| VerifiedFileError::ReadOwnerClosed)?;
+        let label = format!("payload file {}", self.file_index);
+        observe_exact_file(&self.reference, self.expected_length, &label).await?;
+        let handle = self
+            .reference
+            .open(StorageFileAccess::ReadExisting)
+            .await
+            .map_err(|source| VerifiedFileError::Storage {
+                artifact: label.clone(),
+                source,
+            })?;
+        let expected_length = self.expected_length;
+        let metrics = self.metrics.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let _read = OwnedCounterGuard::read(metrics.clone());
+            let _lease = OwnedCounterGuard::lease(metrics);
+            let opened = handle
+                .file()
+                .metadata()
+                .map_err(|source| VerifiedFileError::Io {
+                    operation: "inspect open verified payload",
+                    artifact: label.clone(),
+                    source,
+                })?;
+            if !opened.is_file() || opened.len() != expected_length {
+                return Err(VerifiedFileError::UnexpectedArtifact(label));
+            }
+            let mut bytes = vec![0; length];
+            read_exact_at(handle.file(), &mut bytes, offset).map_err(|source| {
+                VerifiedFileError::Io {
+                    operation: "read verified payload",
+                    artifact: label,
+                    source,
+                }
+            })?;
+            Ok(bytes)
+        })
+        .await
+        .map_err(|error| VerifiedFileError::TaskJoin(error.to_string()))?
+    }
+}
+
+async fn observe_exact_file(
+    reference: &StorageFileReference,
+    expected_length: u64,
+    label: &str,
+) -> Result<(), VerifiedFileError> {
+    let observation = reference
+        .observe()
+        .await
+        .map_err(|source| VerifiedFileError::Storage {
+            artifact: label.to_owned(),
+            source,
+        })?;
+    if !observation.exists
+        || observation.kind != Some(StorageObjectKind::File)
+        || observation.length != Some(expected_length)
+    {
+        return Err(VerifiedFileError::UnexpectedArtifact(label.to_owned()));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 struct SeedFile {
     label: String,
@@ -461,6 +786,111 @@ pub enum SeedContentError {
     TaskJoin(String),
 }
 
+#[derive(Debug)]
+pub enum VerifiedFileError {
+    InvalidHaveLength {
+        actual: usize,
+        expected: usize,
+    },
+    InvalidFileIndex(usize),
+    PaddingFile(usize),
+    UnverifiedFile(usize),
+    InvalidRange {
+        offset: u64,
+        length: usize,
+        file_length: u64,
+    },
+    ReadTooLarge {
+        actual: usize,
+        maximum: usize,
+    },
+    UnexpectedArtifact(String),
+    InvalidPlatformNamespace,
+    ReadOwnerClosed,
+    ArithmeticOverflow,
+    Layout(LayoutError),
+    ArtifactLayout(ArtifactLayoutError),
+    StoragePlan(SelectiveStorageError),
+    Storage {
+        artifact: String,
+        source: StorageFilePoolError,
+    },
+    Io {
+        operation: &'static str,
+        artifact: String,
+        source: io::Error,
+    },
+    TaskJoin(String),
+}
+
+impl fmt::Display for VerifiedFileError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidHaveLength { actual, expected } => write!(
+                formatter,
+                "have length {actual} does not match piece count {expected}"
+            ),
+            Self::InvalidFileIndex(index) => {
+                write!(formatter, "verified file index {index} is invalid")
+            }
+            Self::PaddingFile(index) => {
+                write!(formatter, "torrent file {index} is padding")
+            }
+            Self::UnverifiedFile(index) => {
+                write!(formatter, "torrent file {index} is not fully verified")
+            }
+            Self::InvalidRange {
+                offset,
+                length,
+                file_length,
+            } => write!(
+                formatter,
+                "verified file range {offset}+{length} exceeds length {file_length}"
+            ),
+            Self::ReadTooLarge { actual, maximum } => write!(
+                formatter,
+                "verified file read length {actual} exceeds bound {maximum}"
+            ),
+            Self::UnexpectedArtifact(artifact) => write!(
+                formatter,
+                "verified payload has an unexpected type or length: {artifact}"
+            ),
+            Self::InvalidPlatformNamespace => {
+                formatter.write_str("platform namespace does not match verified published metadata")
+            }
+            Self::ReadOwnerClosed => formatter.write_str("verified file read owner is closed"),
+            Self::ArithmeticOverflow => formatter.write_str("verified file arithmetic overflow"),
+            Self::Layout(error) => write!(formatter, "verified file layout: {error}"),
+            Self::ArtifactLayout(error) => {
+                write!(formatter, "verified file artifact layout: {error}")
+            }
+            Self::StoragePlan(error) => write!(formatter, "verified file storage plan: {error}"),
+            Self::Storage { artifact, source } => {
+                write!(formatter, "access verified {artifact}: {source}")
+            }
+            Self::Io {
+                operation,
+                artifact,
+                source,
+            } => write!(formatter, "{operation} {artifact}: {source}"),
+            Self::TaskJoin(error) => write!(formatter, "verified file read task: {error}"),
+        }
+    }
+}
+
+impl Error for VerifiedFileError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Layout(error) => Some(error),
+            Self::ArtifactLayout(error) => Some(error),
+            Self::StoragePlan(error) => Some(error),
+            Self::Storage { source, .. } => Some(source),
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
 impl fmt::Display for SeedContentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -531,6 +961,53 @@ impl Drop for CounterGuard<'_> {
     }
 }
 
+enum OwnedCounterKind {
+    Read,
+    Lease,
+}
+
+struct OwnedCounterGuard {
+    metrics: Arc<ReadMetrics>,
+    kind: OwnedCounterKind,
+}
+
+impl OwnedCounterGuard {
+    fn read(metrics: Arc<ReadMetrics>) -> Self {
+        let value = metrics.current_reads.fetch_add(1, Ordering::AcqRel) + 1;
+        metrics.read_high_water.fetch_max(value, Ordering::AcqRel);
+        Self {
+            metrics,
+            kind: OwnedCounterKind::Read,
+        }
+    }
+
+    fn lease(metrics: Arc<ReadMetrics>) -> Self {
+        let value = metrics.current_file_leases.fetch_add(1, Ordering::AcqRel) + 1;
+        metrics
+            .file_lease_high_water
+            .fetch_max(value, Ordering::AcqRel);
+        Self {
+            metrics,
+            kind: OwnedCounterKind::Lease,
+        }
+    }
+}
+
+impl Drop for OwnedCounterGuard {
+    fn drop(&mut self) {
+        match self.kind {
+            OwnedCounterKind::Read => {
+                self.metrics.current_reads.fetch_sub(1, Ordering::AcqRel);
+            }
+            OwnedCounterKind::Lease => {
+                self.metrics
+                    .current_file_leases
+                    .fetch_sub(1, Ordering::AcqRel);
+            }
+        }
+    }
+}
+
 fn hex(bytes: [u8; 20]) -> String {
     use std::fmt::Write as _;
 
@@ -545,6 +1022,7 @@ fn hex(bytes: [u8; 20]) -> String {
 mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
@@ -557,7 +1035,9 @@ mod tests {
         StorageFileAccess, StorageObjectKind, StorageObservation, platform_storage_channel,
     };
 
-    use super::{SeedContent, SeedContentError, StorageFilePool};
+    use super::{
+        SeedContent, SeedContentError, StorageFilePool, VerifiedFileError, VerifiedFileReader,
+    };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -776,6 +1256,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn verified_file_reader_confines_partial_torrent_reads_to_one_file() {
+        let root = root("verified-file");
+        tokio::fs::create_dir_all(root.join("tree"))
+            .await
+            .expect("create tree");
+        tokio::fs::write(root.join("tree/a"), b"abc")
+            .await
+            .expect("write a");
+        tokio::fs::write(root.join("tree/b"), b"def")
+            .await
+            .expect("write b");
+        tokio::fs::write(root.join("tree/c"), b"gh")
+            .await
+            .expect("write c");
+        let pool = StorageFilePool::new(1, None).expect("pool");
+        let read_jobs = Arc::new(tokio::sync::Semaphore::new(1));
+        let reader = VerifiedFileReader::open_published_with_pool(
+            &root,
+            &multi(),
+            &[true, false, false],
+            0,
+            pool.clone(),
+            "verified-file",
+            read_jobs.clone(),
+        )
+        .await
+        .expect("first file is verified through its intersecting piece");
+        assert_eq!(reader.file_index(), 0);
+        assert_eq!(reader.file_name(), "a");
+        assert_eq!(reader.length(), 3);
+        assert_eq!(reader.read_range(1, 2).await.expect("bounded read"), b"bc");
+        assert!(matches!(
+            VerifiedFileReader::open_published_with_pool(
+                &root,
+                &multi(),
+                &[true, false, false],
+                1,
+                pool.clone(),
+                "verified-file",
+                read_jobs.clone(),
+            )
+            .await,
+            Err(VerifiedFileError::UnverifiedFile(1))
+        ));
+        assert!(matches!(
+            VerifiedFileReader::open_published_with_pool(
+                &root,
+                &multi(),
+                &[true, true, true],
+                2,
+                pool,
+                "verified-file",
+                read_jobs,
+            )
+            .await,
+            Err(VerifiedFileError::PaddingFile(2))
+        ));
+        tokio::fs::write(root.join("tree/a"), b"changed")
+            .await
+            .expect("replace file length");
+        assert!(matches!(
+            reader.read_range(0, 1).await,
+            Err(VerifiedFileError::UnexpectedArtifact(_))
+        ));
+        let snapshot = reader.snapshot();
+        assert_eq!(snapshot.read_high_water, 1);
+        assert_eq!(snapshot.file_lease_high_water, 1);
+        assert_eq!(snapshot.current_reads, 0);
+        assert_eq!(snapshot.current_file_leases, 0);
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
+    }
+
+    #[tokio::test]
     async fn platform_content_uses_observation_and_shared_pool_for_upload_reads() {
         let root = root("platform");
         tokio::fs::create_dir_all(root.join("tree"))
@@ -867,6 +1420,28 @@ mod tests {
                 .await
                 .expect("platform cross-file read"),
             b"abcd"
+        );
+        let reader = VerifiedFileReader::open_published_with_platform(
+            &PlatformStorageSpec {
+                pool: pool.clone(),
+                root_id: "root".to_owned(),
+                storage_id: "platform-seed".to_owned(),
+                publication_name: "tree".to_owned(),
+                publication_shape: PublicationShape::Tree,
+                namespace_generation: 9,
+                managed: true,
+                published: true,
+            },
+            &multi(),
+            &[true, true, false],
+            1,
+            Arc::new(tokio::sync::Semaphore::new(1)),
+        )
+        .await
+        .expect("open verified platform file");
+        assert_eq!(
+            reader.read_range(1, 2).await.expect("platform range"),
+            b"ef"
         );
         let snapshot = pool.snapshot();
         assert_eq!(snapshot.limit, 1);

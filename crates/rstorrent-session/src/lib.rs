@@ -17,6 +17,7 @@ mod durable_state;
 mod file_views;
 mod have;
 mod incoming_seeding;
+mod media;
 mod reachability;
 mod session_network;
 mod session_utp;
@@ -49,6 +50,12 @@ pub use diagnostics::{
 };
 pub use file_views::{FileCatalogState, FileSelectionView, FileView};
 pub use have::{HaveError, HaveState};
+pub use media::{
+    MAX_MEDIA_CAPABILITIES, MAX_MEDIA_READ_JOBS, MAX_MEDIA_REQUESTS,
+    MAX_MEDIA_REQUESTS_PER_CAPABILITY, MEDIA_CAPABILITY_ABSOLUTE_TIMEOUT,
+    MEDIA_CAPABILITY_IDLE_TIMEOUT, MEDIA_CAPABILITY_LENGTH, MediaCapabilityLease,
+    MediaFileAvailability, MediaOriginError, MediaResolveError, MediaUrlOutcome, MediaUrlResponse,
+};
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{
     DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,

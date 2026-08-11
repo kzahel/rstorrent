@@ -3,9 +3,9 @@ use super::*;
 use crate::diagnostics::category;
 use crate::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticFilter, DiagnosticRetention, DiagnosticSeverity,
-    FileCatalogState, FileSelectionView, FileView, ProgressAction, ProgressAssessment,
-    ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot, StorageState,
-    TorrentSnapshot, TorrentState, TorrentView,
+    FileCatalogState, FileSelectionView, FileView, MediaFileAvailability, ProgressAction,
+    ProgressAssessment, ProgressDisposition, ProgressPhase, ProgressReason, ServiceSnapshot,
+    StorageState, TorrentSnapshot, TorrentState, TorrentView,
 };
 use rstorrent_engine::peer::{PeerSource, PeerSources};
 use rstorrent_engine::swarm::ConnectionId;
@@ -167,6 +167,7 @@ fn maximum_file_page_is_separate_from_steady_queue_pressure() {
             padding: false,
             done_bytes: "0".to_owned(),
             verified_bytes: "0".to_owned(),
+            media_availability: MediaFileAvailability::Unverified,
         })
         .collect::<Vec<_>>();
     let snapshot = ViewSnapshot::Files {
@@ -225,6 +226,7 @@ fn maximum_file_page_is_separate_from_steady_queue_pressure() {
                     padding: false,
                     done_bytes: "16384".to_owned(),
                     verified_bytes: "0".to_owned(),
+                    media_availability: MediaFileAvailability::Unverified,
                 }],
                 removed: Vec::new(),
             },

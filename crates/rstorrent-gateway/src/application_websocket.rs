@@ -1765,6 +1765,10 @@ fn valid_application_call(call: &ApplicationCall) -> bool {
     match call {
         ApplicationCall::UpdateViewSet { view_set_id, .. }
         | ApplicationCall::CloseViewSet { view_set_id } => valid_view_set_id(view_set_id),
+        ApplicationCall::CreateMediaUrl {
+            torrent_id,
+            file_index: _,
+        } => torrent_id.len() == 40 && torrent_id.bytes().all(|byte| byte.is_ascii_hexdigit()),
         ApplicationCall::Dispatch { .. } | ApplicationCall::OpenViewSet { .. } => true,
     }
 }

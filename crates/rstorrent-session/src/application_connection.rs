@@ -27,6 +27,10 @@ pub enum ApplicationCall {
     CloseViewSet {
         view_set_id: String,
     },
+    CreateMediaUrl {
+        torrent_id: String,
+        file_index: u32,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -36,6 +40,7 @@ pub enum ApplicationCallResult {
     ViewSetOpened { response: Box<OpenViewSetResponse> },
     ViewSetUpdated,
     ViewSetClosed,
+    MediaUrl { response: crate::MediaUrlResponse },
 }
 
 #[derive(Debug)]
@@ -109,6 +114,12 @@ impl ApplicationService {
                 self.close_view_set(owner, &view_set_id)?;
                 Ok(ApplicationCallResult::ViewSetClosed)
             }
+            ApplicationCall::CreateMediaUrl {
+                torrent_id,
+                file_index,
+            } => Ok(ApplicationCallResult::MediaUrl {
+                response: self.create_media_url(&torrent_id, file_index).await?,
+            }),
         }
     }
 }

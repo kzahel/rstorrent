@@ -134,7 +134,10 @@ pub use resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent,
     ResumeValidationRejectReason, decide_resume_admission,
 };
-pub use seed_content::{SeedContent, SeedContentError, SeedContentSnapshot};
+pub use seed_content::{
+    MAX_VERIFIED_FILE_READ_BYTES, SeedContent, SeedContentError, SeedContentSnapshot,
+    VerifiedFileError, VerifiedFileReader, VerifiedFileSnapshot,
+};
 #[cfg(feature = "descriptor-storage-diagnostics")]
 #[doc(hidden)]
 pub use selective_storage::{

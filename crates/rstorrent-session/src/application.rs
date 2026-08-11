@@ -24,8 +24,9 @@ use rstorrent_engine::{
     SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
     StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind,
     TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
-    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
-    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
+    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
+    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -49,6 +50,10 @@ use crate::diagnostics::{
 use crate::file_views::FileProgressModel;
 use crate::have::HaveState;
 use crate::incoming_seeding::{IncomingSeeding, IncomingSeedingError, SeedReconcileOutcome};
+use crate::media::{
+    MediaCapabilities, MediaFileAvailability, MediaOriginError, MediaRegistryError,
+    MediaResolveError, MediaUrlResponse,
+};
 use crate::session_network::{SessionNetworkConfig, SessionNetworkError, SessionNetworkRuntime};
 use crate::settings::{StorageRootSnapshot, TorrentTransferLimits};
 use crate::speed::{PreparedSpeedHistory, SessionSpeedRecorder, SpeedHistoryRuntime};
@@ -66,6 +71,28 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvailability {
+    match error {
+        VerifiedFileError::InvalidFileIndex(_) => MediaFileAvailability::InvalidFile,
+        VerifiedFileError::PaddingFile(_) => MediaFileAvailability::Padding,
+        VerifiedFileError::UnverifiedFile(_) | VerifiedFileError::InvalidHaveLength { .. } => {
+            MediaFileAvailability::Unverified
+        }
+        VerifiedFileError::UnexpectedArtifact(_)
+        | VerifiedFileError::InvalidPlatformNamespace
+        | VerifiedFileError::ReadOwnerClosed
+        | VerifiedFileError::Storage { .. }
+        | VerifiedFileError::Io { .. } => MediaFileAvailability::StorageUnavailable,
+        VerifiedFileError::InvalidRange { .. }
+        | VerifiedFileError::ReadTooLarge { .. }
+        | VerifiedFileError::ArithmeticOverflow
+        | VerifiedFileError::Layout(_)
+        | VerifiedFileError::ArtifactLayout(_)
+        | VerifiedFileError::StoragePlan(_)
+        | VerifiedFileError::TaskJoin(_) => MediaFileAvailability::NotPublished,
+    }
 }
 
 fn operational_trackers(
@@ -310,6 +337,7 @@ pub struct ApplicationService {
     publication_delay_for_testing: Duration,
     publication_stage_trace_for_testing: bool,
     storage_file_pool: StorageFilePool,
+    media: MediaCapabilities,
     healthy_platform_roots: BTreeSet<String>,
     session_network: Option<SessionNetworkRuntime>,
     torrent_runtimes: BTreeMap<String, TorrentRuntime>,
@@ -499,6 +527,7 @@ impl ApplicationService {
             publication_delay_for_testing: config.publication_delay_for_testing,
             publication_stage_trace_for_testing: config.publication_stage_trace_for_testing,
             storage_file_pool,
+            media: MediaCapabilities::new(),
             healthy_platform_roots,
             session_network: Some(session_network),
             torrent_runtimes,
@@ -559,6 +588,208 @@ impl ApplicationService {
         self.session_network
             .as_ref()
             .expect("session network exists before application shutdown")
+    }
+
+    pub fn configure_media_origin(&mut self, origin: &str) -> Result<(), MediaOriginError> {
+        self.media.set_origin(origin)
+    }
+
+    pub fn resolve_media_capability(
+        &mut self,
+        capability: &str,
+    ) -> Result<crate::MediaCapabilityLease, MediaResolveError> {
+        self.media.resolve(capability)
+    }
+
+    pub async fn create_media_url(
+        &mut self,
+        torrent_id: &str,
+        file_index: u32,
+    ) -> Result<MediaUrlResponse, ApplicationError> {
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        if crate::control::decode_info_hash(&torrent_id).is_none() {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::MetadataUnavailable,
+            ));
+        }
+        let (resume, removing) = {
+            let store = self.store_mut()?;
+            let resume = match store.load_resume(&torrent_id) {
+                Ok(resume) => resume,
+                Err(StoreError::UnknownTorrent(_)) | Err(StoreError::Have(_)) => {
+                    return Ok(MediaUrlResponse::unavailable(
+                        torrent_id,
+                        file_index,
+                        MediaFileAvailability::MetadataUnavailable,
+                    ));
+                }
+                Err(error) => return Err(error.into()),
+            };
+            let removing =
+                store.snapshot()?.torrents.iter().any(|torrent| {
+                    torrent.torrent_id == torrent_id && torrent.removal_state.is_some()
+                });
+            (resume, removing)
+        };
+        if removing {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::Removing,
+            ));
+        }
+        if resume.verification.is_pending() || resume.state == TorrentState::Checking {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::Checking,
+            ));
+        }
+        if resume.storage_state != StorageState::Published
+            || !matches!(
+                resume.payload_state,
+                crate::durable_state::PayloadState::LegacyOwned
+                    | crate::durable_state::PayloadState::FinalOwned
+            )
+            || matches!(
+                resume.state,
+                TorrentState::NeedsRepair | TorrentState::Error
+            )
+        {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::NotPublished,
+            ));
+        }
+        let Some(raw_info) = resume.raw_info.as_deref() else {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::MetadataUnavailable,
+            ));
+        };
+        let metainfo = match parse_durable_metainfo(raw_info) {
+            Ok(metainfo) => metainfo,
+            Err(_) => {
+                return Ok(MediaUrlResponse::unavailable(
+                    torrent_id,
+                    file_index,
+                    MediaFileAvailability::MetadataUnavailable,
+                ));
+            }
+        };
+        if resume.publication_name.as_deref() != Some(metainfo.name.as_str()) {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::NotPublished,
+            ));
+        }
+        let file_index_usize = usize::try_from(file_index).map_err(|_| {
+            ApplicationError::Configuration("media file index overflows usize".to_owned())
+        })?;
+        let Some(file) = metainfo.files.get(file_index_usize) else {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::InvalidFile,
+            ));
+        };
+        if file.padding {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::Padding,
+            ));
+        }
+        let Some(have) = resume.have.as_ref() else {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::Unverified,
+            ));
+        };
+        let Some(storage_root) = self.storage_roots.get(&resume.storage_root) else {
+            return Ok(MediaUrlResponse::unavailable(
+                torrent_id,
+                file_index,
+                MediaFileAvailability::StorageUnavailable,
+            ));
+        };
+        let read_jobs = self.media.read_jobs();
+        let reader = match storage_root {
+            StorageRootLocation::Path(root) => {
+                VerifiedFileReader::open_published_with_pool(
+                    root,
+                    &metainfo,
+                    have.pieces(),
+                    file_index_usize,
+                    self.storage_file_pool.clone(),
+                    &torrent_id,
+                    read_jobs,
+                )
+                .await
+            }
+            StorageRootLocation::PlatformCapability => {
+                VerifiedFileReader::open_published_with_platform(
+                    &PlatformStorageSpec {
+                        pool: self.storage_file_pool.clone(),
+                        root_id: resume.storage_root,
+                        storage_id: torrent_id.clone(),
+                        publication_shape: PublicationShape::from_metainfo(&metainfo),
+                        publication_name: metainfo.name.clone(),
+                        namespace_generation: 1,
+                        managed: true,
+                        published: true,
+                    },
+                    &metainfo,
+                    have.pieces(),
+                    file_index_usize,
+                    read_jobs,
+                )
+                .await
+            }
+        };
+        let reader = match reader {
+            Ok(reader) => reader,
+            Err(error) => {
+                return Ok(MediaUrlResponse::unavailable(
+                    torrent_id,
+                    file_index,
+                    media_reader_unavailable_reason(&error),
+                ));
+            }
+        };
+        let outcome = match self.media.create(torrent_id.clone(), file_index, reader) {
+            Ok(outcome) => outcome,
+            Err(MediaRegistryError::ServerUnavailable) => {
+                return Ok(MediaUrlResponse::unavailable(
+                    torrent_id,
+                    file_index,
+                    MediaFileAvailability::ServerUnavailable,
+                ));
+            }
+            Err(MediaRegistryError::ResourceLimit) => {
+                return Ok(MediaUrlResponse::unavailable(
+                    torrent_id,
+                    file_index,
+                    MediaFileAvailability::ResourceLimit,
+                ));
+            }
+            Err(MediaRegistryError::Random(error)) => {
+                return Err(ApplicationError::Configuration(format!(
+                    "allocate media capability: {error}"
+                )));
+            }
+        };
+        Ok(MediaUrlResponse {
+            torrent_id,
+            file_index,
+            outcome,
+        })
     }
 
     #[cfg(test)]
@@ -746,6 +977,15 @@ impl ApplicationService {
                 .filter(|torrent_id| self.torrent_runtimes.contains_key(torrent_id)),
             _ => None,
         };
+        let media_fence = match &command {
+            Command::ForceRecheck { torrent_id } | Command::RemoveTorrent { torrent_id, .. } => {
+                Some(torrent_id.to_ascii_lowercase())
+            }
+            _ => None,
+        };
+        if let Some(torrent_id) = media_fence.as_deref() {
+            self.media.revoke_torrent(torrent_id);
+        }
         if let Some(torrent_id) = incoming_fence.as_deref() {
             self.stop_discovery_torrent(torrent_id).await?;
             self.unregister_incoming(torrent_id).await?;
@@ -1032,6 +1272,7 @@ impl ApplicationService {
                 self.drive_removal(&torrent_id).await?;
             }
             Command::RemoveStorageRoot { .. } => {
+                self.media.revoke_all();
                 self.reload_storage_roots()?;
             }
             Command::SetDefaultStorageRoot { .. } | Command::SetShowAddOptions { .. } => {}
@@ -2032,6 +2273,8 @@ impl ApplicationService {
     pub async fn shutdown(&mut self) -> Result<(), ApplicationError> {
         let mut active_join_error = None;
         let mut shutdown_error = None;
+        self.media.revoke_all();
+        self.media.drain_reads().await;
         self.maintenance_cancellation.cancel();
         self.admission_wake.notify_waiters();
         if let Some(task) = self.maintenance_task.take()
@@ -3317,6 +3560,7 @@ fn tracker_metadata_state(
 
 impl Drop for ApplicationService {
     fn drop(&mut self) {
+        self.media.revoke_all();
         self.maintenance_cancellation.cancel();
         if let Some(task) = self.maintenance_task.take() {
             task.abort();
@@ -5050,11 +5294,12 @@ fn durable_view_state(
                 &torrent.torrent_id,
                 resume.publication_name.as_deref(),
             )?;
-            FileProgressModel::new(
+            FileProgressModel::new_with_media(
                 metainfo,
                 &resume.skip_files,
                 &verified_indices,
                 filesystem_content_base,
+                media_catalog_availability(torrent, &resume, storage_roots),
             )
             .ok()
         } else {
@@ -5084,6 +5329,34 @@ fn durable_view_state(
         );
     }
     Ok((snapshot, durable))
+}
+
+fn media_catalog_availability(
+    torrent: &crate::TorrentSnapshot,
+    resume: &ResumeRecord,
+    storage_roots: &BTreeMap<String, StorageRootLocation>,
+) -> MediaFileAvailability {
+    if torrent.removal_state.is_some() {
+        MediaFileAvailability::Removing
+    } else if resume.verification.is_pending() || resume.state == TorrentState::Checking {
+        MediaFileAvailability::Checking
+    } else if !storage_roots.contains_key(&resume.storage_root) {
+        MediaFileAvailability::StorageUnavailable
+    } else if resume.storage_state != StorageState::Published
+        || !matches!(
+            resume.payload_state,
+            crate::durable_state::PayloadState::LegacyOwned
+                | crate::durable_state::PayloadState::FinalOwned
+        )
+        || matches!(
+            resume.state,
+            TorrentState::NeedsRepair | TorrentState::Error
+        )
+    {
+        MediaFileAvailability::NotPublished
+    } else {
+        MediaFileAvailability::Available
+    }
 }
 
 fn filesystem_content_base(
@@ -5377,17 +5650,18 @@ mod tests {
         handle_task_outcome,
     };
     use crate::{
-        AddTorrentBytesRequest, CONTROL_VERSION, CatalogPageRequest, ClientSettings, Command,
-        ConfiguredStorageRoot, DeliveryPolicy, DhtLifecycleView, DiagnosticFilter,
-        DiagnosticProfile, DiagnosticSeverity, EncryptionPolicy, FilePriority,
-        HttpsServerAuthenticationPolicy, ListenerBindFailureReason, ListenerPolicy, ListenerStatus,
-        OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
-        PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
-        RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
-        TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
-        ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
-        ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
+        AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
+        CatalogPageRequest, ClientSettings, Command, ConfiguredStorageRoot, DeliveryPolicy,
+        DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
+        EncryptionPolicy, FilePriority, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
+        ListenerPolicy, ListenerStatus, MediaResolveError, MediaUrlOutcome, OpenViewSetOptions,
+        OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle, PeerRole, PeerSourceView,
+        PeerTransportKind, PeerView, ProgressDisposition, ProgressReason, RemovalDataPolicy,
+        RemovalState, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
+        SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView, TorrentState,
+        TrackerConnectionFamilyView, TrackerSecurityView, TrackerView, ViewDeliveryPolicy,
+        ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner, ViewSetUpdate,
+        ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -9056,6 +9330,130 @@ mod tests {
         })
         .await
         .unwrap_or_else(|_| panic!("torrent {torrent_id} did not reach {expected:?}"));
+    }
+
+    #[tokio::test]
+    async fn media_capability_reads_verified_publication_and_force_recheck_revokes_it() {
+        let root = test_root("media-capability");
+        let configuration = config(&root);
+        let payload = b"verified media bytes";
+        let raw_info = single_file_info("media.bin", payload, 7);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = super::encode_info_hash(info_hash);
+        let mut store = SessionStore::open(
+            configuration
+                .durable_profile_root()
+                .expect("durable profile root"),
+            &configuration.profile_id,
+            &configuration.storage_roots,
+        )
+        .expect("open setup store");
+        store
+            .handle_durable(&add_request("add-media", &torrent_id))
+            .expect("add media torrent");
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record media metadata");
+        store
+            .record_pieces(&torrent_id, &[0, 1, 2])
+            .expect("record verified media pieces");
+        store
+            .mark_storage_prepared(&torrent_id, StorageState::Published)
+            .expect("record media publication");
+        store
+            .mark_complete(&torrent_id)
+            .expect("mark media complete");
+        drop(store);
+        fs::create_dir_all(root.join("payload")).expect("create payload root");
+        fs::write(root.join("payload/media.bin"), payload).expect("write media publication");
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open media application");
+        service
+            .configure_media_origin("http://127.0.0.1:43121")
+            .expect("configure media origin");
+        let owner = ViewSetOwner::trusted("media-test");
+        let first = service
+            .application_call(
+                &owner,
+                ApplicationCall::CreateMediaUrl {
+                    torrent_id: torrent_id.clone(),
+                    file_index: 0,
+                },
+            )
+            .await
+            .expect("create media URL");
+        let ApplicationCallResult::MediaUrl { response } = first else {
+            panic!("wrong media result")
+        };
+        let MediaUrlOutcome::Created { url, .. } = response.outcome else {
+            panic!("verified publication was unavailable")
+        };
+        let capability = url.rsplit('/').next().expect("capability path").to_owned();
+        let lease = service
+            .resolve_media_capability(&capability)
+            .expect("resolve media capability");
+        assert!(lease.is_live());
+        assert_eq!(
+            lease
+                .reader()
+                .read_range(9, 5)
+                .await
+                .expect("read media range"),
+            b"media"
+        );
+        drop(lease);
+
+        let repeated = service
+            .create_media_url(&torrent_id, 0)
+            .await
+            .expect("repeat media URL");
+        let MediaUrlOutcome::Created {
+            url: repeated_url, ..
+        } = repeated.outcome
+        else {
+            panic!("repeated capability was unavailable")
+        };
+        assert_eq!(repeated_url, url);
+
+        let active_leases = (0..4)
+            .map(|_| {
+                service
+                    .resolve_media_capability(&capability)
+                    .expect("admit bounded media request")
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            service.resolve_media_capability(&capability),
+            Err(MediaResolveError::Busy)
+        ));
+
+        service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "recheck-media".to_owned(),
+                expected_revision: None,
+                command: Command::ForceRecheck {
+                    torrent_id: torrent_id.clone(),
+                },
+            })
+            .await
+            .expect("force media recheck");
+        assert!(matches!(
+            service.resolve_media_capability(&capability),
+            Err(MediaResolveError::NotFound)
+        ));
+        assert!(
+            active_leases
+                .iter()
+                .all(|lease| lease.cancellation().is_cancelled())
+        );
+        drop(active_leases);
+
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[tokio::test]
