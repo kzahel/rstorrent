@@ -196,6 +196,22 @@ def validate_product_stop(stopped: dict[str, Any]) -> None:
         raise WanFailure("product reachability or peer owners were not terminal")
 
 
+def product_receive_summary(stopped: dict[str, Any]) -> str:
+    udp = stopped.get("udp_before_shutdown")
+    utp = stopped.get("utp_before_shutdown")
+    if not isinstance(udp, dict) or not isinstance(utp, dict):
+        return "product receive evidence unavailable"
+    return (
+        "product receive evidence: "
+        f"udp_received={udp.get('datagrams_received', 'missing')}, "
+        f"utp_classified={udp.get('utp_datagrams_classified', 'missing')}, "
+        f"utp_dropped={udp.get('utp_datagrams_dropped', 'missing')}, "
+        f"utp_half_open={utp.get('incoming_half_open_high_water', 'missing')}, "
+        f"utp_connections={utp.get('connection_high_water', 'missing')}, "
+        f"utp_sent={utp.get('datagrams_sent', 'missing')}"
+    )
+
+
 def run(host: str) -> dict[str, Any]:
     if not SSH_ALIAS_PATTERN.fullmatch(host) or host.startswith("-"):
         raise WanFailure("SSH host alias is malformed")
@@ -251,7 +267,12 @@ def run(host: str) -> dict[str, Any]:
             remote_pid = remote_leecher_started_pid(remote.read_event(deadline))
             validate_remote_leecher_ready(remote.read_event(deadline), remote_pid)
             remote_complete = remote.read_event(deadline)
-            validate_remote_leecher_complete(remote_complete, expected_sha1)
+            try:
+                validate_remote_leecher_complete(remote_complete, expected_sha1)
+            except WanFailure as error:
+                stopped = stop_seed(seed)
+                seed = None
+                raise WanFailure(f"{error}; {product_receive_summary(stopped)}") from error
             remote.wait_success(deadline)
 
             stopped = stop_seed(seed)

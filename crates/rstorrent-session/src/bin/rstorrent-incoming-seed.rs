@@ -166,6 +166,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "tcp_mapping_status": tcp_mapping_status,
         "udp_mapping_status": udp_mapping_status,
         "utp_listen": utp_listen,
+        "udp": service.session_udp_snapshot().map(session_udp_snapshot_json),
         "ipv6_listener": staged_ipv6.as_ref().map(|(_, endpoint)| endpoint.to_string()),
         "ipv6_pinhole": staged_ipv6.as_ref().map(|(status, _)| status),
     });
@@ -316,6 +317,9 @@ async fn run() -> Result<(), SeedHarnessError> {
         .incoming_peer_snapshot()
         .expect("enabled incoming service remains owned before shutdown");
     let final_utp = service.utp_snapshot().map(utp_snapshot_json);
+    let final_udp = service
+        .session_udp_snapshot()
+        .map(session_udp_snapshot_json);
     let final_bandwidth: BandwidthRuntimeView = service.bandwidth_snapshot().into();
     service.shutdown().await?;
     let stopped_json = serde_json::json!({
@@ -326,6 +330,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "payload_bytes_sent": final_snapshot.payload_bytes_sent,
         "bandwidth": final_bandwidth,
         "utp_before_shutdown": final_utp,
+        "udp_before_shutdown": final_udp,
         "pending_high_water": final_snapshot.pending_high_water,
         "established_high_water": final_snapshot.established_high_water,
         "connection_high_water": final_snapshot.peer_budget.total_high_water,
@@ -933,6 +938,17 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "mtu_revalidations_started_high_water": snapshot.mtu_revalidations_started_high_water,
         "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
         "worker_panics": snapshot.worker_panics,
+    })
+}
+
+fn session_udp_snapshot_json(snapshot: rstorrent_engine::SessionUdpSnapshot) -> serde_json::Value {
+    serde_json::json!({
+        "datagrams_received": snapshot.datagrams_received,
+        "datagram_bytes_received": snapshot.datagram_bytes_received,
+        "datagrams_dropped": snapshot.datagrams_dropped,
+        "utp_datagrams_classified": snapshot.utp_datagrams_classified,
+        "utp_datagram_bytes_classified": snapshot.utp_datagram_bytes_classified,
+        "utp_datagrams_dropped": snapshot.utp_datagrams_dropped,
     })
 }
 

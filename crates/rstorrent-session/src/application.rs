@@ -1733,6 +1733,12 @@ impl ApplicationService {
             .map(|handle| handle.snapshot())
     }
 
+    pub fn session_udp_snapshot(&self) -> Option<rstorrent_engine::SessionUdpSnapshot> {
+        self.session_network
+            .as_ref()
+            .map(SessionNetworkRuntime::session_udp_snapshot)
+    }
+
     pub fn session_download_resource_snapshot(&self) -> SessionDownloadResourceSnapshot {
         self.session_download_resources.snapshot()
     }

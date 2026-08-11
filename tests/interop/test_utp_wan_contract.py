@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from product_utp_reachability import (
     gateway_preflight,
+    product_receive_summary,
     validate_product_stop,
     validate_udp_mapping,
 )
@@ -75,6 +76,25 @@ class UtpWanContractTests(unittest.TestCase):
         stopped["mappings_after_shutdown"] = 1
         with self.assertRaises(WanFailure):
             validate_product_stop(stopped)
+
+    def test_product_receive_summary_is_bounded_to_counters(self) -> None:
+        stopped = {
+            "udp_before_shutdown": {
+                "datagrams_received": 3,
+                "utp_datagrams_classified": 2,
+                "utp_datagrams_dropped": 1,
+            },
+            "utp_before_shutdown": {
+                "incoming_half_open_high_water": 1,
+                "connection_high_water": 1,
+                "datagrams_sent": 4,
+            },
+        }
+        self.assertEqual(
+            product_receive_summary(stopped),
+            "product receive evidence: udp_received=3, utp_classified=2, "
+            "utp_dropped=1, utp_half_open=1, utp_connections=1, utp_sent=4",
+        )
 
     def test_product_gateway_preflight_rejects_owned_residue(self) -> None:
         with (

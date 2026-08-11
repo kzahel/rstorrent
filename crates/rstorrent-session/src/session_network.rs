@@ -987,7 +987,6 @@ impl SessionNetworkRuntime {
         self.reachability_evidence.pinhole_packets(deleted).await
     }
 
-    #[cfg(test)]
     pub(crate) fn session_udp_snapshot(&self) -> rstorrent_engine::SessionUdpSnapshot {
         self.session_udp_handle.snapshot()
     }
