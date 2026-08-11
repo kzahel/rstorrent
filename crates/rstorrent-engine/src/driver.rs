@@ -129,6 +129,8 @@ fn admission_rejection_failure(outcome: PeerAdmissionOutcome) -> Option<PeerFail
 
 const MAX_CONCURRENT_TRACKER_OPERATIONS: usize = 8;
 const TRACKER_RESULT_QUEUE: usize = 4;
+const TRACKER_COMMAND_QUEUE: usize = 1;
+const DIRECT_TRACKER_FINISH_TIMEOUT: Duration = Duration::from_secs(5);
 const CONTENT_DISCOVERY_QUEUE: usize = 8;
 const UNKNOWN_MAGNET_LEFT: u64 = 16 * 1024;
 const DHT_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(15);
@@ -1175,13 +1177,20 @@ enum TrackerUpdate {
 struct TrackerOperationResult {
     id: TrackerId,
     tracker: String,
+    event: rstorrent_protocol::udp_tracker::AnnounceEvent,
     token_cache: Option<UdpTrackerTokenCache>,
     result: Result<TrackerAnnounceOutcome, TrackerOperationFailure>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum TrackerManagerCommand {
+    Finish,
 }
 
 #[derive(Debug)]
 struct TrackerManager {
     receiver: mpsc::Receiver<TrackerUpdate>,
+    command_sender: mpsc::Sender<TrackerManagerCommand>,
     cancellation: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -1213,6 +1222,7 @@ impl TrackerManager {
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
         let (sender, receiver) = mpsc::channel(TRACKER_RESULT_QUEUE);
+        let (command_sender, command_receiver) = mpsc::channel(TRACKER_COMMAND_QUEUE);
         let task = tokio::spawn(run_tracker_manager(
             TrackerSchedule::from_configs(trackers),
             info_hash,
@@ -1221,9 +1231,11 @@ impl TrackerManager {
             control,
             task_cancellation,
             sender,
+            command_receiver,
         ));
         Ok(Self {
             receiver,
+            command_sender,
             cancellation,
             task: Some(task),
         })
@@ -1271,6 +1283,44 @@ impl TrackerManager {
         task.await
             .map_err(|error| DownloadError::TrackerTask(error.to_string()))
     }
+
+    async fn finish(mut self) -> Result<(), DownloadError> {
+        self.command_sender
+            .send(TrackerManagerCommand::Finish)
+            .await
+            .map_err(|_| {
+                DownloadError::TrackerTask(
+                    "tracker owner terminated before final announces".to_owned(),
+                )
+            })?;
+        let Some(mut task) = self.task.take() else {
+            return Ok(());
+        };
+        let deadline = tokio::time::sleep(DIRECT_TRACKER_FINISH_TIMEOUT);
+        tokio::pin!(deadline);
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut task => {
+                    return result
+                        .map_err(|error| DownloadError::TrackerTask(error.to_string()));
+                }
+                _ = &mut deadline => {
+                    self.cancellation.cancel();
+                    return task
+                        .await
+                        .map_err(|error| DownloadError::TrackerTask(error.to_string()));
+                }
+                update = self.receiver.recv() => {
+                    if update.is_none() {
+                        return task
+                            .await
+                            .map_err(|error| DownloadError::TrackerTask(error.to_string()));
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1287,6 +1337,7 @@ enum ContentDiscoveryEvent {
 struct ContentDiscovery {
     receiver: mpsc::Receiver<ContentDiscoveryEvent>,
     cancellation: CancellationToken,
+    tracker_task: Option<JoinHandle<Result<TrackerManager, DownloadError>>>,
     tasks: Vec<JoinHandle<Result<(), DownloadError>>>,
 }
 
@@ -1295,13 +1346,13 @@ impl ContentDiscovery {
         let (sender, receiver) = mpsc::channel(CONTENT_DISCOVERY_QUEUE);
         let cancellation = CancellationToken::new();
         let mut tasks = Vec::new();
-        if let Some(tracker) = peers.tracker.take() {
-            tasks.push(tokio::spawn(run_content_tracker_discovery(
+        let tracker_task = peers.tracker.take().map(|tracker| {
+            tokio::spawn(run_content_tracker_discovery(
                 tracker,
                 sender.clone(),
                 cancellation.clone(),
-            )));
-        }
+            ))
+        });
         if let Some(dht) = peers.dht.clone() {
             tasks.push(tokio::spawn(run_content_dht_discovery(
                 dht,
@@ -1321,6 +1372,7 @@ impl ContentDiscovery {
         Self {
             receiver,
             cancellation,
+            tracker_task,
             tasks,
         }
     }
@@ -1333,14 +1385,21 @@ impl ContentDiscovery {
         self.receiver.recv().await
     }
 
-    async fn shutdown(mut self) -> Result<(), DownloadError> {
+    async fn shutdown(mut self) -> Result<Option<TrackerManager>, DownloadError> {
         self.cancellation.cancel();
         self.receiver.close();
+        let tracker = match self.tracker_task.take() {
+            Some(task) => Some(
+                task.await
+                    .map_err(|error| DownloadError::PeerTask(error.to_string()))??,
+            ),
+            None => None,
+        };
         for task in self.tasks {
             task.await
                 .map_err(|error| DownloadError::PeerTask(error.to_string()))??;
         }
-        Ok(())
+        Ok(tracker)
     }
 }
 
@@ -1356,7 +1415,7 @@ async fn run_content_tracker_discovery(
     mut tracker: TrackerManager,
     sender: mpsc::Sender<ContentDiscoveryEvent>,
     cancellation: CancellationToken,
-) -> Result<(), DownloadError> {
+) -> Result<TrackerManager, DownloadError> {
     loop {
         let result = tokio::select! {
             biased;
@@ -1383,7 +1442,7 @@ async fn run_content_tracker_discovery(
             break;
         }
     }
-    tracker.shutdown().await
+    Ok(tracker)
 }
 
 async fn run_content_dht_discovery(
@@ -1490,6 +1549,7 @@ impl Drop for TrackerManager {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_tracker_manager(
     mut schedule: TrackerSchedule,
     info_hash: [u8; 20],
@@ -1498,6 +1558,7 @@ async fn run_tracker_manager(
     control: DownloadControl,
     cancellation: CancellationToken,
     sender: mpsc::Sender<TrackerUpdate>,
+    mut command_receiver: mpsc::Receiver<TrackerManagerCommand>,
 ) {
     let started_at = Instant::now();
     let http_clients = HttpTrackerClients::new_with_authentication(
@@ -1519,6 +1580,7 @@ async fn run_tracker_manager(
         &control,
         &cancellation,
         &sender,
+        &mut command_receiver,
         started_at,
     )
     .await;
@@ -1537,11 +1599,13 @@ async fn run_active_tracker_manager(
     control: &DownloadControl,
     cancellation: &CancellationToken,
     sender: &mpsc::Sender<TrackerUpdate>,
+    command_receiver: &mut mpsc::Receiver<TrackerManagerCommand>,
     started_at: Instant,
 ) {
     let mut token_caches = BTreeMap::new();
     let mut http_tracker_ids = BTreeMap::new();
     let mut operations = JoinSet::new();
+    let mut finishing = false;
     loop {
         let mut pending_action = None;
         while operations.len() < MAX_CONCURRENT_TRACKER_OPERATIONS {
@@ -1578,13 +1642,21 @@ async fn run_active_tracker_manager(
                     let mut token_cache = token_caches.remove(&id).unwrap_or_default();
                     let tracker_id = http_tracker_ids.get(&id).cloned();
                     let operation_http_clients = http_clients.clone();
+                    let num_want =
+                        if event == rstorrent_protocol::udp_tracker::AnnounceEvent::Stopped {
+                            0
+                        } else {
+                            MAX_COMPACT_PEERS as i32
+                        };
+                    let operation_timeout =
+                        if event == rstorrent_protocol::udp_tracker::AnnounceEvent::Stopped {
+                            DIRECT_TRACKER_FINISH_TIMEOUT
+                        } else {
+                            HTTP_TRACKER_TIMEOUT
+                        };
                     let session_permit = tokio::select! {
                         biased;
                         _ = cancellation.cancelled() => {
-                            shutdown_tracker_operations(&mut operations).await;
-                            return;
-                        }
-                        _ = control.cancelled() => {
                             shutdown_tracker_operations(&mut operations).await;
                             return;
                         }
@@ -1607,12 +1679,12 @@ async fn run_active_tracker_manager(
                                 left: UNKNOWN_MAGNET_LEFT,
                                 uploaded: 0,
                                 event,
-                                num_want: MAX_COMPACT_PEERS as i32,
+                                num_want,
                                 port: 1,
                                 ipv6_port: 1,
                                 support_crypto: network.encryption.accepts_incoming_mse(),
                             },
-                            HTTP_TRACKER_TIMEOUT,
+                            operation_timeout,
                             &mut token_cache,
                             tracker_id,
                             &operation_control,
@@ -1622,6 +1694,7 @@ async fn run_active_tracker_manager(
                         TrackerOperationResult {
                             id,
                             tracker,
+                            event,
                             token_cache: is_udp.then_some(token_cache),
                             result,
                         }
@@ -1637,13 +1710,39 @@ async fn run_active_tracker_manager(
         }
 
         if !operations.is_empty() {
-            let joined = tokio::select! {
+            enum OperationEvent {
+                Joined(Option<Result<TrackerOperationResult, tokio::task::JoinError>>),
+                Finish,
+                CommandsClosed,
+            }
+            let event = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => {
                     shutdown_tracker_operations(&mut operations).await;
                     return;
                 }
-                joined = operations.join_next() => joined,
+                command = command_receiver.recv(), if !finishing => {
+                    match command {
+                        Some(TrackerManagerCommand::Finish) => OperationEvent::Finish,
+                        None => OperationEvent::CommandsClosed,
+                    }
+                }
+                joined = operations.join_next() => OperationEvent::Joined(joined),
+            };
+            if matches!(event, OperationEvent::Finish) {
+                finishing = true;
+                let requested = schedule.request_completed();
+                if !requested {
+                    schedule.request_stop();
+                }
+                continue;
+            }
+            if matches!(event, OperationEvent::CommandsClosed) {
+                shutdown_tracker_operations(&mut operations).await;
+                return;
+            }
+            let OperationEvent::Joined(joined) = event else {
+                unreachable!("finish event handled above")
             };
             let Some(joined) = joined else {
                 continue;
@@ -1658,6 +1757,14 @@ async fn run_active_tracker_manager(
             if let Some(token_cache) = operation.token_cache {
                 token_caches.insert(operation.id, token_cache);
             }
+            let stop_after_result = finishing
+                && (matches!(
+                    operation.event,
+                    rstorrent_protocol::udp_tracker::AnnounceEvent::Completed
+                ) || (matches!(
+                    operation.event,
+                    rstorrent_protocol::udp_tracker::AnnounceEvent::Started
+                ) && operation.result.is_err()));
             let now = started_at.elapsed();
             match operation.result {
                 Ok(response) => {
@@ -1747,10 +1854,15 @@ async fn run_active_tracker_manager(
                     )));
                 }
             }
+            if stop_after_result {
+                schedule.request_stop();
+            }
             continue;
         }
 
-        match pending_action.unwrap_or_else(|| schedule.next_action(started_at.elapsed())) {
+        let pending_action =
+            pending_action.unwrap_or_else(|| schedule.next_action(started_at.elapsed()));
+        match pending_action {
             TrackerAction::Wait {
                 delay, url, kind, ..
             } => {
@@ -1759,6 +1871,15 @@ async fn run_active_tracker_manager(
                 tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => return,
+                    command = command_receiver.recv(), if !finishing => {
+                        if matches!(command, Some(TrackerManagerCommand::Finish)) {
+                            finishing = true;
+                            let requested = schedule.request_completed();
+                            if !requested {
+                                schedule.request_stop();
+                            }
+                        }
+                    }
                     _ = tokio::time::sleep(delay) => {}
                 }
             }
@@ -3061,6 +3182,17 @@ impl TorrentPeerCoordinator {
         result
     }
 
+    async fn finish_tracker(&mut self) -> Result<(), DownloadError> {
+        let result = match self.tracker.take() {
+            Some(tracker) => tracker.finish().await,
+            None => Ok(()),
+        };
+        self.peers
+            .publish(!self.owns_peer_sink, true)
+            .map_err(map_torrent_peer_error)?;
+        result
+    }
+
     async fn disable_dht_for_private(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
         self.purge_pex_for_private()?;
         let current_is_dht_only = self.connection.as_ref().is_some_and(|connection| {
@@ -3311,7 +3443,12 @@ async fn run_magnet_download(
     )
     .await?;
     let result = run_magnet_download_with_peers(config, control, magnet, &mut peers).await;
-    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
+    let tracker_shutdown = if result.is_ok() {
+        peers.finish_tracker().await
+    } else {
+        peers.shutdown_tracker().await
+    };
+    merge_tracker_shutdown(result, tracker_shutdown)
 }
 
 async fn run_magnet_download_with_peers(
@@ -3462,7 +3599,12 @@ async fn run_resumable_magnet_download(
             Some(resume),
         )
         .await;
-        return merge_tracker_shutdown(result, peers.shutdown_tracker().await);
+        let tracker_shutdown = if result.is_ok() {
+            peers.finish_tracker().await
+        } else {
+            peers.shutdown_tracker().await
+        };
+        return merge_tracker_shutdown(result, tracker_shutdown);
     }
 
     if descriptors.is_some() {
@@ -3513,7 +3655,12 @@ async fn run_resumable_magnet_download(
         .await
     }
     .await;
-    merge_tracker_shutdown(result, peers.shutdown_tracker().await)
+    let tracker_shutdown = if result.is_ok() {
+        peers.finish_tracker().await
+    } else {
+        peers.shutdown_tracker().await
+    };
+    merge_tracker_shutdown(result, tracker_shutdown)
 }
 
 async fn acquire_metadata_from_connection(
@@ -6182,7 +6329,9 @@ async fn download_content_swarm<'a>(
     let failure = result.as_ref().err().and_then(content_peer_failure);
     peers.peers.remove_incoming_content_route(incoming_route);
     let registration_cleanup = download.unregister_active_route().await;
-    let discovery_cleanup = discovery.shutdown().await;
+    let discovery_cleanup = discovery.shutdown().await.map(|tracker| {
+        peers.tracker = tracker;
+    });
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;
     download.shutdown_incoming_content(&peers.peers);

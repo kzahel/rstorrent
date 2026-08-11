@@ -1,4 +1,5 @@
 use super::*;
+use crate::tracker::{TrackerConfig, TrackerEndpoint, TrackerSource};
 use crate::{PeerBudget, TrackerConnectionFamily};
 use std::net::{IpAddr, Ipv6Addr};
 
@@ -449,7 +450,7 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
         .await
         .expect("bind scripted HTTP tracker");
     let tracker_address = tracker_listener.local_addr().expect("tracker address");
-    let tracker_task = tokio::spawn(serve_one_shot_http_tracker(
+    let tracker_task = tokio::spawn(serve_http_tracker_lifecycle(
         tracker_listener,
         info_hash,
         peer_address,
@@ -516,15 +517,300 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
     assert!(!rendered_activity.contains("passkey=fixture"));
 
     peers
-        .shutdown_tracker()
+        .finish_tracker()
         .await
-        .expect("stop HTTP tracker manager");
-    let request_target = tracker_task.await.expect("scripted HTTP tracker task");
-    assert!(request_target.starts_with("/announce/private-token?passkey=fixture&"));
-    assert!(request_target.contains("info_hash="));
-    assert!(request_target.contains("peer_id="));
+        .expect("finish HTTP tracker manager");
+    let request_targets = tracker_task.await.expect("scripted HTTP tracker task");
+    assert_eq!(request_targets.len(), 3);
+    assert!(
+        request_targets
+            .iter()
+            .all(|target| target.starts_with("/announce/private-token?passkey=fixture&"))
+    );
+    assert!(request_targets[0].contains("info_hash="));
+    assert!(request_targets[0].contains("peer_id="));
+    assert!(request_targets[0].contains("event=started"));
+    assert!(request_targets[1].contains("event=completed"));
+    assert!(request_targets[2].contains("event=stopped"));
+    assert!(request_targets[1].contains("numwant=200"));
+    assert!(request_targets[2].contains("numwant=0"));
+    assert!(
+        request_targets[1..]
+            .iter()
+            .all(|target| target.contains("trackerid=%66%69%78%74%75%72%65"))
+    );
     peer_task.await.expect("scripted peer task");
     let _ = tokio::fs::remove_file(output_path).await;
+}
+
+#[tokio::test]
+async fn direct_http_failure_falls_back_to_udp_tracker() {
+    let info_hash = [0x5a; 20];
+    let peer = SocketAddr::from(([127, 0, 0, 1], 42_424));
+    let http_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind failing HTTP tracker");
+    let http_address = http_listener.local_addr().expect("HTTP tracker address");
+    let http_task = tokio::spawn(serve_declared_failure_http_tracker(http_listener));
+    let udp_socket = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("bind fallback UDP tracker");
+    let udp_address = udp_socket.local_addr().expect("UDP tracker address");
+    let udp_task = tokio::spawn(serve_one_shot_udp_tracker(
+        udp_socket,
+        info_hash,
+        peer,
+        peer,
+        Duration::ZERO,
+    ));
+    let http_url = format!("http://{http_address}/announce?passkey=fixture");
+    let trackers = vec![
+        TrackerConfig {
+            url: http_url.clone(),
+            endpoint: TrackerEndpoint::from_http_url(&http_url).expect("HTTP tracker endpoint"),
+            tier: 0,
+            position: 0,
+            source: TrackerSource::Metainfo,
+        },
+        TrackerConfig {
+            url: format!("udp://{udp_address}"),
+            endpoint: TrackerEndpoint::Udp(UdpTrackerUrl {
+                host: udp_address.ip().to_string(),
+                port: udp_address.port(),
+            }),
+            tier: 1,
+            position: 0,
+            source: TrackerSource::Metainfo,
+        },
+    ];
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    let mut manager = TrackerManager::start_with_configs(
+        trackers,
+        info_hash,
+        loopback_network(Duration::from_secs(1)),
+        control,
+    )
+    .expect("start mixed direct tracker manager");
+
+    let (tracker, peers) = timeout(Duration::from_secs(2), manager.next_peers())
+        .await
+        .expect("mixed tracker fallback deadline")
+        .expect("UDP fallback result");
+    assert_eq!(tracker, format!("udp://{udp_address}"));
+    assert!(peers.contains(&peer));
+    {
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::TrackerAnnounceFailed { tracker, detail, .. }
+                if tracker == &format!("http://{http_address}")
+                    && detail == "controlled tracker failure"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::TrackerFallbackSelected { tracker, tier: 1 }
+                if tracker == &format!("udp://{udp_address}")
+        )));
+    }
+
+    manager
+        .shutdown()
+        .await
+        .expect("stop mixed tracker manager");
+    http_task.await.expect("failing HTTP tracker task");
+    udp_task.await.expect("fallback UDP tracker task");
+}
+
+#[tokio::test]
+async fn direct_http_cancellation_joins_and_closes_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled HTTP tracker");
+    let tracker_address = listener.local_addr().expect("tracker address");
+    let request_seen = Arc::new(Notify::new());
+    let server_seen = request_seen.clone();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("accept stalled HTTP tracker");
+        read_test_http_headers(&mut stream).await;
+        server_seen.notify_one();
+        let mut request = [0_u8; 4096];
+        let closed = timeout(Duration::from_secs(1), stream.read(&mut request))
+            .await
+            .expect("cancelled HTTP tracker socket closes")
+            .expect("read cancelled tracker socket");
+        assert_eq!(closed, 0);
+    });
+    let url = format!("http://{tracker_address}/announce");
+    let manager = TrackerManager::start_with_configs(
+        vec![TrackerConfig {
+            url: url.clone(),
+            endpoint: TrackerEndpoint::from_http_url(&url).expect("HTTP tracker endpoint"),
+            tier: 0,
+            position: 0,
+            source: TrackerSource::Magnet,
+        }],
+        [0x6b; 20],
+        loopback_network(Duration::from_secs(1)),
+        DownloadControl::new(),
+    )
+    .expect("start stalled HTTP tracker manager");
+
+    timeout(Duration::from_secs(1), request_seen.notified())
+        .await
+        .expect("stalled HTTP request starts");
+    timeout(Duration::from_secs(1), manager.shutdown())
+        .await
+        .expect("HTTP tracker cancellation deadline")
+        .expect("join HTTP tracker manager");
+    server.await.expect("stalled HTTP tracker task");
+}
+
+#[cfg(feature = "test-platform-root")]
+#[tokio::test]
+#[ignore = "opt-in pinned-libtorrent direct HTTPS interoperability harness"]
+async fn authenticated_https_tracker_introduces_pinned_libtorrent_peer() {
+    let tracker_url = std::env::var("RSTORRENT_INTEROP_TRACKER_URL")
+        .expect("RSTORRENT_INTEROP_TRACKER_URL is required");
+    assert!(tracker_url.starts_with("https://127.0.0.1:"));
+    let info_hash = decode_test_info_hash(
+        &std::env::var("RSTORRENT_INTEROP_INFO_HASH")
+            .expect("RSTORRENT_INTEROP_INFO_HASH is required"),
+    );
+    let root_pem = std::fs::read(
+        std::env::var("RSTORRENT_INTEROP_ROOT_PEM")
+            .expect("RSTORRENT_INTEROP_ROOT_PEM is required"),
+    )
+    .expect("read controlled root certificate");
+    crate::http_tracker::install_test_platform_root(&root_pem)
+        .expect("install one test-only platform root");
+    let storage_root = PathBuf::from(
+        std::env::var("RSTORRENT_INTEROP_DIRECT_ROOT")
+            .expect("RSTORRENT_INTEROP_DIRECT_ROOT is required"),
+    );
+    let magnet = format!(
+        "magnet:?xt=urn:btih:{}&tr={}",
+        hex(&info_hash),
+        percent_encode_test_magnet_value(&tracker_url)
+    );
+    let network = loopback_network(Duration::from_secs(15));
+    let report = timeout(
+        Duration::from_secs(60),
+        resume_magnet_with_control(
+            ResumableMagnetDownloadConfig {
+                magnet,
+                storage_root,
+                network,
+                peer_budget: PeerBudget::system_default(),
+                mse_dh: crate::mse::MseDhWorkOwner::new(),
+                encryption: crate::network::PeerEncryptionPolicyHandle::new(network.encryption),
+                torrent_peers: None,
+                resource_limits: DownloadResourceLimits::DESKTOP,
+                skip_files: Vec::new(),
+                verified_info: None,
+                verified_pieces: Vec::new(),
+                artifact_state: ResumeArtifactState::None,
+                resume_validation: crate::resume_validation::ResumeValidationIntent::FastEligible,
+                download_missing: true,
+                dht: None,
+                trackers: None,
+            },
+            Arc::new(RecordingCheckpointSink::default()),
+            DownloadControl::new(),
+        ),
+    )
+    .await
+    .expect("authenticated direct HTTPS transfer deadline")
+    .expect("authenticated direct HTTPS transfer");
+    assert_eq!(report.info_hash, info_hash);
+    assert_eq!(report.verified_piece_count, report.piece_count);
+    assert_ne!(report.bytes_written, 0);
+}
+
+#[cfg(feature = "test-platform-root")]
+#[tokio::test]
+#[ignore = "opt-in controlled untrusted direct HTTPS harness"]
+async fn system_trust_rejects_untrusted_https_before_http() {
+    let tracker_url = std::env::var("RSTORRENT_INTEROP_TRACKER_URL")
+        .expect("RSTORRENT_INTEROP_TRACKER_URL is required");
+    assert!(tracker_url.starts_with("https://127.0.0.1:"));
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    let manager = TrackerManager::start_with_configs(
+        vec![TrackerConfig {
+            url: tracker_url.clone(),
+            endpoint: TrackerEndpoint::from_http_url(&tracker_url)
+                .expect("controlled HTTPS tracker URL"),
+            tier: 0,
+            position: 0,
+            source: TrackerSource::Magnet,
+        }],
+        [0x7c; 20],
+        loopback_network(Duration::from_secs(2)),
+        control,
+    )
+    .expect("start direct HTTPS tracker manager");
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if activity
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .any(|event| matches!(event, DownloadActivityEvent::TrackerAnnounceFailed { .. }))
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("system-trust failure deadline");
+    let rendered = format!(
+        "{:?}",
+        activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    );
+    assert!(rendered.contains("TLS failure") || rendered.contains("certificate"));
+    assert!(!rendered.contains("passkey=fixture"));
+    manager
+        .shutdown()
+        .await
+        .expect("stop rejected HTTPS manager");
+}
+
+#[cfg(feature = "test-platform-root")]
+fn decode_test_info_hash(value: &str) -> [u8; 20] {
+    assert_eq!(value.len(), 40);
+    let mut result = [0_u8; 20];
+    for (index, byte) in result.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .expect("hexadecimal info hash");
+    }
+    result
+}
+
+#[cfg(feature = "test-platform-root")]
+fn percent_encode_test_magnet_value(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(byte).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 #[tokio::test]

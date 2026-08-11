@@ -365,10 +365,11 @@ impl TrackerSchedule {
         self.reset_round();
     }
 
-    pub(crate) fn request_completed(&mut self) {
+    pub(crate) fn request_completed(&mut self) -> bool {
         if self.stopping {
-            return;
+            return false;
         }
+        let mut requested = false;
         for record in &mut self.records {
             if !record.stopped
                 && (record.start_acknowledged
@@ -376,9 +377,11 @@ impl TrackerSchedule {
             {
                 record.pending_event = Some(TrackerPriorityEvent::Completed);
                 record.next_announce = Duration::ZERO;
+                requested = true;
             }
         }
         self.reset_round();
+        requested
     }
 
     pub(crate) fn request_stop(&mut self) {
