@@ -160,7 +160,7 @@ from configured intent or a port. The existing DHT view keeps its kind and
 bounds while each active family supplies an independent node observation. No
 view-contract version, lease, queue, cadence, task, or client-side address
 policy is added.
-Active Tactical
+Closed evidence-limited Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 adds a sibling `ipv6_pinhole_status` to that complete client-settings value
 without widening or reinterpreting `port_mapping_status`. The closed status
@@ -171,6 +171,17 @@ only the selected IPv6 address, listener port, lease timing, and bounded fault
 detail appropriate to the phase; the gateway-assigned pinhole ID and control
 URL never cross the application boundary. The view owns no socket, lease,
 retry, discovery, or cleanup work.
+
+Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) adds sibling
+`udp_port_mapping_status` without widening or reinterpreting the compatible
+`port_mapping_status`, which remains TCP. Both use the same closed bounded
+status shape and independently report their actual listener target, verified
+external port, renewal, failure, and stopping state. The generated TypeScript,
+JSON Schema, validators, React settings UI, UniFFI, and generated Kotlin carry
+the field; older decoded fixtures default the additive UDP fact conservatively.
+Clients own no lease or endpoint inference, and one persisted `Upnp` policy
+still controls every eligible concrete product listener transport.
 
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) extends the

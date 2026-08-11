@@ -1,11 +1,16 @@
 # Tactical 140: Incoming uTP Reachability
 
-Status: **Active on 2026-08-11.** Explicit maintainer direction selected this
-slice and authorized end-to-end autonomous implementation, logical commits,
-the generated first-party contract update, proportional Android evidence, and
-one bounded off-LAN proof using the already established temporary testbed.
-Source-ready Tactical [`139`](139-incomplete-file-streaming-demand.md) remains
-unchanged as the first **Next** candidate; its implementation is not implied.
+Status: **Complete on 2026-08-11, with the bounded physical gate
+evidence-limited.** Explicit maintainer direction selected this slice and
+authorized end-to-end autonomous implementation, logical commits, the
+generated first-party contract update, proportional Android evidence, and one
+bounded off-LAN proof using the already established temporary testbed. Every
+controlled stopping gate passes. The physical attempt budget ended with the
+product TCP lease mapped but the product UDP lease still nonterminal; exact
+cleanup was independently verified after every attempt, so no positive public
+incoming-uTP claim follows. Source-ready Tactical
+[`139`](139-incomplete-file-streaming-demand.md) remains unchanged for human
+review; its implementation is not implied.
 
 Topics: `utp-transport-campaign`, `incoming-reachability-and-seeding`,
 `tracker-discovery`, `dht-discovery`, `application-view-api`,
@@ -269,6 +274,77 @@ a concrete harness or implementation repair. Failure because the local
 gateway lacks usable UDP UPnP is recorded as environmental evidence, but the
 controlled gates still must pass. The remote side need not expose a mapping
 because it is the outgoing leecher in this direction.
+
+## Implemented Result
+
+Commits `7a6a20e` through `9ee581b` implement and harden the slice:
+
+- one task-free endpoint value retains independent tracker/TCP and DHT/uTP
+  endpoints under one monotonic generation; trackers and BEP 10 keep the TCP
+  value, IPv4 DHT uses the actual session UDP value, and IPv6 retains the
+  existing TCP behavior because IPv6 uTP is out of scope;
+- the one reachability coordinator discovers once and owns independent finite
+  TCP and UDP lease state, renewal, failure, uncertainty, and cleanup. UDP
+  eligibility comes only from the bound IPv4 session UDP socket;
+- the additive `udp_port_mapping_status` crosses Rust, generated TypeScript,
+  schema validation, React, UniFFI, and generated Kotlin while the existing
+  `port_mapping_status` remains the compatible TCP fact;
+- the product UI presents TCP and UDP/uTP status separately under the existing
+  single UPnP policy, and diagnostic readiness can require a verified UDP
+  lease without bypassing ordinary application ownership;
+- the controlled advertised-seeding gate observes tracker-only TCP as a
+  control, then obtains a different explicit endpoint through DHT and
+  hash-verifies the exact fixture against pinned libtorrent over one uTP and
+  zero TCP peer connections; and
+- the physical harness owns the product process, remote outgoing peer,
+  per-run artifacts, exact mapping inventory, and exact cleanup. A DHT
+  identical-node bucket-distance underflow exposed by that path was repaired
+  with an explicit zero-distance branch and a regression test.
+
+No new task, socket, persisted policy, mapping protocol, or Android-only
+runtime was introduced. The declared ceiling remains one reachability task,
+one discovery, and at most one finite lease per TCP and UDP.
+
+## Recorded Evidence
+
+The controlled `advertised_seeding.py` run passes against pinned libtorrent
+`2.0.13.0`: the tracker-only control uses TCP; the DHT-only case has no direct
+peer hint, reports two `get_peers` observations, reaches a one-peer high water,
+uses one uTP and zero TCP peer connections, and verifies the exact payload.
+All 13 WAN-contract unit tests pass.
+
+The generated web contract was regenerated cleanly; TypeScript typecheck and
+247 web tests pass with two intentional skips. Both Android native ABIs build.
+The API 34 no-window application gate observes the actual uTP listener and
+dynamic IPv4 MTU mode, independent TCP/UDP `Disabled` mapping states on the
+emulator network, joined shutdown, and zero terminal owners, mappings, tasks,
+or panics. Android assembly and unit tests pass.
+
+Formatting, warning-denying workspace clippy, the 237-test session library
+gate with two ignored tests, and the 514-test engine library gate with seven
+ignored tests pass. Two complete parallel workspace runs each exposed a
+different pre-existing timing-sensitive assertion outside this slice: one
+ephemeral TCP-port reuse assertion and one metadata-progress timeout count.
+Each exact rerun and its complete owning crate then passed. This record does
+not relabel those failed workspace invocations as green; a subsequent complete
+workspace invocation passed.
+
+The authorized physical budget comprised one primary run and two diagnostic
+retries. The first harness version hid a readiness error after mapping TCP;
+the repair made stderr and cleanup ownership explicit. The first retry exposed
+and led to the DHT identical-ID repair. On the final retry the product started
+without that panic, but UDP mapping did not become `Mapped` or `Failed` within
+60 seconds even though TCP mapped. No remote peer or payload transfer was
+started. Each exact finite TCP mapping was deleted and a fresh inventory found
+zero owned TCP or UDP residue. Prior Tactical `130` evidence proves that this
+gateway has established diagnostic UDP mappings, so the result is classified
+as a current product/gateway interoperability limitation rather than a claim
+that the gateway lacks UDP UPnP support.
+
+The physical alternative in the stopping condition is therefore satisfied,
+but public incoming uTP remains unproved. The implementation claim rests on
+the deterministic, scripted, controlled-DHT, generated-client, desktop, and
+Android evidence above.
 
 ## Non-Goals And Next Boundary
 

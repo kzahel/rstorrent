@@ -81,10 +81,12 @@ Maintainer direction reactivated Tactical `137` for end-to-end implementation
 with logical commits. Tactical `137` is now complete through controlled
 desktop evidence, both Android ABIs, the API 34 AVD, and repository closure.
 Maintainer direction selected and authorized incoming-uTP reachability
-Tactical [`140`](../tactical/140-incoming-utp-reachability.md) as the sole
-authoritative **Now**. Source-reviewed Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) remains the first
-**Next** candidate without implementation authorization. The completed
+Tactical [`140`](../tactical/140-incoming-utp-reachability.md), which is now
+complete with every controlled gate passing and its bounded physical gate
+evidence-limited with exact cleanup. Source-reviewed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) is the sole
+authoritative **Now** review checkpoint without implementation authorization.
+The completed
 maximum-throughput storage campaign
 remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
@@ -435,11 +437,12 @@ alternating pairs reduce median DATA datagrams 62.97%, and the exact capped
 ordinary-application/libtorrent cohort passes in both roles. Stage 6 proves
 both Android native ABIs, API 34 option/send/replacement behavior, an exact
 private-gateway application uTP transfer with no TCP masking, terminal
-cleanup, and complete repository gates. Active Tactical `140` now owns
-independent TCP/UDP mapping, transport-truthful tracker/DHT advertisement,
-and controlled plus bounded off-LAN incoming-uTP evidence. It is the sole
-authoritative **Now**. Source-ready Tactical `139` remains first **Next** and
-is not implementation-authorized.
+cleanup, and complete repository gates. Completed Tactical `140` adds
+independent product TCP/UDP mapping, transport-truthful tracker/DHT
+advertisement, controlled DHT-only incoming uTP, generated-client and Android
+parity, and a zero-residue physical attempt whose UDP readiness remained
+nonterminal. Source-ready Tactical `139` is the sole authoritative **Now**
+review checkpoint and is not implementation-authorized.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -453,15 +456,23 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed engine tactical:
-[`137`](../tactical/137-product-utp-path-mtu-discovery.md). Verified IPv4
-sockets now use bounded 548--1,472-byte path-MTU discovery with exact socket
-policy restoration, 15-minute revalidation, downward recovery, and fixed-548
-fallback. Controlled 1,500/1,280 paths, alternating efficiency pairs, the
-rate-limited pinned-libtorrent application cohort, real macOS behavior, both
-Android ABIs, an API 34 AVD platform/application matrix, and complete
-repository gates pass. The BEP 29 claim remains **Partial**.
+[`140`](../tactical/140-incoming-utp-reachability.md). One generation-fenced
+reachability owner independently maps the actual TCP and IPv4 UDP/uTP
+listeners; trackers remain TCP and IPv4 DHT uses the explicit UDP/uTP
+endpoint. Controlled DHT-only pinned-libtorrent transfer, generated web/Kotlin
+contracts, both Android ABIs, and an API 34 lifecycle gate pass. The bounded
+physical UDP-readiness gate is evidence-limited with zero residue, so the BEP
+29 claim remains **Partial** and no public incoming-uTP claim follows.
 
 Latest closed external-evidence tactical:
+[`140`](../tactical/140-incoming-utp-reachability.md). Its authorized product-
+owned off-LAN attempt budget reached a verified finite TCP mapping but no
+terminal UDP mapping state within the final 60-second bound. No remote peer or
+payload transfer began. Every temporary mapping was exactly deleted and an
+independent inventory found zero residue. The result is an environmental/
+interoperability limit, not evidence that the gateway lacks UDP support.
+
+Earlier closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
 complementary locally mapped WAN direction, exact six-profile real-socket
 impairment transfers, hostile endpoint/connection/queue/generation/cancellation
@@ -491,12 +502,9 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute active Tactical
-[`140`](../tactical/140-incoming-utp-reachability.md) through its independent
-mapping, truthful discovery, generated-contract, Android, controlled
-interoperability, and bounded off-LAN gates. Then reconcile its evidence and
-return to review source-ready Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md). The
+Next engine-campaign action: review source-ready Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) and explicitly
+authorize, revise, or defer it. No implementation is implied. The
 post-discovery Ubuntu stall remains one non-reproducible changing-swarm
 observation and is not authority for an unplanned change.
 
@@ -520,6 +528,20 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `bd6b816` through `9ee581b` plan and implement Tactical `140`'s
+  independent TCP/UDP endpoint selection and lease ownership, transport-
+  specific tracker/DHT advertisement, additive first-party mapping status,
+  controlled DHT-only incoming-uTP gate, Android lifecycle gate, DHT identical-
+  ID repair, and exact physical cleanup. The controlled fixture completes over
+  one uTP and zero TCP peer connections without a direct hint; web generation,
+  typecheck/tests, both Android ABIs, API 34 lifecycle, formatting, workspace
+  clippy, complete engine/session crate gates, and a subsequent complete
+  workspace invocation pass. Two earlier parallel workspace invocations each
+  exposed a different non-reproducing timing assertion outside this slice;
+  exact and complete owning-crate reruns pass. The physical attempt
+  budget ended with TCP mapped and UDP nonterminal before any remote transfer,
+  followed by independent zero-residue inventory. No public incoming-uTP claim
+  follows;
 - commits `fe33a2e`, `6ec809b`, `457ad3a`, and `d3ca426` close Tactical `132`,
   establish Tactical `133`'s source-first plan, enable inherited application
   `PreferUtp`, and stabilize its exact saturation fixtures. The default-policy

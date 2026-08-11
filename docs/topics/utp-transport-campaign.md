@@ -45,10 +45,12 @@ selected ready Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but reprioritized
 verified HTTP file serving before implementation. Tactical `138` is complete,
 and maintainer direction reactivated Tactical `137` with end-to-end
-implementation and logical commits authorized. Tactical `137` is now complete;
-incoming-uTP reachability Tactical
-[`140`](../tactical/140-incoming-utp-reachability.md) is the authoritative
-**Now**.
+implementation and logical commits authorized. Tactical `137` is now complete.
+Incoming-uTP reachability Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) is also complete: every
+controlled gate passes and its bounded physical gate closes evidence-limited
+with exact cleanup. Source-ready Tactical `139` is now the human-review
+checkpoint; implementation remains unauthorized.
 
 ## Scope And Ownership
 
@@ -77,9 +79,19 @@ the single authoritative **Now**.
   IPv4 plaintext uTP, eligible outgoing dials prefer uTP and fall back
   sequentially to TCP after joined transport failure, and the existing peer
   lifecycle reports the actual selected/final transport. `TcpOnly` remains an
-  explicit diagnostic construction override. There is no persisted setting,
-  presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
-  public incoming-reachability claim.
+  explicit diagnostic construction override. There is no persisted transport
+  setting or public incoming-reachability claim.
+- Completed Tactical `140` makes the ordinary UPnP policy independently map
+  the actual TCP listener and IPv4 session UDP/uTP listener through one
+  reachability owner. The existing status remains TCP and an additive UDP/uTP
+  status crosses every first-party client. Trackers and BEP 10 retain TCP;
+  IPv4 DHT uses the explicit active UDP/uTP endpoint, while IPv6 DHT retains
+  TCP because IPv6 uTP is absent. Controlled DHT-only pinned-libtorrent
+  discovery transfers the exact fixture over one uTP and zero TCP peers, and
+  the API 34 lifecycle gate passes. The off-LAN product proof is evidence-
+  limited because UDP mapping never reached a terminal readiness state within
+  the final 60-second bound; every temporary TCP mapping was deleted and an
+  independent inventory found zero residue.
 - Completed Tactical `137` activates the existing
   548--1,472-byte IPv4 search only behind positively verified fragmentation-
   protected sends and one shared DHT/uTP egress exclusion boundary. It adds
@@ -123,11 +135,11 @@ the single authoritative **Now**.
   session to one coordinated TCP/UDP socket pair per enabled address family.
   Tactical `118` inspects that landed owner rather than designing around the
   former IPv4-only shape.
-- Current product UPnP behavior maps TCP only. Tactical `127` generalized the
-  existing engine mapping owner to an explicit TCP/UDP value while retaining
-  every product call as TCP; UDP remains diagnostic-only. The successful run
-  used the remote gateway rather than the local-listener fallback. No product
-  tracker/DHT incoming-uTP advertisement follows.
+- Tactical `127` generalized the mapping mechanism to explicit TCP/UDP values,
+  and Tactical `140` now composes both as independent product leases. One
+  shared discovery result and generation-fenced owner retain no more than one
+  finite lease per protocol; failure, renewal, uncertain deletion, and
+  replacement are protocol-local.
 - Completed Tacticals
   [`111`](../tactical/111-mse-peer-stream-encryption.md) and
   [`115`](../tactical/115-mse-policy-advertisement-and-peer-detail.md)
@@ -729,12 +741,11 @@ Desktop, Android, both supported Android native builds, focused lifecycle and
 recovery, formatting, warning-denying clippy, and complete workspace gates
 pass.
 
-The implemented BEP 29 subset is now **Partial**. UDP mapping, tracker/DHT
-incoming-endpoint advertisement, public incoming reachability, persisted
-presentation, IPv6 uTP, MSE-over-uTP, racing, portable per-datagram
-fragmentation protection, dynamic product MTU, and the incomplete repeatable
-WAN cohort remain explicit limits. No additional public, WAN, emulator, or
-physical-device run was needed or performed.
+At Tactical `133`'s checkpoint the implemented BEP 29 subset became
+**Partial**. Tactical `137` subsequently added dynamic product MTU, and
+Tactical `140` added product UDP mapping plus transport-truthful tracker/DHT
+advertisement. Public incoming reachability, persisted transport policy, IPv6
+uTP, MSE-over-uTP, racing, and a repeatable WAN cohort remain explicit limits.
 
 ## Validation Contract
 
@@ -818,8 +829,8 @@ Pause and ask for direction before any further uTP work that would require:
 - materially redesigning the shared UDP owner beyond the accepted tactical;
 - selecting a congestion controller or deliberately departing from BEP 29,
   RFC 6817, or established libtorrent interoperability behavior;
-- expanding the slice into UDP port mapping, IPv6 pinholes, NAT traversal,
-  hole punching, LSD, or multi-interface policy;
+- expanding the completed UDP mapping slice into another mapping mechanism,
+  IPv6 uTP, NAT traversal, hole punching, LSD, or multi-interface policy;
 - adding persisted/user-visible transport policy, TCP/uTP racing, or a
   materially different fallback policy;
 - expanding MSE work beyond composing the completed stream boundary;
@@ -863,11 +874,15 @@ the approved macOS adapter; deterministic Stage 3 revalidation/downward
 recovery and Stage 4 protected-send/product runtime integration pass, and
 Stage 5 controlled interop/rate/efficiency evidence passes; Stage 6 proves
 both Android ABIs, API 34 option/send/replacement/application semantics, exact
-cleanup, and complete repository gates.**
+cleanup, and complete repository gates; incoming-reachability Tactical `140`
+then adds independent product TCP/UDP mapping, transport-specific tracker/DHT
+advertisement, controlled DHT-only incoming uTP, and proportional Android
+evidence, while its physical public-incoming gate closes evidence-limited with
+zero mapping residue.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Review the completed
-campaign and select the next bounded tactical. Reachability, tracker/DHT
-incoming-endpoint advertisement, presentation, permanent network change,
-different host, and a broader uTP support claim remain separate decisions; no
-such work is authorized by Tactical `137`.
+[`capability-readiness.md`](capability-readiness.md). Human review of
+source-ready Tactical `139` is the next checkpoint. Its implementation, a
+fresh physical mapping investigation, another NAT mechanism, IPv6 uTP,
+permanent network change, another host, and a broader uTP support claim remain
+separate decisions.

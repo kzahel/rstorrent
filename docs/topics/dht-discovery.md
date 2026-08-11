@@ -8,9 +8,9 @@ incoming-query participation, private-torrent gating, and revalidated warm
 restart. Tactical 065 added its bounded endpoint-free product observatory.
 Tactical 089 moved application DHT traffic behind the bounded session UDP
 receive owner and separately reports its actual endpoint. Completed Tactical
-[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) adds
+[`092`](../tactical/092-truthful-tracker-and-dht-peer-advertisement.md) added
 verified-public explicit-TCP-port self-announcement under the long-lived
-torrent/session scheduler.
+torrent/session scheduler; Tactical `140` refines IPv4 selection below.
 Completed Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 made that UDP transport generation-replaceable while retaining one DHT
@@ -25,7 +25,7 @@ identities, routing, tokens, transactions, lookups, peer values, bootstrap,
 and persisted samples. Controlled pinned-libtorrent IPv6 DHT discovery and a
 bounded public dual-family metadata run pass; incoming IPv6 reachability is
 not claimed.
-Active Tactical
+Closed evidence-limited Tactical
 [`113`](../tactical/113-ipv6-firewall-pinhole-and-incoming-reachability.md)
 refines the existing listener-backed IPv6 advertisement input with
 `GlobalUnicast`, `Unfiltered`, or `Pinholed` evidence. The DHT actor retains no
@@ -33,6 +33,13 @@ gateway or lease authority and announces the same actual listener port under
 each eligible scope. Scripted coverage and the live negative control pass, but
 the observed gateway returns typed `606` to `AddPinhole`; no off-LAN incoming
 IPv6 claim is made.
+
+Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) separates the peer
+advertisement input from tracker/TCP truth. IPv4 `announce_peer` now carries
+the explicit active session UDP/uTP endpoint, including its independently
+mapped external port; IPv6 retains the TCP endpoint because IPv6 uTP is out of
+scope. The DHT actor still owns no gateway or lease state.
 
 ## Why DHT Was Front-Loaded
 
@@ -80,8 +87,10 @@ and eligible self-announcement across download completion. It registers
 long-lived torrent generations rather than starting a timer per torrent. One
 announce traversal retains exactly correlated tokens only for its immediate
 phase, selects no more than the K=8 closest token-bearing responders, and
-sends the selected TCP peer port explicitly with `implied_port = 0`. The DHT
-UDP source endpoint remains transport state, never peer-port authority.
+sends the selected family/transport peer port explicitly with
+`implied_port = 0`. IPv4 selects the actual UDP/uTP endpoint; IPv6 currently
+selects TCP. The query source port remains transport state rather than implied
+peer-port authority.
 
 Verified private metadata disables DHT and purges DHT-only peers before content
 scheduling. Verified private metadata restored from durable state prevents DHT
@@ -135,6 +144,13 @@ peer completed 4,195,035 bytes through that TCP endpoint and reconnect failed
 after joined cancellation and mapping deletion. The one-torrent scheduler
 records command-queue and DHT-operation high water `1` and terminates with
 zero tasks, registrations, tracker operations, and DHT operations.
+
+Tactical `140` adds the transport-specific successor evidence. A controlled
+DHT-only pinned-libtorrent leecher received the RSTorrent UDP/uTP endpoint
+without a direct peer hint, completed the exact fixture over one uTP and zero
+TCP peer connections, and observed two `get_peers` requests with a one-peer
+high water. A tracker-only TCP control proves that the two discovery paths did
+not borrow each other's port.
 
 Tactical `112` adds independent BEP 32 runtime participation without adding a
 second actor, command route, observation owner, or product scheduler. The
@@ -247,15 +263,17 @@ All UDP and bencoded input is hostile. The design must cover malformed and
 oversized dictionaries, unexpected types, duplicate or unknown keys, spoofed
 endpoints, stale or colliding transactions, unsolicited responses, token
 abuse, invalid node IDs, self-addresses, duplicate nodes, and address-policy
-violations before mutating trusted state.
+violations before mutating trusted state. Tactical `140` also fixes identical-
+node bucket-distance selection to avoid a zero-distance arithmetic underflow.
 
 RSTorrent is a useful participant rather than a write-only crawler. Incoming
 queries and eligible self-announcement are implemented. Self-announcement
 waits for verified public metadata, desired-running state, a matching incoming
-registration, and the current eligible selected TCP endpoint. It sends that
-port explicitly rather than implying the possibly different DHT UDP port.
-Peer lookup remains useful without eligibility; remote peer entries are
-expiring soft state because BEP 5 defines no withdrawal query.
+registration, and the current eligible family/transport endpoint. IPv4 sends
+the selected UDP/uTP port and IPv6 currently sends TCP, both explicitly rather
+than inferring authority from the DHT query's source port. Peer lookup remains
+useful without eligibility; remote peer entries are expiring soft state
+because BEP 5 defines no withdrawal query.
 
 BEP 43 read-only behavior is relevant to a future metered or uncontactable
 Android mode. It should fit the session policy model, but it is not a substitute
@@ -313,12 +331,12 @@ path; and support claims follow evidence rather than code existence.
 The completed DHT foundation does not imply:
 
 - `announce_peer` before verified public, incoming-routable eligibility;
-- BEP 11 PEX, BEP 14 LSD, uTP, NAT traversal, or hole punching;
+- BEP 14 LSD, BEP 55 hole punching, or broader NAT traversal;
 - DHT scrape, mutable/immutable items, or BEP 45 multi-address announce;
 - BEP 5 `PORT` messages, foreign-family saved bootstrap endpoints, or the BEP
   32 cross-family bootstrap optimization;
-- UDP pinholes or an incoming-IPv6 reachability claim from the implemented but
-  not yet physically proven TCP firewall-pinhole path;
+- UDP firewall pinholes, IPv6 uTP, or an incoming-IPv6 reachability claim from
+  the implemented but not yet physically proven TCP firewall-pinhole path;
 - a product settings or log-window redesign;
 - a remote daemon or socket control plane; or
 - speed-ratio gates that fail CI on normal public-swarm variance.

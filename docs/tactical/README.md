@@ -650,9 +650,11 @@ that scope and its cleanup or compatibility rules explicitly.
   time-critical peer scheduling, progressive HTTP fulfillment, and bounded
   browser/Tauri client integration.
 - [`140-incoming-utp-reachability.md`](140-incoming-utp-reachability.md):
-  active; maps the concrete product UDP/uTP listener independently from TCP,
-  keeps tracker and DHT advertisement transport-truthful, and requires
-  controlled plus bounded off-LAN incoming-uTP evidence.
+  complete with the bounded physical gate evidence-limited; independently maps
+  the concrete TCP and UDP/uTP listeners, keeps tracker and DHT advertisement
+  transport-truthful, proves controlled DHT-only incoming uTP plus Android
+  lifecycle parity, and records exact zero-residue physical cleanup without a
+  positive public incoming claim.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

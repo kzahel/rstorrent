@@ -44,6 +44,13 @@ all three cases. Tracker owners consume only the selected endpoint and do not
 own or infer gateway state. Scripted coverage passes; off-LAN incoming IPv6
 evidence remains pending.
 Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) makes the endpoint source
+transport-specific without changing tracker semantics. UDP, HTTP, and HTTPS
+trackers still advertise the selected TCP peer-listener port, even when the
+independently mapped IPv4 UDP/uTP port differs. The controlled tracker-only
+case transfers over TCP and supplies the zero-uTP control for the DHT-only uTP
+gate. Trackers do not claim discoverability of a distinct UDP peer port.
+Completed Tactical
 [`122`](../tactical/122-paired-public-download-performance-cohorts.md) exposed
 one narrower integration boundary: the focused resumable download driver's
 nested tracker manager dispatched only UDP. Completed Tactical
@@ -408,7 +415,8 @@ not tracker failure or authority for a new peer-policy change.
 The session owner remains volatile. Current transfer
 counters are truthful for the application tracker session but are not durable
 lifetime accounting. Port mapping success remains distinct from observed
-incoming reachability, and the port-`1` tracker value remains an explicitly
+incoming reachability, a mapped UDP/uTP port remains DHT rather than tracker
+peer-port authority, and the port-`1` tracker value remains an explicitly
 unconnectable compatibility sentinel rather than an endpoint.
 
 WebSocket transport, proxies, non-Basic authentication, BEP 41 URL data,

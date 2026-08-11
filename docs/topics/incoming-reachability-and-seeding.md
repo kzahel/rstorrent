@@ -49,16 +49,17 @@ remain later slices.
 Completed diagnostic-only Tactical
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md) extends that
 engine mapping owner from an implicit TCP constant to an explicit TCP/UDP
-value. Existing product reachability remains explicitly TCP. The successful
-direction used one finite verified UDP mapping owned by the remote oracle;
-the engine's UDP mapping path remains diagnostic-only and was not invoked.
-The result adds no persisted setting, advertisement, or ordinary product
+value. At that checkpoint product reachability remained explicitly TCP. The
+successful direction used one finite verified UDP mapping owned by the remote
+oracle; the engine's UDP mapping path was diagnostic-only and not invoked.
+The result added no persisted setting, advertisement, or ordinary product
 listener policy.
 
 Closed diagnostic-only Tactical
 [`130`](../tactical/130-utp-transport-solidification.md) exercises the engine's
 explicit UDP mapping path on the authorized local gateway with RSTorrent as
-the seed/bulk sender. Every product reachability call remains TCP, and every
+the seed/bulk sender. At that checkpoint every product reachability call
+remained TCP, and every
 diagnostic UDP lease was queried, deleted, and independently confirmed absent
 before the next sample.
 
@@ -75,6 +76,25 @@ send successes and two intermittent 180-second timeouts, all with exact lease,
 process, and artifact cleanup. The external attempt budget expired before a
 compliant three-sample remote-receive summary was retained. No product UDP
 mapping, listener, advertisement, setting, or reachability claim follows.
+
+Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) now composes the actual
+IPv4 product UDP/uTP listener beside TCP under the existing single UPnP policy.
+One reachability owner discovers once, retains no more than one finite lease
+per protocol, and keeps each protocol's creation, renewal, failure, uncertain
+deletion, and replacement independent. Trackers and BEP 10 continue to use
+TCP; IPv4 DHT explicitly announces the selected UDP/uTP endpoint. The existing
+mapping status remains TCP and an additive UDP/uTP status crosses Rust,
+TypeScript, React, UniFFI, and Kotlin.
+
+Controlled tracker-only TCP and DHT-only uTP cases pass against pinned
+libtorrent with exact content and no TCP masking in the DHT case. Both Android
+ABIs and the API 34 application status/lifecycle gate pass. The authorized
+physical product gate closes evidence-limited: TCP mapped, but UDP did not
+reach `Mapped` or `Failed` within the final 60-second readiness bound. No
+remote transfer began, every exact temporary mapping was deleted, and an
+independent inventory found zero residue. This is not a positive public
+incoming-uTP claim.
 
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
@@ -259,7 +279,8 @@ endpoint:
   sibling, and disabled or failed TCP retains independently bound ephemeral
   DHT UDP service;
 - runtime state and diagnostics separately expose configured preferred port,
-  actual TCP, actual UDP plus coordination state, and mapped external TCP;
+  actual TCP, actual UDP plus coordination state, mapped external TCP, and
+  mapped external UDP/uTP;
   controlled loopback and eligible local-network peers observed the reported
   TCP listener and exact DHT UDP source, with joined terminal ownership;
 - UDP, HTTP, and HTTPS tracker announces carry exact current counters plus the
@@ -271,10 +292,11 @@ endpoint:
   the IPv6 family's port and uses the probe-selected IPv6 source; it never
   borrows an IPv4 endpoint. Compact `peers6` remains independently useful for
   outbound dialing;
-- each DHT node uses its family session UDP transport but does not treat that
-  endpoint as a TCP peer listener; eligible verified public seeds explicitly
-  announce the independently selected same-family TCP port; and
-- PCP, NAT-PMP, IGD v1/WANPPP, IPv6 pinholes, and UDP mappings are absent.
+- each DHT node uses its family session UDP transport; eligible IPv4 verified-
+  public seeds explicitly announce the independently selected UDP/uTP port,
+  while IPv6 retains its listener-backed TCP port until IPv6 uTP exists; and
+- PCP, NAT-PMP, IGD v1/WANPPP, positive physical IPv6 pinholes, and positive
+  product off-LAN UDP reachability remain absent.
 
 The implementation adds cohesive `peer_io`, `upload`, `seed_content`,
 `incoming`, and session `incoming_seeding` owners instead of extending the
@@ -425,12 +447,13 @@ policy now starts that fixed-548 service in the application and proves one
 incoming IPv4 loopback transfer through the same ordinary admission owner.
 Completed Tactical
 [`133`](../tactical/133-utp-product-default-enablement.md) makes that service the
-common application construction default, but uTP is still not advertised as
-an incoming public endpoint and UDP mapping still waits for a truthful
-reachability/announce policy. Tactical `127`'s temporary remote diagnostic UDP
-lease was deliberately not that product capability: it existed only for one
-controlled WAN evidence direction and its exact deletion plus independent
-absence audit passed before completion.
+common application construction default. Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) now supplies the truthful
+IPv4 product UDP lease and DHT announce policy while retaining TCP tracker
+truth. Its controlled gate passes, but its bounded physical UDP readiness gate
+is evidence-limited, so no public incoming-uTP observation follows. Tactical
+`127`'s temporary remote diagnostic UDP lease remains only one earlier
+controlled WAN evidence direction.
 
 ### Configuration, actual state, and evidence remain distinct
 
@@ -797,10 +820,8 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
   permission affect listening and mapping;
-- active Tactical
-  [`140`](../tactical/140-incoming-utp-reachability.md) owns the product-policy
-  relationship among the DHT UDP port, the ordinary uTP runtime, and UDP
-  mapping; and
+- whether another mapping mechanism or gateway-specific repair is justified
+  after Tactical `140`'s bounded physical UDP-readiness limitation; and
 - when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
   tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
   complete in Tactical
@@ -883,3 +904,12 @@ API 34 SAF runs prove complementary payload in both directions before
 completion with exact hashes and bounded cleanup. Tactical `134` subsequently
 enforces finite bandwidth at those duplex boundaries; ratio/time goals remain
 a separate policy tactical.
+Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) extends that same stable
+session-network owner with independent product TCP and UDP leases and
+transport-specific discovery. Deterministic, scripted, controlled DHT-only,
+generated-client, and Android evidence passes; the bounded physical UDP
+readiness alternative closes with exact zero-residue cleanup and no positive
+public incoming claim. The authoritative next checkpoint is the readiness
+queue's human review of source-ready Tactical `139`, not an implicit expansion
+of reachability or seeding policy.
