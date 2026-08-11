@@ -65,9 +65,12 @@ generated first-party controls, controlled desktop/full-duplex evidence, and
 an API 34 AVD product gate. Explicit maintainer near-parity direction
 superseded unimplemented Tactical `129` with completed Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) as the
-controlled TCP storage result. Tactical `122`'s classified Ubuntu result now
-leaves focused-driver HTTP(S) tracker dispatch as the authoritative planning
-**Now**. The
+controlled TCP storage result. Tactical `122`'s classified Ubuntu result then
+selected active Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) as the
+authoritative implementation **Now**. It extracts a shared task-free tracker
+operation executor before composing authenticated HTTP(S) into the focused
+direct driver. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -400,8 +403,9 @@ session/torrent peer-transfer rate policy, common TCP/uTP duplex enforcement,
 generated React/Compose controls, controlled cap/fairness/full-duplex
 evidence, and an API 34 AVD product gate. Tactical `129` is superseded before
 implementation; Tactical `135` completes controlled plaintext/RC4 near parity
-and the smaller-piece matrix. Focused-driver HTTP(S) tracker dispatch is the
-sole authoritative planning Now.**
+and the smaller-piece matrix. Active Tactical `136` owns the shared tracker
+operation executor and focused-driver authenticated HTTP(S) composition as the
+sole authoritative Now.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -452,13 +456,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: perform source-first planning for bounded HTTP(S)
-tracker dispatch in the focused resumable driver's nested manager. Tactical
-`122` proves the missing composition on the official HTTPS-only Ubuntu
-torrent. Inspect the pinned libtorrent implementation and tests, the existing
-application tracker owner, and relevant JSTorrent history before creating a
-new tactical. No implementation is authorized until that ownership and
-interoperability contract exists.
+Next executable action: implement Tactical `136`'s first code slice by
+extracting one task-free tracker-operation executor and moving the application
+owner onto it without behavior drift. Its source-first record covers the
+pinned libtorrent implementation and tests, the existing application owner,
+and relevant JSTorrent history. The following slice composes authenticated
+HTTP(S) into the focused resumable driver's nested manager and closes with
+controlled and bounded public evidence.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

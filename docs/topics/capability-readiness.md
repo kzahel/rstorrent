@@ -371,14 +371,14 @@ complete repository gates. Pending-write hash input remains unselected.
 
 ### Now
 
-- Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager is the single authoritative planning item.
-  Completed Tactical
-  [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
-  proves that the long-lived application tracker owner is not composed into
-  this standalone path: the official HTTPS-only Ubuntu torrent found no peers
-  while libtorrent reached 10%. No implementation is authorized until a
-  bounded tactical records the ownership and interoperability contract.
+- Active Tactical
+  [`136`](../tactical/136-shared-tracker-operation-executor.md) is the single
+  authoritative **Now**. It extracts one task-free UDP/HTTP/HTTPS operation
+  executor shared by the application and focused direct lifecycle owners,
+  then composes authenticated HTTP(S) into the standalone resumable path.
+  Tactical `122` proved the gap on the official HTTPS-only Ubuntu torrent;
+  explicit maintainer authorization now supplies the bounded ownership and
+  interoperability contract required before implementation.
 
 ### Next
 

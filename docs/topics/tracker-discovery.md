@@ -51,6 +51,12 @@ rejected both HTTPS rows and found no peer, while the existing long-lived
 application owner retains its controlled and public HTTP(S) evidence. Direct-
 manager HTTP(S) dispatch is therefore a source-first follow-up candidate, not
 a regression of the application tracker capability.
+Active Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) accepts that
+follow-up. It preserves separate application and direct lifecycle owners while
+extracting their common task-free UDP/HTTP/HTTPS announce operation boundary;
+the application continues disabling the nested owner so product torrents do
+not announce twice.
 
 ## Scope
 

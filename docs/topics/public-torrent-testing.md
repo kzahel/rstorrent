@@ -137,7 +137,9 @@ contained no file and was removed. This is a dated outbound default-readiness
 observation, not incoming reachability, stable swarm performance, or a general
 BEP 29 claim. The tactical authorizes no repeat.
 
-The next source-first candidate is that direct-manager HTTP(S) integration.
+Active Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) owns that direct-
+manager HTTP(S) integration through one shared task-free operation executor.
 Separate later breadth remains a bounded application-level Debian run on a
 host with native routed IPv6 and an Arch DHT-only cohort. Do not add a
 product-wide force-family setting or hard-code a dated DNS address merely to

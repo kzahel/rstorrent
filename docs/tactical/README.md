@@ -628,10 +628,14 @@ that scope and its cleanup or compatibility rules explicitly.
   generated web/Android controls, controlled cap/full-duplex/fairness evidence,
   API 34 AVD evidence, and complete repository gates.
 - [`135-controlled-tcp-storage-near-parity.md`](135-controlled-tcp-storage-near-parity.md):
-  active authoritative **Now**; begins with Tactical `129`'s independent
-  storage-intake watermark, then uses causal controls for write/task and
-  pending-hash work until the application-shaped TCP path reaches at least
-  95% of pinned libtorrent on matched plaintext and forced-RC4 cohorts.
+  complete; separates the 1 MiB storage-intake watermark from resident safety
+  ceilings and amortizes hash reads to reach controlled plaintext/RC4 and
+  smaller-piece near parity with exact integrity and bounded resources.
+- [`136-shared-tracker-operation-executor.md`](136-shared-tracker-operation-executor.md):
+  active authoritative **Now**; extracts one task-free UDP/HTTP/HTTPS announce
+  executor shared by the application and focused direct owners, then composes
+  authenticated HTTP(S) into the standalone resumable path without adding a
+  second product tracker owner.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
