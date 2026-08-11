@@ -300,26 +300,27 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
 
     assert_eq!(report.bytes_written, 0);
     assert!(checkpoints.rechecks().is_empty());
-    let events = activity
-        .events
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    assert!(events.iter().any(|event| matches!(
-        event,
-        DownloadActivityEvent::FastResumeAccepted {
-            committed_pieces,
-            payload_bytes_read: 0,
-            hash_jobs: 0,
-            ..
-        } if *committed_pieces == layout.piece_count()
-    )));
-    assert!(!events.iter().any(|event| matches!(
-        event,
-        DownloadActivityEvent::CheckerProgress(_)
-            | DownloadActivityEvent::CheckerFinished { .. }
-            | DownloadActivityEvent::PieceHashing { .. }
-    )));
-    drop(events);
+    {
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::FastResumeAccepted {
+                committed_pieces,
+                payload_bytes_read: 0,
+                hash_jobs: 0,
+                ..
+            } if *committed_pieces == layout.piece_count()
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::CheckerProgress(_)
+                | DownloadActivityEvent::CheckerFinished { .. }
+                | DownloadActivityEvent::PieceHashing { .. }
+        )));
+    }
     tokio::fs::remove_dir_all(root).await.expect("remove root");
 }
 
@@ -387,16 +388,17 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
     ));
     assert_eq!(pool.snapshot().platform_pending, 0);
     assert!(checkpoints.rechecks().is_empty());
-    let events = activity
-        .events
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    assert!(!events.iter().any(|event| matches!(
-        event,
-        DownloadActivityEvent::FastResumeAccepted { .. }
-            | DownloadActivityEvent::FastResumeRejected { .. }
-    )));
-    drop(events);
+    {
+        let events = activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            DownloadActivityEvent::FastResumeAccepted { .. }
+                | DownloadActivityEvent::FastResumeRejected { .. }
+        )));
+    }
     broker.cancel_all();
     pool.shutdown().await.expect("shutdown platform pool");
 }
