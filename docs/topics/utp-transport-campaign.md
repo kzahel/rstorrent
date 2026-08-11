@@ -86,10 +86,10 @@ the single authoritative **Now**.
   Its dependency-free seam now serializes all DHT/uTP sends per family, fences
   retired generations, reports contention and capability, and uses existing
   `rustix` for safe Linux/Android option verification; both Android ABIs
-  cross-build. macOS remains fixed at 548 pending the required review for a
-  focused safe socket-option dependency. No protected product probe, new
-  dependency, unsafe project code, setting, external run, or protocol-claim
-  change has landed.
+  cross-build. The approved target-specific `dontfrag 1.0.1` adapter passes
+  actual macOS set/get/exact-restore proof. No protected product probe, unsafe
+  project code, setting, external run, or protocol-claim change has landed;
+  deterministic revalidation is the current stage.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -840,13 +840,12 @@ passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
 Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
-its dependency-free Stage 2 seam passes and the required macOS dependency
-review is current.**
+its Stage 2 shared-egress and safe platform-option boundary passes, including
+the approved macOS adapter, and deterministic Stage 3 is current.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Resolve Tactical `137`'s
-macOS dependency review, with target-specific `dontfrag 1.0.1` recommended
-and existing `rustix` retained for Linux/Android. Reachability, tracker/DHT incoming-endpoint advertisement,
+pure revalidation and downward-recovery stage. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

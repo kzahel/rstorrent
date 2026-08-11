@@ -60,7 +60,52 @@ pub(crate) fn verify_ipv4_fragmentation_protection(
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub(crate) fn verify_ipv4_fragmentation_protection(
+    socket: &UdpSocket,
+) -> io::Result<Ipv4FragmentationProtectionStatus> {
+    use dontfrag::UdpSocketExt;
+
+    let prior = match socket.dontfrag_v4() {
+        Ok(prior) => prior,
+        Err(_) => return Ok(Ipv4FragmentationProtectionStatus::VerificationFailed),
+    };
+    if socket.set_dontfrag_v4(true).is_err() {
+        return match socket.dontfrag_v4() {
+            Ok(observed) if observed == prior => {
+                Ok(Ipv4FragmentationProtectionStatus::VerificationFailed)
+            }
+            Ok(_) => Err(io::Error::other(
+                "failed IPv4 fragmentation-policy change altered the prior value",
+            )),
+            Err(_) => Err(io::Error::other(
+                "failed to verify IPv4 fragmentation policy after a rejected change",
+            )),
+        };
+    }
+    let protected = socket.dontfrag_v4();
+    let restored = socket.set_dontfrag_v4(prior);
+    let observed_restore = socket.dontfrag_v4();
+
+    if let Err(error) = restored {
+        return Err(io::Error::new(
+            error.kind(),
+            format!("failed to restore IPv4 fragmentation policy: {error}"),
+        ));
+    }
+    let observed_restore = observed_restore?;
+    if observed_restore != prior {
+        return Err(io::Error::other(
+            "restored IPv4 fragmentation policy does not match its prior value",
+        ));
+    }
+    match protected {
+        Ok(true) => Ok(Ipv4FragmentationProtectionStatus::Verified),
+        Ok(false) | Err(_) => Ok(Ipv4FragmentationProtectionStatus::VerificationFailed),
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "linux", target_os = "macos")))]
 pub(crate) fn verify_ipv4_fragmentation_protection(
     _socket: &UdpSocket,
 ) -> io::Result<Ipv4FragmentationProtectionStatus> {
@@ -87,7 +132,22 @@ mod tests {
         assert_eq!(ip_mtu_discover(&socket).unwrap(), prior);
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn verification_restores_the_exact_macos_policy() {
+        use dontfrag::UdpSocketExt;
+
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        socket.set_dontfrag_v4(false).unwrap();
+        let prior = socket.dontfrag_v4().unwrap();
+        assert_eq!(
+            verify_ipv4_fragmentation_protection(&socket).unwrap(),
+            Ipv4FragmentationProtectionStatus::Verified
+        );
+        assert_eq!(socket.dontfrag_v4().unwrap(), prior);
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "linux", target_os = "macos")))]
     #[tokio::test]
     async fn unsupported_platform_fails_closed() {
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();

@@ -39,3 +39,6 @@ url = { workspace = true }
 rcgen = "0.14.8"
 time = { version = "0.3.54", default-features = false }
 tokio-rustls = "0.26.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+dontfrag = { workspace = true }

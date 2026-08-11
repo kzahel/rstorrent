@@ -1193,9 +1193,9 @@ mod tests {
     async fn construction_reports_fragmentation_protection_capability() {
         let (service, dht) = service().await;
         let status = service.snapshot().ipv4_fragmentation_protection;
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
         assert_eq!(status, Ipv4FragmentationProtectionStatus::Verified);
-        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        #[cfg(not(any(target_os = "android", target_os = "linux", target_os = "macos")))]
         assert_eq!(
             status,
             Ipv4FragmentationProtectionStatus::UnsupportedPlatform

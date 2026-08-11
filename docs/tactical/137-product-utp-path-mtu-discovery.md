@@ -3,11 +3,12 @@
 Status: **Active on 2026-08-11.** Maintainer direction reactivated this
 decision-complete tactical after verified HTTP file-serving Tactical `138`
 completed and authorized end-to-end implementation with logical commits.
-Stage 2's dependency-free shared-egress seam is complete. Existing `rustix`
-support proves the safe Linux/Android option shape and both Android native
-ABIs cross-build; macOS remains fixed at 548 pending the mandatory dependency
-review recorded below. No new dependency, unsafe project code, public-network
-activity, or physical-device work has been authorized.
+Stage 2's shared-egress and safe platform-option boundary is complete.
+Maintainer review approved target-specific `dontfrag 1.0.1` for macOS;
+existing `rustix` remains the Linux/Android adapter, both Android native ABIs
+cross-build, and actual macOS set/get/restore passes. Product packetization
+remains fixed at 548 while Stage 3 adds deterministic revalidation. No unsafe
+project code, public-network activity, or physical-device work is authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -369,10 +370,10 @@ at 548 bytes.
 Enabling the existing workspace `rustix 1.1.4` dependency's `net` feature
 provides safe Linux/Android `IP_MTU_DISCOVER` access. Construction reads the
 exact prior enum, verifies `IP_PMTUDISC_PROBE`, restores and rereads the prior
-value, and refuses to publish a socket if restoration is uncertain. macOS
-reports `UnsupportedPlatform`, which leaves the conservative fixed profile in
-place. Both Android native ABI checks compile this platform-specific path; an
-actual option/send run remains part of the later AVD gate.
+value, and refuses to publish a socket if restoration is uncertain. The
+approved macOS adapter now reports `Verified` after the equivalent exact bool
+round trip. Both Android native ABI checks compile their platform-specific
+path; an actual option/send run remains part of the later AVD gate.
 
 No safe macOS IPv4 setter/getter exists in the current dependency graph. Two
 current registry candidates were inspected without adding either:
@@ -387,10 +388,11 @@ current registry candidates were inspected without adding either:
   get/set operations under the MIT license, but is a broader general-purpose
   Unix API dependency than this one option requires.
 
-The recommendation is therefore to authorize target-specific
-`dontfrag 1.0.1` with its `tokio` feature and retain the repository's existing
-`forbid(unsafe_code)` rules. This is the declared human review boundary: no
-macOS dependency or protected product send will land before approval.
+Maintainer review approved target-specific `dontfrag 1.0.1` with its `tokio`
+feature on 2026-08-11. The dependency and distribution notice are recorded;
+the repository's existing `forbid(unsafe_code)` rules remain unchanged.
+Focused macOS evidence reads a false prior value, sets and verifies true, and
+restores and rereads the exact false value on an actual UDP socket.
 
 Focused evidence at this checkpoint:
 
@@ -430,8 +432,8 @@ requires diagnosis, not threshold relaxation.
    design with focused tests. Stop for human review before adding a dependency,
    unsafe isolation, or a materially different socket owner. Commit the
    accepted feasibility seam separately. The dependency-free portion is
-   complete; review is now required for the recommended target-specific macOS
-   dependency.
+   complete, including the approved target-specific macOS dependency and
+   actual host proof.
 3. Extend pure MTU state with explicit revalidation/downward recovery and add
    hostile deterministic cases. Commit without enabling product behavior.
 4. Carry protected-send intent and typed feedback through the generation-
