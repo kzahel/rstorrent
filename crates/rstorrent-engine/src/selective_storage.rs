@@ -916,79 +916,103 @@ impl SelectiveHashPlan {
             blocking_jobs: 1,
             ..SelectiveHashIoStats::default()
         };
+        let zeroes = [0_u8; VERIFICATION_CHUNK_LENGTH];
         for span in self.spans {
-            let mut consumed = 0_usize;
-            let (file, file_offset, span_length, part_file) = match span {
+            match span {
                 BlockingHashSpan::WantedFile {
                     file,
                     file_offset,
-                    length: span_length,
-                } => (
-                    file.acquire(StorageFileAccess::ReadExisting).await?,
-                    file_offset,
-                    span_length,
-                    false,
-                ),
-                BlockingHashSpan::PartFile { file, span } => (
-                    file.acquire(StorageFileAccess::ReadExisting)
-                        .await
-                        .map_err(SelectiveStorageError::PartFile)?,
-                    span.file_offset,
-                    span.length,
-                    true,
-                ),
-                BlockingHashSpan::Padding {
-                    length: span_length,
+                    length,
                 } => {
-                    let buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
-                    while consumed < span_length {
-                        let length = (span_length - consumed).min(buffer.len());
-                        hasher.update(&buffer[..length]);
+                    let file = file.acquire(StorageFileAccess::ReadExisting).await?;
+                    let (next_hasher, reads) = spawn_blocking_hash_span(
+                        hasher,
+                        file,
+                        file_offset,
+                        length,
+                        "read selected staging range in blocking verification job",
+                    )
+                    .await?;
+                    hasher = next_hasher;
+                    stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(reads);
+                }
+                BlockingHashSpan::PartFile { file, span } => {
+                    let file = file
+                        .acquire(StorageFileAccess::ReadExisting)
+                        .await
+                        .map_err(SelectiveStorageError::PartFile)?;
+                    let (next_hasher, reads) = spawn_blocking_hash_span(
+                        hasher,
+                        file,
+                        span.file_offset,
+                        span.length,
+                        "read part-file range in blocking verification job",
+                    )
+                    .await?;
+                    hasher = next_hasher;
+                    stats.part_file_reads = stats.part_file_reads.saturating_add(reads);
+                }
+                BlockingHashSpan::Padding { length } => {
+                    let mut consumed = 0_usize;
+                    while consumed < length {
+                        let length = (length - consumed).min(zeroes.len());
+                        hasher.update(&zeroes[..length]);
                         consumed += length;
                     }
-                    continue;
                 }
-            };
-            while consumed < span_length {
-                let length = (span_length - consumed).min(VERIFICATION_CHUNK_LENGTH);
-                let offset = file_offset
-                    .checked_add(u64::try_from(consumed).map_err(|_| {
-                        SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow)
-                    })?)
-                    .ok_or(SelectiveStorageError::Layout(
-                        LayoutError::ArithmeticOverflow,
-                    ))?;
-                let read_file = file.clone();
-                let bytes = tokio::task::spawn_blocking(move || {
-                    let mut bytes = vec![0_u8; length];
-                    read_exact_at(read_file.file(), &mut bytes, offset)?;
-                    Ok::<Vec<u8>, io::Error>(bytes)
-                })
-                .await
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: "join selected piece blocking verification job",
-                    source: io::Error::other(source),
-                })?
-                .map_err(|source| SelectiveStorageError::Io {
-                    operation: if part_file {
-                        "read part-file range in blocking verification job"
-                    } else {
-                        "read selected staging range in blocking verification job"
-                    },
-                    source,
-                })?;
-                if part_file {
-                    stats.part_file_reads = stats.part_file_reads.saturating_add(1);
-                } else {
-                    stats.wanted_file_reads = stats.wanted_file_reads.saturating_add(1);
-                }
-                hasher.update(&bytes);
-                consumed += length;
             }
         }
         Ok((hasher.finalize().into(), stats))
     }
+}
 
+async fn spawn_blocking_hash_span(
+    hasher: Sha1,
+    file: StorageFileLease,
+    file_offset: u64,
+    span_length: usize,
+    operation: &'static str,
+) -> Result<(Sha1, usize), SelectiveStorageError> {
+    tokio::task::spawn_blocking(move || {
+        hash_file_span(hasher, file, file_offset, span_length, operation)
+    })
+    .await
+    .map_err(|source| SelectiveStorageError::Io {
+        operation: "join selected piece blocking verification job",
+        source: io::Error::other(source),
+    })?
+}
+
+fn hash_file_span(
+    mut hasher: Sha1,
+    file: StorageFileLease,
+    file_offset: u64,
+    span_length: usize,
+    operation: &'static str,
+) -> Result<(Sha1, usize), SelectiveStorageError> {
+    let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+    let mut consumed = 0_usize;
+    let mut reads = 0_usize;
+    while consumed < span_length {
+        let length = (span_length - consumed).min(VERIFICATION_CHUNK_LENGTH);
+        let offset = file_offset
+            .checked_add(
+                u64::try_from(consumed)
+                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?,
+            )
+            .ok_or(SelectiveStorageError::Layout(
+                LayoutError::ArithmeticOverflow,
+            ))?;
+        read_exact_at(file.file(), &mut buffer[..length], offset)
+            .map_err(|source| SelectiveStorageError::Io { operation, source })?;
+        hasher.update(&buffer[..length]);
+        consumed += length;
+        reads = reads.saturating_add(1);
+    }
+    Ok((hasher, reads))
+}
+
+impl SelectiveHashPlan {
     pub(crate) async fn execute(self) -> Result<[u8; 20], SelectiveStorageError> {
         self.hash().await.map(|(hash, _stats)| hash)
     }
@@ -4809,10 +4833,16 @@ mod tests {
         };
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await
-                .expect("create storage");
+        let pool = StorageFilePool::new(1, None).expect("single-handle file pool");
+        let mut storage = SelectiveStorage::create_with_pool(
+            output.clone(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+            pool,
+        )
+        .await
+        .expect("create storage");
         for request in layout.request_ranges(0, &selection).expect("requests") {
             let begin = request.begin as usize;
             storage
@@ -4824,10 +4854,13 @@ mod tests {
                 .await
                 .expect("write block");
         }
-        let (actual, stats) = storage
-            .hash_piece_with_stats(0)
-            .await
-            .expect("hash cross-file piece");
+        let (actual, stats) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            storage.hash_piece_with_stats(0),
+        )
+        .await
+        .expect("cross-file hash must not retain one lease while acquiring the next")
+        .expect("hash cross-file piece");
         assert_eq!(actual, expected);
         assert_eq!(stats.wanted_file_seeks, 0);
         assert_eq!(stats.wanted_file_duplicates, 0);

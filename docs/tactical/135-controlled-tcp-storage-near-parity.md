@@ -295,8 +295,44 @@ This rejects write-job count and opportunistic coalescing as the primary
 residual owner. RSTorrent's retained baseline consumes about 1.21 CPU cores
 against libtorrent's 1.86, while every 16 MiB piece still waits for all write
 completions before a separate full-file read/hash job. The campaign therefore
-advances to generation-safe pending-write hash input; more workers, wider
-batches, and a persistent write dispatcher remain unselected.
+inspected the hash input path before changing buffer ownership; more workers,
+wider batches, and a persistent write dispatcher remain unselected.
+
+### Retained hash-read dispatch amortization
+
+That inspection found an independent inefficiency before the write-complete
+fence. `SelectiveHashPlan::hash` described one bounded logical piece job, but
+implemented every 16 KiB positional read as a separate `spawn_blocking` task
+which allocated and returned a new `Vec<u8>`. A 16 MiB single-file piece
+therefore issued 1,024 blocking-task dispatches and allocations; the primary
+1 GiB case issued 65,536. The pinned libtorrent oracle instead keeps a hash
+job on its storage worker while it consumes the piece.
+
+The retained implementation acquires one exact physical-span lease, runs all
+of that span's bounded 16 KiB positional reads and SHA-1 updates in one
+blocking task with one reusable fixed buffer, releases the lease, and only
+then acquires the next span. Padding remains synthetic. This is one blocking
+dispatch per piece for the primary single-file geometry and one per physical
+span for fragmented pieces; it deliberately does not acquire every span's
+handle at once. A cross-file-plus-padding test hashes through a one-handle
+pool under a finite deadline, preserving the session's 40-handle bound.
+
+Four alternating exact-code plaintext repetitions measured a 565.7 MiB/s
+RSTorrent median against 493.6 MiB/s for libtorrent, or `1.146x`. That is a
+25.9% increase over the retained 449.3 MiB/s pre-change median. Cumulative
+RSTorrent hash service fell from roughly 7.0--7.6 seconds to 1.00--1.21
+seconds across all 64 pieces. One RSTorrent run encountered a host/storage
+outlier at 298.1 MiB/s with doubled write service and a missing process CPU
+sample; the declared four-run median remains above parity without excluding
+it. All eight outputs retained exact independent verification, one TCP/zero
+uTP peers, zero failed/redundant bytes, publication, joined shutdown, and
+cleanup.
+
+The candidate clears the primary plaintext gate and is retained. Forced RC4,
+the three small-piece rows, full failure/liveness/resource validation, and
+both Android builds remain before closure. Pending-write read-through is no
+longer presumed necessary; it will be considered only if those measurements
+leave a causal gap.
 
 ## Validation Matrix
 

@@ -366,10 +366,10 @@ accounting, and ratio/time seeding goals remain separate.
   authoritative work item. Explicit maintainer direction supersedes
   unimplemented Tactical `129` with a measured near-parity campaign: first
   separate storage-intake pressure from the resident safety ceiling, then use
-  causal controls to select write/task or pending-hash work until matched
-  plaintext and forced-RC4 application paths reach at least `0.95x` pinned
-  libtorrent without integrity, resource, small-piece, fairness, or Android
-  regression.
+  causal controls to select hot-path work. The retained per-physical-span hash
+  dispatch change raises matched plaintext to `1.146x` pinned libtorrent;
+  forced RC4, small-piece, failure/resource, repository, and Android gates
+  remain before closure or any decision to add pending-write hash input.
 
 ### Next
 

@@ -67,9 +67,14 @@ resident safety ceiling and storage-channel capacity. A four-run controlled
 sweep selects a 1 MiB high point and two-thirds low point for desktop and
 Android while preserving their 32 and 16 MiB resident ceilings. A subsequent
 control nearly halves write-job count without improving throughput, rejecting
-opportunistic batch fill as the residual owner. The campaign next tests the
-write-complete hash fence and pending-write input while pursuing at least
-`0.95x` pinned-libtorrent throughput without reopening durability authority.
+opportunistic batch fill as the residual owner. Inspection then finds that
+each logical piece hash creates one blocking task and allocation per 16 KiB
+read. Amortizing that work into one fixed-buffer blocking task per physical
+span raises the primary plaintext median from 449.3 to 565.7 MiB/s, or
+`1.146x` the paired libtorrent median, while retaining sequential handle
+acquisition and the session pool bound. The campaign retains this change and
+continues its forced-RC4, geometry, failure, resource, repository, and Android
+gates before deciding whether pending-write input is still material.
 
 ## Purpose And Scope
 

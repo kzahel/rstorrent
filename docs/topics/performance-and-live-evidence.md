@@ -121,9 +121,22 @@ That control is now rejected. A stronger version reduced write jobs from
 roughly 10,700 to 4,954--5,618 and raised fill from about 6.1 to 11.7--13.2
 blocks/job, yet its four-run median was 449.5 MiB/s against libtorrent at
 500.9 MiB/s (`0.897x`). This was no improvement over the retained 449.3 MiB/s
-baseline, and all candidate code was removed. Tactical `135` next tests the
-write-complete hash fence and pending-write read-through rather than treating
-small-write dispatch as the established bottleneck.
+baseline, and all candidate code was removed.
+
+The next inspection found that each logical piece-hash operation dispatched
+and allocated one blocking task per 16 KiB positional read. Amortizing those
+reads into one fixed-buffer blocking task per physical file span reduced the
+primary single-file geometry from 65,536 to 64 blocking dispatches. Four
+alternating 1 GiB/16 MiB-piece plaintext repetitions then measured RSTorrent
+at 565.7 MiB/s against libtorrent at 493.6 MiB/s (`1.146x`), a 25.9% gain over
+the retained 449.3 MiB/s baseline. Aggregate hash service fell from roughly
+7.0--7.6 seconds to 1.00--1.21 seconds for all 64 pieces. One included
+RSTorrent outlier reached 298.1 MiB/s when write service doubled; the declared
+median remained above parity. Every output independently verified, used one
+TCP and zero uTP peers, published, joined, and cleaned up with no failed or
+redundant payload. Tactical `135` retains this causal change and proceeds to
+forced RC4, small-piece, failure/liveness/resource, repository, and Android
+gates before deciding whether pending-write read-through is still material.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo

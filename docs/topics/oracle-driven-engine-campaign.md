@@ -453,11 +453,12 @@ separate control-transport investigation is explicitly authorized.
 
 Next executable action: execute active Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md). Preserve the
-resident-payload safety ceiling while selecting a separate hysteretic storage-
-intake watermark, then use controlled causal evidence to select bounded
-write/task or pending-hash work until the matched plaintext and forced-RC4
-near-parity gates pass. Do not combine further bandwidth policy, public-swarm
-work, or protocol breadth with this campaign.
+resident-payload safety ceiling and selected 1 MiB storage-intake watermark.
+The retained per-span hash-read dispatch change raises the primary plaintext
+median to `1.146x` pinned libtorrent. Run its forced-RC4, small-piece,
+failure/liveness/resource, repository, and Android gates; add pending-write
+input only if those measurements leave a causal gap. Do not combine further
+bandwidth policy, public-swarm work, or protocol breadth with this campaign.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
