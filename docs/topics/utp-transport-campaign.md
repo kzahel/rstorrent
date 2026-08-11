@@ -87,9 +87,12 @@ the single authoritative **Now**.
   retired generations, reports contention and capability, and uses existing
   `rustix` for safe Linux/Android option verification; both Android ABIs
   cross-build. The approved target-specific `dontfrag 1.0.1` adapter passes
-  actual macOS set/get/exact-restore proof. No protected product probe, unsafe
-  project code, setting, external run, or protocol-claim change has landed;
-  deterministic revalidation is the current stage.
+  actual macOS set/get/exact-restore proof. Pure state now revalidates after 15
+  minutes, reopens from the conservative base after an isolated floor failure,
+  preserves the exact fragmentable retry, and fences repeated fast-loss
+  signals by one RTT. No protected product probe, unsafe project code, setting,
+  external run, or protocol-claim change has landed; runtime integration is
+  the current stage.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -841,11 +844,12 @@ default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
 Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
 its Stage 2 shared-egress and safe platform-option boundary passes, including
-the approved macOS adapter, and deterministic Stage 3 is current.**
+the approved macOS adapter; deterministic Stage 3 revalidation/downward
+recovery passes and Stage 4 runtime integration is current.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Resolve Tactical `137`'s
-pure revalidation and downward-recovery stage. Reachability, tracker/DHT incoming-endpoint advertisement,
+[`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
+protected-send and capability-gated product integration stage. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

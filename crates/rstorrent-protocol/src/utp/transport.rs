@@ -729,16 +729,18 @@ impl TransportState {
         self.remote_window_bytes = advertised_window;
         self.timestamp_difference_micros = local_timestamp.elapsed_since(remote_timestamp);
         if let Some(acknowledgement) = &outcome.acknowledgement {
+            let smoothed_rtt = self.connection.snapshot().send.rtt.smoothed_rtt_micros;
             for sequence_number in &acknowledgement.acknowledged_sequences {
                 self.in_flight.remove(sequence_number);
                 self.retransmissions.remove(*sequence_number);
-                let mtu_outcome = self.mtu.on_acknowledged(*sequence_number);
+                let mtu_outcome =
+                    self.mtu
+                        .on_acknowledged(*sequence_number, now_micros, smoothed_rtt);
                 if matches!(mtu_outcome, MtuProbeOutcome::RaisedFloor { .. }) {
                     self.update_congestion_mss()?;
                 }
             }
 
-            let smoothed_rtt = self.connection.snapshot().send.rtt.smoothed_rtt_micros;
             if acknowledgement.acknowledged_bytes > 0 && one_way_delay_micros != 0 {
                 let congestion_snapshot = self.congestion.snapshot();
                 let mss = congestion_snapshot.maximum_segment_bytes;
@@ -774,14 +776,26 @@ impl TransportState {
                 }
                 self.in_flight.remove(sequence_number);
                 if is_active_probe {
-                    self.mtu.on_probe_loss(
+                    let mtu_outcome = self.mtu.on_probe_loss(
                         *sequence_number,
                         if isolated_probe {
                             MtuProbeFailure::ThreeLaterAcknowledgements
                         } else {
                             MtuProbeFailure::CongestionOrUnknown
                         },
+                        now_micros,
+                        smoothed_rtt,
                     );
+                    if matches!(
+                        mtu_outcome,
+                        MtuProbeOutcome::LoweredCeiling {
+                            previous_floor,
+                            floor,
+                            ..
+                        } if previous_floor != floor
+                    ) {
+                        self.update_congestion_mss()?;
+                    }
                 }
                 self.retransmissions.schedule([*sequence_number])?;
                 self.congestion
@@ -897,14 +911,22 @@ impl TransportState {
                     .pending_emission
                     .take()
                     .expect("pending emission was validated");
-                let mtu_outcome = self
-                    .mtu
-                    .on_message_too_large(sequence_number, pending.datagram_bytes())?;
+                let mtu_outcome = self.mtu.on_message_too_large(
+                    sequence_number,
+                    pending.datagram_bytes(),
+                    now_micros,
+                    self.connection.snapshot().send.rtt.smoothed_rtt_micros,
+                )?;
                 if let MtuProbeOutcome::LoweredCeiling {
                     isolated_from_congestion,
+                    previous_floor,
+                    floor,
                     ..
                 } = mtu_outcome
                 {
+                    if previous_floor != floor {
+                        self.update_congestion_mss()?;
+                    }
                     self.in_flight.remove(&sequence_number);
                     self.retransmissions.schedule([sequence_number])?;
                     self.congestion.on_loss(
@@ -1054,7 +1076,7 @@ impl TransportState {
         let ordinary_limit = self.mtu.ordinary_datagram_bytes();
         let mut datagram_limit = ordinary_limit;
         let mut use_probe = false;
-        if self.mtu.probe_ready(congestion_window) {
+        if self.mtu.probe_ready(now_micros, congestion_window) {
             let candidate = self.mtu.candidate_datagram_bytes();
             let candidate_payload = candidate.saturating_sub(utp_header_bytes(selective_ack_bytes));
             let admitted = new_payload_bytes(
@@ -1095,10 +1117,15 @@ impl TransportState {
         let datagram_bytes = utp_header_bytes(selective_ack_bytes) + payload_bytes;
         if use_probe {
             self.mtu
-                .begin_probe(intent.sequence_number, datagram_bytes, congestion_window)
+                .begin_probe(
+                    intent.sequence_number,
+                    datagram_bytes,
+                    now_micros,
+                    congestion_window,
+                )
                 .expect("probe admission and size were checked before recording DATA");
         } else {
-            self.mtu.record_ordinary_sent(datagram_bytes);
+            self.mtu.record_ordinary_sent(datagram_bytes, now_micros);
         }
         self.transmit
             .consume(payload_bytes)
@@ -1151,14 +1178,26 @@ impl TransportState {
             self.in_flight.remove(sequence_number);
         }
         if let Some(probe) = active_probe {
-            self.mtu.on_probe_loss(
+            let mtu_outcome = self.mtu.on_probe_loss(
                 probe.sequence_number,
                 if isolated_probe {
                     MtuProbeFailure::SolePacketTimeout
                 } else {
                     MtuProbeFailure::CongestionOrUnknown
                 },
+                now_micros,
+                smoothed_rtt_micros,
             );
+            if matches!(
+                mtu_outcome,
+                MtuProbeOutcome::LoweredCeiling {
+                    previous_floor,
+                    floor,
+                    ..
+                } if previous_floor != floor
+            ) {
+                self.update_congestion_mss()?;
+            }
         }
         self.retransmissions.schedule(timeout.loss_signals)?;
         if isolated_probe {
@@ -1557,6 +1596,100 @@ mod tests {
                 .transmissions,
             2
         );
+    }
+
+    #[test]
+    fn revalidation_failure_lowers_mss_and_retries_exact_packet_fragmentably() {
+        let (mut initiator, _) = connected_pair();
+        let mut now_micros = 1_000_000;
+        let mut probe_sequence = 200;
+        while !initiator.mtu.search_complete() {
+            for _ in 0..3 {
+                initiator
+                    .mtu
+                    .record_ordinary_sent(initiator.mtu.ordinary_datagram_bytes(), now_micros);
+            }
+            let candidate = initiator.mtu.candidate_datagram_bytes();
+            initiator
+                .mtu
+                .begin_probe(sequence(probe_sequence), candidate, now_micros, 100_000)
+                .expect("begin synthetic search probe");
+            now_micros += 1_000_000;
+            assert!(matches!(
+                initiator
+                    .mtu
+                    .on_acknowledged(sequence(probe_sequence), now_micros, Some(100_000)),
+                MtuProbeOutcome::RaisedFloor { .. }
+            ));
+            now_micros += 1_000_000;
+            probe_sequence += 1;
+        }
+        initiator.update_congestion_mss().expect("raised MSS");
+        let confirmed = initiator.mtu.ordinary_datagram_bytes();
+        let confirmed_mss = confirmed - UTP_HEADER_SIZE;
+        for sample in 0..8 {
+            initiator
+                .congestion
+                .on_ack(
+                    now_micros + sample,
+                    confirmed_mss,
+                    100_000,
+                    1,
+                    Some(100_000),
+                    true,
+                )
+                .expect("grow synthetic congestion window");
+        }
+        assert!(
+            initiator.snapshot().congestion.congestion_window_bytes > confirmed.saturating_mul(3)
+        );
+        let deadline = initiator
+            .mtu
+            .snapshot()
+            .revalidation_deadline_micros
+            .expect("completed search deadline");
+        for _ in 0..3 {
+            initiator.mtu.record_ordinary_sent(confirmed, deadline);
+        }
+        initiator
+            .queue_data(&vec![7; confirmed_mss])
+            .expect("queue revalidation payload");
+        let revalidation = initiator
+            .poll_transmit(deadline, TimestampMicros::new(deadline as u32))
+            .expect("poll revalidation")
+            .expect("revalidation emission");
+        assert!(revalidation.mtu_probe);
+        assert!(revalidation.dont_fragment);
+        assert_eq!(revalidation.datagram_bytes(), confirmed);
+
+        initiator
+            .on_send_result(
+                revalidation.intent.sequence_number,
+                DatagramSendResult::MessageTooLarge,
+                deadline,
+            )
+            .expect("classify revalidation failure");
+        let reduced = initiator.snapshot();
+        assert_eq!(reduced.mtu.floor_datagram_bytes, IPV4_UDP_PAYLOAD_FLOOR);
+        assert_eq!(
+            reduced.congestion.maximum_segment_bytes,
+            IPV4_UDP_PAYLOAD_FLOOR - UTP_HEADER_SIZE
+        );
+        assert_eq!(reduced.mtu.downward_recoveries, 1);
+
+        let retry = initiator
+            .poll_transmit(deadline, TimestampMicros::new(deadline as u32))
+            .expect("poll fragmentable retry")
+            .expect("fragmentable retry emission");
+        assert!(retry.retransmission);
+        assert!(retry.fragmentable_mtu_retry);
+        assert!(!retry.dont_fragment);
+        assert_eq!(
+            retry.intent.sequence_number,
+            revalidation.intent.sequence_number
+        );
+        assert_eq!(retry.payload, revalidation.payload);
+        assert_eq!(retry.datagram_bytes(), revalidation.datagram_bytes());
     }
 
     #[test]

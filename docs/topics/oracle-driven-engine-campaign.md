@@ -419,7 +419,8 @@ Product Tactical `138` is complete; Tactical `137` is reactivated as the sole
 authoritative **Now**. Its dependency-free Stage 2 shared-egress seam and safe
 Linux/Android option path pass; the approved target-specific adapter also
 passes actual macOS set/get/exact-restore proof. Stage 3 deterministic
-revalidation is current.
+revalidation/downward recovery and the RTT-fenced repeated fast-loss repair
+pass; Stage 4 protected-send integration is current.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -472,8 +473,9 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `137` Stage 3 by adding pure,
-bounded revalidation and downward recovery without enabling product behavior.
+Next engine-campaign action: execute Tactical `137` Stage 4 by carrying typed
+protected-send results through the shared generation-fenced runtime and
+enabling dynamic construction only for a positively verified IPv4 socket.
 The approved macOS `dontfrag 1.0.1` adapter and existing Linux/Android `rustix`
 adapter retain `forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
 non-reproducible changing-swarm observation and is not authority for changes in

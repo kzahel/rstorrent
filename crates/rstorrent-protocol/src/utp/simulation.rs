@@ -1779,6 +1779,11 @@ mod tests {
         assert!(competitor.retransmissions >= competitor.loss_reductions);
         assert!(report.sender.congestion.loss_reductions > 0);
         assert!(report.link.queue_drops > 0);
-        assert!(report.link.queue_byte_high_water <= 75_000);
+        // The snapshot sums the independently bounded forward and reverse
+        // queues; permit one maximum uTP acknowledgement datagram in reverse.
+        assert!(
+            report.link.queue_byte_high_water <= 75_000 + IPV4_UDP_PAYLOAD_CEILING,
+            "report={report:?}"
+        );
     }
 }

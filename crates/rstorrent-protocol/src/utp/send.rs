@@ -507,14 +507,24 @@ impl SendState {
             self.duplicate_ack_count = self.duplicate_ack_count.saturating_add(1);
         }
 
-        let mut loss_signals = self.loss_signals_from_sack(acknowledgement_number, &sack_offsets);
+        let retransmission_guard_micros = self.rtt.smoothed_micros.unwrap_or(MIN_RTO_MICROS);
+        let mut loss_signals = self.loss_signals_from_sack(
+            acknowledgement_number,
+            &sack_offsets,
+            now_micros,
+            retransmission_guard_micros,
+        );
         if self.duplicate_ack_count >= LOSS_ACK_THRESHOLD as u8 {
             let missing = acknowledgement_number.wrapping_add(1);
-            if let Some(packet) = self
-                .outstanding
-                .iter_mut()
-                .find(|packet| packet.sequence_number == missing && !packet.loss_signaled)
-            {
+            if let Some(packet) = self.outstanding.iter_mut().find(|packet| {
+                packet.sequence_number == missing
+                    && !packet.loss_signaled
+                    && (packet.transmissions == 1
+                        || now_micros
+                            >= packet
+                                .last_sent_at_micros
+                                .saturating_add(retransmission_guard_micros))
+            }) {
                 packet.loss_signaled = true;
                 loss_signals.push(missing);
             }
@@ -641,6 +651,8 @@ impl SendState {
         &mut self,
         acknowledgement_number: SequenceNumber,
         sack_offsets: &[u16],
+        now_micros: u64,
+        retransmission_guard_micros: u64,
     ) -> Vec<SequenceNumber> {
         let mut signals = Vec::new();
         for packet in &mut self.outstanding {
@@ -650,7 +662,15 @@ impl SendState {
                 continue;
             };
             let later = sack_offsets.partition_point(|reported| *reported <= offset);
-            if sack_offsets.len() - later >= LOSS_ACK_THRESHOLD && !packet.loss_signaled {
+            let retransmission_is_old_enough = packet.transmissions == 1
+                || now_micros
+                    >= packet
+                        .last_sent_at_micros
+                        .saturating_add(retransmission_guard_micros);
+            if sack_offsets.len() - later >= LOSS_ACK_THRESHOLD
+                && !packet.loss_signaled
+                && retransmission_is_old_enough
+            {
                 packet.loss_signaled = true;
                 signals.push(packet.sequence_number);
             }
@@ -836,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn three_duplicate_state_acks_signal_once_until_retransmit() {
+    fn three_duplicate_state_acks_wait_one_rtt_before_resignaling_retransmit() {
         let mut state = SendState::new(SequenceNumber::new(1));
         let missing = data(&mut state, 1, 0);
         for expected_count in 1..=2 {
@@ -865,10 +885,22 @@ mod tests {
                     .is_empty()
             );
         }
-        assert_eq!(
+        assert!(
             state
                 .acknowledge(SequenceNumber::new(0), None, PacketType::State, 30)
-                .expect("third duplicate ACK")
+                .expect("third duplicate ACK before guard")
+                .loss_signals
+                .is_empty()
+        );
+        assert_eq!(
+            state
+                .acknowledge(
+                    SequenceNumber::new(0),
+                    None,
+                    PacketType::State,
+                    20 + MIN_RTO_MICROS,
+                )
+                .expect("duplicate ACK after guard")
                 .loss_signals,
             vec![missing]
         );
@@ -890,6 +922,23 @@ mod tests {
             .acknowledge(SequenceNumber::new(0), Some(&sack), PacketType::State, 20)
             .expect("repeated SACK");
         assert!(repeated.loss_signals.is_empty());
+
+        state
+            .mark_retransmitted(SequenceNumber::new(1), 30)
+            .expect("retransmit missing packet");
+        let early = state
+            .acknowledge(SequenceNumber::new(0), Some(&sack), PacketType::State, 31)
+            .expect("SACK before retransmission guard");
+        assert!(early.loss_signals.is_empty());
+        let guarded = state
+            .acknowledge(
+                SequenceNumber::new(0),
+                Some(&sack),
+                PacketType::State,
+                30 + MIN_RTO_MICROS,
+            )
+            .expect("SACK after retransmission guard");
+        assert_eq!(guarded.loss_signals, vec![SequenceNumber::new(1)]);
     }
 
     #[test]

@@ -6,9 +6,10 @@ completed and authorized end-to-end implementation with logical commits.
 Stage 2's shared-egress and safe platform-option boundary is complete.
 Maintainer review approved target-specific `dontfrag 1.0.1` for macOS;
 existing `rustix` remains the Linux/Android adapter, both Android native ABIs
-cross-build, and actual macOS set/get/restore passes. Product packetization
-remains fixed at 548 while Stage 3 adds deterministic revalidation. No unsafe
-project code, public-network activity, or physical-device work is authorized.
+cross-build, and actual macOS set/get/restore passes. Stage 3 deterministic
+revalidation and downward recovery are complete; product packetization remains
+fixed at 548 while Stage 4 integrates protected sends. No unsafe project code,
+public-network activity, or physical-device work is authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -401,8 +402,53 @@ Focused evidence at this checkpoint:
 - `cargo clippy -p rstorrent-engine --all-targets -- -D warnings`;
 - `cargo ndk -t x86_64 -t arm64-v8a -P 28 check -p rstorrent-engine --lib`
   with the configured NDK; and
-- macOS focused tests prove unsupported fallback, shared DHT/uTP exclusion,
-  cancellation cleanup, and generation replacement fencing.
+- macOS focused tests prove verified option restoration, shared DHT/uTP
+  exclusion, cancellation cleanup, and generation replacement fencing.
+
+## Stage 3 Deterministic Revalidation Evidence
+
+The pure state now names `Base`, `Search`, and `SearchComplete` explicitly and
+retains the immutable configured base and maximum separately from its current
+confirmed floor and search ceiling. Probe outcomes install a saturating
+one-smoothed-RTT guard before another probe. Completion schedules
+revalidation after 15 minutes, the midpoint of this tactical's accepted
+10--30-minute range: this is deliberately conservative relative to RFC 8899's
+requirement to confirm PMTU information over time while avoiding frequent
+socket-policy changes. Fixed equal bounds never schedule revalidation.
+
+A revalidation protects one DATA packet at the current confirmed floor. Exact
+ACK preserves that floor and schedules the next interval. Isolated loss or
+local message-too-large reopens search from the conservative configured base
+to one byte below the failed floor, lowers the congestion-controller MSS, and
+retries the exact already-sequenced payload once without fragmentation
+protection. Ambiguous loss does not lower either bound. Counters distinguish
+search probes, revalidations, failures, and downward recoveries; deadline math
+saturates at the monotonic-clock limit.
+
+The changed probe cadence exposed a pre-existing deterministic loss-recovery
+hazard: repeated SACK evidence could re-signal the same retransmitted sequence
+several times before that retransmission had one RTT to arrive. Pinned
+libtorrent's `utp_stream.cpp::resend_packet` uses its fast-resend sequence fence
+to avoid the same burst. RSTorrent now admits a second fast-loss signal for a
+retransmission only after one smoothed RTT, or the minimum RTO before an RTT
+sample. Timeout recovery remains independently bounded. The original periodic
+1% loss fixture passes unchanged, and the independently bounded forward and
+reverse simulation queues now assert their correct combined high-water shape
+rather than an accidental single-direction timing value.
+
+Stage 3 evidence:
+
+- nine focused path-MTU transition tests cover phase, cadence, convergence,
+  successful revalidation, downward recovery, exact packet identity, fixed
+  fallback, local errors, ambiguous loss, and saturating deadlines;
+- a composed transport test proves downward MSS replacement and an exact
+  same-sequence, same-payload, same-size fragmentable retry;
+- retransmission tests prove SACK and duplicate-ACK re-signalling cannot occur
+  within one RTT;
+- the original fixed periodic 1% loss and TCP-like foreground simulations
+  pass; and
+- `cargo test -p rstorrent-protocol --lib`: 204 passed, 2 ignored, plus
+  protocol all-target Clippy with warnings denied.
 
 ## Validation Matrix
 
@@ -436,6 +482,8 @@ requires diagnosis, not threshold relaxation.
    actual host proof.
 3. Extend pure MTU state with explicit revalidation/downward recovery and add
    hostile deterministic cases. Commit without enabling product behavior.
+   Complete with a 15-minute interval and an RTT-fenced repeated fast-loss
+   repair.
 4. Carry protected-send intent and typed feedback through the generation-
    fenced runtime, enable dynamic construction only behind positively verified
    capability, and commit scripted shared-DHT/lifecycle evidence.
