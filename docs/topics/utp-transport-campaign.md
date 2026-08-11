@@ -43,8 +43,9 @@ is **Partial**. Tacticals `134`, `135`, and `136` subsequently completed their
 independent rate-policy, storage, and tracker work. Maintainer direction then
 selected ready Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but reprioritized
-verified HTTP file serving before implementation. Tactical `137` remains a
-future engine candidate and is not the authoritative **Now**.
+verified HTTP file serving before implementation. Tactical `138` is complete,
+and maintainer direction now reactivates Tactical `137` as the authoritative
+**Now** with end-to-end implementation and logical commits authorized.
 
 ## Scope And Ownership
 
@@ -833,14 +834,13 @@ closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
-Partial; Tactical `137` was superseded before implementation by active product
-Tactical `138`.**
+Partial; product Tactical `138` completed, and Tactical `137` is reactivated
+with Stage 2 platform/shared-egress feasibility in progress.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). After the current product
-work, explicit reactivation may execute Tactical `137`'s safe fragmentation-
-option/shared-egress feasibility stage, stopping before any new dependency or
-unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
+[`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
+safe fragmentation-option/shared-egress feasibility stage, stopping before
+any new dependency or unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

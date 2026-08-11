@@ -1,12 +1,11 @@
 # Tactical 137: Product uTP Path-MTU Discovery
 
-Status: **Superseded before implementation on 2026-08-11.** Maintainer
-direction initially selected dynamic uTP MTU after Tactical `136`, then
-explicitly reprioritized verified HTTP file serving as Tactical `138`. No
-implementation, dependency, unsafe code, public-network activity, or
-physical-device work landed. This remains a decision-complete future engine
-candidate but is not the authoritative **Now** and requires explicit
-reactivation.
+Status: **Active on 2026-08-11.** Maintainer direction reactivated this
+decision-complete tactical after verified HTTP file-serving Tactical `138`
+completed and authorized end-to-end implementation with logical commits.
+Stage 2 safe fragmentation-option and shared-egress feasibility is in
+progress. No dependency, unsafe code, public-network activity, or physical-
+device work is authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,

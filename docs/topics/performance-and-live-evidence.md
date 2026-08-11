@@ -1131,14 +1131,14 @@ runtime state/feedback loop, not Internet PMTU: the portable shared UDP sender
 does not apply per-emission fragmentation intent to the OS socket. Ordinary
 runtime therefore remains fixed at 548 bytes.
 
-Ready Tactical
+Active Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md) owns the bounded
 product follow-up. It requires fragmentation-protected probes isolated from
 DHT and other uTP sends, fixed-548 fallback, 548/1,280/1,500-byte controlled
 paths, and at least a 50% clean-path DATA-datagram reduction against an
 alternating fixed-548 control with exact hashes, rate-limit preservation, and
-recorded CPU/RSS/queue high waters. This is a plan, not new performance or
-interoperability evidence; no implementation or external run has occurred.
+recorded CPU/RSS/queue high waters. Implementation is active, but no new
+performance/interoperability evidence or external run has occurred.
 
 ## Public Product-uTP Metadata Observation: 2026-08-11
 

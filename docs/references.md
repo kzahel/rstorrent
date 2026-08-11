@@ -103,7 +103,7 @@ set used for the implementation decision:
   LEDBAT reference. Both are summarized independently; no specification text
   or fixture is imported.
 - [RFC 8899](https://www.rfc-editor.org/rfc/rfc8899.html) is the Datagram
-  Packetization Layer PMTU reference for ready Tactical `137`, especially its
+  Packetization Layer PMTU reference for active Tactical `137`, especially its
   base, protected-probe, confirmation, search-completion, revalidation, and
   black-hole requirements. RSTorrent records an intentional compatibility
   difference for uTP's packet-sequenced fragmentable retry and does not claim

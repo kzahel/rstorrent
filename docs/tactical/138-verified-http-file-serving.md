@@ -443,5 +443,5 @@ playhead-driven scheduling remain outside this result.
 
 The next streaming slice may add bounded transient demand and verified-range
 waits only after this capability, logical reader, cancellation, and HTTP
-contract are stable. Tactical `137` remains a future engine candidate and must
-be explicitly reactivated before uTP MTU implementation begins.
+contract are stable. Tactical `137` was subsequently reactivated as the next
+engine implementation.

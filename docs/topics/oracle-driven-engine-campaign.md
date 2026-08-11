@@ -77,9 +77,9 @@ new implementation direction. Maintainer direction then selected ready
 Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but
 explicitly reprioritized verified HTTP file serving before implementation.
 Tactical [`138`](../tactical/138-verified-http-file-serving.md) is complete.
-The sole authoritative **Now** is maintainer selection of the next bounded
-tactical; no engine implementation is active. Tactical `137` remains an
-unimplemented future engine candidate with its dynamic-MTU plan intact. The
+Maintainer direction reactivated Tactical `137` for end-to-end implementation
+with logical commits. It is the sole authoritative **Now**, beginning at its
+safe fragmentation-option and shared-socket egress feasibility gate. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -415,9 +415,9 @@ implementation; Tactical `135` completes controlled plaintext/RC4 near parity
 and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
 lifecycle, controlled interoperability, and the public dispatch rerun.
-Tactical `137` was superseded before implementation; product Tactical `138`
-is complete and the sole authoritative **Now** has returned to selecting the
-next bounded tactical.
+Product Tactical `138` is complete; Tactical `137` is reactivated as the sole
+authoritative **Now** with Stage 2 platform/shared-egress feasibility in
+progress.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -470,9 +470,8 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: no engine implementation is currently active.
-Explicit reactivation may resume Tactical `137` at Stage 2 by proving the safe
-fragmentation-option and shared-socket egress boundary. Stop before adding a
+Next engine-campaign action: execute Tactical `137` Stage 2 by proving the
+safe fragmentation-option and shared-socket egress boundary. Stop before adding a
 dependency, unsafe isolation, or relaxing
 `forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
 non-reproducible changing-swarm observation and is not authority for changes in

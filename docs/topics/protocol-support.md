@@ -68,8 +68,8 @@ tracker/DHT incoming-endpoint advertisement, public incoming reachability,
 IPv6 uTP, MSE-over-uTP, racing, or dynamic product MTU. Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md) plans safe
 fragmentation-protected dynamic IPv4 product MTU and fixed-548 platform
-fallback but was superseded before implementation. No behavior or evidence
-has landed, so the **Partial** claim and every listed limit remain unchanged.
+fallback and is now active. No dynamic-MTU behavior or evidence has landed
+yet, so the **Partial** claim and every listed limit remain unchanged.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.
