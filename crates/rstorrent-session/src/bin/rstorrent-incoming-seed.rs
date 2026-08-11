@@ -13,10 +13,10 @@ use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
     ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
-    Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PortMappingPolicy,
-    PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore, StorageState, StoreError,
-    SubscriptionSpec, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewUpdatePayload,
+    Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PeerTransportPolicy,
+    PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
+    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TransportAddressFamily,
+    ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -86,6 +86,9 @@ async fn run() -> Result<(), SeedHarnessError> {
     if let Some(bootstrap) = arguments.dht_bootstrap {
         config.dht.bootstrap_nodes = vec![BootstrapNode::Address(bootstrap)];
     }
+    if arguments.utp {
+        config.peer_transport_policy = PeerTransportPolicy::PreferUtp;
+    }
     let mut service = ApplicationService::open(config).await?;
     let ready = timeout(READY_TIMEOUT, async {
         loop {
@@ -109,6 +112,11 @@ async fn run() -> Result<(), SeedHarnessError> {
     } else {
         None
     };
+    let utp_listen = if arguments.utp {
+        Some(session_udp_endpoint(&service).await?)
+    } else {
+        None
+    };
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "info_hash": hex(metainfo.info_hash),
@@ -124,6 +132,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_bytes_high_water": ready.read_bytes_high_water,
         "payload_bytes_sent": ready.payload_bytes_sent,
         "mapping": mapping,
+        "utp_listen": utp_listen,
         "ipv6_listener": staged_ipv6.as_ref().map(|(_, endpoint)| endpoint.to_string()),
         "ipv6_pinhole": staged_ipv6.as_ref().map(|(status, _)| status),
     });
@@ -242,6 +251,7 @@ async fn run() -> Result<(), SeedHarnessError> {
             "queued_requests_high_water": snapshot.queued_requests_high_water,
             "read_high_water": snapshot.read_high_water,
             "payload_bytes_sent": snapshot.payload_bytes_sent,
+            "utp": service.utp_snapshot().map(utp_snapshot_json),
             "peers": snapshot_view(&service, ViewSelector::Torrent {
                 torrent_id: hex(metainfo.info_hash),
             }, ViewProjection::Peers).await?,
@@ -270,6 +280,7 @@ async fn run() -> Result<(), SeedHarnessError> {
     let final_snapshot = service
         .incoming_peer_snapshot()
         .expect("enabled incoming service remains owned before shutdown");
+    let final_utp = service.utp_snapshot().map(utp_snapshot_json);
     service.shutdown().await?;
     let stopped_json = serde_json::json!({
         "event": "stopped",
@@ -277,6 +288,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "established_before_shutdown": final_snapshot.established,
         "reads_before_shutdown": final_snapshot.reads,
         "payload_bytes_sent": final_snapshot.payload_bytes_sent,
+        "utp_before_shutdown": final_utp,
         "pending_high_water": final_snapshot.pending_high_water,
         "established_high_water": final_snapshot.established_high_water,
         "connection_high_water": final_snapshot.peer_budget.total_high_water,
@@ -514,6 +526,7 @@ struct Arguments {
     metainfo: PathBuf,
     upnp: bool,
     staged_ipv6_pinhole: bool,
+    utp: bool,
     encryption: EncryptionPolicy,
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
@@ -533,6 +546,7 @@ impl Arguments {
         let mut metainfo = None;
         let mut upnp = false;
         let mut staged_ipv6_pinhole = false;
+        let mut utp = false;
         let mut encryption = None;
         let mut tracker = None;
         let mut dht_bootstrap = None;
@@ -558,6 +572,15 @@ impl Arguments {
                 if std::mem::replace(&mut staged_ipv6_pinhole, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--staged-ipv6-pinhole may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--utp" {
+                if std::mem::replace(&mut utp, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--utp may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -687,6 +710,7 @@ impl Arguments {
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
             staged_ipv6_pinhole,
+            utp,
             encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
             tracker,
             dht_bootstrap,
@@ -700,6 +724,40 @@ impl Arguments {
     fn local_network_listener(&self) -> bool {
         self.upnp || self.staged_ipv6_pinhole
     }
+}
+
+async fn session_udp_endpoint(service: &ApplicationService) -> Result<String, SeedHarnessError> {
+    let snapshot =
+        snapshot_view(service, ViewSelector::TorrentList, ViewProjection::Summary).await?;
+    let ViewSnapshot::TorrentList {
+        client_settings, ..
+    } = snapshot
+    else {
+        return Err(SeedHarnessError::Catalog(
+            "torrent-list snapshot returned the wrong projection".to_owned(),
+        ));
+    };
+    match client_settings.session_udp_status {
+        SessionUdpStatus::Bound { address, port, .. } => Ok(format!("{address}:{port}")),
+        SessionUdpStatus::Unavailable => Err(SeedHarnessError::Catalog(
+            "uTP policy has no bound session UDP endpoint".to_owned(),
+        )),
+    }
+}
+
+fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_json::Value {
+    serde_json::json!({
+        "active_connections": snapshot.active_connections,
+        "connection_high_water": snapshot.connection_high_water,
+        "incoming_half_open": snapshot.incoming_half_open,
+        "incoming_half_open_high_water": snapshot.incoming_half_open_high_water,
+        "datagrams_sent": snapshot.datagrams_sent,
+        "datagram_bytes_sent": snapshot.datagram_bytes_sent,
+        "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
+        "selected_mtu_min_bytes": snapshot.selected_mtu_min_bytes,
+        "selected_mtu_max_bytes": snapshot.selected_mtu_max_bytes,
+        "worker_panics": snapshot.worker_panics,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1099,6 +1157,7 @@ mod tests {
                 "storage",
                 "--metainfo",
                 "fixture.torrent",
+                "--utp",
                 "--fixture-payload",
                 "payload.bin",
                 "--initial-piece",
@@ -1114,6 +1173,7 @@ mod tests {
             .map(OsString::from),
         )
         .expect("parse partial fixture arguments");
+        assert!(partial.utp);
         assert_eq!(partial.initial_pieces, [0, 2]);
         assert_eq!(partial.skip_files, [1]);
         assert_eq!(

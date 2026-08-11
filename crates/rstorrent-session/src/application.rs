@@ -1363,6 +1363,13 @@ impl ApplicationService {
             .and_then(SessionNetworkRuntime::incoming_peer_snapshot)
     }
 
+    pub fn utp_snapshot(&self) -> Option<rstorrent_engine::UtpServiceSnapshot> {
+        self.session_network
+            .as_ref()
+            .and_then(SessionNetworkRuntime::utp_handle)
+            .map(|handle| handle.snapshot())
+    }
+
     pub fn session_download_resource_snapshot(&self) -> SessionDownloadResourceSnapshot {
         self.session_download_resources.snapshot()
     }

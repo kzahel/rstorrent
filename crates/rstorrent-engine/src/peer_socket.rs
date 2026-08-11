@@ -222,8 +222,11 @@ async fn connect_with_progress(
             policy: network.policy,
         });
     }
-    let utp_eligible = utp_dial_eligible(address, network.encryption);
-    if let Some(utp) = utp.as_ref().filter(|_| utp_eligible) {
+    let preferred_transport = preferred_transport(address, network.encryption, utp.is_some());
+    if let Some(utp) = utp
+        .as_ref()
+        .filter(|_| preferred_transport == PeerTransport::Utp)
+    {
         let stream = utp
             .connect_with_timeout(address, network.peer_connect_timeout)
             .await;
@@ -248,6 +251,18 @@ fn utp_dial_eligible(address: std::net::SocketAddr, encryption: PeerEncryptionPo
             encryption,
             PeerEncryptionPolicy::Disabled | PeerEncryptionPolicy::Allow
         )
+}
+
+pub(crate) fn preferred_transport(
+    address: std::net::SocketAddr,
+    encryption: PeerEncryptionPolicy,
+    utp_available: bool,
+) -> PeerTransport {
+    if utp_available && utp_dial_eligible(address, encryption) {
+        PeerTransport::Utp
+    } else {
+        PeerTransport::Tcp
+    }
 }
 
 async fn connect_tcp_with_progress(
@@ -1432,7 +1447,7 @@ mod tests {
     use super::{
         ConnectResources, PEER_COMMAND_QUEUE, PeerConnection, PeerDialServices, PeerSetEvent,
         PeerSocketError, PeerSocketSet, PeerSocketTask, PeerTaskEvent, connect,
-        connect_with_progress, next_message, send_message, utp_dial_eligible,
+        connect_with_progress, next_message, preferred_transport, send_message, utp_dial_eligible,
     };
     use crate::metrics::{ByteMetric, ByteMetricSink};
     use crate::mse::{
@@ -1927,6 +1942,14 @@ mod tests {
         assert!(!utp_dial_eligible(ipv4, PeerEncryptionPolicy::Prefer));
         assert!(!utp_dial_eligible(ipv4, PeerEncryptionPolicy::Required));
         assert!(!utp_dial_eligible(ipv6, PeerEncryptionPolicy::Disabled));
+        assert_eq!(
+            preferred_transport(ipv4, PeerEncryptionPolicy::Disabled, true),
+            PeerTransport::Utp
+        );
+        assert_eq!(
+            preferred_transport(ipv4, PeerEncryptionPolicy::Disabled, false),
+            PeerTransport::Tcp
+        );
     }
 
     #[tokio::test]

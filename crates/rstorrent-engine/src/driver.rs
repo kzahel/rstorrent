@@ -2042,9 +2042,21 @@ impl TorrentPeerCoordinator {
         let context = PeerSelectionContext {
             now: self.elapsed(),
         };
+        let initial_transport = peer_socket::preferred_transport(
+            candidate.endpoint().address(),
+            self.encryption.load(),
+            self.control.utp_handle().is_some(),
+        );
         let attempt = self
             .peers
-            .with_state(|state| state.begin_dial(candidate, role, context.now))
+            .with_state(|state| {
+                let attempt = state.begin_dial(candidate, role, context.now)?;
+                state
+                    .runtime
+                    .set_transport(connection_id(attempt), initial_transport)
+                    .map_err(TorrentPeerError::Runtime)?;
+                Ok(attempt)
+            })
             .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)?;
         Ok(attempt)
