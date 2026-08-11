@@ -1,9 +1,9 @@
 # Tactical 138: Verified HTTP File Serving
 
-Status: **Active on 2026-08-11; implementation authorized and not yet
-started.** Explicit maintainer direction selected verified HTTP file serving
-after Tactical `136` and superseded ready-but-unimplemented Tactical `137` as
-the sole authoritative **Now**.
+Status: **Completed 2026-08-11.** Explicit maintainer direction selected
+verified HTTP file serving after Tactical `136` and superseded ready-but-
+unimplemented Tactical `137` as the sole authoritative **Now** while this
+slice was active.
 
 Topics: `http-file-serving-and-streaming`, `capability-readiness`,
 `application-connection-architecture`, `application-control`,
@@ -335,6 +335,98 @@ migration, a nonloopback listener, remote authorization, incomplete-file
 waiting or scheduling, a visible player/copy-link surface, an Android HTTP
 listener, a public/physical run, or behavior that serves bytes without the
 declared verification and storage authorities.
+
+## Completion Record
+
+The tactical landed in five logical commits:
+
+- `375b46b` records the source-first design, exact bounds, ownership map, and
+  queue reprioritization without behavior change;
+- `ecc52bf` adds the verified logical-file reader, typed eligibility,
+  volatile capability registry, semantic application call, and cancellation
+  authority;
+- `efe75cc` adds the shared bounded Axum media router, existing-gateway mount,
+  and joined exact-loopback Tauri media listener;
+- `6154011` regenerates the application contract and implements authenticated
+  HTTP, WebSocket, Tauri, browser, and React Files `Open` paths; and
+- the closure commit fixes the additive Android reducer fixture exposed by
+  full cross-build validation and records the completed evidence.
+
+The completed boundary reads only one published non-padding logical file.
+Construction requires all intersecting pieces to be durably verified and the
+current path or platform observation to match the expected file kind and
+length. Each read re-observes the representation before opening it. Force
+recheck, torrent removal, storage transition, profile replacement, and
+shutdown revoke the applicable entries and cancel already admitted bodies.
+Repeated requests for the same file reuse one memory-only 256-bit capability;
+no token, port, or URL enters durable state or a view.
+
+`rstorrent-media` owns the one exact route and accepts only exact Host plus
+`GET` or `HEAD`. Full, bounded, open-ended, and suffix requests produce exact
+`200`/`206` responses; all rejected range shapes produce the selected `416`
+without a read. Successful bodies prepare at most one 64-KiB chunk. Fixed
+admission ceilings are 128 live capabilities, 16 bodies application-wide,
+four bodies per capability, eight logical read jobs, and the existing 40-file
+pool. The verified reader's deterministic path and platform tests observed a
+high water of one read and one file lease under their one-permit harness and
+returned both to zero. Local reads remain separate from peer-transfer rate
+accounting.
+
+The gateway mounts the same router while retaining its existing host and
+authentication boundary; the byte route needs no application bearer in its
+local capability mode. Tauri binds only `127.0.0.1:0`, joins the listener at
+shutdown, and accepts only an exact current-origin capability URL before
+invoking the system opener. Browser presentation reserves an opener-isolated
+tab synchronously and fills it only after the semantic call succeeds. Android
+does not bind HTTP and retains its existing complete-file `content://` open.
+
+## Completed Evidence
+
+Deterministic engine, session, media, gateway, desktop, and client tests prove:
+
+- partial-torrent logical reads stay inside one file across shared piece
+  geometry, reject padding or unverified files, fail after representation
+  replacement, and share the path/platform file-pool contract;
+- capability URL reuse, exact token shape, per-capability admission, force-
+  recheck revocation, active-body cancellation, origin validation, and
+  shutdown are bounded and observable;
+- complete, bounded, open-ended, suffix, malformed, multiple, overflowed,
+  empty, and unsatisfied ranges have the selected status, length, range,
+  security-header, MIME, and no-read `HEAD` behavior;
+- wrong Host, method, route, and capability requests do not disclose content,
+  and a real ephemeral loopback server exposes only the media route;
+- the existing gateway serves exact bytes after an authenticated capability-
+  creation call without requiring an application bearer on the byte request;
+  and
+- browser, WebSocket, Tauri, generated-validator, React availability/action,
+  opener isolation, failure cleanup, and exact native URL validation paths
+  converge on the same semantic result.
+
+The final tree passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace -- --test-threads=1`;
+- focused `rstorrent-media`, gateway, desktop, engine, and session tests;
+- `npm run generate --prefix clients/web` with no generated drift;
+- `npm run typecheck --prefix clients/web`;
+- `npm run test --prefix clients/web` with 247 tests passing and two skipped;
+- `npm run test:e2e --prefix clients/web` with 33 tests passing and 11
+  explicitly opt-in live cases skipped; and
+- `experiments/android-engine-bootstrap/build.sh`, including release
+  `x86_64-linux-android` and `aarch64-linux-android`, both UniFFI generations,
+  Android unit tests, and the debug APK.
+
+Parallel workspace attempts separately exposed timing-sensitive failures in
+`bandwidth::tests::live_unlimited_change_wakes_waiter`,
+`application::tests::application_incoming_bootstrap_is_disabled_or_exactly_fixed`,
+and
+`driver::tests::content::disconnect_and_choke_reassign_only_their_outstanding_blocks`.
+Each passed immediately in isolation and all three passed in the final serial
+workspace run; no media-serving failure was observed. No public network,
+swarm, remote host, physical device, or visible client was used. Every
+stopping condition is met for verified serving; incomplete-file waiting and
+playhead-driven scheduling remain outside this result.
 
 ## Non-Goals And Next Boundary
 

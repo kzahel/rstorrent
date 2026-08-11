@@ -173,6 +173,16 @@ error handling; headless Chrome proves wide, compact, and phone interaction,
 keyboard toggling, retained input, save feedback, and zero serious/critical
 Axe violations.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) presents `Open` only for
+Files rows whose producer-owned media availability is `available`. Browser
+mode synchronously reserves an opener-isolated tab before requesting the
+ephemeral URL and closes it on typed failure; Tauri delegates the same result
+to its validated system opener. Tests cover visibility, call routing, popup
+isolation, failure cleanup, WebSocket/Tauri adapters, URL rejection, and live
+state. There is no embedded player, copied URL, MIME-specific action, or
+client-derived eligibility.
+
 ## Purpose
 
 The shared browser and Tauri presentation should become RSTorrent's detailed

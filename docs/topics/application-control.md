@@ -111,6 +111,15 @@ replay, stale-revision, rollback, and convergence rules. Runtime application
 updates one stable session bandwidth owner without replacing peer, discovery,
 listener, or torrent generations.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) adds the read-only
+`create_media_url` semantic call for one torrent identity and file index. It
+authoritatively rechecks typed eligibility, creates or reuses one volatile
+file capability, and returns the complete ephemeral URL with idle and
+absolute lifetime metadata. It is not a durable command, request envelope,
+receipt, event, lifecycle mutation, or storage-path grant; reading it does not
+start, resume, unskip, prioritize, repair, or recheck content.
+
 ## Scope
 
 This topic owns the application-facing command, response, snapshot, and event

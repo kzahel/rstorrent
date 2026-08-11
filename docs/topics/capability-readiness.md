@@ -378,32 +378,31 @@ gates, and a bounded Ubuntu public dispatch rerun pass. That rerun later
 stalled after six verified pieces, so it closes the tracker integration gap
 without authorizing a peer-policy change from one changing-swarm sample.
 
-Active Tactical
-[`138`](../tactical/138-verified-http-file-serving.md) is the selected
-implementation plan. It owns verified logical-file reads, bounded volatile
-capabilities, one shared gateway/Tauri media router, the React/Tauri Open
-surface, and proportional Android compatibility evidence. Ready Tactical
-`137` was superseded before implementation and remains a future engine
-candidate.
+Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) is complete. Verified
+logical-file reads, bounded volatile capabilities, the shared gateway/Tauri
+media router, and the React/Tauri Files `Open` action pass repository, web,
+desktop, and Android compatibility gates. Android retains its native
+complete-file open and starts no HTTP listener. Ready Tactical `137` was
+superseded before implementation and remains a future engine candidate.
 
 ## Current Queue
 
 ### Now
 
-- **Verified HTTP file serving.** Active Tactical
-  [`138`](../tactical/138-verified-http-file-serving.md) is the sole
-  implementation plan. It serves only non-padding published files whose
-  intersecting pieces are verified, through bounded file capabilities and one
-  shared gateway/Tauri media router. It owns exact single-range GET/HEAD,
-  cancellation, path/SAF semantics, React/Tauri Open, and proportional Android
-  compatibility evidence.
+- **Select the next bounded tactical.** Tactical
+  [`138`](../tactical/138-verified-http-file-serving.md) is complete and no
+  implementation tactical is currently authorized. Maintainer selection is
+  the sole planning **Now**: explicitly reactivate Tactical `137`, plan
+  durable seeding goals, or authorize a separately bounded incomplete-file
+  streaming slice without silently combining their policies.
 
 ### Next
 
 - Product uTP path-MTU discovery remains decision-complete in superseded
   Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md). It may
-  be explicitly reactivated after Tactical `138`; none of its planned dynamic
-  MTU behavior or evidence has landed.
+  be explicitly reactivated; none of its planned dynamic MTU behavior or
+  evidence has landed.
 - Durable seeding goals remain a separate policy-planning candidate. Tactical
   `134` now owns finite rate allocation, hot-path fairness, and cancellation;
   ratio/time goals still own durable accounting and torrent lifecycle.
@@ -531,7 +530,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Durable semantic application control | Implemented | deterministic, runtime, interop, web, Tauri, AVD, physical | Archive, fenced keep/delete removal, metadata-only add, atomic v1 torrent-byte add, serialized live file selection, retained checker pause/resume, atomic `Download now`, queue movement, automatic concurrent admission, and exact-or-synthesized magnet export are implemented; stable public compatibility remains absent. | [`application-control`](application-control.md) |
 | Ephemeral application state | Implemented | deterministic, runtime | Private bounded session and metrics SQLite stores preserve receipts, exact source, metadata, settings, views, DHT and speed state for one joined service lifetime, then disappear without profile files. One maximum source plus info fits the 256-MiB session cap and a second maximum import rolls back with a typed resource limit; payload storage remains external. | [`client-persistence`](client-persistence.md), [`application-control`](application-control.md) |
 | Leased application view sets and delivery clients | Implemented | deterministic, runtime, interop, web, Tauri | Named summary, generation-scoped checker progress, piece, structured diagnostic, active-peer, registry-backed Swarm, paged file and tracker, global Disk, range-selected session Speed, and latest-value session DHT views have bounded replay/reset, independent lease expiry, fresh-snapshot recovery, diagnostic HTTP polling, acknowledged browser WebSocket streaming, and acknowledged in-process Tauri streaming. The retained observer matrices still expose Summary reset storms and trace/all-view serialization pressure; stable public compatibility remains unimplemented. | [`application-view-api`](application-view-api.md), [`application-connection-architecture`](application-connection-architecture.md) |
-| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. A real media catalog/playback remains incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
+| Shared web and Tauri desktop UI | Partial | runtime, interop, web, desktop | The responsive surface now has Library, Transfers, and Workbench destinations, truthful bounded torrent-backed cards, accessible determinate/indeterminate checker progress with exact selected-summary counters, shared multi-selection, magnet and local `.torrent` add, source-preserving or name/tracker-rich bounded magnet copy, metadata-only add, live Normal/Skip file actions plus atomic `Download now` for skipped targets, verified-file `Open` through an ephemeral HTTP capability, archives, guarded removal, live peer/swarm/file/tracker inspection, global Disk pressure, bounded Canvas Pieces, a smooth exact session Speed history, a one-second download/upload tab title, and the exact routing-space DHT observatory. Incomplete streaming, embedded playback, and a media catalog remain incomplete. | [`client-surfaces`](client-surfaces.md), [`application-interface-direction`](application-interface-direction.md) |
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings including session/per-torrent transfer limits, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |

@@ -47,9 +47,11 @@ access. RSTorrent is an independently implemented engine, not a wrapper around
 libtorrent, librqbit, or a separate torrent daemon.
 
 The desktop product uses a shared React interface hosted by Tauri and provides
-Library, Transfers, and detailed Workbench views. Android uses a
-platform-appropriate Compose interface over the same engine and application
-semantics; presentation parity is not required.
+Library, Transfers, and detailed Workbench views. Eligible verified files can
+be opened through a bounded ephemeral HTTP capability in the browser or the
+desktop system opener. Android uses a platform-appropriate Compose interface
+over the same engine and application semantics, retaining its native complete-
+file open path; presentation parity is not required.
 
 In project terminology, unqualified **UI** or **web UI** means that shared
 React product interface, whether it is browser-hosted or embedded by Tauri.

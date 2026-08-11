@@ -76,9 +76,10 @@ records one later post-discovery stall after six pieces without inferring a
 new implementation direction. Maintainer direction then selected ready
 Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but
 explicitly reprioritized verified HTTP file serving before implementation.
-Active Tactical [`138`](../tactical/138-verified-http-file-serving.md) is the
-sole authoritative product **Now**. Tactical `137` remains an unimplemented
-future engine candidate with its dynamic-MTU plan intact. The
+Tactical [`138`](../tactical/138-verified-http-file-serving.md) is complete.
+The sole authoritative **Now** is maintainer selection of the next bounded
+tactical; no engine implementation is active. Tactical `137` remains an
+unimplemented future engine candidate with its dynamic-MTU plan intact. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -414,8 +415,9 @@ implementation; Tactical `135` completes controlled plaintext/RC4 near parity
 and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
 lifecycle, controlled interoperability, and the public dispatch rerun.
-Tactical `137` was superseded before implementation; active product Tactical
-`138` is the sole authoritative **Now**.
+Tactical `137` was superseded before implementation; product Tactical `138`
+is complete and the sole authoritative **Now** has returned to selecting the
+next bounded tactical.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -429,13 +431,14 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`136`](../tactical/136-shared-tracker-operation-executor.md). One task-free
-UDP/HTTP/HTTPS executor now serves the separate application and focused direct
-lifecycle owners. Scripted HTTP lifecycle/fallback/cancellation, authenticated
-pinned-libtorrent HTTPS with an untrusted control, repository/web/Android
-gates, and the bounded Ubuntu dispatch rerun pass. The public run verified six
-pieces before a later stall; that changing-swarm observation is not authority
-for a new peer-policy slice.
+[`138`](../tactical/138-verified-http-file-serving.md). One verified logical-
+file reader, bounded volatile capability authority, and shared exact-range
+HTTP router now serve the gateway and Tauri hosting modes. React Files opens
+eligible content through the semantic application call; Android retains its
+native complete-file path without an HTTP listener. Repository, web,
+Playwright, desktop, and both Android ABI gates pass. Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) remains the
+latest completed engine tactical.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -468,9 +471,9 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Next engine-campaign action: no engine implementation is currently active.
-After Tactical `138`, explicit reactivation may resume Tactical `137` at Stage
-2 by proving the safe fragmentation-option and shared-socket egress boundary.
-Stop before adding a dependency, unsafe isolation, or relaxing
+Explicit reactivation may resume Tactical `137` at Stage 2 by proving the safe
+fragmentation-option and shared-socket egress boundary. Stop before adding a
+dependency, unsafe isolation, or relaxing
 `forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
 non-reproducible changing-swarm observation and is not authority for changes in
 that tactical.

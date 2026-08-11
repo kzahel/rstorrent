@@ -77,6 +77,15 @@ rows subsequently reach `1.213x`--`1.336x`. The campaign therefore does not
 select pending-write input. Its failure, resource, repository, and Android
 gates pass before closure.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) extracts a verified
+logical-file reader over the same published path/platform observations and
+40-handle pool. HTTP responses add a separate eight-read admission ceiling
+and one 64-KiB prepared chunk per body; they do not consume peer-transfer rate
+quota or change write/hash scheduling. Deterministic path and platform tests
+observe one read and one file lease at high water under a one-permit harness,
+then return both to zero after success and failure.
+
 ## Purpose And Scope
 
 RSTorrent should not limit a healthy download through an unnecessary

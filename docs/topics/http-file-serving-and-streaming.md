@@ -2,10 +2,10 @@
 
 Topic: `http-file-serving-and-streaming`
 
-Status: Product and architecture direction accepted on 2026-08-07. Active
-Tactical [`138`](../tactical/138-verified-http-file-serving.md) is authorized
-on 2026-08-11 to implement bounded HTTP reads of verified torrent files end to
-end. Incomplete-file streaming remains a later separately authorized slice.
+Status: Product and architecture direction accepted on 2026-08-07. Completed
+Tactical [`138`](../tactical/138-verified-http-file-serving.md) implements
+bounded HTTP reads of verified torrent files end to end. Incomplete-file
+streaming remains a later separately authorized slice.
 
 ## Purpose And Scope
 
@@ -80,11 +80,12 @@ Adopt the separation among HTTP response ownership, stream-session demand,
 and torrent scheduling. Do not inherit JSTorrent's companion-daemon topology:
 RSTorrent's first-party clients normally run the Rust engine in-process.
 
-RSTorrent already has conservative verified published-content reads in
-`crates/rstorrent-engine/src/seed_content.rs` for peer upload and internal
-piece-range reads in selective storage. Neither is presently a logical-file
-application API or an HTTP surface. The serving tactical should extract the
-smallest reusable verified logical-range boundary rather than route arbitrary
+RSTorrent now has a reusable verified logical-file reader in
+`crates/rstorrent-engine/src/seed_content.rs` alongside conservative peer-
+upload reads and internal selective-storage ranges. The reader observes the
+published path or platform representation, checks exact kind and length,
+confines reads to one logical file, and uses the shared bounded file pool. The
+application and HTTP layers refer to that reader rather than routing arbitrary
 paths around storage ownership.
 
 No source, fixture, or test data is imported from either reference.
@@ -347,9 +348,30 @@ cannot substitute for deterministic ownership evidence.
 - Multipart ranges, uploads, writes, or general HTTP compatibility beyond the
   bounded media contract unless later evidence requires them.
 
+## Implemented Contract And Evidence
+
+Completed Tactical `138` adds typed file-view eligibility plus one ephemeral
+`create_media_url` application call. The application owns at most 128
+memory-only 256-bit file capabilities with 30-minute idle and 24-hour absolute
+lifetimes. The shared router admits at most 16 bodies globally, four per
+capability, and eight logical reads, prepares one 64-KiB chunk per response,
+and uses the existing 40-handle storage pool. It implements exact full and
+single-range `GET`/`HEAD`, deterministic `416`, bounded MIME mapping, security
+headers, Host enforcement, cancellation, and revocation.
+
+The existing gateway mounts the route under its authentication and hosting
+policy. Tauri owns one media-only `127.0.0.1:0` listener and validates the
+exact current URL before the system opener. React Files exposes `Open` only
+for typed `available` rows; browser mode uses an opener-isolated new tab.
+Android remains on its complete-file `content://` path and starts no HTTP
+listener. Engine/session/router/gateway/Tauri/web tests, the complete serial
+Rust workspace, 247 web unit tests, 33 Playwright cases, and both Android
+native ABIs pass; the tactical execution record contains the exact commands
+and deliberate deferrals.
+
 ## Recommended Next Work
 
-Execute active Tactical `138` through its verified-reader, capability,
-gateway/Tauri, client, platform, and resource gates. Only after that contract
-is stable should a separate **incomplete-file streaming** tactical add
-stream-demand ownership, verified-range waits, and time-critical scheduling.
+Only after explicit selection should a separate **incomplete-file streaming**
+tactical add stream-demand ownership, verified-range waits, and time-critical
+scheduling. Stable sharing, remote exposure, playback UI, and transcoding
+remain independent product decisions.

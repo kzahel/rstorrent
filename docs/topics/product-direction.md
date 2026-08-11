@@ -130,11 +130,13 @@ payloads.
 
 The accepted
 [`http-file-serving-and-streaming`](http-file-serving-and-streaming.md)
-direction permits one narrowly scoped in-process HTTP byte-serving exception:
-reuse an existing gateway or bind an ephemeral loopback-only media listener
-that serves one capability-authorized logical torrent file. It is not a
-daemon, application-control socket, arbitrary filesystem server, or authority
-to expose payload on a peer, LAN, mapped, or public listener.
+direction now implements one narrowly scoped in-process HTTP byte-serving
+exception: completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) reuses an existing
+gateway or binds an ephemeral loopback-only media listener that serves one
+capability-authorized verified logical torrent file. It is not a daemon,
+application-control socket, arbitrary filesystem server, or authority to
+expose payload on a peer, LAN, mapped, or public listener.
 
 ### Initial platforms
 

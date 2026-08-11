@@ -44,6 +44,14 @@ grant loss, repairs through the picker, then exchanges complementary Fast
 payload with pinned libtorrent through staging and part routes before either
 side completes. Rust remains the only payload owner.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) reuses the same typed
+observation and shared-pool contract for verified logical-file reads, including
+a fake platform provider that proves exact ranges, representation validation,
+and terminal handle release. The generated `MediaFileAvailability` fact
+cross-builds for both Android native ABIs, but Android keeps its existing
+complete-file `content://` open and intentionally binds no HTTP listener.
+
 ## Scope
 
 This topic owns the continuing Android Storage Access Framework boundary:

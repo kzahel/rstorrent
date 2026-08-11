@@ -153,6 +153,16 @@ proves wide, compact, phone, keyboard, retained-value, save, and accessibility
 behavior; the API 34 no-window AVD proves durable limited concurrent transfer
 through the Android product boundary.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) adds one `Open` action
+to eligible rows in the shared React Files table. Browser hosting reserves an
+opener-isolated tab before the asynchronous capability call; Tauri validates
+the returned URL against its current exact-loopback media origin before using
+the system opener. Failure closes the reserved tab and remains typed
+presentation state. Android deliberately retains its existing complete-file
+`content://` action and starts no HTTP listener. There is no embedded player,
+copy-link action, MIME-specific UI, or incomplete-file scheduling.
+
 ## Scope
 
 This topic owns the product-client surfaces above the shared application
@@ -161,7 +171,7 @@ adapter, generated client types, and the boundary between presentation and
 application control.
 
 It does not own torrent protocol behavior, payload storage, the future remote
-account or relay system, or the future HTTP playback-content server.
+account or relay system, or the HTTP payload-serving implementation.
 
 ## Accepted Product Shape
 

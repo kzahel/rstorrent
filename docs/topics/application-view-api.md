@@ -181,6 +181,15 @@ configured `TorrentTransferLimits` pair. Runtime owners remain producers;
 views own no quota, timer, waiter, retry, or effective-policy inference, and
 the generated contract version remains unchanged.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) adds one closed
+`MediaFileAvailability` fact to each paged file row. The application producer
+derives it from metainfo, lifecycle, durable verified pieces, publication,
+and root state; clients do not infer eligibility from progress counters or
+selection. The ephemeral URL is returned only by a semantic call and never
+stored in a view, patch, request receipt, or durable snapshot. No view kind,
+lease, queue, cadence, or contract-version change is added.
+
 ## Purpose And Scope
 
 The desktop inspection surface needs a recoverable, typed local replica of the

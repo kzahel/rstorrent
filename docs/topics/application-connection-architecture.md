@@ -33,7 +33,12 @@ authentication or a new semantic application protocol. Tactical `109` makes
 browser application authority strictly same-origin: hosted builds connect to
 their own page origin, caller input cannot redirect the API or WebSocket, and
 the manual launcher serves assets and application routes from one stable
-loopback listener.
+loopback listener. Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) carries the ephemeral
+`create_media_url` semantic call through authenticated HTTP, the existing
+WebSocket, and in-process Tauri IPC. Actual file bytes use only the separate
+capability route: the gateway mounts it on its existing listener, while Tauri
+owns a media-only exact-loopback listener that exposes no application API.
 
 ## Purpose And Scope
 

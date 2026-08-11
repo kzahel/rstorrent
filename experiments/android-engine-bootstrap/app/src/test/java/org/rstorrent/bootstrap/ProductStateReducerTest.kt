@@ -31,6 +31,7 @@ import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.Ipv6PinholeStatus
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
+import org.rstorrent.session.uniffi.MediaFileAvailability
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.ProgressAssessment
@@ -452,6 +453,7 @@ class ProductStateReducerTest {
             padding = false,
             doneBytes = "0",
             verifiedBytes = "0",
+            mediaAvailability = MediaFileAvailability.UNVERIFIED,
         )
 
     private fun clientSettings(

@@ -39,6 +39,14 @@ lookup fails. Picker-root registration therefore remains compiled off, and
 app-owned Documents is the sole root assumption for the first complete iOS
 product tactical.
 
+Completed Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) consumes stable root
+identity, availability, publication layout, and path/platform observation when
+authorizing one verified-file URL. It neither exposes the locator in that URL
+nor changes root selection, persistence, repair, relocation, or provider
+policy. Root loss makes the file typed unavailable and revokes applicable
+capabilities through the existing storage transition.
+
 ## Scope
 
 This topic owns the product meaning and user experience of download roots:
