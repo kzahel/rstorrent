@@ -62,8 +62,9 @@ the bounded BEP 29 claim graduated to **Partial**. Product-policy Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) is complete
 with hierarchical session/torrent peer-transfer limits across TCP/uTP,
 generated first-party controls, controlled desktop/full-duplex evidence, and
-an API 34 AVD product gate. Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md) is the
+an API 34 AVD product gate. Explicit maintainer near-parity direction
+supersedes unimplemented Tactical `129` with active Tactical
+[`135`](../tactical/135-controlled-tcp-storage-near-parity.md) as the
 authoritative **Now**, and Tactical `122`'s classified Ubuntu result leaves
 focused-driver HTTP(S) tracker dispatch available after it. The
 completed maximum-throughput storage campaign remains recorded in
@@ -396,8 +397,8 @@ desktop/Android lifecycle and build evidence, controlled fallback, and the
 bounded Partial BEP 29 claim; Tactical `134` completes durable hierarchical
 session/torrent peer-transfer rate policy, common TCP/uTP duplex enforcement,
 generated React/Compose controls, controlled cap/fairness/full-duplex
-evidence, and an API 34 AVD product gate. Tactical `129` is ready and resumes
-as the sole authoritative Now.**
+evidence, and an API 34 AVD product gate. Tactical `129` is superseded before
+implementation; Tactical `135` is active as the sole authoritative Now.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -450,12 +451,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute ready Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md). Preserve the
+Next executable action: execute active Tactical
+[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). Preserve the
 resident-payload safety ceiling while selecting a separate hysteretic storage-
-intake watermark, then rerun its required deterministic, controlled TCP,
-resource, Android, and repository gates. Do not combine further bandwidth
-policy or protocol breadth with this storage optimization.
+intake watermark, then use controlled causal evidence to select bounded
+write/task or pending-hash work until the matched plaintext and forced-RC4
+near-parity gates pass. Do not combine further bandwidth policy, public-swarm
+work, or protocol breadth with this campaign.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

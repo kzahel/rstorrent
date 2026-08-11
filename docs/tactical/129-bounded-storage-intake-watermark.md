@@ -1,12 +1,11 @@
 # Tactical 129: Bounded Storage Intake Watermark
 
-Status: **Ready, authoritative Now and not implemented**. Completed Tactical
-[`128`](128-controlled-tcp-performance-diagnosis.md) selected storage intake
-backpressure as the next optimization owner. The maintainer subsequently
-resumed and completed the bounded uTP campaign through Tactical `133`; this
-plan and its evidence remained intact. Completed Tactical `134` then added
-hierarchical transfer-rate policy without changing this storage optimization;
-Tactical `129` now resumes as the sole priority.
+Status: **Superseded before implementation** on 2026-08-11 by explicit
+maintainer direction in Tactical
+[`135`](135-controlled-tcp-storage-near-parity.md). Its independent watermark,
+invariants, source record, and validation requirements are incorporated as the
+first stage of that broader measured near-parity tactical. No result below is
+claimed as implemented.
 
 Topics: `performance-and-live-evidence`, `storage-throughput-architecture`,
 `capability-readiness`, `oracle-driven-engine-campaign`

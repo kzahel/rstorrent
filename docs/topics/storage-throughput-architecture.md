@@ -59,10 +59,13 @@ Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) subsequently
 finds that sustained single-torrent throughput degrades monotonically as the
 current coupled resident/storage intake allowance grows from 8 to 64 MiB.
-Ready Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md) owns separating a
-hysteretic storage-queue watermark from the larger resident safety ceiling;
-it does not reopen storage concurrency or durability policy.
+Tactical [`129`](../tactical/129-bounded-storage-intake-watermark.md) was
+superseded before implementation by active Tactical
+[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). The broader
+slice begins by separating a hysteretic storage-queue watermark from the
+larger resident safety ceiling, then uses measured write/task and pending-hash
+controls to pursue at least `0.95x` pinned-libtorrent throughput without
+reopening durability authority.
 
 ## Purpose And Scope
 

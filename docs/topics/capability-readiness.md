@@ -361,17 +361,20 @@ accounting, and ratio/time seeding goals remain separate.
 
 ### Now
 
-- Ready Tactical
-  [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the single
-  authoritative work item. Separate the storage-intake backpressure watermark
-  from the larger resident-payload safety ceiling, retain bounded memory and
-  large-piece liveness, and prove the selected hysteretic policy against the
-  controlled TCP diagnosis.
+- Active Tactical
+  [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) is the single
+  authoritative work item. Explicit maintainer direction supersedes
+  unimplemented Tactical `129` with a measured near-parity campaign: first
+  separate storage-intake pressure from the resident safety ceiling, then use
+  causal controls to select write/task or pending-hash work until matched
+  plaintext and forced-RC4 application paths reach at least `0.95x` pinned
+  libtorrent without integrity, resource, small-piece, fairness, or Android
+  regression.
 
 ### Next
 
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
-  download driver's nested manager remains available after Tactical `129`.
+  download driver's nested manager remains available after Tactical `135`.
   Completed Tactical
   [`122`](../tactical/122-paired-public-download-performance-cohorts.md)
   proves that the long-lived application tracker owner is not composed into

@@ -25,7 +25,13 @@ returns to byte-identical TCP-only loopback fixtures. It reproduces the
 sustained large-transfer gap, rejects checkpoint sync, observation overhead,
 resumable semantics, and storage-worker count as primary causes, and selects
 storage intake backlog for ready Tactical
-[`129`](../tactical/129-bounded-storage-intake-watermark.md).
+[`129`](../tactical/129-bounded-storage-intake-watermark.md). Explicit
+maintainer direction subsequently supersedes that unimplemented bounded plan
+with active near-parity Tactical
+[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). It retains the
+independent watermark as its first stage and requires at least `0.95x` pinned
+libtorrent on both matched sustained plaintext and forced-RC4 cohorts before
+closing.
 
 ## Hierarchical Transfer-Rate Evidence: 2026-08-11
 
@@ -87,10 +93,10 @@ also roughly halved RSTorrent RSS without increasing median CPU demand.
 
 This does not select an 8 MiB total memory limit. The current engine couples
 its resident-payload ceiling, a 75% intake watermark, and a block-count job
-limit. Tactical `129` will hold the safety ceiling constant while selecting a
-separate hysteretic storage intake watermark. Only its post-change result can
-select profiling or optimization of the remaining roughly 15--20% sustained
-TCP ceiling. Raw JSON and payload artifacts were removed after this summary.
+limit. Tactical `135` will hold the safety ceiling constant while selecting a
+separate hysteretic storage intake watermark, then use causal controls for the
+remaining write/task and hash-input costs until its near-parity gate. Raw JSON
+and payload artifacts were removed after this summary.
 
 The schema-v2 comparator now isolates each owner in a fresh process and the
 orchestrator itself does not import libtorrent. A release-mode direct-metainfo
