@@ -5005,7 +5005,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     .piece_length_at(block.piece)
                     .map_err(DownloadError::Layout)?;
                 self.control.disk_block_stored(block, piece_length);
-                self.control.record_streaming_progress(block.piece);
+                self.control.record_streaming_block_progress(block.piece);
                 self.control
                     .record_bytes(ByteMetric::StagedWrite, block.length as usize);
                 self.control.emit(DownloadActivityEvent::BlockStored {
@@ -5096,7 +5096,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     self.availability
                         .publish(piece_index, self.availability.snapshot().epoch)
                         .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
-                    self.control.record_streaming_progress(piece);
+                    self.control.record_streaming_piece_verified(piece);
                     self.last_piece = Some(VerifiedPiece {
                         index: piece,
                         hash: actual,

@@ -183,7 +183,6 @@ async fn media_request(
             Ok(_) => return empty_response(StatusCode::NOT_FOUND),
             Err(error) => return active_preflight_read_error(error),
         };
-        lease.touch();
         media_body(lease, range.start, content_length, Some(first))
     } else {
         media_body(lease, range.start, content_length, None)
@@ -263,6 +262,7 @@ fn media_body(
             return None;
         }
         if let Some(bytes) = state.first.take() {
+            state.lease.touch_served(bytes.len());
             state.offset += bytes.len() as u64;
             state.remaining -= bytes.len() as u64;
             return Some((Ok::<Bytes, io::Error>(Bytes::from(bytes)), Some(state)));
@@ -301,7 +301,7 @@ fn media_body(
                 None,
             ));
         }
-        state.lease.touch();
+        state.lease.touch_served(bytes.len());
         state.offset += bytes.len() as u64;
         state.remaining -= bytes.len() as u64;
         Some((Ok::<Bytes, io::Error>(Bytes::from(bytes)), Some(state)))

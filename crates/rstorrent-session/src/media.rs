@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -30,6 +31,56 @@ pub const MAX_MEDIA_READ_JOBS: usize = 8;
 pub const MEDIA_CAPABILITY_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 pub const MEDIA_CAPABILITY_ABSOLUTE_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 pub const MEDIA_STREAMING_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MediaResourceSnapshot {
+    pub active_bodies: usize,
+    pub body_high_water: usize,
+    pub active_streaming_leases: usize,
+    pub streaming_lease_high_water: usize,
+    pub active_streaming_reads: usize,
+    pub streaming_read_high_water: usize,
+    pub demanded_bytes_read: u64,
+    pub demanded_bytes_served: u64,
+    pub streaming_stall_timeouts: usize,
+    pub publication_handoffs: usize,
+}
+
+#[derive(Debug, Default)]
+struct MediaMetrics {
+    active_bodies: AtomicUsize,
+    body_high_water: AtomicUsize,
+    active_streaming_leases: AtomicUsize,
+    streaming_lease_high_water: AtomicUsize,
+    active_streaming_reads: AtomicUsize,
+    streaming_read_high_water: AtomicUsize,
+    demanded_bytes_read: AtomicU64,
+    demanded_bytes_served: AtomicU64,
+    streaming_stall_timeouts: AtomicUsize,
+    publication_handoffs: AtomicUsize,
+}
+
+impl MediaMetrics {
+    fn increment(active: &AtomicUsize, high_water: &AtomicUsize) {
+        let current = active.fetch_add(1, Ordering::AcqRel).saturating_add(1);
+        high_water.fetch_max(current, Ordering::AcqRel);
+    }
+
+    fn snapshot(&self) -> MediaResourceSnapshot {
+        MediaResourceSnapshot {
+            active_bodies: self.active_bodies.load(Ordering::Acquire),
+            body_high_water: self.body_high_water.load(Ordering::Acquire),
+            active_streaming_leases: self.active_streaming_leases.load(Ordering::Acquire),
+            streaming_lease_high_water: self.streaming_lease_high_water.load(Ordering::Acquire),
+            active_streaming_reads: self.active_streaming_reads.load(Ordering::Acquire),
+            streaming_read_high_water: self.streaming_read_high_water.load(Ordering::Acquire),
+            demanded_bytes_read: self.demanded_bytes_read.load(Ordering::Acquire),
+            demanded_bytes_served: self.demanded_bytes_served.load(Ordering::Acquire),
+            streaming_stall_timeouts: self.streaming_stall_timeouts.load(Ordering::Acquire),
+            publication_handoffs: self.publication_handoffs.load(Ordering::Acquire),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -90,6 +141,10 @@ pub struct MediaCapabilityLease {
     last_used: Arc<Mutex<Instant>>,
     read_jobs: Arc<Semaphore>,
     streaming_demand: Option<StreamingDemandLease>,
+    metrics: Arc<MediaMetrics>,
+    body_counted: bool,
+    streaming_counted: bool,
+    streaming_origin: bool,
     _global_request: OwnedSemaphorePermit,
     _capability_request: OwnedSemaphorePermit,
     absolute_deadline: Instant,
@@ -286,6 +341,13 @@ impl MediaCapabilityLease {
                         .acquire_streaming_demand(current, ahead)
                         .map_err(map_streaming_demand_error)?,
                 );
+                if !self.streaming_counted {
+                    MediaMetrics::increment(
+                        &self.metrics.active_streaming_leases,
+                        &self.metrics.streaming_lease_high_water,
+                    );
+                    self.streaming_counted = true;
+                }
             }
         }
         let (demand_id, mut updates, mut progress_revision) = {
@@ -329,7 +391,10 @@ impl MediaCapabilityLease {
                         Err(MediaRangeError::Revoked)
                     };
                 },
-                _ = &mut sleep => return Err(MediaRangeError::NoProgress),
+                _ = &mut sleep => {
+                    self.metrics.streaming_stall_timeouts.fetch_add(1, Ordering::AcqRel);
+                    return Err(MediaRangeError::NoProgress);
+                },
                 changed = publication.changed() => {
                     changed.map_err(|_| MediaRangeError::Revoked)?;
                     if self.handoff_if_published().await? {
@@ -379,12 +444,21 @@ impl MediaCapabilityLease {
             return Err(MediaRangeError::Revoked);
         }
         self.streaming_demand = None;
+        if self.streaming_counted {
+            self.metrics
+                .active_streaming_leases
+                .fetch_sub(1, Ordering::AcqRel);
+            self.streaming_counted = false;
+        }
+        self.metrics
+            .publication_handoffs
+            .fetch_add(1, Ordering::AcqRel);
         self.reader = MediaCapabilityReader::Published(published);
         Ok(true)
     }
 
     pub async fn read_range(&self, offset: u64, length: usize) -> Result<Vec<u8>, MediaReadError> {
-        match &self.reader {
+        let result = match &self.reader {
             MediaCapabilityReader::Published(reader) => reader
                 .read_range(offset, length)
                 .await
@@ -396,11 +470,50 @@ impl MediaCapabilityLease {
                     .acquire_owned()
                     .await
                     .map_err(|_| MediaReadError::Closed)?;
-                reader
+                MediaMetrics::increment(
+                    &self.metrics.active_streaming_reads,
+                    &self.metrics.streaming_read_high_water,
+                );
+                let result = reader
                     .read_range(offset, length)
                     .await
-                    .map_err(MediaReadError::Active)
+                    .map_err(MediaReadError::Active);
+                self.metrics
+                    .active_streaming_reads
+                    .fetch_sub(1, Ordering::AcqRel);
+                result
             }
+        };
+        if self.streaming_origin
+            && let Ok(bytes) = &result
+        {
+            self.metrics.demanded_bytes_read.fetch_add(
+                u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                Ordering::AcqRel,
+            );
+        }
+        result
+    }
+
+    pub fn touch_served(&self, length: usize) {
+        self.touch();
+        if self.streaming_origin {
+            self.metrics
+                .demanded_bytes_served
+                .fetch_add(u64::try_from(length).unwrap_or(u64::MAX), Ordering::AcqRel);
+        }
+    }
+}
+
+impl Drop for MediaCapabilityLease {
+    fn drop(&mut self) {
+        if self.streaming_counted {
+            self.metrics
+                .active_streaming_leases
+                .fetch_sub(1, Ordering::AcqRel);
+        }
+        if self.body_counted {
+            self.metrics.active_bodies.fetch_sub(1, Ordering::AcqRel);
         }
     }
 }
@@ -507,6 +620,7 @@ pub(crate) struct MediaCapabilities {
     by_file: HashMap<(String, u32), String>,
     requests: Arc<Semaphore>,
     read_jobs: Arc<Semaphore>,
+    metrics: Arc<MediaMetrics>,
 }
 
 impl MediaCapabilities {
@@ -517,11 +631,16 @@ impl MediaCapabilities {
             by_file: HashMap::new(),
             requests: Arc::new(Semaphore::new(MAX_MEDIA_REQUESTS)),
             read_jobs: Arc::new(Semaphore::new(MAX_MEDIA_READ_JOBS)),
+            metrics: Arc::new(MediaMetrics::default()),
         }
     }
 
     pub(crate) fn read_jobs(&self) -> Arc<Semaphore> {
         self.read_jobs.clone()
+    }
+
+    pub(crate) fn resource_snapshot(&self) -> MediaResourceSnapshot {
+        self.metrics.snapshot()
     }
 
     pub(crate) fn set_origin(&mut self, origin: &str) -> Result<(), MediaOriginError> {
@@ -635,12 +754,18 @@ impl MediaCapabilities {
             .last_used
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = now;
+        let streaming_origin = matches!(entry.reader, MediaCapabilityReader::Active { .. });
+        MediaMetrics::increment(&self.metrics.active_bodies, &self.metrics.body_high_water);
         Ok(MediaCapabilityLease {
             reader: entry.reader.clone(),
             cancellation: entry.cancellation.clone(),
             last_used: Arc::clone(&entry.last_used),
             read_jobs: Arc::clone(&self.read_jobs),
             streaming_demand: None,
+            metrics: Arc::clone(&self.metrics),
+            body_counted: true,
+            streaming_counted: false,
+            streaming_origin,
             _global_request: global,
             _capability_request: capability,
             absolute_deadline: entry.created + MEDIA_CAPABILITY_ABSOLUTE_TIMEOUT,

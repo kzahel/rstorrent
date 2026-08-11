@@ -615,6 +615,10 @@ impl ApplicationService {
         self.media.resolve(capability)
     }
 
+    pub fn media_resource_snapshot(&self) -> crate::MediaResourceSnapshot {
+        self.media.resource_snapshot()
+    }
+
     pub async fn create_media_url(
         &mut self,
         torrent_id: &str,
@@ -9890,6 +9894,10 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_millis(25)).await;
         assert!(!active_task.is_finished());
+        let waiting_resources = service.media_resource_snapshot();
+        assert_eq!(waiting_resources.active_bodies, 1);
+        assert_eq!(waiting_resources.active_streaming_leases, 1);
+        assert_eq!(waiting_resources.streaming_lease_high_water, 1);
         release.notify_one();
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(3), active_task)
@@ -9930,6 +9938,17 @@ mod tests {
                 .expect("read published handoff range"),
             payload[100..164]
         );
+        published.touch_served(64);
+        let completed_resources = service.media_resource_snapshot();
+        assert_eq!(completed_resources.body_high_water, 1);
+        assert_eq!(completed_resources.active_streaming_leases, 0);
+        assert_eq!(completed_resources.active_streaming_reads, 0);
+        assert_eq!(completed_resources.streaming_read_high_water, 1);
+        assert_eq!(completed_resources.demanded_bytes_read, 128);
+        assert_eq!(completed_resources.demanded_bytes_served, 64);
+        assert_eq!(completed_resources.publication_handoffs, 1);
+        drop(published);
+        assert_eq!(service.media_resource_snapshot().active_bodies, 0);
         tokio::time::timeout(Duration::from_secs(2), peer_task)
             .await
             .expect("handoff peer did not close")

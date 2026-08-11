@@ -404,6 +404,9 @@ pub struct DownloadControl {
 struct StreamingDemandOwner {
     state: Mutex<StreamingDemandSet>,
     updates: watch::Sender<StreamingDemandSnapshot>,
+    high_water: AtomicUsize,
+    progress_events: AtomicUsize,
+    pieces_verified: AtomicUsize,
 }
 
 /// One independently removable streaming demand owned by an active response.
@@ -566,6 +569,12 @@ pub struct DownloadProgress {
     pub requested_bytes: usize,
     pub received_bytes: usize,
     pub stored_bytes: usize,
+    pub streaming_demands_active: usize,
+    pub streaming_demands_high_water: usize,
+    pub streaming_current_intervals: usize,
+    pub streaming_ahead_intervals: usize,
+    pub streaming_progress_events: usize,
+    pub streaming_pieces_verified: usize,
     pub storage_jobs_pending: usize,
     pub storage_jobs_high_water: usize,
     pub storage_command_queue_high_water: usize,
@@ -831,6 +840,9 @@ impl DownloadControl {
                 streaming_demands: Arc::new(StreamingDemandOwner {
                     state: Mutex::new(StreamingDemandSet::default()),
                     updates: streaming_updates,
+                    high_water: AtomicUsize::new(0),
+                    progress_events: AtomicUsize::new(0),
+                    pieces_verified: AtomicUsize::new(0),
                 }),
                 content_published,
                 checking_paused,
@@ -1026,6 +1038,9 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let id = state.insert(current, ahead)?;
         let snapshot = state.snapshot();
+        owner
+            .high_water
+            .fetch_max(snapshot.demands().len(), Ordering::AcqRel);
         drop(state);
         owner.updates.send_replace(snapshot);
         Ok(StreamingDemandLease { owner, id })
@@ -1039,7 +1054,15 @@ impl DownloadControl {
         self.inner.streaming_demands.updates.borrow().clone()
     }
 
-    pub(super) fn record_streaming_progress(&self, piece: u32) {
+    pub(super) fn record_streaming_block_progress(&self, piece: u32) {
+        self.record_streaming_progress(piece, false);
+    }
+
+    pub(super) fn record_streaming_piece_verified(&self, piece: u32) {
+        self.record_streaming_progress(piece, true);
+    }
+
+    fn record_streaming_progress(&self, piece: u32, verified: bool) {
         let owner = &self.inner.streaming_demands;
         let mut state = owner
             .state
@@ -1047,6 +1070,10 @@ impl DownloadControl {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !state.record_progress(piece) {
             return;
+        }
+        owner.progress_events.fetch_add(1, Ordering::AcqRel);
+        if verified {
+            owner.pieces_verified.fetch_add(1, Ordering::AcqRel);
         }
         let snapshot = state.snapshot();
         drop(state);
@@ -1090,6 +1117,7 @@ impl DownloadControl {
         let hash_timing = &self.inner.storage_hash_timing;
         let (storage_active_write_micros, storage_active_hash_micros) = self.storage_active_ages();
         let checkpoint = self.checkpoint_progress_snapshot(Instant::now());
+        let streaming = self.streaming_demand_snapshot();
         DownloadProgress {
             buffered_payload_bytes: self.inner.buffered_payload_bytes.load(Ordering::Acquire),
             payload_high_water: self.inner.payload_high_water.load(Ordering::Acquire),
@@ -1101,6 +1129,28 @@ impl DownloadControl {
             requested_bytes: self.inner.requested_bytes.load(Ordering::Acquire),
             received_bytes: self.inner.received_bytes.load(Ordering::Acquire),
             stored_bytes: self.inner.stored_bytes.load(Ordering::Acquire),
+            streaming_demands_active: streaming.demands().len(),
+            streaming_demands_high_water: self
+                .inner
+                .streaming_demands
+                .high_water
+                .load(Ordering::Acquire),
+            streaming_current_intervals: streaming.demands().len(),
+            streaming_ahead_intervals: streaming
+                .demands()
+                .iter()
+                .filter(|demand| demand.ahead().is_some())
+                .count(),
+            streaming_progress_events: self
+                .inner
+                .streaming_demands
+                .progress_events
+                .load(Ordering::Acquire),
+            streaming_pieces_verified: self
+                .inner
+                .streaming_demands
+                .pieces_verified
+                .load(Ordering::Acquire),
             storage_jobs_pending: self.inner.storage_jobs_pending.load(Ordering::Acquire),
             storage_jobs_high_water: self.inner.storage_jobs_high_water.load(Ordering::Acquire),
             storage_command_queue_high_water: self
@@ -3272,12 +3322,24 @@ mod streaming_demand_tests {
         assert_eq!(updates.borrow().demands().len(), 2);
 
         let progress = first.progress_revision().unwrap();
-        control.record_streaming_progress(4);
+        control.record_streaming_block_progress(4);
         assert!(!updates.has_changed().unwrap());
-        control.record_streaming_progress(3);
+        control.record_streaming_block_progress(3);
         assert!(updates.has_changed().unwrap());
         assert_eq!(first.progress_revision(), Some(progress + 1));
         assert_eq!(second.progress_revision(), Some(0));
+        let progress = control.snapshot();
+        assert_eq!(progress.streaming_demands_active, 2);
+        assert_eq!(progress.streaming_demands_high_water, 2);
+        assert_eq!(progress.streaming_current_intervals, 2);
+        assert_eq!(progress.streaming_ahead_intervals, 1);
+        assert_eq!(progress.streaming_progress_events, 1);
+        assert_eq!(progress.streaming_pieces_verified, 0);
+
+        control.record_streaming_piece_verified(2);
+        let progress = control.snapshot();
+        assert_eq!(progress.streaming_progress_events, 2);
+        assert_eq!(progress.streaming_pieces_verified, 1);
 
         first.update(interval(7, 8), None).unwrap();
         assert_eq!(
