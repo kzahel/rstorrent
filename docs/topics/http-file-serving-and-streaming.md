@@ -6,7 +6,8 @@ Status: Product and architecture direction accepted on 2026-08-07. Completed
 Tactical [`138`](../tactical/138-verified-http-file-serving.md) implements
 bounded HTTP reads of verified torrent files end to end. Source-reviewed
 Tactical [`139`](../tactical/139-incomplete-file-streaming-demand.md) now owns
-the incomplete-file slice; implementation still requires explicit direction.
+the incomplete-file slice and has explicit end-to-end implementation
+authorization.
 
 ## Purpose And Scope
 
@@ -246,7 +247,7 @@ HTTP request for an absent range registers bounded transient demand, waits
 until all intersecting pieces are hash verified, and only then reads and emits
 the bytes. Tactical
 [`139`](../tactical/139-incomplete-file-streaming-demand.md) is the source-
-reviewed, decision-complete execution plan. It is not active until explicit
+reviewed, decision-complete execution plan and is now active under explicit
 implementation authorization.
 
 The stream-session owner must:
@@ -377,8 +378,7 @@ and deliberate deferrals.
 
 ## Recommended Next Work
 
-Review and, if accepted, explicitly authorize Tactical `139` to add stream-
-demand ownership, verified-range waits, time-critical scheduling, and
-progressive HTTP fulfillment. Stable sharing, remote exposure, playback UI,
-Android streaming presentation, and transcoding remain independent product
-decisions.
+Execute Tactical `139` to add stream-demand ownership, verified-range waits,
+time-critical scheduling, and progressive HTTP fulfillment. Stable sharing,
+remote exposure, playback UI, Android streaming presentation, and transcoding
+remain independent product decisions.

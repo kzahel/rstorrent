@@ -83,9 +83,10 @@ desktop evidence, both Android ABIs, the API 34 AVD, and repository closure.
 Maintainer direction selected and authorized incoming-uTP reachability
 Tactical [`140`](../tactical/140-incoming-utp-reachability.md), which is now
 complete with every controlled gate passing and its bounded physical gate
-evidence-limited with exact cleanup. Source-reviewed Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) is the sole
-authoritative **Now** review checkpoint without implementation authorization.
+evidence-limited with exact cleanup. Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) now has explicit
+end-to-end implementation authorization and is the sole authoritative
+**Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -441,8 +442,8 @@ cleanup, and complete repository gates. Completed Tactical `140` adds
 independent product TCP/UDP mapping, transport-truthful tracker/DHT
 advertisement, controlled DHT-only incoming uTP, generated-client and Android
 parity, and a zero-residue physical attempt whose UDP readiness remained
-nonterminal. Source-ready Tactical `139` is the sole authoritative **Now**
-review checkpoint and is not implementation-authorized.
+nonterminal. Explicitly authorized Tactical `139` is the sole authoritative
+implementation **Now**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -502,11 +503,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: review source-ready Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) and explicitly
-authorize, revise, or defer it. No implementation is implied. The
-post-discovery Ubuntu stall remains one non-reproducible changing-swarm
-observation and is not authority for an unplanned change.
+Next engine-campaign action: execute active Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) from its compact
+demand and scheduler stage through verified active reads, HTTP/client
+composition, controlled evidence, and closure. The post-discovery Ubuntu stall
+remains one non-reproducible changing-swarm observation and is not authority
+for an unplanned change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

@@ -1,10 +1,9 @@
 # Tactical 139: Incomplete-File Streaming Demand
 
-Status: **Ready on 2026-08-11.** Explicit maintainer direction authorized
-creation and commit of this source-first tactical. This planning commit does
-not authorize implementation. Review and implementation authorization for
-Tactical `139` is the sole authoritative **Now** after completed Tactical
-`137`.
+Status: **Active on 2026-08-11.** Explicit maintainer direction now authorizes
+end-to-end implementation with logical commits under this source-first
+tactical. Tactical `139` is the sole authoritative **Now** after completed
+Tactical `140`.
 
 Topics: `http-file-serving-and-streaming`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `download-correctness`, `peer-lifecycle`,

@@ -404,12 +404,12 @@ incoming-uTP claim follows.
 
 ### Now
 
-- **Review incomplete-file streaming demand.** Source-ready Tactical
-  [`139`](../tactical/139-incomplete-file-streaming-demand.md) is the sole
-  **Now** review checkpoint. Its compact current/ahead demand, verified active-
-  storage read, time-critical peer scheduling, progressive HTTP fulfillment,
-  and bounded browser/Tauri client contracts are ready for a human go/no-go.
-  Implementation remains unauthorized.
+- **Implement incomplete-file streaming demand.** Explicit maintainer
+  direction activates Tactical
+  [`139`](../tactical/139-incomplete-file-streaming-demand.md) as the sole
+  **Now**. Its compact current/ahead demand, verified active-storage read,
+  time-critical peer scheduling, progressive HTTP fulfillment, and bounded
+  browser/Tauri client contracts proceed end to end in logical commits.
 
 ### Next
 
@@ -451,8 +451,8 @@ API 34 AVD option/send/replacement/application/cleanup matrix pass. Completed
 Tactical `140` adds independent product TCP/UDP mapping, transport-specific
 tracker/DHT advertisement, controlled DHT-only incoming uTP, Android status
 parity, and a zero-residue evidence-limited physical gate. Source-reviewed
-Tactical `139` is the **Now** review checkpoint and still awaits explicit
-implementation direction.
+Tactical `139` is the active implementation **Now** under explicit maintainer
+direction.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
