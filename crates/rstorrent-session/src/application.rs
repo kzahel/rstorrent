@@ -240,7 +240,7 @@ impl ApplicationConfig {
             storage_roots,
             network,
             initial_client_settings: crate::ClientSettings::default(),
-            peer_transport_policy: PeerTransportPolicy::TcpOnly,
+            peer_transport_policy: PeerTransportPolicy::PreferUtp,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             active_download_cap: None,
             dht,
@@ -5381,7 +5381,7 @@ mod tests {
         ))
     }
 
-    fn config(root: &Path) -> ApplicationConfig {
+    fn default_config(root: &Path) -> ApplicationConfig {
         ApplicationConfig::new(
             root.join("profile"),
             "test".to_owned(),
@@ -5395,6 +5395,12 @@ mod tests {
                 std::time::Duration::from_secs(5),
             ),
         )
+    }
+
+    fn config(root: &Path) -> ApplicationConfig {
+        let mut config = default_config(root);
+        config.peer_transport_policy = rstorrent_engine::PeerTransportPolicy::TcpOnly;
+        config
     }
 
     fn persist_client_settings(config: &ApplicationConfig, settings: ClientSettings) {
@@ -7692,7 +7698,7 @@ mod tests {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
         let torrent_id = super::encode_info_hash(info_hash);
         let (address, peer_task) = spawn_metadata_peer(raw_info).await;
-        let application_config = ApplicationConfig::ephemeral(
+        let mut application_config = ApplicationConfig::ephemeral(
             "ephemeral-test".to_owned(),
             vec![ConfiguredStorageRoot::path(
                 "downloads",
@@ -7704,6 +7710,7 @@ mod tests {
                 std::time::Duration::from_secs(5),
             ),
         );
+        application_config.peer_transport_policy = rstorrent_engine::PeerTransportPolicy::TcpOnly;
         let mut service = ApplicationService::open(application_config.clone())
             .await
             .expect("open ephemeral application");
@@ -8248,38 +8255,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_utp_is_default_off_and_explicitly_joined() {
-        let default_root = test_root("session-utp-default-off");
-        let mut default_application = ApplicationService::open(config(&default_root))
+    async fn session_utp_default_and_tcp_override_have_joined_lifecycles() {
+        let default_root = test_root("session-utp-default-on");
+        let default_config = default_config(&default_root);
+        assert_eq!(
+            default_config.peer_transport_policy,
+            rstorrent_engine::PeerTransportPolicy::PreferUtp
+        );
+        let ephemeral_config = ApplicationConfig::ephemeral(
+            "utp-default-ephemeral".to_owned(),
+            Vec::new(),
+            NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                Duration::from_secs(5),
+                Duration::from_secs(5),
+            ),
+        );
+        assert_eq!(
+            ephemeral_config.peer_transport_policy,
+            rstorrent_engine::PeerTransportPolicy::PreferUtp
+        );
+        let mut default_application = ApplicationService::open(default_config)
             .await
             .expect("open default application");
-        assert!(default_application.session_network().utp_handle().is_none());
+        let default_utp = default_application
+            .session_network()
+            .utp_handle()
+            .expect("default policy starts uTP");
+        assert_eq!(default_utp.snapshot().active_connections, 0);
+        assert_eq!(default_utp.snapshot().incoming_half_open, 0);
+        assert_eq!(default_utp.snapshot().worker_panics, 0);
         default_application
             .shutdown()
             .await
             .expect("default application shutdown");
+        assert_eq!(default_utp.snapshot().active_connections, 0);
+        assert_eq!(default_utp.snapshot().incoming_half_open, 0);
+        assert_eq!(default_utp.snapshot().worker_panics, 0);
         drop(default_application);
         fs::remove_dir_all(default_root).expect("remove default root");
 
-        let enabled_root = test_root("session-utp-explicit");
-        let mut enabled_config = config(&enabled_root);
-        enabled_config.peer_transport_policy = rstorrent_engine::PeerTransportPolicy::PreferUtp;
-        let mut enabled_application = ApplicationService::open(enabled_config)
+        let tcp_root = test_root("session-utp-tcp-override");
+        let mut tcp_config = config(&tcp_root);
+        tcp_config.peer_transport_policy = rstorrent_engine::PeerTransportPolicy::TcpOnly;
+        let mut tcp_application = ApplicationService::open(tcp_config)
             .await
-            .expect("open uTP-enabled application");
-        let utp = enabled_application
-            .session_network()
-            .utp_handle()
-            .expect("explicit policy starts uTP");
-        assert_eq!(utp.snapshot().active_connections, 0);
-        assert_eq!(utp.snapshot().worker_panics, 0);
-        enabled_application
+            .expect("open TCP-only application");
+        assert!(tcp_application.session_network().utp_handle().is_none());
+        tcp_application
             .shutdown()
             .await
-            .expect("uTP-enabled application shutdown");
-        assert_eq!(utp.snapshot().active_connections, 0);
-        drop(enabled_application);
-        fs::remove_dir_all(enabled_root).expect("remove enabled root");
+            .expect("TCP-only application shutdown");
+        drop(tcp_application);
+        fs::remove_dir_all(tcp_root).expect("remove TCP-only root");
     }
 
     #[tokio::test]

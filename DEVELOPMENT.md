@@ -477,11 +477,11 @@ uv run --project tests/interop --locked \
   python tests/interop/incomplete_duplex.py
 ```
 
-The default-off product uTP profile explicitly opts the application diagnostic
-into fixed-548 IPv4/plaintext uTP. It verifies incoming and outgoing exact
-transfers against pinned libtorrent, then proves a joined uTP timeout and
-sequential TCP fallback against a TCP-only seed. Ordinary product defaults are
-unchanged:
+The product uTP profile exercises the ordinary fixed-548 IPv4/plaintext
+application default. It verifies incoming and outgoing exact transfers against
+pinned libtorrent, then proves a joined uTP timeout and sequential TCP fallback
+against a TCP-only seed. The separate incomplete-duplex profile explicitly
+selects `TcpOnly` to retain its transport-isolated TCP, Fast, and MSE baseline:
 
 ```bash
 uv run --project tests/interop --locked \

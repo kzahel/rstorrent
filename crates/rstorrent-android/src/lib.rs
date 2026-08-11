@@ -1726,6 +1726,10 @@ mod tests {
 
         assert_eq!(config.network.policy, NetworkPolicy::Online);
         assert_eq!(
+            config.peer_transport_policy,
+            rstorrent_session::PeerTransportPolicy::PreferUtp
+        );
+        assert_eq!(
             config.initial_client_settings,
             rstorrent_session::ClientSettings::fresh_profile_default()
         );

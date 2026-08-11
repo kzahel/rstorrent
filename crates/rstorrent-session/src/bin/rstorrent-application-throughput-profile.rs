@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, ConfiguredStorageRoot,
     DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity, NetworkConfig, NetworkPolicy,
-    OpenViewSetOptions, OpenViewSetRequest, RequestEnvelope, ResponseOutcome, TorrentState,
-    UpdateBatch, ViewDeliveryPolicy, ViewSet, ViewSetOwner, ViewSetUpdate, ViewSpec,
+    OpenViewSetOptions, OpenViewSetRequest, PeerTransportPolicy, RequestEnvelope, ResponseOutcome,
+    TorrentState, UpdateBatch, ViewDeliveryPolicy, ViewSet, ViewSetOwner, ViewSetUpdate, ViewSpec,
 };
 use serde::Serialize;
 use tokio::task::JoinHandle;
@@ -191,6 +191,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             arguments.timeout,
         ),
     );
+    config.peer_transport_policy = PeerTransportPolicy::TcpOnly;
     config.storage_write_concurrency_for_testing = arguments.write_concurrency;
     config.storage_hash_concurrency_for_testing = arguments.hash_concurrency;
     let mut service = ApplicationService::open(config).await?;

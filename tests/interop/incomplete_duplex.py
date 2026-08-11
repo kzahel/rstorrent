@@ -595,6 +595,7 @@ def start_rstorrent(
         str(fixture.flat_payload),
         "--encryption",
         encryption,
+        "--tcp-only",
     ]
     for piece in initial:
         command.extend(["--initial-piece", str(piece)])

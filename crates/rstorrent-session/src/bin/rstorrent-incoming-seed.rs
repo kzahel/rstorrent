@@ -88,6 +88,8 @@ async fn run() -> Result<(), SeedHarnessError> {
     }
     if arguments.utp {
         config.peer_transport_policy = PeerTransportPolicy::PreferUtp;
+    } else if arguments.tcp_only {
+        config.peer_transport_policy = PeerTransportPolicy::TcpOnly;
     }
     let mut service = ApplicationService::open(config).await?;
     let ready = timeout(READY_TIMEOUT, async {
@@ -112,7 +114,7 @@ async fn run() -> Result<(), SeedHarnessError> {
     } else {
         None
     };
-    let utp_listen = if arguments.utp {
+    let utp_listen = if service.utp_snapshot().is_some() {
         Some(session_udp_endpoint(&service).await?)
     } else {
         None
@@ -527,6 +529,7 @@ struct Arguments {
     upnp: bool,
     staged_ipv6_pinhole: bool,
     utp: bool,
+    tcp_only: bool,
     encryption: EncryptionPolicy,
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
@@ -547,6 +550,7 @@ impl Arguments {
         let mut upnp = false;
         let mut staged_ipv6_pinhole = false;
         let mut utp = false;
+        let mut tcp_only = false;
         let mut encryption = None;
         let mut tracker = None;
         let mut dht_bootstrap = None;
@@ -581,6 +585,15 @@ impl Arguments {
                 if std::mem::replace(&mut utp, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--utp may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--tcp-only" {
+                if std::mem::replace(&mut tcp_only, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--tcp-only may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -699,6 +712,11 @@ impl Arguments {
                 "--upnp and --staged-ipv6-pinhole are mutually exclusive".to_owned(),
             ));
         }
+        if utp && tcp_only {
+            return Err(SeedHarnessError::Arguments(
+                "--utp and --tcp-only are mutually exclusive".to_owned(),
+            ));
+        }
         Ok(Self {
             profile_root: profile_root.ok_or_else(|| {
                 SeedHarnessError::Arguments("--profile-root is required".to_owned())
@@ -711,6 +729,7 @@ impl Arguments {
             upnp,
             staged_ipv6_pinhole,
             utp,
+            tcp_only,
             encryption: encryption.unwrap_or(EncryptionPolicy::Allow),
             tracker,
             dht_bootstrap,
@@ -1174,6 +1193,7 @@ mod tests {
         )
         .expect("parse partial fixture arguments");
         assert!(partial.utp);
+        assert!(!partial.tcp_only);
         assert_eq!(partial.initial_pieces, [0, 2]);
         assert_eq!(partial.skip_files, [1]);
         assert_eq!(
@@ -1187,6 +1207,39 @@ mod tests {
                 .to_string_lossy(),
             "payload.bin"
         );
+        assert!(
+            Arguments::parse(
+                [
+                    "--profile-root",
+                    "profile",
+                    "--storage-root",
+                    "storage",
+                    "--metainfo",
+                    "fixture.torrent",
+                    "--utp",
+                    "--tcp-only",
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .is_err()
+        );
+        let tcp_only = Arguments::parse(
+            [
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+                "--tcp-only",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse explicit TCP-only policy");
+        assert!(tcp_only.tcp_only);
+        assert!(!tcp_only.utp);
         assert!(
             Arguments::parse(
                 [

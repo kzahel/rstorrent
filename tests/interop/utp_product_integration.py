@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove default-off product uTP selection and sequential TCP fallback."""
+"""Prove default product uTP selection and sequential TCP fallback."""
 
 from __future__ import annotations
 
@@ -196,7 +196,6 @@ def start_application(
         str(torrent_path),
         "--encryption",
         "disabled",
-        "--utp",
     ]
     if fixture_payload is not None:
         command.extend(
@@ -511,8 +510,8 @@ def run() -> dict[str, Any]:
         "oracle": "application-libtorrent-utp-composition-loopback",
         "libtorrent_version": lt.__version__,
         "policy": {
-            "application_default": "tcp_only",
-            "diagnostic_override": "prefer_utp",
+            "application_default": "prefer_utp",
+            "diagnostic_override": None,
             "ipv4_only": True,
             "plaintext_only": True,
             "fallback": "sequential_tcp_after_utp_transport_failure",
