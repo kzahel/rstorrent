@@ -279,14 +279,21 @@ def discover_control(local_address: str) -> tuple[str, str]:
     raise GateFailure("independent query could not select the mapped IGD v2 service")
 
 
-def query_mapping(control: str, service: str, port: int) -> dict[str, str] | None:
+def query_mapping(
+    control: str,
+    service: str,
+    port: int,
+    protocol: str = "TCP",
+) -> dict[str, str] | None:
+    if protocol not in {"TCP", "UDP"}:
+        raise GateFailure("independent mapping query protocol is invalid")
     action = "GetSpecificPortMappingEntry"
     body = (
         '<?xml version="1.0"?>'
         '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
         f'<s:Body><u:{action} xmlns:u="{service}">'
         f"<NewRemoteHost></NewRemoteHost><NewExternalPort>{port}</NewExternalPort>"
-        f"<NewProtocol>TCP</NewProtocol></u:{action}></s:Body></s:Envelope>"
+        f"<NewProtocol>{protocol}</NewProtocol></u:{action}></s:Body></s:Envelope>"
     ).encode()
     request = urllib.request.Request(
         control,
@@ -324,6 +331,51 @@ def query_mapping(control: str, service: str, port: int) -> dict[str, str] | Non
     if not all(field in values for field in required):
         raise GateFailure("independent mapping query omitted an authoritative field")
     return values
+
+
+def delete_mapping(
+    control: str,
+    service: str,
+    port: int,
+    protocol: str,
+) -> None:
+    if protocol not in {"TCP", "UDP"}:
+        raise GateFailure("independent mapping delete protocol is invalid")
+    action = "DeletePortMapping"
+    body = (
+        '<?xml version="1.0"?>'
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+        f'<s:Body><u:{action} xmlns:u="{service}">'
+        f"<NewRemoteHost></NewRemoteHost><NewExternalPort>{port}</NewExternalPort>"
+        f"<NewProtocol>{protocol}</NewProtocol></u:{action}></s:Body></s:Envelope>"
+    ).encode()
+    request = urllib.request.Request(
+        control,
+        data=body,
+        headers={
+            "Content-Type": 'text/xml; charset="utf-8"',
+            "SOAPAction": f'"{service}#{action}"',
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = response.read(256 * 1024 + 1)
+    except urllib.error.HTTPError as error:
+        payload = error.read(256 * 1024 + 1)
+    if len(payload) > 256 * 1024:
+        raise GateFailure("independent mapping delete exceeded its body bound")
+    try:
+        document = ET.fromstring(payload)
+    except ET.ParseError as error:
+        raise GateFailure("independent mapping delete returned malformed XML") from error
+    values = {
+        local_name(element.tag): (element.text or "").strip()
+        for element in document.iter()
+    }
+    error_code = values.get("errorCode")
+    if error_code not in {None, "714"}:
+        raise GateFailure("independent mapping delete returned a gateway fault")
 
 
 def remote_command(source: str) -> str:

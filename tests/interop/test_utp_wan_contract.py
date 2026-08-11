@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from product_utp_reachability import validate_product_stop, validate_udp_mapping
 from utp_remote_seed import eligible_public_ipv4, parse_mapping_entries
 from utp_rstorrent_wan import (
     WanFailure,
@@ -30,6 +31,42 @@ from utp_rstorrent_wan import (
 
 
 class UtpWanContractTests(unittest.TestCase):
+    def test_product_udp_mapping_targets_the_actual_utp_listener(self) -> None:
+        ready = {
+            "utp_listen": "192.168.1.20:42001",
+            "udp_mapping": {
+                "type": "mapped",
+                "local_address": "192.168.1.20",
+                "local_port": 42001,
+                "external_address": "8.8.8.8",
+                "external_port": 48001,
+                "lease_seconds": 3600,
+            },
+        }
+        self.assertEqual(
+            validate_udp_mapping(ready),
+            ("192.168.1.20", 42001, "8.8.8.8", 48001, 3600),
+        )
+        ready["utp_listen"] = "192.168.1.20:42002"
+        with self.assertRaises(WanFailure):
+            validate_udp_mapping(ready)
+
+    def test_product_stop_requires_exact_utp_and_mapping_termination(self) -> None:
+        stopped = {
+            "connection_high_water": 1,
+            "mapping_tasks_after_shutdown": 0,
+            "mappings_after_shutdown": 0,
+            "utp_before_shutdown": {
+                "connection_high_water": 1,
+                "worker_panics": 0,
+                "datagrams_sent": 4,
+            },
+        }
+        validate_product_stop(stopped)
+        stopped["mappings_after_shutdown"] = 1
+        with self.assertRaises(WanFailure):
+            validate_product_stop(stopped)
+
     def test_mapping_inventory_parser_preserves_finite_udp_identity(self) -> None:
         entries = parse_mapping_entries(
             " 0 UDP 42000->192.168.1.108:42000 "

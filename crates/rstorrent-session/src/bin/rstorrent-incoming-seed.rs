@@ -108,7 +108,7 @@ async fn run() -> Result<(), SeedHarnessError> {
     })
     .await
     .map_err(|_| SeedHarnessError::ReadinessTimeout)?;
-    let mapping = if arguments.upnp && !arguments.await_udp_mapping {
+    let mapping = if arguments.upnp {
         Some(wait_for_mapping(&service, MappingWait::Tcp).await?)
     } else {
         None

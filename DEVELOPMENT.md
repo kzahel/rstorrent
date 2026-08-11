@@ -448,15 +448,27 @@ uv run --project tests/interop --locked \
 ```
 
 Its opt-in physical mode additionally requires an operator-controlled off-LAN
-SSH destination. It verifies that tracker and DHT wire traffic carry the live
-mapped TCP port, transfers through that observed port, deletes the mapping,
-and proves the endpoint is then unreachable. The destination value and network
+SSH destination. It verifies that tracker wire traffic carries the mapped TCP
+port while DHT carries the independently mapped UDP/uTP port, transfers over
+TCP through the tracker-observed endpoint, deletes both mappings, and proves
+the TCP endpoint is then unreachable. The destination value and network
 identities are never printed or persisted:
 
 ```bash
 RSTORRENT_OFF_LAN_SSH_TARGET=YOUR_TARGET \
   uv run --project tests/interop --locked \
   python tests/interop/advertised_seeding.py --mapped-external
+```
+
+The product incoming-uTP physical gate uses the ordinary session-owned UDP
+lease rather than a diagnostic-owned mapping. A pinned libtorrent leecher on
+the selected off-LAN host dials that public UDP endpoint directly with TCP
+disabled, verifies the exact payload, and leaves no mapping, process, remote
+run directory, or local temporary directory:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/product_utp_reachability.py --host YOUR_TARGET
 ```
 
 The controlled mixed-peer profile keeps a scripted, valid, permanently choked

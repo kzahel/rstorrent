@@ -527,7 +527,7 @@ def run_dht(binary: Path, root: Path) -> tuple[int, int, int, int]:
 
 def run_mapped_external(
     repository: Path, binary: Path, root: Path
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     target = os.environ.get("RSTORRENT_OFF_LAN_SSH_TARGET")
     if not target:
         raise GateFailure("off-LAN SSH target is not configured")
@@ -545,6 +545,8 @@ def run_mapped_external(
             fixture,
             [
                 "--upnp",
+                "--utp",
+                "--await-udp-mapping",
                 "--tracker",
                 tracker.url,
                 "--dht-bootstrap",
@@ -553,21 +555,34 @@ def run_mapped_external(
         )
         mapping = ready.get("mapping")
         if not isinstance(mapping, dict) or mapping.get("type") != "mapped":
-            raise ScenarioFailure("seed did not publish mapped readiness")
+            raise ScenarioFailure("seed did not publish TCP mapped readiness")
+        udp_mapping = ready.get("udp_mapping")
+        if not isinstance(udp_mapping, dict) or udp_mapping.get("type") != "mapped":
+            raise ScenarioFailure("seed did not publish UDP mapped readiness")
         local_address = mapping.get("local_address")
         local_port = mapping.get("local_port")
         external_address = mapping.get("external_address")
         external_port = mapping.get("external_port")
+        udp_local_address = udp_mapping.get("local_address")
+        udp_local_port = udp_mapping.get("local_port")
+        udp_external_address = udp_mapping.get("external_address")
+        udp_external_port = udp_mapping.get("external_port")
         if not (
             isinstance(local_address, str)
             and isinstance(local_port, int)
             and isinstance(external_address, str)
             and isinstance(external_port, int)
+            and isinstance(udp_local_address, str)
+            and isinstance(udp_local_port, int)
+            and isinstance(udp_external_address, str)
+            and isinstance(udp_external_port, int)
         ):
             raise ScenarioFailure("mapped readiness fields are invalid")
+        if external_address != udp_external_address:
+            raise ScenarioFailure("TCP and UDP mappings reported different public addresses")
 
         tracker.wait_seed_port(external_port)
-        router.wait_seed_port(external_port)
+        router.wait_seed_port(udp_external_port)
         control, service = discover_control(local_address)
         installed = query_mapping(control, service, external_port)
         if installed is None or not (
@@ -575,7 +590,14 @@ def run_mapped_external(
             and int(installed["NewInternalPort"]) == local_port
             and installed["NewEnabled"] == "1"
         ):
-            raise ScenarioFailure("independent query did not verify the mapping")
+            raise ScenarioFailure("independent query did not verify the TCP mapping")
+        installed_udp = query_mapping(control, service, udp_external_port, "UDP")
+        if installed_udp is None or not (
+            installed_udp["NewInternalClient"] == udp_local_address
+            and int(installed_udp["NewInternalPort"]) == udp_local_port
+            and installed_udp["NewEnabled"] == "1"
+        ):
+            raise ScenarioFailure("independent query did not verify the UDP mapping")
 
         remote_source = (repository / "tests/interop/off_lan_peer_wire.py").read_text()
         remote = start_remote(
@@ -606,7 +628,9 @@ def run_mapped_external(
         seed = None
         tracker.wait_seed_stopped()
         if query_mapping(control, service, external_port) is not None:
-            raise ScenarioFailure("mapping survived joined shutdown")
+            raise ScenarioFailure("TCP mapping survived joined shutdown")
+        if query_mapping(control, service, udp_external_port, "UDP") is not None:
+            raise ScenarioFailure("UDP mapping survived joined shutdown")
         unreachable = start_remote(
             target,
             remote_source,
@@ -623,7 +647,12 @@ def run_mapped_external(
             and stopped.get("mappings_after_shutdown") == 0
         ):
             raise ScenarioFailure("mapping owners were not terminal at shutdown")
-        return external_port, tracker.leecher_announces, router.announce_queries
+        return (
+            external_port,
+            udp_external_port,
+            tracker.leecher_announces,
+            router.announce_queries,
+        )
     finally:
         for remote in remote_processes:
             terminate(remote)
@@ -670,14 +699,20 @@ def main() -> int:
             f"dht_tcp_peers={dht_tcp_peers}"
         )
         if mapped_result is not None:
-            mapped_port, mapped_tracker_announces, mapped_dht_announces = mapped_result
+            (
+                mapped_tcp_port,
+                mapped_udp_port,
+                mapped_tracker_announces,
+                mapped_dht_announces,
+            ) = mapped_result
             print(
-                "mapped_external=verified tracker_wire_port_matches=true "
-                "dht_wire_port_matches=true off_lan_payload_sha256=verified "
-                "post_shutdown_unreachable=true"
+                "mapped_external=verified tracker_wire_tcp_port_matches=true "
+                "dht_wire_udp_port_matches=true off_lan_tcp_payload_sha256=verified "
+                "post_shutdown_tcp_unreachable=true"
             )
             print(
-                f"mapped_port_nonzero={mapped_port > 1} "
+                f"mapped_tcp_port_nonzero={mapped_tcp_port > 1} "
+                f"mapped_udp_port_nonzero={mapped_udp_port > 1} "
                 f"mapped_tracker_leecher_announces={mapped_tracker_announces} "
                 f"mapped_dht_announces={mapped_dht_announces}"
             )
