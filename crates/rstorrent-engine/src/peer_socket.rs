@@ -29,7 +29,7 @@ use crate::mse::{
     MseHandshakeSink, record_mse_handshake,
 };
 use crate::network::{AddressFamilyPolicy, NetworkConfig, PeerEncryptionPolicy};
-use crate::peer::{DialAttempt, DialAttemptId, MseEndpointState, PeerFailure};
+use crate::peer::{DialAttempt, DialAttemptId, MseEndpointState, PeerFailure, UtpDialDecision};
 use crate::peer_budget::{PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetRejection};
 use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::{PeerTransport, connection_id};
@@ -222,7 +222,12 @@ async fn connect_with_progress(
             policy: network.policy,
         });
     }
-    let preferred_transport = preferred_transport(address, network.encryption, utp.is_some());
+    let preferred_transport = preferred_transport(
+        address,
+        network.encryption,
+        utp.is_some(),
+        attempt.utp_decision(),
+    );
     if let Some(utp) = utp
         .as_ref()
         .filter(|_| preferred_transport == PeerTransport::Utp)
@@ -257,8 +262,12 @@ pub(crate) fn preferred_transport(
     address: std::net::SocketAddr,
     encryption: PeerEncryptionPolicy,
     utp_available: bool,
+    utp_decision: UtpDialDecision,
 ) -> PeerTransport {
-    if utp_available && utp_dial_eligible(address, encryption) {
+    if utp_available
+        && utp_decision == UtpDialDecision::Try
+        && utp_dial_eligible(address, encryption)
+    {
         PeerTransport::Utp
     } else {
         PeerTransport::Tcp
@@ -1943,11 +1952,30 @@ mod tests {
         assert!(!utp_dial_eligible(ipv4, PeerEncryptionPolicy::Required));
         assert!(!utp_dial_eligible(ipv6, PeerEncryptionPolicy::Disabled));
         assert_eq!(
-            preferred_transport(ipv4, PeerEncryptionPolicy::Disabled, true),
+            preferred_transport(
+                ipv4,
+                PeerEncryptionPolicy::Disabled,
+                true,
+                crate::peer::UtpDialDecision::Try,
+            ),
             PeerTransport::Utp
         );
         assert_eq!(
-            preferred_transport(ipv4, PeerEncryptionPolicy::Disabled, false),
+            preferred_transport(
+                ipv4,
+                PeerEncryptionPolicy::Disabled,
+                false,
+                crate::peer::UtpDialDecision::Try,
+            ),
+            PeerTransport::Tcp
+        );
+        assert_eq!(
+            preferred_transport(
+                ipv4,
+                PeerEncryptionPolicy::Disabled,
+                true,
+                crate::peer::UtpDialDecision::TcpWhileSuppressed,
+            ),
             PeerTransport::Tcp
         );
     }

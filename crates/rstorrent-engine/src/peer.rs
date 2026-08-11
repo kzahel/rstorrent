@@ -12,6 +12,8 @@ use crate::swarm::ConnectionId;
 pub const DEFAULT_MAX_PEER_RECORDS: usize = 1_000;
 pub const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
 pub const DEFAULT_RECONNECT_BACKOFF: Duration = Duration::from_secs(60);
+pub const UTP_RETRY_INITIAL_BACKOFF: Duration = Duration::from_secs(5 * 60);
+pub const UTP_RETRY_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PeerEndpoint(SocketAddr);
@@ -88,6 +90,7 @@ pub struct PeerObservation {
     endpoint: PeerEndpoint,
     source: PeerSource,
     connectable: bool,
+    utp_advertised: bool,
 }
 
 impl PeerObservation {
@@ -96,11 +99,21 @@ impl PeerObservation {
             endpoint,
             source,
             connectable,
+            utp_advertised: false,
         }
     }
 
     pub fn dialable(endpoint: PeerEndpoint, source: PeerSource) -> Self {
         Self::new(endpoint, source, true)
+    }
+
+    pub fn pex_dialable(endpoint: PeerEndpoint, utp_advertised: bool) -> Self {
+        Self {
+            endpoint,
+            source: PeerSource::PeerExchange,
+            connectable: true,
+            utp_advertised,
+        }
     }
 
     pub fn endpoint(self) -> PeerEndpoint {
@@ -113,6 +126,10 @@ impl PeerObservation {
 
     pub fn is_connectable(self) -> bool {
         self.connectable
+    }
+
+    pub fn utp_advertised(self) -> bool {
+        self.utp_advertised
     }
 }
 
@@ -173,6 +190,39 @@ pub enum MseEndpointState {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UtpEndpointState {
+    #[default]
+    Unknown,
+    Advertised,
+    Confirmed,
+    Suppressed {
+        failures: u8,
+        retry_at: Duration,
+    },
+}
+
+impl UtpEndpointState {
+    pub fn should_try(self, now: Duration) -> bool {
+        match self {
+            Self::Unknown | Self::Advertised | Self::Confirmed => true,
+            Self::Suppressed { retry_at, .. } => now >= retry_at,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UtpDialDecision {
+    Try,
+    TcpWhileSuppressed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UtpConnectOutcome {
+    Connected,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PeerIntegrity {
     pub trust_points: i8,
     pub hash_failures: u8,
@@ -197,6 +247,7 @@ pub struct PeerHistory {
     pub retry_at: Option<Duration>,
     pub last_failure: Option<PeerFailure>,
     pub mse_endpoint: MseEndpointState,
+    pub utp_endpoint: UtpEndpointState,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -214,6 +265,7 @@ pub struct PeerRecord {
     last_connection_attempt: Option<DialAttemptId>,
     incoming_connections: u32,
     ban_when_idle: bool,
+    last_utp_outcome_attempt: Option<DialAttemptId>,
 }
 
 impl PeerRecord {
@@ -357,6 +409,7 @@ pub struct DialAttempt {
     record_id: PeerRecordId,
     endpoint: PeerEndpoint,
     mse_endpoint: MseEndpointState,
+    utp_decision: UtpDialDecision,
 }
 
 impl DialAttempt {
@@ -378,6 +431,10 @@ impl DialAttempt {
 
     pub fn mse_endpoint(self) -> MseEndpointState {
         self.mse_endpoint
+    }
+
+    pub fn utp_decision(self) -> UtpDialDecision {
+        self.utp_decision
     }
 }
 
@@ -641,6 +698,11 @@ impl PeerRegistry {
             record.sources.insert(observation.source);
             record.connectable |= observation.connectable;
             record.last_observed_at = now;
+            if observation.utp_advertised
+                && record.history.utp_endpoint != UtpEndpointState::Confirmed
+            {
+                record.history.utp_endpoint = UtpEndpointState::Advertised;
+            }
             return Ok(PeerObservationResult {
                 record_id: record.id,
                 disposition: PeerObservationDisposition::Merged,
@@ -669,6 +731,10 @@ impl PeerRegistry {
             PeerObservationDisposition::Added
         };
 
+        let mut history = PeerHistory::default();
+        if observation.utp_advertised {
+            history.utp_endpoint = UtpEndpointState::Advertised;
+        }
         self.records.push(PeerRecord {
             id,
             endpoint: observation.endpoint,
@@ -678,11 +744,12 @@ impl PeerRegistry {
             last_observed_at: now,
             observation_order,
             phase: PeerPhase::Idle,
-            history: PeerHistory::default(),
+            history,
             integrity: PeerIntegrity::default(),
             last_connection_attempt: None,
             incoming_connections: 0,
             ban_when_idle: false,
+            last_utp_outcome_attempt: None,
         });
         self.next_record_id = next_record_id;
         self.next_observation_order = next_observation_order;
@@ -747,7 +814,44 @@ impl PeerRegistry {
             record_id: candidate.record_id,
             endpoint: candidate.endpoint,
             mse_endpoint: record.history.mse_endpoint,
+            utp_decision: if record.history.utp_endpoint.should_try(context.now) {
+                UtpDialDecision::Try
+            } else {
+                UtpDialDecision::TcpWhileSuppressed
+            },
         })
+    }
+
+    pub fn record_utp_outcome(
+        &mut self,
+        attempt: DialAttempt,
+        now: Duration,
+        outcome: UtpConnectOutcome,
+    ) -> Result<(), PeerRegistryError> {
+        if attempt.utp_decision != UtpDialDecision::Try {
+            return Err(PeerRegistryError::UnexpectedUtpOutcome(attempt.id));
+        }
+        let record = self.record_for_attempt_mut(attempt, false)?;
+        if record.last_utp_outcome_attempt == Some(attempt.id) {
+            return Err(PeerRegistryError::DuplicateUtpOutcome(attempt.id));
+        }
+        record.history.utp_endpoint = match outcome {
+            UtpConnectOutcome::Connected => UtpEndpointState::Confirmed,
+            UtpConnectOutcome::Failed => {
+                let failures = match record.history.utp_endpoint {
+                    UtpEndpointState::Suppressed { failures, .. } => failures.saturating_add(1),
+                    UtpEndpointState::Unknown
+                    | UtpEndpointState::Advertised
+                    | UtpEndpointState::Confirmed => 1,
+                };
+                let retry_at = now
+                    .checked_add(utp_retry_backoff(failures))
+                    .ok_or(PeerRegistryError::TimeOverflow(record.id))?;
+                UtpEndpointState::Suppressed { failures, retry_at }
+            }
+        };
+        record.last_utp_outcome_attempt = Some(attempt.id);
+        Ok(())
     }
 
     pub fn update_mse_endpoint(
@@ -1049,6 +1153,14 @@ fn apply_failure(
     Ok(())
 }
 
+fn utp_retry_backoff(failures: u8) -> Duration {
+    let shift = u32::from(failures.saturating_sub(1)).min(4);
+    UTP_RETRY_INITIAL_BACKOFF
+        .checked_mul(1_u32 << shift)
+        .unwrap_or(UTP_RETRY_MAX_BACKOFF)
+        .min(UTP_RETRY_MAX_BACKOFF)
+}
+
 fn compare_eviction_candidates(
     left: &PeerRecord,
     right: &PeerRecord,
@@ -1083,6 +1195,8 @@ pub enum PeerRegistryError {
         eligibility: DialEligibility,
     },
     StaleAttempt(DialAttemptId),
+    DuplicateUtpOutcome(DialAttemptId),
+    UnexpectedUtpOutcome(DialAttemptId),
     ActivePeer(PeerRecordId),
     InactiveIncoming(PeerRecordId),
     IdentifierOverflow(&'static str),
@@ -1123,6 +1237,15 @@ impl fmt::Display for PeerRegistryError {
             Self::StaleAttempt(attempt_id) => {
                 write!(formatter, "dial attempt {attempt_id} is stale")
             }
+            Self::DuplicateUtpOutcome(attempt_id) => {
+                write!(
+                    formatter,
+                    "dial attempt {attempt_id} already recorded a uTP outcome"
+                )
+            }
+            Self::UnexpectedUtpOutcome(attempt_id) => {
+                write!(formatter, "dial attempt {attempt_id} did not select uTP")
+            }
             Self::ActivePeer(record_id) => {
                 write!(formatter, "peer record {record_id} is active")
             }
@@ -1156,7 +1279,8 @@ mod tests {
     use super::{
         DialEligibility, PeerEndpoint, PeerFailure, PeerIntegrityAction, PeerObservation,
         PeerObservationDisposition, PeerPhase, PeerRegistry, PeerRegistryConfig, PeerRegistryError,
-        PeerSelectionContext, PeerSelector, PeerSource,
+        PeerSelectionContext, PeerSelector, PeerSource, UTP_RETRY_INITIAL_BACKOFF,
+        UTP_RETRY_MAX_BACKOFF, UtpConnectOutcome, UtpDialDecision, UtpEndpointState,
     };
 
     fn endpoint(port: u16) -> PeerEndpoint {
@@ -1198,6 +1322,256 @@ mod tests {
         assert!(record.sources().contains(PeerSource::Tracker));
         assert_eq!(record.sources().len(), 2);
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn utp_endpoint_memory_suppresses_retries_and_recovers() {
+        let mut registry = PeerRegistry::new(config(4)).expect("registry");
+        let endpoint = endpoint(6_881);
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("observation")
+            .record_id;
+
+        let first = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("first candidate");
+        let first = registry
+            .begin_dial(
+                first,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("first dial");
+        assert_eq!(first.utp_decision(), UtpDialDecision::Try);
+        registry
+            .record_utp_outcome(first, Duration::ZERO, UtpConnectOutcome::Failed)
+            .expect("first uTP failure");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Suppressed {
+                failures: 1,
+                retry_at: UTP_RETRY_INITIAL_BACKOFF,
+            }
+        );
+        assert!(matches!(
+            registry.record_utp_outcome(first, Duration::ZERO, UtpConnectOutcome::Failed),
+            Err(PeerRegistryError::DuplicateUtpOutcome(_))
+        ));
+        registry
+            .dial_succeeded(first, Duration::from_secs(1))
+            .expect("fallback succeeded");
+        registry
+            .connection_closed(first, Duration::from_secs(2), None)
+            .expect("fallback closed");
+
+        let suppressed = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::from_secs(60),
+                },
+            )
+            .expect("suppressed endpoint is still TCP eligible");
+        let suppressed = registry
+            .begin_dial(
+                suppressed,
+                PeerSelectionContext {
+                    now: Duration::from_secs(60),
+                },
+            )
+            .expect("suppressed dial");
+        assert_eq!(
+            suppressed.utp_decision(),
+            UtpDialDecision::TcpWhileSuppressed
+        );
+        assert!(matches!(
+            registry.record_utp_outcome(
+                suppressed,
+                Duration::from_secs(60),
+                UtpConnectOutcome::Connected,
+            ),
+            Err(PeerRegistryError::UnexpectedUtpOutcome(_))
+        ));
+        registry
+            .dial_cancelled(suppressed)
+            .expect("cancel suppressed dial");
+
+        let retry = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: UTP_RETRY_INITIAL_BACKOFF,
+                },
+            )
+            .expect("retry candidate");
+        let retry = registry
+            .begin_dial(
+                retry,
+                PeerSelectionContext {
+                    now: UTP_RETRY_INITIAL_BACKOFF,
+                },
+            )
+            .expect("retry dial");
+        assert_eq!(retry.utp_decision(), UtpDialDecision::Try);
+        registry
+            .record_utp_outcome(retry, UTP_RETRY_INITIAL_BACKOFF, UtpConnectOutcome::Failed)
+            .expect("second uTP failure");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Suppressed {
+                failures: 2,
+                retry_at: UTP_RETRY_INITIAL_BACKOFF + UTP_RETRY_INITIAL_BACKOFF * 2,
+            }
+        );
+        registry.dial_cancelled(retry).expect("cancel retry");
+
+        registry
+            .observe(
+                PeerObservation::pex_dialable(endpoint, true),
+                UTP_RETRY_INITIAL_BACKOFF + Duration::from_secs(1),
+            )
+            .expect("PEX refresh");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Advertised
+        );
+        let advertised = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: UTP_RETRY_INITIAL_BACKOFF + Duration::from_secs(1),
+                },
+            )
+            .expect("advertised candidate");
+        let advertised = registry
+            .begin_dial(
+                advertised,
+                PeerSelectionContext {
+                    now: UTP_RETRY_INITIAL_BACKOFF + Duration::from_secs(1),
+                },
+            )
+            .expect("advertised dial");
+        registry
+            .record_utp_outcome(
+                advertised,
+                UTP_RETRY_INITIAL_BACKOFF + Duration::from_secs(2),
+                UtpConnectOutcome::Connected,
+            )
+            .expect("uTP connected");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Confirmed
+        );
+    }
+
+    #[test]
+    fn utp_endpoint_memory_saturates_and_rejects_stale_or_overflowing_results() {
+        let mut registry = PeerRegistry::new(config(2)).expect("registry");
+        let endpoint = endpoint(6_881);
+        let record_id = registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                Duration::ZERO,
+            )
+            .expect("observation")
+            .record_id;
+        registry
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .expect("record")
+            .history
+            .utp_endpoint = UtpEndpointState::Suppressed {
+            failures: u8::MAX,
+            retry_at: Duration::ZERO,
+        };
+        let candidate = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("candidate");
+        let attempt = registry
+            .begin_dial(
+                candidate,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("dial");
+        registry
+            .record_utp_outcome(attempt, Duration::ZERO, UtpConnectOutcome::Failed)
+            .expect("saturating failure");
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Suppressed {
+                failures: u8::MAX,
+                retry_at: UTP_RETRY_MAX_BACKOFF,
+            }
+        );
+        registry.dial_cancelled(attempt).expect("cancel dial");
+        assert!(matches!(
+            registry.record_utp_outcome(attempt, Duration::ZERO, UtpConnectOutcome::Connected),
+            Err(PeerRegistryError::StaleAttempt(_))
+        ));
+
+        registry
+            .records
+            .iter_mut()
+            .find(|record| record.id == record_id)
+            .expect("record")
+            .history
+            .utp_endpoint = UtpEndpointState::Unknown;
+        let candidate = PeerSelector
+            .select(&registry, PeerSelectionContext { now: Duration::MAX })
+            .expect("candidate at maximum time");
+        let attempt = registry
+            .begin_dial(candidate, PeerSelectionContext { now: Duration::MAX })
+            .expect("dial at maximum time");
+        assert!(matches!(
+            registry.record_utp_outcome(attempt, Duration::MAX, UtpConnectOutcome::Failed),
+            Err(PeerRegistryError::TimeOverflow(id)) if id == record_id
+        ));
+        assert_eq!(
+            registry
+                .get(record_id)
+                .expect("record")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Unknown
+        );
     }
 
     #[test]

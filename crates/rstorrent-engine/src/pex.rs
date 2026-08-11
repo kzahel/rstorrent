@@ -265,7 +265,7 @@ impl PexState {
                 continue;
             }
             registry.observe(
-                PeerObservation::dialable(endpoint, PeerSource::PeerExchange),
+                PeerObservation::pex_dialable(endpoint, contact.flags.contains(PexFlags::UTP)),
                 now,
             )?;
             self.sources
@@ -578,7 +578,7 @@ fn wire_endpoint(endpoint: SocketAddr) -> PexEndpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peer::{PeerRegistryConfig, PeerSources};
+    use crate::peer::{PeerRegistryConfig, PeerSources, UtpEndpointState};
 
     fn connection(value: u64) -> ConnectionId {
         ConnectionId::new(value).expect("connection")
@@ -726,6 +726,45 @@ mod tests {
             }
         );
         assert_eq!(state.source_contacts(connection(1)), 1);
+    }
+
+    #[test]
+    fn inbound_utp_flag_refreshes_endpoint_capability() {
+        let mut state = PexState::default();
+        let mut registry = registry();
+        let peer = "203.0.113.9:6881".parse().expect("peer");
+        let endpoint = PeerEndpoint::new(peer).expect("endpoint");
+        let payload = encode_pex_message(&PexMessage {
+            added: vec![PexContact {
+                endpoint: wire_endpoint(peer),
+                flags: PexFlags::from_bits(PexFlags::UTP),
+            }],
+            ..PexMessage::default()
+        })
+        .expect("PEX payload");
+        state
+            .receive(
+                connection(1),
+                &payload,
+                PexReceiveContext {
+                    source_endpoint: "198.51.100.4:5000".parse().expect("source"),
+                    now: Duration::ZERO,
+                    verified_public: true,
+                    network_policy: NetworkPolicy::Online,
+                    address_families: AddressFamilyPolicy::dual_stack(),
+                    self_endpoints: &[],
+                },
+                &mut registry,
+            )
+            .expect("receive PEX");
+        assert_eq!(
+            registry
+                .find_endpoint(endpoint)
+                .expect("PEX endpoint")
+                .history()
+                .utp_endpoint,
+            UtpEndpointState::Advertised
+        );
     }
 
     #[test]

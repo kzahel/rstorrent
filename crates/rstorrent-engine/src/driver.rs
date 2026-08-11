@@ -2042,15 +2042,18 @@ impl TorrentPeerCoordinator {
         let context = PeerSelectionContext {
             now: self.elapsed(),
         };
-        let initial_transport = peer_socket::preferred_transport(
-            candidate.endpoint().address(),
-            self.encryption.load(),
-            self.control.utp_handle().is_some(),
-        );
+        let encryption = self.encryption.load();
+        let utp_available = self.control.utp_handle().is_some();
         let attempt = self
             .peers
             .with_state(|state| {
                 let attempt = state.begin_dial(candidate, role, context.now)?;
+                let initial_transport = peer_socket::preferred_transport(
+                    attempt.endpoint().address(),
+                    encryption,
+                    utp_available,
+                    attempt.utp_decision(),
+                );
                 state
                     .runtime
                     .set_transport(connection_id(attempt), initial_transport)
@@ -2128,10 +2131,13 @@ impl TorrentPeerCoordinator {
                     .handshake_completed(connection_id, handshake, self.network.peer_id, now)
                     .map_err(TorrentPeerError::Runtime)?;
                 if matches!(outcome, PeerAdmissionOutcome::Admitted { .. }) {
-                    state.pex.peer_established(
-                        attempt.endpoint(),
-                        PexFlags::from_bits(PexFlags::OUTGOING),
-                    );
+                    let mut pex_flags = PexFlags::OUTGOING;
+                    if connection.transport() == crate::peer_runtime::PeerTransport::Utp {
+                        pex_flags |= PexFlags::UTP;
+                    }
+                    state
+                        .pex
+                        .peer_established(attempt.endpoint(), PexFlags::from_bits(pex_flags));
                 }
                 Ok::<_, TorrentPeerError>(outcome)
             })
