@@ -11,7 +11,7 @@ use rstorrent_gateway::{
 };
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, ConfiguredStorageRoot, DownloadResourceLimits,
-    NetworkConfig, NetworkPolicy,
+    NetworkConfig, NetworkPolicy, PeerTransportPolicy,
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -128,9 +128,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok()
         .map(|value| value.parse::<usize>())
         .transpose()?;
+    let test_peer_transport = env::var("RSTORRENT_TEST_PEER_TRANSPORT").ok();
+    if test_peer_transport
+        .as_deref()
+        .is_some_and(|value| value != "tcp_only")
+    {
+        return Err("RSTORRENT_TEST_PEER_TRANSPORT must be tcp_only".into());
+    }
     if (test_view_set_lease.is_some()
         || test_storage_write_delay.is_some()
-        || test_buffered_payload_bytes.is_some())
+        || test_buffered_payload_bytes.is_some()
+        || test_peer_transport.is_some())
         && !matches!(
             authentication,
             GatewayAuthentication::UnauthenticatedLoopbackDevelopment
@@ -213,6 +221,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             buffered_bytes,
             buffered_bytes.saturating_mul(8),
         );
+    }
+    if test_peer_transport.is_some() {
+        application_config.peer_transport_policy = PeerTransportPolicy::TcpOnly;
     }
     let application = ApplicationService::open(application_config).await?;
     let application = Arc::new(Mutex::new(application));

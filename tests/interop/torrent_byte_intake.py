@@ -108,6 +108,9 @@ class Gateway:
         profile: Path,
         storage: Path,
         network_policy: str,
+        *,
+        authentication: str = "bearer",
+        environment_overrides: dict[str, str] | None = None,
     ) -> None:
         self.port = reserve_port()
         self.origin = ORIGIN
@@ -116,13 +119,15 @@ class Gateway:
             {
                 "RSTORRENT_PROFILE_ROOT": str(profile),
                 "RSTORRENT_STORAGE_ROOT": str(storage),
-                "RSTORRENT_GATEWAY_AUTH": "bearer",
+                "RSTORRENT_GATEWAY_AUTH": authentication,
                 "RSTORRENT_GATEWAY_TOKEN": TOKEN,
                 "RSTORRENT_GATEWAY_BIND": f"127.0.0.1:{self.port}",
                 "RSTORRENT_GATEWAY_ORIGIN": self.origin,
                 "RSTORRENT_NETWORK_POLICY": network_policy,
             }
         )
+        if environment_overrides is not None:
+            environment.update(environment_overrides)
         self.process = subprocess.Popen(
             [str(binary)],
             cwd=repository_root(),
