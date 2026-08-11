@@ -1120,7 +1120,8 @@ async fn wait_for_mapping(
             catalog_page: None,
         })
         .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
-    timeout(READY_TIMEOUT, async {
+    let mut last_status = None;
+    let result = timeout(READY_TIMEOUT, async {
         loop {
             let update = subscription.next_update().await.ok_or_else(|| {
                 SeedHarnessError::Catalog(
@@ -1149,6 +1150,9 @@ async fn wait_for_mapping(
                 }),
                 _ => None,
             };
+            if let Some(status) = &status {
+                last_status = Some(status.clone());
+            }
             match status {
                 Some(status @ PortMappingStatus::Mapped { .. }) => return Ok(status),
                 Some(PortMappingStatus::Failed { stage, detail }) => {
@@ -1173,8 +1177,15 @@ async fn wait_for_mapping(
             }
         }
     })
-    .await
-    .map_err(|_| SeedHarnessError::ReadinessTimeout)?
+    .await;
+    match result {
+        Ok(result) => result,
+        Err(_) => Err(SeedHarnessError::Catalog(format!(
+            "{} UPnP mapping readiness timed out; last status: {:?}",
+            target.label(),
+            last_status
+        ))),
+    }
 }
 
 async fn mapping_statuses(
