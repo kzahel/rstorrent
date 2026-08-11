@@ -382,6 +382,8 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
             generation: *generation,
             ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
             ipv6,
+            dht_ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv6: ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Local {
@@ -399,6 +401,15 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
                 }),
             },
             ipv6,
+            dht_ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(SocketAddr::V4(*local_endpoint)),
+                source_address: Some((*local_endpoint.ip()).into()),
+                scope: Some(match scope {
+                    EndpointScope::Loopback => PeerAdvertisementEndpointScope::Loopback,
+                    EndpointScope::LocalNetwork => PeerAdvertisementEndpointScope::LocalNetwork,
+                }),
+            },
+            dht_ipv6: ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Mapped {
@@ -414,6 +425,12 @@ fn project_wire_endpoint(state: &SelectorState) -> PeerAdvertisementEndpoint {
                 scope: Some(PeerAdvertisementEndpointScope::Mapped),
             },
             ipv6,
+            dht_ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(SocketAddr::V4(*external_endpoint)),
+                source_address: Some((*local_endpoint.ip()).into()),
+                scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            },
+            dht_ipv6: ipv6,
             stopping: false,
         },
         AdvertisedPeerEndpointState::Stopping { generation, .. } => {

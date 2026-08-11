@@ -74,6 +74,8 @@ pub struct PeerAdvertisementEndpoint {
     pub generation: u64,
     pub ipv4: PeerAdvertisementFamilyEndpoint,
     pub ipv6: PeerAdvertisementFamilyEndpoint,
+    pub dht_ipv4: PeerAdvertisementFamilyEndpoint,
+    pub dht_ipv6: PeerAdvertisementFamilyEndpoint,
     pub stopping: bool,
 }
 
@@ -83,6 +85,8 @@ impl PeerAdvertisementEndpoint {
             generation,
             ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
             ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: false,
         }
     }
@@ -92,6 +96,8 @@ impl PeerAdvertisementEndpoint {
             generation,
             ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
             ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: true,
         }
     }
@@ -101,6 +107,14 @@ impl PeerAdvertisementEndpoint {
         match family {
             AddressFamily::Ipv4 => self.ipv4,
             AddressFamily::Ipv6 => self.ipv6,
+        }
+    }
+
+    #[must_use]
+    pub const fn dht_family(self, family: AddressFamily) -> PeerAdvertisementFamilyEndpoint {
+        match family {
+            AddressFamily::Ipv4 => self.dht_ipv4,
+            AddressFamily::Ipv6 => self.dht_ipv6,
         }
     }
 }
@@ -1404,8 +1418,8 @@ fn dht_announce_ports(
         return None;
     }
     let ports = DhtAnnouncePorts {
-        ipv4: eligible_family_port(policy, endpoint.ipv4).unwrap_or(0),
-        ipv6: eligible_family_port(policy, endpoint.ipv6).unwrap_or(0),
+        ipv4: eligible_family_port(policy, endpoint.dht_ipv4).unwrap_or(0),
+        ipv6: eligible_family_port(policy, endpoint.dht_ipv6).unwrap_or(0),
     };
     (ports.ipv4 != 0 || ports.ipv6 != 0).then_some(ports)
 }
@@ -1633,14 +1647,17 @@ mod tests {
         scope: PeerAdvertisementEndpointScope,
     ) -> PeerAdvertisementEndpoint {
         let endpoint = address.parse::<SocketAddr>().expect("endpoint");
+        let ipv4 = PeerAdvertisementFamilyEndpoint {
+            endpoint: Some(endpoint),
+            source_address: Some(endpoint.ip()),
+            scope: Some(scope),
+        };
         PeerAdvertisementEndpoint {
             generation,
-            ipv4: PeerAdvertisementFamilyEndpoint {
-                endpoint: Some(endpoint),
-                source_address: Some(endpoint.ip()),
-                scope: Some(scope),
-            },
+            ipv4,
             ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv4: ipv4,
+            dht_ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: false,
         }
     }
@@ -1794,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn tracker_ports_select_each_family_independently() {
+    fn tracker_and_dht_ports_select_each_transport_and_family_independently() {
         let endpoint = PeerAdvertisementEndpoint {
             generation: 3,
             ipv4: PeerAdvertisementFamilyEndpoint {
@@ -1804,6 +1821,16 @@ mod tests {
             },
             ipv6: PeerAdvertisementFamilyEndpoint {
                 endpoint: Some("[2001:4860:4860::8888]:43000".parse().unwrap()),
+                source_address: Some("2001:4860:4860::8888".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::GlobalUnicast),
+            },
+            dht_ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("192.168.1.2:44000".parse().unwrap()),
+                source_address: Some("192.168.1.2".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::LocalNetwork),
+            },
+            dht_ipv6: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("[2001:4860:4860::8888]:45000".parse().unwrap()),
                 source_address: Some("2001:4860:4860::8888".parse().unwrap()),
                 scope: Some(PeerAdvertisementEndpointScope::GlobalUnicast),
             },
@@ -1828,8 +1855,8 @@ mod tests {
                 },
             ),
             Some(DhtAnnouncePorts {
-                ipv4: 42_000,
-                ipv6: 43_000,
+                ipv4: 44_000,
+                ipv6: 45_000,
             })
         );
     }
@@ -2207,6 +2234,12 @@ mod tests {
             generation: 1,
             ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
             ipv6: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some(format!("[::1]:{listener_port}").parse().unwrap()),
+                source_address: Some("::1".parse().unwrap()),
+                scope: Some(PeerAdvertisementEndpointScope::Loopback),
+            },
+            dht_ipv4: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv6: PeerAdvertisementFamilyEndpoint {
                 endpoint: Some(format!("[::1]:{listener_port}").parse().unwrap()),
                 source_address: Some("::1".parse().unwrap()),
                 scope: Some(PeerAdvertisementEndpointScope::Loopback),
@@ -2729,6 +2762,12 @@ mod tests {
                 scope: Some(PeerAdvertisementEndpointScope::Mapped),
             },
             ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
+            dht_ipv4: PeerAdvertisementFamilyEndpoint {
+                endpoint: Some("203.0.113.9:48001".parse().expect("mapped endpoint")),
+                source_address: Some(Ipv4Addr::LOCALHOST.into()),
+                scope: Some(PeerAdvertisementEndpointScope::Mapped),
+            },
+            dht_ipv6: PeerAdvertisementFamilyEndpoint::outbound_only(),
             stopping: false,
         };
         let (_endpoint_sender, endpoint_receiver) = watch::channel(endpoint);
