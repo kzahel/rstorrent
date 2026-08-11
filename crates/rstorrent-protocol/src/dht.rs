@@ -53,7 +53,11 @@ impl NodeId {
 
     fn bucket_index(self, other: Self) -> Option<usize> {
         let shared = usize::from(self.shared_prefix_bits(other));
-        (shared < 160).then_some(159 - shared)
+        if shared < 160 {
+            Some(159 - shared)
+        } else {
+            None
+        }
     }
 }
 
@@ -1402,6 +1406,7 @@ mod tests {
             NodeId(bytes)
         };
         assert_eq!(local.shared_prefix_bits(local), 160);
+        assert_eq!(local.bucket_index(local), None);
         assert_eq!(local.shared_prefix_bits(at_depth(0, 1)), 0);
         assert_eq!(local.shared_prefix_bits(at_depth(17, 2)), 17);
         assert_eq!(local.shared_prefix_bits(at_depth(24, 3)), 24);
