@@ -11,7 +11,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from product_utp_reachability import validate_product_stop, validate_udp_mapping
+from product_utp_reachability import (
+    gateway_preflight,
+    validate_product_stop,
+    validate_udp_mapping,
+)
 from utp_remote_seed import eligible_public_ipv4, parse_mapping_entries
 from utp_rstorrent_wan import (
     WanFailure,
@@ -66,6 +70,26 @@ class UtpWanContractTests(unittest.TestCase):
         stopped["mappings_after_shutdown"] = 1
         with self.assertRaises(WanFailure):
             validate_product_stop(stopped)
+
+    def test_product_gateway_preflight_rejects_owned_residue(self) -> None:
+        with (
+            patch("product_utp_reachability.local_route_address", return_value="192.168.1.20"),
+            patch(
+                "product_utp_reachability.discover_control",
+                return_value=("http://gateway/control", "service"),
+            ),
+            patch(
+                "product_utp_reachability.list_mappings",
+                return_value=[
+                    {
+                        "NewInternalClient": "192.168.1.20",
+                        "NewPortMappingDescription": "RSTorrent",
+                    }
+                ],
+            ),
+        ):
+            with self.assertRaises(WanFailure):
+                gateway_preflight()
 
     def test_mapping_inventory_parser_preserves_finite_udp_identity(self) -> None:
         entries = parse_mapping_entries(

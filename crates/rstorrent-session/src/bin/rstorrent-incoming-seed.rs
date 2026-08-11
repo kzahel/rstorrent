@@ -108,27 +108,45 @@ async fn run() -> Result<(), SeedHarnessError> {
     })
     .await
     .map_err(|_| SeedHarnessError::ReadinessTimeout)?;
-    let mapping = if arguments.upnp {
-        Some(wait_for_mapping(&service, MappingWait::Tcp).await?)
-    } else {
-        None
+    let readiness = async {
+        let mapping = if arguments.upnp {
+            Some(wait_for_mapping(&service, MappingWait::Tcp).await?)
+        } else {
+            None
+        };
+        let udp_mapping = if arguments.await_udp_mapping {
+            Some(wait_for_mapping(&service, MappingWait::Udp).await?)
+        } else {
+            None
+        };
+        let staged_ipv6 = if arguments.staged_ipv6_pinhole {
+            Some(wait_for_ipv6_pinhole(&service, PinholeWait::Disabled).await?)
+        } else {
+            None
+        };
+        let utp_listen = if service.utp_snapshot().is_some() {
+            Some(session_udp_endpoint(&service).await?)
+        } else {
+            None
+        };
+        let mapping_statuses = mapping_statuses(&service).await?;
+        Ok::<_, SeedHarnessError>((
+            mapping,
+            udp_mapping,
+            staged_ipv6,
+            utp_listen,
+            mapping_statuses,
+        ))
+    }
+    .await;
+    let (mapping, udp_mapping, staged_ipv6, utp_listen, mapping_statuses) = match readiness {
+        Ok(readiness) => readiness,
+        Err(readiness_error) => {
+            service.shutdown().await?;
+            return Err(readiness_error);
+        }
     };
-    let udp_mapping = if arguments.await_udp_mapping {
-        Some(wait_for_mapping(&service, MappingWait::Udp).await?)
-    } else {
-        None
-    };
-    let staged_ipv6 = if arguments.staged_ipv6_pinhole {
-        Some(wait_for_ipv6_pinhole(&service, PinholeWait::Disabled).await?)
-    } else {
-        None
-    };
-    let utp_listen = if service.utp_snapshot().is_some() {
-        Some(session_udp_endpoint(&service).await?)
-    } else {
-        None
-    };
-    let (tcp_mapping_status, udp_mapping_status) = mapping_statuses(&service).await?;
+    let (tcp_mapping_status, udp_mapping_status) = mapping_statuses;
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "info_hash": hex(metainfo.info_hash),

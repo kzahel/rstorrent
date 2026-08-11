@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from upnp_external_seeding import (
     build_seed,
     delete_mapping,
     discover_control,
+    list_mappings,
     query_mapping,
     read_json_line,
     stop_seed,
@@ -29,6 +31,7 @@ from utp_rstorrent_wan import (
     SSH_ALIAS_PATTERN,
     RemoteProcess,
     WanFailure,
+    bounded_diagnostics,
     create_remote_run,
     remote_leecher_started_pid,
     stage_remote_leecher_fixture,
@@ -47,6 +50,32 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
     return parser.parse_args()
+
+
+def local_route_address() -> str:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("1.1.1.1", 53))
+        address = probe.getsockname()[0]
+    finally:
+        probe.close()
+    if address.startswith("127.") or address == "0.0.0.0":
+        raise WanFailure("local route did not select a usable IPv4 address")
+    return address
+
+
+def gateway_preflight() -> tuple[str, str, str]:
+    local_address = local_route_address()
+    control, service = discover_control(local_address)
+    owned = [
+        entry
+        for entry in list_mappings(control, service)
+        if entry.get("NewInternalClient") == local_address
+        and entry.get("NewPortMappingDescription") == MAPPING_DESCRIPTION
+    ]
+    if owned:
+        raise WanFailure("gateway preflight found an existing local RSTorrent mapping")
+    return local_address, control, service
 
 
 def start_product_seed(
@@ -80,9 +109,14 @@ def start_product_seed(
         if ready.get("event") != "ready" or ready.get("registrations") != 1:
             raise WanFailure("product seed did not become registered and UDP-mapped")
         return process, ready
-    except BaseException:
+    except BaseException as error:
         terminate(process)
-        raise
+        stderr = process.stderr.read() if process.stderr is not None else ""
+        detail = bounded_diagnostics(stderr.splitlines())
+        raise WanFailure(
+            "product seed failed before UDP-mapped readiness"
+            + (f": {detail[-5:]}" if detail else "")
+        ) from error
 
 
 def parse_endpoint(value: object, field: str) -> tuple[str, int]:
@@ -166,6 +200,7 @@ def run(host: str) -> dict[str, Any]:
     if not SSH_ALIAS_PATTERN.fullmatch(host) or host.startswith("-"):
         raise WanFailure("SSH host alias is malformed")
     binary = build_seed(ROOT)
+    preflight_address, preflight_control, preflight_service = gateway_preflight()
     remote_run: str | None = None
     remote: RemoteProcess | None = None
     remote_pid: int | None = None
@@ -195,7 +230,9 @@ def run(host: str) -> dict[str, Any]:
                 mapping
             )
             verify_direct_route(host, external_address)
-            control, service = discover_control(local_address)
+            if local_address != preflight_address:
+                raise WanFailure("product mapping used a different local route than preflight")
+            control, service = preflight_control, preflight_service
             verify_installed_mapping(
                 control,
                 service,

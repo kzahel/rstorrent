@@ -378,6 +378,67 @@ def delete_mapping(
         raise GateFailure("independent mapping delete returned a gateway fault")
 
 
+def list_mappings(
+    control: str,
+    service: str,
+    maximum_entries: int = 256,
+) -> list[dict[str, str]]:
+    if not 1 <= maximum_entries <= 256:
+        raise GateFailure("independent mapping inventory bound is invalid")
+    entries: list[dict[str, str]] = []
+    action = "GetGenericPortMappingEntry"
+    for index in range(maximum_entries):
+        body = (
+            '<?xml version="1.0"?>'
+            '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+            f'<s:Body><u:{action} xmlns:u="{service}">'
+            f"<NewPortMappingIndex>{index}</NewPortMappingIndex>"
+            f"</u:{action}></s:Body></s:Envelope>"
+        ).encode()
+        request = urllib.request.Request(
+            control,
+            data=body,
+            headers={
+                "Content-Type": 'text/xml; charset="utf-8"',
+                "SOAPAction": f'"{service}#{action}"',
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = response.read(256 * 1024 + 1)
+        except urllib.error.HTTPError as error:
+            payload = error.read(256 * 1024 + 1)
+        if len(payload) > 256 * 1024:
+            raise GateFailure("independent mapping inventory exceeded its body bound")
+        try:
+            document = ET.fromstring(payload)
+        except ET.ParseError as error:
+            raise GateFailure("independent mapping inventory returned malformed XML") from error
+        values = {
+            local_name(element.tag): (element.text or "").strip()
+            for element in document.iter()
+        }
+        error_code = values.get("errorCode")
+        if error_code == "713":
+            return entries
+        if error_code is not None:
+            raise GateFailure("independent mapping inventory returned a gateway fault")
+        required = (
+            "NewExternalPort",
+            "NewProtocol",
+            "NewInternalClient",
+            "NewInternalPort",
+            "NewEnabled",
+            "NewPortMappingDescription",
+            "NewLeaseDuration",
+        )
+        if not all(field in values for field in required):
+            raise GateFailure("independent mapping inventory omitted an authoritative field")
+        entries.append(values)
+    raise GateFailure("independent mapping inventory exceeded its entry bound")
+
+
 def remote_command(source: str) -> str:
     encoded = base64.b64encode(source.encode()).decode()
     return f"'import base64;exec(base64.b64decode(\"{encoded}\"))'"
