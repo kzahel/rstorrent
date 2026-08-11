@@ -108,8 +108,13 @@ async fn run() -> Result<(), SeedHarnessError> {
     })
     .await
     .map_err(|_| SeedHarnessError::ReadinessTimeout)?;
-    let mapping = if arguments.upnp {
-        Some(wait_for_mapping(&service).await?)
+    let mapping = if arguments.upnp && !arguments.await_udp_mapping {
+        Some(wait_for_mapping(&service, MappingWait::Tcp).await?)
+    } else {
+        None
+    };
+    let udp_mapping = if arguments.await_udp_mapping {
+        Some(wait_for_mapping(&service, MappingWait::Udp).await?)
     } else {
         None
     };
@@ -138,6 +143,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_bytes_high_water": ready.read_bytes_high_water,
         "payload_bytes_sent": ready.payload_bytes_sent,
         "mapping": mapping,
+        "udp_mapping": udp_mapping,
         "utp_listen": utp_listen,
         "ipv6_listener": staged_ipv6.as_ref().map(|(_, endpoint)| endpoint.to_string()),
         "ipv6_pinhole": staged_ipv6.as_ref().map(|(status, _)| status),
@@ -573,6 +579,7 @@ struct Arguments {
     storage_root: PathBuf,
     metainfo: PathBuf,
     upnp: bool,
+    await_udp_mapping: bool,
     staged_ipv6_pinhole: bool,
     controlled_local_network: bool,
     utp: bool,
@@ -599,6 +606,7 @@ impl Arguments {
         let mut storage_root = None;
         let mut metainfo = None;
         let mut upnp = false;
+        let mut await_udp_mapping = false;
         let mut staged_ipv6_pinhole = false;
         let mut controlled_local_network = false;
         let mut utp = false;
@@ -623,6 +631,15 @@ impl Arguments {
                 if std::mem::replace(&mut upnp, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--upnp may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--await-udp-mapping" {
+                if std::mem::replace(&mut await_udp_mapping, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--await-udp-mapping may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -806,6 +823,11 @@ impl Arguments {
                 "--upnp and --staged-ipv6-pinhole are mutually exclusive".to_owned(),
             ));
         }
+        if await_udp_mapping && (!upnp || !utp) {
+            return Err(SeedHarnessError::Arguments(
+                "--await-udp-mapping requires --upnp and --utp".to_owned(),
+            ));
+        }
         if controlled_local_network && (upnp || staged_ipv6_pinhole) {
             return Err(SeedHarnessError::Arguments(
                 "--controlled-local-network cannot request a port mapping".to_owned(),
@@ -826,6 +848,7 @@ impl Arguments {
             metainfo: metainfo
                 .ok_or_else(|| SeedHarnessError::Arguments("--metainfo is required".to_owned()))?,
             upnp,
+            await_udp_mapping,
             staged_ipv6_pinhole,
             controlled_local_network,
             utp,
@@ -1045,8 +1068,24 @@ fn pinhole_diagnostic_json(event: &str, result: Ipv6PinholeDiagnosticResult) -> 
     }
 }
 
+#[derive(Clone, Copy)]
+enum MappingWait {
+    Tcp,
+    Udp,
+}
+
+impl MappingWait {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Tcp => "TCP",
+            Self::Udp => "UDP/uTP",
+        }
+    }
+}
+
 async fn wait_for_mapping(
     service: &ApplicationService,
+    target: MappingWait,
 ) -> Result<PortMappingStatus, SeedHarnessError> {
     let subscription = service
         .subscribe(SubscriptionSpec {
@@ -1073,31 +1112,40 @@ async fn wait_for_mapping(
                         ViewSnapshot::TorrentList {
                             client_settings, ..
                         },
-                } => Some(client_settings.port_mapping_status),
+                } => Some(match target {
+                    MappingWait::Tcp => client_settings.port_mapping_status,
+                    MappingWait::Udp => client_settings.udp_port_mapping_status,
+                }),
                 ViewUpdatePayload::Patch {
                     patch:
                         rstorrent_session::ViewPatch::TorrentList {
                             client_settings: Some(client_settings),
                             ..
                         },
-                } => Some(client_settings.port_mapping_status),
+                } => Some(match target {
+                    MappingWait::Tcp => client_settings.port_mapping_status,
+                    MappingWait::Udp => client_settings.udp_port_mapping_status,
+                }),
                 _ => None,
             };
             match status {
                 Some(status @ PortMappingStatus::Mapped { .. }) => return Ok(status),
                 Some(PortMappingStatus::Failed { stage, detail }) => {
                     return Err(SeedHarnessError::Catalog(format!(
-                        "UPnP mapping failed during {stage:?}: {detail}"
+                        "{} UPnP mapping failed during {stage:?}: {detail}",
+                        target.label()
                     )));
                 }
                 Some(PortMappingStatus::RenewalFailed { detail, .. }) => {
                     return Err(SeedHarnessError::Catalog(format!(
-                        "UPnP mapping renewal failed before readiness: {detail}"
+                        "{} UPnP mapping renewal failed before readiness: {detail}",
+                        target.label()
                     )));
                 }
                 Some(PortMappingStatus::CleanupFailed { detail, .. }) => {
                     return Err(SeedHarnessError::Catalog(format!(
-                        "prior UPnP mapping cleanup remains uncertain: {detail}"
+                        "prior {} UPnP mapping cleanup remains uncertain: {detail}",
+                        target.label()
                     )));
                 }
                 _ => {}
@@ -1232,6 +1280,40 @@ mod tests {
         )
         .expect("parse UPnP harness arguments");
         assert!(upnp.upnp);
+        assert!(!upnp.await_udp_mapping);
+        let udp_mapping = Arguments::parse(
+            [
+                "--upnp",
+                "--utp",
+                "--await-udp-mapping",
+                "--profile-root",
+                "profile",
+                "--storage-root",
+                "storage",
+                "--metainfo",
+                "fixture.torrent",
+            ]
+            .into_iter()
+            .map(OsString::from),
+        )
+        .expect("parse UDP mapping readiness arguments");
+        assert!(udp_mapping.await_udp_mapping);
+        assert!(
+            Arguments::parse(
+                [
+                    "--await-udp-mapping",
+                    "--profile-root",
+                    "profile",
+                    "--storage-root",
+                    "storage",
+                    "--metainfo",
+                    "fixture.torrent",
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .is_err()
+        );
         let staged = Arguments::parse(
             [
                 "--staged-ipv6-pinhole",
