@@ -1610,7 +1610,7 @@ async fn run(config: Config) -> ProbeResult {
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
             dht: dht.as_ref().map(|runtime| runtime.service.handle()),
-            udp_trackers: prepared.trackers,
+            trackers: prepared.trackers,
         };
         let checkpoints = Arc::new(ProbeCheckpointSink);
         tokio::spawn(async move {

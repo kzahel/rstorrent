@@ -2563,7 +2563,7 @@ impl ApplicationService {
                             resume_validation: ResumeValidationIntent::FastEligible,
                             download_missing: true,
                             dht: None,
-                            udp_trackers: Some(Vec::new()),
+                            trackers: Some(Vec::new()),
                         },
                         checkpoints,
                         task_control,
@@ -2688,7 +2688,7 @@ impl ApplicationService {
             resume_validation,
             download_missing: resume.desired_running,
             dht: None,
-            udp_trackers: Some(Vec::new()),
+            trackers: Some(Vec::new()),
         };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),

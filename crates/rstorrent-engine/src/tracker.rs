@@ -185,6 +185,7 @@ pub struct TrackerRuntimeSnapshot {
 pub(crate) struct TrackerRecord {
     id: TrackerId,
     endpoint: TrackerEndpoint,
+    request_url: String,
     display_url: String,
     tier: u32,
     position: u32,
@@ -211,10 +212,12 @@ pub(crate) struct TrackerRecord {
 
 impl TrackerRecord {
     fn new(id: TrackerId, config: TrackerConfig) -> Self {
+        let display_url = redacted_tracker_label(&config.url);
         Self {
             id,
             endpoint: config.endpoint,
-            display_url: config.url,
+            request_url: config.url,
+            display_url,
             tier: config.tier,
             position: config.position,
             source: config.source,
@@ -431,7 +434,7 @@ impl TrackerSchedule {
                 }
                 return TrackerAction::Announce {
                     id: record.id,
-                    url: record.display_url.clone(),
+                    url: record.request_url.clone(),
                     endpoint: record.endpoint.clone(),
                     tier: record.tier,
                     source: record.source,
@@ -481,7 +484,7 @@ impl TrackerSchedule {
                 }
                 return TrackerAction::Announce {
                     id: record.id,
-                    url: record.display_url.clone(),
+                    url: record.request_url.clone(),
                     endpoint: record.endpoint.clone(),
                     tier: record.tier,
                     source: record.source,
@@ -573,6 +576,7 @@ impl TrackerSchedule {
         self.reset_round();
     }
 
+    #[cfg(test)]
     pub(crate) fn succeeded(
         &mut self,
         id: TrackerId,
@@ -751,6 +755,24 @@ impl TrackerRecord {
     }
 }
 
+pub(crate) fn redacted_tracker_label(value: &str) -> String {
+    let Ok(url) = url::Url::parse(value) else {
+        return "tracker".to_owned();
+    };
+    let Some(host) = url.host_str() else {
+        return "tracker".to_owned();
+    };
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    }
+}
+
 fn bounded_tracker_error(detail: &str) -> String {
     let mut bounded = String::with_capacity(detail.len().min(MAX_TRACKER_ERROR_LENGTH));
     for character in detail.chars() {
@@ -877,6 +899,18 @@ mod tests {
                 super::TrackerTransport::Udp,
                 super::TrackerTransport::Http,
                 super::TrackerTransport::Https,
+            ]
+        );
+        assert_eq!(
+            snapshot
+                .records
+                .iter()
+                .map(|record| record.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "udp://tracker.example:6969",
+                "http://tracker.example",
+                "https://tracker.example",
             ]
         );
 

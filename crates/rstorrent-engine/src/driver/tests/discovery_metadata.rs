@@ -428,6 +428,106 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
 }
 
 #[tokio::test]
+async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
+    let payload = b"HTTP tracker-discovered payload".to_vec();
+    let info = single_file_info(&payload);
+    let info_hash: [u8; 20] = Sha1::digest(&info).into();
+    let output_path = test_path("http-tracker-magnet-output.bin");
+
+    let peer_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind HTTP tracker-discovered peer");
+    let peer_address = peer_listener.local_addr().expect("peer address");
+    let peer_task = tokio::spawn(serve_metadata_then_piece(
+        peer_listener,
+        info,
+        payload.clone(),
+        vec![0x80],
+    ));
+
+    let tracker_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind scripted HTTP tracker");
+    let tracker_address = tracker_listener.local_addr().expect("tracker address");
+    let tracker_task = tokio::spawn(serve_one_shot_http_tracker(
+        tracker_listener,
+        info_hash,
+        peer_address,
+    ));
+    let magnet = format!(
+        "magnet:?xt=urn:btih:{}&tr=http%3A%2F%2F{tracker_address}%2Fannounce%2Fprivate-token%3Fpasskey%3Dfixture",
+        hex(&info_hash)
+    );
+    let parsed = Magnet::parse(&magnet).expect("parse HTTP tracker magnet");
+    assert!(parsed.peer_hints.is_empty());
+    assert_eq!(parsed.trackers.len(), 1);
+    assert_eq!(
+        parsed.trackers[0].transport(),
+        rstorrent_protocol::magnet::TrackerUrlTransport::Http
+    );
+
+    let network = loopback_network(Duration::from_secs(2));
+    let control = DownloadControl::new();
+    let activity = Arc::new(RecordingActivitySink::default());
+    control.set_activity_sink(activity.clone());
+    let mut peers = TorrentPeerCoordinator::from_magnet(&parsed, network, control.clone(), None)
+        .await
+        .expect("prepare HTTP tracker discovery");
+    assert!(peers.registry_is_empty());
+
+    let report = run_magnet_download_with_peers(
+        MagnetDownloadConfig {
+            magnet,
+            output_path: output_path.clone(),
+            network,
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        },
+        control,
+        parsed,
+        &mut peers,
+    )
+    .await
+    .expect("HTTP tracker-discovered magnet download");
+
+    assert_eq!(peers.registry_len(), 1);
+    assert_eq!(report.info_hash, info_hash);
+    assert_eq!(
+        tokio::fs::read(&output_path)
+            .await
+            .expect("published HTTP tracker output"),
+        payload
+    );
+    assert!(peers.peers.with_state(|state| {
+        state
+            .registry
+            .find_endpoint(PeerEndpoint::new(peer_address).expect("HTTP tracker endpoint"))
+            .is_some_and(|record| record.sources().contains(PeerSource::Tracker))
+    }));
+    let rendered_activity = format!(
+        "{:?}",
+        activity
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    );
+    assert!(!rendered_activity.contains("passkey=fixture"));
+
+    peers
+        .shutdown_tracker()
+        .await
+        .expect("stop HTTP tracker manager");
+    let request_target = tracker_task.await.expect("scripted HTTP tracker task");
+    assert!(request_target.starts_with("/announce/private-token?passkey=fixture&"));
+    assert!(request_target.contains("info_hash="));
+    assert!(request_target.contains("peer_id="));
+    peer_task.await.expect("scripted peer task");
+    let _ = tokio::fs::remove_file(output_path).await;
+}
+
+#[tokio::test]
 async fn initial_tracker_operations_start_concurrently_and_merge_results() {
     let barrier = Arc::new(Barrier::new(3));
     let mut tracker_addresses = Vec::new();

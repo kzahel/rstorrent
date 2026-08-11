@@ -2386,6 +2386,70 @@ async fn serve_one_shot_udp_tracker(
         .expect("send announce response");
 }
 
+async fn serve_one_shot_http_tracker(
+    listener: TcpListener,
+    info_hash: [u8; 20],
+    peer: SocketAddr,
+) -> String {
+    let (mut stream, _) = listener.accept().await.expect("accept HTTP tracker client");
+    let mut request = Vec::new();
+    loop {
+        let mut chunk = [0_u8; 1024];
+        let length = stream
+            .read(&mut chunk)
+            .await
+            .expect("read HTTP tracker request");
+        assert_ne!(length, 0, "HTTP tracker request ended before headers");
+        request.extend_from_slice(&chunk[..length]);
+        assert!(
+            request.len() <= 16 * 1024,
+            "HTTP tracker request is bounded"
+        );
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+    let request = String::from_utf8(request).expect("ASCII HTTP tracker request");
+    let request_target = request
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("GET "))
+        .and_then(|line| line.strip_suffix(" HTTP/1.1"))
+        .expect("HTTP tracker GET target")
+        .to_owned();
+    let encoded_hash = info_hash
+        .iter()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect::<String>();
+    assert!(request_target.contains(&format!("info_hash={encoded_hash}")));
+
+    let SocketAddr::V4(peer) = peer else {
+        panic!("scripted HTTP tracker peer must be IPv4");
+    };
+    let mut compact_peer = Vec::from(peer.ip().octets());
+    compact_peer.extend_from_slice(&peer.port().to_be_bytes());
+    let mut body = b"d8:intervali600e5:peers6:".to_vec();
+    body.extend_from_slice(&compact_peer);
+    body.extend_from_slice(b"10:tracker id7:fixturee");
+    let headers = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(headers.as_bytes())
+        .await
+        .expect("write HTTP tracker headers");
+    stream
+        .write_all(&body)
+        .await
+        .expect("write HTTP tracker body");
+    stream
+        .shutdown()
+        .await
+        .expect("close HTTP tracker response");
+    request_target
+}
+
 async fn serve_rejecting_udp_tracker(socket: UdpSocket) {
     let mut request = [0; 16];
     let (length, client) = socket

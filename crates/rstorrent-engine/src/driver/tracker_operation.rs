@@ -68,7 +68,7 @@ pub(crate) enum TrackerOperationFailure {
     },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct TrackerOperationSources {
     pub(crate) ipv4: Option<IpAddr>,
     pub(crate) ipv6: Option<IpAddr>,
@@ -305,21 +305,7 @@ pub(crate) fn random_nonzero_u32() -> Result<u32, DownloadError> {
 }
 
 pub(crate) fn redacted_tracker_label(value: &str) -> String {
-    let Ok(url) = url::Url::parse(value) else {
-        return "tracker".to_owned();
-    };
-    let Some(host) = url.host_str() else {
-        return "tracker".to_owned();
-    };
-    let host = if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.to_owned()
-    };
-    match url.port() {
-        Some(port) => format!("{}://{host}:{port}", url.scheme()),
-        None => format!("{}://{host}", url.scheme()),
-    }
+    crate::tracker::redacted_tracker_label(value)
 }
 
 pub(crate) fn compact_peer_address(
