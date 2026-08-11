@@ -279,7 +279,7 @@ export type ChooseDownloadRootResponse = { root: StorageRootSnapshot | null, };
 
 export type CreateMediaUrlRequest = { torrent_id: string, file_index: number, };
 
-export type MediaFileAvailability = "available" | "metadata_unavailable" | "invalid_file" | "padding" | "not_published" | "checking" | "unverified" | "storage_unavailable" | "removing" | "server_unavailable" | "resource_limit";
+export type MediaFileAvailability = "available" | "streamable" | "metadata_unavailable" | "invalid_file" | "padding" | "not_published" | "checking" | "unverified" | "storage_unavailable" | "removing" | "server_unavailable" | "resource_limit";
 
 export type MediaUrlOutcome = { "type": "created", url: string, idle_timeout_millis: string, absolute_timeout_millis: string, } | { "type": "unavailable", reason: MediaFileAvailability, };
 

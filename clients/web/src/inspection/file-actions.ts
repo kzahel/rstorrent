@@ -53,7 +53,9 @@ export function resolveFileActions(
   return FILE_ACTIONS.filter(
     (action) =>
       (action.id !== "open" ||
-        (targetCount === 1 && openAvailability === "available")) &&
+        (targetCount === 1 &&
+          (openAvailability === "available" ||
+            openAvailability === "streamable"))) &&
       (action.id !== "download_now" || skippedTargetCount > 0),
   ).map((action) => ({
     ...action,

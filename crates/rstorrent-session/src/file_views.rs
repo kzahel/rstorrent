@@ -253,14 +253,17 @@ impl FileProgressModel {
             padding: file.padding,
             done_bytes: counters.done.to_string(),
             verified_bytes: counters.verified.to_string(),
-            media_availability: if file.padding {
-                MediaFileAvailability::Padding
-            } else if self.catalog.media_availability != MediaFileAvailability::Available {
-                self.catalog.media_availability
-            } else if counters.verified == file.length {
-                MediaFileAvailability::Available
-            } else {
-                MediaFileAvailability::Unverified
+            media_availability: match self.catalog.media_availability {
+                _ if file.padding => MediaFileAvailability::Padding,
+                MediaFileAvailability::Streamable if self.catalog.selection.is_wanted(index) => {
+                    MediaFileAvailability::Streamable
+                }
+                MediaFileAvailability::Streamable => MediaFileAvailability::Unverified,
+                MediaFileAvailability::Available if counters.verified == file.length => {
+                    MediaFileAvailability::Available
+                }
+                MediaFileAvailability::Available => MediaFileAvailability::Unverified,
+                availability => availability,
             },
         }
     }
@@ -606,6 +609,33 @@ mod tests {
         assert_eq!(rows[1].media_availability, MediaFileAvailability::Available);
         assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
         assert_eq!(rows[2].media_availability, MediaFileAvailability::Available);
+        assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
+    }
+
+    #[test]
+    fn active_media_is_streamable_only_for_wanted_non_padding_files() {
+        let model = FileProgressModel::new_with_media(
+            &fixture(),
+            &[2],
+            &[],
+            None,
+            MediaFileAvailability::Streamable,
+        )
+        .expect("active model");
+        let rows = model.rows();
+        assert_eq!(
+            rows[0].media_availability,
+            MediaFileAvailability::Streamable
+        );
+        assert_eq!(
+            rows[1].media_availability,
+            MediaFileAvailability::Streamable
+        );
+        assert_eq!(rows[2].selection, Some(FileSelectionView::Skipped));
+        assert_eq!(
+            rows[2].media_availability,
+            MediaFileAvailability::Unverified
+        );
         assert_eq!(rows[3].media_availability, MediaFileAvailability::Padding);
     }
 

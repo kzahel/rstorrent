@@ -5395,6 +5395,8 @@ fn media_catalog_availability(
         MediaFileAvailability::Checking
     } else if !storage_roots.contains_key(&resume.storage_root) {
         MediaFileAvailability::StorageUnavailable
+    } else if torrent.state == TorrentState::Downloading {
+        MediaFileAvailability::Streamable
     } else if resume.storage_state != StorageState::Published
         || !matches!(
             resume.payload_state,

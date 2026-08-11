@@ -17,6 +17,10 @@ describe("file selection actions", () => {
       id: "open",
       disabled: false,
     });
+    expect(resolveFileActions(1, 0, false, undefined, "streamable")[0]).toMatchObject({
+      id: "open",
+      disabled: false,
+    });
     expect(
       resolveFileActions(1, 0, false, undefined, "unverified").some(
         (action) => action.id === "open",

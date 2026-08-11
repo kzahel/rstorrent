@@ -1459,6 +1459,7 @@ function mediaUnavailableMessage(reason: import("../../api").MediaFileAvailabili
     case "resource_limit":
       return "Too many files are already open; try again shortly";
     case "available":
+    case "streamable":
       return "The file is temporarily unavailable";
   }
 }
