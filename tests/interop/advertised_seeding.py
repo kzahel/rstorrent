@@ -33,6 +33,7 @@ from upnp_external_seeding import (
     stop_seed,
     terminate,
 )
+from utp_reference_oracle import OracleFailure, stats_snapshot
 
 
 PROTOCOL_ID = 0x41727101980
@@ -171,6 +172,7 @@ class ControlledDhtRouter:
         self.socket.settimeout(0.2)
         self.port = self.socket.getsockname()[1]
         self.seed_port: int | None = None
+        self.seed_client: tuple[str, int] | None = None
         self.seed_announced = threading.Event()
         self.get_peers_queries = 0
         self.announce_queries = 0
@@ -193,7 +195,7 @@ class ControlledDhtRouter:
             if self.seed_port == expected:
                 return
             time.sleep(0.02)
-        raise ScenarioFailure("DHT did not observe the selected mapped TCP port")
+        raise ScenarioFailure("DHT did not observe the selected UDP/uTP port")
 
     def close(self) -> None:
         self.finished.set()
@@ -269,14 +271,18 @@ class ControlledDhtRouter:
                         raise ScenarioFailure("DHT announce used the wrong info hash")
                     if arguments.get(b"token") != b"fixture":
                         raise ScenarioFailure("DHT announce did not reuse the node token")
-                    if arguments.get(b"implied_port", 0) != 0:
-                        raise ScenarioFailure("DHT announce unexpectedly implied the UDP port")
                     port = arguments.get(b"port")
                     if not isinstance(port, int) or port <= 1:
-                        raise ScenarioFailure("DHT announce omitted the explicit TCP port")
-                    self.seed_port = port
-                    self.announce_queries += 1
-                    self.seed_announced.set()
+                        raise ScenarioFailure("DHT announce omitted the explicit UDP/uTP port")
+                    if self.seed_client is None:
+                        if arguments.get(b"implied_port", 0) != 0:
+                            raise ScenarioFailure(
+                                "RSTorrent DHT announce unexpectedly implied the UDP port"
+                            )
+                        self.seed_client = client
+                        self.seed_port = port
+                        self.announce_queries += 1
+                        self.seed_announced.set()
                     response = self._response(transaction, client)
                 else:
                     continue
@@ -332,20 +338,24 @@ def leech(
     expected_sha256: str,
     *,
     dht_router: ControlledDhtRouter | None,
-) -> None:
+    transport: str,
+) -> tuple[dict[str, int], int]:
+    if transport not in {"tcp", "utp"}:
+        raise ScenarioFailure(f"unknown leecher transport {transport}")
+    force_utp = transport == "utp"
     settings: dict[str, object] = {
         "listen_interfaces": "127.0.0.1:0",
         "enable_dht": dht_router is not None,
         "enable_lsd": False,
         "enable_upnp": False,
         "enable_natpmp": False,
-        "enable_incoming_utp": False,
-        "enable_outgoing_utp": False,
+        "enable_incoming_utp": force_utp,
+        "enable_outgoing_utp": force_utp,
         # libtorrent gates torrent DHT announces (and their peer-result
         # callback) on having a listening socket, even for this leecher-only
         # fixture.
-        "enable_incoming_tcp": dht_router is not None,
-        "enable_outgoing_tcp": True,
+        "enable_incoming_tcp": dht_router is not None and not force_utp,
+        "enable_outgoing_tcp": not force_utp,
         "alert_queue_size": 1000,
     }
     if dht_router is not None:
@@ -364,6 +374,7 @@ def leech(
     session = lt.session(settings)
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
+    peer_high_water = 0
     try:
         if dht_router is not None:
             session.add_dht_node(("127.0.0.1", dht_router.port))
@@ -383,6 +394,7 @@ def leech(
                 next_dht_announce = time.monotonic() + 1
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
             status = handle.status()
+            peer_high_water = max(peer_high_water, len(handle.get_peer_info()))
             if status.errc.value() != 0:
                 raise ScenarioFailure(f"libtorrent leecher failed: {status.errc.message()}")
             if status.is_seeding:
@@ -396,6 +408,20 @@ def leech(
         payload = output_root / "external-seed.bin"
         if hashlib.sha256(payload.read_bytes()).hexdigest() != expected_sha256:
             raise ScenarioFailure("libtorrent payload failed the fixture SHA-256 check")
+        try:
+            stats = stats_snapshot(session, diagnostics, deadline)
+        except OracleFailure as error:
+            raise ScenarioFailure(str(error)) from error
+        if force_utp:
+            if stats["peer.num_tcp_peers"] != 0:
+                raise ScenarioFailure("DHT-only leecher observed a TCP peer")
+            if stats["utp.utp_packets_in"] <= 0 or stats["utp.utp_packets_out"] <= 0:
+                raise ScenarioFailure("DHT-only leecher lacked bidirectional uTP packets")
+            if peer_high_water != 1:
+                raise ScenarioFailure(
+                    f"DHT-only leecher peer high water was {peer_high_water}, expected 1"
+                )
+        return stats, peer_high_water
     finally:
         if handle is not None and handle.is_valid():
             session.remove_torrent(handle)
@@ -423,6 +449,7 @@ def run_tracker(binary: Path, root: Path) -> tuple[int, int]:
                 root / "tracker-output",
                 str(fixture["payload_sha256"]),
                 dht_router=None,
+                transport="tcp",
             )
         except ScenarioFailure as error:
             raise ScenarioFailure(f"{error}\ntracker_events={tracker.events[-20:]}") from error
@@ -438,34 +465,60 @@ def run_tracker(binary: Path, root: Path) -> tuple[int, int]:
         tracker.close()
 
 
-def run_dht(binary: Path, root: Path) -> tuple[int, int]:
+def endpoint_port(value: object, field: str) -> int:
+    if not isinstance(value, str):
+        raise ScenarioFailure(f"seed readiness omitted {field}")
+    _host, separator, port_text = value.rpartition(":")
+    if separator != ":":
+        raise ScenarioFailure(f"seed readiness has malformed {field}")
+    try:
+        port = int(port_text)
+    except ValueError as error:
+        raise ScenarioFailure(f"seed readiness has malformed {field}") from error
+    if not 1 < port <= 65535:
+        raise ScenarioFailure(f"seed readiness has invalid {field}")
+    return port
+
+
+def run_dht(binary: Path, root: Path) -> tuple[int, int, int, int]:
     root.mkdir(parents=True)
     fixture = create_fixture(root)
     router = ControlledDhtRouter(str(fixture["info_hash"]))
     router.start()
     seed: subprocess.Popen[str] | None = None
     try:
-        seed, _ready = start_seed(
+        seed, ready = start_seed(
             binary,
             fixture,
-            ["--dht-bootstrap", f"127.0.0.1:{router.port}"],
+            ["--utp", "--dht-bootstrap", f"127.0.0.1:{router.port}"],
         )
         router.wait_seed_announced()
+        utp_port = endpoint_port(ready.get("utp_listen"), "utp_listen")
+        router.wait_seed_port(utp_port)
         try:
-            leech(
+            stats, peer_high_water = leech(
                 lt.torrent_info(str(fixture["torrent"])),
                 root / "dht-output",
                 str(fixture["payload_sha256"]),
                 dht_router=router,
+                transport="utp",
             )
         except ScenarioFailure as error:
             raise ScenarioFailure(
                 f"{error}\ndht_get_peers={router.get_peers_queries} "
                 f"dht_announces={router.announce_queries} seed_port={router.seed_port}"
             ) from error
-        stop_seed(seed)
+        stopped = stop_seed(seed)
         seed = None
-        return router.get_peers_queries, router.seed_port or 0
+        utp = stopped.get("utp_before_shutdown")
+        if not isinstance(utp, dict) or utp.get("connection_high_water") != 1:
+            raise ScenarioFailure("RSTorrent did not observe exactly one incoming uTP connection")
+        return (
+            router.get_peers_queries,
+            router.seed_port or 0,
+            peer_high_water,
+            stats["peer.num_tcp_peers"],
+        )
     finally:
         if seed is not None:
             terminate(seed)
@@ -592,7 +645,9 @@ def main() -> int:
         if any(argument != "--mapped-external" for argument in sys.argv[1:]):
             raise ScenarioFailure("unknown argument")
         tracker_announces, tracker_port = run_tracker(binary, root / "tracker")
-        dht_queries, dht_port = run_dht(binary, root / "dht")
+        dht_queries, dht_port, dht_peer_high_water, dht_tcp_peers = run_dht(
+            binary, root / "dht"
+        )
         mapped_result = (
             run_mapped_external(repository, binary, root / "mapped")
             if mapped_external
@@ -601,8 +656,8 @@ def main() -> int:
         print(f"libtorrent_binding_version={lt.__version__}")
         print(f"libtorrent_native_version={lt.version}")
         print(
-            "tracker_only=verified dht_only=verified explicit_peer_hint=false "
-            "payload_sha256=verified"
+            "tracker_only_tcp=verified dht_only_utp=verified "
+            "explicit_peer_hint=false payload_sha256=verified"
         )
         print(
             f"tracker_leecher_announces={tracker_announces} "
@@ -610,7 +665,9 @@ def main() -> int:
         )
         print(
             f"dht_get_peers_queries={dht_queries} "
-            f"dht_seed_port_nonzero={dht_port > 1}"
+            f"dht_seed_port_nonzero={dht_port > 1} "
+            f"dht_peer_high_water={dht_peer_high_water} "
+            f"dht_tcp_peers={dht_tcp_peers}"
         )
         if mapped_result is not None:
             mapped_port, mapped_tracker_announces, mapped_dht_announces = mapped_result

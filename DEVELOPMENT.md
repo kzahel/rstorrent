@@ -437,8 +437,10 @@ UDP/uTP resource counters. A safely cleaned timeout or lack of a uTP-capable
 peer is evidence-limited rather than a deterministic test failure.
 
 The advertisement profile independently discovers a completed RSTorrent seed
-through either a controlled UDP tracker or DHT and hash-verifies both
-libtorrent downloads without an explicit peer hint:
+through either a controlled UDP tracker over TCP or DHT over forced uTP and
+hash-verifies both libtorrent downloads without an explicit peer hint. The DHT
+case verifies the product's explicit UDP-listener port on the wire, exactly one
+peer, bidirectional uTP packets, and zero TCP peers:
 
 ```bash
 uv run --project tests/interop --locked \
