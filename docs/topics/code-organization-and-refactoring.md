@@ -33,6 +33,16 @@ specific peer bootstrap paths exposed by MSE. No standalone refactor is
 selected. The completed storage slice does not justify a generic resume,
 storage, or recovery framework.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds one
+task-free bandwidth core inside the engine and one joined upload/download
+service under the existing session-network owner. A fixed registration on
+`TorrentPeerHandle` carries policy to initiated and accepted TCP/uTP I/O;
+initiated peer I/O became genuinely duplex so local upload waits do not block
+reads. Finite scheduling's one outstanding directional grant per torrent is a
+concrete fairness invariant, not a generic scheduler layer. No crate, per-
+torrent task, transport trait, or persistence abstraction was added.
+
 Topic: `code-organization-and-refactoring`
 
 ## Scope

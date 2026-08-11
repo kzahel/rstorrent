@@ -17,8 +17,12 @@ survive download-to-seed transitions, and routed incoming connections attach
 to that owner with complete upload observations. Ordinary Peers/Swarm mapping
 and the unchanged headless product adapter consume those facts; the
 authenticated gateway proof follows pinned libtorrent and RSTorrent peers
-through exact transfer, removal, pause, and terminal zero ownership.
-Finite bandwidth and seeding goals remain future slices.
+through exact transfer, removal, pause, and terminal zero ownership. Completed
+Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds live
+session/torrent upload and download limits at the common established-peer
+boundary for initiated and accepted TCP/uTP streams. Ratio/time seeding goals
+remain a future slice.
 
 Completed very-high-priority Tactical
 [`124`](../tactical/124-duplex-verified-piece-upload.md) replaces the
@@ -546,8 +550,9 @@ contracts, the shared browser/Tauri Settings surface, and equivalent headless
 behavior. Tactical `097` now applies that persisted group live with explicit
 configured/effective convergence and no schema change.
 Pending-handshake and incoming-slack tuning remain internal safety policy.
-Finite bandwidth and ratio/time seeding goals wait for their own enforcing and
-durability owners.
+Tactical `134` subsequently supplies finite session/torrent peer-transfer
+limits. Durable accounting/reset policy and ratio/time seeding goals still
+wait for their own owners.
 
 Controlled product evidence persists automatic/37/one through the production
 web gateway, reopens onto an observed nonzero listener, and seeds an exact
@@ -848,8 +853,8 @@ Tactical
 [`097`](../tactical/097-live-client-settings-and-replaceable-session-generations.md)
 now completes live convergence for listener, preferred port, UPnP mapping,
 session peer limit, and upload slots through one stable session-network owner.
-Finite bandwidth, durable accounting/reset policy, and ratio/time goals remain
-separate future slices.
+Tactical `134` extends that owner with finite bandwidth convergence; durable
+accounting/reset policy and ratio/time goals remain separate future slices.
 Completed Tactical
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md) keeps
 complete-seed registration outside the new download-count gate while sharing
@@ -873,5 +878,6 @@ initiated and accepted duplex sockets, contributor-ranked ordinary choking,
 actual-port active discovery, failure retraction, and joined namespace fences
 all use the established session owners. Controlled RSTorrent/libtorrent and
 API 34 SAF runs prove complementary payload in both directions before
-completion with exact hashes and bounded cleanup. Finite bandwidth and
-ratio/time goals remain separate policy tacticals.
+completion with exact hashes and bounded cleanup. Tactical `134` subsequently
+enforces finite bandwidth at those duplex boundaries; ratio/time goals remain
+a separate policy tactical.

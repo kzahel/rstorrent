@@ -604,8 +604,8 @@ that scope and its cleanup or compatibility rules explicitly.
   identifies sustained large-transfer storage admission/backlog as the first
   optimization owner without resuming uTP or public-swarm work.
 - [`129-bounded-storage-intake-watermark.md`](129-bounded-storage-intake-watermark.md):
-  ready and queued bounded optimization selected by Tactical `128`; separates
-  storage queue pressure from the larger resident-payload ceiling, validates
+  ready authoritative **Now** selected by Tactical `128`; separates storage
+  queue pressure from the larger resident-payload ceiling, validates
   hysteresis and session fairness, and remeasures the remaining TCP ceiling.
 - [`130-utp-transport-solidification.md`](130-utp-transport-solidification.md):
   closed bounded uTP solidification campaign; proves the complementary
@@ -624,10 +624,10 @@ that scope and its cleanup or compatibility rules explicitly.
   path as the common application construction default, with desktop/Android,
   fallback, lifecycle, and **Partial** protocol-claim evidence.
 - [`134-hierarchical-transfer-rate-enforcement.md`](134-hierarchical-transfer-rate-enforcement.md):
-  ready authoritative product-policy tactical for live durable All torrents
-  and per-torrent upload/download limits, torrent-first fair allocation,
-  TCP/uTP duplex enforcement, generated web/Android controls, and bounded
-  controlled evidence. Tactical `129` remains ready and queued behind it.
+  complete live durable All torrents and per-torrent upload/download limits,
+  torrent-first fair TCP/uTP duplex enforcement, schema-18 persistence,
+  generated web/Android controls, controlled cap/full-duplex/fairness evidence,
+  API 34 AVD evidence, and complete repository gates.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

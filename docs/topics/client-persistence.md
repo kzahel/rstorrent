@@ -135,6 +135,16 @@ authority. Accepted fast resume also reconciles pending file promotions before
 new writes, so persisted route state cannot leave wanted bytes stranded behind
 a part-file route while hashing reads a different location.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) advances
+the store to schema version `18`. Each torrent row stores one checked upload
+and download limit, and the existing atomic client-settings singleton stores
+the session pair. Fresh and every migrated profile default all four values to
+Unlimited. Exact finite values survive no-op, replay, ephemeral lifetime, and
+reopen; malformed or out-of-range durable values fail closed. Effective
+session clamps, allocator credit, waiters, counters, and application state
+remain non-durable runtime facts.
+
 ## Scope
 
 This topic owns durable client state, resume and restart correctness, database
@@ -684,8 +694,9 @@ successful mutation unreadable after upgrade.
   without a schema change or second persistence authority. Successful no-op
   and exact replay saves resubmit authoritative intent after persistence
   resolution so degraded runtime state can retry.
-  Finite bandwidth, durable upload totals, and ratio/time seeding goals remain
-  later boundaries.
+  Completed Tactical `134` adds finite session and per-torrent peer-transfer
+  limits without adding durable transfer totals. Durable upload totals and
+  ratio/time seeding goals remain later boundaries.
 - JSTorrent migration is accepted as an explicit user-initiated semantic
   import into one selected backend, not in-place reuse of the legacy database
   or live synchronization between backends. The exact supported source

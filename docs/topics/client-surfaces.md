@@ -142,6 +142,17 @@ and submits one bounded `ArrayBuffer` through the active adapter. Nonempty Add
 remains the magnet path; there is no client digest, upload percentage, path,
 or alternate native picker command.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) makes All
+torrents upload/download limits and per-torrent upload/download limits
+operable in both first-party product families. Browser/Tauri uses Connection
+& seeding settings plus General torrent detail; Compose uses Speed &
+Connection Limits plus torrent detail. Both present semantic Unlimited and
+KiB/s finite values without inferring effective session state. Headless Chrome
+proves wide, compact, phone, keyboard, retained-value, save, and accessibility
+behavior; the API 34 no-window AVD proves durable limited concurrent transfer
+through the Android product boundary.
+
 ## Scope
 
 This topic owns the product-client surfaces above the shared application
@@ -507,8 +518,9 @@ future server.
 - The Android Compose product now presents authoritative multi-torrent queue
   and concurrent-admission state plus live Peers, Files, Trackers, Pieces,
   Disk, Swarm, Logs, Speed, and dual-family DHT projections. Search/plugins,
-  playback, bandwidth policy, dynamic network policy, and tracker mutation
-  remain explicitly unavailable rather than discarded or simulated.
+  playback, dynamic network policy, and tracker mutation remain explicitly
+  unavailable rather than discarded or simulated. Manual session and torrent
+  peer-transfer limits are implemented.
 - Diagnostics currently cover application lifecycle, discovery exhaustion,
   network restriction, tracker policy rejection, metadata, storage, piece,
   integrity, and terminal MSE handshake edges, including role, captured policy,
@@ -521,8 +533,9 @@ future server.
   Android network binding and race analysis.
 - Android now has Compose connection/seeding settings for backed peer, upload-
   slot, active-download, listener, port-mapping, IPv6, and encryption values,
-  including configured/effective/application truth. VPN, metered-network,
-  bandwidth, proxy, and power policy remain separate product/engine slices.
+  including configured/effective/application truth, plus backed session and
+  per-torrent upload/download limits. VPN, metered-network, proxy, and power
+  policy remain separate product/engine slices.
 - Tracker HTTPS authentication is intentionally absent from ordinary React
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker

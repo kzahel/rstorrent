@@ -172,6 +172,15 @@ detail appropriate to the phase; the gateway-assigned pinhole ID and control
 URL never cross the application boundary. The view owns no socket, lease,
 retry, discovery, or cleanup work.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) extends the
+same complete settings value with configured/effective upload and download
+limits, independent bandwidth application state, and bounded upload/download
+allocator observations. Existing torrent rows and snapshots carry their
+configured `TorrentTransferLimits` pair. Runtime owners remain producers;
+views own no quota, timer, waiter, retry, or effective-policy inference, and
+the generated contract version remains unchanged.
+
 ## Purpose And Scope
 
 The desktop inspection surface needs a recoverable, typed local replica of the

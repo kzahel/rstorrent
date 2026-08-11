@@ -4,8 +4,9 @@ Status: **Ready, authoritative Now and not implemented**. Completed Tactical
 [`128`](128-controlled-tcp-performance-diagnosis.md) selected storage intake
 backpressure as the next optimization owner. The maintainer subsequently
 resumed and completed the bounded uTP campaign through Tactical `133`; this
-plan and its evidence remained intact and now resume as the single queued
-priority.
+plan and its evidence remained intact. Completed Tactical `134` then added
+hierarchical transfer-rate policy without changing this storage optimization;
+Tactical `129` now resumes as the sole priority.
 
 Topics: `performance-and-live-evidence`, `storage-throughput-architecture`,
 `capability-readiness`, `oracle-driven-engine-campaign`

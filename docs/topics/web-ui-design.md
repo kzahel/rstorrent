@@ -162,6 +162,17 @@ access owns immediate browser approval, session listing and revocation,
 sign-out, and restart-pairing recovery. Tauri, demo, Basic-only, and bearer
 surfaces do not show an inert cookie-session category.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds All
+torrents peer upload/download controls to Connection & seeding and an atomic
+per-torrent pair to General detail. Both reuse one semantic Unlimited-or-KiB/s
+field, retain the last valid finite value across toggles, state the counted
+peer-traffic scope, and wait for authoritative command/view updates. Component
+tests cover bounds, exact bytes-per-second conversion, effective state, and
+error handling; headless Chrome proves wide, compact, and phone interaction,
+keyboard toggling, retained input, save feedback, and zero serious/critical
+Axe violations.
+
 ## Purpose
 
 The shared browser and Tauri presentation should become RSTorrent's detailed

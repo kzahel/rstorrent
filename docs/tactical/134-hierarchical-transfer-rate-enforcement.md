@@ -1,14 +1,14 @@
 # Tactical 134: Hierarchical Transfer-Rate Enforcement
 
-Status: **Ready, authoritative Now and not implemented**. The maintainer
-explicitly selected this product-policy slice on 2026-08-11. Ready Tactical
-[`129`](129-bounded-storage-intake-watermark.md) remains intact and queued
-after this work.
+Status: **Complete**. Commits `8339026` through `2f0990b` implement and prove
+the bounded slice planned in `d72b1e1`. Ready Tactical
+[`129`](129-bounded-storage-intake-watermark.md) is now the sole authoritative
+**Now**.
 
 Topics: `application-control`, `application-view-api`, `client-persistence`,
 `client-surfaces`, `web-ui-design`, `performance-and-live-evidence`,
 `code-organization-and-refactoring`, `capability-readiness`,
-`oracle-driven-engine-campaign`
+`oracle-driven-engine-campaign`, `protocol-support`
 
 Dependencies: completed Tactical
 [`097`](097-live-client-settings-and-replaceable-session-generations.md)
@@ -308,23 +308,100 @@ emitted.
 | Android | generated Kotlin, unit/Compose behavior, both native ABIs, APK checks, and one no-window AVD limited duplex or concurrent-torrent profile |
 | Repository | format, warning-denying Clippy, workspace tests, generated drift, TypeScript typecheck/tests, architecture/dependency checks, and temporary-artifact cleanup |
 
-## Staged Execution And Commit Plan
+## Implemented Result And Evidence
 
-1. Commit this source-first tactical, make it the sole authoritative **Now**,
-   and leave Tactical `129` ready and queued.
-2. Add the pure hierarchical allocator, joined session service, torrent
-   registrations, exhaustive fake-time tests, and focused resource snapshots;
-   commit.
-3. Integrate quota after peer handshake/routing, refactor initiated peer I/O
-   for independent read/write progress, apply it to accepted TCP/uTP I/O, and
-   commit after scripted duplex/lifecycle tests pass.
-4. Add schema 18, portable values, session and torrent commands/views,
-   convergence, generated artifacts, and restart/hostile tests; commit.
-5. Add shared React and Android Compose controls and their deterministic
-   presentation evidence; commit.
-6. Run controlled pinned-libtorrent and no-window AVD evidence, complete all
-   repository gates, record high waters/results, reconcile topics and queue,
-   and commit the completed tactical.
+The task-free `rstorrent-engine::bandwidth` core now owns one upload and one
+download allocator. `SessionNetworkRuntime` owns their joined services, and a
+fixed registration attached to `TorrentPeerHandle` carries the torrent
+constraint into every established initiated and accepted TCP/uTP stream.
+Finite scheduling permits one outstanding directional grant per torrent. That
+rule, discovered by the unequal-peer controlled gate, prevents peer count from
+buying session share while retaining FIFO peer progress inside the torrent,
+idle borrowing, and the direct all-Unlimited path.
+
+Initiated I/O is genuinely duplex. Accepted readers and their joined writers
+use the same quota boundary. Every quota wait is cancellation-aware and is
+excluded from network read, write-no-progress, request-stall, snub,
+inactivity, and speed-eviction clocks. Unused grants are returned, torrent
+removal unregisters, and joined session shutdown leaves no waiter or queued
+byte behind.
+
+Schema 18 durably adds the torrent pair and extends the existing complete
+client-settings singleton with the session pair. `TransferRateLimit` is the
+only portable representation, with exact Unlimited or
+`1,024..=4,294,967,295` bytes-per-second validation. The whole session group
+and atomic torrent-pair commands preserve the existing receipt, revision,
+no-op, replay, rollback, ephemeral, reopen, migration, and live convergence
+semantics. Configured/effective session limits, application state, bounded
+runtime counters, and configured torrent limits cross generated JSON Schema,
+TypeScript, UniFFI, and Kotlin without a second client authority.
+
+The controlled macOS arm64/APFS rate-policy run used pinned libtorrent
+`2.0.13.0`, 2 MiB per torrent, and 256-KiB pieces:
+
+| Policy | Completion | Admitted / declared upper bound | Utilization and result |
+| --- | ---: | ---: | --- |
+| 256-KiB/s session download | 8.087 s | 2,099,608 / 2,399,263 bytes | 99.0%; exact SHA-1; cap and terminal-zero gates pass |
+| 256-KiB/s torrent under 1-MiB/s session | 8.047 s | 2,099,608 / 2,388,719 bytes | 99.5%; exact SHA-1; cap and terminal-zero gates pass |
+| two torrents under 512-KiB/s session, three peers versus one | 8.433 / 8.202 s | 4,393,387 / 4,963,998 bytes | 99.3%; 2.8% completion skew; both exact SHA-1 values pass |
+
+The fairness case reached four admitted peers and two registered torrents;
+terminal download waiters and queued requested bytes were zero. A separate
+full-duplex pinned-libtorrent case combined 24-KiB/s session and 16-KiB/s
+torrent upload/download limits. Its exact 64-KiB content completed in 4.083
+seconds with 65,746 upload and 65,918 download bytes admitted, both below the
+99,669-byte declared bound, positive throttle waits, and terminal zero queues.
+The existing ordinary, Fast, and forced-RC4 duplex cases also pass.
+
+The API 34 arm64 no-window AVD configured and restored a 24-KiB/s session
+download limit before resuming three torrents. It observed two active and one
+queued torrent, then three exact published hashes, 393,363 admitted bytes
+below the 622,692-byte declared upper bound over 23.671 seconds, and terminal
+zero active downloads, bandwidth waiters, and queued bytes. Both supported
+Android native ABIs, generated Kotlin, APK assembly/inspection, and Android
+unit tests pass. No visible client or physical-device action was required.
+
+The shared React product supplies All torrents controls in Connection &
+seeding settings and atomic per-torrent controls in General detail; Android
+Compose supplies the same four controls. Component tests cover validation,
+command values, save behavior, and effective state. The production web build
+passes, and the headless Playwright suite passes 33 scenarios with 11
+live-only scenarios skipped; the feature-specific scenario exercises wide,
+compact, and phone layouts, keyboard Unlimited toggling, retained finite
+input, atomic save, and zero serious/critical Axe violations.
+
+Final repository gates pass on 2026-08-11:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace` (engine 494 passed/7 ignored, protocol 200
+  passed/2 ignored, session 232 passed/2 ignored, plus all remaining crate,
+  binary, architecture, and documentation tests);
+- generated-contract drift, TypeScript typecheck, and 241 web unit tests with
+  two intentional skips;
+- the same-origin production web build and CSP gate; and
+- both Android cross-builds plus the API 34 product profile above.
+
+The counted scope remains established BitTorrent peer-stream bytes, not total
+device traffic. Automatic network policy, LAN exemption, header accounting,
+tracker/DHT limiting, seeding goals, weights/priorities, and the other listed
+non-goals remain deliberately outside this completed tactical.
+
+## Implementation Record
+
+1. `d72b1e1` recorded the source-first tactical and selected it as **Now**.
+2. `8339026` added the allocator, service, registrations, fake-time tests, and
+   resource snapshot.
+3. `6773e90` integrated independent duplex quota across established TCP/uTP,
+   plaintext, and TCP MSE paths.
+4. `c861c36` added schema 18, commands, convergence, generated contracts, and
+   the shared React and Compose controls.
+5. `87ed825` added controlled desktop/full-duplex/AVD evidence and corrected
+   peer-count-sensitive fairness.
+6. `e9f816b` and `c6e9f38` corrected test-only lock lifetime and deterministic
+   cancellation polling exposed by the warning-denying/full-workspace gates.
+7. `2f0990b` added the dedicated responsive browser interaction and
+   accessibility gate.
 
 ## Non-Goals And Deliberate Deferrals
 
@@ -340,7 +417,7 @@ emitted.
 - Limiting tracker, DHT, DNS, mapping, web-host, application-control, storage,
   or playback traffic.
 - Changing active-download admission, upload-slot/choking policy, request
-  windows, storage intake, or Tactical `129`'s queued optimization.
+  windows, storage intake, or Tactical `129`'s optimization.
 - A new crate, daemon, proxy, IPC path, dependency, or public compatibility
   promise.
 

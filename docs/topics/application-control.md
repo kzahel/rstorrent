@@ -101,6 +101,16 @@ resolves first, Tactical `097`'s one reconciler applies the domain, and typed
 responses/views distinguish configured intent, optional effective policy,
 degraded construction, and operation-captured tracker security.
 
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds
+semantic Unlimited-or-bounded upload and download policy at the session and
+torrent levels. The existing whole-group `set_client_settings` command owns
+the session pair, while one `set_torrent_transfer_limits` command commits the
+torrent pair atomically under the same durable revision, request-receipt,
+replay, stale-revision, rollback, and convergence rules. Runtime application
+updates one stable session bandwidth owner without replacing peer, discovery,
+listener, or torrent generations.
+
 ## Scope
 
 This topic owns the application-facing command, response, snapshot, and event

@@ -27,6 +27,34 @@ resumable semantics, and storage-worker count as primary causes, and selects
 storage intake backlog for ready Tactical
 [`129`](../tactical/129-bounded-storage-intake-watermark.md).
 
+## Hierarchical Transfer-Rate Evidence: 2026-08-11
+
+Completed Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) extends the
+release multi-torrent comparator with restart-applied rate policy. A 256-KiB/s
+session cap and a 256-KiB/s torrent cap under a 1-MiB/s session each admitted
+2,099,608 counted bytes for exact 2-MiB content in 8.087 and 8.047 seconds,
+using 99.0% and 99.5% of the effective rate interval. Both remained below the
+declared burst-aware upper bound and terminated with zero waiters/queued
+bytes.
+
+The two-torrent fairness case used a 512-KiB/s session limit and unequal three-
+peer/one-peer source counts. Exact outputs completed in 8.433 and 8.202
+seconds, a 2.8% skew; 4,393,387 admitted bytes remained below the 4,963,998-
+byte declared bound with 99.3% utilization, four peer connections at high
+water, and terminal zero waiters/queued bytes. This gate exposed and corrected
+a peer-count-sensitive initial allocator before completion.
+
+A separate 64-KiB pinned-libtorrent full-duplex case combined 24-KiB/s session
+and 16-KiB/s torrent limits in both directions. Exact content completed in
+4.083 seconds with 65,746 upload and 65,918 download bytes admitted, both
+below the 99,669-byte bound, positive throttling, and terminal zero queues.
+The API 34 arm64 no-window Android product profile restored a 24-KiB/s session
+download limit, completed three exact torrents in 23.671 seconds, admitted
+393,363 bytes below its 622,692-byte bound, and ended with zero active
+downloads, waiters, and queued bytes. These controlled rate-policy results are
+cap/fairness/lifecycle evidence, not maximum-throughput baselines.
+
 ## Controlled TCP Storage-Intake Diagnosis: 2026-08-10
 
 The retained release harness compares one focused RSTorrent process, the

@@ -58,7 +58,11 @@ default-readiness Tactical
 [`132`](../tactical/132-utp-default-readiness-evidence.md); both are complete.
 The review selected recommendation A, and uTP product-default Tactical
 [`133`](../tactical/133-utp-product-default-enablement.md) is now complete with
-the bounded BEP 29 claim graduated to **Partial**. Tactical
+the bounded BEP 29 claim graduated to **Partial**. Product-policy Tactical
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) is complete
+with hierarchical session/torrent peer-transfer limits across TCP/uTP,
+generated first-party controls, controlled desktop/full-duplex evidence, and
+an API 34 AVD product gate. Tactical
 [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the
 authoritative **Now**, and Tactical `122`'s classified Ubuntu result leaves
 focused-driver HTTP(S) tracker dispatch available after it. The
@@ -389,8 +393,11 @@ application composition; Tactical `132` completes bounded endpoint memory,
 mixed socket recovery, and one successful metadata-only public observation;
 and Tactical `133` completes the fixed-548 IPv4/plaintext product default,
 desktop/Android lifecycle and build evidence, controlled fallback, and the
-bounded Partial BEP 29 claim. The maintainer explicitly selected product-
-policy Tactical `134`; Tactical `129` remains ready and queued.**
+bounded Partial BEP 29 claim; Tactical `134` completes durable hierarchical
+session/torrent peer-transfer rate policy, common TCP/uTP duplex enforcement,
+generated React/Compose controls, controlled cap/fairness/full-duplex
+evidence, and an API 34 AVD product gate. Tactical `129` is ready and resumes
+as the sole authoritative Now.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -404,16 +411,15 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`133`](../tactical/133-utp-product-default-enablement.md). Common durable and
-ephemeral application construction now defaults to the existing `PreferUtp`
-policy. The exact pinned-libtorrent application fixture passes inherited-
-default incoming and outgoing uTP plus joined TCP fallback; explicit
-`TcpOnly` retains ordinary TCP, Fast, and forced-MSE isolation. Desktop,
-Android, both supported Android native builds, focused lifecycle/recovery, and
-complete repository gates pass. The implemented fixed-548 IPv4/plaintext BEP
-29 subset is now **Partial** without adding persisted policy, mapping,
-incoming-endpoint advertisement, public incoming reachability, IPv6, or
-MSE-over-uTP.
+[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md). One joined
+session bandwidth owner now applies durable Unlimited-or-finite upload and
+download limits at both session and torrent levels across initiated and
+accepted TCP/uTP peer streams. Unequal three-peer/one-peer controlled
+downloads finish within 2.8% under one session cap; independent session-cap,
+torrent-cap, full-duplex, exact-hash, schema-18 restart, web, Android
+cross-build, API 34 AVD, and complete repository gates pass. The counted scope
+is established peer-stream bytes; automatic network policy, total-device
+accounting, and seeding goals remain separate.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -445,12 +451,11 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Next executable action: execute ready Tactical
-[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md). Implement
-the task-free deterministic quota core and one joined upload/download session
-owner first, then integrate torrent registrations at established TCP/uTP peer
-I/O without coupling local quota waits to network-stall clocks. Preserve
-Tactical `129` unchanged and queued; do not combine its storage-watermark
-optimization with bandwidth policy.
+[`129`](../tactical/129-bounded-storage-intake-watermark.md). Preserve the
+resident-payload safety ceiling while selecting a separate hysteretic storage-
+intake watermark, then rerun its required deterministic, controlled TCP,
+resource, Android, and repository gates. Do not combine further bandwidth
+policy or protocol breadth with this storage optimization.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
