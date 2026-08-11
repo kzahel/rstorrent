@@ -418,13 +418,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: conduct the human pre-product review of Tactical
-`130`. Choose whether to keep uTP diagnostic-only and return to Tactical `129`,
-or authorize a separate product-integration tactical with explicit transport
-selection, reachability, fallback, presentation, and evidence gates. Do not
-run another external sample without later human authority. No product uTP,
-public swarm, dependency, permanent network change, or support-claim authority
-is implicit.
+Next executable action: execute active Tactical `131` through its product-
+enablement review. Human review selected bounded recommendation A: compose
+fixed-548 IPv4/plaintext uTP behind an explicit default-off application policy,
+with source-first selection and one sequential TCP fallback under the existing
+logical dial owner. Do not run another external sample without later human
+authority. Default enablement, reachability/advertisement, presentation,
+public swarm, dependency, permanent network change, and support-claim
+authority remain outside the tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

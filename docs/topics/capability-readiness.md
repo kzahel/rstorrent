@@ -325,20 +325,21 @@ peer, bounded resources, cleanup, and alternating orders passed.
 
 ### Now
 
-- Human pre-product review of closed Tactical
-  [`130`](../tactical/130-utp-transport-solidification.md) is the single
-  authoritative work item. Its controlled transport-solidification gates pass
-  while the fresh bidirectional WAN cohort is explicitly evidence-limited.
-  Decide whether to keep uTP diagnostic-only and return to queued Tactical
-  `129`, or authorize a separate product-integration tactical. No product uTP
-  implementation is authorized by this review item.
+- Active Tactical
+  [`131`](../tactical/131-bounded-product-utp-composition.md) is the single
+  authoritative work item. Human review selected bounded recommendation A:
+  compose the fixed-548 IPv4/plaintext uTP runtime into the ordinary
+  application behind an explicit default-off policy, with source-first
+  uTP/TCP selection and one sequential TCP fallback under the existing logical
+  dial owner. Default enablement, reachability/advertisement, presentation,
+  and BEP 29 graduation remain separate human gates.
 
 ### Next
 
 - Ready Tactical
   [`129`](../tactical/129-bounded-storage-intake-watermark.md) retains the
   storage-intake optimization selected by Tactical `128`; explicit maintainer
-  priority kept it intact and it is queued behind the current uTP review.
+  priority kept it intact and it is queued behind active Tactical `131`.
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
   download driver's nested manager remains available after queued Tactical
   `129`.

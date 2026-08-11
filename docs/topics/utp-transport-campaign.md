@@ -25,9 +25,11 @@ verified cleanup. Human review then authorized Tactical
 complementary WAN direction, a small bidirectional cohort, real-socket
 impairment/lifecycle hardening, and diagnostic-only MTU integration before the
 pre-product review. Tactical `130` is now closed with its WAN cohort evidence-
-limited and every controlled gate passing. The campaign is at that pre-product
-review; uTP remains **Unsupported** and no product transport policy or
-dependency is accepted.
+limited and every controlled gate passing. Human review selected bounded
+product-composition recommendation A, now active as Tactical
+[`131`](../tactical/131-bounded-product-utp-composition.md): IPv4/plaintext,
+fixed 548, and default off, with source-first uTP/TCP selection and sequential
+fallback. Default enablement and BEP 29 graduation remain later gates.
 
 ## Scope And Ownership
 
@@ -667,12 +669,12 @@ Tactical `125`, and remote-mapped Stage 4 Tactical `127` complete; outbound-
 only WAN Tactical `126` remains closed evidence-limited at its superseded
 direct-interface preflight; post-Stage 4 solidification Tactical `130` is
 closed with the WAN cohort evidence-limited and every controlled gate
-passing; the campaign is at pre-product review**.
+passing; bounded default-off product composition Tactical `131` is active**.
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is the
-human pre-product decision: keep uTP diagnostic-only and return to queued work,
-or authorize a separate product-integration tactical with explicit transport
-selection, reachability, fallback, presentation, and evidence gates. No
-implementation, permanent network change, different host, dependency, public
-swarm, or support-claim authority is implied by this checkpoint.
+[`capability-readiness.md`](capability-readiness.md). The next action is to
+execute Tactical `131` through its product-enablement review. It composes only
+fixed-548 IPv4/plaintext uTP behind an explicit default-off policy and one
+sequential TCP fallback. Reachability, advertisement, presentation, default
+enablement, permanent network change, different host, dependency, public
+swarm, and support-claim authority remain outside this checkpoint.
