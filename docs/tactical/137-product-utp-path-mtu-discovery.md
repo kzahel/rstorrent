@@ -1,18 +1,14 @@
 # Tactical 137: Product uTP Path-MTU Discovery
 
-Status: **Active on 2026-08-11.** Maintainer direction reactivated this
+Status: **Complete on 2026-08-11.** Maintainer direction reactivated this
 decision-complete tactical after verified HTTP file-serving Tactical `138`
-completed and authorized end-to-end implementation with logical commits.
-Stage 2's shared-egress and safe platform-option boundary is complete.
-Maintainer review approved target-specific `dontfrag 1.0.1` for macOS;
-existing `rustix` remains the Linux/Android adapter, both Android native ABIs
-cross-build, and actual macOS set/get/restore passes. Stage 3 deterministic
-revalidation and downward recovery and Stage 4 protected-send/product runtime
-integration are complete. Verified IPv4 sockets now select dynamic product
-packetization; other capabilities fail closed at 548. Stage 5 controlled
-interop, rate, and efficiency evidence is complete. Stage 6 platform and
-repository closure is current. No unsafe project code, public-network
-activity, or physical-device work is authorized.
+completed and authorized end-to-end implementation with logical commits. The
+shared-egress boundary, safe Linux/Android/macOS platform adapters,
+revalidation and downward recovery, protected-send runtime integration,
+capability-gated product activation, controlled interoperability and
+efficiency matrix, macOS host proof, both Android builds, API 34 AVD platform
+and application proof, and complete repository gates all pass. No unsafe
+project code, public-network activity, or physical-device work was required.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -558,6 +554,50 @@ packets without changing counted bytes, final hash, selected MTU, or allocator
 semantics. Packet-type counters and the coalescing high water now make this
 failure observable.
 
+## Stage 6 Android And Repository Evidence
+
+The no-window API 34 `arm64-v8a` AVD completed the platform and application
+matrix in 15.720 seconds. Its direct platform role transferred an exact
+32,768-byte fixture with SHA-1
+`9dbe5260858a0f960c062aa8f8d3914ff5bde250`, positively verified the initial
+and replacement IPv4 socket generations, observed both endpoint and generation
+replacement, acknowledged three protected probes, and selected 1,356 bytes.
+All three protected sends restored successfully; congestion loss and timeout
+collapse remained zero. Both uTP endpoints and both shared-UDP owners
+terminated with zero tasks, connections, queues, and worker panics.
+
+The same AVD then used the actual `ApplicationService` to download the exact
+2,097,883-byte Tactical `137` fixture from pinned libtorrent over uTP through
+the emulator's private host gateway. The narrowly controlled local-network
+diagnostic disabled public DHT bootstrap and port mapping, supplied one exact
+private peer hint, and required zero TCP peers, so TCP and public-network
+traffic could not mask the result. The application published all 33 verified
+pieces with SHA-1 `cdce24126a8e65854d876c0b83ad3ba19748f6dc`.
+It selected the verified `dynamic_ipv4` profile; its request-heavy receive
+direction correctly retained the 548-byte confirmed floor because it did not
+emit enough full DATA to probe. The application connection high water was one,
+and shutdown reported zero active uTP connections, rate waiters, mapping
+tasks, mappings, pinholes, and panics. The remote root, harness temporary
+directory, and harness-owned AVD were all removed.
+
+The Android harness cross-built both `x86_64` and `arm64-v8a` diagnostic
+binaries. The full bootstrap build independently rebuilt both native
+application ABIs, regenerated the `rstorrent_android` and `rstorrent_session`
+Kotlin bindings, passed the JVM unit tests, and assembled the debug APK.
+
+Final repository evidence passes:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`, including 514 passing engine library tests with
+  nine ignored opt-in cases and 236 passing session library tests with two
+  ignored resource profiles; and
+- `experiments/android-engine-bootstrap/build.sh` for both native ABIs,
+  generated boundaries, JVM tests, and APK assembly.
+
+No application-boundary type changed, so web generation, typecheck, and tests
+were inapplicable under this tactical's validation matrix.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -604,7 +644,9 @@ requires diagnosis, not threshold relaxation.
    ordinary-application cohort.
 6. Run macOS, both Android native builds, the API 34 AVD, and complete
    repository gates; record actual evidence, reconcile owning topics, and
-   commit closure.
+   commit closure. Complete with actual option/send/replacement and exact
+   application-transfer evidence, terminal cleanup, both application ABIs,
+   and the full Rust repository baseline.
 
 ## Autonomy And Human Review Contract
 
@@ -631,10 +673,10 @@ Stop for human direction before:
 - accepting data loss, indefinite connection retention, or a fragmentable
   retry that changes packet sequence/payload identity.
 
-The next human review is therefore the platform feasibility decision if the
-safe macOS route needs new authority. If the current dependency graph proves a
-safe portable route, implementation may continue through controlled, AVD, and
-repository evidence before the next prudent review at tactical completion.
+The platform feasibility review approved the focused macOS dependency, and the
+authorized campaign then continued through controlled, AVD, and repository
+evidence. Tactical completion is now the prudent human review point before a
+different bounded workstream becomes authoritative **Now**.
 
 ## Next-Slice Boundary
 

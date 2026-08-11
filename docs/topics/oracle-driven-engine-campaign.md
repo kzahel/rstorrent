@@ -78,9 +78,11 @@ Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but
 explicitly reprioritized verified HTTP file serving before implementation.
 Tactical [`138`](../tactical/138-verified-http-file-serving.md) is complete.
 Maintainer direction reactivated Tactical `137` for end-to-end implementation
-with logical commits. It is the sole authoritative **Now**, beginning at its
-safe fragmentation-option and shared-socket egress feasibility gate. The
-completed maximum-throughput storage campaign remains recorded in
+with logical commits. Tactical `137` is now complete through controlled
+desktop evidence, both Android ABIs, the API 34 AVD, and repository closure.
+The sole authoritative **Now** is maintainer review and selection of the next
+bounded tactical. The completed maximum-throughput storage campaign remains
+recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
 gate.
@@ -415,8 +417,8 @@ implementation; Tactical `135` completes controlled plaintext/RC4 near parity
 and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
 lifecycle, controlled interoperability, and the public dispatch rerun.
-Product Tactical `138` is complete; Tactical `137` is reactivated as the sole
-authoritative **Now**. Its dependency-free Stage 2 shared-egress seam and safe
+Product Tactical `138` is complete; Tactical `137` is also complete. Its
+dependency-free Stage 2 shared-egress seam and safe
 Linux/Android option path pass; the approved target-specific adapter also
 passes actual macOS set/get/exact-restore proof. Stage 3 deterministic
 revalidation/downward recovery and the RTT-fenced repeated fast-loss repair
@@ -426,8 +428,11 @@ dynamic product profile only for verified IPv4 sockets, and passes exact
 macOS product transfer evidence. Stage 5 controlled interop/rate evidence is
 complete: controlled 1,500/1,280 paths select 1,457/1,269 bytes, five
 alternating pairs reduce median DATA datagrams 62.97%, and the exact capped
-ordinary-application/libtorrent cohort passes in both roles. Stage 6 Android
-runtime and repository closure is current.
+ordinary-application/libtorrent cohort passes in both roles. Stage 6 proves
+both Android native ABIs, API 34 option/send/replacement behavior, an exact
+private-gateway application uTP transfer with no TCP masking, terminal
+cleanup, and complete repository gates. The next-tactical review is the sole
+authoritative **Now**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -440,15 +445,14 @@ bookmark coordination, direct Rust TCP/UDP, ordinary expiration, finite
 continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
-Latest completed tactical:
-[`138`](../tactical/138-verified-http-file-serving.md). One verified logical-
-file reader, bounded volatile capability authority, and shared exact-range
-HTTP router now serve the gateway and Tauri hosting modes. React Files opens
-eligible content through the semantic application call; Android retains its
-native complete-file path without an HTTP listener. Repository, web,
-Playwright, desktop, and both Android ABI gates pass. Tactical
-[`136`](../tactical/136-shared-tracker-operation-executor.md) remains the
-latest completed engine tactical.
+Latest completed engine tactical:
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md). Verified IPv4
+sockets now use bounded 548--1,472-byte path-MTU discovery with exact socket
+policy restoration, 15-minute revalidation, downward recovery, and fixed-548
+fallback. Controlled 1,500/1,280 paths, alternating efficiency pairs, the
+rate-limited pinned-libtorrent application cohort, real macOS behavior, both
+Android ABIs, an API 34 AVD platform/application matrix, and complete
+repository gates pass. The BEP 29 claim remains **Partial**.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -480,13 +484,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `137` Stage 6 with both Android
-native builds, the no-window API 34 AVD option/send/replacement/application
-profile, and complete repository gates. The approved macOS `dontfrag 1.0.1`
-adapter and existing Linux/Android `rustix` adapter retain
-`forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
-non-reproducible changing-swarm observation and is not authority for changes
-in that tactical.
+Next engine-campaign action: review completed Tactical `137` and select one
+bounded tactical through the readiness queue. No later uTP gap, durable seeding
+policy, or other candidate becomes implementation authority merely because
+the path-MTU slice completed. The post-discovery Ubuntu stall remains one
+non-reproducible changing-swarm observation and is not authority for an
+unplanned change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

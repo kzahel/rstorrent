@@ -19,7 +19,7 @@ observations rather than public-swarm or product performance claims.
 Completed Tactical `132` records one 2.862-second metadata-only ordinary-swarm
 uTP readiness observation with both transports, bounded resources, and exact
 cleanup. It is not a throughput baseline.
-Active Tactical `137` records a controlled product-MTU comparison: five
+Completed Tactical `137` records a controlled product-MTU comparison: five
 alternating exact 2,097,883-byte pairs reduce median RSTorrent DATA datagrams
 from 3,978 at fixed 548 to 1,473 at dynamic 1,457 bytes, a 62.97% reduction.
 Median active time falls from 7.646 to 2.994 seconds and sampled seed CPU from
@@ -1138,14 +1138,17 @@ runtime state/feedback loop, not Internet PMTU: the portable shared UDP sender
 does not apply per-emission fragmentation intent to the OS socket. Ordinary
 runtime therefore remains fixed at 548 bytes.
 
-Active Tactical
-[`137`](../tactical/137-product-utp-path-mtu-discovery.md) owns the bounded
-product follow-up. It requires fragmentation-protected probes isolated from
-DHT and other uTP sends, fixed-548 fallback, 548/1,280/1,500-byte controlled
-paths, and at least a 50% clean-path DATA-datagram reduction against an
-alternating fixed-548 control with exact hashes, rate-limit preservation, and
-recorded CPU/RSS/queue high waters. Implementation is active, but no new
-performance/interoperability evidence or external run has occurred.
+Completed Tactical
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md) closes that bounded
+product follow-up. The verified clean path selects 1,457 bytes and emits 1,471
+DATA packets in 2.996 seconds; the controlled 1,280-byte black hole selects
+1,269 bytes after three acknowledged and three failed probes plus three exact
+fragmentable retries. Five alternating clean-path pairs reduce median DATA
+packets from 3,978 fixed to 1,473 dynamic, a 62.97% reduction, while median
+time and CPU improve and RSS/queue high waters do not materially grow. Exact
+hashes, rate-limit preservation, pinned-libtorrent application transfers in
+both roles, and terminal cleanup pass. These remain controlled packetization
+measurements, not a public-WAN speed claim.
 
 ## Public Product-uTP Metadata Observation: 2026-08-11
 

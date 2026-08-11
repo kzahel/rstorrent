@@ -492,6 +492,20 @@ uv run --project tests/interop --locked \
   python tests/interop/utp_product_integration.py
 ```
 
+The Android path-MTU closure harness cross-builds the focused diagnostic for
+both native ABIs, owns a no-window API 34 AVD, and proves actual protected-send
+option behavior across socket replacement. It then downloads the exact
+controlled fixture through the real `ApplicationService` from pinned
+libtorrent over the emulator's private host gateway, with public DHT bootstrap
+disabled and zero TCP peers required, before checking terminal and filesystem
+cleanup:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/android_utp_path_mtu.py \
+  --avd jstorrent-tablet
+```
+
 The real-socket uTP impairment fixture retains its six-profile explicit
 fixed-548 regression by default. `--product-mtu` runs clean 1,500-byte and
 controlled 1,280-byte product-MTU paths; `--efficiency` runs five alternating

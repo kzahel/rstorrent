@@ -44,8 +44,9 @@ independent rate-policy, storage, and tracker work. Maintainer direction then
 selected ready Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but reprioritized
 verified HTTP file serving before implementation. Tactical `138` is complete,
-and maintainer direction now reactivates Tactical `137` as the authoritative
-**Now** with end-to-end implementation and logical commits authorized.
+and maintainer direction reactivated Tactical `137` with end-to-end
+implementation and logical commits authorized. Tactical `137` is now complete;
+the readiness queue holds the next-tactical review as authoritative **Now**.
 
 ## Scope And Ownership
 
@@ -77,8 +78,7 @@ the single authoritative **Now**.
   explicit diagnostic construction override. There is no persisted setting,
   presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
   public incoming-reachability claim.
-- Reactivated Tactical `137` defines and has begun the next bounded uTP slice:
-  activate the existing
+- Completed Tactical `137` activates the existing
   548--1,472-byte IPv4 search only behind positively verified fragmentation-
   protected sends and one shared DHT/uTP egress exclusion boundary. It adds
   path revalidation, conservative fixed-548 fallback, controlled packet-count
@@ -98,9 +98,12 @@ the single authoritative **Now**.
   zero terminal ownership. Controlled 1,500/1,280 paths now select
   1,457/1,269 bytes, five alternating fixed/dynamic pairs reduce median DATA
   datagrams 62.97%, and the capped ordinary application/libtorrent cohort
-  passes in both roles. No unsafe project code, setting, external run, or
-  protocol-claim change has landed; Android runtime and repository closure is
-  the current stage.
+  passes in both roles. Both Android ABIs build, and a no-window API 34 AVD
+  proves verified option/send/replacement semantics, an exact private-gateway
+  `ApplicationService` uTP transfer from pinned libtorrent with no TCP masking,
+  and terminal cleanup. Complete workspace and Android application gates pass.
+  No unsafe project code, setting, public-network run, physical-device run, or
+  protocol-claim change landed.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -852,16 +855,17 @@ closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
-Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
+Partial; product Tactical `138` completed, and Tactical `137` is complete;
 its Stage 2 shared-egress and safe platform-option boundary passes, including
 the approved macOS adapter; deterministic Stage 3 revalidation/downward
 recovery and Stage 4 protected-send/product runtime integration pass, and
-Stage 5 controlled interop/rate/efficiency evidence passes; Stage 6 Android
-runtime and repository closure is current.**
+Stage 5 controlled interop/rate/efficiency evidence passes; Stage 6 proves
+both Android ABIs, API 34 option/send/replacement/application semantics, exact
+cleanup, and complete repository gates.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
-Android runtime and repository closure stage. Reachability, tracker/DHT incoming-endpoint advertisement,
-presentation, permanent network change, different host, and a broader uTP
-support claim remain separate decisions; no public-swarm attempt is authorized
-by this tactical.
+[`capability-readiness.md`](capability-readiness.md). Review the completed
+campaign and select the next bounded tactical. Reachability, tracker/DHT
+incoming-endpoint advertisement, presentation, permanent network change,
+different host, and a broader uTP support claim remain separate decisions; no
+such work is authorized by Tactical `137`.
