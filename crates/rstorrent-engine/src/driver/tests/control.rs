@@ -76,8 +76,9 @@ fn checkpoint_stages_and_fixed_counters_are_exact() {
 #[test]
 fn disk_pressure_uses_distinct_high_and_low_watermarks() {
     let control = DownloadControl::new();
-    let limit = 4 * MIN_PAYLOAD_ALLOWANCE;
-    control.configure_disk_runtime(limit);
+    let limit = 8 * MIN_PAYLOAD_ALLOWANCE;
+    let intake_high = 3 * MIN_PAYLOAD_ALLOWANCE;
+    control.configure_disk_runtime_with_intake(limit, intake_high);
     assert!(control.try_buffer_payload(2 * MIN_PAYLOAD_ALLOWANCE, limit));
     assert!(!control.disk_snapshot().intake_backpressured);
     assert!(control.try_buffer_payload(MIN_PAYLOAD_ALLOWANCE, limit));
@@ -89,6 +90,7 @@ fn disk_pressure_uses_distinct_high_and_low_watermarks() {
         3 * MIN_PAYLOAD_ALLOWANCE
     );
     assert_eq!(high.resident_low_watermark_bytes, 2 * MIN_PAYLOAD_ALLOWANCE);
+    assert_eq!(high.resident_limit_bytes, 8 * MIN_PAYLOAD_ALLOWANCE);
 
     control.release_buffered_payload(MIN_PAYLOAD_ALLOWANCE / 2);
     assert!(control.disk_snapshot().intake_backpressured);

@@ -302,6 +302,9 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
 {MIN_PAYLOAD_ALLOWANCE} and {MAX_BUFFERED_PAYLOAD_BYTES}"
                     ));
                 }
+                resource_limits.storage_intake_high_watermark_bytes =
+                    (resource_limits.max_buffered_payload_bytes.saturating_mul(3) / 4)
+                        .max(MIN_PAYLOAD_ALLOWANCE);
             }
             "--encryption" => {
                 encryption = match value

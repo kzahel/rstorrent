@@ -41,6 +41,7 @@ async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -104,6 +105,7 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
         ContentDownloadConfig {
             output_path: output.clone(),
             max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+            storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
             swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
             skip_files: Vec::new(),
             materialize_files: Vec::new(),

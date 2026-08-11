@@ -520,6 +520,7 @@ def run_rstorrent(
     diagnostic_summary_activity_observation: bool = False,
     diagnostic_nonresumable_execution: bool = False,
     max_buffered_payload_bytes: int | None = None,
+    storage_intake_high_watermark_bytes: int | None = None,
 ) -> dict[str, Any]:
     profile_contract = comparison_profile(profile)
     if expected_info_hash is None:
@@ -557,6 +558,13 @@ def run_rstorrent(
     if max_buffered_payload_bytes is not None:
         command.extend(
             ("--max-buffered-payload-bytes", str(max_buffered_payload_bytes))
+        )
+    if storage_intake_high_watermark_bytes is not None:
+        command.extend(
+            (
+                "--storage-intake-high-watermark-bytes",
+                str(storage_intake_high_watermark_bytes),
+            )
         )
     result = run_owner_process(
         command, "rstorrent", timeout_seconds + cleanup_seconds * 2 + OUTER_GRACE_SECONDS

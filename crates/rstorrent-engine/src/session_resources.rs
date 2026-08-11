@@ -1003,6 +1003,7 @@ mod tests {
             DownloadResourceLimits {
                 max_outstanding_request_bytes: 32,
                 max_buffered_payload_bytes: 16,
+                storage_intake_high_watermark_bytes: 16,
                 max_active_piece_bytes: 64,
                 max_active_pieces: 2,
             },
@@ -1170,6 +1171,7 @@ mod tests {
             DownloadResourceLimits {
                 max_outstanding_request_bytes: 32,
                 max_buffered_payload_bytes: 16,
+                storage_intake_high_watermark_bytes: 16,
                 max_active_piece_bytes: 64,
                 max_active_pieces: 2,
             },

@@ -1297,6 +1297,7 @@ async fn run_adverse_reassignment_case(action: AdverseRequestAction) {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),

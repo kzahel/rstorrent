@@ -295,6 +295,7 @@ async fn slow_storage_preserves_multi_peer_resident_payload_bound() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -415,6 +416,7 @@ async fn cancellation_joins_storage_with_queued_writes() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: payload_len,
+                storage_intake_high_watermark_bytes: payload_len,
                 swarm_config: SwarmConfig::for_request_limit(payload_len),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -516,6 +518,7 @@ async fn cancellation_joins_storage_during_piece_hash() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -577,9 +580,10 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
     let control = DownloadControl::new();
     control.set_storage_write_delay(Duration::from_millis(300));
     let storage = single_file_content_storage(output.clone(), 5 * block_length, block_length).await;
-    let mut pipeline = ContentStoragePipeline::start(storage, &control, 5 * block_length, None)
-        .await
-        .expect("start write-limit pipeline");
+    let mut pipeline =
+        ContentStoragePipeline::start(storage, &control, 5 * block_length, 5 * block_length, None)
+            .await
+            .expect("start write-limit pipeline");
     for piece in 0..CONTENT_STORAGE_WRITE_CONCURRENCY {
         pipeline
             .enqueue(ContentStorageCommand::Write {
@@ -654,6 +658,7 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
         storage,
         &control,
         (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
+        (CONTENT_STORAGE_HASH_CONCURRENCY + 1) * block_length,
         None,
     )
     .await
@@ -726,9 +731,10 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
     let control = DownloadControl::new();
     control.set_storage_hash_delay(Duration::from_millis(250));
     control.set_storage_write_delay(Duration::from_millis(250));
-    let mut pipeline = ContentStoragePipeline::start(storage, &control, 2 * block_length, None)
-        .await
-        .expect("start cross-class pipeline");
+    let mut pipeline =
+        ContentStoragePipeline::start(storage, &control, 2 * block_length, 2 * block_length, None)
+            .await
+            .expect("start cross-class pipeline");
     let expected: [u8; 20] = Sha1::digest(vec![0x51; block_length]).into();
     pipeline
         .enqueue(ContentStorageCommand::Verify {
@@ -792,9 +798,10 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
             .expect("write completion fixture");
     }
     let control = DownloadControl::new();
-    let mut pipeline = ContentStoragePipeline::start(storage, &control, block_length, None)
-        .await
-        .expect("start one-slot completion pipeline");
+    let mut pipeline =
+        ContentStoragePipeline::start(storage, &control, block_length, block_length, None)
+            .await
+            .expect("start one-slot completion pipeline");
     for piece in 0..2 {
         let expected: [u8; 20] = Sha1::digest(vec![piece as u8; block_length]).into();
         pipeline
@@ -865,6 +872,7 @@ async fn storage_command_backpressure_is_bounded_and_completes() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload.len(),
+                storage_intake_high_watermark_bytes: payload.len(),
                 swarm_config: SwarmConfig::for_request_limit(payload.len()),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -969,6 +977,7 @@ async fn storage_pressure_cannot_starve_dht_intake_or_dial_refill() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: payload_limit,
+                storage_intake_high_watermark_bytes: payload_limit,
                 swarm_config: SwarmConfig::for_request_limit(payload_limit),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),

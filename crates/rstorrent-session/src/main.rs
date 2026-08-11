@@ -219,6 +219,12 @@ fn parse_arguments(
                     usize::try_from(parse_positive_u64(value, name)?).map_err(|_| {
                         DiagnosticError::Arguments("payload allowance exceeds usize".to_owned())
                     })?;
+                download_resource_limits.storage_intake_high_watermark_bytes =
+                    (download_resource_limits
+                        .max_buffered_payload_bytes
+                        .saturating_mul(3)
+                        / 4)
+                    .max(rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE);
             }
             "--storage-write-concurrency" => {
                 storage_write_concurrency = parse_storage_concurrency(value, name)?;

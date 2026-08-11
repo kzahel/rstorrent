@@ -83,9 +83,34 @@ fn product_profiles_are_generous_and_fill_every_initial_peer_window() {
     ] {
         assert!(limits.max_outstanding_request_bytes >= initial_window_bytes);
         assert!(limits.max_buffered_payload_bytes >= MIN_PAYLOAD_ALLOWANCE);
+        assert_eq!(
+            limits.storage_intake_high_watermark_bytes,
+            limits.max_buffered_payload_bytes * 3 / 4
+        );
         assert!(limits.max_active_piece_bytes >= initial_window_bytes);
         limits.validate().expect("valid product profile");
     }
+}
+
+#[test]
+fn storage_intake_watermark_must_fit_a_block_and_the_resident_ceiling() {
+    let mut too_small = DownloadResourceLimits::DESKTOP;
+    too_small.storage_intake_high_watermark_bytes = MIN_PAYLOAD_ALLOWANCE - 1;
+    assert!(matches!(
+        too_small.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "storage intake high watermark must fit one request block"
+        ))
+    ));
+
+    let mut too_large = DownloadResourceLimits::DESKTOP;
+    too_large.storage_intake_high_watermark_bytes = too_large.max_buffered_payload_bytes + 1;
+    assert!(matches!(
+        too_large.validate(),
+        Err(DownloadError::InvalidResourceLimit(
+            "storage intake high watermark must not exceed the buffered payload allowance"
+        ))
+    ));
 }
 
 #[tokio::test]
@@ -124,6 +149,7 @@ async fn capable_peer_grows_pipeline_beyond_initial_request_window() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload_limit,
+                storage_intake_high_watermark_bytes: payload_limit,
                 swarm_config: SwarmConfig::for_request_limit(payload_limit),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -201,6 +227,7 @@ async fn request_pipeline_exceeds_independently_bounded_resident_payload() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(8 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -269,6 +296,7 @@ async fn multi_peer_split_availability_completes_and_joins_every_socket() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -350,6 +378,7 @@ async fn endgame_cancel_reaches_loser_before_slow_storage_completes() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -455,6 +484,7 @@ async fn sole_corrupt_source_is_banned_and_clean_peer_retries_piece() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -658,6 +688,7 @@ async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -773,6 +804,7 @@ async fn useful_peer_at_end_of_full_pending_cohort_completes_promptly() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(2 * MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -836,6 +868,7 @@ async fn cancellation_joins_a_full_silent_pending_cohort() {
             ContentDownloadConfig {
                 output_path: task_output,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -939,6 +972,7 @@ async fn full_choked_set_is_replaced_by_an_eligible_useful_peer() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -1018,6 +1052,7 @@ async fn full_irrelevant_set_is_replaced_by_a_wanted_piece_peer() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -1073,6 +1108,7 @@ async fn full_choked_set_without_an_alternative_waits_without_churn() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -1154,6 +1190,7 @@ async fn unrelated_messages_do_not_prevent_expiry_and_late_payload_is_safe() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -1232,6 +1269,7 @@ async fn sampled_stall_moves_a_burst_peers_window_to_a_healthy_peer() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload_limit,
+                storage_intake_high_watermark_bytes: payload_limit,
                 swarm_config,
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),
@@ -1444,6 +1482,7 @@ async fn dht_peer_discovered_during_content_becomes_useful() {
             ContentDownloadConfig {
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
+                storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
                 swarm_config: SwarmConfig::for_request_limit(MIN_PAYLOAD_ALLOWANCE),
                 skip_files: Vec::new(),
                 materialize_files: Vec::new(),

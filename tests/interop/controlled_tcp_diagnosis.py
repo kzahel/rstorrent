@@ -58,6 +58,11 @@ OWNER_CHOICES = (
     "resumable-buffer-8m",
     "resumable-buffer-16m",
     "resumable-buffer-32m",
+    "resumable-intake-1m",
+    "resumable-intake-2m",
+    "resumable-intake-4m",
+    "resumable-intake-6m",
+    "resumable-intake-8m",
 )
 MAX_PAYLOAD_MIB = 2048
 MAX_PIECE_KIB = 256 * 1024
@@ -87,6 +92,7 @@ class DiagnosisResult:
     activity_observation: str
     execution_path: str
     payload_allowance_bytes: int | None
+    storage_intake_high_watermark_bytes: int | None
     version: str
     published_seconds: float
     active_seconds: float | None
@@ -426,6 +432,11 @@ def run_owner(
             "resumable-buffer-8m",
             "resumable-buffer-16m",
             "resumable-buffer-32m",
+            "resumable-intake-1m",
+            "resumable-intake-2m",
+            "resumable-intake-4m",
+            "resumable-intake-6m",
+            "resumable-intake-8m",
         ):
             checkpoint_sync_bypass = owner == "resumable-no-sync"
             summary_activity_observation = owner == "resumable-summary-observation"
@@ -435,6 +446,13 @@ def run_owner(
                 "resumable-buffer-16m": 16 * MIB,
                 "resumable-buffer-32m": 32 * MIB,
             }.get(owner, PAYLOAD_ALLOWANCE)
+            storage_intake_high_watermark_bytes = {
+                "resumable-intake-1m": 1 * MIB,
+                "resumable-intake-2m": 2 * MIB,
+                "resumable-intake-4m": 4 * MIB,
+                "resumable-intake-6m": 6 * MIB,
+                "resumable-intake-8m": 8 * MIB,
+            }.get(owner, payload_allowance_bytes * 3 // 4)
             raw = run_resumable_rstorrent(
                 resumable_binary,
                 torrent_path,
@@ -450,6 +468,9 @@ def run_owner(
                 diagnostic_summary_activity_observation=summary_activity_observation,
                 diagnostic_nonresumable_execution=nonresumable_execution,
                 max_buffered_payload_bytes=payload_allowance_bytes,
+                storage_intake_high_watermark_bytes=(
+                    storage_intake_high_watermark_bytes
+                ),
             )
             metrics = normalize_adapter_result(owner, raw, fixture, profile)
             version = binary_sha256(resumable_binary)
@@ -520,6 +541,11 @@ def run_owner(
                 if owner.startswith("resumable") or owner == "probe-nonresumable"
                 else None
             ),
+            storage_intake_high_watermark_bytes=(
+                storage_intake_high_watermark_bytes
+                if owner.startswith("resumable") or owner == "probe-nonresumable"
+                else None
+            ),
             version=version,
             published_seconds=published_seconds,
             active_seconds=metrics.pop("active_seconds"),
@@ -568,6 +594,10 @@ def summarize_results(results: list[DiagnosisResult]) -> list[dict[str, Any]]:
             samples = [result for result in cohort if result.owner == owner]
             owner_summaries[owner] = {
                 "runs": len(samples),
+                "payload_allowance_bytes": samples[0].payload_allowance_bytes,
+                "storage_intake_high_watermark_bytes": samples[
+                    0
+                ].storage_intake_high_watermark_bytes,
                 "median_published_seconds": statistics.median(
                     result.published_seconds for result in samples
                 ),
@@ -820,6 +850,8 @@ def main(arguments: list[str]) -> int:
             "budget_seconds": args.budget_seconds,
             "block_size_bytes": BLOCK_SIZE,
             "payload_allowance_bytes": PAYLOAD_ALLOWANCE,
+            "storage_intake_watermark_bytes": [1 * MIB, 2 * MIB, 4 * MIB, 6 * MIB, 8 * MIB],
+            "storage_intake_low_watermark_fraction": "2/3",
             "storage_concurrency": {"writes": 4, "hashes": 4},
             "checkpoint_sync": "selected-by-owner",
             "activity_observation": "selected-by-owner",

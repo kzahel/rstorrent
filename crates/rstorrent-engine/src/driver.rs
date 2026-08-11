@@ -149,6 +149,7 @@ fn public_pex_extension_handshake() -> Vec<u8> {
 pub struct DownloadResourceLimits {
     pub max_outstanding_request_bytes: usize,
     pub max_buffered_payload_bytes: usize,
+    pub storage_intake_high_watermark_bytes: usize,
     pub max_active_piece_bytes: usize,
     pub max_active_pieces: usize,
 }
@@ -157,6 +158,7 @@ impl DownloadResourceLimits {
     pub const DESKTOP: Self = Self {
         max_outstanding_request_bytes: 256 * 1024 * 1024,
         max_buffered_payload_bytes: 32 * 1024 * 1024,
+        storage_intake_high_watermark_bytes: 24 * 1024 * 1024,
         max_active_piece_bytes: 256 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
@@ -164,6 +166,7 @@ impl DownloadResourceLimits {
     pub const ANDROID: Self = Self {
         max_outstanding_request_bytes: 128 * 1024 * 1024,
         max_buffered_payload_bytes: 16 * 1024 * 1024,
+        storage_intake_high_watermark_bytes: 12 * 1024 * 1024,
         max_active_piece_bytes: 128 * 1024 * 1024,
         max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
     };
@@ -176,6 +179,14 @@ impl DownloadResourceLimits {
         Self {
             max_outstanding_request_bytes,
             max_buffered_payload_bytes,
+            storage_intake_high_watermark_bytes: {
+                let derived = max_buffered_payload_bytes.saturating_mul(3) / 4;
+                if derived < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
+                    rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE
+                } else {
+                    derived
+                }
+            },
             max_active_piece_bytes,
             max_active_pieces: crate::swarm::DEFAULT_MAX_ACTIVE_PIECES,
         }
@@ -190,6 +201,18 @@ impl DownloadResourceLimits {
         if self.max_buffered_payload_bytes < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
             return Err(DownloadError::InvalidResourceLimit(
                 "buffered payload allowance must fit one request block",
+            ));
+        }
+        if self.storage_intake_high_watermark_bytes
+            < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE
+        {
+            return Err(DownloadError::InvalidResourceLimit(
+                "storage intake high watermark must fit one request block",
+            ));
+        }
+        if self.storage_intake_high_watermark_bytes > self.max_buffered_payload_bytes {
+            return Err(DownloadError::InvalidResourceLimit(
+                "storage intake high watermark must not exceed the buffered payload allowance",
             ));
         }
         if self.max_active_piece_bytes < rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE {
@@ -283,9 +306,16 @@ pub trait DownloadCheckpointSink: Send + Sync {
 struct ContentDownloadConfig {
     output_path: PathBuf,
     max_buffered_payload_bytes: usize,
+    storage_intake_high_watermark_bytes: usize,
     swarm_config: SwarmConfig,
     skip_files: Vec<usize>,
     materialize_files: Vec<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContentStorageLimits {
+    resident_payload_bytes: usize,
+    intake_high_watermark_bytes: usize,
 }
 
 #[cfg(test)]
@@ -3566,6 +3596,9 @@ async fn run_magnet_download_with_peers(
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+        storage_intake_high_watermark_bytes: config
+            .resource_limits
+            .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
@@ -3685,6 +3718,9 @@ async fn run_resumable_magnet_download(
         let content_config = ContentDownloadConfig {
             output_path,
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+            storage_intake_high_watermark_bytes: config
+                .resource_limits
+                .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
@@ -3731,6 +3767,9 @@ async fn run_resumable_magnet_download(
         let content_config = ContentDownloadConfig {
             output_path: config.storage_root.join(&metainfo.name),
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+            storage_intake_high_watermark_bytes: config
+                .resource_limits
+                .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
             skip_files: config.skip_files,
             materialize_files: Vec::new(),
@@ -4052,6 +4091,9 @@ async fn run_download(
     let content_config = ContentDownloadConfig {
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+        storage_intake_high_watermark_bytes: config
+            .resource_limits
+            .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
@@ -4121,7 +4163,7 @@ struct ContentSwarmDownload<'a> {
     contributor_attempts: BTreeMap<ConnectionId, ContentContributor>,
     selection: FileSelection,
     maximum_planned_bytes: usize,
-    max_buffered_payload_bytes: usize,
+    storage_limits: ContentStorageLimits,
     selection_revision: u64,
 }
 
@@ -4226,7 +4268,7 @@ enum ContentMessageDisposition {
 impl<'a> ContentSwarmDownload<'a> {
     async fn new(
         config: SwarmConfig,
-        max_buffered_payload_bytes: usize,
+        storage_limits: ContentStorageLimits,
         wanted_pieces: Vec<u32>,
         picker_seed: u64,
         selection: AppliedFileSelection,
@@ -4263,7 +4305,8 @@ impl<'a> ContentSwarmDownload<'a> {
         let storage_pipeline = ContentStoragePipeline::start(
             storage,
             control,
-            max_buffered_payload_bytes,
+            storage_limits.resident_payload_bytes,
+            storage_limits.intake_high_watermark_bytes,
             checkpoints,
         )
         .await?;
@@ -4297,7 +4340,7 @@ impl<'a> ContentSwarmDownload<'a> {
             contributor_attempts: BTreeMap::new(),
             selection: selection.selection,
             maximum_planned_bytes,
-            max_buffered_payload_bytes,
+            storage_limits,
             selection_revision: selection.revision,
         })
     }
@@ -5127,7 +5170,8 @@ impl<'a> ContentSwarmDownload<'a> {
             ContentStoragePipeline::start(
                 storage,
                 self.control,
-                self.max_buffered_payload_bytes,
+                self.storage_limits.resident_payload_bytes,
+                self.storage_limits.intake_high_watermark_bytes,
                 checkpoints,
             )
             .await?,
@@ -7147,7 +7191,10 @@ async fn run_selective_download(
     } else {
         let download = ContentSwarmDownload::new(
             config.swarm_config,
-            config.max_buffered_payload_bytes,
+            ContentStorageLimits {
+                resident_payload_bytes: config.max_buffered_payload_bytes,
+                intake_high_watermark_bytes: config.storage_intake_high_watermark_bytes,
+            },
             wanted_pieces,
             picker_seed(metainfo.info_hash, peers.network.peer_id),
             AppliedFileSelection {

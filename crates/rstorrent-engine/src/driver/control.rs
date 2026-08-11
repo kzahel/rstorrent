@@ -2096,19 +2096,28 @@ impl DownloadControl {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn configure_disk_runtime(&self, resident_limit_bytes: usize) {
+        self.configure_disk_runtime_with_intake(
+            resident_limit_bytes,
+            resident_limit_bytes.saturating_mul(3) / 4,
+        );
+    }
+
+    pub(super) fn configure_disk_runtime_with_intake(
+        &self,
+        resident_limit_bytes: usize,
+        intake_high_watermark_bytes: usize,
+    ) {
+        debug_assert!(intake_high_watermark_bytes <= resident_limit_bytes);
         let mut state = self
             .inner
             .disk_runtime
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.resident_limit_bytes = resident_limit_bytes;
-        state.high_watermark_bytes = resident_limit_bytes
-            .saturating_mul(3)
-            .checked_div(4)
-            .unwrap_or(resident_limit_bytes)
-            .max(1);
-        state.low_watermark_bytes = resident_limit_bytes.checked_div(2).unwrap_or_default();
+        state.high_watermark_bytes = intake_high_watermark_bytes.max(1);
+        state.low_watermark_bytes = intake_high_watermark_bytes.saturating_mul(2) / 3;
         state.pressure = DiskPressure::Normal;
         drop(state);
         self.emit_storage_state_force();

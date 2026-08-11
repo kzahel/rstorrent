@@ -175,6 +175,7 @@ struct Config {
     timeout: Duration,
     cleanup_grace: Duration,
     payload_limit: usize,
+    storage_intake_high_watermark: usize,
     wire_payload_limit: u64,
     checkpoint_sync_bypassed: bool,
     summary_activity_observation: bool,
@@ -1047,6 +1048,9 @@ struct Diagnostics {
     stored_bytes: usize,
     buffered_payload_bytes: usize,
     payload_high_water: usize,
+    resident_payload_limit_bytes: usize,
+    storage_intake_high_watermark_bytes: usize,
+    storage_intake_low_watermark_bytes: usize,
     storage_jobs_pending: usize,
     storage_jobs_high_water: usize,
     storage_command_queue_high_water: usize,
@@ -1553,6 +1557,7 @@ async fn run(config: Config) -> ProbeResult {
 
     let mut resource_limits = DownloadResourceLimits::DESKTOP;
     resource_limits.max_buffered_payload_bytes = config.payload_limit;
+    resource_limits.storage_intake_high_watermark_bytes = config.storage_intake_high_watermark;
     let mut budget_config = PeerBudgetConfig::system_default();
     budget_config.configured_limit = config.profile.connection_limit();
     budget_config.incoming_slack = 0;
@@ -1935,9 +1940,7 @@ fn result(
         &observation,
         utility_timeline,
         peer_sink.snapshot(diagnostics),
-        config.checkpoint_sync_bypassed,
-        config.summary_activity_observation,
-        config.nonresumable_execution,
+        config,
     );
     ProbeResult {
         schema_version: 2,
@@ -1984,9 +1987,7 @@ fn diagnostic_result(
     observation: &ObservationSnapshot,
     utility_timeline: &UtilityTimeline,
     peer_methods: PeerMethodEvidence,
-    checkpoint_sync_bypassed: bool,
-    summary_activity_observation: bool,
-    nonresumable_execution: bool,
+    config: &Config,
 ) -> Diagnostics {
     let registry = snapshot.metadata.registry.as_ref();
     let content_registry = snapshot.content_registry.as_ref();
@@ -2092,6 +2093,10 @@ fn diagnostic_result(
         stored_bytes: snapshot.progress.stored_bytes,
         buffered_payload_bytes: snapshot.progress.buffered_payload_bytes,
         payload_high_water: snapshot.progress.payload_high_water,
+        resident_payload_limit_bytes: config.payload_limit,
+        storage_intake_high_watermark_bytes: config.storage_intake_high_watermark,
+        storage_intake_low_watermark_bytes: config.storage_intake_high_watermark.saturating_mul(2)
+            / 3,
         storage_jobs_pending: snapshot.progress.storage_jobs_pending,
         storage_jobs_high_water: snapshot.progress.storage_jobs_high_water,
         storage_command_queue_high_water: snapshot.progress.storage_command_queue_high_water,
@@ -2129,9 +2134,9 @@ fn diagnostic_result(
         checkpoint_commit_service_max_micros: snapshot
             .progress
             .checkpoint_commit_service_max_micros,
-        checkpoint_sync_bypassed,
-        summary_activity_observation,
-        nonresumable_execution,
+        checkpoint_sync_bypassed: config.checkpoint_sync_bypassed,
+        summary_activity_observation: config.summary_activity_observation,
+        nonresumable_execution: config.nonresumable_execution,
         storage_active_kind: if snapshot.progress.storage_active_write_micros.is_some() {
             Some("write")
         } else if snapshot.progress.storage_active_hash_micros.is_some() {
@@ -2159,6 +2164,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
     let mut timeout_seconds = DEFAULT_TIMEOUT_SECONDS;
     let mut cleanup_seconds = DEFAULT_CLEANUP_SECONDS;
     let mut payload_limit = DEFAULT_PAYLOAD_LIMIT;
+    let mut storage_intake_high_watermark = None;
     let mut wire_payload_limit = DEFAULT_WIRE_PAYLOAD_LIMIT;
     let mut checkpoint_sync_bypassed = false;
     let mut summary_activity_observation = false;
@@ -2204,6 +2210,15 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                 if !(16 * 1024..=1024 * 1024 * 1024).contains(&payload_limit) {
                     return Err(format!("{flag} is outside the supported range"));
                 }
+            }
+            "--storage-intake-high-watermark-bytes" => {
+                let parsed = value
+                    .parse()
+                    .map_err(|_| format!("{flag} must be an integer"))?;
+                if !(16 * 1024..=1024 * 1024 * 1024).contains(&parsed) {
+                    return Err(format!("{flag} is outside the supported range"));
+                }
+                set_once(&mut storage_intake_high_watermark, parsed, flag)?;
             }
             "--wire-payload-ceiling-bytes" => {
                 wire_payload_limit = bounded_u64(value, flag, 1, u64::MAX)?;
@@ -2275,6 +2290,15 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
                 .to_owned(),
         );
     }
+    let storage_intake_high_watermark = storage_intake_high_watermark.unwrap_or_else(|| {
+        (payload_limit.saturating_mul(3) / 4).max(rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE)
+    });
+    if storage_intake_high_watermark > payload_limit {
+        return Err(
+            "--storage-intake-high-watermark-bytes must not exceed the buffered payload allowance"
+                .to_owned(),
+        );
+    }
     Ok(Config {
         input,
         expected_info_hash: expected_info_hash
@@ -2287,6 +2311,7 @@ fn parse_args(arguments: Vec<String>) -> Result<Config, String> {
         timeout: Duration::from_secs(timeout_seconds),
         cleanup_grace: Duration::from_secs(cleanup_seconds),
         payload_limit,
+        storage_intake_high_watermark,
         wire_payload_limit,
         checkpoint_sync_bypassed,
         summary_activity_observation,
@@ -2367,6 +2392,10 @@ mod tests {
         let config = parse_args(required_arguments()).expect("valid magnet arguments");
         assert!(matches!(config.input, ProbeInput::Magnet(_)));
         assert_eq!(config.profile, Profile::MatchedPlain30);
+        assert_eq!(
+            config.storage_intake_high_watermark,
+            config.payload_limit * 3 / 4
+        );
 
         let mut both = required_arguments();
         both.extend(["--metainfo".to_owned(), "fixture.torrent".to_owned()]);
@@ -2374,6 +2403,29 @@ mod tests {
 
         let missing = required_arguments().into_iter().skip(2).collect::<Vec<_>>();
         assert!(parse_args(missing).is_err());
+    }
+
+    #[test]
+    fn storage_intake_watermark_is_independent_and_bounded_by_resident_payload() {
+        let mut arguments = required_arguments();
+        arguments.extend([
+            "--max-buffered-payload-bytes".to_owned(),
+            (64 * 1024 * 1024).to_string(),
+            "--storage-intake-high-watermark-bytes".to_owned(),
+            (2 * 1024 * 1024).to_string(),
+        ]);
+        let config = parse_args(arguments).expect("independent intake watermark");
+        assert_eq!(config.payload_limit, 64 * 1024 * 1024);
+        assert_eq!(config.storage_intake_high_watermark, 2 * 1024 * 1024);
+
+        let mut invalid = required_arguments();
+        invalid.extend([
+            "--max-buffered-payload-bytes".to_owned(),
+            (1024 * 1024).to_string(),
+            "--storage-intake-high-watermark-bytes".to_owned(),
+            (2 * 1024 * 1024).to_string(),
+        ]);
+        assert!(parse_args(invalid).is_err());
     }
 
     #[test]

@@ -225,6 +225,33 @@ Implementation commits remain independently reviewable: admission policy,
 diagnostics/controls, each retained optimization, and final evidence do not
 collapse into one commit.
 
+## Execution Record
+
+### Independent intake policy
+
+The first implementation stage is complete. `DownloadResourceLimits` now
+names a storage-intake high watermark separately from the buffered-payload
+resident ceiling. The low point is two thirds of high. Existing product
+behavior is initially unchanged: desktop remains 32 MiB resident with 24/16
+MiB intake hysteresis, while Android remains 16 MiB resident with 12/8 MiB
+hysteresis. The storage command and completion channel capacity continues to
+derive from the resident ceiling, not the new ordinary pressure point.
+
+The resumable diagnostic accepts an internal
+`--storage-intake-high-watermark-bytes` control, records the resident/high/low
+values, and rejects a high point below one block or above the resident cap.
+The controlled TCP harness now owns distinct 1/2/4/6/8 MiB cases while keeping
+its 64 MiB diagnostic resident allowance unchanged. This is not a persisted
+or product-visible setting.
+
+Deterministic validation covers independent high/low transitions, exact
+desktop/Android defaults, invalid bounds, restart propagation, and existing
+storage saturation/cancellation paths. Focused engine Clippy and tests pass;
+one full 502-test engine run had a pre-existing bandwidth timing failure that
+passed immediately in exact isolation. The locked controlled-harness and
+public-comparator unit suites pass. Performance selection remains pending the
+release sweep, so no new default or speed claim is made yet.
+
 ## Validation Matrix
 
 | Layer | Required evidence |

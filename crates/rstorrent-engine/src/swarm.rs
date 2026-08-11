@@ -3907,6 +3907,7 @@ mod tests {
             crate::DownloadResourceLimits {
                 max_outstanding_request_bytes: BLOCK as usize,
                 max_buffered_payload_bytes: BLOCK as usize,
+                storage_intake_high_watermark_bytes: BLOCK as usize,
                 max_active_piece_bytes: BLOCK as usize,
                 max_active_pieces: 1,
             },

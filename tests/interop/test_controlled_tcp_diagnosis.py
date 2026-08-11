@@ -53,6 +53,17 @@ def result(owner: str, throughput: float, run: int = 1) -> DiagnosisResult:
             if owner == "focused" or owner.startswith("resumable") or owner == "probe-nonresumable"
             else None
         ),
+        storage_intake_high_watermark_bytes=(
+            {
+                "resumable-intake-1m": 1 * 1024 * 1024,
+                "resumable-intake-2m": 2 * 1024 * 1024,
+                "resumable-intake-4m": 4 * 1024 * 1024,
+                "resumable-intake-6m": 6 * 1024 * 1024,
+                "resumable-intake-8m": 8 * 1024 * 1024,
+            }.get(owner, 48 * 1024 * 1024)
+            if owner.startswith("resumable") or owner == "probe-nonresumable"
+            else None
+        ),
         version="fixture",
         published_seconds=1.0 / throughput,
         active_seconds=None,
@@ -168,6 +179,17 @@ class ControlledTcpDiagnosisTests(unittest.TestCase):
         )[0]
         self.assertAlmostEqual(summary["buffer_8m_64m_ratio"], 110.0 / 90.0)
         self.assertEqual(summary["buffer_8m_64m_classification"], "ahead")
+
+    def test_summary_records_independent_intake_watermark(self) -> None:
+        summary = summarize_results(
+            [result("resumable-intake-1m", 100.0), result("libtorrent", 125.0)]
+        )[0]
+        intake = summary["owners"]["resumable-intake-1m"]
+        self.assertEqual(intake["payload_allowance_bytes"], 64 * 1024 * 1024)
+        self.assertEqual(
+            intake["storage_intake_high_watermark_bytes"], 1024 * 1024
+        )
+        self.assertAlmostEqual(intake["libtorrent_ratio"], 0.8)
 
     def test_adapter_rejects_utp_or_more_than_one_peer(self) -> None:
         valid = {

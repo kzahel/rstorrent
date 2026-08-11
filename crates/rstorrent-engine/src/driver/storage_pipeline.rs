@@ -311,6 +311,7 @@ impl ContentStoragePipeline {
         mut storage: ContentStorage,
         control: &DownloadControl,
         max_buffered_payload_bytes: usize,
+        storage_intake_high_watermark_bytes: usize,
         checkpoints: Option<Arc<dyn DownloadCheckpointSink>>,
     ) -> Result<Self, DownloadError> {
         let checkpoint = match checkpoints {
@@ -328,7 +329,10 @@ impl ContentStoragePipeline {
             }
             None => None,
         };
-        control.configure_disk_runtime(max_buffered_payload_bytes);
+        control.configure_disk_runtime_with_intake(
+            max_buffered_payload_bytes,
+            storage_intake_high_watermark_bytes,
+        );
         let job_limit = content_storage_job_limit(max_buffered_payload_bytes);
         debug_assert_ne!(job_limit, 0);
         let queue_capacity = job_limit;
