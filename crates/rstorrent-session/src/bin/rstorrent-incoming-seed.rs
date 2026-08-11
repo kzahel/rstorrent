@@ -128,6 +128,7 @@ async fn run() -> Result<(), SeedHarnessError> {
     } else {
         None
     };
+    let (tcp_mapping_status, udp_mapping_status) = mapping_statuses(&service).await?;
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "info_hash": hex(metainfo.info_hash),
@@ -144,6 +145,8 @@ async fn run() -> Result<(), SeedHarnessError> {
         "payload_bytes_sent": ready.payload_bytes_sent,
         "mapping": mapping,
         "udp_mapping": udp_mapping,
+        "tcp_mapping_status": tcp_mapping_status,
+        "udp_mapping_status": udp_mapping_status,
         "utp_listen": utp_listen,
         "ipv6_listener": staged_ipv6.as_ref().map(|(_, endpoint)| endpoint.to_string()),
         "ipv6_pinhole": staged_ipv6.as_ref().map(|(status, _)| status),
@@ -1149,6 +1152,59 @@ async fn wait_for_mapping(
                     )));
                 }
                 _ => {}
+            }
+        }
+    })
+    .await
+    .map_err(|_| SeedHarnessError::ReadinessTimeout)?
+}
+
+async fn mapping_statuses(
+    service: &ApplicationService,
+) -> Result<(PortMappingStatus, PortMappingStatus), SeedHarnessError> {
+    let subscription = service
+        .subscribe(SubscriptionSpec {
+            selector: ViewSelector::TorrentList,
+            projection: ViewProjection::Summary,
+            delivery: DeliveryPolicy {
+                min_interval_millis: 0,
+                max_queue_bytes: 64 * 1_024,
+            },
+            diagnostics: None,
+            catalog_page: None,
+        })
+        .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    timeout(READY_TIMEOUT, async {
+        loop {
+            let update = subscription.next_update().await.ok_or_else(|| {
+                SeedHarnessError::Catalog(
+                    "mapping view subscription closed before observation".to_owned(),
+                )
+            })?;
+            let statuses = match update.payload {
+                ViewUpdatePayload::Snapshot {
+                    snapshot:
+                        ViewSnapshot::TorrentList {
+                            client_settings, ..
+                        },
+                } => Some((
+                    client_settings.port_mapping_status,
+                    client_settings.udp_port_mapping_status,
+                )),
+                ViewUpdatePayload::Patch {
+                    patch:
+                        rstorrent_session::ViewPatch::TorrentList {
+                            client_settings: Some(client_settings),
+                            ..
+                        },
+                } => Some((
+                    client_settings.port_mapping_status,
+                    client_settings.udp_port_mapping_status,
+                )),
+                _ => None,
+            };
+            if let Some(statuses) = statuses {
+                return Ok(statuses);
             }
         }
     })

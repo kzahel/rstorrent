@@ -520,6 +520,17 @@ uv run --project tests/interop --locked \
   --avd jstorrent-tablet
 ```
 
+The smaller incoming-uTP reachability parity gate reuses both ABI builds and
+owns a no-window API 34 AVD. It starts the real application with mapping
+disabled, verifies independent TCP and UDP status plus the actual uTP listener,
+then proves joined application, mapping-owner, AVD, and filesystem cleanup:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/android_utp_reachability_status.py \
+  --avd jstorrent-tablet
+```
+
 The real-socket uTP impairment fixture retains its six-profile explicit
 fixed-548 regression by default. `--product-mtu` runs clean 1,500-byte and
 controlled 1,280-byte product-MTU paths; `--efficiency` runs five alternating

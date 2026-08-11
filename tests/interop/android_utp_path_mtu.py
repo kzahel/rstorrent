@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove product uTP path-MTU behavior on one owned API 34 AVD."""
+"""Prove product uTP path-MTU and lifecycle behavior on one API 34 AVD."""
 
 from __future__ import annotations
 
@@ -286,6 +286,18 @@ def run_application_transfer(
         if ready.get("event") != "ready" or ready.get("registrations") != 1:
             raise AndroidUtpFailure(f"unexpected Android application readiness: {ready}")
         parse_endpoint_port(ready.get("utp_listen"), "application uTP listen")
+        tcp_mapping = ready.get("tcp_mapping_status")
+        udp_mapping = ready.get("udp_mapping_status")
+        if not (
+            isinstance(tcp_mapping, dict)
+            and tcp_mapping.get("type") == "disabled"
+            and isinstance(udp_mapping, dict)
+            and udp_mapping.get("type") == "disabled"
+        ):
+            raise AndroidUtpFailure(
+                "Android application mapping statuses did not preserve disabled "
+                f"lifecycle semantics: tcp={tcp_mapping}, udp={udp_mapping}"
+            )
 
         snapshot: dict[str, Any] | None = None
         observed_outgoing_utp = False
@@ -367,6 +379,10 @@ def run_application_transfer(
         return {
             "payload_sha1": expected_sha1,
             "application_utp": application_utp,
+            "mapping_status": {
+                "tcp": tcp_mapping,
+                "udp": udp_mapping,
+            },
             "application_snapshot": snapshot,
             "application_stopped": stopped,
             "libtorrent_stats": oracle_stats,
