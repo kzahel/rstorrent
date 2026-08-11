@@ -62,7 +62,8 @@ use crate::peer_runtime::{
     PeerRequestWindowPhase, PeerRuntimeError, connection_id,
 };
 use crate::peer_socket::{
-    self, PeerConnection, PeerSetError, PeerSetEvent, PeerSocketError, PeerSocketSet, PeerTaskEvent,
+    self, PeerConnection, PeerDialServices, PeerSetError, PeerSetEvent, PeerSocketError,
+    PeerSocketSet, PeerTaskEvent,
 };
 use crate::pex::{PexError, PexReceiveContext, PexReceiveDisposition};
 use crate::piece_availability::{
@@ -2055,7 +2056,11 @@ impl TorrentPeerCoordinator {
             .with_address_families(self.peers.address_family_policy())
     }
 
-    fn transport_connected(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
+    fn transport_connected(
+        &mut self,
+        attempt: DialAttempt,
+        transport: crate::peer_runtime::PeerTransport,
+    ) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
         let Some(peer) = self
             .peers
@@ -2068,7 +2073,11 @@ impl TorrentPeerCoordinator {
         }
         let now = self.elapsed();
         self.peers
-            .with_state(|state| state.runtime.transport_connected(connection, now))
+            .with_state(|state| {
+                state
+                    .runtime
+                    .transport_connected(connection, transport, now)
+            })
             .map_err(DownloadError::PeerRuntime)?;
         self.publish_peer_runtime(true)
     }
@@ -2088,6 +2097,10 @@ impl TorrentPeerCoordinator {
         let outcome = self
             .peers
             .with_state(|state| {
+                state
+                    .runtime
+                    .set_transport(connection_id, connection.transport())
+                    .map_err(TorrentPeerError::Runtime)?;
                 if let Some(endpoint_state) = connection.mse_endpoint_update() {
                     state
                         .registry
@@ -2784,8 +2797,11 @@ impl TorrentPeerCoordinator {
                     info_hash,
                     true,
                     self.connection_network(),
-                    self.control.byte_metric_sink(),
-                    self.control.mse_handshake_sink(),
+                    PeerDialServices {
+                        byte_metric_sink: self.control.byte_metric_sink(),
+                        mse_handshake_sink: self.control.mse_handshake_sink(),
+                        utp: self.control.utp_handle(),
+                    },
                 ) {
                     self.dial_cancelled(attempt)?;
                     if matches!(error, PeerSetError::ConnectionLimit(_)) {
@@ -2837,8 +2853,11 @@ impl TorrentPeerCoordinator {
                 }
             };
             match event {
-                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialPhase { attempt })) => {
-                    self.transport_connected(attempt)?;
+                MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialPhase {
+                    attempt,
+                    transport,
+                })) => {
+                    self.transport_connected(attempt, transport)?;
                 }
                 MetadataSupervisorEvent::Discovery(Ok(())) => {
                     discovery_failed_while_active = false;
@@ -5369,8 +5388,11 @@ fn fill_content_dials(
             info_hash,
             true,
             peers.connection_network(),
-            peers.control.byte_metric_sink(),
-            peers.control.mse_handshake_sink(),
+            PeerDialServices {
+                byte_metric_sink: peers.control.byte_metric_sink(),
+                mse_handshake_sink: peers.control.mse_handshake_sink(),
+                utp: peers.control.utp_handle(),
+            },
         ) {
             state
                 .finish_dial(pending_dial_id(attempt))
@@ -6096,8 +6118,8 @@ async fn run_selective_swarm_loop(
                     )));
                 }
             }
-            ContentSupervisorEvent::Peer(PeerSetEvent::DialPhase { attempt }) => {
-                peers.transport_connected(attempt)?;
+            ContentSupervisorEvent::Peer(PeerSetEvent::DialPhase { attempt, transport }) => {
+                peers.transport_connected(attempt, transport)?;
             }
             ContentSupervisorEvent::Peer(PeerSetEvent::DialCompleted { attempt, result }) => {
                 download

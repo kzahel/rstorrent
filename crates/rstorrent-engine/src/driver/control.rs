@@ -36,6 +36,7 @@ use crate::storage_file_pool::StorageFilePool;
 use crate::swarm::{BlockKey, ConnectionWindowPhaseSnapshot, NoRequestReason, SwarmState};
 use crate::torrent_peer::TorrentPeerActivitySink;
 use crate::tracker::TrackerRuntimeSnapshot;
+use crate::utp_runtime::UtpHandle;
 
 pub(super) const CONTENT_STORAGE_WRITE_CONCURRENCY: usize = 4;
 pub(super) const CONTENT_STORAGE_HASH_CONCURRENCY: usize = 4;
@@ -434,6 +435,7 @@ struct DownloadControlInner {
     storage_file_pool: Mutex<Option<StorageFilePool>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
     incoming_peers: Mutex<Option<IncomingPeerHandle>>,
+    utp: Mutex<Option<UtpHandle>>,
     incoming_content_routable: AtomicBool,
     incoming_route_wake: Mutex<Option<Arc<Notify>>>,
     session_resources: Mutex<Option<SessionTorrentResources>>,
@@ -792,6 +794,7 @@ impl DownloadControl {
                 storage_file_pool: Mutex::new(None),
                 platform_storage: Mutex::new(None),
                 incoming_peers: Mutex::new(None),
+                utp: Mutex::new(None),
                 incoming_content_routable: AtomicBool::new(false),
                 incoming_route_wake: Mutex::new(None),
                 session_resources: Mutex::new(None),
@@ -849,6 +852,14 @@ impl DownloadControl {
         *self
             .inner
             .incoming_peers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(handle);
+    }
+
+    pub fn set_utp_handle(&self, handle: UtpHandle) {
+        *self
+            .inner
+            .utp
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(handle);
     }
@@ -931,6 +942,14 @@ impl DownloadControl {
     pub(super) fn incoming_peer_handle(&self) -> Option<IncomingPeerHandle> {
         self.inner
             .incoming_peers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub(super) fn utp_handle(&self) -> Option<UtpHandle> {
+        self.inner
+            .utp
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()

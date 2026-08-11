@@ -19,6 +19,7 @@ mod have;
 mod incoming_seeding;
 mod reachability;
 mod session_network;
+mod session_utp;
 mod settings;
 mod speed;
 mod store;
@@ -51,7 +52,7 @@ pub use have::{HaveError, HaveState};
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{
     DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,
-    NetworkPolicy,
+    NetworkPolicy, PeerTransportPolicy,
 };
 pub use settings::{
     ActiveDownloadsClampReason, AdvertisedPeerEndpointScope, AdvertisedPeerEndpointStatus,

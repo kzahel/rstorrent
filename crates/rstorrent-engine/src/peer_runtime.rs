@@ -175,6 +175,15 @@ pub(crate) struct PeerRuntime {
 }
 
 impl PeerRuntime {
+    pub(crate) fn set_transport(
+        &mut self,
+        connection: ConnectionId,
+        transport: PeerTransport,
+    ) -> Result<(), PeerRuntimeError> {
+        self.connection_mut(connection)?.transport = transport;
+        Ok(())
+    }
+
     pub(crate) fn begin_outgoing(
         &mut self,
         attempt: DialAttempt,
@@ -236,8 +245,10 @@ impl PeerRuntime {
     pub(crate) fn transport_connected(
         &mut self,
         connection: ConnectionId,
+        transport: PeerTransport,
         now: Duration,
     ) -> Result<(), PeerRuntimeError> {
+        self.set_transport(connection, transport)?;
         self.transition(
             connection,
             PeerConnectionLifecycle::ProtocolHandshaking,
@@ -579,7 +590,7 @@ mod tests {
             .begin_outgoing(attempt, PeerConnectionRole::Content, Duration::ZERO)
             .expect("begin outgoing");
         runtime
-            .transport_connected(id, Duration::ZERO)
+            .transport_connected(id, PeerTransport::Tcp, Duration::ZERO)
             .expect("transport connected");
         id
     }
@@ -619,7 +630,7 @@ mod tests {
             .begin_outgoing(attempt, PeerConnectionRole::Metadata, Duration::ZERO)
             .expect("begin");
         runtime
-            .transport_connected(connection, Duration::from_millis(5))
+            .transport_connected(connection, PeerTransport::Tcp, Duration::from_millis(5))
             .expect("transport");
         let handshake = Handshake {
             peer_id: *b"-LTTEST-000000000000",
@@ -699,7 +710,7 @@ mod tests {
         ));
         let unknown = ConnectionId::new(connection.get() + 1).expect("unknown");
         assert!(matches!(
-            runtime.transport_connected(unknown, Duration::ZERO),
+            runtime.transport_connected(unknown, PeerTransport::Tcp, Duration::ZERO),
             Err(PeerRuntimeError::UnknownConnection(actual)) if actual == unknown
         ));
     }

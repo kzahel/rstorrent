@@ -14,9 +14,9 @@ use rstorrent_engine::{
     IncomingPeerError, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, MseDhWorkOwner, MseHandshakeObservation, MseHandshakeOutcome,
     MseHandshakeSink, NetworkConfig, PeerAdvertisementEndpoint, PeerBudget, PeerEncryptionPolicy,
-    PeerEncryptionPolicyHandle, SessionSocketConfig, SessionSocketError, SessionSocketFamilySet,
-    SessionSocketFamilyState, SessionSocketSet, SessionUdpError, SessionUdpHandle,
-    SessionUdpService,
+    PeerEncryptionPolicyHandle, PeerTransportPolicy, SessionSocketConfig, SessionSocketError,
+    SessionSocketFamilySet, SessionSocketFamilyState, SessionSocketSet, SessionUdpError,
+    SessionUdpHandle, SessionUdpService, UtpHandle, UtpRuntimeError, UtpService,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -33,6 +33,7 @@ use crate::reachability::{
     ReachabilityEvidenceProbe, ReachabilityGenerationShutdown, ReachabilityStartInputs,
     UncertainMappingLease, UncertainPinholeLease,
 };
+use crate::session_utp::SessionUtpPeerService;
 use crate::settings::{
     AdvertisedPeerEndpointStatus, ClientSettings, ClientSettingsApplicationState,
     ClientSettingsDegradedReason, ClientSettingsRuntimeView, EffectiveListenerSettings,
@@ -88,6 +89,7 @@ pub(crate) struct SessionNetworkConfig {
     pub incoming_no_request_timeout: Duration,
     pub incoming_inactivity_timeout: Duration,
     pub peer_budget_max_open_files_for_testing: Option<usize>,
+    pub peer_transport_policy: PeerTransportPolicy,
 }
 
 #[derive(Debug)]
@@ -97,6 +99,7 @@ pub(crate) enum SessionNetworkError {
     Incoming(IncomingPeerError),
     SessionSocket(SessionSocketError),
     SessionUdp(SessionUdpError),
+    Utp(UtpRuntimeError),
     Discovery(DiscoveryAdvertisementError),
 }
 
@@ -108,6 +111,7 @@ impl fmt::Display for SessionNetworkError {
             Self::Incoming(error) => write!(formatter, "{error}"),
             Self::SessionSocket(error) => write!(formatter, "{error}"),
             Self::SessionUdp(error) => write!(formatter, "{error}"),
+            Self::Utp(error) => write!(formatter, "{error}"),
             Self::Discovery(error) => write!(formatter, "{error}"),
         }
     }
@@ -120,6 +124,7 @@ impl Error for SessionNetworkError {
             Self::Incoming(error) => Some(error),
             Self::SessionSocket(error) => Some(error),
             Self::SessionUdp(error) => Some(error),
+            Self::Utp(error) => Some(error),
             Self::Discovery(error) => Some(error),
             Self::Configuration(_) => None,
         }
@@ -150,6 +155,12 @@ impl From<SessionUdpError> for SessionNetworkError {
     }
 }
 
+impl From<UtpRuntimeError> for SessionNetworkError {
+    fn from(error: UtpRuntimeError) -> Self {
+        Self::Utp(error)
+    }
+}
+
 impl From<DiscoveryAdvertisementError> for SessionNetworkError {
     fn from(error: DiscoveryAdvertisementError) -> Self {
         Self::Discovery(error)
@@ -177,6 +188,7 @@ pub(crate) struct SessionNetworkRuntime {
     incoming_handle: IncomingPeerHandle,
     incoming_seeding: IncomingSeeding,
     session_udp_handle: SessionUdpHandle,
+    utp_handle: Option<UtpHandle>,
     discovery_handle: DiscoveryAdvertisementHandle,
     reachability_evidence: ReachabilityEvidenceProbe,
     listener_active: Arc<AtomicBool>,
@@ -299,6 +311,7 @@ struct SessionNetworkOwner {
     incoming_ipv6_acceptor: Option<IncomingPeerAcceptor>,
     incoming_seeding: IncomingSeeding,
     session_udp: Option<SessionUdpService>,
+    session_utp: Option<SessionUtpPeerService>,
     dht: Option<DhtService>,
     dht_observations: Option<DhtObservationRuntime>,
     discovery_advertisement: Option<DiscoveryAdvertisementService>,
@@ -326,6 +339,7 @@ impl SessionNetworkRuntime {
             incoming_no_request_timeout,
             incoming_inactivity_timeout,
             peer_budget_max_open_files_for_testing,
+            peer_transport_policy,
         } = config;
         let requested_address_families = if settings.ipv6_enabled {
             AddressFamilyPolicy::dual_stack()
@@ -480,6 +494,42 @@ impl SessionNetworkRuntime {
         let mut incoming_acceptor = incoming_acceptor;
         let mut incoming_ipv6_acceptor = incoming_ipv6_acceptor;
         let mut session_udp = Some(session_udp);
+        let mut session_utp = match peer_transport_policy {
+            PeerTransportPolicy::TcpOnly => None,
+            PeerTransportPolicy::PreferUtp => {
+                let service = match UtpService::start(
+                    session_udp
+                        .as_mut()
+                        .expect("session UDP exists while starting uTP"),
+                ) {
+                    Ok(service) => service,
+                    Err(error) => {
+                        if let Some(acceptor) = incoming_acceptor.take() {
+                            let _ = acceptor.shutdown().await;
+                        }
+                        if let Some(acceptor) = incoming_ipv6_acceptor.take() {
+                            let _ = acceptor.shutdown().await;
+                        }
+                        if let Some(runtime) = incoming_runtime.take() {
+                            let _ = runtime.shutdown().await;
+                        }
+                        if let Some(udp) = session_udp.take() {
+                            let _ = udp.shutdown().await;
+                        }
+                        return Err(error.into());
+                    }
+                };
+                Some(SessionUtpPeerService::start(
+                    service,
+                    incoming_runtime
+                        .as_ref()
+                        .expect("incoming runtime exists while starting uTP")
+                        .handle(),
+                    incoming_handshake_timeout,
+                ))
+            }
+        };
+        let utp_handle = session_utp.as_ref().map(SessionUtpPeerService::handle);
         let dht = match DhtService::start_with_transport(dht, dht_transport).await {
             Ok(dht) => dht,
             Err(error) => {
@@ -488,6 +538,9 @@ impl SessionNetworkRuntime {
                 }
                 if let Some(acceptor) = incoming_ipv6_acceptor.take() {
                     let _ = acceptor.shutdown().await;
+                }
+                if let Some(utp) = session_utp.take() {
+                    let _ = utp.shutdown().await;
                 }
                 if let Some(runtime) = incoming_runtime.take() {
                     let _ = runtime.shutdown().await;
@@ -577,6 +630,7 @@ impl SessionNetworkRuntime {
             incoming_ipv6_acceptor,
             incoming_seeding: incoming_seeding.clone(),
             session_udp,
+            session_utp,
             dht: Some(dht),
             dht_observations: None,
             discovery_advertisement: Some(discovery_advertisement),
@@ -625,6 +679,7 @@ impl SessionNetworkRuntime {
             incoming_handle,
             incoming_seeding,
             session_udp_handle,
+            utp_handle,
             discovery_handle,
             reachability_evidence,
             listener_active,
@@ -854,6 +909,10 @@ impl SessionNetworkRuntime {
 
     pub(crate) fn incoming_peer_handle(&self) -> IncomingPeerHandle {
         self.incoming_handle.clone()
+    }
+
+    pub(crate) fn utp_handle(&self) -> Option<UtpHandle> {
+        self.utp_handle.clone()
     }
 
     pub(crate) fn advertised_endpoint(&self) -> AdvertisedPeerEndpointSelector {
@@ -2027,6 +2086,27 @@ impl SessionNetworkOwner {
             remember_error(&mut join_error, format!("IPv6 incoming acceptor: {error}"));
         }
         self.listener_active.store(false, Ordering::Release);
+        if let Some(utp) = self.session_utp.take() {
+            match utp.shutdown().await {
+                Ok(terminal) => {
+                    let terminal_counts = format!(
+                        "connections={},half_open={},incoming_queue_high_water={}",
+                        terminal.active_connections,
+                        terminal.incoming_half_open,
+                        terminal.incoming_stream_queue_high_water,
+                    );
+                    let _ = views.record_diagnostic(
+                        DiagnosticSeverity::Info,
+                        category::PEER_CONNECTION,
+                        "session_utp_service_stopped",
+                        None,
+                        "Session uTP service stopped with joined ownership",
+                        &[("terminal_counts", &terminal_counts)],
+                    );
+                }
+                Err(error) => remember_error(&mut join_error, error),
+            }
+        }
         if let Some(runtime) = self.incoming_runtime.take() {
             match runtime.shutdown().await {
                 Ok(terminal) => {

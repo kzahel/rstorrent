@@ -17,15 +17,15 @@ use rstorrent_engine::{
     DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot,
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NamespaceAction,
     NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
-    PathPublicationStage, PeerEncryptionPolicy, PlatformStorageClient, PlatformStorageFailureKind,
-    PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
-    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
-    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
-    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig,
-    TrackerEndpoint, TrackerSource, TrackerTransport, decide_namespace_transition,
-    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_platform_files,
+    PathPublicationStage, PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient,
+    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
+    SelectiveStorageError, SessionDownloadResourceSnapshot, SessionDownloadResources,
+    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
+    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind,
+    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
+    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
+    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -138,6 +138,7 @@ pub struct ApplicationConfig {
     pub storage_roots: Vec<ConfiguredStorageRoot>,
     pub network: NetworkConfig,
     pub initial_client_settings: crate::ClientSettings,
+    pub peer_transport_policy: PeerTransportPolicy,
     pub download_resource_limits: DownloadResourceLimits,
     /// Optional platform ceiling applied after the persisted configured limit.
     pub active_download_cap: Option<u16>,
@@ -239,6 +240,7 @@ impl ApplicationConfig {
             storage_roots,
             network,
             initial_client_settings: crate::ClientSettings::default(),
+            peer_transport_policy: PeerTransportPolicy::TcpOnly,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
             active_download_cap: None,
             dht,
@@ -439,6 +441,7 @@ impl ApplicationService {
             incoming_no_request_timeout: config.incoming_no_request_timeout,
             incoming_inactivity_timeout: config.incoming_inactivity_timeout,
             peer_budget_max_open_files_for_testing: config.peer_budget_max_open_files_for_testing,
+            peer_transport_policy: config.peer_transport_policy,
         })
         .await?;
         let views = ViewHub::new_with_runtime_views(
@@ -2724,6 +2727,9 @@ impl ApplicationService {
         ));
         control.set_storage_file_pool(self.storage_file_pool.clone());
         control.set_incoming_peer_handle(self.session_network().incoming_peer_handle());
+        if let Some(utp) = self.session_network().utp_handle() {
+            control.set_utp_handle(utp);
+        }
         control.set_incoming_route_wake(self.discovery_wake.clone());
         control.set_storage_write_delay(self.storage_write_delay_for_testing);
         control.set_storage_hash_delay(self.storage_hash_delay_for_testing);
@@ -5174,6 +5180,7 @@ pub enum ApplicationError {
     Incoming(IncomingPeerError),
     SessionSocket(SessionSocketError),
     SessionUdp(SessionUdpError),
+    Utp(rstorrent_engine::UtpRuntimeError),
     IncomingSeeding(String),
 }
 
@@ -5199,6 +5206,7 @@ impl fmt::Display for ApplicationError {
             Self::Incoming(error) => write!(formatter, "{error}"),
             Self::SessionSocket(error) => write!(formatter, "{error}"),
             Self::SessionUdp(error) => write!(formatter, "{error}"),
+            Self::Utp(error) => write!(formatter, "{error}"),
             Self::IncomingSeeding(error) => write!(formatter, "incoming seeding: {error}"),
         }
     }
@@ -5214,6 +5222,7 @@ impl Error for ApplicationError {
             Self::Incoming(error) => Some(error),
             Self::SessionSocket(error) => Some(error),
             Self::SessionUdp(error) => Some(error),
+            Self::Utp(error) => Some(error),
             _ => None,
         }
     }
@@ -5258,6 +5267,7 @@ impl From<SessionNetworkError> for ApplicationError {
             SessionNetworkError::Incoming(error) => Self::Incoming(error),
             SessionNetworkError::SessionSocket(error) => Self::SessionSocket(error),
             SessionNetworkError::SessionUdp(error) => Self::SessionUdp(error),
+            SessionNetworkError::Utp(error) => Self::Utp(error),
         }
     }
 }
@@ -8228,6 +8238,41 @@ mod tests {
         assert!(application.session_network.is_none());
         drop(application);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn session_utp_is_default_off_and_explicitly_joined() {
+        let default_root = test_root("session-utp-default-off");
+        let mut default_application = ApplicationService::open(config(&default_root))
+            .await
+            .expect("open default application");
+        assert!(default_application.session_network().utp_handle().is_none());
+        default_application
+            .shutdown()
+            .await
+            .expect("default application shutdown");
+        drop(default_application);
+        fs::remove_dir_all(default_root).expect("remove default root");
+
+        let enabled_root = test_root("session-utp-explicit");
+        let mut enabled_config = config(&enabled_root);
+        enabled_config.peer_transport_policy = rstorrent_engine::PeerTransportPolicy::PreferUtp;
+        let mut enabled_application = ApplicationService::open(enabled_config)
+            .await
+            .expect("open uTP-enabled application");
+        let utp = enabled_application
+            .session_network()
+            .utp_handle()
+            .expect("explicit policy starts uTP");
+        assert_eq!(utp.snapshot().active_connections, 0);
+        assert_eq!(utp.snapshot().worker_panics, 0);
+        enabled_application
+            .shutdown()
+            .await
+            .expect("uTP-enabled application shutdown");
+        assert_eq!(utp.snapshot().active_connections, 0);
+        drop(enabled_application);
+        fs::remove_dir_all(enabled_root).expect("remove enabled root");
     }
 
     #[tokio::test]

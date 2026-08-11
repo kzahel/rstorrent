@@ -24,7 +24,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 use tokio_util::sync::{CancellationToken, PollSender};
 
 use crate::network::AddressFamily;
@@ -131,6 +131,7 @@ pub enum UtpRuntimeError {
     UnsupportedFamily(AddressFamily),
     ConnectionLimit,
     ConnectionIdCollision,
+    ConnectTimedOut(Duration),
     ServiceStopped,
     TaskJoin(String),
 }
@@ -149,6 +150,9 @@ impl fmt::Display for UtpRuntimeError {
             Self::ConnectionIdCollision => {
                 formatter.write_str("uTP connection ID entropy collision limit reached")
             }
+            Self::ConnectTimedOut(timeout) => {
+                write!(formatter, "uTP connect timed out after {timeout:?}")
+            }
             Self::ServiceStopped => formatter.write_str("uTP service stopped"),
             Self::TaskJoin(detail) => write!(formatter, "uTP task join failed: {detail}"),
         }
@@ -165,6 +169,7 @@ impl Error for UtpRuntimeError {
             | Self::UnsupportedFamily(_)
             | Self::ConnectionLimit
             | Self::ConnectionIdCollision
+            | Self::ConnectTimedOut(_)
             | Self::ServiceStopped
             | Self::TaskJoin(_) => None,
         }
@@ -213,6 +218,8 @@ enum UtpServiceCommand {
     Connect {
         target: SocketAddr,
         response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
+        cancellation: CancellationToken,
+        termination: oneshot::Sender<()>,
     },
 }
 
@@ -224,17 +231,96 @@ pub struct UtpHandle {
 
 impl UtpHandle {
     pub async fn connect(&self, target: SocketAddr) -> Result<UtpStream, UtpRuntimeError> {
+        self.connect_inner(target, None).await
+    }
+
+    pub async fn connect_with_timeout(
+        &self,
+        target: SocketAddr,
+        timeout: Duration,
+    ) -> Result<UtpStream, UtpRuntimeError> {
+        self.connect_inner(target, Some(timeout)).await
+    }
+
+    async fn connect_inner(
+        &self,
+        target: SocketAddr,
+        connect_timeout: Option<Duration>,
+    ) -> Result<UtpStream, UtpRuntimeError> {
         let (response, result) = oneshot::channel();
+        let (termination, terminated) = oneshot::channel();
+        let cancellation = CancellationToken::new();
+        let mut cancellation_guard = UtpConnectCancellation::new(cancellation.clone());
         self.commands
-            .send(UtpServiceCommand::Connect { target, response })
+            .send(UtpServiceCommand::Connect {
+                target,
+                response,
+                cancellation,
+                termination,
+            })
             .await
             .map_err(|_| UtpRuntimeError::ServiceStopped)?;
-        result.await.map_err(|_| UtpRuntimeError::ServiceStopped)?
+        let resolved = match connect_timeout {
+            Some(connect_timeout) => {
+                tokio::select! {
+                    biased;
+                    result = result => Some(result),
+                    _ = sleep(connect_timeout) => None,
+                }
+            }
+            None => Some(result.await),
+        };
+        match resolved {
+            Some(Ok(Ok(stream))) => {
+                cancellation_guard.disarm();
+                Ok(stream)
+            }
+            Some(Ok(Err(error))) => {
+                let _ = terminated.await;
+                Err(error)
+            }
+            Some(Err(_)) => {
+                let _ = terminated.await;
+                Err(UtpRuntimeError::ServiceStopped)
+            }
+            None => {
+                cancellation_guard.cancel();
+                let _ = terminated.await;
+                Err(UtpRuntimeError::ConnectTimedOut(
+                    connect_timeout.expect("timeout branch has a duration"),
+                ))
+            }
+        }
     }
 
     #[must_use]
     pub fn snapshot(&self) -> UtpServiceSnapshot {
         self.stats.snapshot()
+    }
+}
+
+#[derive(Debug)]
+struct UtpConnectCancellation(Option<CancellationToken>);
+
+impl UtpConnectCancellation {
+    fn new(cancellation: CancellationToken) -> Self {
+        Self(Some(cancellation))
+    }
+
+    fn cancel(&mut self) {
+        if let Some(cancellation) = self.0.take() {
+            cancellation.cancel();
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for UtpConnectCancellation {
+    fn drop(&mut self) {
+        self.cancel();
     }
 }
 
@@ -998,7 +1084,12 @@ fn handle_service_command(
     config: UtpRuntimeConfig,
 ) {
     match command {
-        UtpServiceCommand::Connect { target, response } => {
+        UtpServiceCommand::Connect {
+            target,
+            response,
+            cancellation,
+            termination,
+        } => {
             let result = prepare_outgoing(
                 target,
                 transport,
@@ -1009,6 +1100,8 @@ fn handle_service_command(
                 routes,
                 workers,
                 config,
+                cancellation,
+                termination,
                 response,
             );
             if let Err((error, response)) = result {
@@ -1029,6 +1122,8 @@ fn prepare_outgoing(
     routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
     workers: &mut WorkerSet,
     config: UtpRuntimeConfig,
+    cancellation: CancellationToken,
+    termination: oneshot::Sender<()>,
     response: oneshot::Sender<Result<UtpStream, UtpRuntimeError>>,
 ) -> Result<
     (),
@@ -1093,6 +1188,8 @@ fn prepare_outgoing(
         routes,
         workers,
         false,
+        cancellation,
+        Some(termination),
     );
     Ok(())
 }
@@ -1198,6 +1295,8 @@ fn handle_datagram(
         routes,
         workers,
         true,
+        CancellationToken::new(),
+        None,
     );
 }
 
@@ -1377,9 +1476,10 @@ fn spawn_worker(
     routes: &mut BTreeMap<UtpConnectionKey, UtpRoute>,
     workers: &mut WorkerSet,
     incoming: bool,
+    cancellation: CancellationToken,
+    termination: Option<oneshot::Sender<()>>,
 ) {
     let (ingress, datagrams) = mpsc::channel(UTP_CONNECTION_DATAGRAM_QUEUE);
-    let cancellation = CancellationToken::new();
     routes.insert(
         key,
         UtpRoute {
@@ -1416,6 +1516,9 @@ fn spawn_worker(
     workers.spawn(async move {
         let result = AssertUnwindSafe(worker.run()).catch_unwind().await;
         worker_stats.connection_stopped();
+        if let Some(termination) = termination {
+            let _ = termination.send(());
+        }
         (key, result)
     });
 }
@@ -2367,6 +2470,49 @@ mod tests {
         assert_eq!(terminal.active_connections, 0);
         assert_eq!(terminal.incoming_half_open, 0);
         assert_eq!(terminal.worker_panics, 0);
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn connect_timeout_joins_worker_before_returning() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let error = utp
+            .handle()
+            .connect_with_timeout(remote.local_addr().unwrap(), Duration::from_millis(25))
+            .await
+            .expect_err("unanswered connect must time out");
+        assert!(matches!(error, UtpRuntimeError::ConnectTimedOut(_)));
+        assert_eq!(utp.snapshot().active_connections, 0);
+        assert!(utp.snapshot().datagrams_sent > 0);
+
+        let terminal = utp.shutdown().await.unwrap();
+        assert_eq!(terminal.active_connections, 0);
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropped_connect_future_cancels_worker() {
+        let (udp, dht, utp) = service().await;
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let handle = utp.handle();
+        let connect =
+            tokio::spawn(async move { handle.connect(remote.local_addr().unwrap()).await });
+        wait_for(|| utp.snapshot().active_connections == 1).await;
+
+        connect.abort();
+        assert!(
+            connect
+                .await
+                .expect_err("connect task must cancel")
+                .is_cancelled()
+        );
+        wait_for(|| utp.snapshot().active_connections == 0).await;
+
+        let terminal = utp.shutdown().await.unwrap();
+        assert_eq!(terminal.active_connections, 0);
         drop(dht);
         udp.shutdown().await.unwrap();
     }

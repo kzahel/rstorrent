@@ -12,6 +12,13 @@ pub enum AddressFamily {
     Ipv6,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PeerTransportPolicy {
+    #[default]
+    TcpOnly,
+    PreferUtp,
+}
+
 impl AddressFamily {
     #[must_use]
     pub const fn of(address: IpAddr) -> Self {
