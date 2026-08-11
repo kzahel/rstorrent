@@ -479,15 +479,30 @@ uv run --project tests/interop --locked \
   python tests/interop/incomplete_duplex.py
 ```
 
-The product uTP profile exercises the ordinary fixed-548 IPv4/plaintext
-application default. It verifies incoming and outgoing exact transfers against
-pinned libtorrent, then proves a joined uTP timeout and sequential TCP fallback
-against a TCP-only seed. The separate incomplete-duplex profile explicitly
-selects `TcpOnly` to retain its transport-isolated TCP, Fast, and MSE baseline:
+The product uTP profile exercises the ordinary IPv4/plaintext application
+default: dynamic 548--1,472 packetization when fragmentation protection is
+verified and fixed 548 otherwise. It verifies incoming and outgoing exact
+transfers against pinned libtorrent under a 256-KiB/s application stream-byte
+cap, then proves a joined uTP timeout and sequential TCP fallback against a
+TCP-only seed. The separate incomplete-duplex profile explicitly selects
+`TcpOnly` to retain its transport-isolated TCP, Fast, and MSE baseline:
 
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/utp_product_integration.py
+```
+
+The real-socket uTP impairment fixture retains its six-profile explicit
+fixed-548 regression by default. `--product-mtu` runs clean 1,500-byte and
+controlled 1,280-byte product-MTU paths; `--efficiency` runs five alternating
+fixed/dynamic clean-path pairs and checks packet-count, time, CPU, RSS, queues,
+integrity, and cleanup:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/utp_runtime_impairment.py --product-mtu
+uv run --project tests/interop --locked \
+  python tests/interop/utp_runtime_impairment.py --efficiency
 ```
 
 The concurrent-torrent profile downloads independent deterministic fixtures

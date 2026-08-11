@@ -95,9 +95,12 @@ the single authoritative **Now**.
   contaminated generation through the existing session owner, and selects
   dynamic product MTU only for a positively verified IPv4 socket. A 256 KiB
   macOS product transfer selected at least 1,456 bytes with exact content and
-  zero terminal ownership. No unsafe project code, setting, external run, or
-  protocol-claim change has landed; controlled interop/rate evidence is the
-  current stage.
+  zero terminal ownership. Controlled 1,500/1,280 paths now select
+  1,457/1,269 bytes, five alternating fixed/dynamic pairs reduce median DATA
+  datagrams 62.97%, and the capped ordinary application/libtorrent cohort
+  passes in both roles. No unsafe project code, setting, external run, or
+  protocol-claim change has landed; Android runtime and repository closure is
+  the current stage.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -141,9 +144,11 @@ the single authoritative **Now**.
   proves the inherited application default against pinned libtorrent in
   incoming uTP, outgoing uTP, and TCP-only fallback roles. All three transfer
   and independently hash the exact 2,097,883-byte fixture with one application
-  peer, actual transport views, bounded fixed-runtime counters, and joined
-  shutdown. The explicit `TcpOnly` TCP/Fast/MSE application regression passes
-  with no uTP service.
+  peer, actual transport views, bounded dynamic/fallback counters, a
+  256-KiB/s stream-byte cap, and joined shutdown. The application DATA sender
+  selects 1,457 bytes; its request/ACK-heavy receiver correctly remains at the
+  548-byte confirmed floor with no size-filling probe. The explicit `TcpOnly`
+  TCP/Fast/MSE application regression passes with no uTP service.
 - Completed Tactical `119` now supplies the independently authored,
   dependency-free v1 codec and deterministic bounded connection/reliability
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
@@ -851,12 +856,12 @@ Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
 its Stage 2 shared-egress and safe platform-option boundary passes, including
 the approved macOS adapter; deterministic Stage 3 revalidation/downward
 recovery and Stage 4 protected-send/product runtime integration pass, and
-Stage 5 controlled interop/rate evidence is current.**
+Stage 5 controlled interop/rate/efficiency evidence passes; Stage 6 Android
+runtime and repository closure is current.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
-controlled application/libtorrent and alternating fixed/dynamic efficiency
-stage. Reachability, tracker/DHT incoming-endpoint advertisement,
+Android runtime and repository closure stage. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

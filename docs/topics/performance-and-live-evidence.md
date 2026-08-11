@@ -19,6 +19,13 @@ observations rather than public-swarm or product performance claims.
 Completed Tactical `132` records one 2.862-second metadata-only ordinary-swarm
 uTP readiness observation with both transports, bounded resources, and exact
 cleanup. It is not a throughput baseline.
+Active Tactical `137` records a controlled product-MTU comparison: five
+alternating exact 2,097,883-byte pairs reduce median RSTorrent DATA datagrams
+from 3,978 at fixed 548 to 1,473 at dynamic 1,457 bytes, a 62.97% reduction.
+Median active time falls from 7.646 to 2.994 seconds and sampled seed CPU from
+0.15 to 0.06 seconds; median RSS stays near 10.7 MiB and queue high waters do
+not grow. This is a controlled packetization baseline, not a public-WAN speed
+claim.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

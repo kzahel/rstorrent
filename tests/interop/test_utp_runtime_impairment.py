@@ -7,8 +7,10 @@ import unittest
 
 from utp_runtime_impairment import (
     DIAGNOSTIC_MTU_PROFILE,
+    PRODUCT_MTU_1280_PROFILE,
     ImpairmentFailure,
     RelayPolicy,
+    parse_process_time,
     utp_packet_type,
 )
 
@@ -60,18 +62,33 @@ class UtpRuntimeImpairmentTests(unittest.TestCase):
         self.assertFalse(mtu.decide("client-to-target", packet(0, 1400)).drop)
 
     def test_diagnostic_mtu_drops_first_oversized_sequence_then_retries(self) -> None:
-        mtu = RelayPolicy(DIAGNOSTIC_MTU_PROFILE)
-        self.assertFalse(mtu.decide("target-to-client", packet(0, 1280, 10)).drop)
-        protected = mtu.decide("target-to-client", packet(0, 1281, 10))
-        self.assertTrue(protected.drop)
-        retry = mtu.decide("target-to-client", packet(0, 1281, 10))
-        self.assertFalse(retry.drop)
-        self.assertTrue(retry.fragmentable_mtu_retry)
-        next_probe = mtu.decide("target-to-client", packet(0, 1400, 11))
-        self.assertTrue(next_probe.drop)
-        self.assertFalse(
-            mtu.decide("client-to-target", packet(0, 1400, 12)).drop
-        )
+        for profile in (DIAGNOSTIC_MTU_PROFILE, PRODUCT_MTU_1280_PROFILE):
+            with self.subTest(profile=profile):
+                mtu = RelayPolicy(profile)
+                self.assertFalse(
+                    mtu.decide("target-to-client", packet(0, 1280, 10)).drop
+                )
+                protected = mtu.decide(
+                    "target-to-client", packet(0, 1281, 10)
+                )
+                self.assertTrue(protected.drop)
+                retry = mtu.decide("target-to-client", packet(0, 1281, 10))
+                self.assertFalse(retry.drop)
+                self.assertTrue(retry.fragmentable_mtu_retry)
+                next_probe = mtu.decide(
+                    "target-to-client", packet(0, 1400, 11)
+                )
+                self.assertTrue(next_probe.drop)
+                self.assertFalse(
+                    mtu.decide("client-to-target", packet(0, 1400, 12)).drop
+                )
+
+    def test_process_time_parser_accepts_bsd_and_linux_shapes(self) -> None:
+        self.assertEqual(parse_process_time("0:00.05"), 0.05)
+        self.assertEqual(parse_process_time("01:02:03"), 3723.0)
+        self.assertEqual(parse_process_time("2-01:02:03"), 176523.0)
+        with self.assertRaisesRegex(ImpairmentFailure, "unexpected process CPU"):
+            parse_process_time("unexpected")
 
     def test_delay_jitter_alternates_independently_each_way(self) -> None:
         policy = RelayPolicy("delay-jitter")

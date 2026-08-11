@@ -8,6 +8,8 @@ import heapq
 import json
 import selectors
 import socket
+import statistics
+import subprocess
 import sys
 import tempfile
 import threading
@@ -52,7 +54,11 @@ PROFILES = (
     "mtu-black-hole",
 )
 DIAGNOSTIC_MTU_PROFILE = "diagnostic-mtu-black-hole"
-RELAY_PROFILES = PROFILES + (DIAGNOSTIC_MTU_PROFILE,)
+PRODUCT_MTU_CLEAN_PROFILE = "product-mtu-clean-1500"
+PRODUCT_MTU_1280_PROFILE = "product-mtu-1280"
+PRODUCT_MTU_PROFILES = (PRODUCT_MTU_CLEAN_PROFILE, PRODUCT_MTU_1280_PROFILE)
+RELAY_PROFILES = PROFILES + (DIAGNOSTIC_MTU_PROFILE,) + PRODUCT_MTU_PROFILES
+EFFICIENCY_PAIRS = 5
 SCENARIO_TIMEOUT_SECONDS = 180.0
 MAX_PACKET_DECISIONS = 10_000
 MAX_PROFILE_BYTES = 16 * 1024 * 1024
@@ -111,7 +117,7 @@ class RelayPolicy:
         if self.profile == "mtu-black-hole" and eligible_data:
             return RelayDecision(len(payload) > 1_280, (0.002,))
         if (
-            self.profile == DIAGNOSTIC_MTU_PROFILE
+            self.profile in (DIAGNOSTIC_MTU_PROFILE, PRODUCT_MTU_1280_PROFILE)
             and eligible_data
             and len(payload) > 1_280
         ):
@@ -263,7 +269,10 @@ class DeterministicUdpRelay:
             raise ImpairmentFailure("relay profile byte budget was exceeded")
         if decision.drop:
             snapshot.dropped_datagrams += 1
-            if self.policy.profile == DIAGNOSTIC_MTU_PROFILE:
+            if self.policy.profile in (
+                DIAGNOSTIC_MTU_PROFILE,
+                PRODUCT_MTU_1280_PROFILE,
+            ):
                 snapshot.mtu_probe_drops += 1
             return
         if decision.fragmentable_mtu_retry:
@@ -338,8 +347,66 @@ class DeterministicUdpRelay:
         return self.snapshot()
 
 
+def parse_process_time(value: str) -> float:
+    days = 0
+    if "-" in value:
+        day_text, value = value.split("-", 1)
+        days = int(day_text)
+    components = value.split(":")
+    if len(components) == 2:
+        hours = 0
+        minutes, seconds = components
+    elif len(components) == 3:
+        hours, minutes, seconds = components
+    else:
+        raise ImpairmentFailure(f"unexpected process CPU time {value}")
+    return (
+        days * 86_400
+        + int(hours) * 3_600
+        + int(minutes) * 60
+        + float(seconds)
+    )
+
+
+@dataclass
+class ProcessResources:
+    cpu_seconds: float = 0.0
+    rss_high_water_bytes: int = 0
+
+    def observe(self, process: subprocess.Popen[str]) -> None:
+        completed = subprocess.run(
+            ["ps", "-o", "rss=", "-o", "time=", "-p", str(process.pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if completed.returncode != 0:
+            if process.poll() is not None:
+                return
+            raise ImpairmentFailure(
+                f"failed to sample RSTorrent resources: {completed.stderr.strip()}"
+            )
+        fields = completed.stdout.split()
+        if len(fields) != 2:
+            raise ImpairmentFailure(
+                f"unexpected RSTorrent resource sample: {completed.stdout!r}"
+            )
+        self.rss_high_water_bytes = max(
+            self.rss_high_water_bytes, int(fields[0]) * 1_024
+        )
+        self.cpu_seconds = max(self.cpu_seconds, parse_process_time(fields[1]))
+
+    def snapshot(self) -> dict[str, float | int]:
+        return {
+            "cpu_seconds": round(self.cpu_seconds, 6),
+            "rss_high_water_bytes": self.rss_high_water_bytes,
+        }
+
+
 def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, Any]) -> None:
     live = rstorrent["resources"]["live_utp"]
+    udp = rstorrent["resources"]["live_udp"]
     if relay["packet_decisions"] <= 0 or relay["data_datagrams"] <= 0:
         raise ImpairmentFailure(f"{profile} relayed no uTP DATA traffic")
     if relay["packet_decisions"] > MAX_PACKET_DECISIONS:
@@ -352,7 +419,14 @@ def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, A
         raise ImpairmentFailure(f"{profile} exceeded its byte queue")
     if relay["client_high_water"] != 1:
         raise ImpairmentFailure(f"{profile} did not retain one client")
-    if profile in ("clean", "delay-jitter", "mtu-black-hole"):
+    if relay["data_datagrams"] != live["data_datagrams_sent"]:
+        raise ImpairmentFailure(f"{profile} relay/runtime DATA counts disagree")
+    if profile in (
+        "clean",
+        "delay-jitter",
+        "mtu-black-hole",
+        PRODUCT_MTU_CLEAN_PROFILE,
+    ):
         if relay["dropped_datagrams"] != 0:
             raise ImpairmentFailure(f"{profile} unexpectedly dropped traffic")
     if profile in ("sparse-loss", "burst-loss"):
@@ -365,9 +439,13 @@ def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, A
         relay["duplicated_datagrams"] > 0 and relay["reordered_datagrams"] > 0
     ):
         raise ImpairmentFailure("duplicate-reorder did not apply both policies")
-    if profile == "mtu-black-hole" and relay["max_data_datagram_bytes"] > 548:
-        raise ImpairmentFailure("fixed-MTU baseline emitted an oversized DATA datagram")
     if profile in PROFILES:
+        if relay["max_data_datagram_bytes"] > 548:
+            raise ImpairmentFailure(
+                f"{profile} fixed-MTU control emitted an oversized DATA datagram"
+            )
+        if live.get("path_mtu_profile") != "fixed_548":
+            raise ImpairmentFailure(f"{profile} did not use the fixed MTU profile")
         if (
             live["mtu_candidate_min_bytes"] != 548
             or live["mtu_candidate_max_bytes"] != 548
@@ -382,7 +460,7 @@ def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, A
         ):
             if live[key] != 0:
                 raise ImpairmentFailure(f"{profile} unexpectedly reported {key}")
-    if profile == DIAGNOSTIC_MTU_PROFILE:
+    if profile in (DIAGNOSTIC_MTU_PROFILE, PRODUCT_MTU_1280_PROFILE):
         selected = live["selected_mtu_max_bytes"]
         if relay["mtu_probe_drops"] <= 0 or relay["mtu_fragmentable_retries"] <= 0:
             raise ImpairmentFailure("diagnostic MTU relay observed no probe/retry feedback")
@@ -425,6 +503,31 @@ def validate_profile(profile: str, relay: dict[str, int], rstorrent: dict[str, A
             raise ImpairmentFailure("diagnostic MTU probe loss reduced congestion")
         if live["timeout_collapse_high_water"] != 0:
             raise ImpairmentFailure("diagnostic MTU probe loss collapsed congestion")
+    if profile in PRODUCT_MTU_PROFILES:
+        if live.get("path_mtu_profile") != "dynamic_ipv4":
+            raise ImpairmentFailure(f"{profile} did not use the product MTU profile")
+        if live["mtu_probes_started_high_water"] <= 0:
+            raise ImpairmentFailure(f"{profile} started no product MTU probes")
+        if live["mtu_probes_acknowledged_high_water"] <= 0:
+            raise ImpairmentFailure(f"{profile} acknowledged no product MTU probes")
+        if udp["protected_sends_attempted"] != live["mtu_probe_datagrams_sent"]:
+            raise ImpairmentFailure(
+                f"{profile} protected-send and probe counts disagree"
+            )
+        if udp["protected_sends_sent"] != udp["protected_sends_attempted"]:
+            raise ImpairmentFailure(f"{profile} did not send every protected probe")
+        if udp["fragmentation_restore_failures"] != 0:
+            raise ImpairmentFailure(f"{profile} failed to restore fragmentation policy")
+    if profile == PRODUCT_MTU_CLEAN_PROFILE:
+        selected = live["selected_mtu_max_bytes"]
+        if selected is None or not 1_456 <= selected <= 1_472:
+            raise ImpairmentFailure(
+                f"clean product MTU search did not converge near 1472: {selected}"
+            )
+        if relay["max_data_datagram_bytes"] < 1_456:
+            raise ImpairmentFailure("clean product MTU emitted no large DATA datagram")
+        if live["mtu_probes_failed_high_water"] != 0:
+            raise ImpairmentFailure("clean product MTU unexpectedly failed a probe")
 
 
 def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
@@ -439,13 +542,15 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
+    process_resources = ProcessResources()
     relay_live: dict[str, int] | None = None
     relay_terminal: dict[str, int] | None = None
-    role_name = (
-        "diagnostic-mtu-seed"
-        if profile == DIAGNOSTIC_MTU_PROFILE
-        else "impairment-seed"
-    )
+    if profile == DIAGNOSTIC_MTU_PROFILE:
+        role_name = "diagnostic-mtu-seed"
+    elif profile in PRODUCT_MTU_PROFILES:
+        role_name = "product-mtu-seed"
+    else:
+        role_name = "impairment-seed"
     try:
         role = RoleProcess.start(
             binary,
@@ -457,6 +562,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 str(seed_root),
             ],
         )
+        process_resources.observe(role.process)
         _, seed_port = validate_ready(role.read_event(deadline), role_name)
         relay = DeterministicUdpRelay(("127.0.0.1", seed_port), profile)
         relay.start()
@@ -483,6 +589,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
                 raise ImpairmentFailure(
                     f"RSTorrent seed stopped: {role.stderr.captured[-MAX_DIAGNOSTICS:]}"
                 )
+            process_resources.observe(role.process)
             collect_alerts(session, diagnostics)
             peers = peer_addresses(handle)
             if len(peers) > peer_high_water:
@@ -575,6 +682,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
             )
         role.send_command("snapshot")
         pre_stop = role.read_event(deadline)
+        process_resources.observe(role.process)
         if (
             pre_stop.get("event") != "snapshot"
             or pre_stop.get("role") != role_name
@@ -591,7 +699,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
             complete,
             role_name,
             expected_sha1,
-            require_fixed_mtu=profile != DIAGNOSTIC_MTU_PROFILE,
+            require_fixed_mtu=profile in PROFILES,
         )
         relay.wait_idle(1.0)
         relay_live = relay.snapshot()
@@ -604,6 +712,7 @@ def run_profile(binary: Path, root: Path, profile: str) -> dict[str, Any]:
             "libtorrent_stats": stats,
             "rstorrent": complete,
             "relay": relay_live,
+            "process_resources": process_resources.snapshot(),
             "diagnostics": diagnostics[-MAX_DIAGNOSTICS:],
             "seconds": round(time.monotonic() - started, 6),
         }
@@ -646,15 +755,137 @@ def run(profiles_to_run: tuple[str, ...] = PROFILES) -> dict[str, Any]:
     }
 
 
+def run_efficiency() -> dict[str, Any]:
+    binary = build_role_binary()
+    started = time.monotonic()
+    pairs: list[dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="rstorrent-utp-efficiency-") as temporary:
+        root = Path(temporary)
+        for ordinal in range(1, EFFICIENCY_PAIRS + 1):
+            fixed = run_profile(binary, root / f"pair-{ordinal:02d}-fixed", "clean")
+            dynamic = run_profile(
+                binary,
+                root / f"pair-{ordinal:02d}-dynamic",
+                PRODUCT_MTU_CLEAN_PROFILE,
+            )
+            pairs.append({"ordinal": ordinal, "fixed": fixed, "dynamic": dynamic})
+
+    fixed_datagrams = [pair["fixed"]["relay"]["data_datagrams"] for pair in pairs]
+    dynamic_datagrams = [
+        pair["dynamic"]["relay"]["data_datagrams"] for pair in pairs
+    ]
+    fixed_seconds = [pair["fixed"]["active_transfer_seconds"] for pair in pairs]
+    dynamic_seconds = [pair["dynamic"]["active_transfer_seconds"] for pair in pairs]
+    fixed_cpu = [
+        pair["fixed"]["process_resources"]["cpu_seconds"] for pair in pairs
+    ]
+    dynamic_cpu = [
+        pair["dynamic"]["process_resources"]["cpu_seconds"] for pair in pairs
+    ]
+    fixed_rss = [
+        pair["fixed"]["process_resources"]["rss_high_water_bytes"] for pair in pairs
+    ]
+    dynamic_rss = [
+        pair["dynamic"]["process_resources"]["rss_high_water_bytes"] for pair in pairs
+    ]
+    fixed_datagram_median = statistics.median(fixed_datagrams)
+    dynamic_datagram_median = statistics.median(dynamic_datagrams)
+    reduction = 1.0 - dynamic_datagram_median / fixed_datagram_median
+    fixed_time_median = statistics.median(fixed_seconds)
+    dynamic_time_median = statistics.median(dynamic_seconds)
+    fixed_cpu_median = statistics.median(fixed_cpu)
+    dynamic_cpu_median = statistics.median(dynamic_cpu)
+    fixed_rss_median = statistics.median(fixed_rss)
+    dynamic_rss_median = statistics.median(dynamic_rss)
+    if reduction < 0.50:
+        raise ImpairmentFailure(
+            f"dynamic MTU reduced median DATA datagrams by only {reduction:.1%}"
+        )
+    if dynamic_time_median > fixed_time_median * 1.10:
+        raise ImpairmentFailure(
+            "dynamic MTU exceeded the 10% median active-transfer time gate"
+        )
+    if dynamic_cpu_median > fixed_cpu_median * 1.25 + 0.02:
+        raise ImpairmentFailure("dynamic MTU materially increased median seed CPU")
+    if dynamic_rss_median > fixed_rss_median * 1.10 + 2 * 1024 * 1024:
+        raise ImpairmentFailure("dynamic MTU materially increased median seed RSS")
+
+    queue_high_waters = {
+        "fixed_connection_datagrams": max(
+            pair["fixed"]["rstorrent"]["resources"]["live_utp"][
+                "connection_datagram_queue_high_water"
+            ]
+            for pair in pairs
+        ),
+        "dynamic_connection_datagrams": max(
+            pair["dynamic"]["rstorrent"]["resources"]["live_utp"][
+                "connection_datagram_queue_high_water"
+            ]
+            for pair in pairs
+        ),
+        "fixed_relay_datagrams": max(
+            pair["fixed"]["relay"]["queue_high_water"] for pair in pairs
+        ),
+        "dynamic_relay_datagrams": max(
+            pair["dynamic"]["relay"]["queue_high_water"] for pair in pairs
+        ),
+        "fixed_egress_waiters": max(
+            pair["fixed"]["rstorrent"]["resources"]["live_udp"][
+                "egress_waiter_high_water"
+            ]
+            for pair in pairs
+        ),
+        "dynamic_egress_waiters": max(
+            pair["dynamic"]["rstorrent"]["resources"]["live_udp"][
+                "egress_waiter_high_water"
+            ]
+            for pair in pairs
+        ),
+    }
+    return {
+        "schema_version": 1,
+        "oracle": "rstorrent-product-utp-path-mtu-efficiency",
+        "libtorrent_version": lt.__version__,
+        "alternating_pairs": EFFICIENCY_PAIRS,
+        "payload_bytes_per_case": PAYLOAD_SIZE,
+        "summary": {
+            "fixed_data_datagram_median": fixed_datagram_median,
+            "dynamic_data_datagram_median": dynamic_datagram_median,
+            "data_datagram_reduction_fraction": round(reduction, 6),
+            "fixed_active_seconds_median": round(fixed_time_median, 6),
+            "dynamic_active_seconds_median": round(dynamic_time_median, 6),
+            "fixed_cpu_seconds_median": round(fixed_cpu_median, 6),
+            "dynamic_cpu_seconds_median": round(dynamic_cpu_median, 6),
+            "fixed_rss_bytes_median": fixed_rss_median,
+            "dynamic_rss_bytes_median": dynamic_rss_median,
+            "queue_high_waters": queue_high_waters,
+        },
+        "pairs": pairs,
+        "cleanup": {
+            "succeeded": True,
+            "terminal_relay_queues": 0,
+            "temporary_directory_removed": True,
+        },
+        "seconds": round(time.monotonic() - started, 6),
+    }
+
+
 def main() -> int:
     arguments = sys.argv[1:]
     if not arguments:
-        profiles = PROFILES
+        result = run(PROFILES)
     elif arguments == ["--diagnostic-mtu"]:
-        profiles = (DIAGNOSTIC_MTU_PROFILE,)
+        result = run((DIAGNOSTIC_MTU_PROFILE,))
+    elif arguments == ["--product-mtu"]:
+        result = run(PRODUCT_MTU_PROFILES)
+    elif arguments == ["--efficiency"]:
+        result = run_efficiency()
     else:
-        raise ImpairmentFailure("usage: utp_runtime_impairment.py [--diagnostic-mtu]")
-    print(json.dumps(run(profiles), indent=2, sort_keys=True))
+        raise ImpairmentFailure(
+            "usage: utp_runtime_impairment.py "
+            "[--diagnostic-mtu|--product-mtu|--efficiency]"
+        )
+    print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 

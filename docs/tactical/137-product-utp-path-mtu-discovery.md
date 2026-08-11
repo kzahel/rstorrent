@@ -10,8 +10,9 @@ cross-build, and actual macOS set/get/restore passes. Stage 3 deterministic
 revalidation and downward recovery and Stage 4 protected-send/product runtime
 integration are complete. Verified IPv4 sockets now select dynamic product
 packetization; other capabilities fail closed at 548. Stage 5 controlled
-interop, rate, and efficiency evidence is current. No unsafe project code,
-public-network activity, or physical-device work is authorized.
+interop, rate, and efficiency evidence is complete. Stage 6 platform and
+repository closure is current. No unsafe project code, public-network
+activity, or physical-device work is authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -256,6 +257,11 @@ descriptors, OS constants, application state, or rate-limit owners.
 - Each connection has at most one protected probe and one fragmentable retry.
   Probes are separated by at least one RTT and search-complete revalidation is
   no more frequent than once per ten minutes.
+- The uTP stream may coalesce application writes up to the 528-byte
+  conservative MSS or five milliseconds before admitting them to protocol
+  packetization. The buffer is task-free and bounded to one 16-KiB write plus
+  at most 527 retained bytes; flush/shutdown drains accepted bytes, while
+  consumer/service cancellation retains the existing discard semantics.
 - Socket policy is never peer-controlled directly. Hostile packets can affect
   ACK/loss state only after connection-ID, endpoint, sequence, and generation
   validation already owned by the uTP transport.
@@ -502,6 +508,56 @@ Stage 4 evidence at this checkpoint:
 - engine and session all-target Clippy pass with warnings denied; and
 - workspace all-target compilation and formatting/diff checks pass.
 
+## Stage 5 Controlled Interop, Rate, And Efficiency Evidence
+
+The real-socket impairment harness now separates its explicit `fixed_548`
+control from a `product-mtu-seed` role that uses ordinary `UtpService::start`.
+The fixed six-profile regression still transfers the exact 2,097,883-byte
+fixture, emits no probe, sends no DATA datagram above 548 bytes, and drains
+every owner. A pure product selector additionally proves both
+`VerificationFailed` and `UnsupportedPlatform` choose exact `548..=548`
+bounds.
+
+On the verified macOS host, controlled product paths produced:
+
+| Path | Selected MTU | Probe outcomes | DATA packets / time | Resources |
+| --- | ---: | ---: | ---: | ---: |
+| clean 1,500 | 1,457 bytes | 6 ACK / 0 fail | 1,471 / 2.996 s | 0.09 CPU s; 10,829,824-byte RSS; connection/relay queue HWM 3/6 |
+| 1,280 black hole | 1,269 bytes | 3 ACK / 3 fail and 3 exact fragmentable retries | 1,692 / 3.239 s | 0.13 CPU s; 10,960,896-byte RSS; connection/relay queue HWM 3/6 |
+
+Both paths hash-verified exact content, restored every protected send, caused
+zero probe congestion reductions, and terminated with zero connection, UDP,
+or relay ownership. The black-hole relay observes the oversized protected
+packet and exact same-sequence fragmentable retry; its maximum observed DATA
+size is 1,356 bytes while only the confirmed 1,269-byte floor survives.
+
+Five alternating fixed/dynamic clean-path pairs pass the hard efficiency
+gate. Fixed-548 has a median 3,978 RSTorrent DATA datagrams, 7.646 seconds,
+0.15 CPU seconds, and 10,731,520-byte RSS. Dynamic has a median 1,473 DATA
+datagrams, 2.994 seconds, 0.06 CPU seconds, and 10,780,672-byte RSS: a 62.97%
+packet-count reduction and no time, CPU, RSS, or queue regression. Connection
+queue high water is 3 for both; relay queue high water is 8 fixed and 6
+dynamic; egress waiters remain zero.
+
+The ordinary application/pinned-libtorrent cohort passes inherited
+`PreferUtp` incoming uTP, outgoing uTP, and joined TCP fallback with exact
+hashes and one actual application peer. The application seed selects 1,457
+bytes with six acknowledged probes; the receiver correctly remains at 548
+with zero probes because its peer-wire request DATA never fills a candidate.
+All three cases apply a 256-KiB/s application stream-byte cap. The uTP seed
+admits 2,099,731 bytes below a 2,374,821-byte bound in 7.997 seconds; the uTP
+receiver admits 2,034,249 bytes below 2,336,903 in 7.852 seconds. Both record
+positive throttle waits and terminal zero waiters/queued bytes.
+
+That finite-rate case exposed a real packetization defect: the allocator can
+legitimately return a very small partial quota, but uTP immediately turned
+each grant into a DATA packet. Before repair, exact transfer and the rate cap
+passed while the seed emitted 571,034 tiny DATA packets. The bounded stream
+coalescer described above reduces the same case to 3,832 DATA and 103 STATE
+packets without changing counted bytes, final hash, selected MTU, or allocator
+semantics. Packet-type counters and the coalescing high water now make this
+failure observable.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -543,7 +599,9 @@ requires diagnosis, not threshold relaxation.
    structured evidence, and real macOS dynamic transfer.
 5. Extend the controlled application/libtorrent fixture and alternating
    fixed/dynamic rate/performance matrix. Commit exact interoperability,
-   efficiency, and resource evidence.
+   efficiency, and resource evidence. Complete with controlled 1,500/1,280
+   paths, the retained fixed matrix, five alternating pairs, and the capped
+   ordinary-application cohort.
 6. Run macOS, both Android native builds, the API 34 AVD, and complete
    repository gates; record actual evidence, reconcile owning topics, and
    commit closure.

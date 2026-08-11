@@ -17,8 +17,8 @@ use futures_util::FutureExt;
 use rstorrent_protocol::utp::{
     ConnectionError, ConnectionPhase, DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING,
     IPV4_UDP_PAYLOAD_FLOOR, IncomingDisposition, MAX_UNSENT_BYTES, PacketType, PathMtuState,
-    SendError, SequenceNumber, TimestampMicros, TransportError, TransportState, UtpCodecError,
-    decode_packet,
+    SendError, SequenceNumber, TimestampMicros, TransportError, TransportState, UTP_HEADER_SIZE,
+    UtpCodecError, decode_packet,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc::error::TrySendError;
@@ -45,6 +45,8 @@ const UTP_APPLICATION_WRITE_QUEUE: usize = 1;
 const UTP_APPLICATION_CONTROL_QUEUE: usize = 1;
 const UTP_STREAM_EVENT_QUEUE: usize = 64;
 const UTP_DELIVERY_CHUNK_BYTES: usize = 16 * 1024;
+const UTP_APPLICATION_COALESCE_BYTES: usize = UTP_RUNTIME_DATAGRAM_BYTES - UTP_HEADER_SIZE;
+const UTP_APPLICATION_COALESCE_DELAY: Duration = Duration::from_millis(5);
 const UTP_ENTROPY_DRAWS: usize = 16;
 const MAX_EMISSIONS_PER_TURN: usize = 64;
 
@@ -118,6 +120,8 @@ pub struct UtpServiceSnapshot {
     pub connection_datagrams_dropped: u64,
     pub datagrams_sent: u64,
     pub datagram_bytes_sent: u64,
+    pub data_datagrams_sent: u64,
+    pub state_datagrams_sent: u64,
     pub retransmission_datagrams_sent: u64,
     pub retransmission_bytes_sent: u64,
     pub retransmission_queue_high_water: usize,
@@ -126,6 +130,7 @@ pub struct UtpServiceSnapshot {
     pub delivered_byte_high_water: usize,
     pub unsent_byte_high_water: usize,
     pub sent_byte_high_water: usize,
+    pub application_coalesce_byte_high_water: usize,
     pub smoothed_rtt_min_micros: Option<u64>,
     pub smoothed_rtt_max_micros: Option<u64>,
     pub effective_rto_min_micros: Option<u64>,
@@ -372,13 +377,7 @@ pub struct UtpService {
 
 impl UtpService {
     pub fn start(udp: &mut SessionUdpService) -> Result<Self, UtpRuntimeError> {
-        let config = if udp.ipv4_fragmentation_protection_status()
-            == Ipv4FragmentationProtectionStatus::Verified
-        {
-            UtpRuntimeConfig::diagnostic_ipv4_path_mtu()
-        } else {
-            UtpRuntimeConfig::fixed_ipv4()
-        };
+        let config = product_runtime_config(udp.ipv4_fragmentation_protection_status());
         Self::start_with_config(udp, config)
     }
 
@@ -443,6 +442,14 @@ impl UtpService {
             .expect("uTP service task exists before shutdown")
             .await
             .map_err(|error| UtpRuntimeError::TaskJoin(error.to_string()))?
+    }
+}
+
+const fn product_runtime_config(capability: Ipv4FragmentationProtectionStatus) -> UtpRuntimeConfig {
+    match capability {
+        Ipv4FragmentationProtectionStatus::Verified => UtpRuntimeConfig::diagnostic_ipv4_path_mtu(),
+        Ipv4FragmentationProtectionStatus::VerificationFailed
+        | Ipv4FragmentationProtectionStatus::UnsupportedPlatform => UtpRuntimeConfig::fixed_ipv4(),
     }
 }
 
@@ -861,6 +868,8 @@ struct UtpStats {
     connection_datagrams_dropped: AtomicU64,
     datagrams_sent: AtomicU64,
     datagram_bytes_sent: AtomicU64,
+    data_datagrams_sent: AtomicU64,
+    state_datagrams_sent: AtomicU64,
     retransmission_datagrams_sent: AtomicU64,
     retransmission_bytes_sent: AtomicU64,
     retransmission_queue_high_water: AtomicUsize,
@@ -869,6 +878,7 @@ struct UtpStats {
     delivered_byte_high_water: AtomicUsize,
     unsent_byte_high_water: AtomicUsize,
     sent_byte_high_water: AtomicUsize,
+    application_coalesce_byte_high_water: AtomicUsize,
     smoothed_rtt_micros: AtomicU64Range,
     effective_rto_micros: AtomicU64Range,
     base_delay_micros: AtomicU64Range,
@@ -931,6 +941,8 @@ impl UtpStats {
             connection_datagrams_dropped: self.connection_datagrams_dropped.load(Ordering::Relaxed),
             datagrams_sent: self.datagrams_sent.load(Ordering::Relaxed),
             datagram_bytes_sent: self.datagram_bytes_sent.load(Ordering::Relaxed),
+            data_datagrams_sent: self.data_datagrams_sent.load(Ordering::Relaxed),
+            state_datagrams_sent: self.state_datagrams_sent.load(Ordering::Relaxed),
             retransmission_datagrams_sent: self
                 .retransmission_datagrams_sent
                 .load(Ordering::Relaxed),
@@ -943,6 +955,9 @@ impl UtpStats {
             delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
             unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
             sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
+            application_coalesce_byte_high_water: self
+                .application_coalesce_byte_high_water
+                .load(Ordering::Relaxed),
             smoothed_rtt_min_micros,
             smoothed_rtt_max_micros,
             effective_rto_min_micros,
@@ -1000,6 +1015,19 @@ impl UtpStats {
                 .saturating_add(1);
             self.incoming_half_open_high_water
                 .fetch_max(half_open, Ordering::Relaxed);
+        }
+    }
+
+    fn record_datagram_sent(&self, packet_type: PacketType, length: usize) {
+        saturating_increment(&self.datagrams_sent, 1);
+        saturating_increment(
+            &self.datagram_bytes_sent,
+            u64::try_from(length).unwrap_or(u64::MAX),
+        );
+        match packet_type {
+            PacketType::Data => saturating_increment(&self.data_datagrams_sent, 1),
+            PacketType::State => saturating_increment(&self.state_datagrams_sent, 1),
+            PacketType::Fin | PacketType::Reset | PacketType::Syn => {}
         }
     }
 
@@ -1582,6 +1610,8 @@ fn spawn_worker(
         writes: channels.writes,
         controls: channels.controls,
         events: channels.events,
+        pending_application_write: Vec::new(),
+        application_write_deadline: None,
         pending_delivery: VecDeque::new(),
         consumption: channels.consumption,
         read_notification: channels.read_notification,
@@ -1617,6 +1647,8 @@ struct UtpWorker {
     writes: mpsc::Receiver<Vec<u8>>,
     controls: mpsc::Receiver<UtpStreamControl>,
     events: mpsc::Sender<UtpStreamEvent>,
+    pending_application_write: Vec<u8>,
+    application_write_deadline: Option<Instant>,
     pending_delivery: VecDeque<Vec<u8>>,
     consumption: Arc<UtpConsumption>,
     read_notification: Arc<Notify>,
@@ -1658,6 +1690,7 @@ impl UtpWorker {
     async fn run_loop(&mut self) -> Result<WorkerTerminal, UtpRuntimeError> {
         loop {
             self.consume_application_bytes()?;
+            self.flush_application_write_if_ready()?;
             self.flush_delivery();
             let sent_any = self.drain_emissions().await?;
             self.maybe_publish(sent_any)?;
@@ -1675,14 +1708,18 @@ impl UtpWorker {
                 return Ok(WorkerTerminal::Reset);
             }
             let can_accept_write = !snapshot.close_requested
-                && snapshot.transmit.unsent_bytes
+                && snapshot
+                    .transmit
+                    .unsent_bytes
+                    .saturating_add(self.pending_application_write.len())
                     <= MAX_UNSENT_BYTES.saturating_sub(MAX_UTP_APPLICATION_WRITE_BYTES);
             let now_micros = self.clock.now_micros();
-            let deadline = self
+            let transport_deadline = self
                 .state
                 .next_wakeup_micros()
                 .filter(|micros| *micros > now_micros)
                 .map(|micros| self.clock.instant_at(micros));
+            let deadline = minimum_instant(transport_deadline, self.application_write_deadline);
             tokio::select! {
                 biased;
                 _ = self.cancellation.cancelled() => return Ok(WorkerTerminal::ServiceCancelled),
@@ -1703,7 +1740,7 @@ impl UtpWorker {
                     None => return Ok(WorkerTerminal::ServiceCancelled),
                 },
                 write = self.writes.recv(), if can_accept_write => match write {
-                    Some(bytes) => self.state.queue_data(&bytes)?,
+                    Some(bytes) => self.queue_application_write(bytes),
                     None if self.controls.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
                     None => {}
                 },
@@ -1729,6 +1766,33 @@ impl UtpWorker {
             self.state
                 .consume_received(consumed, self.clock.now_micros())?;
         }
+        Ok(())
+    }
+
+    fn queue_application_write(&mut self, bytes: Vec<u8>) {
+        if self.pending_application_write.is_empty() {
+            self.application_write_deadline = Some(Instant::now() + UTP_APPLICATION_COALESCE_DELAY);
+        }
+        self.pending_application_write.extend_from_slice(&bytes);
+        self.stats
+            .application_coalesce_byte_high_water
+            .fetch_max(self.pending_application_write.len(), Ordering::Relaxed);
+    }
+
+    fn flush_application_write_if_ready(&mut self) -> Result<(), UtpRuntimeError> {
+        if self.pending_application_write.is_empty()
+            || !should_flush_application_write(
+                self.pending_application_write.len(),
+                self.application_write_deadline
+                    .is_some_and(|deadline| Instant::now() >= deadline),
+                self.pending_flush.is_some() || self.pending_shutdown.is_some(),
+            )
+        {
+            return Ok(());
+        }
+        let bytes = std::mem::take(&mut self.pending_application_write);
+        self.application_write_deadline = None;
+        self.state.queue_data(&bytes)?;
         Ok(())
     }
 
@@ -1817,11 +1881,8 @@ impl UtpWorker {
             {
                 Ok((length, DatagramSendResult::Sent)) if length == bytes.len() => {
                     sent_any = true;
-                    saturating_increment(&self.stats.datagrams_sent, 1);
-                    saturating_increment(
-                        &self.stats.datagram_bytes_sent,
-                        u64::try_from(length).unwrap_or(u64::MAX),
-                    );
+                    self.stats
+                        .record_datagram_sent(emission.intent.packet_type, length);
                     if emission.retransmission {
                         saturating_increment(&self.stats.retransmission_datagrams_sent, 1);
                         saturating_increment(
@@ -1880,11 +1941,8 @@ impl UtpWorker {
             .await
         {
             Ok((length, DatagramSendResult::Sent)) if length == bytes.len() => {
-                saturating_increment(&self.stats.datagrams_sent, 1);
-                saturating_increment(
-                    &self.stats.datagram_bytes_sent,
-                    u64::try_from(length).unwrap_or(u64::MAX),
-                );
+                self.stats
+                    .record_datagram_sent(emission.intent.packet_type, length);
                 self.state.on_send_result(
                     sequence_number,
                     DatagramSendResult::Sent,
@@ -1996,6 +2054,22 @@ async fn wait_for_deadline(deadline: Option<Instant>) {
     }
 }
 
+fn minimum_instant(left: Option<Instant>, right: Option<Instant>) -> Option<Instant> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
+        (None, None) => None,
+    }
+}
+
+const fn should_flush_application_write(
+    bytes: usize,
+    deadline_due: bool,
+    control_pending: bool,
+) -> bool {
+    bytes >= UTP_APPLICATION_COALESCE_BYTES || deadline_due || control_pending
+}
+
 #[derive(Clone, Debug)]
 struct UtpClock {
     origin: Instant,
@@ -2086,6 +2160,39 @@ mod tests {
         utp.shutdown().await.unwrap();
         drop(dht);
         udp.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn product_mtu_profile_fails_closed_without_verified_capability() {
+        assert_eq!(
+            product_runtime_config(Ipv4FragmentationProtectionStatus::Verified).profile(),
+            UtpPathMtuProfile::DynamicIpv4
+        );
+        for capability in [
+            Ipv4FragmentationProtectionStatus::VerificationFailed,
+            Ipv4FragmentationProtectionStatus::UnsupportedPlatform,
+        ] {
+            let config = product_runtime_config(capability);
+            assert_eq!(config.profile(), UtpPathMtuProfile::Fixed548);
+            assert_eq!(config.floor_datagram_bytes, UTP_RUNTIME_DATAGRAM_BYTES);
+            assert_eq!(config.ceiling_datagram_bytes, UTP_RUNTIME_DATAGRAM_BYTES);
+        }
+    }
+
+    #[test]
+    fn application_writes_coalesce_to_the_conservative_mss_or_a_bound() {
+        assert!(!should_flush_application_write(
+            UTP_APPLICATION_COALESCE_BYTES - 1,
+            false,
+            false
+        ));
+        assert!(should_flush_application_write(
+            UTP_APPLICATION_COALESCE_BYTES,
+            false,
+            false
+        ));
+        assert!(should_flush_application_write(1, true, false));
+        assert!(should_flush_application_write(1, false, true));
     }
 
     #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]

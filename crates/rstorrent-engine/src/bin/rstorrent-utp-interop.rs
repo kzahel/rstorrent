@@ -46,6 +46,7 @@ Usage:
   rstorrent-utp-interop wan-leecher --metainfo PATH --peer PUBLIC_IPV4:PORT --output PATH
   rstorrent-utp-interop seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop impairment-seed --metainfo PATH --storage-root PATH
+  rstorrent-utp-interop product-mtu-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop diagnostic-mtu-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop wan-seed --metainfo PATH --storage-root PATH
   rstorrent-utp-interop wan-mapping-audit --local-port PORT --external-port PORT";
@@ -60,6 +61,7 @@ enum LeecherScope {
 enum SeedScope {
     Loopback,
     Impairment,
+    ProductMtu,
     DiagnosticMtu,
     Wan,
 }
@@ -69,6 +71,7 @@ impl SeedScope {
         match self {
             Self::Loopback => "seed",
             Self::Impairment => "impairment-seed",
+            Self::ProductMtu => "product-mtu-seed",
             Self::DiagnosticMtu => "diagnostic-mtu-seed",
             Self::Wan => "wan-seed",
         }
@@ -134,7 +137,11 @@ impl Arguments {
             }
             | Self::MappingAudit { .. } => LOOPBACK_ROLE_TIMEOUT,
             Self::Seed {
-                scope: SeedScope::Wan | SeedScope::Impairment | SeedScope::DiagnosticMtu,
+                scope:
+                    SeedScope::Wan
+                    | SeedScope::Impairment
+                    | SeedScope::ProductMtu
+                    | SeedScope::DiagnosticMtu,
                 ..
             } => WAN_ROLE_TIMEOUT,
         }
@@ -226,7 +233,11 @@ impl Arguments {
                     output: output.ok_or_else(|| format!("{role} requires --output"))?,
                 })
             }
-            "seed" | "impairment-seed" | "diagnostic-mtu-seed" | "wan-seed" => {
+            "seed"
+            | "impairment-seed"
+            | "product-mtu-seed"
+            | "diagnostic-mtu-seed"
+            | "wan-seed" => {
                 if peer.is_some()
                     || output.is_some()
                     || local_port.is_some()
@@ -238,6 +249,7 @@ impl Arguments {
                     scope: match role {
                         "seed" => SeedScope::Loopback,
                         "impairment-seed" => SeedScope::Impairment,
+                        "product-mtu-seed" => SeedScope::ProductMtu,
                         "diagnostic-mtu-seed" => SeedScope::DiagnosticMtu,
                         "wan-seed" => SeedScope::Wan,
                         _ => unreachable!(),
@@ -476,18 +488,22 @@ async fn run_seed(
 ) -> Result<(), Box<dyn Error>> {
     let (metainfo, raw_info) = read_fixture(metainfo_path).await?;
     let bind_address = match scope {
-        SeedScope::Loopback | SeedScope::Impairment | SeedScope::DiagnosticMtu => {
-            Ipv4Addr::LOCALHOST
-        }
+        SeedScope::Loopback
+        | SeedScope::Impairment
+        | SeedScope::ProductMtu
+        | SeedScope::DiagnosticMtu => Ipv4Addr::LOCALHOST,
         SeedScope::Wan => select_local_network_ipv4().await?,
     };
     let socket = UdpSocket::bind((bind_address, 0)).await?;
     let (mut udp, dht) = SessionUdpService::start(socket)?;
     let mut utp = match scope {
+        SeedScope::Impairment => {
+            UtpService::start_diagnostic(&mut udp, UtpRuntimeConfig::fixed_ipv4())?
+        }
         SeedScope::DiagnosticMtu => {
             UtpService::start_diagnostic(&mut udp, UtpRuntimeConfig::diagnostic_ipv4_path_mtu())?
         }
-        SeedScope::Loopback | SeedScope::Impairment | SeedScope::Wan => {
+        SeedScope::Loopback | SeedScope::ProductMtu | SeedScope::Wan => {
             UtpService::start(&mut udp)?
         }
     };
@@ -828,7 +844,12 @@ async fn wait_for_stop(
                     .map_err(|_| "seed input thread panicked")?;
                 return Ok(());
             }
-            "snapshot" if matches!(scope, SeedScope::Impairment | SeedScope::DiagnosticMtu) => {
+            "snapshot"
+                if matches!(
+                    scope,
+                    SeedScope::Impairment | SeedScope::ProductMtu | SeedScope::DiagnosticMtu
+                ) =>
+            {
                 write_json(json!({
                     "event": "snapshot",
                     "role": scope.role(),
@@ -863,9 +884,13 @@ fn validate_seed_evidence(
         return Err(format!("unexpected peer transport evidence: {peers:?}").into());
     }
     let endpoint_is_eligible = |peer: &SocketAddr| match (scope, peer) {
-        (SeedScope::Loopback, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
-        (SeedScope::Impairment, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
-        (SeedScope::DiagnosticMtu, SocketAddr::V4(endpoint)) => endpoint.ip().is_loopback(),
+        (
+            SeedScope::Loopback
+            | SeedScope::Impairment
+            | SeedScope::ProductMtu
+            | SeedScope::DiagnosticMtu,
+            SocketAddr::V4(endpoint),
+        ) => endpoint.ip().is_loopback(),
         (SeedScope::Wan, SocketAddr::V4(endpoint)) => eligible_public_ipv4(*endpoint.ip()),
         (_, SocketAddr::V6(_)) => false,
     };
@@ -976,6 +1001,8 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "connection_datagrams_dropped": snapshot.connection_datagrams_dropped,
         "datagrams_sent": snapshot.datagrams_sent,
         "datagram_bytes_sent": snapshot.datagram_bytes_sent,
+        "data_datagrams_sent": snapshot.data_datagrams_sent,
+        "state_datagrams_sent": snapshot.state_datagrams_sent,
         "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
         "retransmission_bytes_sent": snapshot.retransmission_bytes_sent,
         "retransmission_queue_high_water": snapshot.retransmission_queue_high_water,
@@ -984,6 +1011,7 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "delivered_byte_high_water": snapshot.delivered_byte_high_water,
         "unsent_byte_high_water": snapshot.unsent_byte_high_water,
         "sent_byte_high_water": snapshot.sent_byte_high_water,
+        "application_coalesce_byte_high_water": snapshot.application_coalesce_byte_high_water,
         "smoothed_rtt_min_micros": snapshot.smoothed_rtt_min_micros,
         "smoothed_rtt_max_micros": snapshot.smoothed_rtt_max_micros,
         "effective_rto_min_micros": snapshot.effective_rto_min_micros,
@@ -1072,6 +1100,22 @@ mod tests {
             impairment_seed,
             Arguments::Seed {
                 scope: SeedScope::Impairment,
+                ..
+            }
+        ));
+        let product_mtu_seed = Arguments::parse(strings(&[
+            "product-mtu-seed",
+            "--metainfo",
+            "fixture.torrent",
+            "--storage-root",
+            "seed",
+        ]))
+        .unwrap();
+        assert_eq!(product_mtu_seed.timeout(), WAN_ROLE_TIMEOUT);
+        assert!(matches!(
+            product_mtu_seed,
+            Arguments::Seed {
+                scope: SeedScope::ProductMtu,
                 ..
             }
         ));

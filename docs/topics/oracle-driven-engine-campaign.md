@@ -424,7 +424,10 @@ pass. Stage 4 carries typed protected sends through the shared exclusion,
 repairs uncertain restoration through the existing session owner, enables the
 dynamic product profile only for verified IPv4 sockets, and passes exact
 macOS product transfer evidence. Stage 5 controlled interop/rate evidence is
-current.
+complete: controlled 1,500/1,280 paths select 1,457/1,269 bytes, five
+alternating pairs reduce median DATA datagrams 62.97%, and the exact capped
+ordinary-application/libtorrent cohort passes in both roles. Stage 6 Android
+runtime and repository closure is current.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -477,12 +480,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `137` Stage 5 by extending the
-controlled ordinary-application/libtorrent fixture and alternating fixed and
-dynamic rate/efficiency matrix. The approved macOS `dontfrag 1.0.1` adapter
-and existing Linux/Android `rustix` adapter retain `forbid(unsafe_code)`. The
-post-discovery Ubuntu stall remains one non-reproducible changing-swarm
-observation and is not authority for changes in that tactical.
+Next engine-campaign action: execute Tactical `137` Stage 6 with both Android
+native builds, the no-window API 34 AVD option/send/replacement/application
+profile, and complete repository gates. The approved macOS `dontfrag 1.0.1`
+adapter and existing Linux/Android `rustix` adapter retain
+`forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
+non-reproducible changing-swarm observation and is not authority for changes
+in that tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

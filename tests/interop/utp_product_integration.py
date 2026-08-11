@@ -37,7 +37,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY_NAME = "rstorrent-incoming-seed"
 CASE_TIMEOUT_SECONDS = 60.0
 BUILD_TIMEOUT_SECONDS = 180.0
-TRANSFER_RATE_BYTES = 256 * 1024
+APPLICATION_RATE_BYTES = 256 * 1024
+ORACLE_RATE_BYTES = 4 * APPLICATION_RATE_BYTES
 
 
 class ProductInteropFailure(RuntimeError):
@@ -196,6 +197,10 @@ def start_application(
         str(torrent_path),
         "--encryption",
         "disabled",
+        "--upload-rate-limit",
+        str(APPLICATION_RATE_BYTES),
+        "--download-rate-limit",
+        str(APPLICATION_RATE_BYTES),
     ]
     if fixture_payload is not None:
         command.extend(
@@ -251,8 +256,8 @@ def create_libtorrent_session(transport: str) -> lt.session:
         )
     else:
         raise ProductInteropFailure(f"unknown oracle transport {transport}")
-    settings["upload_rate_limit"] = TRANSFER_RATE_BYTES
-    settings["download_rate_limit"] = TRANSFER_RATE_BYTES
+    settings["upload_rate_limit"] = ORACLE_RATE_BYTES
+    settings["download_rate_limit"] = ORACLE_RATE_BYTES
     return lt.session(settings)
 
 
@@ -281,25 +286,112 @@ def validate_application_summary(snapshot: dict[str, Any]) -> None:
 
 
 def validate_utp_snapshot(
-    snapshot: dict[str, Any], *, established: bool, inactive: bool = False
+    snapshot: dict[str, Any],
+    *,
+    established: bool,
+    inactive: bool = False,
+    expect_large_mtu: bool = False,
 ) -> dict[str, Any]:
     utp = snapshot.get("utp")
     if not isinstance(utp, dict):
         raise ProductInteropFailure(f"application snapshot lacks uTP counters: {snapshot}")
     if utp.get("worker_panics") != 0:
         raise ProductInteropFailure(f"application observed a uTP worker panic: {utp}")
+    if utp.get("path_mtu_profile") != "dynamic_ipv4":
+        raise ProductInteropFailure(f"application did not use dynamic IPv4 MTU: {utp}")
     if not isinstance(utp.get("datagrams_sent"), int) or utp["datagrams_sent"] <= 0:
         raise ProductInteropFailure(f"application sent no uTP datagrams: {utp}")
     if utp.get("connection_high_water") != 1:
         raise ProductInteropFailure(f"application uTP connection high water changed: {utp}")
     if inactive and utp.get("active_connections") != 0:
         raise ProductInteropFailure(f"fallback retained a live uTP transport: {utp}")
-    if established and (
-        utp.get("selected_mtu_min_bytes") != 548
-        or utp.get("selected_mtu_max_bytes") != 548
-    ):
-        raise ProductInteropFailure(f"application did not use fixed-548 uTP: {utp}")
+    if established and expect_large_mtu:
+        if (
+            utp.get("selected_mtu_min_bytes") != 548
+            or not isinstance(utp.get("selected_mtu_max_bytes"), int)
+            or utp["selected_mtu_max_bytes"] < 1_456
+        ):
+            raise ProductInteropFailure(
+                f"application did not confirm the clean-path MTU: {utp}"
+            )
+        if (
+            not isinstance(utp.get("mtu_probes_started_high_water"), int)
+            or utp["mtu_probes_started_high_water"] <= 0
+            or not isinstance(utp.get("mtu_probes_acknowledged_high_water"), int)
+            or utp["mtu_probes_acknowledged_high_water"] <= 0
+            or utp.get("mtu_probes_failed_high_water") != 0
+        ):
+            raise ProductInteropFailure(
+                f"application did not complete clean-path MTU probing: {utp}"
+            )
+        if (
+            not isinstance(utp.get("data_datagrams_sent"), int)
+            or not 0 < utp["data_datagrams_sent"] <= 10_000
+            or not isinstance(utp.get("application_coalesce_byte_high_water"), int)
+            or utp["application_coalesce_byte_high_water"] < 528
+        ):
+            raise ProductInteropFailure(
+                f"application did not retain bounded uTP packetization: {utp}"
+            )
+    if established and not expect_large_mtu:
+        if (
+            utp.get("selected_mtu_min_bytes") != 548
+            or not isinstance(utp.get("selected_mtu_max_bytes"), int)
+            or not 548 <= utp["selected_mtu_max_bytes"] <= 1_472
+        ):
+            raise ProductInteropFailure(
+                f"application reported an invalid receiver-side MTU: {utp}"
+            )
     return utp
+
+
+def validate_bandwidth(
+    snapshot: dict[str, Any],
+    direction: str,
+    transfer_seconds: float,
+    minimum_bytes: int = PAYLOAD_SIZE,
+) -> dict[str, int]:
+    bandwidth = snapshot.get("bandwidth")
+    if not isinstance(bandwidth, dict):
+        raise ProductInteropFailure("application snapshot lacks bandwidth evidence")
+    evidence = bandwidth.get(direction)
+    if not isinstance(evidence, dict):
+        raise ProductInteropFailure(
+            f"application snapshot lacks {direction} bandwidth evidence"
+        )
+    try:
+        granted = int(evidence["granted_bytes"])
+        returned = int(evidence["returned_bytes"])
+        throttle_wait = int(evidence["throttle_wait_high_water_micros"])
+        active_waiters = int(evidence["active_waiters"])
+        queued_bytes = int(evidence["queued_requested_bytes"])
+        registered_torrents = int(evidence["registered_torrents"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ProductInteropFailure(
+            f"application {direction} bandwidth evidence is malformed: {evidence}"
+        ) from error
+    admitted = granted - returned
+    upper_bound = int(APPLICATION_RATE_BYTES * transfer_seconds)
+    upper_bound += min(APPLICATION_RATE_BYTES, 1024 * 1024) + 16 * 1024
+    if admitted < minimum_bytes or admitted > upper_bound:
+        raise ProductInteropFailure(
+            f"application {direction} admitted {admitted} outside "
+            f"{minimum_bytes}..={upper_bound}"
+        )
+    if throttle_wait <= 0:
+        raise ProductInteropFailure(
+            f"application {direction} rate limit never throttled"
+        )
+    if active_waiters != 0 or queued_bytes != 0 or registered_torrents != 1:
+        raise ProductInteropFailure(
+            f"application {direction} rate owner did not drain: {evidence}"
+        )
+    return {
+        "bytes_per_second": APPLICATION_RATE_BYTES,
+        "admitted_bytes": admitted,
+        "upper_bound_bytes": upper_bound,
+        "throttle_wait_high_water_micros": throttle_wait,
+    }
 
 
 def validate_forced_utp_stats(stats: dict[str, int], role: str) -> None:
@@ -393,24 +485,36 @@ def run_incoming_utp(binary: Path, root: Path) -> dict[str, Any]:
             deadline=deadline,
             diagnostics=diagnostics,
         )
+        transfer_started = time.monotonic()
         handle.connect_peer(parse_loopback_endpoint(application.ready["utp_listen"], "utp_listen"))
         snapshot = wait_libtorrent_completion(
             application, session, handle, deadline, diagnostics
         )
+        transfer_seconds = time.monotonic() - transfer_started
         validate_payload(leech_root / PAYLOAD_NAME, expected_sha1)
         stats = stats_snapshot(session, diagnostics, deadline)
         validate_forced_utp_stats(stats, "leecher")
         application.evidence.require("incoming", "utp")
-        validate_utp_snapshot(snapshot, established=True)
+        live_utp = validate_utp_snapshot(
+            snapshot, established=True, expect_large_mtu=True
+        )
+        rate_gate = validate_bandwidth(snapshot, "upload", transfer_seconds)
         final_snapshot, stopped = application.stop(deadline)
-        validate_utp_snapshot(final_snapshot, established=True)
+        final_utp = validate_utp_snapshot(
+            final_snapshot, established=True, expect_large_mtu=True
+        )
+        validate_bandwidth(stopped, "upload", transfer_seconds)
         result = {
             "role": "application_seed",
             "transport": "utp",
             "payload_sha1": expected_sha1,
             "application_peers": application.evidence.summary(),
+            "application_utp": final_utp,
+            "live_application_utp": live_utp,
+            "rate_gate": rate_gate,
             "libtorrent_stats": stats,
             "stopped": stopped,
+            "active_transfer_seconds": round(transfer_seconds, 6),
             "seconds": round(time.monotonic() - started, 6),
             "diagnostics": diagnostics[-MAX_DIAGNOSTICS:],
         }
@@ -443,6 +547,7 @@ def run_outgoing_case(binary: Path, root: Path, transport: str) -> dict[str, Any
             deadline=deadline,
             diagnostics=diagnostics,
         )
+        transfer_started = time.monotonic()
         application = start_application(
             binary,
             profile_root=root / "profile",
@@ -460,6 +565,7 @@ def run_outgoing_case(binary: Path, root: Path, transport: str) -> dict[str, Any
             deadline,
             diagnostics,
         )
+        transfer_seconds = time.monotonic() - transfer_started
         validate_payload(payload_path, expected_sha1)
         validate_application_summary(snapshot)
         stats = stats_snapshot(session, diagnostics, deadline)
@@ -467,16 +573,30 @@ def run_outgoing_case(binary: Path, root: Path, transport: str) -> dict[str, Any
         application.evidence.require("outgoing", expected_transport)
         if transport == "utp":
             validate_forced_utp_stats(stats, "seed")
-            validate_utp_snapshot(snapshot, established=True)
+            live_utp = validate_utp_snapshot(snapshot, established=True)
         else:
             if stats["net.sent_payload_bytes"] <= 0:
                 raise ProductInteropFailure("TCP-only seed sent no payload bytes")
-            validate_utp_snapshot(snapshot, established=False, inactive=True)
+            live_utp = validate_utp_snapshot(
+                snapshot, established=False, inactive=True
+            )
+        rate_gate = validate_bandwidth(
+            snapshot,
+            "download",
+            transfer_seconds,
+            PAYLOAD_SIZE - PIECE_SIZE,
+        )
         final_snapshot, stopped = application.stop(deadline)
-        validate_utp_snapshot(
+        final_utp = validate_utp_snapshot(
             final_snapshot,
             established=transport == "utp",
             inactive=transport == "tcp",
+        )
+        validate_bandwidth(
+            stopped,
+            "download",
+            transfer_seconds,
+            PAYLOAD_SIZE - PIECE_SIZE,
         )
         result = {
             "role": "application_leecher",
@@ -484,8 +604,12 @@ def run_outgoing_case(binary: Path, root: Path, transport: str) -> dict[str, Any
             "utp_attempted": True,
             "payload_sha1": expected_sha1,
             "application_peers": application.evidence.summary(),
+            "application_utp": final_utp,
+            "live_application_utp": live_utp,
+            "rate_gate": rate_gate,
             "libtorrent_stats": stats,
             "stopped": stopped,
+            "active_transfer_seconds": round(transfer_seconds, 6),
             "seconds": round(time.monotonic() - started, 6),
             "diagnostics": diagnostics[-MAX_DIAGNOSTICS:],
         }
@@ -515,6 +639,8 @@ def run() -> dict[str, Any]:
             "ipv4_only": True,
             "plaintext_only": True,
             "fallback": "sequential_tcp_after_utp_transport_failure",
+            "path_mtu": "dynamic_ipv4_when_fragmentation_protection_is_verified",
+            "application_rate_bytes_per_second": APPLICATION_RATE_BYTES,
         },
         "payload": {
             "bytes": PAYLOAD_SIZE,
