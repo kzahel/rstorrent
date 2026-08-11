@@ -17,16 +17,16 @@ use rstorrent_engine::{
     DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot,
     MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NamespaceAction,
     NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
-    PathPublicationStage, PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient,
-    PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash, PublicationShape,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
-    SelectiveStorageError, SessionDownloadResourceSnapshot, SessionDownloadResources,
-    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
-    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind,
-    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
-    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
-    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_platform_files,
+    NetworkPolicy, PathPublicationStage, PeerEncryptionPolicy, PeerTransportPolicy,
+    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
+    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent,
+    ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
+    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
+    StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
+    TrackerSource, TrackerTransport, VerifiedFileError, VerifiedFileReader,
+    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
+    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
 };
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -313,7 +313,14 @@ impl ApplicationConfig {
     }
 
     pub fn with_fresh_profile_defaults(mut self) -> Self {
-        self.initial_client_settings = crate::ClientSettings::fresh_profile_default();
+        self.initial_client_settings = match self.network.policy {
+            NetworkPolicy::Online => crate::ClientSettings::fresh_profile_default(),
+            NetworkPolicy::LoopbackOnly => crate::ClientSettings {
+                listener: crate::ListenerPolicy::AutomaticLoopback,
+                ..crate::ClientSettings::default()
+            },
+            NetworkPolicy::Offline => crate::ClientSettings::default(),
+        };
         self
     }
 }
@@ -5793,6 +5800,44 @@ mod tests {
                 std::time::Duration::from_secs(5),
             ),
         )
+    }
+
+    #[test]
+    fn fresh_profile_defaults_follow_the_network_boundary() {
+        let root = test_root("fresh-network-defaults");
+        let loopback = default_config(&root).with_fresh_profile_defaults();
+        assert_eq!(
+            loopback.initial_client_settings.listener,
+            ListenerPolicy::AutomaticLoopback
+        );
+        assert_eq!(
+            loopback.initial_client_settings.port_mapping,
+            crate::PortMappingPolicy::Disabled
+        );
+
+        let mut online = default_config(&root);
+        online.network.policy = NetworkPolicy::Online;
+        let online = online.with_fresh_profile_defaults();
+        assert_eq!(
+            online.initial_client_settings.listener,
+            ListenerPolicy::AutomaticLocalNetwork
+        );
+        assert_eq!(
+            online.initial_client_settings.port_mapping,
+            crate::PortMappingPolicy::Upnp
+        );
+
+        let mut offline = default_config(&root);
+        offline.network.policy = NetworkPolicy::Offline;
+        let offline = offline.with_fresh_profile_defaults();
+        assert_eq!(
+            offline.initial_client_settings.listener,
+            ListenerPolicy::Disabled
+        );
+        assert_eq!(
+            offline.initial_client_settings.port_mapping,
+            crate::PortMappingPolicy::Disabled
+        );
     }
 
     fn config(root: &Path) -> ApplicationConfig {
