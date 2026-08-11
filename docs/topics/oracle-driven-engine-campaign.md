@@ -84,9 +84,11 @@ Maintainer direction selected and authorized incoming-uTP reachability
 Tactical [`140`](../tactical/140-incoming-utp-reachability.md), which is now
 complete with every controlled gate passing and its bounded physical gate
 evidence-limited with exact cleanup. Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) now has explicit
-end-to-end implementation authorization and is the sole authoritative
-**Now**.
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) is now complete
+through controlled pinned-libtorrent streaming, browser/Tauri, both Android
+ABIs, API 34 AVD, and complete repository evidence. No subsequent
+implementation tactical is authorized; capability readiness owns selection
+of the next bounded slice as the sole authoritative **Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -442,8 +444,11 @@ cleanup, and complete repository gates. Completed Tactical `140` adds
 independent product TCP/UDP mapping, transport-truthful tracker/DHT
 advertisement, controlled DHT-only incoming uTP, generated-client and Android
 parity, and a zero-residue physical attempt whose UDP readiness remained
-nonterminal. Explicitly authorized Tactical `139` is the sole authoritative
-implementation **Now**.
+nonterminal. Tactical `139` completes bounded incomplete-file stream demand,
+verified active logical reads, time-critical scheduling, progressive HTTP,
+the exact active-to-published handoff, shared client eligibility, controlled
+wire evidence, and proportional Android parity. The campaign has no active
+implementation tactical pending maintainer selection.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -457,13 +462,13 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed engine tactical:
-[`140`](../tactical/140-incoming-utp-reachability.md). One generation-fenced
-reachability owner independently maps the actual TCP and IPv4 UDP/uTP
-listeners; trackers remain TCP and IPv4 DHT uses the explicit UDP/uTP
-endpoint. Controlled DHT-only pinned-libtorrent transfer, generated web/Kotlin
-contracts, both Android ABIs, and an API 34 lifecycle gate pass. The bounded
-physical UDP-readiness gate is evidence-limited with zero residue, so the BEP
-29 claim remains **Partial** and no public incoming-uTP claim follows.
+[`139`](../tactical/139-incomplete-file-streaming-demand.md). Compact current
+and ahead leases drive generation-fenced verified reads and bounded time-
+critical scheduling without replacing durable selection, rarest-first work,
+or rate policy. Progressive full/range HTTP survives exact publication under
+one capability; controlled concurrent probes and an active full body return
+exact bytes, and every repository, web, desktop, Android build, and API 34 AVD
+gate passes.
 
 Latest closed external-evidence tactical:
 [`140`](../tactical/140-incoming-utp-reachability.md). Its authorized product-
@@ -503,12 +508,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute active Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) from its compact
-demand and scheduler stage through verified active reads, HTTP/client
-composition, controlled evidence, and closure. The post-discovery Ubuntu stall
-remains one non-reproducible changing-swarm observation and is not authority
-for an unplanned change.
+Next engine-campaign action: select the next bounded source-first tactical in
+[`capability-readiness.md`](capability-readiness.md); do not infer
+implementation authorization from the retained queue. Durable seeding goals
+remain the leading policy candidate, while embedded playback, Android
+streaming presentation, and stable sharing have distinct ownership and
+security boundaries. The post-discovery Ubuntu stall remains one non-
+reproducible changing-swarm observation and is not authority for an unplanned
+change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -530,6 +537,17 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `0b6d3a5` through `c950365` activate and implement Tactical `139`'s
+  compact stream-demand leases, active logical-range owner, bounded current-
+  first scheduler and ordinary-work preemption, one adaptive duplicate,
+  progressive media capability, shared client eligibility, controlled peer
+  transport, and exact publication handoff. Concurrent head, tail, seek, and
+  overlap ranges plus one full active body hash-verify the 393,549-byte
+  controlled pinned-libtorrent fixture. Demand high water is two; the forced
+  handoff holds one body, lease, and read at high water and drains them to
+  zero. Web generation/typecheck/unit/build/Playwright, Tauri, both Android
+  ABIs, API 34 AVD, formatting, warning-denying workspace Clippy, and the
+  complete serial workspace pass;
 - commits `bd6b816` through `9ee581b` plan and implement Tactical `140`'s
   independent TCP/UDP endpoint selection and lease ownership, transport-
   specific tracker/DHT advertisement, additive first-party mapping status,

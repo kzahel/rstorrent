@@ -1,9 +1,9 @@
 # Tactical 139: Incomplete-File Streaming Demand
 
-Status: **Active on 2026-08-11.** Explicit maintainer direction now authorizes
-end-to-end implementation with logical commits under this source-first
-tactical. Tactical `139` is the sole authoritative **Now** after completed
-Tactical `140`.
+Status: **Complete on 2026-08-11.** The compact demand model, generation-
+fenced active reads, time-critical scheduler overlay, progressive HTTP
+fulfillment, shared browser/Tauri action, Android-compatible engine boundary,
+controlled pinned-libtorrent evidence, and complete repository gates pass.
 
 Topics: `http-file-serving-and-streaming`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `download-correctness`, `peer-lifecycle`,
@@ -638,23 +638,83 @@ device, or external service is required or authorized. A bounded local pinned-
 libtorrent process and no-window AVD are authorized only after implementation
 of this tactical is explicitly approved.
 
-## Staged Execution And Future Commit Plan
+## Execution Record
 
-1. Commit this source-first tactical, exact bounds, ownership maps, reference
-   record, and queue selection with no behavior change.
-2. Add compact pure demand state, queue-time calculations, scheduler ordering,
-   and deterministic adversarial tests.
-3. Generalize active verified-content planning, add generation-fenced waits,
-   and prove path/fake-platform wait-then-read behavior.
-4. Compose transient leases through download control, current-piece planning,
-   ordinary preemption, peer choice, and one strict urgent duplicate.
-5. Extend capability eligibility and progressive HTTP fulfillment, including
-   preflight, timeout, handoff, concurrency, and cancellation tests.
-6. Regenerate client boundaries, enable shared browser/Tauri streamable Open,
-   and retain the Android completed-file-only presentation.
-7. Run controlled pinned-libtorrent, repository, web, desktop, Android, and
-   optional no-window AVD gates; record actual high waters and reconcile all
-   living topics before closure.
+1. Commit `0b6d3a5` activated this source-first tactical, exact bounds,
+   ownership maps, reference record, and queue selection without behavior
+   change.
+2. Commits `c39cfc5`, `0fd052f`, `3e608a2`, and `06478ac` added compact pure
+   demand, generation-scoped RAII leases, current/ahead ordering, peer queue-
+   time selection, the slowest-decile safeguard, two-second horizon, one
+   strict adaptive duplicate, and bounded untouched ordinary preemption.
+3. Commits `b68de7d`, `a5b2387`, `1781214`, and `c950365` added active logical-
+   file planning, verified waits, progressive 64-KiB HTTP chunks, initial
+   error mapping, exact completion handoff, and the final storage-close-to-
+   publication race repair.
+4. Commits `e31c8d1` and `8b48bfd` added typed `streamable` client eligibility,
+   the existing shared `Open` action, and bounded demand/read/body/resource
+   observations without adding a stable application view.
+5. Commits `f12fabf`, `1985fa8`, and `f90c54a` made fresh loopback gateway
+   profiles operational within their network boundary and added the
+   deterministic pinned-libtorrent HTTP/wire harness. Commit `efba0de`
+   corrected an older choke-reassignment mock that rejected ordinary `Have`
+   broadcasts once faster scheduling exposed the valid ordering.
+
+### Controlled interoperability
+
+`tests/interop/incomplete_file_streaming.py` independently generates a
+four-file, 13-piece fixture with a 393,549-byte media file and a 32-KiB piece
+size. Pinned libtorrent `2.0.13.0` at
+`7d7fc38fac61177fa5e02148f791b2f65250b09d` seeds at 96 KiB/s through a
+TCP capture proxy. RSTorrent serves concurrent head, tail, seek, and overlap
+ranges, then an active full `GET` through the same capability while the
+torrent completes and publishes.
+
+The retained run returned exact SHA-1 for every range and the full file. Head,
+tail, seek, and overlap latencies were 1.937, 2.441, 2.941, and 3.443 seconds;
+publication was visible 0.006 seconds after the full body. The 21 post-baseline
+requests covered every demanded piece and began `10, 10, 0, 0, 11, 11, 5, 2,
+5, 12`; the complete captured order then reached ordinary gap pieces `8, 9,
+3`. This is qualitative scheduling evidence, not a latency-parity claim. The
+finalized scenario passed three times and joined the seed, proxy, gateway,
+response owners, and temporary state.
+
+### Bounds and high waters
+
+- Demand storage stays at eight constant-size leases per torrent and the
+  deterministic two-lease test records `streaming_demands_high_water = 2`.
+- The exact handoff test records one active body, one active streaming lease,
+  one active read, 128 demanded bytes read, 64 demanded bytes marked served,
+  two per-lease publication handoffs, and terminal zero active bodies, reads,
+  and leases. Its deliberate 200-ms publication gate proves a read survives
+  the closed-planner window without changing generation or URL.
+- The controlled four-reader trace remains inside the declared 16 global,
+  four-per-capability body, eight-read, eight-per-torrent demand, 16 active-
+  plan, and 40-handle ceilings. The Android AVD retained a 7/40 storage-handle
+  and 2/16 pending-request high water with exact cleanup.
+- No dependency, schema, unsafe code, daemon, listener exposure, durable
+  priority, automatic lifecycle change, Android HTTP listener, or embedded
+  player was added.
+
+### Validation completed
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --all-targets -- --test-threads=1`
+- web contract generation, typecheck, 247 passing unit tests, production/CSP
+  build, and 33 passing Playwright tests with 11 opt-in live tests skipped
+- `cargo test -p rstorrent-desktop --all-targets` and matching all-target
+  Clippy
+- pinned-libtorrent controlled streaming three times, including the active
+  full-body publication transition
+- Android x86_64 and arm64-v8a release libraries, generated Kotlin, JVM unit
+  tests, and debug APK assembly
+- one API 34 `product-incomplete-duplex` AVD run with exact cleanup
+
+The first complete serial workspace run exposed the older choke mock described
+above; its focused test passed three times after correction, and the complete
+workspace passed on both subsequent serial runs. No public swarm, WAN host,
+visible desktop client, or physical device was used.
 
 After explicit implementation authorization, ordinary owner-local refactors,
 internal names/module layout, independently authored fixtures, adversarial

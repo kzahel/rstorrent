@@ -39,6 +39,12 @@ loopback listener. Completed Tactical
 WebSocket, and in-process Tauri IPC. Actual file bytes use only the separate
 capability route: the gateway mounts it on its existing listener, while Tauri
 owns a media-only exact-loopback listener that exposes no application API.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) preserves that
+transport split for active files. Only the semantic capability call crosses
+the application connection; progressive verified bytes, range waits, body
+cancellation, and the active-to-published handoff remain entirely on the
+separate capability-authorized media route.
 
 ## Purpose And Scope
 

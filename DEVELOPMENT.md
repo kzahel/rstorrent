@@ -303,6 +303,17 @@ uv run --project tests/interop --locked \
   python tests/interop/first_verified_piece.py --runs 3
 ```
 
+The incomplete-file streaming profile uses a throttled pinned-libtorrent seed
+and a TCP capture proxy. It proves exact concurrent head, tail, seek, and
+overlap ranges while content is incomplete, then keeps one full active body
+alive across immutable publication and records bounded demand/request order:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/incomplete_file_streaming.py \
+  --output target/incomplete-file-streaming-evidence.json
+```
+
 Tactical `001`'s bounded large-piece profile streams a deterministic 32 MiB
 fixture through a 256 KiB engine-owned payload allowance:
 

@@ -2,20 +2,19 @@
 
 Topic: `http-file-serving-and-streaming`
 
-Status: Product and architecture direction accepted on 2026-08-07. Completed
-Tactical [`138`](../tactical/138-verified-http-file-serving.md) implements
-bounded HTTP reads of verified torrent files end to end. Source-reviewed
-Tactical [`139`](../tactical/139-incomplete-file-streaming-demand.md) now owns
-the incomplete-file slice and has explicit end-to-end implementation
-authorization.
+Status: Implemented on 2026-08-11 through completed Tacticals
+[`138`](../tactical/138-verified-http-file-serving.md) and
+[`139`](../tactical/139-incomplete-file-streaming-demand.md). Bounded
+capabilities now serve both published files and eligible active incomplete
+files through verified-only progressive HTTP reads.
 
 ## Purpose And Scope
 
-RSTorrent should let an authorized client hand a browser, media element, media
-player, or ordinary HTTP client a URL for one torrent file. The first slice
-serves only content already known to be hash verified and readable. A later
-slice may wait for absent ranges while the torrent engine prioritizes and
-verifies the pieces needed at the current playhead.
+RSTorrent lets an authorized client hand a browser, media element, media
+player, or ordinary HTTP client a URL for one torrent file. Published content
+uses the immutable verified reader. Eligible active incomplete content adds
+bounded transient demand, waits for exact piece verification, and reads only
+through the live generation-fenced storage owner.
 
 This topic owns:
 
@@ -26,8 +25,8 @@ This topic owns:
   authentication;
 - verified-only response, storage, lifecycle, cancellation, and resource
   invariants;
-- the seam that permits future incomplete-file streaming without changing the
-  HTTP identity model; and
+- incomplete-file demand, verification waits, and publication handoff without
+  changing the HTTP identity model; and
 - the required separation between local media serving and future remote owner
   access.
 
@@ -202,12 +201,11 @@ for media bytes: nonbrowser players may send no `Origin`, and browsers can
 initiate cross-origin media requests. Host validation, exact binding, and the
 unguessable capability are the local media authority.
 
-## Initial Verified-File Contract
+## Base Verified-File Contract
 
-The first implementation tactical should expose only verified readable
-content. A successful response must never contain bytes merely received,
-written, cached, sparse, or present on disk without the engine's integrity
-authority.
+The base implementation exposes only verified readable content. A successful
+response never contains bytes merely received, written, cached, sparse, or
+present on disk without the engine's integrity authority.
 
 The first HTTP contract is deliberately narrow:
 
@@ -240,15 +238,15 @@ cannot assume a stable path or lend a path to the client. Symlink, replacement,
 length, generation, grant-loss, and dynamic-handle behavior stay behind the
 existing storage authorities.
 
-## Planned Incomplete-File Streaming
+## Implemented Incomplete-File Streaming
 
 Incomplete streaming extends the verified reader; it does not weaken it. An
 HTTP request for an absent range registers bounded transient demand, waits
 until all intersecting pieces are hash verified, and only then reads and emits
-the bytes. Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) is the source-
-reviewed, decision-complete execution plan and is now active under explicit
-implementation authorization.
+the bytes. Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) records the exact
+implementation, bounds, source review, controlled wire evidence, and platform
+gates.
 
 The stream-session owner must:
 
@@ -283,7 +281,7 @@ application/profile owner
        -> bounded capability registry
        -> bounded HTTP request owners
             -> verified logical-range read
-            -> planned: stream-demand lease + verified-range wait
+            -> stream-demand lease + verified-range wait
   -> profile/torrent/storage generation authorities
   -> shutdown
        -> stop accepts
@@ -316,9 +314,9 @@ cannot emit bytes for a newer capability or storage generation.
 - Shutdown and revocation are observable and terminal; an abandoned body
   cannot retain storage handles or scheduling priority indefinitely.
 
-## Evidence Required Before Claims
+## Evidence Record
 
-The verified-serving tactical should include:
+The verified-serving evidence includes:
 
 - pure range parsing for complete, open-ended, suffix, malformed, overflow,
   multiple, empty, and unsatisfiable inputs;
@@ -334,7 +332,7 @@ The verified-serving tactical should include:
 - unchanged workspace, adapters, hosted gateway, Tauri, and proportional
   Android build evidence.
 
-Tactical `139` adds deterministic seek/probe/look-ahead traces,
+Tactical `139` adds passing deterministic seek/probe/look-ahead traces,
 piece-boundary and padding fixtures, corruption and retry, stalled peers,
 storage pressure, several concurrent streams, exact hash verification, and
 controlled libtorrent scheduling comparison. Public swarms are optional and
@@ -357,7 +355,7 @@ cannot substitute for deterministic ownership evidence.
 
 ## Implemented Contract And Evidence
 
-Completed Tactical `138` adds typed file-view eligibility plus one ephemeral
+Completed Tactical `138` added typed file-view eligibility plus one ephemeral
 `create_media_url` application call. The application owns at most 128
 memory-only 256-bit file capabilities with 30-minute idle and 24-hour absolute
 lifetimes. The shared router admits at most 16 bodies globally, four per
@@ -371,14 +369,29 @@ policy. Tauri owns one media-only `127.0.0.1:0` listener and validates the
 exact current URL before the system opener. React Files exposes `Open` only
 for typed `available` rows; browser mode uses an opener-isolated new tab.
 Android remains on its complete-file `content://` path and starts no HTTP
-listener. Engine/session/router/gateway/Tauri/web tests, the complete serial
-Rust workspace, 247 web unit tests, 33 Playwright cases, and both Android
-native ABIs pass; the tactical execution record contains the exact commands
+listener.
+
+Completed Tactical `139` adds `streamable` as a distinct typed eligibility
+fact. Each active body owns one current interval and at most 4 MiB/16 pieces
+of ahead demand, schedules current before ahead and ordinary rarest-first
+work, may preempt only bounded untouched ordinary work, selects peers by a
+two-second queue horizon with a safe slowest-decile filter, and permits one
+adaptive duplicate on a different peer. The first 64-KiB chunk is verified
+and read before successful headers; later chunks wait under the same
+120-second progress bound. Completion hands the same URL and byte position to
+the exact immutable publication.
+
+The controlled pinned-libtorrent trace serves exact concurrent head, tail,
+seek, and overlap ranges from an incomplete 393,549-byte multi-file fixture,
+then completes one full active `GET` across publication. The serial workspace,
+web generation/typecheck/unit/build/Playwright gates, Tauri tests and Clippy,
+both Android native ABIs, and the API 34 AVD pass. The tactical execution
+record contains the exact request ordering, latencies, high waters, commands,
 and deliberate deferrals.
 
 ## Recommended Next Work
 
-Execute Tactical `139` to add stream-demand ownership, verified-range waits,
-time-critical scheduling, and progressive HTTP fulfillment. Stable sharing,
-remote exposure, playback UI, Android streaming presentation, and transcoding
-remain independent product decisions.
+Stable sharing, remote exposure, playback UI, Android streaming presentation,
+and transcoding remain independent product decisions. A future embedded
+player may provide real presentation deadlines through the existing bounded
+demand seam; byte offsets alone remain insufficient to invent them.

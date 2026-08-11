@@ -645,10 +645,10 @@ that scope and its cleanup or compatibility rules explicitly.
   capabilities, shared gateway/Tauri HTTP serving, React/Tauri Open, and
   proportional Android compatibility evidence.
 - [`139-incomplete-file-streaming-demand.md`](139-incomplete-file-streaming-demand.md):
-  active under explicit end-to-end implementation authorization; defines
-  compact current/ahead demand, verified active-storage reads, time-critical
-  peer scheduling, progressive HTTP fulfillment, and bounded browser/Tauri
-  client integration.
+  complete; implements compact current/ahead demand, verified active-storage
+  reads, time-critical peer scheduling, progressive HTTP fulfillment,
+  publication handoff, bounded browser/Tauri integration, controlled pinned-
+  libtorrent evidence, and proportional Android parity.
 - [`140-incoming-utp-reachability.md`](140-incoming-utp-reachability.md):
   complete with the bounded physical gate evidence-limited; independently maps
   the concrete TCP and UDP/uTP listeners, keeps tracker and DHT advertisement

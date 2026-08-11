@@ -92,6 +92,16 @@ framed IO in the incoming task; nonblocking saturation closes the role instead
 of creating a second scheduler or cross-channel wait. Contributor evidence
 survives disconnect until delayed hashing resolves, and controlled
 complementary transfers prove both directions before completion.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) adds a bounded
+time-critical pass ahead of ordinary rarest-first scheduling. It selects an
+eligible holder by estimated download-queue time, stops beyond a two-second
+horizon, obeys the existing rate/request/connection/session ceilings, and may
+preempt only bounded untouched ordinary attempts. A slow current block may
+own one adaptive duplicate on a different peer; the first accepted response
+sends the loser cancel and releases exact attempt ownership. Removing the
+final transient demand restores ordinary scheduling without replacing the
+peer or download generation.
 
 ## Scope
 

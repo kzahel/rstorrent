@@ -119,6 +119,14 @@ file capability, and returns the complete ephemeral URL with idle and
 absolute lifetime metadata. It is not a durable command, request envelope,
 receipt, event, lifecycle mutation, or storage-path grant; reading it does not
 start, resume, unskip, prioritize, repair, or recheck content.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) extends that same
+call to a separately typed active `streamable` file. The returned capability
+owns transient current/ahead demand only while a body is live and may hand
+the same byte position to the exact published representation on ordinary
+completion. This remains a read-only semantic operation: eligibility and
+generation are rechecked authoritatively, and no durable selection, run,
+priority, verification, or lifecycle intent changes.
 
 ## Scope
 

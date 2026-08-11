@@ -85,6 +85,17 @@ and one 64-KiB prepared chunk per body; they do not consume peer-transfer rate
 quota or change write/hash scheduling. Deterministic path and platform tests
 observe one read and one file lease at high water under a one-permit harness,
 then return both to zero after success and failure.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) generalizes that
+logical reader to the mutable active-storage owner without exposing
+`SelectiveStorage`. After each complete piece hashes, records verified state,
+and admits its required checkpoint intent, a generation-fenced waiter obtains
+one immutable logical read plan under the same shared read and 40-handle
+bounds. HTTP retains its separate eight-read ceiling and one 64-KiB prepared
+chunk per body. Ordinary publication closes the mutable planner first, so the
+capability explicitly releases its active read permit, waits for the exact
+immutable representation, and resumes at the same byte position; replacement
+or mismatched identity fails closed.
 
 ## Purpose And Scope
 

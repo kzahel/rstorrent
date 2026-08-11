@@ -51,6 +51,15 @@ a fake platform provider that proves exact ranges, representation validation,
 and terminal handle release. The generated `MediaFileAvailability` fact
 cross-builds for both Android native ABIs, but Android keeps its existing
 complete-file `content://` open and intentionally binds no HTTP listener.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) reuses the active
+logical-range owner and shared platform handle pool for verified incomplete
+reads, and cross-builds the demand/scheduler/storage semantics for both
+Android native ABIs. The API 34 partial-state profile again fails closed on
+grant loss, repairs, exchanges complementary Fast payload, and removes
+exactly at 7/40 handles and 2/16 pending requests. Compose still exposes only
+completed-file `content://` open; no Android HTTP listener or incomplete-file
+presentation is implied.
 
 ## Scope
 

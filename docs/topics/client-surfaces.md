@@ -161,7 +161,14 @@ the returned URL against its current exact-loopback media origin before using
 the system opener. Failure closes the reserved tab and remains typed
 presentation state. Android deliberately retains its existing complete-file
 `content://` action and starts no HTTP listener. There is no embedded player,
-copy-link action, MIME-specific UI, or incomplete-file scheduling.
+copy-link action, or MIME-specific UI.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) extends the same
+React/Tauri `Open` action to typed `streamable` rows. Browser and Tauri retain
+their existing opener, origin-validation, failure, and lifecycle behavior;
+the progressive wait and scheduling stay behind the capability URL. Android
+continues to present only completed-file native open and gains no listener or
+streaming presentation.
 
 ## Scope
 
@@ -501,19 +508,19 @@ Progress assessment remains a deliberate product view. Diagnostic records are
 a separate bounded timeline and are never scraped to decide torrent state or
 actions.
 
-## Future HTTP Playback Data Plane
+## HTTP Playback Data Plane
 
-Desktop and Android are expected eventually to expose an embedded HTTP server
-that can mint short-lived capability URLs for playing torrent files on local
-players, televisions, or other devices. That server is a content data plane,
-not the command and reactive-view transport.
+Desktop/browser hosting now exposes bounded ephemeral capability URLs for
+published and eligible active torrent files. That server is a content data
+plane, not the command and reactive-view transport. Android deliberately has
+no HTTP listener or incomplete-file presentation.
 
-It will need explicit interface binding, authentication, expiry and
-revocation, `HEAD` and range behavior, verified-range integrity, incomplete
-file scheduling, connection and buffer bounds, and platform lifecycle policy.
-File bytes flow between Rust storage and HTTP clients without crossing the UI
-contract. Tactical `008` does not implement or reserve a wire format for this
-future server.
+Tacticals `138` and `139` implement exact interface binding, capabilities,
+expiry/revocation, `HEAD` and single-range behavior, verified-only active
+reads, bounded incomplete-file scheduling, body/backpressure limits, and
+joined lifecycle ownership. File bytes flow between Rust storage and HTTP
+clients without crossing the UI contract. Embedded playback, stable sharing,
+remote exposure, and Android streaming remain independent product decisions.
 
 ## Current Gaps
 
@@ -552,7 +559,8 @@ future server.
   and Compose settings. The advanced typed `disabled` override exists for
   compatibility/debug use and remains visibly unauthenticated in tracker
   rows; custom roots, pins, and certificate-management UI are absent.
-- No HTTP playback server exists.
+- No embedded playback UI, stable media sharing, remote media listener, or
+  Android HTTP playback server exists.
 - No RSTorrent iOS product exists. Tacticals `116` and `123` prove the
   in-process Rust seam plus app-owned Documents persistence, bounded
   interruption recovery, networking, and finite lifecycle behavior on an

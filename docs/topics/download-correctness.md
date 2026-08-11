@@ -112,6 +112,17 @@ bidirectional complementary exchange under the shared resource owners. An
 accepted fast resume also reconciles pending file promotions before new
 writes, and contributor evidence survives disconnect until delayed hashing
 finishes.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) gives an active
+reader access only after every piece intersecting its next 64-KiB logical
+chunk passes that same complete hash and current-route publication boundary.
+Current stream demand schedules before ahead and ordinary work without
+changing durable selection; bounded untouched ordinary attempts may be
+preempted, and one slow current block may gain at most one different-peer
+attempt whose first accepted response cancels the loser. Corrupt, stale,
+replaced, skipped, paused, or unavailable generations cannot wake or feed a
+body. Controlled concurrent ranges and a full body crossing exact publication
+return the fixture hashes without treating sparse bytes as verified content.
 
 ## Scope
 

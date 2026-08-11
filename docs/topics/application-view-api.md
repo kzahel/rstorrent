@@ -200,6 +200,14 @@ and root state; clients do not infer eligibility from progress counters or
 selection. The ephemeral URL is returned only by a semantic call and never
 stored in a view, patch, request receipt, or durable snapshot. No view kind,
 lease, queue, cadence, or contract-version change is added.
+Completed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) adds
+`streamable` to that closed fact without making progress percentage or a
+sparse file sufficient evidence. The producer requires the exact active
+download, Normal selection, live storage route, available root, and admission
+state. A stale row can still lose authoritative eligibility before the
+semantic call; no demand ID, capability, URL, wait state, or scheduling detail
+enters a view.
 
 ## Purpose And Scope
 
