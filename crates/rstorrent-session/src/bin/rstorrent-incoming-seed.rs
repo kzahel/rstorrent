@@ -11,12 +11,13 @@ use rstorrent_engine::{SelectiveStorage, torrent_storage_paths_for_metainfo};
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, CONTROL_VERSION, ClientSettings, Command,
-    ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
+    ApplicationConfig, ApplicationService, BandwidthRuntimeView, CONTROL_VERSION, ClientSettings,
+    Command, ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
     Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PeerTransportPolicy,
     PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
-    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TransportAddressFamily,
-    ViewProjection, ViewSelector, ViewSnapshot, ViewUpdatePayload,
+    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TorrentTransferLimits,
+    TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -242,6 +243,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         let snapshot = service
             .incoming_peer_snapshot()
             .expect("enabled incoming service remains owned before shutdown");
+        let bandwidth: BandwidthRuntimeView = service.bandwidth_snapshot().into();
         let snapshot_json = serde_json::json!({
             "event": "snapshot",
             "pending": snapshot.pending,
@@ -253,6 +255,7 @@ async fn run() -> Result<(), SeedHarnessError> {
             "queued_requests_high_water": snapshot.queued_requests_high_water,
             "read_high_water": snapshot.read_high_water,
             "payload_bytes_sent": snapshot.payload_bytes_sent,
+            "bandwidth": bandwidth,
             "utp": service.utp_snapshot().map(utp_snapshot_json),
             "peers": snapshot_view(&service, ViewSelector::Torrent {
                 torrent_id: hex(metainfo.info_hash),
@@ -283,6 +286,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         .incoming_peer_snapshot()
         .expect("enabled incoming service remains owned before shutdown");
     let final_utp = service.utp_snapshot().map(utp_snapshot_json);
+    let final_bandwidth: BandwidthRuntimeView = service.bandwidth_snapshot().into();
     service.shutdown().await?;
     let stopped_json = serde_json::json!({
         "event": "stopped",
@@ -290,6 +294,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "established_before_shutdown": final_snapshot.established,
         "reads_before_shutdown": final_snapshot.reads,
         "payload_bytes_sent": final_snapshot.payload_bytes_sent,
+        "bandwidth": final_bandwidth,
         "utp_before_shutdown": final_utp,
         "pending_high_water": final_snapshot.pending_high_water,
         "established_high_water": final_snapshot.established_high_water,
@@ -344,6 +349,8 @@ fn initialize_catalog(
             PortMappingPolicy::Disabled
         },
         encryption: arguments.encryption,
+        upload_rate_limit: rate_limit(arguments.upload_rate_limit),
+        download_rate_limit: rate_limit(arguments.download_rate_limit),
         ..ClientSettings::default()
     };
     if store.client_settings()? != desired_settings {
@@ -362,7 +369,7 @@ fn initialize_catalog(
         }
     }
     let partial = arguments.fixture_payload.is_some();
-    match store.load_resume(&torrent_id) {
+    let existing = match store.load_resume(&torrent_id) {
         Ok(resume)
             if (!partial
                 && resume.state == rstorrent_session::TorrentState::Complete
@@ -371,15 +378,18 @@ fn initialize_catalog(
                     && resume.state != rstorrent_session::TorrentState::Complete
                     && resume.storage_state == StorageState::Staging) =>
         {
-            return Ok(());
+            true
         }
         Ok(_) => {
             return Err(SeedHarnessError::Catalog(
                 "existing fixture catalog row does not match the requested mode".to_owned(),
             ));
         }
-        Err(StoreError::UnknownTorrent(_)) => {}
+        Err(StoreError::UnknownTorrent(_)) => false,
         Err(error) => return Err(error.into()),
+    };
+    if existing {
+        return ensure_transfer_limits(&mut store, &torrent_id, arguments);
     }
     let magnet = {
         let mut magnet = arguments.tracker.as_deref().map_or_else(
@@ -425,7 +435,40 @@ fn initialize_catalog(
         store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
         store.mark_complete(&torrent_id)?;
     }
-    Ok(())
+    ensure_transfer_limits(&mut store, &torrent_id, arguments)
+}
+
+fn rate_limit(bytes_per_second: Option<u32>) -> TransferRateLimit {
+    bytes_per_second.map_or(TransferRateLimit::Unlimited, |bytes_per_second| {
+        TransferRateLimit::Limited { bytes_per_second }
+    })
+}
+
+fn ensure_transfer_limits(
+    store: &mut SessionStore,
+    torrent_id: &str,
+    arguments: &Arguments,
+) -> Result<(), SeedHarnessError> {
+    let limits = TorrentTransferLimits {
+        upload: rate_limit(arguments.torrent_upload_rate_limit),
+        download: rate_limit(arguments.torrent_download_rate_limit),
+    };
+    let response = store.handle_durable(&RequestEnvelope {
+        version: CONTROL_VERSION,
+        request_id: format!("configure-incoming-seed-rates-{}", store.revision()?),
+        expected_revision: None,
+        command: Command::SetTorrentTransferLimits {
+            torrent_id: torrent_id.to_owned(),
+            limits,
+        },
+    })?;
+    if matches!(response.outcome, ResponseOutcome::Success { .. }) {
+        Ok(())
+    } else {
+        Err(SeedHarnessError::Catalog(
+            "fixture torrent rate-limit request was rejected".to_owned(),
+        ))
+    }
 }
 
 async fn stage_partial_fixture(
@@ -537,6 +580,10 @@ struct Arguments {
     initial_pieces: Vec<usize>,
     skip_files: Vec<usize>,
     peer: Option<std::net::SocketAddr>,
+    upload_rate_limit: Option<u32>,
+    download_rate_limit: Option<u32>,
+    torrent_upload_rate_limit: Option<u32>,
+    torrent_download_rate_limit: Option<u32>,
 }
 
 impl Arguments {
@@ -558,6 +605,10 @@ impl Arguments {
         let mut initial_pieces = Vec::new();
         let mut skip_files = Vec::new();
         let mut peer = None;
+        let mut upload_rate_limit = None;
+        let mut download_rate_limit = None;
+        let mut torrent_upload_rate_limit = None;
+        let mut torrent_download_rate_limit = None;
         let mut index = 0;
         while index < arguments.len() {
             let flag = arguments[index]
@@ -689,6 +740,35 @@ impl Arguments {
                 index += 2;
                 continue;
             }
+            let rate_target = match flag {
+                "--upload-rate-limit" => Some(&mut upload_rate_limit),
+                "--download-rate-limit" => Some(&mut download_rate_limit),
+                "--torrent-upload-rate-limit" => Some(&mut torrent_upload_rate_limit),
+                "--torrent-download-rate-limit" => Some(&mut torrent_download_rate_limit),
+                _ => None,
+            };
+            if let Some(target) = rate_target {
+                let value = value
+                    .to_str()
+                    .ok_or_else(|| SeedHarnessError::Arguments(format!("{flag} must be UTF-8")))?;
+                let value = value.parse::<u32>().map_err(|_| {
+                    SeedHarnessError::Arguments(format!(
+                        "{flag} must be an integer number of bytes per second"
+                    ))
+                })?;
+                if value < 1_024 {
+                    return Err(SeedHarnessError::Arguments(format!(
+                        "{flag} must be at least 1024 bytes per second"
+                    )));
+                }
+                if target.replace(value).is_some() {
+                    return Err(SeedHarnessError::Arguments(format!(
+                        "{flag} may appear only once"
+                    )));
+                }
+                index += 2;
+                continue;
+            }
             let target = match flag {
                 "--profile-root" => &mut profile_root,
                 "--storage-root" => &mut storage_root,
@@ -737,6 +817,10 @@ impl Arguments {
             initial_pieces,
             skip_files,
             peer,
+            upload_rate_limit,
+            download_rate_limit,
+            torrent_upload_rate_limit,
+            torrent_download_rate_limit,
         })
     }
 

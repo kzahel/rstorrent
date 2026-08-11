@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductTrackerEvidenceTorrent: String? = null
     private var pendingProductMseEvidence = false
     private var pendingProductDownloadAdmissionEvidence: String? = null
+    private var pendingProductBandwidthPolicy: String? = null
     private var pendingProductIpv6Policy: String? = null
     private var pendingProductTorrentAction: Pair<String, String>? = null
     private var pendingCrashAfterSafRename = false
@@ -126,6 +127,10 @@ class MainActivity : ComponentActivity() {
                 pendingProductDownloadAdmissionEvidence?.let {
                     pendingProductDownloadAdmissionEvidence = null
                     service.logDownloadAdmissionEvidenceForTest(it)
+                }
+                pendingProductBandwidthPolicy?.let {
+                    pendingProductBandwidthPolicy = null
+                    service.exerciseBandwidthPolicyForTest(it)
                 }
                 pendingProductIpv6Policy?.let {
                     pendingProductIpv6Policy = null
@@ -305,6 +310,18 @@ class MainActivity : ComponentActivity() {
                         pendingProductDownloadAdmissionEvidence = it
                     } else {
                         service.logDownloadAdmissionEvidenceForTest(it)
+                    }
+                }
+            command
+                .getStringExtra(EXTRA_PRODUCT_BANDWIDTH_POLICY)
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    command.removeExtra(EXTRA_PRODUCT_BANDWIDTH_POLICY)
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductBandwidthPolicy = it
+                    } else {
+                        service.exerciseBandwidthPolicyForTest(it)
                     }
                 }
             command
@@ -565,6 +582,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_MSE_EVIDENCE = "product_mse_evidence"
         const val EXTRA_PRODUCT_DOWNLOAD_ADMISSION_EVIDENCE =
             "product_download_admission_evidence"
+        const val EXTRA_PRODUCT_BANDWIDTH_POLICY = "product_bandwidth_policy"
         const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"

@@ -1390,6 +1390,13 @@ impl ApplicationService {
         self.session_network().peer_budget().snapshot()
     }
 
+    pub fn bandwidth_snapshot(&self) -> rstorrent_engine::SessionBandwidthSnapshot {
+        self.session_network
+            .as_ref()
+            .map(SessionNetworkRuntime::bandwidth_snapshot)
+            .unwrap_or_default()
+    }
+
     pub async fn ensure_maintenance_owner(service: &Arc<tokio::sync::Mutex<Self>>) {
         let (admission_wake, discovery_wake, cancellation) = {
             let mut service = service.lock().await;

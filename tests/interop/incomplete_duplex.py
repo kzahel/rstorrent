@@ -579,6 +579,7 @@ def start_rstorrent(
     *,
     peer: tuple[str, int] | None = None,
     encryption: str = "allow",
+    rate_limited: bool = False,
 ) -> tuple[subprocess.Popen[str], dict[str, object], Path]:
     storage_root = run_root / "storage"
     profile_root = run_root / "profile"
@@ -597,6 +598,19 @@ def start_rstorrent(
         encryption,
         "--tcp-only",
     ]
+    if rate_limited:
+        command.extend(
+            [
+                "--upload-rate-limit",
+                str(24 * 1024),
+                "--download-rate-limit",
+                str(24 * 1024),
+                "--torrent-upload-rate-limit",
+                str(16 * 1024),
+                "--torrent-download-rate-limit",
+                str(16 * 1024),
+            ]
+        )
     for piece in initial:
         command.extend(["--initial-piece", str(piece)])
     for file_index in SKIP_FILES:
@@ -809,6 +823,7 @@ def run_libtorrent_case(
     *,
     rstorrent_initiates: bool,
     fast: bool,
+    rate_limited: bool = False,
 ) -> dict[str, object]:
     session = create_session()
     configure_encryption(session, "disabled")
@@ -832,7 +847,9 @@ def run_libtorrent_case(
                 RST_INITIAL,
                 peer=proxy.endpoint,
                 encryption="disabled",
+                rate_limited=rate_limited,
             )
+            transfer_started = time.monotonic()
             proxy.allow_connection()
             client_initial, upstream_initial = RST_INITIAL, REMOTE_INITIAL
         else:
@@ -842,11 +859,13 @@ def run_libtorrent_case(
                 root / "rstorrent",
                 RST_INITIAL,
                 encryption="disabled",
+                rate_limited=rate_limited,
             )
             proxy = PlaintextDuplexProxy(
                 parse_address(ready),
                 clear_fast=not fast,
             )
+            transfer_started = time.monotonic()
             handle.connect_peer(proxy.endpoint)
             client_initial, upstream_initial = REMOTE_INITIAL, RST_INITIAL
         wait_complete((process,), (storage_root,), (handle,))
@@ -858,7 +877,13 @@ def run_libtorrent_case(
             client_initial=client_initial,
             upstream_initial=upstream_initial,
         )
+        transfer_seconds = time.monotonic() - transfer_started
         evidence["rstorrent"] = stop_rstorrent(process)
+        evidence["transfer_seconds"] = transfer_seconds
+        if rate_limited:
+            evidence["rate_gate"] = assert_rate_limited(
+                evidence["rstorrent"], transfer_seconds
+            )
         process = None
         return evidence
     finally:
@@ -872,6 +897,49 @@ def run_libtorrent_case(
         handle = None
         session = None
         gc.collect()
+
+
+def assert_rate_limited(
+    rstorrent: dict[str, object], transfer_seconds: float
+) -> dict[str, object]:
+    stopped = rstorrent["stopped"]
+    if not isinstance(stopped, dict):
+        raise ScenarioFailure("rate-limited shutdown evidence is malformed")
+    bandwidth = stopped.get("bandwidth")
+    if not isinstance(bandwidth, dict):
+        raise ScenarioFailure("rate-limited shutdown has no bandwidth evidence")
+    result: dict[str, object] = {
+        "session_bytes_per_second": 24 * 1024,
+        "torrent_bytes_per_second": 16 * 1024,
+    }
+    for direction_name in ("upload", "download"):
+        direction = bandwidth.get(direction_name)
+        if not isinstance(direction, dict):
+            raise ScenarioFailure(f"rate-limited {direction_name} evidence is malformed")
+        admitted = int(direction["granted_bytes"]) - int(direction["returned_bytes"])
+        upper_bound = int(16 * 1024 * transfer_seconds) + 2 * 16 * 1024
+        if admitted < PIECE_SIZE:
+            raise ScenarioFailure(
+                f"rate-limited {direction_name} admitted no complete piece"
+            )
+        if admitted > upper_bound:
+            raise ScenarioFailure(
+                f"rate-limited {direction_name} admitted {admitted} above {upper_bound}"
+            )
+        if int(direction["throttle_wait_high_water_micros"]) <= 0:
+            raise ScenarioFailure(f"rate-limited {direction_name} never throttled")
+        if int(direction["active_waiters"]) != 0 or int(
+            direction["queued_requested_bytes"]
+        ) != 0:
+            raise ScenarioFailure(f"rate-limited {direction_name} did not drain")
+        result[direction_name] = {
+            "admitted_bytes": admitted,
+            "upper_bound_bytes": upper_bound,
+            "throttle_wait_high_water_micros": int(
+                direction["throttle_wait_high_water_micros"]
+            ),
+        }
+    return result
 
 
 def run_rstorrent_case(binary: Path, fixture: Fixture, root: Path) -> dict[str, object]:
@@ -1018,6 +1086,14 @@ def main() -> int:
                     root / "libtorrent-to-rstorrent",
                     rstorrent_initiates=False,
                     fast=True,
+                ),
+                "rate_limited_full_duplex": run_libtorrent_case(
+                    binary,
+                    fixture,
+                    root / "rate-limited-full-duplex",
+                    rstorrent_initiates=True,
+                    fast=True,
+                    rate_limited=True,
                 ),
                 "rstorrent_to_rstorrent_fast": run_rstorrent_case(
                     binary, fixture, root / "rstorrent-pair"

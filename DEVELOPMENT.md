@@ -470,7 +470,9 @@ The incomplete-torrent duplex profile gives each participant a complementary
 sparse set over wanted, skipped, padding, cross-file, and part-backed routes.
 It captures Piece frames in both directions before completion for ordinary,
 Fast, and forced-MSE peers, verifies exact final hashes, and exercises accepted
-fast-resume route reconciliation:
+fast-resume route reconciliation. Its additional limited case composes a
+16 KiB/s torrent upload/download cap beneath a 24 KiB/s session cap and checks
+both directional byte bounds, throttle waits, and terminal quota drain:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -500,15 +502,38 @@ uv run --project tests/interop --locked \
   --output /tmp/rstorrent-multi-torrent.json
 ```
 
+The hierarchical rate-policy variant preconfigures durable session and
+per-torrent download limits, restarts before transfer, and checks session and
+torrent caps plus torrent-first fairness with a three-peer versus one-peer
+imbalance. The bounded smoke uses 2 MiB fixtures and 256 KiB pieces:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/multi_torrent_throughput.py \
+  --rate-policy --size-mib 2 --piece-size-kib 256 --runs 1 \
+  --output /tmp/rstorrent-rate-policy.json
+```
+
 The Android product concurrency profile uses the same generated application
-contract and Android session limits. It requires an explicit target, two
-active downloads plus one queued promotion, exact payload hashes, bounded
-resource/file-descriptor high-waters, and cleanup:
+contract and Android session limits. It applies a 24 KiB/s peer download
+limit before adding torrents and requires an explicit target, two active
+downloads plus one queued promotion, cap accounting, terminal bandwidth
+drain, exact payload hashes, bounded resource/file-descriptor high-waters,
+and cleanup:
 
 ```bash
 experiments/android-engine-bootstrap/build.sh
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target pixel7a --profile product-concurrent-downloads --no-build
+```
+
+Use the same profile without a visible emulator window for routine parity:
+
+```bash
+uv run --project tests/interop --locked \
+  python experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet \
+  --profile product-concurrent-downloads --runs 1 --no-build
 ```
 
 The Android SAF incomplete-duplex profile stages a two-piece partial torrent,

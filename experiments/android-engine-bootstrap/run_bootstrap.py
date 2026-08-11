@@ -2730,6 +2730,42 @@ def request_download_admission_evidence(
     )
 
 
+def request_bandwidth_evidence(
+    target: Any,
+    mode: str,
+) -> dict[str, int]:
+    result = target.shell(
+        [
+            "am",
+            "start",
+            "-n",
+            ACTIVITY,
+            "--es",
+            "product_bandwidth_policy",
+            mode,
+        ],
+        timeout=30,
+        check=False,
+    )
+    if "Error:" in result.stdout or (
+        result.returncode != 0 and "Starting:" not in result.stdout
+    ):
+        raise BootstrapFailure("could not request Android bandwidth evidence")
+    marker = f"bandwidth_policy mode={mode} "
+    deadline = time.monotonic() + 35
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        rows = [line for line in logs.splitlines() if marker in line]
+        if rows:
+            return {
+                key: int(value)
+                for key, value in re.findall(r"([a-z_]+)=(\d+)", rows[-1])
+            }
+        time.sleep(0.2)
+    raise BootstrapFailure(f"timed out waiting for Android bandwidth {mode}\n{logs}")
+
+
 def run_product_concurrent_downloads_profile(
     target: Any,
     target_kind: str,
@@ -2757,6 +2793,14 @@ def run_product_concurrent_downloads_profile(
         clear_application(target)
         prepare_product_saf(target, probe, grant_storage)
         baseline_fds = product_fd_count(target)
+        configured_bandwidth = request_bandwidth_evidence(target, "configure")
+        configured_at = time.monotonic()
+        if configured_bandwidth.get("configured") != 24 * 1024 or configured_bandwidth.get(
+            "effective"
+        ) != 24 * 1024:
+            raise BootstrapFailure(
+                f"Android configured bandwidth diverged: {configured_bandwidth}"
+            )
         for fixture in fixtures:
             fixture.handle.set_upload_limit(16 * 1024)
         transports = [
@@ -2804,6 +2848,16 @@ def run_product_concurrent_downloads_profile(
         }
         if any(active.get(key) != value for key, value in expected_active.items()):
             raise BootstrapFailure(f"Android active admission evidence diverged: {active}")
+        active_bandwidth = request_bandwidth_evidence(target, "active")
+        if (
+            active_bandwidth.get("active_downloads") != 2
+            or active_bandwidth.get("registered") != 3
+            or active_bandwidth.get("granted", 0) <= 0
+            or active_bandwidth.get("wait_high", 0) <= 0
+        ):
+            raise BootstrapFailure(
+                f"Android active bandwidth evidence diverged: {active_bandwidth}"
+            )
 
         def validate_resource_ceilings(evidence: dict[str, int]) -> None:
             if evidence.get("request_high", 0) > 128 * 1024 * 1024:
@@ -2840,6 +2894,30 @@ def run_product_concurrent_downloads_profile(
         ):
             raise BootstrapFailure(f"Android terminal admission did not drain: {terminal}")
         validate_resource_ceilings(terminal)
+        terminal_bandwidth = request_bandwidth_evidence(target, "terminal")
+        admitted_bytes = terminal_bandwidth.get("granted", 0) - terminal_bandwidth.get(
+            "returned", 0
+        )
+        transfer_seconds = time.monotonic() - configured_at
+        rate = 24 * 1024
+        upper_bound = int(rate * transfer_seconds) + rate + 16 * 1024
+        expected_payload = sum(length for _, length, padding in fixture_files() if not padding)
+        if admitted_bytes < len(fixtures) * expected_payload or admitted_bytes > upper_bound:
+            raise BootstrapFailure(
+                "Android bandwidth cap evidence diverged: "
+                f"admitted={admitted_bytes} expected_payload={len(fixtures) * expected_payload} "
+                f"upper_bound={upper_bound} elapsed={transfer_seconds:.3f}"
+            )
+        if (
+            terminal_bandwidth.get("active_downloads") != 0
+            or terminal_bandwidth.get("active_waiters") != 0
+            or terminal_bandwidth.get("queued") != 0
+            or terminal_bandwidth.get("wait_high", 0) <= 0
+            or terminal_bandwidth.get("burst", rate + 1) > rate
+        ):
+            raise BootstrapFailure(
+                f"Android terminal bandwidth did not drain: {terminal_bandwidth}"
+            )
 
         for fixture, output_root in zip(fixtures, output_roots, strict=True):
             for relative_path, _, padding in fixture_files():
@@ -2865,6 +2943,14 @@ def run_product_concurrent_downloads_profile(
             "torrents": [fixture.info_hash for fixture in fixtures],
             "active_admission": active,
             "terminal_admission": terminal,
+            "bandwidth": {
+                "configured": configured_bandwidth,
+                "active": active_bandwidth,
+                "terminal": terminal_bandwidth,
+                "admitted_bytes": admitted_bytes,
+                "upper_bound_bytes": upper_bound,
+                "transfer_seconds": transfer_seconds,
+            },
             "storage_metrics": storage_metrics,
             "process_fds": {
                 "baseline": baseline_fds,

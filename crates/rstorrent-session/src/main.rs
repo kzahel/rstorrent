@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use rstorrent_engine::PathPublicationStage;
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, Command, ConfiguredStorageRoot, DownloadResourceLimits,
-    ErrorCode, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope,
-    application_error_response,
+    ApplicationConfig, ApplicationService, BandwidthRuntimeView, Command, ConfiguredStorageRoot,
+    DownloadResourceLimits, ErrorCode, NetworkConfig, NetworkPolicy, RequestEnvelope,
+    ResponseEnvelope, application_error_response,
 };
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -21,6 +21,7 @@ struct DiagnosticResourceReport {
     download: rstorrent_engine::SessionDownloadResourceSnapshot,
     peer_budget: rstorrent_engine::PeerBudgetSnapshot,
     storage_files: rstorrent_engine::StorageFilePoolSnapshot,
+    bandwidth: BandwidthRuntimeView,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -40,6 +41,7 @@ async fn run() -> Result<(), DiagnosticError> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut output = BufWriter::new(tokio::io::stdout());
     let mut peer_budget_before_shutdown = None;
+    let mut bandwidth_before_shutdown = None;
     while let Some(line) = lines
         .next_line()
         .await
@@ -81,6 +83,7 @@ async fn run() -> Result<(), DiagnosticError> {
         let mut service_guard = service.lock().await;
         if shutdown {
             peer_budget_before_shutdown = Some(service_guard.peer_budget_snapshot());
+            bandwidth_before_shutdown = Some(service_guard.bandwidth_snapshot().into());
         }
         let response = match service_guard.dispatch(request).await {
             Ok(response) => response,
@@ -103,6 +106,8 @@ async fn run() -> Result<(), DiagnosticError> {
             peer_budget: peer_budget_before_shutdown
                 .unwrap_or_else(|| service.peer_budget_snapshot()),
             storage_files: service.storage_file_pool_snapshot(),
+            bandwidth: bandwidth_before_shutdown
+                .unwrap_or_else(|| service.bandwidth_snapshot().into()),
         }
     };
     service.lock().await.shutdown().await?;

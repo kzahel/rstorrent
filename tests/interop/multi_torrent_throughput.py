@@ -46,6 +46,14 @@ class Fixture:
     sha1: str
 
 
+@dataclass(frozen=True)
+class RatePolicy:
+    name: str
+    session_download_bytes_per_second: int
+    torrent_download_bytes_per_second: tuple[int | None, ...]
+    peer_counts: tuple[int, ...]
+
+
 def deterministic_payload(path: Path, size_bytes: int, salt: int) -> str:
     pattern = bytearray(
         ((offset * 73) ^ (offset >> 3) ^ (salt * 41) ^ 0xA5) & 0xFF
@@ -135,7 +143,17 @@ def envelope(request_id: str, command: dict[str, Any]) -> dict[str, Any]:
     return {"version": 1, "request_id": request_id, "command": command}
 
 
-def settings(active_downloads: int) -> dict[str, Any]:
+def transfer_rate_limit(bytes_per_second: int | None) -> dict[str, Any]:
+    if bytes_per_second is None:
+        return {"type": "unlimited"}
+    return {"type": "limited", "bytes_per_second": bytes_per_second}
+
+
+def settings(
+    active_downloads: int,
+    *,
+    download_bytes_per_second: int | None = None,
+) -> dict[str, Any]:
     return {
         "listener": {"type": "disabled"},
         "preferred_listen_port": 6881,
@@ -143,6 +161,8 @@ def settings(active_downloads: int) -> dict[str, Any]:
         "peer_connection_limit": 200,
         "upload_slots": 8,
         "active_downloads": active_downloads,
+        "upload_rate_limit": transfer_rate_limit(None),
+        "download_rate_limit": transfer_rate_limit(download_bytes_per_second),
         "encryption": "allow",
         "ipv6_enabled": True,
         "tracker_https_server_authentication": "system_trust",
@@ -195,58 +215,83 @@ def run_case(
     run: int,
     root: Path,
     timeout_seconds: int,
+    rate_policy: RatePolicy | None = None,
 ) -> dict[str, Any]:
-    case_root = root / f"n{count}-limit{configured_limit}-run{run}"
+    policy_suffix = f"-{rate_policy.name}" if rate_policy is not None else ""
+    case_root = root / f"n{count}-limit{configured_limit}{policy_suffix}-run{run}"
     profile_root = case_root / "profile"
     payload_root = case_root / "payload"
     report_path = case_root / "resources.json"
     payload_root.mkdir(parents=True)
     alerts: list[str] = []
-    seed_sessions = []
-    seed_handles = []
-    seed_ports = []
+    seed_entries: list[tuple[Any, Any, Fixture]] = []
+    seed_ports: dict[int, list[int]] = {}
     process: subprocess.Popen[str] | None = None
     started = time.monotonic()
     try:
-        for fixture in fixtures[:count]:
-            seed_session = create_session()
-            seed_sessions.append(seed_session)
-            seed_ports.append(wait_for_listener(seed_session, alerts))
-            seed_handles.append(
-                add_seed(
+        peer_counts = rate_policy.peer_counts if rate_policy is not None else (1,) * count
+        if len(peer_counts) != count:
+            raise ScenarioFailure("rate policy peer counts do not match its torrent count")
+        for fixture, peer_count in zip(fixtures[:count], peer_counts, strict=True):
+            seed_ports[fixture.index] = []
+            for _ in range(peer_count):
+                seed_session = create_session()
+                port = wait_for_listener(seed_session, alerts)
+                seed_handle = add_seed(
                     seed_session,
                     lt.torrent_info(str(fixture.torrent)),
                     fixture.seed_root,
                     alerts,
                 )
+                seed_entries.append((seed_session, seed_handle, fixture))
+                seed_ports[fixture.index].append(port)
+
+        def start_session(report: Path) -> subprocess.Popen[str]:
+            return subprocess.Popen(
+                [
+                    str(binary),
+                    "--profile-root",
+                    str(profile_root),
+                    "--storage-root",
+                    f"downloads={payload_root}",
+                    "--resource-report",
+                    str(report),
+                    "--timeout-seconds",
+                    str(timeout_seconds),
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
             )
-        process = subprocess.Popen(
-            [
-                str(binary),
-                "--profile-root",
-                str(profile_root),
-                "--storage-root",
-                f"downloads={payload_root}",
-                "--resource-report",
-                str(report_path),
-                "--timeout-seconds",
-                str(timeout_seconds),
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+
+        process = start_session(
+            case_root / "configuration-resources.json"
+            if rate_policy is not None
+            else report_path
         )
         exchange(
             process,
             envelope(
                 "settings",
-                {"type": "set_client_settings", "settings": settings(configured_limit)},
+                {
+                    "type": "set_client_settings",
+                    "settings": settings(
+                        configured_limit,
+                        download_bytes_per_second=(
+                            rate_policy.session_download_bytes_per_second
+                            if rate_policy is not None
+                            else None
+                        ),
+                    ),
+                },
             ),
         )
-        transfer_started = time.monotonic()
-        for fixture, port in zip(fixtures[:count], seed_ports, strict=True):
+        for fixture in fixtures[:count]:
+            explicit_peers = "".join(
+                f"&x.pe=127.0.0.1:{port}" for port in seed_ports[fixture.index]
+            )
             exchange(
                 process,
                 envelope(
@@ -255,14 +300,47 @@ def run_case(
                         "type": "add_magnet",
                         "magnet": (
                             f"magnet:?xt=urn:btih:{fixture.info_hash}"
-                            f"&dn={fixture.name}&x.pe=127.0.0.1:{port}"
+                            f"&dn={fixture.name}{explicit_peers}"
                         ),
                         "storage_root": "downloads",
-                        "start_content": True,
+                        "start_content": rate_policy is None,
                         "skip_files": [],
                     },
                 ),
             )
+            if rate_policy is not None:
+                torrent_rate = rate_policy.torrent_download_bytes_per_second[fixture.index]
+                exchange(
+                    process,
+                    envelope(
+                        f"rate-{fixture.index}",
+                        {
+                            "type": "set_torrent_transfer_limits",
+                            "torrent_id": fixture.info_hash,
+                            "limits": {
+                                "upload": transfer_rate_limit(None),
+                                "download": transfer_rate_limit(torrent_rate),
+                            },
+                        },
+                    ),
+                )
+        if rate_policy is not None:
+            exchange(process, envelope("configured-shutdown", {"type": "shutdown"}))
+            process.wait(timeout=30)
+            if process.returncode != 0:
+                stderr = process.stderr.read() if process.stderr is not None else ""
+                raise ScenarioFailure(f"configuration session exited {process.returncode}\n{stderr}")
+            process = start_session(report_path)
+        transfer_started = time.monotonic()
+        if rate_policy is not None:
+            for fixture in fixtures[:count]:
+                exchange(
+                    process,
+                    envelope(
+                        f"resume-{fixture.index}",
+                        {"type": "resume", "torrent_id": fixture.info_hash},
+                    ),
+                )
         completion_seconds: dict[str, float] = {}
         progress_samples: dict[str, list[tuple[float, int]]] = {
             fixture.info_hash: [(0.0, 0)] for fixture in fixtures[:count]
@@ -344,7 +422,12 @@ def run_case(
             output = payload_root / fixture.name
             if output.stat().st_size != fixture.size_bytes or hash_file(output) != fixture.sha1:
                 raise ScenarioFailure(f"publication differs for {fixture.info_hash}")
-            if seed_handles[fixture.index].status().total_payload_upload <= 0:
+            fixture_handles = [
+                handle
+                for _, handle, seeded_fixture in seed_entries
+                if seeded_fixture.index == fixture.index
+            ]
+            if not any(handle.status().total_payload_upload > 0 for handle in fixture_handles):
                 raise ScenarioFailure(f"oracle uploaded no payload for {fixture.info_hash}")
         if any(len(samples) < 2 for samples in progress_samples.values()):
             raise ScenarioFailure("a concurrent torrent exposed no measured progress")
@@ -352,6 +435,20 @@ def run_case(
         return {
             "count": count,
             "configured_limit": configured_limit,
+            "rate_policy": (
+                {
+                    "name": rate_policy.name,
+                    "session_download_bytes_per_second": (
+                        rate_policy.session_download_bytes_per_second
+                    ),
+                    "torrent_download_bytes_per_second": list(
+                        rate_policy.torrent_download_bytes_per_second
+                    ),
+                    "peer_counts": list(rate_policy.peer_counts),
+                }
+                if rate_policy is not None
+                else None
+            ),
             "run": run,
             "payload_bytes": total_bytes,
             "transfer_seconds": transfer_seconds,
@@ -372,15 +469,14 @@ def run_case(
         if process is not None and process.poll() is None:
             process.kill()
             process.wait(timeout=10)
-        for seed_session, handle in zip(seed_sessions, seed_handles, strict=True):
+        for seed_session, handle, _ in seed_entries:
             try:
                 if handle.is_valid():
                     seed_session.remove_torrent(handle)
             except Exception:
                 pass
             seed_session.pause()
-        seed_handles.clear()
-        seed_sessions.clear()
+        seed_entries.clear()
         gc.collect()
         shutil.rmtree(case_root, ignore_errors=True)
 
@@ -445,6 +541,123 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return summaries
 
 
+def validate_rate_result(result: dict[str, Any]) -> dict[str, Any]:
+    policy = result["rate_policy"]
+    if policy is None:
+        raise ScenarioFailure("rate validation received an unlimited throughput result")
+    direction = result["resources"]["bandwidth"]["download"]
+    granted = int(direction["granted_bytes"])
+    returned = int(direction["returned_bytes"])
+    admitted = granted - returned
+    session_rate = int(policy["session_download_bytes_per_second"])
+    torrent_rates = [
+        rate for rate in policy["torrent_download_bytes_per_second"] if rate is not None
+    ]
+    effective_rate = min([session_rate, *torrent_rates])
+    elapsed = float(result["transfer_seconds"])
+    burst = min(effective_rate, MIB)
+    upper_bound = int(effective_rate * elapsed) + burst + 16 * 1024
+    if admitted < int(result["payload_bytes"]):
+        raise ScenarioFailure(
+            f"{policy['name']} admitted fewer peer bytes than its exact payload"
+        )
+    if admitted > upper_bound:
+        raise ScenarioFailure(
+            f"{policy['name']} admitted {admitted} bytes above {upper_bound}"
+        )
+    if admitted / elapsed < effective_rate * 0.60:
+        raise ScenarioFailure(f"{policy['name']} made less than 60% useful rate progress")
+    if int(direction["throttle_wait_high_water_micros"]) <= 0:
+        raise ScenarioFailure(f"{policy['name']} recorded no throttle wait")
+    if int(direction["active_waiters"]) != 0 or int(direction["queued_requested_bytes"]) != 0:
+        raise ScenarioFailure(f"{policy['name']} left terminal bandwidth work queued")
+    if int(direction["registered_torrents"]) != int(result["count"]):
+        raise ScenarioFailure(f"{policy['name']} lost a live torrent registration")
+    return {
+        "admitted_bytes": admitted,
+        "effective_rate_bytes_per_second": effective_rate,
+        "upper_bound_bytes": upper_bound,
+        "utilization": admitted / elapsed / effective_rate,
+        "cap_pass": True,
+        "terminal_queue_pass": True,
+    }
+
+
+def run_rate_profile(
+    binary: Path,
+    fixtures: list[Fixture],
+    root: Path,
+    arguments: argparse.Namespace,
+    repository: Path,
+) -> int:
+    policies = (
+        RatePolicy("session-cap", 256 * 1024, (None,), (1,)),
+        RatePolicy("torrent-cap", MIB, (256 * 1024,), (1,)),
+        RatePolicy("torrent-fairness", 512 * 1024, (None, None), (3, 1)),
+    )
+    results = []
+    for run in range(1, arguments.runs + 1):
+        ordered = policies if run % 2 else tuple(reversed(policies))
+        for policy in ordered:
+            result = run_case(
+                binary,
+                fixtures,
+                len(policy.torrent_download_bytes_per_second),
+                len(policy.torrent_download_bytes_per_second),
+                run,
+                root,
+                arguments.timeout_seconds,
+                policy,
+            )
+            result["rate_gate"] = validate_rate_result(result)
+            results.append(result)
+            print(json.dumps(result, sort_keys=True), flush=True)
+    fairness = [
+        result for result in results if result["rate_policy"]["name"] == "torrent-fairness"
+    ]
+    fairness_ratios = []
+    for result in fairness:
+        completions = list(result["completion_seconds"].values())
+        ratio = max(completions) / min(completions)
+        fairness_ratios.append(ratio)
+        if ratio > 1.35:
+            raise ScenarioFailure(
+                f"unequal-peer torrent fairness completion ratio {ratio:.3f} exceeded 1.35"
+            )
+        if int(result["peer_connections_high_water"]) < 4:
+            raise ScenarioFailure("unequal-peer fairness case established fewer than four peers")
+    report = {
+        "schema_version": 1,
+        "scenario": "hierarchical-transfer-rate-enforcement",
+        "commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+        ).strip(),
+        "libtorrent": lt.version,
+        "environment": {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "logical_cpus": os.cpu_count(),
+            "host_model": command_value([["sysctl", "-n", "hw.model"], ["uname", "-m"]]),
+            "filesystem": filesystem_name(root),
+        },
+        "size_mib_per_torrent": arguments.size_mib,
+        "piece_size_kib": arguments.piece_size_kib,
+        "recorded_runs_per_case": arguments.runs,
+        "gates": {
+            "all_caps_pass": True,
+            "all_terminal_queues_pass": True,
+            "unequal_peer_fairness_ratios": fairness_ratios,
+            "unequal_peer_fairness_pass": True,
+        },
+        "results": results,
+    }
+    encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if arguments.output is not None:
+        arguments.output.write_text(encoded)
+    print(encoded, end="")
+    return 0
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--size-mib", type=int, default=128)
@@ -453,6 +666,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument(
+        "--rate-policy",
+        action="store_true",
+        help="run the bounded session/torrent cap and unequal-peer fairness profile",
+    )
     return parser.parse_args()
 
 
@@ -478,10 +696,12 @@ def main() -> int:
         root = Path(temporary)
         fixtures = create_fixtures(
             root,
-            max(DEFAULT_COUNTS),
+            2 if arguments.rate_policy else max(DEFAULT_COUNTS),
             arguments.size_mib * MIB,
             arguments.piece_size_kib * 1024,
         )
+        if arguments.rate_policy:
+            return run_rate_profile(binary, fixtures, root, arguments, repository)
         results = []
         cases = [(1, 1), (1, 3), *((count, count) for count in DEFAULT_COUNTS[1:])]
         for count, limit in cases:

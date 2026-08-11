@@ -125,11 +125,7 @@ impl BandwidthPermit {
             used <= self.grant.remaining,
             "used quota exceeds bandwidth grant"
         );
-        let unused = self.grant.remaining - used;
-        self.grant.remaining = 0;
-        if unused != 0 {
-            self.grant.refund(unused);
-        }
+        self.grant.remaining -= used;
     }
 }
 
@@ -149,19 +145,25 @@ impl GrantedQuota {
         }
     }
 
-    fn refund(&self, bytes: usize) {
+    fn disarm(mut self) -> usize {
+        self.direction = None;
+        let remaining = self.remaining;
+        self.remaining = 0;
+        remaining
+    }
+
+    fn complete(&mut self) {
         if let Some(direction) = &self.direction {
-            direction.refund(self.torrent_id, bytes);
+            direction.complete_grant(self.torrent_id, self.remaining);
         }
+        self.direction = None;
+        self.remaining = 0;
     }
 }
 
 impl Drop for GrantedQuota {
     fn drop(&mut self) {
-        if self.remaining != 0 {
-            self.refund(self.remaining);
-            self.remaining = 0;
-        }
+        self.complete();
     }
 }
 
@@ -553,12 +555,17 @@ impl DirectionInner {
         }
     }
 
-    fn refund(&self, torrent_id: u64, bytes: usize) {
+    fn complete_grant(&self, torrent_id: u64, bytes: usize) {
         let mut state = self.state();
         state.advance_to_now();
         state.session.refund(bytes);
         if let Some(torrent) = state.torrents.get_mut(&torrent_id) {
             torrent.bucket.refund(bytes);
+            torrent.grant_in_flight = false;
+            if !torrent.waiters.is_empty() && !torrent.ready {
+                torrent.ready = true;
+                state.ready.push_back(torrent_id);
+            }
         }
         state.snapshot.returned_bytes = state
             .snapshot
@@ -765,6 +772,7 @@ impl DirectionState {
                     self.torrents.insert(torrent_id, torrent);
                     continue;
                 };
+                debug_assert!(!torrent.grant_in_flight);
                 let available = request
                     .requested
                     .min(MAX_BANDWIDTH_GRANT_BYTES)
@@ -803,14 +811,30 @@ impl DirectionState {
                     torrent_id,
                     remaining: available,
                 };
-                let _ = request.response.send(Ok(quota));
-                progress = true;
-                grants += 1;
-                if torrent.waiters.is_empty() {
-                    torrent.ready = false;
-                } else {
-                    torrent.ready = true;
-                    self.ready.push_back(torrent_id);
+                torrent.grant_in_flight = true;
+                torrent.ready = false;
+                match request.response.send(Ok(quota)) {
+                    Ok(()) => {
+                        progress = true;
+                        grants += 1;
+                    }
+                    Err(Ok(quota)) => {
+                        let returned = quota.disarm();
+                        self.session.refund(returned);
+                        torrent.bucket.refund(returned);
+                        torrent.grant_in_flight = false;
+                        self.snapshot.returned_bytes = self
+                            .snapshot
+                            .returned_bytes
+                            .saturating_add(returned.try_into().unwrap_or(u64::MAX));
+                        self.snapshot.cancelled_requests =
+                            self.snapshot.cancelled_requests.saturating_add(1);
+                        if !torrent.waiters.is_empty() {
+                            torrent.ready = true;
+                            self.ready.push_back(torrent_id);
+                        }
+                    }
+                    Err(Err(_)) => unreachable!("allocator only sends successful grants"),
                 }
                 self.torrents.insert(torrent_id, torrent);
                 if grants >= MAX_GRANTS_PER_PASS {
@@ -831,6 +855,7 @@ struct TorrentDirectionState {
     bucket: TokenBucket,
     waiters: VecDeque<PendingRequest>,
     ready: bool,
+    grant_in_flight: bool,
 }
 
 impl TorrentDirectionState {
@@ -839,6 +864,7 @@ impl TorrentDirectionState {
             bucket: TokenBucket::new(limit),
             waiters: VecDeque::new(),
             ready: false,
+            grant_in_flight: false,
         }
     }
 }
@@ -1022,16 +1048,23 @@ mod tests {
             first.push(queue(&mut state, 1, 1_024));
         }
         let mut second = queue(&mut state, 2, 1_024);
-        state.session.credit = 2_048 * super::CREDIT_SCALE;
+        state.session.credit = 4_096 * super::CREDIT_SCALE;
         let _ = state.allocate(&direction);
         drop(state);
-        let mut first_grants = 0;
-        for receiver in &mut first {
-            first_grants += usize::from(receiver.try_recv().is_ok());
-        }
-        let second_granted = second.try_recv().is_ok();
-        assert_eq!(first_grants, 1);
-        assert!(second_granted);
+        let first_grant = first[0].try_recv().expect("first torrent grant").unwrap();
+        let second_grant = second.try_recv().expect("second torrent grant").unwrap();
+        assert!(
+            first[1..]
+                .iter_mut()
+                .all(|receiver| receiver.try_recv().is_err())
+        );
+
+        drop(first_grant);
+        drop(second_grant);
+        let mut state = direction.state();
+        let _ = state.allocate(&direction);
+        drop(state);
+        assert!(first[1].try_recv().is_ok());
     }
 
     #[tokio::test]

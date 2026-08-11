@@ -941,6 +941,13 @@ impl SessionNetworkRuntime {
             .register_torrent(limits)
     }
 
+    pub(crate) fn bandwidth_snapshot(&self) -> SessionBandwidthSnapshot {
+        self.bandwidth
+            .as_ref()
+            .map(SessionBandwidth::snapshot)
+            .unwrap_or_default()
+    }
+
     pub(crate) fn utp_handle(&self) -> Option<UtpHandle> {
         self.utp_handle.clone()
     }

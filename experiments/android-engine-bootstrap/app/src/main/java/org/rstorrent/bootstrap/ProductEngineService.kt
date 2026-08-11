@@ -551,6 +551,93 @@ class ProductEngineService : Service() {
         }
     }
 
+    fun exerciseBandwidthPolicyForTest(mode: String) {
+        check(ProductSafDocuments.isDebuggable(this)) {
+            "bandwidth policy evidence is debug-only"
+        }
+        scope.launch {
+            try {
+                clientReady.await()
+                if (mode == "configure") {
+                    val current = awaitIpv6Policy(null)
+                    val limit = TransferRateLimit.Limited(ANDROID_RATE_BYTES_PER_SECOND.toUInt())
+                    dispatchAwait(
+                        Command.SetClientSettings(
+                            current.configured.copy(
+                                uploadRateLimit = limit,
+                                downloadRateLimit = limit,
+                            ),
+                        ),
+                    )
+                }
+                logBandwidthEvidence(mode, awaitBandwidthPolicy(mode))
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private suspend fun awaitBandwidthPolicy(mode: String): ClientSettingsRuntimeView =
+        withTimeout(30_000) {
+            while (true) {
+                val settings = mutableState.value.clientSettings
+                val configured =
+                    (settings?.configured?.downloadRateLimit as? TransferRateLimit.Limited)
+                        ?.bytesPerSecond
+                val effective =
+                    (settings?.effectiveDownloadRateLimit as? TransferRateLimit.Limited)
+                        ?.bytesPerSecond
+                val download = settings?.bandwidth?.download
+                val policyApplied =
+                    configured == ANDROID_RATE_BYTES_PER_SECOND.toUInt() &&
+                        effective == ANDROID_RATE_BYTES_PER_SECOND.toUInt() &&
+                        settings?.bandwidthApplication is ClientSettingsApplicationState.Applied
+                val ready =
+                    when (mode) {
+                        "configured", "configure" -> policyApplied
+                        "active" ->
+                            policyApplied &&
+                                settings?.activeDownloadCount == 2U.toUShort() &&
+                                download != null &&
+                                download.grantedBytes.toULong() > 0UL &&
+                                download.throttleWaitHighWaterMicros.toULong() > 0UL
+                        "terminal" ->
+                            policyApplied &&
+                                settings?.activeDownloadCount == 0U.toUShort() &&
+                                download != null &&
+                                download.grantedBytes.toULong() > 0UL &&
+                                download.activeWaiters == 0U &&
+                                download.queuedRequestedBytes.toULong() == 0UL
+                        else -> error("unknown bandwidth policy evidence mode")
+                    }
+                if (ready) return@withTimeout requireNotNull(settings)
+                delay(25)
+            }
+            error("unreachable")
+        }
+
+    private fun logBandwidthEvidence(
+        mode: String,
+        settings: ClientSettingsRuntimeView,
+    ) {
+        val configured =
+            (settings.configured.downloadRateLimit as TransferRateLimit.Limited).bytesPerSecond
+        val effective =
+            (settings.effectiveDownloadRateLimit as TransferRateLimit.Limited).bytesPerSecond
+        val download = settings.bandwidth.download
+        Log.i(
+            TAG,
+            "bandwidth_policy mode=$mode configured=$configured effective=$effective " +
+                "application=APPLIED registered=${download.registeredTorrents} " +
+                "active_downloads=${settings.activeDownloadCount} " +
+                "active_waiters=${download.activeWaiters} " +
+                "queued=${download.queuedRequestedBytes} granted=${download.grantedBytes} " +
+                "returned=${download.returnedBytes} " +
+                "wait_high=${download.throttleWaitHighWaterMicros} " +
+                "burst=${download.currentBurstCreditBytes}",
+        )
+    }
+
     private fun logIpv6Evidence(mode: String, observed: ClientSettingsRuntimeView) {
         val application =
             when (observed.ipv6Application) {
@@ -1458,6 +1545,7 @@ class ProductEngineService : Service() {
         private const val NOTIFICATION_ID = 42
         private const val MAX_TORRENT_SOURCE_BYTES = 64 * 1024 * 1024
         private const val SAF_PROVIDER_CONCURRENCY = 4
+        private const val ANDROID_RATE_BYTES_PER_SECOND = 24 * 1024
         private const val TAG = "RSTorrentProduct"
     }
 }
