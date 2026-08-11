@@ -48,9 +48,10 @@ and maintainer direction reactivated Tactical `137` with end-to-end
 implementation and logical commits authorized. Tactical `137` is now complete.
 Incoming-uTP reachability Tactical
 [`140`](../tactical/140-incoming-utp-reachability.md) is also complete: every
-controlled gate passes and its bounded physical gate closes evidence-limited
-with exact cleanup. Source-ready Tactical `139` is now the human-review
-checkpoint; implementation remains unauthorized.
+controlled gate passes, and a product-owned finite UDP mapping carries the
+exact off-LAN fixture over one incoming uTP and zero TCP peers with exact
+cleanup. Tactical `139` subsequently completed; capability readiness now owns
+selection of the next bounded slice.
 
 ## Scope And Ownership
 
@@ -80,7 +81,7 @@ the single authoritative **Now**.
   sequentially to TCP after joined transport failure, and the existing peer
   lifecycle reports the actual selected/final transport. `TcpOnly` remains an
   explicit diagnostic construction override. There is no persisted transport
-  setting or public incoming-reachability claim.
+  setting.
 - Completed Tactical `140` makes the ordinary UPnP policy independently map
   the actual TCP listener and IPv4 session UDP/uTP listener through one
   reachability owner. The existing status remains TCP and an additive UDP/uTP
@@ -88,10 +89,14 @@ the single authoritative **Now**.
   IPv4 DHT uses the explicit active UDP/uTP endpoint, while IPv6 DHT retains
   TCP because IPv6 uTP is absent. Controlled DHT-only pinned-libtorrent
   discovery transfers the exact fixture over one uTP and zero TCP peers, and
-  the API 34 lifecycle gate passes. The off-LAN product proof is evidence-
-  limited because UDP mapping never reached a terminal readiness state within
-  the final 60-second bound; every temporary TCP mapping was deleted and an
-  independent inventory found zero residue.
+  the API 34 lifecycle gate passes. A later explicitly authorized physical
+  continuation repaired wildcard UDP mapping eligibility and the bounded WAN
+  harness. Pinned libtorrent then downloaded and hash-verified the exact
+  2,097,883-byte fixture through the ordinary product-owned UDP mapping over
+  one incoming uTP and zero TCP peers; joined deletion and an independent
+  inventory proved zero residue. One preceding cleaned remote-dial timeout
+  remains a stability observation, so this is a positive single-path result,
+  not a repeatable WAN cohort.
 - Completed Tactical `137` activates the existing
   548--1,472-byte IPv4 search only behind positively verified fragmentation-
   protected sends and one shared DHT/uTP egress exclusion boundary. It adds
@@ -744,8 +749,9 @@ pass.
 At Tactical `133`'s checkpoint the implemented BEP 29 subset became
 **Partial**. Tactical `137` subsequently added dynamic product MTU, and
 Tactical `140` added product UDP mapping plus transport-truthful tracker/DHT
-advertisement. Public incoming reachability, persisted transport policy, IPv6
-uTP, MSE-over-uTP, racing, and a repeatable WAN cohort remain explicit limits.
+advertisement and now proves one product-owned public incoming-uTP path.
+Persisted transport policy, public-DHT discovery over that path, IPv6 uTP,
+MSE-over-uTP, racing, and a repeatable WAN cohort remain explicit limits.
 
 ## Validation Contract
 
@@ -820,6 +826,21 @@ The deterministic real-socket impairment/lifecycle and diagnostic-MTU gates
 subsequently passed; the incomplete cohort remains the explicit external
 evidence limit at pre-product review.
 
+Completed Tactical `140` adds the ordinary product-owned incoming direction.
+After bounded readiness and wildcard-listener repairs, the product session
+created and independently verified its own finite 3,600-second UDP mapping.
+The remote pinned-libtorrent `2.0.13.0` leecher dialed its redacted public
+endpoint over the ordinary Internet route, with SSH/Tailscale remaining
+control-plane only. It hash-verified all 2,097,883 bytes in 77.347993 seconds
+through one uTP and zero TCP peers. Libtorrent recorded 1,494 incoming and
+1,586 outgoing uTP packets, one timeout, and zero loss, fast retransmit, or
+resend. The product observed one incoming/uTP connection high water. Joined
+shutdown deleted the exact mapping, an independent inventory found it absent,
+and every per-run process, directory, and artifact was removed. One preceding
+mapped remote dial timed out with zero remote uTP packets and also cleaned
+exactly; no repeatability or performance baseline follows from the passing
+sample.
+
 ## Human Review Gates
 
 Pause and ask for direction before any further uTP work that would require:
@@ -877,12 +898,11 @@ both Android ABIs, API 34 option/send/replacement/application semantics, exact
 cleanup, and complete repository gates; incoming-reachability Tactical `140`
 then adds independent product TCP/UDP mapping, transport-specific tracker/DHT
 advertisement, controlled DHT-only incoming uTP, and proportional Android
-evidence, while its physical public-incoming gate closes evidence-limited with
-zero mapping residue.**
+evidence, then proves one product-owned public incoming-uTP transfer with zero
+mapping residue.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). Human review of
-source-ready Tactical `139` is the next checkpoint. Its implementation, a
-fresh physical mapping investigation, another NAT mechanism, IPv6 uTP,
-permanent network change, another host, and a broader uTP support claim remain
-separate decisions.
+[`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
+completed; selecting the next bounded tactical is the current checkpoint.
+Another WAN cohort, another NAT mechanism, IPv6 uTP, permanent network change,
+another host, and a broader uTP support claim remain separate decisions.

@@ -150,7 +150,10 @@ DHT-only pinned-libtorrent leecher received the RSTorrent UDP/uTP endpoint
 without a direct peer hint, completed the exact fixture over one uTP and zero
 TCP peer connections, and observed two `get_peers` requests with a one-peer
 high water. A tracker-only TCP control proves that the two discovery paths did
-not borrow each other's port.
+not borrow each other's port. Its later product-owned public incoming-uTP proof
+used a direct dial to the independently verified mapped endpoint, so that
+physical result proves endpoint reachability but does not claim public-DHT
+discovery reliability.
 
 Tactical `112` adds independent BEP 32 runtime participation without adding a
 second actor, command route, observation owner, or product scheduler. The

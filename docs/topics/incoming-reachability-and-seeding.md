@@ -89,12 +89,15 @@ TypeScript, React, UniFFI, and Kotlin.
 
 Controlled tracker-only TCP and DHT-only uTP cases pass against pinned
 libtorrent with exact content and no TCP masking in the DHT case. Both Android
-ABIs and the API 34 application status/lifecycle gate pass. The authorized
-physical product gate closes evidence-limited: TCP mapped, but UDP did not
-reach `Mapped` or `Failed` within the final 60-second readiness bound. No
-remote transfer began, every exact temporary mapping was deleted, and an
-independent inventory found zero residue. This is not a positive public
-incoming-uTP claim.
+ABIs and the API 34 application status/lifecycle gate pass. An explicitly
+authorized physical continuation fixed wildcard UDP mapping eligibility and
+the bounded harness, then independently verified a finite product-owned UDP
+mapping. Pinned libtorrent on the off-LAN peer downloaded and hash-verified
+the exact 2,097,883-byte fixture in 77.347993 seconds over one incoming uTP and
+zero TCP peers. Joined shutdown deleted the mapping, an independent inventory
+found it absent, and all per-run processes and artifacts were removed. One
+preceding mapped dial timed out with zero remote uTP packets and also cleaned
+exactly, so the positive single-path result is not a repeatability claim.
 
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
@@ -450,10 +453,12 @@ Completed Tactical
 common application construction default. Completed Tactical
 [`140`](../tactical/140-incoming-utp-reachability.md) now supplies the truthful
 IPv4 product UDP lease and DHT announce policy while retaining TCP tracker
-truth. Its controlled gate passes, but its bounded physical UDP readiness gate
-is evidence-limited, so no public incoming-uTP observation follows. Tactical
-`127`'s temporary remote diagnostic UDP lease remains only one earlier
-controlled WAN evidence direction.
+truth. Its controlled gate passes, and one ordinary product-owned finite UDP
+mapping now carries an exact off-LAN incoming-uTP transfer with zero TCP
+masking and exact cleanup. Public-DHT discovery over that mapped endpoint and
+a repeatable WAN cohort remain unproved. Tactical `127`'s temporary remote
+diagnostic UDP lease remains the complementary earlier controlled WAN
+direction.
 
 ### Configuration, actual state, and evidence remain distinct
 
@@ -820,8 +825,8 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
   permission affect listening and mapping;
-- whether another mapping mechanism or gateway-specific repair is justified
-  after Tactical `140`'s bounded physical UDP-readiness limitation; and
+- whether another mapping mechanism or a repeatable product-owned WAN cohort
+  is justified after Tactical `140`'s positive single-path result; and
 - when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
   tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
   complete in Tactical
@@ -908,8 +913,9 @@ Completed Tactical
 [`140`](../tactical/140-incoming-utp-reachability.md) extends that same stable
 session-network owner with independent product TCP and UDP leases and
 transport-specific discovery. Deterministic, scripted, controlled DHT-only,
-generated-client, and Android evidence passes; the bounded physical UDP
-readiness alternative closes with exact zero-residue cleanup and no positive
-public incoming claim. The authoritative next checkpoint is the readiness
-queue's human review of source-ready Tactical `139`, not an implicit expansion
-of reachability or seeding policy.
+generated-client, and Android evidence passes. Its physical continuation
+proves one exact product-owned public incoming-uTP transfer and zero-residue
+cleanup; the preceding cleaned timeout keeps repeatability explicitly open.
+Tactical `139` subsequently completed. The authoritative next checkpoint is
+the readiness queue's selection of another bounded tactical, not an implicit
+expansion of reachability or seeding policy.

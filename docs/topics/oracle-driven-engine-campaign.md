@@ -82,8 +82,8 @@ with logical commits. Tactical `137` is now complete through controlled
 desktop evidence, both Android ABIs, the API 34 AVD, and repository closure.
 Maintainer direction selected and authorized incoming-uTP reachability
 Tactical [`140`](../tactical/140-incoming-utp-reachability.md), which is now
-complete with every controlled gate passing and its bounded physical gate
-evidence-limited with exact cleanup. Tactical
+complete with every controlled gate passing and one exact product-owned
+public incoming-uTP transfer plus exact cleanup. Tactical
 [`139`](../tactical/139-incomplete-file-streaming-demand.md) is now complete
 through controlled pinned-libtorrent streaming, browser/Tauri, both Android
 ABIs, API 34 AVD, and complete repository evidence. No subsequent
@@ -443,11 +443,11 @@ private-gateway application uTP transfer with no TCP masking, terminal
 cleanup, and complete repository gates. Completed Tactical `140` adds
 independent product TCP/UDP mapping, transport-truthful tracker/DHT
 advertisement, controlled DHT-only incoming uTP, generated-client and Android
-parity, and a zero-residue physical attempt whose UDP readiness remained
-nonterminal. Tactical `139` completes bounded incomplete-file stream demand,
-verified active logical reads, time-critical scheduling, progressive HTTP,
-the exact active-to-published handoff, shared client eligibility, controlled
-wire evidence, and proportional Android parity. The campaign has no active
+parity, and one exact product-owned public incoming-uTP transfer with zero
+residue. Tactical `139` completes bounded incomplete-file stream demand,
+verified active logical reads, time-critical scheduling, progressive HTTP, the
+exact active-to-published handoff, shared client eligibility, controlled wire
+evidence, and proportional Android parity. The campaign has no active
 implementation tactical pending maintainer selection.
 
 Latest graduated tactical:
@@ -470,13 +470,16 @@ one capability; controlled concurrent probes and an active full body return
 exact bytes, and every repository, web, desktop, Android build, and API 34 AVD
 gate passes.
 
-Latest closed external-evidence tactical:
-[`140`](../tactical/140-incoming-utp-reachability.md). Its authorized product-
-owned off-LAN attempt budget reached a verified finite TCP mapping but no
-terminal UDP mapping state within the final 60-second bound. No remote peer or
-payload transfer began. Every temporary mapping was exactly deleted and an
-independent inventory found zero residue. The result is an environmental/
-interoperability limit, not evidence that the gateway lacks UDP support.
+Latest completed external-evidence tactical:
+[`140`](../tactical/140-incoming-utp-reachability.md). After explicit
+maintainer direction reopened its initially evidence-limited physical stage,
+the ordinary product session created and independently verified its own finite
+UDP mapping. Pinned libtorrent `2.0.13.0` downloaded and hash-verified the exact
+2,097,883-byte fixture in 77.347993 seconds over the ordinary Internet route
+with one uTP and zero TCP peers. Joined deletion, independent absent inventory,
+and local/remote process and artifact cleanup pass. One preceding mapped dial
+timed out with zero remote uTP packets and also cleaned exactly, so the result
+proves one product-owned public incoming path but not repeatability.
 
 Earlier closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -548,20 +551,23 @@ Last completed evidence:
   zero. Web generation/typecheck/unit/build/Playwright, Tauri, both Android
   ABIs, API 34 AVD, formatting, warning-denying workspace Clippy, and the
   complete serial workspace pass;
-- commits `bd6b816` through `9ee581b` plan and implement Tactical `140`'s
-  independent TCP/UDP endpoint selection and lease ownership, transport-
-  specific tracker/DHT advertisement, additive first-party mapping status,
-  controlled DHT-only incoming-uTP gate, Android lifecycle gate, DHT identical-
-  ID repair, and exact physical cleanup. The controlled fixture completes over
-  one uTP and zero TCP peer connections without a direct hint; web generation,
-  typecheck/tests, both Android ABIs, API 34 lifecycle, formatting, workspace
-  clippy, complete engine/session crate gates, and a subsequent complete
-  workspace invocation pass. Two earlier parallel workspace invocations each
-  exposed a different non-reproducing timing assertion outside this slice;
-  exact and complete owning-crate reruns pass. The physical attempt
-  budget ended with TCP mapped and UDP nonterminal before any remote transfer,
-  followed by independent zero-residue inventory. No public incoming-uTP claim
-  follows;
+- commits `bd6b816` through `9ee581b`, then `af41289` through `3f6584a`, plan,
+  implement, and physically close Tactical `140`'s independent TCP/UDP
+  endpoint selection and lease ownership, transport-specific tracker/DHT
+  advertisement, additive first-party mapping status, controlled DHT-only
+  incoming-uTP gate, Android lifecycle gate, DHT identical-ID repair,
+  wildcard UDP mapping eligibility, and bounded failure evidence. The
+  controlled fixture completes over one uTP and zero TCP peer connections
+  without a direct hint; web generation, typecheck/tests, both Android ABIs,
+  API 34 lifecycle, formatting, workspace clippy, complete engine/session
+  crate gates, and a subsequent complete workspace invocation pass. Two
+  earlier parallel workspace invocations each exposed a different non-
+  reproducing timing assertion outside this slice; exact and complete owning-
+  crate reruns pass. The continued physical gate then hash-verifies all
+  2,097,883 bytes in 77.347993 seconds over one product-owned public incoming
+  uTP connection and zero TCP peers. Exact mapping deletion, independent
+  absent inventory, and local/remote process and artifact cleanup pass. One
+  preceding mapped dial timed out cleanly, so repeatability remains open;
 - commits `fe33a2e`, `6ec809b`, `457ad3a`, and `d3ca426` close Tactical `132`,
   establish Tactical `133`'s source-first plan, enable inherited application
   `PreferUtp`, and stabilize its exact saturation fixtures. The default-policy

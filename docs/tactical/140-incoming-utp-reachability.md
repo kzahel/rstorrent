@@ -1,20 +1,21 @@
 # Tactical 140: Incoming uTP Reachability
 
-Status: **Complete on 2026-08-11, with the bounded physical gate
-evidence-limited.** Explicit maintainer direction selected this slice and
-authorized end-to-end autonomous implementation, logical commits, the
-generated first-party contract update, proportional Android evidence, and one
-bounded off-LAN proof using the already established temporary testbed. Every
-controlled stopping gate passes. The physical attempt budget ended with the
-product TCP lease mapped but the product UDP lease still nonterminal; exact
-cleanup was independently verified after every attempt, so no positive public
-incoming-uTP claim follows. Source-ready Tactical
-[`139`](139-incomplete-file-streaming-demand.md) remains unchanged for human
-review; its implementation is not implied.
+Status: **Complete on 2026-08-12.** Explicit maintainer direction selected
+this slice and authorized end-to-end autonomous implementation, logical
+commits, the generated first-party contract update, proportional Android
+evidence, and a bounded off-LAN proof using the already established temporary
+testbed. Every controlled stopping gate passes. After the initial physical
+attempts closed evidence-limited, explicit maintainer direction reopened that
+stage. The repaired ordinary product path then completed the exact transfer
+over one incoming uTP and zero TCP peers through its own finite UDP mapping,
+followed by independently verified cleanup. Tactical
+[`139`](139-incomplete-file-streaming-demand.md) subsequently completed; the
+readiness queue owns selection of the next bounded slice.
 
 Topics: `utp-transport-campaign`, `incoming-reachability-and-seeding`,
 `tracker-discovery`, `dht-discovery`, `application-view-api`,
-`capability-readiness`, `oracle-driven-engine-campaign`, `protocol-support`
+`capability-readiness`, `oracle-driven-engine-campaign`, `protocol-support`,
+`performance-and-live-evidence`
 
 Dependencies: completed Tacticals [`088`](088-upnp-mapped-external-tcp-seeding.md),
 [`089`](089-coordinated-session-listen-sockets.md),
@@ -277,7 +278,8 @@ because it is the outgoing leecher in this direction.
 
 ## Implemented Result
 
-Commits `7a6a20e` through `9ee581b` implement and harden the slice:
+Commits `7a6a20e` through `9ee581b`, followed by `af41289` through `3f6584a`,
+implement and harden the slice:
 
 - one task-free endpoint value retains independent tracker/TCP and DHT/uTP
   endpoints under one monotonic generation; trackers and BEP 10 keep the TCP
@@ -299,7 +301,12 @@ Commits `7a6a20e` through `9ee581b` implement and harden the slice:
 - the physical harness owns the product process, remote outgoing peer,
   per-run artifacts, exact mapping inventory, and exact cleanup. A DHT
   identical-node bucket-distance underflow exposed by that path was repaired
-  with an explicit zero-distance branch and a regression test.
+  with an explicit zero-distance branch and a regression test; and
+- physical continuation made timeout state observable, paired the wildcard
+  product UDP bind's actual port with the concrete listener-side LAN address
+  for mapping eligibility, accepted that same wildcard ownership truth in the
+  external validator, and preserves bounded UDP/uTP receive counters through
+  controlled shutdown for failure localization.
 
 No new task, socket, persisted policy, mapping protocol, or Android-only
 runtime was introduced. The declared ceiling remains one reachability task,
@@ -311,7 +318,7 @@ The controlled `advertised_seeding.py` run passes against pinned libtorrent
 `2.0.13.0`: the tracker-only control uses TCP; the DHT-only case has no direct
 peer hint, reports two `get_peers` observations, reaches a one-peer high water,
 uses one uTP and zero TCP peer connections, and verifies the exact payload.
-All 13 WAN-contract unit tests pass.
+After the physical-path repairs, all 14 WAN-contract unit tests pass.
 
 The generated web contract was regenerated cleanly; TypeScript typecheck and
 247 web tests pass with two intentional skips. Both Android native ABIs build.
@@ -329,29 +336,52 @@ Each exact rerun and its complete owning crate then passed. This record does
 not relabel those failed workspace invocations as green; a subsequent complete
 workspace invocation passed.
 
-The authorized physical budget comprised one primary run and two diagnostic
-retries. The first harness version hid a readiness error after mapping TCP;
-the repair made stderr and cleanup ownership explicit. The first retry exposed
-and led to the DHT identical-ID repair. On the final retry the product started
-without that panic, but UDP mapping did not become `Mapped` or `Failed` within
-60 seconds even though TCP mapped. No remote peer or payload transfer was
-started. Each exact finite TCP mapping was deleted and a fresh inventory found
-zero owned TCP or UDP residue. Prior Tactical `130` evidence proves that this
-gateway has established diagnostic UDP mappings, so the result is classified
-as a current product/gateway interoperability limitation rather than a claim
-that the gateway lacks UDP UPnP support.
+The first authorized physical budget comprised one primary run and two
+diagnostic retries. It successively exposed hidden readiness errors, the DHT
+identical-ID underflow, and a product UDP mapping that remained nonterminal
+after TCP mapped. Every run deleted its exact finite mapping and a fresh
+inventory found zero owned residue. Explicit maintainer direction on
+2026-08-12 reopened the physical stage and requested restoration of the
+existing control path.
 
-The physical alternative in the stopping condition is therefore satisfied,
-but public incoming uTP remains unproved. The implementation claim rests on
-the deterministic, scripted, controlled-DHT, generated-client, desktop, and
-Android evidence above.
+The continued runs exposed two harness/product boundary defects rather than
+an absent Internet address: mapping timeout lacked its last typed state, and
+the ordinary wildcard UDP bind was incorrectly treated as an ineligible
+mapping address even though it owned a concrete port beside a concrete
+listener-side LAN address. Repairs preserve the real UDP port, never invent a
+preferred port, and retain wildcard socket ownership truth. The first mapped
+remote dial after those repairs timed out with zero libtorrent uTP packets;
+the mapping and all processes/artifacts still cleaned exactly. Bounded
+product receive counters were then retained so any recurrence distinguishes
+gateway loss from local UDP classification or admission failure.
+
+The next clean run passed. The ordinary product session created and
+independently verified its finite 3,600-second UDP mapping. Pinned libtorrent
+`2.0.13.0` on the off-LAN peer dialed the redacted public endpoint over the
+ordinary Internet route with TCP disabled, established one uTP peer, and
+downloaded and SHA-1-verified all 2,097,883 bytes in 77.347993 seconds.
+Libtorrent recorded 1,494 incoming and 1,586 outgoing uTP packets, one timeout,
+zero loss, zero fast retransmit, and zero resend. The product observed one
+incoming/uTP connection high water. Joined shutdown deleted the exact mapping;
+an independent inventory found it absent, and both local and remote processes,
+run directories, and temporary artifacts were absent.
+
+This is positive product-owned public incoming-uTP reachability evidence for
+one controlled path, not a repeatability, performance, public-DHT discovery,
+or complete BEP 29 claim. The earlier cleaned timeout remains an honest
+stability observation.
+
+The continuation passes formatting, warning-denying workspace clippy, the
+complete workspace test suite, the incoming-seed binary test, all 244 session
+library tests with two intentional ignores, and all 14 WAN-contract tests.
 
 ## Non-Goals And Next Boundary
 
 This tactical does not add PCP, NAT-PMP, BEP 55 hole punching, IPv6 uTP,
 multi-interface binding, VPN/metered policy, a relay, a remote daemon, a new
 mapping setting, ratio/time seeding goals, public-swarm support evidence, or a
-complete BEP 29 claim. It does not implement Tactical `139`.
+complete BEP 29 claim. Its scope did not include Tactical `139`, which
+subsequently completed independently.
 
 Trackers have only one BitTorrent peer port. They remain a truthful TCP
 discovery path; this tactical does not claim that a differently mapped UDP

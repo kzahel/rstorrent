@@ -650,11 +650,10 @@ that scope and its cleanup or compatibility rules explicitly.
   publication handoff, bounded browser/Tauri integration, controlled pinned-
   libtorrent evidence, and proportional Android parity.
 - [`140-incoming-utp-reachability.md`](140-incoming-utp-reachability.md):
-  complete with the bounded physical gate evidence-limited; independently maps
-  the concrete TCP and UDP/uTP listeners, keeps tracker and DHT advertisement
-  transport-truthful, proves controlled DHT-only incoming uTP plus Android
-  lifecycle parity, and records exact zero-residue physical cleanup without a
-  positive public incoming claim.
+  complete; independently maps the concrete TCP and UDP/uTP listeners, keeps
+  tracker and DHT advertisement transport-truthful, proves controlled DHT-only
+  incoming uTP plus Android lifecycle parity, and completes one exact product-
+  owned public incoming-uTP transfer with zero-residue cleanup.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

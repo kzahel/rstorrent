@@ -1119,6 +1119,29 @@ immediately around them passed. The external attempt budget expired before a
 compliant three-sample remote-receive summary was retained. These data are a
 stability gap, not a performance baseline or threshold.
 
+Completed Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) adds one ordinary
+product-owned incoming sample after explicit maintainer direction reopened its
+initially evidence-limited physical stage. The product session created and
+independently verified one finite 3,600-second UDP mapping for its actual
+shared UDP/uTP socket. Pinned libtorrent `2.0.13.0` on the off-LAN peer dialed
+the redacted public endpoint over the ordinary Internet route, with
+SSH/Tailscale used only for control, and downloaded and SHA-1-verified all
+2,097,883 bytes in 77.347993 seconds. Both sides observed one uTP and zero TCP
+peers. Libtorrent recorded 1,494 incoming and 1,586 outgoing uTP packets,
+including 1,493 incoming payload packets, with one timeout and zero loss, fast
+retransmit, or resend. Joined shutdown deleted the exact mapping, an
+independent inventory found it absent, and local and remote processes,
+directories, and temporary artifacts were absent.
+
+One preceding product-owned mapped dial reached the unchanged 180-second
+limit with zero libtorrent uTP packets and also cleaned exactly. Bounded
+product UDP/uTP counters now survive controlled shutdown to distinguish a
+future gateway-path loss from local classification or admission failure. The
+passing run proves one product-owned public incoming-uTP path. It does not
+establish a timing or throughput baseline, public-DHT discovery, or a
+repeatable WAN cohort.
+
 The controlled loopback transport matrix passes six deterministic real-socket
 profiles against pinned libtorrent in 72.868 seconds on its final rerun.
 Clean, alternating delay/jitter, one-percent sparse DATA loss, exact
