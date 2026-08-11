@@ -45,6 +45,10 @@ mod upload_scheduler;
 mod utp_diagnostic;
 mod utp_runtime;
 
+pub use active_seed_content::{
+    ActiveContentReader, ActiveFileError, ActiveFileReader, MAX_STREAMING_AHEAD_BYTES,
+    MAX_STREAMING_AHEAD_PIECES,
+};
 pub use advertisement::{
     DHT_ANNOUNCE_INTERVAL, DHT_LOOKUP_INTERVAL, DISCOVERY_ADVERTISEMENT_COMMAND_CAPACITY,
     DiscoveryAdvertisementError, DiscoveryAdvertisementHandle, DiscoveryAdvertisementOwnerCounts,
@@ -148,14 +152,15 @@ pub use selective_storage::{
     DescriptorStoragePlanFile, plan_descriptor_storage, verify_prepared_descriptors,
 };
 pub use selective_storage::{
-    FastResumeValidation, MAX_UPLOAD_READ_SEGMENTS, MaterializationReport, PlatformStorageSpec,
-    PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectionReconcileReport,
-    SelectiveStorage, SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats,
-    TorrentStoragePaths, remove_selective_part_if_present, remove_selective_staging_if_present,
-    selective_part_path, selective_staging_path, torrent_storage_paths,
-    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
-    validate_publication_name, validate_published_fast_resume_with_path,
-    validate_published_fast_resume_with_platform, verify_prepared_platform_files,
+    FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS,
+    MaterializationReport, PlatformStorageSpec, PreparedFileHash, ResumeArtifactState,
+    ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan, SelectiveStorage,
+    SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats, TorrentStoragePaths,
+    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+    selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
+    torrent_storage_paths_with_shape, validate_publication_name,
+    validate_published_fast_resume_with_path, validate_published_fast_resume_with_platform,
+    verify_prepared_platform_files,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

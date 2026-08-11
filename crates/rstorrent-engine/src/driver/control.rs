@@ -18,6 +18,7 @@ use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
 use super::DownloadError;
+use crate::active_seed_content::{ActiveContentReader, ActiveFileError, ActiveFileReader};
 use crate::checkpoint::CheckpointBatch;
 use crate::incoming::IncomingPeerHandle;
 use crate::metrics::{ByteMetric, ByteMetricSink, SharedByteMetricSink};
@@ -454,6 +455,7 @@ struct DownloadControlInner {
     peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
     storage_file_pool: Mutex<Option<StorageFilePool>>,
+    active_content_reader: Mutex<Option<ActiveContentReader>>,
     platform_storage: Mutex<Option<PlatformStorageSpec>>,
     incoming_peers: Mutex<Option<IncomingPeerHandle>>,
     utp: Mutex<Option<UtpHandle>>,
@@ -815,6 +817,7 @@ impl DownloadControl {
                 peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
                 storage_file_pool: Mutex::new(None),
+                active_content_reader: Mutex::new(None),
                 platform_storage: Mutex::new(None),
                 incoming_peers: Mutex::new(None),
                 utp: Mutex::new(None),
@@ -865,6 +868,27 @@ impl DownloadControl {
             .storage_file_pool
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pool);
+    }
+
+    pub(super) fn set_active_content_reader(&self, reader: ActiveContentReader) {
+        *self
+            .inner
+            .active_content_reader
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(reader);
+    }
+
+    pub fn active_file_reader(
+        &self,
+        file_index: usize,
+    ) -> Result<ActiveFileReader, ActiveFileError> {
+        self.inner
+            .active_content_reader
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .ok_or(ActiveFileError::Closed)?
+            .file(file_index)
     }
 
     pub fn set_platform_storage(&self, storage: PlatformStorageSpec) {

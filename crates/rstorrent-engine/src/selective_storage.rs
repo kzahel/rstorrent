@@ -76,6 +76,53 @@ pub struct SelectiveUploadReadPlan {
     spans: Vec<SelectiveUploadReadSpan>,
 }
 
+pub const MAX_ACTIVE_FILE_READ_BYTES: usize = 64 * 1024;
+
+#[derive(Debug)]
+pub struct SelectiveFileReadPlan {
+    file_index: usize,
+    offset: u64,
+    length: usize,
+    route_epoch: u64,
+    source: RetainedFileSource,
+}
+
+impl SelectiveFileReadPlan {
+    pub const fn file_index(&self) -> usize {
+        self.file_index
+    }
+
+    pub const fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    pub const fn length(&self) -> usize {
+        self.length
+    }
+
+    pub const fn route_epoch(&self) -> u64 {
+        self.route_epoch
+    }
+
+    pub async fn execute(self) -> Result<Vec<u8>, SelectiveStorageError> {
+        let source = self.source.acquire(StorageFileAccess::ReadExisting).await?;
+        tokio::task::spawn_blocking(move || {
+            let mut bytes = vec![0_u8; self.length];
+            read_exact_at(source.file(), &mut bytes, self.offset)?;
+            Ok::<_, io::Error>(bytes)
+        })
+        .await
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "join active file read",
+            source: io::Error::other(source),
+        })?
+        .map_err(|source| SelectiveStorageError::Io {
+            operation: "read active file range",
+            source,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 enum SelectiveUploadReadSpan {
     File {
@@ -2349,6 +2396,91 @@ impl SelectiveStorage {
             request,
             route_epoch: self.route_epoch,
             spans,
+        })
+    }
+
+    pub fn prepare_file_read(
+        &self,
+        file_index: usize,
+        offset: u64,
+        length: usize,
+        expected_route_epoch: u64,
+    ) -> Result<SelectiveFileReadPlan, SelectiveStorageError> {
+        if expected_route_epoch != self.route_epoch {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "stale active file route epoch",
+            ));
+        }
+        if length == 0 || length > MAX_ACTIVE_FILE_READ_BYTES {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "invalid active file read length",
+            ));
+        }
+        let file = self
+            .layout
+            .files()
+            .get(file_index)
+            .ok_or(SelectiveStorageError::Layout(
+                LayoutError::InvalidFileIndex {
+                    index: file_index,
+                    file_count: self.layout.files().len(),
+                },
+            ))?;
+        if file.padding || !self.selection.is_wanted(file_index) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "active file is not selected payload",
+            ));
+        }
+        if self.pending_promotions.contains(&file_index) {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "active file promotion is not reconciled",
+            ));
+        }
+        let length_u64 = u64::try_from(length)
+            .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+        let end = offset
+            .checked_add(length_u64)
+            .ok_or(SelectiveStorageError::Layout(
+                LayoutError::ArithmeticOverflow,
+            ))?;
+        if end > file.length {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "active file read exceeds file length",
+            ));
+        }
+        let torrent_start =
+            file.offset
+                .checked_add(offset)
+                .ok_or(SelectiveStorageError::Layout(
+                    LayoutError::ArithmeticOverflow,
+                ))?;
+        let torrent_end =
+            torrent_start
+                .checked_add(length_u64 - 1)
+                .ok_or(SelectiveStorageError::Layout(
+                    LayoutError::ArithmeticOverflow,
+                ))?;
+        let piece_length = u64::from(self.layout.piece_length());
+        let first_piece = torrent_start / piece_length;
+        let last_piece = torrent_end / piece_length;
+        for piece in first_piece..=last_piece {
+            let piece = usize::try_from(piece)
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            if !self.verified.get(piece).copied().unwrap_or(false) {
+                return Err(SelectiveStorageError::InvalidVerifiedPiece { piece_index: piece });
+            }
+        }
+        let source = self.files[file_index]
+            .as_ref()
+            .ok_or(SelectiveStorageError::MissingWantedFile { file_index })?
+            .source
+            .clone();
+        Ok(SelectiveFileReadPlan {
+            file_index,
+            offset,
+            length,
+            route_epoch: self.route_epoch,
+            source,
         })
     }
 
@@ -4995,6 +5127,53 @@ mod tests {
             plan.execute().await.expect("part-backed read"),
             bytes[16_384..32_768]
         );
+        clean(&output).await;
+    }
+
+    #[tokio::test]
+    async fn active_file_read_requires_every_intersecting_verified_piece() {
+        let output = test_path("active-file-read");
+        clean(&output).await;
+        let metainfo = single_file_fixture();
+        let bytes = (0..metainfo.total_length as usize)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let selection = FileSelection::new(&layout, &[]).expect("selection");
+        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
+            .await
+            .expect("storage");
+        storage
+            .write_block(0, 0, bytes[..16_384].to_vec())
+            .await
+            .expect("first piece");
+        storage
+            .write_block(1, 0, bytes[16_384..].to_vec())
+            .await
+            .expect("second piece");
+        storage.record_verified(0).expect("first verified");
+        let epoch = storage.route_epoch();
+        assert!(matches!(
+            storage.prepare_file_read(0, 10_000, 10_000, epoch),
+            Err(SelectiveStorageError::InvalidVerifiedPiece { piece_index: 1 })
+        ));
+        storage.record_verified(1).expect("second verified");
+        let plan = storage
+            .prepare_file_read(0, 10_000, 10_000, epoch)
+            .expect("verified file read plan");
+        assert_eq!(plan.file_index(), 0);
+        assert_eq!(plan.offset(), 10_000);
+        assert_eq!(plan.length(), 10_000);
+        assert_eq!(
+            plan.execute().await.expect("active file read"),
+            bytes[10_000..]
+        );
+        assert!(matches!(
+            storage.prepare_file_read(0, 0, 1, epoch + 1),
+            Err(SelectiveStorageError::InvalidStorageOperation(
+                "stale active file route epoch"
+            ))
+        ));
         clean(&output).await;
     }
 

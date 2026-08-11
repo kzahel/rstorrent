@@ -17,7 +17,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::control::StorageCommandKind;
 use super::{DownloadActivityEvent, DownloadCheckpointSink, DownloadControl, DownloadError};
-use crate::active_seed_content::{ACTIVE_UPLOAD_PLAN_CAPACITY, ActiveUploadPlanRequest};
+use crate::active_seed_content::{
+    ACTIVE_UPLOAD_PLAN_CAPACITY, ActiveFilePlanRequest, ActiveUploadPlanRequest,
+};
 use crate::checkpoint::{
     CheckpointAdmission, CheckpointBatch, CheckpointBatchState, CheckpointIntent, CheckpointPolicy,
     DurabilityTarget,
@@ -304,6 +306,12 @@ pub(super) struct ContentStoragePipeline {
     queue_capacity: usize,
     checkpoint: Option<ContentCheckpointPipeline>,
     active_upload_plans: mpsc::Sender<ActiveUploadPlanRequest>,
+    active_file_plans: mpsc::Sender<ActiveFilePlanRequest>,
+}
+
+struct ActiveReadPlanReceivers {
+    uploads: mpsc::Receiver<ActiveUploadPlanRequest>,
+    files: mpsc::Receiver<ActiveFilePlanRequest>,
 }
 
 impl ContentStoragePipeline {
@@ -340,6 +348,8 @@ impl ContentStoragePipeline {
         let (completion_sender, completion_receiver) = mpsc::channel(queue_capacity);
         let (active_upload_plan_sender, active_upload_plan_receiver) =
             mpsc::channel(ACTIVE_UPLOAD_PLAN_CAPACITY);
+        let (active_file_plan_sender, active_file_plan_receiver) =
+            mpsc::channel(ACTIVE_UPLOAD_PLAN_CAPACITY);
         let cancellation = CancellationToken::new();
         let task = tokio::spawn(run_content_storage_task(
             storage,
@@ -348,7 +358,10 @@ impl ContentStoragePipeline {
             cancellation.clone(),
             control.clone(),
             queue_capacity,
-            active_upload_plan_receiver,
+            ActiveReadPlanReceivers {
+                uploads: active_upload_plan_receiver,
+                files: active_file_plan_receiver,
+            },
         ));
         Ok(Self {
             commands: Some(command_sender),
@@ -362,11 +375,16 @@ impl ContentStoragePipeline {
             queue_capacity,
             checkpoint,
             active_upload_plans: active_upload_plan_sender,
+            active_file_plans: active_file_plan_sender,
         })
     }
 
     pub(super) fn active_upload_planner(&self) -> mpsc::Sender<ActiveUploadPlanRequest> {
         self.active_upload_plans.clone()
+    }
+
+    pub(super) fn active_file_planner(&self) -> mpsc::Sender<ActiveFilePlanRequest> {
+        self.active_file_plans.clone()
     }
 
     pub(super) fn enqueue(&mut self, command: ContentStorageCommand) -> Result<(), DownloadError> {
@@ -770,8 +788,12 @@ async fn run_content_storage_task(
     cancellation: CancellationToken,
     control: DownloadControl,
     queue_capacity: usize,
-    mut active_upload_plans: mpsc::Receiver<ActiveUploadPlanRequest>,
+    active_read_plans: ActiveReadPlanReceivers,
 ) -> Result<ContentStorage, DownloadError> {
+    let ActiveReadPlanReceivers {
+        uploads: mut active_upload_plans,
+        files: mut active_file_plans,
+    } = active_read_plans;
     let mut ready_writes = VecDeque::new();
     let mut ready_hashes = VecDeque::new();
     let mut pending_completions = VecDeque::new();
@@ -780,6 +802,7 @@ async fn run_content_storage_task(
     let mut active_hashes = 0_usize;
     let mut commands_closed = false;
     let mut active_upload_plans_closed = false;
+    let mut active_file_plans_closed = false;
     let mut cancelled = false;
     let (write_concurrency, hash_concurrency) = control.storage_execution_limits();
 
@@ -791,6 +814,16 @@ async fn run_content_storage_task(
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         active_upload_plans_closed = true;
+                        break;
+                    }
+                }
+            }
+            loop {
+                match active_file_plans.try_recv() {
+                    Ok(request) => complete_active_file_plan(&storage, request),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        active_file_plans_closed = true;
                         break;
                     }
                 }
@@ -924,6 +957,7 @@ async fn run_content_storage_task(
                 cancelled = true;
                 commands.close();
                 active_upload_plans.close();
+                active_file_plans.close();
             }
             joined = running.join_next(), if !running.is_empty() => {
                 let result = joined
@@ -995,6 +1029,12 @@ async fn run_content_storage_task(
                     None => active_upload_plans_closed = true,
                 }
             }
+            request = active_file_plans.recv(), if !active_file_plans_closed => {
+                match request {
+                    Some(request) => complete_active_file_plan(&storage, request),
+                    None => active_file_plans_closed = true,
+                }
+            }
         }
     }
 }
@@ -1003,6 +1043,16 @@ fn complete_active_upload_plan(storage: &ContentStorage, request: ActiveUploadPl
     let result = storage
         .0
         .prepare_upload_read(request.request, request.route_epoch);
+    let _ = request.response.send(result);
+}
+
+fn complete_active_file_plan(storage: &ContentStorage, request: ActiveFilePlanRequest) {
+    let result = storage.0.prepare_file_read(
+        request.file_index,
+        request.offset,
+        request.length,
+        request.route_epoch,
+    );
     let _ = request.response.send(result);
 }
 

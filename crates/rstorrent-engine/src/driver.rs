@@ -4198,6 +4198,13 @@ impl<'a> ContentSwarmDownload<'a> {
             availability.clone(),
             storage_pipeline.active_upload_planner(),
         );
+        let active_reader = active_content.configure_file_access(
+            metainfo,
+            &selection.selection,
+            control.cancellation_token(),
+            storage_pipeline.active_file_planner(),
+        );
+        control.set_active_content_reader(active_reader);
         let active_upload_failure = active_content.failure_signal();
         let streaming_cursor = StreamingCandidateCursor::new(&control.streaming_demand_snapshot());
         Ok(Self {
@@ -5115,6 +5122,12 @@ impl<'a> ContentSwarmDownload<'a> {
                 .expect("restarted storage pipeline is installed")
                 .active_upload_planner(),
         );
+        self.active_content.replace_file_planner(
+            self.storage_pipeline
+                .as_ref()
+                .expect("restarted storage pipeline is installed")
+                .active_file_planner(),
+        );
         self.completed_storage = None;
         Ok(())
     }
@@ -5198,7 +5211,9 @@ impl<'a> ContentSwarmDownload<'a> {
                 peer.cursor = cursor;
             }
         }
-        self.restart_storage(storage).await
+        self.restart_storage(storage).await?;
+        self.active_content.update_file_selection(&self.selection);
+        Ok(())
     }
 
     async fn register_active_route(
