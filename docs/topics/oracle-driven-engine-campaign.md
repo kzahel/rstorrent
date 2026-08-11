@@ -56,12 +56,12 @@ cohort evidence-limited. Human review selected default-off composition
 Tactical [`131`](../tactical/131-bounded-product-utp-composition.md), then
 default-readiness Tactical
 [`132`](../tactical/132-utp-default-readiness-evidence.md); both are complete.
-The review selected recommendation A, making uTP product-default Tactical
-[`133`](../tactical/133-utp-product-default-enablement.md) the authoritative
-**Now**.
-Tactical `129` remains ready and queued intact, and Tactical `122`'s classified
-Ubuntu result leaves focused-driver HTTP(S) tracker dispatch available after
-that queued item. The
+The review selected recommendation A, and uTP product-default Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) is now complete with
+the bounded BEP 29 claim graduated to **Partial**. Tactical
+[`129`](../tactical/129-bounded-storage-intake-watermark.md) is the
+authoritative **Now**, and Tactical `122`'s classified Ubuntu result leaves
+focused-driver HTTP(S) tracker dispatch available after it. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -381,14 +381,15 @@ evidence-limited at its superseded direct-interface preflight; Tactical `122`
 completed paired public download performance evidence; and mapped-WAN uTP
 Tactical `127` completed one exact direct-public-path leecher transfer and
 cleanup; human review paused uTP; Tactical `128` completed controlled TCP
-diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
-Tactical `130` is closed with its WAN cohort evidence-limited and every
-controlled gate passing; and Tactical `131` completes bounded default-off
-application composition, exact incoming/outgoing/fallback product interop, and
-the default-TCP regression; and Tactical `132` completes bounded endpoint
-memory, mixed socket recovery, retained product interop, and one successful
-metadata-only public observation. The campaign is at its product-default
-human review**.
+diagnosis; Tactical `129` remained ready while uTP transport-solidification
+Tactical `130` ran; Tactical `130` is closed with its WAN cohort evidence-
+limited and every
+controlled gate passing; Tactical `131` completes bounded default-off
+application composition; Tactical `132` completes bounded endpoint memory,
+mixed socket recovery, and one successful metadata-only public observation;
+and Tactical `133` completes the fixed-548 IPv4/plaintext product default,
+desktop/Android lifecycle and build evidence, controlled fallback, and the
+bounded Partial BEP 29 claim. Tactical `129` is the authoritative Now.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -402,16 +403,16 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`132`](../tactical/132-utp-default-readiness-evidence.md). Volatile endpoint
-uTP capability lives in the existing bounded peer record; joined outcomes,
-five-minute-to-one-hour suppression, direct-TCP repeats, PEX refresh, and
-exact-deadline recovery pass without a cache or task. The exact application
-incoming/outgoing/fallback suite and default TCP/Fast/MSE regression pass. One
-authorized Big Buck Bunny `product-utp` profile verified metadata in 2.862383
-seconds while observing both TCP and uTP, fixed 548-byte MTU, bounded queues,
-no drops or panics, terminal zero UDP/uTP ownership, and an empty removed
-temporary root. Shipped/default clients and the BEP 29 claim remain unchanged
-at the product-default review.
+[`133`](../tactical/133-utp-product-default-enablement.md). Common durable and
+ephemeral application construction now defaults to the existing `PreferUtp`
+policy. The exact pinned-libtorrent application fixture passes inherited-
+default incoming and outgoing uTP plus joined TCP fallback; explicit
+`TcpOnly` retains ordinary TCP, Fast, and forced-MSE isolation. Desktop,
+Android, both supported Android native builds, focused lifecycle/recovery, and
+complete repository gates pass. The implemented fixed-548 IPv4/plaintext BEP
+29 subset is now **Partial** without adding persisted policy, mapping,
+incoming-endpoint advertisement, public incoming reachability, IPv6, or
+MSE-over-uTP.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -421,7 +422,8 @@ bounds, and controlled diagnostic-MTU convergence to 1,269 bytes under a
 1,280-byte black hole without congestion reduction. The fresh bidirectional
 WAN cohort remains explicitly evidence-limited after its attempt budget
 expired; ordinary runtime remains fixed at 548 bytes and shipped/default
-product uTP remains disabled.
+product uTP remained disabled at that checkpoint. Tactical `133` subsequently
+enabled the bounded application default.
 
 Earlier completed mapped-WAN tactical:
 [`127`](../tactical/127-mapped-utp-wan-interoperability.md). A reusable isolated
@@ -441,14 +443,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute active Tactical
-[`133`](../tactical/133-utp-product-default-enablement.md). Change only the
-common application construction default to existing `PreferUtp`, validate
-desktop/Android inheritance and lifecycle plus controlled fallback, retain
-explicit TCP-only diagnostic gates, and graduate only the implemented BEP 29
-subset to **Partial**. Reachability, tracker/DHT incoming-endpoint
-advertisement, presentation, dependency, permanent network change, and a
-broader support claim remain separate gates.
+Next executable action: execute ready Tactical
+[`129`](../tactical/129-bounded-storage-intake-watermark.md). Separate the
+storage-intake high/low watermark from the resident-payload emergency ceiling,
+front-load deterministic delayed-storage, cancellation, large-piece liveness,
+and multi-torrent fairness gates, then select or reject a default using its
+alternating 1/2/4/6/8-MiB controlled matrix. Do not change total memory caps,
+request-window policy, write/hash concurrency, settings, or uTP behavior.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -459,7 +460,8 @@ invalidation, clean-shutdown prerequisite, or product setting. Readable
 content mismatches fall back to that torrent's common full checker, malformed
 ownership remains repair-local, and Force recheck remains full. Its crash,
 500-seed, controlled libtorrent, repository, Android cross-build, and two AVD
-gates pass. It does not replace the post-Stage 4 uTP review checkpoint.
+gates pass. It did not replace the then-active post-Stage 4 uTP review
+checkpoint.
 
 Tactical `108` exercised the pinned libtorrent oracle at exact commit
 `7d7fc38fac61177fa5e02148f791b2f65250b09d`. Its discrete checking,
@@ -469,6 +471,16 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `fe33a2e`, `6ec809b`, `457ad3a`, and `d3ca426` close Tactical `132`,
+  establish Tactical `133`'s source-first plan, enable inherited application
+  `PreferUtp`, and stabilize its exact saturation fixtures. The default-policy
+  pinned-libtorrent cohort hash-verifies all three 2,097,883-byte roles in
+  7.840312 seconds total: incoming uTP in 1.374587 seconds, outgoing uTP in
+  0.290656 seconds, and joined TCP fallback in 5.339730 seconds. Explicit
+  TCP/Fast/MSE isolation, desktop and Android tests, both supported Android
+  native builds, focused engine/session gates, formatting, warning-denying
+  workspace clippy, and complete workspace tests pass. The bounded BEP 29
+  claim is now **Partial**;
 - commits `d917393`, `7da3609`, `782a9a2`, `ac6aec0`, and `c4034f0` complete
   Tactical `132`'s source-first plan, bounded endpoint capability memory,
   joined socket/driver outcome path, repeated direct-TCP and expiry-recovery

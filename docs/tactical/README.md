@@ -620,9 +620,9 @@ that scope and its cleanup or compatibility rules explicitly.
   controlled cohort, and one metadata-only ordinary-swarm observation before
   the product-default review.
 - [`133-utp-product-default-enablement.md`](133-utp-product-default-enablement.md):
-  active bounded enablement of the existing fixed-548 IPv4/plaintext uTP path
-  as the common application construction default, with desktop/Android,
-  fallback, lifecycle, and protocol-claim evidence.
+  complete bounded enablement of the existing fixed-548 IPv4/plaintext uTP
+  path as the common application construction default, with desktop/Android,
+  fallback, lifecycle, and **Partial** protocol-claim evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

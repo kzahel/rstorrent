@@ -419,11 +419,14 @@ Completed Tactical
 [`131`](../tactical/131-bounded-product-utp-composition.md) construction-only
 policy now starts that fixed-548 service in the application and proves one
 incoming IPv4 loopback transfer through the same ordinary admission owner.
-Every shipped/default client remains TCP-only, uTP is not advertised, and UDP
-mapping still waits for an advertisable product capability. Tactical `127`'s
-temporary remote diagnostic UDP lease was deliberately not that product
-capability: it existed only for one controlled WAN evidence direction and its
-exact deletion plus independent absence audit passed before completion.
+Completed Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) makes that service the
+common application construction default, but uTP is still not advertised as
+an incoming public endpoint and UDP mapping still waits for a truthful
+reachability/announce policy. Tactical `127`'s temporary remote diagnostic UDP
+lease was deliberately not that product capability: it existed only for one
+controlled WAN evidence direction and its exact deletion plus independent
+absence audit passed before completion.
 
 ### Configuration, actual state, and evidence remain distinct
 

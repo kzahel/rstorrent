@@ -1,10 +1,11 @@
 # Tactical 129: Bounded Storage Intake Watermark
 
-Status: **Ready, queued and not implemented** on 2026-08-10. Completed Tactical
+Status: **Ready, authoritative Now and not implemented**. Completed Tactical
 [`128`](128-controlled-tcp-performance-diagnosis.md) selected storage intake
 backpressure as the next optimization owner. The maintainer subsequently
-resumed the bounded uTP campaign through Tactical `130`; this plan and its
-evidence remain intact behind that explicitly selected work.
+resumed and completed the bounded uTP campaign through Tactical `133`; this
+plan and its evidence remained intact and now resume as the single queued
+priority.
 
 Topics: `performance-and-live-evidence`, `storage-throughput-architecture`,
 `capability-readiness`, `oracle-driven-engine-campaign`

@@ -36,9 +36,10 @@ readiness Tactical
 after bounded endpoint memory, mixed real-socket evidence, retained product
 interop, and one successful metadata-only public observation. Human review
 selected bounded default enablement recommendation A. Tactical
-[`133`](../tactical/133-utp-product-default-enablement.md) is active to change
-the common application default, validate desktop/Android lifecycle and
-fallback, and graduate only the implemented BEP 29 subset to **Partial**.
+[`133`](../tactical/133-utp-product-default-enablement.md) is complete: the
+common application default is now `PreferUtp`, desktop/Android lifecycle and
+build gates plus controlled fallback pass, and the implemented BEP 29 subset
+is **Partial**. Tactical `129` resumes as the authoritative **Now**.
 
 ## Scope And Ownership
 
@@ -62,13 +63,14 @@ the single authoritative **Now**.
 
 ## Current Truth
 
-- Every shipped/default product client remains TCP only. Completed Tactical
-  `131` adds one construction-only `PreferUtp` application path: the session
-  accepts incoming IPv4 plaintext uTP, eligible outgoing dials prefer uTP and
-  fall back sequentially to TCP after joined transport failure, and the
-  existing peer lifecycle reports the actual selected/final transport. There
-  is no persisted setting, presentation, UDP mapping, tracker/DHT incoming-
-  endpoint advertisement, or default change.
+- Every ordinary product client now inherits `PreferUtp` from the common
+  durable/ephemeral application constructor. The session accepts incoming
+  IPv4 plaintext uTP, eligible outgoing dials prefer uTP and fall back
+  sequentially to TCP after joined transport failure, and the existing peer
+  lifecycle reports the actual selected/final transport. `TcpOnly` remains an
+  explicit diagnostic construction override. There is no persisted setting,
+  presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
+  public incoming-reachability claim.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -105,15 +107,16 @@ the single authoritative **Now**.
   pinned libtorrent. Completed Tactical `127` additionally proves the leecher
   role over one mapped direct public path, and Tactical `130` proves the first
   reverse sample. Tactical `132` adds one ordinary-swarm outgoing observation;
-  no public product listener, repeatable WAN cohort, or default policy exists.
+  no publicly reachable/advertised product listener or repeatable WAN cohort
+  exists.
 - The retained
   [`utp_product_integration.py`](../../tests/interop/utp_product_integration.py)
-  proves the default-off application composition against pinned libtorrent in
+  proves the inherited application default against pinned libtorrent in
   incoming uTP, outgoing uTP, and TCP-only fallback roles. All three transfer
   and independently hash the exact 2,097,883-byte fixture with one application
   peer, actual transport views, bounded fixed-runtime counters, and joined
-  shutdown. The unchanged default-TCP/Fast/MSE application regression also
-  passes with no uTP service.
+  shutdown. The explicit `TcpOnly` TCP/Fast/MSE application regression passes
+  with no uTP service.
 - Completed Tactical `119` now supplies the independently authored,
   dependency-free v1 codec and deterministic bounded connection/reliability
   state in `rstorrent-protocol`. Its 41 focused tests and full workspace
@@ -642,7 +645,7 @@ The maintainer selected choice A on 2026-08-11. Tactical
 default-readiness work and its single bounded public observation. It is now
 complete; default enablement remains a separate human product-policy decision.
 
-## Default-Readiness Result And Review Choices
+## Product-Default Result
 
 Tactical `132` is complete. The registry, socket, driver, application, and
 public-probe evidence now agree on one bounded policy: try unknown eligible
@@ -653,7 +656,7 @@ suite again hash-verifies incoming uTP, outgoing uTP, and TCP fallback; the
 default TCP/Fast/MSE suite still starts no uTP owner. The single public profile
 found both transports and cleaned every owner without changing a default.
 
-The review choices are:
+The review choices were:
 
 1. **A — bounded default enablement (recommended):** draft one tactical to
    change the application construction default to the existing `PreferUtp`,
@@ -670,10 +673,24 @@ The review choices are:
    outbound selection and fallback are now independently ready, while NAT
    reachability and announce-port semantics require a broader product policy.
 
-The maintainer selected choice A on 2026-08-11. Active Tactical
-[`133`](../tactical/133-utp-product-default-enablement.md) owns that bounded
-change. Shipped/default clients remain TCP-only and BEP 29 remains
-**Unsupported** until the tactical's gates pass and its implementation lands.
+The maintainer selected choice A on 2026-08-11. Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) completed that
+bounded change. Ordinary application construction now inherits `PreferUtp`;
+an explicit `TcpOnly` override retains the isolated TCP/Fast/MSE baseline. The
+exact pinned-libtorrent application fixture passes default incoming uTP in
+1.374587 seconds, default outgoing uTP in 0.290656 seconds, and joined TCP
+fallback in 5.339730 seconds, with exact content, actual final transport,
+fixed 548-byte uTP datagrams, zero worker panics, and clean shutdown.
+Desktop, Android, both supported Android native builds, focused lifecycle and
+recovery, formatting, warning-denying clippy, and complete workspace gates
+pass.
+
+The implemented BEP 29 subset is now **Partial**. UDP mapping, tracker/DHT
+incoming-endpoint advertisement, public incoming reachability, persisted
+presentation, IPv6 uTP, MSE-over-uTP, racing, portable per-datagram
+fragmentation protection, dynamic product MTU, and the incomplete repeatable
+WAN cohort remain explicit limits. No additional public, WAN, emulator, or
+physical-device run was needed or performed.
 
 ## Validation Contract
 
@@ -750,7 +767,7 @@ evidence limit at pre-product review.
 
 ## Human Review Gates
 
-Pause after the active bounded slice and ask for direction before:
+Pause and ask for direction before any further uTP work that would require:
 
 - adopting, copying, mechanically translating, vendoring, wrapping, linking,
   or adding any uTP implementation or new runtime dependency;
@@ -759,8 +776,8 @@ Pause after the active bounded slice and ask for direction before:
   RFC 6817, or established libtorrent interoperability behavior;
 - expanding the slice into UDP port mapping, IPv6 pinholes, NAT traversal,
   hole punching, LSD, or multi-interface policy;
-- choosing the user-visible default for TCP/uTP racing, preference, fallback,
-  or disabling;
+- adding persisted/user-visible transport policy, TCP/uTP racing, or a
+  materially different fallback policy;
 - expanding MSE work beyond composing the completed stream boundary;
 - running on `pimom`, public swarms, physical devices, or other externally
   consequential environments not already authorized by the active tactical;
@@ -795,12 +812,13 @@ direct-interface preflight; post-Stage 4 solidification Tactical `130` is
 closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
-`133` is active after human selection of recommendation A**.
+`133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
+Partial.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). The next action is to
-execute Tactical `133`'s common construction-default, platform lifecycle,
-controlled fallback, and exact **Partial** claim gates. Reachability,
-tracker/DHT incoming-endpoint advertisement, presentation, permanent network
-change, different host, dependency, and a broader support claim remain outside
-the tactical; no further public-swarm attempt is authorized.
+execute queued Tactical `129`'s bounded storage-intake watermark campaign.
+Reachability, tracker/DHT incoming-endpoint advertisement, presentation,
+permanent network change, different host, dependency, and a broader uTP
+support claim remain separate decisions; no further public-swarm attempt is
+authorized by this completed campaign.

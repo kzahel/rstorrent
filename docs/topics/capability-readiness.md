@@ -333,25 +333,30 @@ verified metadata in 2.862383 seconds while observing both TCP and uTP, fixed
 548-byte MTU, bounded queues, no drops/panics, and terminal zero UDP/uTP
 ownership. Shipped/default clients and the BEP 29 claim remain unchanged.
 
+Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) is complete. The
+common durable and ephemeral application constructors now default to the
+existing fixed-548 IPv4/plaintext `PreferUtp` policy, while explicit
+`TcpOnly` diagnostics retain isolated TCP, Fast, and MSE coverage. Exact
+pinned-libtorrent incoming uTP, outgoing uTP, and sequential TCP-fallback
+application transfers, desktop/Android lifecycle tests, both Android native
+builds, and complete repository gates pass. The bounded BEP 29 claim is now
+**Partial**; mapping, incoming-endpoint advertisement, public incoming
+reachability, persisted presentation, IPv6, and MSE-over-uTP remain absent.
+
 ## Current Queue
 
 ### Now
 
-- Tactical [`132`](../tactical/132-utp-default-readiness-evidence.md) is
-  complete and its product-default review selected recommendation A. Active
-  Tactical [`133`](../tactical/133-utp-product-default-enablement.md) is the
-  single authoritative work item: make the existing `PreferUtp` construction
-  policy the shipped application default, validate desktop/Android lifecycle
-  and fallback, and graduate only the implemented BEP 29 subset to **Partial**.
-  Defaults and the support claim remain unchanged until that tactical lands.
+- Ready Tactical
+  [`129`](../tactical/129-bounded-storage-intake-watermark.md) is the single
+  authoritative work item. Separate the ordinary storage-intake high/low
+  watermark from the larger resident-payload safety ceiling, prove bounded
+  backpressure and large-piece liveness, then select or reject a default from
+  its controlled alternating performance matrix.
 
 ### Next
 
-- Ready Tactical
-  [`129`](../tactical/129-bounded-storage-intake-watermark.md) retains the
-  storage-intake optimization selected by Tactical `128`; explicit maintainer
-  priority kept it intact and it is queued behind the current uTP product-
-  default human review.
 - Source-first planning for HTTP(S) tracker dispatch in the focused resumable
   download driver's nested manager remains available after queued Tactical
   `129`.
@@ -450,7 +455,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. Tactical `113` implements one independent finite-lease IPv6 firewall-pinhole slot and typed product status under the same reachability coordinator; deterministic and scripted-gateway evidence pass. Its live negative control passes, but the observed gateway rejects `AddPinhole` with typed `606`, so no physical off-network incoming IPv6 or cleanup claim is made. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tactical `127` proves a remote-mapped direct-public-path RSTorrent leecher; closed Tactical `130` proves the complementary locally mapped seed direction, a six-profile real-socket matrix, endpoint/half-open/queue/generation/cancellation lifecycle gates, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole without congestion reduction. Completed Tactical `131` composes one default-off application service, incoming admission, eligible IPv4/plaintext outgoing selection, exact transport views, and sequential TCP fallback under one logical attempt and permit. Tactical `132` adds bounded endpoint capability memory, suppression/backoff, PEX refresh, direct-TCP repeats, exact real-socket expiry recovery, and one ordinary-swarm metadata observation with both transports, fixed 548-byte MTU, bounded queues, and terminal zero ownership. Its retained application gate passes incoming uTP, outgoing uTP, and TCP-only fallback with exact 2,097,883-byte hashes; default TCP/Fast/MSE remains unchanged. Every shipped/default client remains TCP-only and mapping/tracker/DHT incoming-endpoint advertisement/presentation are unchanged. The first TCP-only attempt still costs one uTP timeout. Portable per-datagram fragmentation protection, a repeatable WAN cohort, IPv6 uTP, MSE-over-uTP, incoming public reachability, default policy, and protocol-claim graduation remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
+| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tacticals `127` and `130` prove both first-sample mapped-public-path directions, a six-profile real-socket matrix, hostile lifecycle bounds, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole. Tacticals `131` and `132` add ordinary application composition, endpoint capability memory, suppression/backoff, PEX refresh, exact expiry recovery, and one ordinary-swarm metadata observation with both transports. Completed Tactical `133` makes the existing fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction default. Its exact 2,097,883-byte pinned-libtorrent gate passes default incoming uTP, default outgoing uTP, and joined TCP fallback; explicit `TcpOnly` retains TCP/Fast/MSE isolation. Mapping, tracker/DHT incoming-endpoint advertisement, public incoming reachability, persisted presentation, portable per-datagram fragmentation protection, a repeatable WAN cohort, IPv6 uTP, MSE-over-uTP, racing, and dynamic product MTU remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

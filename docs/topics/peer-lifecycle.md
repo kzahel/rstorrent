@@ -270,6 +270,13 @@ wake path. A valid PEX uTP flag refreshes advertised support, while TCP,
 cancellation without a transport result, peer-wire failure, and stale or
 duplicate completions cannot mutate a newer generation. No peer cache, timer
 task, persistence, or endpoint-retention rule was added.
+Completed Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) now makes that same
+`PreferUtp` path the common application construction default. Desktop,
+Android, gateway, and CLI consumers inherit one immutable policy; explicit
+`TcpOnly` remains available for transport-isolated diagnostics. The default
+change adds no record, generation, permit, task, socket, persistence, or
+presentation owner.
 
 Outgoing observation begins before transport work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
@@ -528,6 +535,13 @@ coverage proves advertised/confirmed/suppressed transitions, PEX recovery,
 backoff cap and saturation, overflow, eviction, source removal, and stale or
 duplicate outcome rejection. The public metadata-only observation reports
 only record-state high waters, never retained peer endpoints.
+Completed Tactical
+[`133`](../tactical/133-utp-product-default-enablement.md) proves the inherited
+default through the same owner model. Default incoming and outgoing uTP each
+expose one actual uTP generation; fallback joins the failed uTP subattempt
+before the same logical generation reports TCP. Application lifecycle tests
+close the fixed service at zero connections, half-opens, queues, admission
+tasks, and worker panics, while explicit `TcpOnly` starts no uTP service.
 
 Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records

@@ -1,8 +1,10 @@
 # Tactical 133: uTP Product Default Enablement
 
-Status: **Active**. Tactical `132` completed the bounded default-readiness
-evidence and the maintainer selected recommendation A on 2026-08-11. This
-tactical is the single authoritative **Now**.
+Status: **Complete** on 2026-08-11. Tactical `132` completed the bounded
+default-readiness evidence, the maintainer selected recommendation A, and this
+tactical made the existing fixed-548 IPv4/plaintext uTP path the common
+application construction default. Tactical `129` is now the single
+authoritative **Now**.
 
 Topics: `utp-transport-campaign`, `peer-lifecycle`, `protocol-support`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -216,3 +218,72 @@ ordinary-swarm observation remains the live evidence supporting this decision.
 The tactical stops after the bounded default and claim land. Reachability,
 advertisement, presentation, MSE-over-uTP, IPv6, racing, and dynamic MTU remain
 separate future decisions.
+
+## Execution Result
+
+Commits `457ad3a` and `d3ca426` implement and stabilize the bounded change.
+
+- Durable and ephemeral `ApplicationConfig` construction now selects
+  `PreferUtp`. Desktop, Android, gateway, and application CLI consumers inherit
+  that single value without platform overrides.
+- The application lifecycle test starts the inherited service, observes its
+  active owner, and closes with zero connections, half-opens, queued datagrams,
+  admission tasks, or worker panics. The same test proves that an explicit
+  `TcpOnly` override starts no uTP service.
+- The incoming-seed diagnostic now uses the product default unless
+  `--tcp-only` is passed. The application integration cohort therefore proves
+  inherited policy rather than an opt-in flag. Transport-isolated TCP, Fast,
+  MSE, and throughput diagnostics explicitly select `TcpOnly`.
+- The implementation adds no setting, schema, generated contract, migration,
+  socket, task, dependency, unsafe code, or presentation surface. Existing
+  profiles adopt the construction default when their next application
+  generation opens.
+- Two saturation tests were made deterministic without weakening their
+  production assertions: the fallback/recovery socket case reserves both TCP
+  and UDP port namespaces and drains stale SYNs, while the incoming queue case
+  sends its bounded burst synchronously before workers can drain it.
+
+The exact implemented BEP 29 subset is now **Partial**. It covers first-party
+fixed-548 IPv4/plaintext uTP, ordinary application listening and preferred
+outgoing selection, endpoint capability memory, actual transport views, and
+joined sequential TCP fallback. Persisted policy, UDP mapping, tracker/DHT
+incoming-endpoint advertisement, public incoming reachability, IPv6,
+MSE-over-uTP, racing, portable per-datagram fragmentation protection, dynamic
+product MTU, and repeatable WAN-cohort evidence remain outside the claim.
+
+## Recorded Evidence
+
+- The pinned-libtorrent `2.0.13.0` application cohort transferred and
+  independently hash-verified the exact 2,097,883-byte fixture with SHA-1
+  `cdce24126a8e65854d876c0b83ad3ba19748f6dc` in all three roles. Default
+  incoming uTP completed in 1.374587 seconds with one incoming uTP peer and
+  4,097 application uTP datagrams. Default outgoing uTP completed in 0.290656
+  seconds with one outgoing uTP peer and 900 datagrams. The TCP-only fallback
+  sent three uTP datagrams, recorded two retransmissions, joined that worker,
+  exposed one final outgoing TCP peer, and completed in 5.339730 seconds.
+  Both uTP roles retained the fixed 548-byte MTU; every case ended cleanly with
+  zero worker panics and exact temporary-root cleanup.
+- The explicit TCP-only application regression passes ordinary initiated TCP,
+  accepted Fast TCP, RSTorrent-to-RSTorrent Fast TCP, and forced MSE with no
+  uTP owner.
+- `cargo test -p rstorrent-session` passes 228 library tests with two ignored,
+  two throughput-profile tests, one incoming-seed test, and four CLI tests.
+  `cargo test -p rstorrent-desktop` passes four tests, and
+  `cargo test -p rstorrent-android` passes eight tests.
+- `experiments/android-engine-bootstrap/build.sh` passes the supported
+  cargo-ndk x86_64 and arm64-v8a release builds, host UniFFI generation,
+  `assembleDebug`, and `testDebugUnitTest`. A raw Cargo cross-target attempt
+  did not select the Android NDK compiler and was superseded by this documented
+  project build path; no project compilation failed in the supported path.
+- The coordinated-port recovery test passes five consecutive runs, the exact
+  incoming saturation test passes ten consecutive runs, and the final engine
+  library gate passes 484 tests with seven ignored.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, and
+  `cargo test --workspace` all pass after the final committed code. No web or
+  generated application contract changed, so the web generation/typecheck
+  gates do not apply. No public network, WAN, emulator, visible client, or
+  physical device was used.
+
+All stopping conditions are met. The campaign returns the authoritative queue
+to Tactical `129`; broader uTP reachability and policy remain separate future
+decisions.
