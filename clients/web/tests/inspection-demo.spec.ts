@@ -704,6 +704,69 @@ test("interface size settings persist and keep geometry coherent", async ({
   await capture(page, "rstorrent-settings-phone.png");
 });
 
+test("peer transfer limits stay operable across responsive layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openScenario(page, "healthy-download", 42_000);
+  await page.getByRole("tab", { name: "General" }).click();
+
+  const details = page.getByRole("region", { name: "Torrent details" });
+  const uploadUnlimited = details.getByRole("checkbox", {
+    name: "Torrent upload limit unlimited",
+  });
+  const upload = details.getByRole("spinbutton", {
+    name: "Torrent upload limit in KiB per second",
+  });
+  const downloadUnlimited = details.getByRole("checkbox", {
+    name: "Torrent download limit unlimited",
+  });
+  const download = details.getByRole("spinbutton", {
+    name: "Torrent download limit in KiB per second",
+  });
+
+  await expect(uploadUnlimited).toBeChecked();
+  await uploadUnlimited.focus();
+  await page.keyboard.press("Space");
+  await upload.fill("48");
+  await downloadUnlimited.uncheck();
+  await download.fill("160");
+  await details.getByRole("button", { name: "Save torrent limits" }).click();
+  await expect(
+    details.getByText("Torrent peer transfer limits saved."),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 920, height: 720 });
+  await expect(details.getByText("Only this torrent")).toBeVisible();
+  await expect(upload).toHaveValue("48");
+  await expect(download).toHaveValue("160");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: "Big Buck Bunny" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Torrents", exact: true }),
+  ).toBeVisible();
+  await uploadUnlimited.focus();
+  await page.keyboard.press("Space");
+  await expect(upload).toBeDisabled();
+  await page.keyboard.press("Space");
+  await expect(upload).toBeEnabled();
+  await expect(upload).toHaveValue("48");
+
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+  await capture(page, "rstorrent-transfer-limits-phone.png");
+});
+
 test("color themes follow or override system appearance and persist", async ({
   page,
 }) => {
