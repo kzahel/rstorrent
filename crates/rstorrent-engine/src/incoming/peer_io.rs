@@ -13,9 +13,11 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::TorrentBandwidth;
 use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::peer_io::{
-    NETWORK_READ_LENGTH, PeerIoError, message_payload_metric, record_bytes, record_sent_range,
+    NETWORK_READ_LENGTH, PeerIo, PeerIoError, message_payload_metric, record_bytes,
+    record_sent_range,
 };
 use crate::peer_stream::PeerStream;
 
@@ -134,6 +136,7 @@ impl IncomingWriter {
         write: WriteHalf<PeerStream>,
         send_cipher: Option<Rc4>,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+        bandwidth: Option<TorrentBandwidth>,
     ) -> Self {
         let (commands, receiver) = mpsc::channel(WRITER_FRAME_QUEUE);
         let state = Arc::new(Mutex::new(WriterState::new()));
@@ -142,11 +145,14 @@ impl IncomingWriter {
         let task = tokio::spawn(run_writer(
             write,
             receiver,
-            state.clone(),
-            changes,
-            cancellation.clone(),
-            send_cipher,
-            byte_metric_sink,
+            WriterRuntime {
+                state: state.clone(),
+                changes,
+                cancellation: cancellation.clone(),
+                send_cipher,
+                byte_metric_sink,
+                bandwidth,
+            },
         ));
         Self {
             commands: Some(commands),
@@ -257,6 +263,7 @@ pub(super) struct IncomingPeerIo {
     writer: IncomingWriter,
     io_timeout: Duration,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    bandwidth: Option<TorrentBandwidth>,
 }
 
 impl IncomingPeerIo {
@@ -266,16 +273,35 @@ impl IncomingPeerIo {
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
     ) -> Self {
-        Self::new_with_mse(stream, io_timeout, byte_metric_sink, None, &[])
+        Self::new_with_mse_and_bandwidth(stream, io_timeout, byte_metric_sink, None, &[], None)
             .expect("empty carried input is valid")
     }
 
+    #[cfg(test)]
     pub fn new_with_mse(
         stream: impl Into<PeerStream>,
         io_timeout: Duration,
         byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
         ciphers: Option<MseCipherPair>,
         carried: &[u8],
+    ) -> Result<Self, PeerIoError> {
+        Self::new_with_mse_and_bandwidth(
+            stream,
+            io_timeout,
+            byte_metric_sink,
+            ciphers,
+            carried,
+            None,
+        )
+    }
+
+    pub fn new_with_mse_and_bandwidth(
+        stream: impl Into<PeerStream>,
+        io_timeout: Duration,
+        byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+        ciphers: Option<MseCipherPair>,
+        carried: &[u8],
+        bandwidth: Option<TorrentBandwidth>,
     ) -> Result<Self, PeerIoError> {
         let mut decoder = FrameDecoder::new();
         let queued_messages = decoder
@@ -296,9 +322,15 @@ impl IncomingPeerIo {
             receive_cipher,
             decoder,
             queued_messages,
-            writer: IncomingWriter::spawn(write, send_cipher, byte_metric_sink.clone()),
+            writer: IncomingWriter::spawn(
+                write,
+                send_cipher,
+                byte_metric_sink.clone(),
+                bandwidth.clone(),
+            ),
             io_timeout,
             byte_metric_sink,
+            bandwidth,
         })
     }
 
@@ -335,11 +367,22 @@ impl IncomingPeerIo {
         self.writer.snapshot().uploaded_payload_bytes
     }
 
+    pub fn upload_rate_limited(&self) -> bool {
+        self.bandwidth
+            .as_ref()
+            .is_some_and(TorrentBandwidth::upload_limited)
+    }
+
+    pub fn download_rate_limited(&self) -> bool {
+        self.bandwidth
+            .as_ref()
+            .is_some_and(TorrentBandwidth::download_limited)
+    }
+
     pub async fn next_message_or_send_ready(
         &mut self,
         send_watermark: usize,
     ) -> Result<Option<PeerMessage>, PeerIoError> {
-        let deadline = Instant::now() + self.io_timeout;
         loop {
             if let Some(message) = self.queued_messages.pop_front() {
                 self.record_incoming_message(&message)?;
@@ -347,8 +390,14 @@ impl IncomingPeerIo {
             }
             let was_at_watermark = self.send_buffer_size() >= send_watermark;
             let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
+            let quota =
+                PeerIo::acquire_download_quota(self.bandwidth.clone(), NETWORK_READ_LENGTH).await?;
+            if was_at_watermark && self.send_buffer_size() < send_watermark {
+                return Ok(None);
+            }
+            let deadline = Instant::now() + self.io_timeout;
             let read = tokio::select! {
-                read = self.read.read(&mut network_buffer) => Some(read),
+                read = self.read.read(&mut network_buffer[..quota.bytes().min(NETWORK_READ_LENGTH)]) => Some(read),
                 changed = self.writer.changed() => {
                     let snapshot = changed?;
                     if was_at_watermark && snapshot.queued_bytes < send_watermark {
@@ -370,6 +419,7 @@ impl IncomingPeerIo {
                 operation: "read peer message",
                 source,
             })?;
+            quota.commit(read);
             if read == 0 {
                 return Err(PeerIoError::Closed);
             }
@@ -414,15 +464,28 @@ impl IncomingPeerIo {
     }
 }
 
-async fn run_writer(
-    mut write: WriteHalf<PeerStream>,
-    mut commands: mpsc::Receiver<WriterFrame>,
+struct WriterRuntime {
     state: Arc<Mutex<WriterState>>,
     changes: watch::Sender<WriterSnapshot>,
     cancellation: CancellationToken,
-    mut send_cipher: Option<Rc4>,
+    send_cipher: Option<Rc4>,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    bandwidth: Option<TorrentBandwidth>,
+}
+
+async fn run_writer(
+    mut write: WriteHalf<PeerStream>,
+    mut commands: mpsc::Receiver<WriterFrame>,
+    runtime: WriterRuntime,
 ) -> Result<(), PeerIoError> {
+    let WriterRuntime {
+        state,
+        changes,
+        cancellation,
+        mut send_cipher,
+        byte_metric_sink,
+        bandwidth,
+    } = runtime;
     let result = async {
         loop {
             let frame = tokio::select! {
@@ -443,6 +506,7 @@ async fn run_writer(
                     send_cipher: send_cipher.as_mut(),
                     byte_metric_sink: byte_metric_sink.as_ref(),
                     no_progress_timeout: INCOMING_WRITER_NO_PROGRESS_TIMEOUT,
+                    bandwidth: bandwidth.as_ref(),
                 },
             )
             .await?;
@@ -465,6 +529,7 @@ struct WriterCommitContext<'a> {
     send_cipher: Option<&'a mut Rc4>,
     byte_metric_sink: Option<&'a Arc<dyn ByteMetricSink>>,
     no_progress_timeout: Duration,
+    bandwidth: Option<&'a TorrentBandwidth>,
 }
 
 async fn write_frame<W: AsyncWrite + Unpin>(
@@ -479,6 +544,7 @@ async fn write_frame<W: AsyncWrite + Unpin>(
         send_cipher,
         byte_metric_sink,
         no_progress_timeout,
+        bandwidth,
     } = context;
     if frame
         .validity
@@ -491,9 +557,41 @@ async fn write_frame<W: AsyncWrite + Unpin>(
     if let Some(cipher) = send_cipher {
         cipher.apply(&mut frame.bytes);
     }
-    let mut deadline = Instant::now() + no_progress_timeout;
     let mut offset = 0;
     while offset < frame.bytes.len() {
+        let quota = {
+            let acquire = PeerIo::acquire_upload_quota(
+                bandwidth.cloned(),
+                frame.bytes.len().saturating_sub(offset),
+            );
+            if offset == 0 {
+                if let Some(validity) = frame.validity.as_ref() {
+                    tokio::select! {
+                        biased;
+                        _ = cancellation.cancelled() => return Ok(()),
+                        _ = validity.cancelled() => {
+                            discard_frame(state, changes, frame.bytes.len());
+                            return Ok(());
+                        }
+                        quota = acquire => quota?,
+                    }
+                } else {
+                    tokio::select! {
+                        biased;
+                        _ = cancellation.cancelled() => return Ok(()),
+                        quota = acquire => quota?,
+                    }
+                }
+            } else {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => return Ok(()),
+                    quota = acquire => quota?,
+                }
+            }
+        };
+        let deadline = Instant::now() + no_progress_timeout;
+        let end = frame.bytes.len().min(offset.saturating_add(quota.bytes()));
         let result = if offset == 0 {
             if let Some(validity) = frame.validity.as_ref() {
                 tokio::select! {
@@ -503,20 +601,20 @@ async fn write_frame<W: AsyncWrite + Unpin>(
                         discard_frame(state, changes, frame.bytes.len());
                         return Ok(());
                     }
-                    result = timeout_at(deadline, write.write(&frame.bytes)) => result,
+                    result = timeout_at(deadline, write.write(&frame.bytes[..end])) => result,
                 }
             } else {
                 tokio::select! {
                     biased;
                     _ = cancellation.cancelled() => return Ok(()),
-                    result = timeout_at(deadline, write.write(&frame.bytes)) => result,
+                    result = timeout_at(deadline, write.write(&frame.bytes[..end])) => result,
                 }
             }
         } else {
             tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => return Ok(()),
-                result = timeout_at(deadline, write.write(&frame.bytes[offset..])) => result,
+                result = timeout_at(deadline, write.write(&frame.bytes[offset..end])) => result,
             }
         };
         let written = result
@@ -531,7 +629,7 @@ async fn write_frame<W: AsyncWrite + Unpin>(
         if written == 0 {
             return Err(PeerIoError::Closed);
         }
-        deadline = Instant::now() + no_progress_timeout;
+        quota.commit(written);
         let uploaded = record_sent_range(
             byte_metric_sink,
             frame.bytes.len(),
@@ -588,10 +686,12 @@ mod tests {
     use rstorrent_protocol::peer_wire::{PeerMessage, encode_message};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::time::timeout;
 
     use super::{
         FrameValidity, IncomingPeerIo, MAX_INCOMING_WRITER_BYTES, WRITER_FRAME_QUEUE, WriterState,
     };
+    use crate::{SessionBandwidth, TorrentTransferRateLimits, TransferRateLimit};
 
     #[test]
     fn writer_charge_is_exact_and_recoverable() {
@@ -641,6 +741,58 @@ mod tests {
         assert_eq!(io.uploaded_payload_bytes(), 0);
         assert_eq!(io.send_buffer_size(), 0);
         io.shutdown().await.expect("join writer");
+    }
+
+    #[tokio::test]
+    async fn accepted_upload_quota_wait_does_not_block_the_reader() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind pair");
+        let mut client = TcpStream::connect(listener.local_addr().expect("pair address"))
+            .await
+            .expect("connect pair");
+        let (server, _) = listener.accept().await.expect("accept pair");
+        let session = SessionBandwidth::start(TorrentTransferRateLimits {
+            upload: TransferRateLimit::limited(1_024).expect("finite upload rate"),
+            download: TransferRateLimit::UNLIMITED,
+        });
+        let bandwidth = session
+            .register_torrent(TorrentTransferRateLimits::default())
+            .expect("torrent bandwidth");
+        let mut io = IncomingPeerIo::new_with_mse_and_bandwidth(
+            server,
+            Duration::from_secs(2),
+            None,
+            None,
+            &[],
+            Some(bandwidth.clone()),
+        )
+        .expect("construct accepted peer IO");
+        io.queue_message(&PeerMessage::Piece {
+            index: 0,
+            begin: 0,
+            block: vec![7; 2_048],
+        })
+        .expect("queue throttled upload");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        client
+            .write_all(&encode_message(&PeerMessage::Interested).expect("interested frame"))
+            .await
+            .expect("write inbound message during upload wait");
+        assert_eq!(
+            timeout(
+                Duration::from_millis(250),
+                io.next_message_or_send_ready(usize::MAX),
+            )
+            .await
+            .expect("inbound progress during accepted upload throttle")
+            .expect("peer message"),
+            Some(PeerMessage::Interested)
+        );
+
+        io.shutdown().await.expect("join writer");
+        drop(bandwidth);
+        let terminal = session.shutdown().await;
+        assert_eq!(terminal.upload.waiting_requests, 0);
+        assert_eq!(terminal.download.waiting_requests, 0);
     }
 
     #[tokio::test]

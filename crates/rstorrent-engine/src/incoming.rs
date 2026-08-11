@@ -2688,12 +2688,13 @@ async fn run_incoming_peer(
         torrent: torrent_upload,
         session: shared.session_upload.clone(),
     });
-    let mut io = match IncomingPeerIo::new_with_mse(
+    let mut io = match IncomingPeerIo::new_with_mse_and_bandwidth(
         stream,
         shared.peer_activity_timeout,
         Some(byte_metric_sink),
         ciphers,
         &carried,
+        registration.torrent_peers.bandwidth(),
     ) {
         Ok(io) => io,
         Err(_) => return (PeerTermination::Protocol, peer_attachment),
@@ -2951,13 +2952,16 @@ async fn run_incoming_peer_loop(
             }
             PeerEvent::Maintenance => {
                 let now = Instant::now();
-                if now.saturating_duration_since(last_peer_activity) >= shared.peer_activity_timeout
+                if !io.download_rate_limited()
+                    && now.saturating_duration_since(last_peer_activity)
+                        >= shared.peer_activity_timeout
                 {
                     join_read(read.take()).await;
                     return PeerTermination::ActivityTimeout;
                 }
                 let snapshot = upload.snapshot();
-                if snapshot.interested
+                if !io.download_rate_limited()
+                    && snapshot.interested
                     && !snapshot.choking
                     && snapshot.queued_requests == 0
                     && read.is_none()
@@ -2968,7 +2972,9 @@ async fn run_incoming_peer_loop(
                     return PeerTermination::NoRequestTimeout;
                 }
                 let budget = shared.peer_budget.snapshot();
-                if budget.total >= budget.effective_limit
+                if !io.upload_rate_limited()
+                    && !io.download_rate_limited()
+                    && budget.total >= budget.effective_limit
                     && now.saturating_duration_since(last_meaningful_activity)
                         >= shared.inactivity_timeout
                 {

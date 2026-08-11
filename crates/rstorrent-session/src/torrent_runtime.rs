@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
     DownloadControl, PeerConnectionDirection, PeerConnectionObservation, SeedRegistrationToken,
-    StorageFilePool, TorrentPeerActivitySink, TorrentPeerError, TorrentPeerHandle, TrackerCounters,
+    StorageFilePool, TorrentBandwidth, TorrentPeerActivitySink, TorrentPeerError,
+    TorrentPeerHandle, TrackerCounters,
 };
 use tokio::task::JoinHandle;
 
@@ -304,6 +305,7 @@ impl TorrentRuntime {
         generation: u64,
         views: ViewHub,
         advertised_endpoint: AdvertisedPeerEndpointSelector,
+        bandwidth: TorrentBandwidth,
     ) -> Result<Self, TorrentPeerError> {
         let accepting_peer_events = Arc::new(AtomicBool::new(true));
         let tracker_counters = TrackerCounters::unknown_metadata();
@@ -316,6 +318,7 @@ impl TorrentRuntime {
             traffic: Mutex::new(std::collections::BTreeMap::new()),
         });
         let peers = TorrentPeerHandle::new(sink)?;
+        peers.install_bandwidth(bandwidth);
         let handle = TorrentRuntimeHandle {
             generation,
             peers: peers.clone(),

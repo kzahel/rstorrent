@@ -2791,7 +2791,8 @@ impl TorrentPeerCoordinator {
         info_hash: [u8; 20],
     ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
         debug_assert!(self.connection.is_none());
-        let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone());
+        let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone())
+            .with_bandwidth(self.peers.bandwidth());
         let mut workers = JoinSet::new();
         let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
             BTreeMap::new();
@@ -3781,7 +3782,7 @@ async fn acquire_metadata_from_connection(
     let metadata_progress_timeout = peer.io_timeout();
     let mut progress_deadline = TokioInstant::now() + metadata_progress_timeout;
     loop {
-        if TokioInstant::now() >= progress_deadline {
+        if !peer.download_rate_limited() && TokioInstant::now() >= progress_deadline {
             return Err(DownloadError::PeerTimedOut {
                 operation: "metadata progress",
                 timeout: metadata_progress_timeout,
@@ -3807,7 +3808,7 @@ async fn acquire_metadata_from_connection(
             _ = tokio::time::sleep_until(scheduler_wake) => None,
         };
         let Some(message) = message else {
-            if TokioInstant::now() >= progress_deadline {
+            if !peer.download_rate_limited() && TokioInstant::now() >= progress_deadline {
                 return Err(DownloadError::PeerTimedOut {
                     operation: "metadata progress",
                     timeout: metadata_progress_timeout,
@@ -5407,7 +5408,8 @@ fn fill_content_dials(
             .saturating_add(incoming_established),
         sockets.pending_len(),
         state.config(),
-        state.replacement_candidate(peers.elapsed()).is_some(),
+        !peers.peers.download_rate_limited()
+            && state.replacement_candidate(peers.elapsed()).is_some(),
     ) {
         if !peers.control.try_acquire_outbound_turn() {
             break;
@@ -5801,6 +5803,7 @@ async fn run_selective_swarm_loop(
     let mut next_owner = ContentSupervisorOwner::Storage;
     let mut selection_updates = download.control.selection_updates();
     let mut storage_pressure_started = None;
+    let mut rate_limit_started = None;
     let mut next_maintenance_at = Duration::ZERO;
     let mut completion_drain_started = None;
     if let Some(connection) = peers.connection.take() {
@@ -5887,6 +5890,17 @@ async fn run_selective_swarm_loop(
             }
             _ => {}
         }
+        let download_rate_limited = peers.peers.download_rate_limited();
+        match (rate_limit_started, download_rate_limited) {
+            (None, true) => rate_limit_started = Some(now),
+            (Some(started), false) => {
+                download
+                    .state
+                    .defer_peer_deadlines(now.saturating_sub(started));
+                rate_limit_started = None;
+            }
+            _ => {}
+        }
         peers.publish_peer_registry(false);
         for (connection, failure) in download.service_outgoing_uploads(sockets).await? {
             download.remove_outgoing_upload(connection).await;
@@ -5902,7 +5916,7 @@ async fn run_selective_swarm_loop(
             }
         }
         if now >= next_maintenance_at {
-            if !storage_backpressured {
+            if !storage_backpressured && !download_rate_limited {
                 download
                     .state
                     .expire_requests(now)
@@ -6206,8 +6220,9 @@ async fn run_selective_swarm_loop(
                         if download.established_content_connections(sockets)
                             >= download.state.config().max_established_connections
                         {
-                            if let Some(replaced) =
-                                download.state.replacement_candidate(peers.elapsed())
+                            if let Some(replaced) = (!peers.peers.download_rate_limited())
+                                .then(|| download.state.replacement_candidate(peers.elapsed()))
+                                .flatten()
                             {
                                 download
                                     .close_content_peer(
@@ -6374,7 +6389,8 @@ async fn download_content_swarm<'a>(
     peers: &mut TorrentPeerCoordinator,
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
-    let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone());
+    let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone())
+        .with_bandwidth(peers.peers.bandwidth());
     let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
     let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
     let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);

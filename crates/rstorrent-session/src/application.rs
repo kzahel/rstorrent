@@ -474,6 +474,9 @@ impl ApplicationService {
                 generation,
                 views.clone(),
                 advertised_endpoint.clone(),
+                session_network
+                    .register_torrent_bandwidth(Default::default())
+                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             torrent_runtimes.insert(torrent.torrent_id.clone(), runtime);
@@ -600,6 +603,9 @@ impl ApplicationService {
                 generation,
                 self.views.clone(),
                 self.session_network().advertised_endpoint(),
+                self.session_network()
+                    .register_torrent_bandwidth(Default::default())
+                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?,
             )
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             self.torrent_runtimes.insert(torrent_id.to_owned(), runtime);

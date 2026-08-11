@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +26,7 @@ use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 
+use crate::TorrentBandwidth;
 use crate::mse::{
     MseDhWorkOwner, MseHandshakeAccounting, MseHandshakeFailure, MseHandshakeOutcome,
     MseHandshakeSink, record_mse_handshake,
@@ -33,7 +36,7 @@ use crate::peer::{
     DialAttempt, DialAttemptId, MseEndpointState, PeerFailure, UtpConnectOutcome, UtpDialDecision,
 };
 use crate::peer_budget::{PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetRejection};
-use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
+use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, PeerIoQuota, record_bytes};
 use crate::peer_runtime::{PeerTransport, connection_id};
 use crate::swarm::ConnectionId;
 use crate::{ByteMetric, ByteMetricSink};
@@ -71,6 +74,10 @@ impl PeerConnection {
 
     pub(crate) const fn io_timeout(&self) -> Duration {
         self.io.io_timeout
+    }
+
+    pub(crate) fn download_rate_limited(&self) -> bool {
+        self.io.download_rate_limited()
     }
 
     pub(crate) const fn supports_fast_extension(&self) -> bool {
@@ -1136,6 +1143,7 @@ pub(crate) struct PeerSocketSet {
     pending_attempts: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)>,
     dial_progress_tx: mpsc::Sender<PeerDialProgress>,
     dial_progress_rx: mpsc::Receiver<PeerDialProgress>,
+    bandwidth: Option<TorrentBandwidth>,
 }
 
 impl PeerSocketSet {
@@ -1160,7 +1168,13 @@ impl PeerSocketSet {
             pending_attempts: BTreeMap::new(),
             dial_progress_tx,
             dial_progress_rx,
+            bandwidth: None,
         }
+    }
+
+    pub(crate) fn with_bandwidth(mut self, bandwidth: Option<TorrentBandwidth>) -> Self {
+        self.bandwidth = bandwidth;
+        self
     }
 
     pub(crate) fn established_len(&self) -> usize {
@@ -1231,11 +1245,12 @@ impl PeerSocketSet {
         let cancellation = CancellationToken::new();
         let progress = self.dial_progress_tx.clone();
         let mse_dh = self.mse_dh.clone();
+        let bandwidth = self.bandwidth.clone();
         self.pending_attempts
             .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
             let mut utp_outcome = None;
-            let result = tokio::select! {
+            let mut result = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => Err(PeerSocketError::Cancelled),
                 _ = budget_cancellation.cancelled() => Err(PeerSocketError::Cancelled),
@@ -1255,6 +1270,9 @@ impl PeerSocketSet {
                     },
                 ) => result,
             };
+            if let Ok((connection, _)) = &mut result {
+                connection.io.attach_bandwidth(bandwidth);
+            }
             (attempt, utp_outcome, result)
         });
         Ok(())
@@ -1370,42 +1388,28 @@ async fn run_peer_task(
 ) -> Result<(), PeerSocketError> {
     let budget_cancellation = peer.budget_cancellation();
     let mut pending_messages = std::mem::take(&mut peer.io.queued_messages);
-    let mut read_deadline = Instant::now() + peer.io.io_timeout;
+    let mut read_remaining = peer.io.io_timeout;
+    let mut write_remaining = peer.io.io_timeout;
+    let mut read_deadline = None;
+    let mut write_deadline = None;
+    let mut read_ready = false;
+    let mut write_ready = false;
+    let mut download_wait: Option<QuotaFuture> = None;
+    let mut upload_wait: Option<QuotaFuture> = None;
+    let bandwidth = peer.io.bandwidth();
     let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
     loop {
-        if !pending_messages.is_empty() {
-            tokio::select! {
-                biased;
-                _ = cancellation.cancelled() => return Ok(()),
-                _ = async {
-                    if let Some(cancellation) = &budget_cancellation {
-                        cancellation.cancelled().await;
-                    }
-                }, if budget_cancellation.is_some() => return Ok(()),
-                permit = events.reserve() => {
-                    let permit = permit.map_err(|_| PeerSocketError::Io {
-                        operation: "deliver peer event",
-                        source: io::Error::new(
-                            io::ErrorKind::BrokenPipe,
-                            "torrent supervisor stopped",
-                        ),
-                    })?;
-                    let message = pending_messages
-                        .pop_front()
-                        .expect("pending peer message queue is nonempty");
-                    permit.send(PeerTaskEvent::Message {
-                        attempt: peer.attempt,
-                        message,
-                    });
-                }
-                command = commands.recv() => match command {
-                    Some(PeerTaskCommand::Send(message)) => {
-                        send_message(&mut peer, &message).await?;
-                    }
-                    None => return Ok(()),
-                },
-            }
-            continue;
+        if pending_messages.is_empty() && !read_ready && read_deadline.is_none() {
+            read_deadline = Some(Instant::now() + read_remaining);
+        }
+        if pending_messages.is_empty() && read_ready && download_wait.is_none() {
+            download_wait = Some(quota_future(bandwidth.clone(), false));
+        }
+        if peer.io.has_queued_frames() && !write_ready && write_deadline.is_none() {
+            write_deadline = Some(Instant::now() + write_remaining);
+        }
+        if peer.io.has_queued_frames() && write_ready && upload_wait.is_none() {
+            upload_wait = Some(quota_future(bandwidth.clone(), true));
         }
         tokio::select! {
             biased;
@@ -1415,20 +1419,51 @@ async fn run_peer_task(
                     cancellation.cancelled().await;
                 }
             }, if budget_cancellation.is_some() => return Ok(()),
+            permit = events.reserve(), if !pending_messages.is_empty() => {
+                let permit = permit.map_err(|_| PeerSocketError::Io {
+                    operation: "deliver peer event",
+                    source: io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "torrent supervisor stopped",
+                    ),
+                })?;
+                let message = pending_messages
+                    .pop_front()
+                    .expect("pending peer message queue is nonempty");
+                permit.send(PeerTaskEvent::Message {
+                    attempt: peer.attempt,
+                    message,
+                });
+            }
             command = commands.recv() => match command {
-                Some(PeerTaskCommand::Send(message)) => send_message(&mut peer, &message).await?,
+                Some(PeerTaskCommand::Send(message)) => peer.io.queue_message(&message)?,
                 None => return Ok(()),
             },
-            read = timeout_at(read_deadline, peer.io.stream.read(&mut network_buffer)) => {
-                let read = read
-                    .map_err(|_| PeerSocketError::TimedOut {
-                        operation: "message read",
-                        timeout: peer.io.io_timeout,
-                    })?
-                    .map_err(|source| PeerSocketError::Io {
+            quota = async {
+                download_wait
+                    .as_mut()
+                    .expect("guarded download quota future")
+                    .await
+            }, if download_wait.is_some() => {
+                download_wait = None;
+                let quota = quota?;
+                let read = match peer
+                    .io
+                    .stream
+                    .try_read(&mut network_buffer[..quota.bytes().min(NETWORK_READ_LENGTH)])
+                {
+                    Ok(read) => read,
+                    Err(source) if source.kind() == io::ErrorKind::WouldBlock => {
+                        read_ready = false;
+                        continue;
+                    }
+                    Err(source) => return Err(PeerSocketError::Io {
                         operation: "read peer message",
                         source,
-                    })?;
+                    }),
+                };
+                quota.commit(read);
+                read_ready = false;
                 if read == 0 {
                     return Err(PeerSocketError::Closed);
                 }
@@ -1437,11 +1472,81 @@ async fn run_peer_task(
                     peer.io.record_incoming_message(message)?;
                 }
                 if !messages.is_empty() {
-                    read_deadline = Instant::now() + peer.io.io_timeout;
+                    read_remaining = peer.io.io_timeout;
                 }
                 pending_messages.extend(messages);
             }
+            quota = async {
+                upload_wait
+                    .as_mut()
+                    .expect("guarded upload quota future")
+                    .await
+            }, if upload_wait.is_some() => {
+                upload_wait = None;
+                let quota = quota?;
+                let written = peer.io.flush_queued_frames_limited(quota.bytes())?;
+                quota.commit(written);
+                write_ready = false;
+                if written != 0 {
+                    write_remaining = peer.io.io_timeout;
+                }
+            }
+            ready = peer.io.stream.readable(), if pending_messages.is_empty() && !read_ready => {
+                ready.map_err(|source| PeerSocketError::Io {
+                    operation: "wait for peer message",
+                    source,
+                })?;
+                read_remaining = remaining_timeout(read_deadline, read_remaining);
+                read_deadline = None;
+                read_ready = true;
+            }
+            ready = peer.io.stream.writable(), if peer.io.has_queued_frames() && !write_ready => {
+                ready.map_err(|source| PeerSocketError::Io {
+                    operation: "wait to send peer message",
+                    source,
+                })?;
+                write_remaining = remaining_timeout(write_deadline, write_remaining);
+                write_deadline = None;
+                write_ready = true;
+            }
+            _ = wait_for_deadline(read_deadline), if read_deadline.is_some() => {
+                return Err(PeerSocketError::TimedOut {
+                    operation: "message read",
+                    timeout: peer.io.io_timeout,
+                });
+            }
+            _ = wait_for_deadline(write_deadline), if write_deadline.is_some() => {
+                return Err(PeerSocketError::TimedOut {
+                    operation: "message write",
+                    timeout: peer.io.io_timeout,
+                });
+            }
         }
+    }
+}
+
+type QuotaFuture = Pin<Box<dyn Future<Output = Result<PeerIoQuota, PeerIoError>> + Send>>;
+
+fn quota_future(bandwidth: Option<TorrentBandwidth>, upload: bool) -> QuotaFuture {
+    Box::pin(async move {
+        if upload {
+            PeerIo::acquire_upload_quota(bandwidth, NETWORK_READ_LENGTH).await
+        } else {
+            PeerIo::acquire_download_quota(bandwidth, NETWORK_READ_LENGTH).await
+        }
+    })
+}
+
+fn remaining_timeout(deadline: Option<Instant>, fallback: Duration) -> Duration {
+    deadline
+        .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+        .unwrap_or(fallback)
+}
+
+async fn wait_for_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
     }
 }
 
@@ -1479,7 +1584,10 @@ mod tests {
         PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource, UtpConnectOutcome,
     };
     use crate::peer_budget::{PeerBudget, PeerBudgetConfig, PeerBudgetPhase};
-    use crate::{PeerTransport, SessionUdpService, UtpService};
+    use crate::{
+        PeerTransport, SessionBandwidth, SessionUdpService, TorrentTransferRateLimits,
+        TransferRateLimit, UtpService,
+    };
 
     #[derive(Debug, Default)]
     struct RecordingMseSink {
@@ -2757,6 +2865,50 @@ mod tests {
             event => panic!("unexpected event {event:?}"),
         }
         task.shutdown().await.expect("join task");
+    }
+
+    #[tokio::test]
+    async fn upload_quota_wait_does_not_block_inbound_peer_messages() {
+        let (mut connection, mut server) = connected_pair(Duration::from_secs(2)).await;
+        let session = SessionBandwidth::start(TorrentTransferRateLimits {
+            upload: TransferRateLimit::limited(1_024).expect("finite upload rate"),
+            download: TransferRateLimit::UNLIMITED,
+        });
+        let bandwidth = session
+            .register_torrent(TorrentTransferRateLimits::default())
+            .expect("torrent bandwidth");
+        connection.io.attach_bandwidth(Some(bandwidth.clone()));
+        let (event_tx, mut events) = mpsc::channel(4);
+        let task = PeerSocketTask::spawn(connection, event_tx);
+
+        task.send(PeerMessage::Piece {
+            index: 0,
+            begin: 0,
+            block: vec![7; 2_048],
+        })
+        .await
+        .expect("queue throttled upload");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        server
+            .write_all(&encode_message(&PeerMessage::Interested).expect("interested frame"))
+            .await
+            .expect("write inbound message during upload wait");
+        assert!(matches!(
+            timeout(Duration::from_millis(250), events.recv())
+                .await
+                .expect("inbound progress during upload throttle")
+                .expect("peer event"),
+            PeerTaskEvent::Message {
+                message: PeerMessage::Interested,
+                ..
+            }
+        ));
+
+        task.shutdown().await.expect("join task");
+        drop(bandwidth);
+        let terminal = session.shutdown().await;
+        assert_eq!(terminal.upload.waiting_requests, 0);
+        assert_eq!(terminal.download.waiting_requests, 0);
     }
 
     #[tokio::test]

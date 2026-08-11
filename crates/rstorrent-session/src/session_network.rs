@@ -16,8 +16,10 @@ use rstorrent_engine::{
     MseHandshakeSink, NetworkConfig, PeerAdvertisementEndpoint, PeerBudget, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransportPolicy, SessionSocketConfig, SessionSocketError,
     SessionSocketFamilySet, SessionSocketFamilyState, SessionSocketSet, SessionUdpError,
-    SessionUdpHandle, SessionUdpService, UtpHandle, UtpRuntimeError, UtpService,
+    SessionUdpHandle, SessionUdpService, TorrentBandwidth, TorrentTransferRateLimits, UtpHandle,
+    UtpRuntimeError, UtpService,
 };
+use rstorrent_engine::{BandwidthError, SessionBandwidth};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -202,6 +204,7 @@ pub(crate) struct SessionNetworkRuntime {
     initial_tracker_https_authentication: Option<HttpsServerAuthenticationPolicy>,
     initial_tracker_https_application: ClientSettingsApplicationState,
     views: Option<ViewHub>,
+    bandwidth: Option<SessionBandwidth>,
 }
 
 #[derive(Debug, Default)]
@@ -613,6 +616,7 @@ impl SessionNetworkRuntime {
             }),
         };
         let reachability_evidence = ReachabilityEvidenceProbe::default();
+        let bandwidth = SessionBandwidth::start(TorrentTransferRateLimits::default());
         let pending_owner = SessionNetworkOwner {
             effective_settings,
             effective_listener,
@@ -693,6 +697,7 @@ impl SessionNetworkRuntime {
             initial_tracker_https_authentication,
             initial_tracker_https_application,
             views: None,
+            bandwidth: Some(bandwidth),
         })
     }
 
@@ -911,6 +916,16 @@ impl SessionNetworkRuntime {
         self.incoming_handle.clone()
     }
 
+    pub(crate) fn register_torrent_bandwidth(
+        &self,
+        limits: TorrentTransferRateLimits,
+    ) -> Result<TorrentBandwidth, BandwidthError> {
+        self.bandwidth
+            .as_ref()
+            .ok_or(BandwidthError::Stopped)?
+            .register_torrent(limits)
+    }
+
     pub(crate) fn utp_handle(&self) -> Option<UtpHandle> {
         self.utp_handle.clone()
     }
@@ -961,21 +976,26 @@ impl SessionNetworkRuntime {
 
     pub(crate) async fn shutdown(mut self, views: &ViewHub) -> SessionNetworkShutdown {
         self.begin_shutdown();
-        if let Some(task) = self.reconciliation_task.take() {
-            return match task.await {
+        let terminal = if let Some(task) = self.reconciliation_task.take() {
+            match task.await {
                 Ok(owner) => owner.shutdown(views).await,
                 Err(error) => SessionNetworkShutdown {
                     dht_snapshot: None,
                     dht_error: None,
                     join_error: Some(format!("session network reconciler: {error}")),
                 },
-            };
+            }
+        } else {
+            self.pending_owner
+                .take()
+                .expect("pending owner exists before reconciliation starts")
+                .shutdown(views)
+                .await
+        };
+        if let Some(bandwidth) = self.bandwidth.take() {
+            let _ = bandwidth.shutdown().await;
         }
-        self.pending_owner
-            .take()
-            .expect("pending owner exists before reconciliation starts")
-            .shutdown(views)
-            .await
+        terminal
     }
 }
 

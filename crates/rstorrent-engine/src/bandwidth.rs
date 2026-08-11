@@ -255,6 +255,14 @@ impl TorrentBandwidth {
         }
     }
 
+    pub fn upload_limited(&self) -> bool {
+        self.inner.upload.is_limited()
+    }
+
+    pub fn download_limited(&self) -> bool {
+        self.inner.download.is_limited()
+    }
+
     pub async fn acquire_upload(
         &self,
         requested: usize,
@@ -292,6 +300,11 @@ struct DirectionRegistration {
 }
 
 impl DirectionRegistration {
+    fn is_limited(&self) -> bool {
+        self.direction.session_limit.load(Ordering::Acquire) != 0
+            || self.limit.load(Ordering::Acquire) != 0
+    }
+
     fn limit(&self) -> TransferRateLimit {
         let value = self.limit.load(Ordering::Acquire);
         if value == 0 {

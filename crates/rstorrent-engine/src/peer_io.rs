@@ -12,9 +12,9 @@ use rstorrent_protocol::mse::{MseCipherPair, MseHandshakeError, Rc4};
 use rstorrent_protocol::peer_wire::{
     FrameDecoder, FrameError, HandshakeError, PeerMessage, encode_message,
 };
-use tokio::io::AsyncReadExt;
 use tokio::time::{Instant, timeout_at};
 
+use crate::bandwidth::{BandwidthPermit, MAX_BANDWIDTH_GRANT_BYTES, TorrentBandwidth};
 use crate::metrics::{ByteMetric, ByteMetricSink};
 use crate::mse::MseDhWorkError;
 use crate::network::NetworkPolicy;
@@ -33,6 +33,7 @@ pub(crate) struct PeerIo {
     send_cipher: Option<Rc4>,
     pub(crate) io_timeout: Duration,
     pub(crate) byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
+    bandwidth: Option<TorrentBandwidth>,
 }
 
 #[derive(Debug)]
@@ -58,6 +59,49 @@ impl PeerIo {
             send_cipher: None,
             io_timeout,
             byte_metric_sink,
+            bandwidth: None,
+        }
+    }
+
+    pub(crate) fn attach_bandwidth(&mut self, bandwidth: Option<TorrentBandwidth>) {
+        self.bandwidth = bandwidth;
+    }
+
+    pub(crate) fn bandwidth(&self) -> Option<TorrentBandwidth> {
+        self.bandwidth.clone()
+    }
+
+    pub(crate) fn download_rate_limited(&self) -> bool {
+        self.bandwidth
+            .as_ref()
+            .is_some_and(TorrentBandwidth::download_limited)
+    }
+
+    pub(crate) async fn acquire_upload_quota(
+        bandwidth: Option<TorrentBandwidth>,
+        requested: usize,
+    ) -> Result<PeerIoQuota, PeerIoError> {
+        match bandwidth {
+            Some(bandwidth) => bandwidth
+                .acquire_upload(requested)
+                .await
+                .map(PeerIoQuota::limited)
+                .map_err(|_| PeerIoError::Cancelled),
+            None => Ok(PeerIoQuota::direct(requested)),
+        }
+    }
+
+    pub(crate) async fn acquire_download_quota(
+        bandwidth: Option<TorrentBandwidth>,
+        requested: usize,
+    ) -> Result<PeerIoQuota, PeerIoError> {
+        match bandwidth {
+            Some(bandwidth) => bandwidth
+                .acquire_download(requested)
+                .await
+                .map(PeerIoQuota::limited)
+                .map_err(|_| PeerIoError::Cancelled),
+            None => Ok(PeerIoQuota::direct(requested)),
         }
     }
 
@@ -84,65 +128,50 @@ impl PeerIo {
         &mut self,
         send_watermark: usize,
     ) -> Result<Option<PeerMessage>, PeerIoError> {
-        let deadline = Instant::now() + self.io_timeout;
+        let mut read_remaining = self.io_timeout;
         loop {
             if let Some(message) = self.queued_messages.pop_front() {
                 self.record_incoming_message(&message)?;
                 return Ok(Some(message));
             }
             let was_at_watermark = self.send_buffer_size() >= send_watermark;
-            self.flush_queued_frames()?;
-            if was_at_watermark && self.send_buffer_size() < send_watermark {
-                return Ok(None);
+            if self.has_queued_frames() {
+                self.flush_next_quota().await?;
+            }
+            if was_at_watermark {
+                if self.send_buffer_size() < send_watermark {
+                    return Ok(None);
+                }
+                continue;
             }
             let mut network_buffer = [0_u8; NETWORK_READ_LENGTH];
-            let read = if self.queued_frames.is_empty() {
-                timeout_at(deadline, self.stream.read(&mut network_buffer))
-                    .await
-                    .map_err(|_| PeerIoError::TimedOut {
-                        operation: "message read",
-                        timeout: self.io_timeout,
-                    })?
-                    .map_err(|source| PeerIoError::Io {
+            let deadline = Instant::now() + read_remaining;
+            timeout_at(deadline, self.stream.readable())
+                .await
+                .map_err(|_| PeerIoError::TimedOut {
+                    operation: "message read",
+                    timeout: self.io_timeout,
+                })?
+                .map_err(|source| PeerIoError::Io {
+                    operation: "wait for peer message",
+                    source,
+                })?;
+            read_remaining = deadline.saturating_duration_since(Instant::now());
+            let quota = Self::acquire_download_quota(self.bandwidth(), NETWORK_READ_LENGTH).await?;
+            let read = match self
+                .stream
+                .try_read(&mut network_buffer[..quota.bytes().min(NETWORK_READ_LENGTH)])
+            {
+                Ok(read) => read,
+                Err(source) if source.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(source) => {
+                    return Err(PeerIoError::Io {
                         operation: "read peer message",
                         source,
-                    })?
-            } else {
-                tokio::select! {
-                    biased;
-                    ready = self.stream.readable() => {
-                        ready.map_err(|source| PeerIoError::Io {
-                            operation: "wait for peer message",
-                            source,
-                        })?;
-                        match self.stream.try_read(&mut network_buffer) {
-                            Ok(read) => read,
-                            Err(source) if source.kind() == io::ErrorKind::WouldBlock => continue,
-                            Err(source) => return Err(PeerIoError::Io {
-                                operation: "read peer message",
-                                source,
-                            }),
-                        }
-                    }
-                    ready = self.stream.writable() => {
-                        ready.map_err(|source| PeerIoError::Io {
-                            operation: "wait to send peer message",
-                            source,
-                        })?;
-                        self.flush_queued_frames()?;
-                        if was_at_watermark && self.send_buffer_size() < send_watermark {
-                            return Ok(None);
-                        }
-                        continue;
-                    }
-                    _ = tokio::time::sleep_until(deadline) => {
-                        return Err(PeerIoError::TimedOut {
-                            operation: "message read or write",
-                            timeout: self.io_timeout,
-                        });
-                    }
+                    });
                 }
             };
+            quota.commit(read);
             if read == 0 {
                 return Err(PeerIoError::Closed);
             }
@@ -173,11 +202,26 @@ impl PeerIo {
             .sum()
     }
 
-    fn flush_queued_frames(&mut self) -> Result<(), PeerIoError> {
+    pub(crate) fn has_queued_frames(&self) -> bool {
+        !self.queued_frames.is_empty()
+    }
+
+    pub(crate) fn flush_queued_frames_limited(
+        &mut self,
+        maximum: usize,
+    ) -> Result<usize, PeerIoError> {
+        let mut total_written = 0;
         while let Some(frame) = self.queued_frames.front_mut() {
+            if total_written >= maximum {
+                break;
+            }
             let start = frame.written;
+            let end = frame
+                .bytes
+                .len()
+                .min(start.saturating_add(maximum - total_written));
             let (written, frame_length, payload_length, payload_metric) =
-                match self.stream.try_write(&frame.bytes[start..]) {
+                match self.stream.try_write(&frame.bytes[start..end]) {
                     Ok(0) => return Err(PeerIoError::Closed),
                     Ok(written) => {
                         frame.written += written;
@@ -188,7 +232,9 @@ impl PeerIo {
                             frame.payload_metric,
                         )
                     }
-                    Err(source) if source.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                    Err(source) if source.kind() == io::ErrorKind::WouldBlock => {
+                        return Ok(total_written);
+                    }
                     Err(source) => {
                         return Err(PeerIoError::Io {
                             operation: "send peer message",
@@ -204,23 +250,26 @@ impl PeerIo {
                 start,
                 written,
             );
+            total_written += written;
             if frame.written != frame.bytes.len() {
-                return Ok(());
+                break;
             }
             self.queued_frames.pop_front();
         }
-        Ok(())
+        Ok(total_written)
     }
 
     pub(crate) async fn send_message(&mut self, message: &PeerMessage) -> Result<(), PeerIoError> {
         self.queue_message(message)?;
-        let deadline = Instant::now() + self.io_timeout;
         while !self.queued_frames.is_empty() {
-            self.flush_queued_frames()?;
-            if self.queued_frames.is_empty() {
-                break;
-            }
-            timeout_at(deadline, self.stream.writable())
+            self.flush_next_quota().await?;
+        }
+        Ok(())
+    }
+
+    async fn flush_next_quota(&mut self) -> Result<usize, PeerIoError> {
+        loop {
+            timeout_at(Instant::now() + self.io_timeout, self.stream.writable())
                 .await
                 .map_err(|_| PeerIoError::TimedOut {
                     operation: "message write",
@@ -230,8 +279,13 @@ impl PeerIo {
                     operation: "wait to send peer message",
                     source,
                 })?;
+            let quota = Self::acquire_upload_quota(self.bandwidth(), NETWORK_READ_LENGTH).await?;
+            let written = self.flush_queued_frames_limited(quota.bytes())?;
+            quota.commit(written);
+            if written != 0 || !self.has_queued_frames() {
+                return Ok(written);
+            }
         }
-        Ok(())
     }
 
     pub(crate) fn decode_received(
@@ -273,6 +327,40 @@ impl PeerIo {
             record_bytes(self.byte_metric_sink.as_ref(), metric, payload_length);
         }
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PeerIoQuota {
+    permit: Option<BandwidthPermit>,
+    bytes: usize,
+}
+
+impl PeerIoQuota {
+    fn direct(requested: usize) -> Self {
+        Self {
+            permit: None,
+            bytes: requested.clamp(1, MAX_BANDWIDTH_GRANT_BYTES),
+        }
+    }
+
+    fn limited(permit: BandwidthPermit) -> Self {
+        let bytes = permit.bytes();
+        Self {
+            permit: Some(permit),
+            bytes,
+        }
+    }
+
+    pub(crate) const fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    pub(crate) fn commit(self, used: usize) {
+        assert!(used <= self.bytes, "used bytes exceed peer I/O quota");
+        if let Some(permit) = self.permit {
+            permit.commit(used);
+        }
     }
 }
 

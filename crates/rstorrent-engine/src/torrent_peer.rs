@@ -12,6 +12,7 @@ use rstorrent_protocol::peer_wire::PeerMessage;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::bandwidth::{TorrentBandwidth, TorrentTransferRateLimits};
 use crate::network::{AddressFamilyPolicy, AddressFamilyPolicyHandle};
 use crate::peer::{
     DialAttempt, DialCandidate, DialEligibility, PeerFailure, PeerObservation, PeerRecordId,
@@ -378,6 +379,7 @@ struct TorrentPeerHandleInner {
     address_families: AddressFamilyPolicyHandle,
     sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
     incoming_content: Mutex<IncomingContentRouteState>,
+    bandwidth: Mutex<Option<TorrentBandwidth>>,
 }
 
 #[derive(Clone, Debug)]
@@ -442,8 +444,37 @@ impl TorrentPeerHandle {
                 address_families: AddressFamilyPolicyHandle::default(),
                 sink: Mutex::new(sink),
                 incoming_content: Mutex::new(IncomingContentRouteState::default()),
+                bandwidth: Mutex::new(None),
             }),
         })
+    }
+
+    pub fn install_bandwidth(&self, bandwidth: TorrentBandwidth) {
+        *self
+            .inner
+            .bandwidth
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(bandwidth);
+    }
+
+    pub(crate) fn bandwidth(&self) -> Option<TorrentBandwidth> {
+        self.inner
+            .bandwidth
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub fn transfer_rate_limits(&self) -> TorrentTransferRateLimits {
+        self.bandwidth()
+            .map_or_else(TorrentTransferRateLimits::default, |bandwidth| {
+                bandwidth.limits()
+            })
+    }
+
+    pub(crate) fn download_rate_limited(&self) -> bool {
+        self.bandwidth()
+            .is_some_and(|bandwidth| bandwidth.download_limited())
     }
 
     pub fn elapsed(&self) -> Duration {
