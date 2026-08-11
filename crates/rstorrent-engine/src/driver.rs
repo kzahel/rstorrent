@@ -83,7 +83,7 @@ use crate::streaming::{
 use crate::swarm::{
     BlockKey, ConnectionId, ConnectionRemoval, ConnectionWindowPhaseSnapshot, PendingDialId,
     PieceHashFailure, PiecePlan, ReceiveDisposition, RejectDisposition, RequestAssignment,
-    SwarmConfig, SwarmError, SwarmState,
+    RequestCancellation, SwarmConfig, SwarmError, SwarmState,
 };
 use crate::torrent_peer::{
     INCOMING_CONTENT_EVENT_CAPACITY, IncomingContentCommand, IncomingContentEvent,
@@ -327,6 +327,12 @@ struct ContentDownloadConfig {
 struct ContentStorageLimits {
     resident_payload_bytes: usize,
     intake_high_watermark_bytes: usize,
+}
+
+#[derive(Debug, Default)]
+struct ContentRequestSchedule {
+    assignments: Vec<RequestAssignment>,
+    cancellations: Vec<RequestCancellation>,
 }
 
 #[cfg(test)]
@@ -4715,17 +4721,29 @@ impl<'a> ContentSwarmDownload<'a> {
         Ok(())
     }
 
-    fn schedule(&mut self, now: Duration) -> Result<Vec<RequestAssignment>, DownloadError> {
+    fn schedule(&mut self, now: Duration) -> Result<ContentRequestSchedule, DownloadError> {
         let streaming = self.control.streaming_demand_snapshot();
         self.prepare_streaming_pieces(&streaming)?;
+        let cancellations = self
+            .state
+            .preempt_ordinary_for_streaming(now, &streaming)
+            .map_err(DownloadError::Swarm)?;
+        if !cancellations.is_empty() {
+            self.prepare_streaming_pieces(&streaming)?;
+        }
         while self.state.planned_piece_count() < MAX_PLANNED_CONTENT_PIECES {
             if !self.prepare_next_piece()? {
                 break;
             }
         }
-        self.state
+        let assignments = self
+            .state
             .schedule_with_streaming(now, &streaming)
-            .map_err(DownloadError::Swarm)
+            .map_err(DownloadError::Swarm)?;
+        Ok(ContentRequestSchedule {
+            assignments,
+            cancellations,
+        })
     }
 
     async fn handle_message(
@@ -5965,13 +5983,22 @@ async fn run_selective_swarm_loop(
             next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
         }
 
-        let assignments = if storage_ready && !storage_backpressured {
+        let scheduled = if storage_ready && !storage_backpressured {
             download.schedule(now)?
         } else {
-            Vec::new()
+            ContentRequestSchedule::default()
         };
+        for cancellation in scheduled.cancellations {
+            let _ = download
+                .send_content_message(
+                    sockets,
+                    cancellation.connection,
+                    PeerMessage::Cancel(cancellation.block.request()),
+                )
+                .await;
+        }
         let mut failed_connections = BTreeSet::new();
-        for assignment in assignments {
+        for assignment in scheduled.assignments {
             if download
                 .send_content_message(
                     sockets,

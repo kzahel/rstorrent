@@ -10,7 +10,10 @@ use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 use crate::piece_picker::{AvailabilityPicker, PieceActivationPolicy};
 use crate::session_resources::SessionTorrentResources;
-use crate::streaming::{StreamingDemandSnapshot, StreamingUrgency};
+use crate::streaming::{
+    MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
+    StreamingUrgency,
+};
 
 pub const DEFAULT_MAX_ESTABLISHED_CONNECTIONS: usize = 30;
 pub const DEFAULT_MAX_PENDING_DIALS: usize = 30;
@@ -411,6 +414,7 @@ pub struct SwarmSnapshot {
     pub endgame_assignments: usize,
     pub streaming_assignments: usize,
     pub streaming_duplicate_assignments: usize,
+    pub streaming_ordinary_preemptions: usize,
     pub streaming_candidate_inspections: u64,
     pub streaming_queue_rejections: u64,
     pub cancelled_request_attempts: usize,
@@ -1003,6 +1007,7 @@ pub struct SwarmState {
     endgame_assignments: usize,
     streaming_assignments: usize,
     streaming_duplicate_assignments: usize,
+    streaming_ordinary_preemptions: usize,
     streaming_candidate_inspections: u64,
     streaming_queue_rejections: u64,
     cancelled_request_attempts: usize,
@@ -1085,6 +1090,7 @@ impl SwarmState {
             endgame_assignments: 0,
             streaming_assignments: 0,
             streaming_duplicate_assignments: 0,
+            streaming_ordinary_preemptions: 0,
             streaming_candidate_inspections: 0,
             streaming_queue_rejections: 0,
             cancelled_request_attempts: 0,
@@ -1757,6 +1763,116 @@ impl SwarmState {
         let mut ordinary = self.schedule_ordinary(now, true, false, false)?;
         assignments.append(&mut ordinary);
         Ok(assignments)
+    }
+
+    /// Cancel bounded untouched ordinary attempts only when current streaming
+    /// work cannot enter the existing planning, active-piece, request-byte, or
+    /// peer queue ceilings. At most one attempt per peer is cancelled in one
+    /// pass, and demanded current work is never selected as the victim.
+    pub fn preempt_ordinary_for_streaming(
+        &mut self,
+        now: Duration,
+        demands: &StreamingDemandSnapshot,
+    ) -> Result<Vec<RequestCancellation>, SwarmError> {
+        if demands.is_empty() || !self.streaming_current_needs_preemption(now, demands)? {
+            return Ok(Vec::new());
+        }
+        let candidates = self
+            .active_attempts
+            .values()
+            .filter(|attempt| {
+                attempt.purpose == RequestPurpose::Ordinary
+                    && demands.urgency(attempt.block.piece) != Some(StreamingUrgency::Current)
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        let mut peers = BTreeSet::new();
+        let mut cancellations = Vec::new();
+        for attempt in candidates {
+            if !peers.insert(attempt.connection) {
+                continue;
+            }
+            self.terminate_requested(attempt.block, attempt.id, RequestDisposition::Cancelled)?;
+            cancellations.push(RequestCancellation {
+                attempt: attempt.id,
+                connection: attempt.connection,
+                block: attempt.block,
+            });
+            self.cancelled_request_attempts = self.cancelled_request_attempts.saturating_add(1);
+            self.streaming_ordinary_preemptions =
+                self.streaming_ordinary_preemptions.saturating_add(1);
+            if !self.streaming_current_needs_preemption(now, demands)? {
+                break;
+            }
+        }
+        Ok(cancellations)
+    }
+
+    fn streaming_current_needs_preemption(
+        &mut self,
+        now: Duration,
+        demands: &StreamingDemandSnapshot,
+    ) -> Result<bool, SwarmError> {
+        let picker = &self.picker;
+        let batch = StreamingCandidateCursor::new(demands).take(
+            MAX_STREAMING_CANDIDATE_INSPECTIONS,
+            |piece| {
+                usize::try_from(piece)
+                    .ok()
+                    .is_some_and(|piece| picker.is_wanted(piece))
+            },
+        );
+        for candidate in batch
+            .candidates
+            .into_iter()
+            .filter(|candidate| candidate.urgency == StreamingUrgency::Current)
+        {
+            let piece = usize::try_from(candidate.piece)
+                .map_err(|_| SwarmError::ArithmeticOverflow("piece index"))?;
+            let has_holder = self
+                .connections
+                .values()
+                .any(|connection| connection.can_request_piece(piece));
+            if !has_holder {
+                continue;
+            }
+            let Some(state) = self.pieces.get(&candidate.piece) else {
+                let removable_plan = self.pieces.iter().any(|(piece, state)| {
+                    demands.urgency(*piece).is_none()
+                        && state.blocks.iter().all(|block| {
+                            self.blocks
+                                .get(block)
+                                .is_some_and(|state| state.phase == BlockPhase::Missing)
+                        })
+                });
+                return Ok(!removable_plan);
+            };
+            if state.blocks.iter().any(|block| {
+                self.blocks.get(block).is_some_and(|state| {
+                    matches!(
+                        state.phase,
+                        BlockPhase::Requested
+                            | BlockPhase::Writing { .. }
+                            | BlockPhase::Received { .. }
+                    )
+                })
+            }) {
+                return Ok(false);
+            }
+            let Some(block) = self.first_missing_block(candidate.piece) else {
+                return Ok(false);
+            };
+            if (self.active_pieces.contains(&piece) || self.can_activate_piece(piece))
+                && self.request_budget_allows(block)?
+                && self
+                    .best_streaming_connection(candidate.piece, block, now)
+                    .is_some()
+            {
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn schedule_ordinary(
@@ -2883,6 +2999,7 @@ impl SwarmState {
             endgame_assignments: self.endgame_assignments,
             streaming_assignments: self.streaming_assignments,
             streaming_duplicate_assignments: self.streaming_duplicate_assignments,
+            streaming_ordinary_preemptions: self.streaming_ordinary_preemptions,
             streaming_candidate_inspections: self.streaming_candidate_inspections,
             streaming_queue_rejections: self.streaming_queue_rejections,
             cancelled_request_attempts: self.cancelled_request_attempts,
@@ -4083,6 +4200,52 @@ mod tests {
             .expect("streaming plan");
         assert_eq!(state.planned_piece_count(), 2);
         assert!(state.pieces.contains_key(&2));
+        assert_cached_indexes(&state);
+    }
+
+    #[test]
+    fn streaming_preempts_one_untouched_ordinary_attempt_per_peer() {
+        let mut config = SwarmConfig::for_request_limit(3 * BLOCK as usize);
+        config.max_active_pieces = 1;
+        let mut state =
+            SwarmState::new_with_wanted(config, 2, vec![0, 1], vec![plan(0, 2), plan(1, 1)], 0)
+                .expect("bounded active swarm");
+        add_peer(&mut state, connection(1), &[0, 1], false);
+        add_peer(&mut state, connection(2), &[0, 1], false);
+        let ordinary = state.schedule(Duration::ZERO).expect("ordinary schedule");
+        assert_eq!(ordinary.len(), 2);
+        let ordinary_piece = ordinary[0].block.piece;
+        assert!(ordinary.iter().all(|request| {
+            request.block.piece == ordinary_piece
+                && state.active_attempts[&request.attempt].purpose == RequestPurpose::Ordinary
+        }));
+        let demanded_piece = 1 - ordinary_piece;
+        let demands = streaming_demands((demanded_piece, demanded_piece), None);
+
+        let cancellations = state
+            .preempt_ordinary_for_streaming(Duration::ZERO, &demands)
+            .expect("bounded ordinary preemption");
+
+        assert_eq!(cancellations.len(), 2);
+        assert_ne!(cancellations[0].connection, cancellations[1].connection);
+        assert_eq!(
+            state.block_status(plan(ordinary_piece, 2).blocks[0]),
+            Ok(BlockStatus::Missing)
+        );
+        let urgent = state
+            .schedule_with_streaming(Duration::ZERO, &demands)
+            .expect("urgent schedule");
+        assert_eq!(urgent[0].block.piece, demanded_piece);
+        assert_eq!(
+            state.active_attempts[&urgent[0].attempt].purpose,
+            RequestPurpose::StreamingPrimary
+        );
+        assert_eq!(
+            state
+                .snapshot(Duration::ZERO)
+                .streaming_ordinary_preemptions,
+            2
+        );
         assert_cached_indexes(&state);
     }
 

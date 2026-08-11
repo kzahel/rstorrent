@@ -238,6 +238,7 @@ pub struct SwarmActivitySnapshot {
     pub endgame_assignments: usize,
     pub streaming_assignments: usize,
     pub streaming_duplicate_assignments: usize,
+    pub streaming_ordinary_preemptions: usize,
     pub streaming_candidate_inspections: u64,
     pub streaming_queue_rejections: u64,
     pub cancelled_request_attempts: usize,
@@ -2103,6 +2104,7 @@ impl DownloadControl {
             endgame_assignments: snapshot.endgame_assignments,
             streaming_assignments: snapshot.streaming_assignments,
             streaming_duplicate_assignments: snapshot.streaming_duplicate_assignments,
+            streaming_ordinary_preemptions: snapshot.streaming_ordinary_preemptions,
             streaming_candidate_inspections: snapshot.streaming_candidate_inspections,
             streaming_queue_rejections: snapshot.streaming_queue_rejections,
             cancelled_request_attempts: snapshot.cancelled_request_attempts,
@@ -3271,6 +3273,8 @@ mod streaming_demand_tests {
 
         let progress = first.progress_revision().unwrap();
         control.record_streaming_progress(4);
+        assert!(!updates.has_changed().unwrap());
+        control.record_streaming_progress(3);
         assert!(updates.has_changed().unwrap());
         assert_eq!(first.progress_revision(), Some(progress + 1));
         assert_eq!(second.progress_revision(), Some(0));
