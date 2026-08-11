@@ -231,11 +231,16 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
   const selectedSkippedCount = rows.filter(
     (row) => selectedFileIds.has(row.id) && row.selection === "skipped",
   ).length;
+  const selectedOpenAvailability =
+    selectedFileIds.size === 1
+      ? rows.find((row) => selectedFileIds.has(row.id))?.mediaAvailability
+      : undefined;
   const toolbarActions = resolveFileActions(
     selectedFileIds.size,
     selectedSkippedCount,
     fileActionPending,
     unavailableReason,
+    selectedOpenAvailability,
   );
 
   const runFileAction = async (
@@ -255,6 +260,7 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
       targetRows.filter((row) => row.selection === "skipped").length,
       fileActionPending,
       unavailableReason,
+      targetRows.length === 1 ? targetRows[0]?.mediaAvailability : undefined,
     ).find((candidate) => candidate.id === actionId);
     if (action === undefined || action.disabled) {
       if (action?.disabledReason !== undefined) {
@@ -267,7 +273,13 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
     try {
       const fileIndices = targetRows.map((row) => row.index);
       const result = await execute(
-        action.id === "download_now"
+        action.id === "open"
+          ? {
+              type: "open_file",
+              torrentId,
+              fileIndex: targetRows[0]!.index,
+            }
+          : action.id === "download_now"
           ? {
               type: "download_files",
               torrentId,
@@ -337,6 +349,9 @@ export function FileTable({ torrentId }: { readonly torrentId: string }) {
               ).length,
               fileActionPending,
               unavailableReason,
+              targetIds.length === 1
+                ? rows.find((row) => row.id === targetIds[0])?.mediaAvailability
+                : undefined,
             );
             return (
               <ActionMenuPopover label="File actions">

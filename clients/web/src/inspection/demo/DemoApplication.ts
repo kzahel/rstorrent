@@ -94,6 +94,8 @@ export class DemoApplication implements InspectionApplication {
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.ensureOpen();
     switch (command.type) {
+      case "open_file":
+        return rejected("Opening files is unavailable in demo scenarios");
       case "set_demo_scenario":
         this.scenarioId = command.scenarioId;
         this.elapsedMs = 0;

@@ -67,6 +67,47 @@ class FakeBridge implements TauriViewBridge {
 }
 
 describe("Tauri leased view-set adapter", () => {
+  it("creates a media URL and delegates opening to the native adapter", async () => {
+    const bridge = new FakeBridge();
+    const url =
+      "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    bridge.handler = (command) => {
+      if (command === "application_create_media_url") {
+        return {
+          torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+          file_index: 2,
+          outcome: {
+            type: "created",
+            url,
+            idle_timeout_millis: "1800000",
+            absolute_timeout_millis: "86400000",
+          },
+        };
+      }
+      if (command === "application_open_media_url") return undefined;
+      throw new Error(`unexpected command ${command}`);
+    };
+    const client = new TauriApplicationViewClient(bridge);
+    const target = client.prepareMediaOpen();
+    const response = await client.createMediaUrl({
+      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      file_index: 2,
+    });
+    expect(response.outcome.type).toBe("created");
+    await target.open(url);
+    expect(bridge.calls).toEqual([
+      {
+        command: "application_create_media_url",
+        arguments_: {
+          torrentId: "000102030405060708090a0b0c0d0e0f10111213",
+          fileIndex: 2,
+        },
+      },
+      { command: "application_open_media_url", arguments_: { url } },
+    ]);
+    await client.close();
+  });
+
   it("passes torrent bytes as a raw IPC body with metadata headers", async () => {
     const bridge = new FakeBridge();
     const source = new Uint8Array([100, 52, 58, 105, 110, 102, 111, 100, 101]).buffer;

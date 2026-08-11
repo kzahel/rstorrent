@@ -655,6 +655,28 @@
             "view_set_id"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "file_index": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "torrent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "create_media_url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "torrent_id",
+            "file_index"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -713,6 +735,22 @@
           },
           "required": [
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "response": {
+              "$ref": "#/$defs/MediaUrlResponse"
+            },
+            "type": {
+              "const": "media_url",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "response"
           ],
           "type": "object"
         }
@@ -2083,6 +2121,23 @@
         }
       ]
     },
+    "CreateMediaUrlRequest": {
+      "properties": {
+        "file_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "torrent_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "file_index"
+      ],
+      "type": "object"
+    },
     "DeliveryMode": {
       "enum": [
         "poll",
@@ -3282,6 +3337,9 @@
         "length_bytes": {
           "type": "string"
         },
+        "media_availability": {
+          "$ref": "#/$defs/MediaFileAvailability"
+        },
         "padding": {
           "type": "boolean"
         },
@@ -3316,7 +3374,8 @@
         "torrent_offset_bytes",
         "padding",
         "done_bytes",
-        "verified_bytes"
+        "verified_bytes",
+        "media_availability"
       ],
       "type": "object"
     },
@@ -3810,6 +3869,87 @@
         "synthesized"
       ],
       "type": "string"
+    },
+    "MediaFileAvailability": {
+      "enum": [
+        "available",
+        "metadata_unavailable",
+        "invalid_file",
+        "padding",
+        "not_published",
+        "checking",
+        "unverified",
+        "storage_unavailable",
+        "removing",
+        "server_unavailable",
+        "resource_limit"
+      ],
+      "type": "string"
+    },
+    "MediaUrlOutcome": {
+      "oneOf": [
+        {
+          "properties": {
+            "absolute_timeout_millis": {
+              "type": "string"
+            },
+            "idle_timeout_millis": {
+              "type": "string"
+            },
+            "type": {
+              "const": "created",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "idle_timeout_millis",
+            "absolute_timeout_millis"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/$defs/MediaFileAvailability"
+            },
+            "type": {
+              "const": "unavailable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "MediaUrlResponse": {
+      "properties": {
+        "file_index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/MediaUrlOutcome"
+        },
+        "torrent_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "torrent_id",
+        "file_index",
+        "outcome"
+      ],
+      "type": "object"
     },
     "OpenViewSetOptions": {
       "properties": {

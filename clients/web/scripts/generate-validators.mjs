@@ -24,6 +24,7 @@ const validators = {
   validateResponseEnvelope: "ResponseEnvelope",
   validateApiErrorEnvelope: "ApiErrorEnvelope",
   validateChooseDownloadRootResponse: "ChooseDownloadRootResponse",
+  validateMediaUrlResponse: "MediaUrlResponse",
   validateOpenViewSetResponse: "OpenViewSetResponse",
   validateUpdateBatch: "UpdateBatch",
 };

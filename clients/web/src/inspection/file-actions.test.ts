@@ -3,12 +3,30 @@ import { describe, expect, it } from "vitest";
 import { FILE_ACTIONS, resolveFileActions } from "./file-actions";
 
 describe("file selection actions", () => {
-  it("defines one stable Download now, Normal, and Skip inventory", () => {
+  it("defines one stable Open, Download now, Normal, and Skip inventory", () => {
     expect(FILE_ACTIONS.map((action) => [action.group, action.id])).toEqual([
+      ["open", "open"],
       ["download", "download_now"],
       ["priority", "normal"],
       ["priority", "skip"],
     ]);
+  });
+
+  it("offers Open only for one typed eligible file", () => {
+    expect(resolveFileActions(1, 0, false, undefined, "available")[0]).toMatchObject({
+      id: "open",
+      disabled: false,
+    });
+    expect(
+      resolveFileActions(1, 0, false, undefined, "unverified").some(
+        (action) => action.id === "open",
+      ),
+    ).toBe(false);
+    expect(
+      resolveFileActions(2, 0, false, undefined, "available").some(
+        (action) => action.id === "open",
+      ),
+    ).toBe(false);
   });
 
   it("offers Download now only when at least one target is skipped", () => {

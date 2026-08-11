@@ -287,6 +287,7 @@ describe("view-set reducer", () => {
       padding: false,
       done_bytes: "16384",
       verified_bytes: "0",
+      media_availability: "unverified" as const,
     };
     let state = reduceUpdateBatch(
       undefined,

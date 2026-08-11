@@ -951,6 +951,7 @@ function demoFileSet(
       padding,
       doneBytes: done.toString(),
       verifiedBytes: verified.toString(),
+      mediaAvailability: "not_published",
       storagePath: `/Users/demo/Downloads/${torrentId}/${path.join("/")}`,
     });
     offset += length;

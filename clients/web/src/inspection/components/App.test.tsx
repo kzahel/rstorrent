@@ -670,6 +670,49 @@ describe("inspection application", () => {
     );
   });
 
+  it("shows Open only for a single verified published file", async () => {
+    const user = userEvent.setup();
+    const base = buildScenarioSnapshot("file-progress", 24_000, false, 1);
+    const fileSet = base.filesByTorrent[DEMO_PRIMARY_TORRENT_ID]!;
+    const file = fileSet.order
+      .map((id) => fileSet.rows[id])
+      .find((candidate) => candidate?.padding === false)!;
+    const snapshot = {
+      ...base,
+      demo: null,
+      filesByTorrent: {
+        ...base.filesByTorrent,
+        [DEMO_PRIMARY_TORRENT_ID]: {
+          ...fileSet,
+          rows: {
+            ...fileSet.rows,
+            [file.id]: { ...file, mediaAvailability: "available" as const },
+          },
+        },
+      },
+    };
+    const application = new RecordingLiveApplication({
+      type: "snapshot",
+      snapshot,
+    });
+    renderApplication(application);
+
+    await user.click(screen.getByRole("button", { name: "Workbench" }));
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    const files = screen.getByRole("grid", { name: "Torrent files" });
+    await user.click(within(files).getByText(file.name));
+    await user.click(screen.getByRole("button", { name: "More file actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Open" }));
+
+    await waitFor(() =>
+      expect(application.commands.at(-1)).toEqual({
+        type: "open_file",
+        torrentId: DEMO_PRIMARY_TORRENT_ID,
+        fileIndex: file.index,
+      }),
+    );
+  });
+
   it("sends one Download now command for a skipped file", async () => {
     const user = userEvent.setup();
     const snapshot = buildScenarioSnapshot("file-progress", 24_000, false, 1);

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
@@ -9,8 +10,8 @@ use rstorrent_media::LoopbackMediaServer;
 use rstorrent_platform::{DownloadDirectoryPicker, NativeDownloadDirectoryPicker, PickerError};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, CONTROL_VERSION, FileIndexRange,
-    FileSelectionIntent, NetworkConfig, NetworkPolicy, RequestEnvelope, ResponseEnvelope,
-    StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    FileSelectionIntent, MediaUrlResponse, NetworkConfig, NetworkPolicy, RequestEnvelope,
+    ResponseEnvelope, StorageRootSnapshot, SubscriptionSpec, ViewSubscription, ViewUpdate,
     application_error_response,
 };
 #[cfg(target_os = "macos")]
@@ -70,6 +71,90 @@ async fn application_dispatch(
             application_error_response(request_id, service.revision().unwrap_or(0), &error)
         }
     })
+}
+
+#[tauri::command]
+async fn application_create_media_url(
+    state: State<'_, DesktopState>,
+    torrent_id: String,
+    file_index: u32,
+) -> Result<MediaUrlResponse, String> {
+    state
+        .service
+        .lock()
+        .await
+        .create_media_url(&torrent_id, file_index)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn application_open_media_url(
+    state: State<'_, DesktopState>,
+    url: String,
+) -> Result<(), String> {
+    let media_server = state.media_server.lock().await;
+    let server = media_server
+        .as_ref()
+        .ok_or_else(|| "media server is unavailable".to_owned())?;
+    validate_local_media_url(&url, server.local_addr())?;
+    open_with_system(&url)
+}
+
+fn validate_local_media_url(
+    source: &str,
+    expected_address: std::net::SocketAddr,
+) -> Result<(), String> {
+    let url = url::Url::parse(source).map_err(|_| "media URL is invalid".to_owned())?;
+    if url.scheme() != "http"
+        || url.username() != ""
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.host_str() != Some("127.0.0.1")
+        || url.port() != Some(expected_address.port())
+    {
+        return Err("media URL is not owned by this desktop process".to_owned());
+    }
+    let Some(capability) = url.path().strip_prefix("/media/v1/") else {
+        return Err("media URL path is invalid".to_owned());
+    };
+    if capability.len() != 43
+        || !capability
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("media URL capability is invalid".to_owned());
+    }
+    Ok(())
+}
+
+fn open_with_system(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    #[cfg(not(any(unix, target_os = "windows")))]
+    return Err("opening media URLs is unsupported on this platform".to_owned());
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("open media URL with system handler: {error}"))
 }
 
 #[tauri::command]
@@ -494,6 +579,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             application_dispatch,
+            application_create_media_url,
+            application_open_media_url,
             application_add_torrent_bytes,
             choose_download_root,
             application_view_hello,
@@ -549,7 +636,7 @@ mod tests {
 
     use super::{
         HEADER_REQUEST_ID, HEADER_START_CONTENT, HEADER_STORAGE_ROOT, NetworkPolicy,
-        decode_torrent_ipc, desktop_application_config,
+        decode_torrent_ipc, desktop_application_config, validate_local_media_url,
     };
 
     #[test]
@@ -598,5 +685,25 @@ mod tests {
                 .expect_err("reject JSON IPC")
                 .contains("raw IPC body")
         );
+    }
+
+    #[test]
+    fn desktop_opener_only_accepts_its_exact_media_origin_and_capability() {
+        let address = "127.0.0.1:43121".parse().expect("address");
+        let capability = "A".repeat(43);
+        let valid = format!("http://127.0.0.1:43121/media/v1/{capability}");
+        assert!(validate_local_media_url(&valid, address).is_ok());
+        for invalid in [
+            format!("http://localhost:43121/media/v1/{capability}"),
+            format!("http://127.0.0.1:43122/media/v1/{capability}"),
+            format!("https://127.0.0.1:43121/media/v1/{capability}"),
+            format!("http://127.0.0.1:43121/media/v1/{capability}?copy=1"),
+            "http://127.0.0.1:43121/media/v1/short".to_owned(),
+        ] {
+            assert!(
+                validate_local_media_url(&invalid, address).is_err(),
+                "{invalid}"
+            );
+        }
     }
 }

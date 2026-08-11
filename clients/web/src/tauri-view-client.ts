@@ -9,6 +9,8 @@ import type {
   AddTorrentBytesRequest,
   ApiHello,
   ChooseDownloadRootRequest,
+  CreateMediaUrlRequest,
+  MediaUrlResponse,
   OpenViewSetRequest,
   OpenViewSetResponse,
   RequestEnvelope,
@@ -21,12 +23,14 @@ import {
   ApplicationViewError,
   type ApplicationUpdateStream,
   type ApplicationViewClient,
+  type MediaOpenTarget,
   validateTorrentByteUpload,
 } from "./api/client";
 import {
   ContractError,
   decodeApiHello,
   decodeOpenViewSetResponse,
+  decodeMediaUrlResponse,
   decodeResponseEnvelope,
   decodeUpdateBatch,
 } from "./validation";
@@ -127,6 +131,35 @@ export class TauriApplicationViewClient implements ApplicationViewClient {
     return this.invoke<StorageRootSnapshot | null>("choose_download_root", {
       repairRoot: request.repair_root ?? null,
     });
+  }
+
+  public async createMediaUrl(
+    request: CreateMediaUrlRequest,
+  ): Promise<MediaUrlResponse> {
+    this.ensureOpen();
+    return decodeStructured(
+      await this.invoke<unknown>("application_create_media_url", {
+        torrentId: request.torrent_id,
+        fileIndex: request.file_index,
+      }),
+      decodeMediaUrlResponse,
+      "Tauri media URL response",
+    );
+  }
+
+  public prepareMediaOpen(): MediaOpenTarget {
+    this.ensureOpen();
+    let active = true;
+    return {
+      open: async (url) => {
+        if (!active) throw new Error("media open target is no longer available");
+        active = false;
+        await this.invoke("application_open_media_url", { url });
+      },
+      cancel: () => {
+        active = false;
+      },
+    };
   }
 
   public async openViewSet(

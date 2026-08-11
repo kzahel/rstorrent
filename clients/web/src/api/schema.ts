@@ -4,6 +4,7 @@ import {
   validateApiHello,
   validateApplicationServerFrame,
   validateChooseDownloadRootResponse,
+  validateMediaUrlResponse,
   validateOpenViewSetResponse,
   validateResponseEnvelope,
   validateUpdateBatch,
@@ -15,6 +16,7 @@ const validators = new Map<string, StandaloneValidateFunction>([
   ["ResponseEnvelope", validateResponseEnvelope],
   ["ApiErrorEnvelope", validateApiErrorEnvelope],
   ["ChooseDownloadRootResponse", validateChooseDownloadRootResponse],
+  ["MediaUrlResponse", validateMediaUrlResponse],
   ["OpenViewSetResponse", validateOpenViewSetResponse],
   ["UpdateBatch", validateUpdateBatch],
 ]);

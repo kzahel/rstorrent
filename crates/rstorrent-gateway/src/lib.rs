@@ -292,6 +292,12 @@ pub struct ChooseDownloadRootResponse {
     pub root: Option<StorageRootSnapshot>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct CreateMediaUrlRequest {
+    pub torrent_id: String,
+    pub file_index: u32,
+}
+
 #[derive(Debug)]
 pub enum GatewayError {
     Configuration(String),
@@ -541,6 +547,7 @@ impl GatewayServer {
             )
             .route("/api/v1/hello", get(api_hello))
             .route("/api/v1/commands", post(api_command))
+            .route("/api/v1/media-urls", post(create_media_url))
             .route("/api/v1/torrents", torrent_upload)
             .route("/api/v1/platform/download-root", post(choose_download_root))
             .route("/api/v1/view-sets", post(open_view_set))
@@ -787,6 +794,32 @@ async fn api_command(
         }
     };
     json_response(StatusCode::OK, &response)
+}
+
+async fn create_media_url(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    request: Result<Json<CreateMediaUrlRequest>, JsonRejection>,
+) -> Response {
+    if let Err(error) = authenticate_http(&state, &headers) {
+        return error.into_response();
+    }
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return invalid_request(error.body_text()),
+    };
+    let mut service = state.service.lock().await;
+    match service
+        .create_media_url(&request.torrent_id, request.file_index)
+        .await
+    {
+        Ok(response) => json_response(StatusCode::OK, &response),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ApiErrorCode::Internal,
+            &error.to_string(),
+        ),
+    }
 }
 
 async fn api_torrent_upload(
@@ -1216,9 +1249,10 @@ mod tests {
     use rstorrent_session::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, ApplicationConfig,
         ApplicationService, Command, ConfiguredStorageRoot, FileSelectionIntent, MediaUrlOutcome,
-        NetworkConfig, NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse,
-        RequestEnvelope, ResponseOutcome, SessionStore, StorageState, UpdateBatch,
-        UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot, ViewSpec,
+        MediaUrlResponse, NetworkConfig, NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest,
+        OpenViewSetResponse, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
+        UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot,
+        ViewSpec,
     };
     use sha1::{Digest, Sha1};
     use tokio::sync::Mutex;
@@ -1662,12 +1696,21 @@ mod tests {
         .await
         .expect("bind gateway");
         let address = server.local_addr();
-        let response = service
-            .lock()
-            .await
-            .create_media_url(&torrent_id, 0)
-            .await
-            .expect("create media URL");
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.serve(shutdown.clone()));
+        let (status, _, body) = raw_http_request(
+            address,
+            "POST",
+            "/api/v1/media-urls",
+            Some("Bearer application-token"),
+            Some("http://127.0.0.1:5173"),
+            Some("00000000000000000000000000000001"),
+            None,
+            Some(serde_json::json!({ "torrent_id": torrent_id, "file_index": 0 }).to_string()),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let response: MediaUrlResponse = serde_json::from_slice(&body).expect("media URL response");
         let MediaUrlOutcome::Created { url, .. } = response.outcome else {
             panic!("gateway media unavailable")
         };
@@ -1676,9 +1719,6 @@ mod tests {
             .strip_prefix(&format!("http://{address}"))
             .expect("same listener URL")
             .to_owned();
-        let shutdown = CancellationToken::new();
-        let task = tokio::spawn(server.serve(shutdown.clone()));
-
         let (status, headers, body) =
             raw_http_request(address, "GET", &path, None, None, None, None, None).await;
         assert_eq!(status, 200);

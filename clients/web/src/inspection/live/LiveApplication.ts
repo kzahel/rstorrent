@@ -150,6 +150,43 @@ export class LiveApplication implements InspectionApplication {
 
   async dispatch(command: InspectionCommand): Promise<CommandResult> {
     this.ensureOpen();
+    if (command.type === "open_file") {
+      const createMediaUrl = this.client.createMediaUrl?.bind(this.client);
+      const prepareMediaOpen = this.client.prepareMediaOpen?.bind(this.client);
+      if (createMediaUrl === undefined || prepareMediaOpen === undefined) {
+        return {
+          accepted: false,
+          message: "Opening files is unavailable on this connection",
+        };
+      }
+      let target;
+      try {
+        target = prepareMediaOpen();
+      } catch (error) {
+        return { accepted: false, message: asError(error).message };
+      }
+      try {
+        const response = await createMediaUrl(
+          {
+            torrent_id: command.torrentId,
+            file_index: command.fileIndex,
+          },
+          this.lifetime.signal,
+        );
+        if (response.outcome.type === "unavailable") {
+          target.cancel();
+          return {
+            accepted: false,
+            message: mediaUnavailableMessage(response.outcome.reason),
+          };
+        }
+        await target.open(response.outcome.url);
+        return { accepted: true, message: "Opening file" };
+      } catch (error) {
+        target.cancel();
+        return { accepted: false, message: asError(error).message };
+      }
+    }
     if (command.type === "choose_download_root") {
       try {
         const root = await this.client.chooseDownloadRoot({
@@ -1391,11 +1428,39 @@ function mapFile(
     padding: file.padding,
     doneBytes: file.done_bytes,
     verifiedBytes: file.verified_bytes,
+    mediaAvailability: file.media_availability,
     storagePath:
       filesystemContentBase === null
         ? null
         : [filesystemContentBase, ...file.path].join("/"),
   };
+}
+
+function mediaUnavailableMessage(reason: import("../../api").MediaFileAvailability): string {
+  switch (reason) {
+    case "metadata_unavailable":
+      return "File metadata is unavailable";
+    case "invalid_file":
+      return "The selected file no longer exists";
+    case "padding":
+      return "Padding files cannot be opened";
+    case "not_published":
+      return "The file is not available in published storage";
+    case "checking":
+      return "The file cannot be opened while its torrent is checking";
+    case "unverified":
+      return "The file is not fully verified yet";
+    case "storage_unavailable":
+      return "The file's storage is unavailable";
+    case "removing":
+      return "The torrent is being removed";
+    case "server_unavailable":
+      return "HTTP file serving is unavailable";
+    case "resource_limit":
+      return "Too many files are already open; try again shortly";
+    case "available":
+      return "The file is temporarily unavailable";
+  }
 }
 
 function mapTrackers(

@@ -8,6 +8,7 @@ import {
   ContractError,
   decodeApplicationServerFrame,
   decodeChooseDownloadRootResponse,
+  decodeMediaUrlResponse,
   decodeResponseEnvelope,
   decodeUpdateBatch,
 } from "./validation";
@@ -33,6 +34,32 @@ describe("download folder response validation", () => {
     expect(() =>
       decodeChooseDownloadRootResponse(JSON.stringify(selected)),
     ).toThrow(/label exceeds 256 bytes/);
+  });
+});
+
+describe("media URL response validation", () => {
+  it("accepts bounded HTTP capabilities and rejects active or ambiguous URLs", () => {
+    const response = {
+      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      file_index: 2,
+      outcome: {
+        type: "created",
+        url: "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        idle_timeout_millis: "1800000",
+        absolute_timeout_millis: "86400000",
+      },
+    };
+    expect(decodeMediaUrlResponse(JSON.stringify(response))).toEqual(response);
+    for (const url of [
+      "javascript:alert(1)",
+      "http://user@127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?copy=1",
+    ]) {
+      response.outcome.url = url;
+      expect(() => decodeMediaUrlResponse(JSON.stringify(response))).toThrow(
+        ContractError,
+      );
+    }
   });
 });
 

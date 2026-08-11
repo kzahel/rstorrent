@@ -2,6 +2,8 @@ import type {
   AddTorrentBytesRequest,
   ApiHello,
   ChooseDownloadRootRequest,
+  CreateMediaUrlRequest,
+  MediaUrlResponse,
   StorageRootSnapshot,
   OpenViewSetRequest,
   OpenViewSetResponse,
@@ -15,6 +17,7 @@ import {
   decodeApiErrorEnvelope,
   decodeApiHello,
   decodeChooseDownloadRootResponse,
+  decodeMediaUrlResponse,
   decodeOpenViewSetResponse,
   decodeResponseEnvelope,
   decodeUpdateBatch,
@@ -37,6 +40,11 @@ export interface ApplicationViewClient {
     request: ChooseDownloadRootRequest,
     signal?: AbortSignal,
   ): Promise<StorageRootSnapshot | null>;
+  createMediaUrl?(
+    request: CreateMediaUrlRequest,
+    signal?: AbortSignal,
+  ): Promise<MediaUrlResponse>;
+  prepareMediaOpen?(): MediaOpenTarget;
   openViewSet(
     request: OpenViewSetRequest,
     signal?: AbortSignal,
@@ -59,6 +67,11 @@ export interface ApplicationViewClient {
   ): Promise<ApplicationUpdateStream>;
   closeViewSet(viewSetId: string, signal?: AbortSignal): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface MediaOpenTarget {
+  open(url: string): Promise<void>;
+  cancel(): void;
 }
 
 export interface ApplicationUpdateStream extends AsyncIterable<UpdateBatch> {
@@ -182,6 +195,23 @@ export class HttpApplicationClient implements ApplicationViewClient {
       signal,
     );
     return response.root;
+  }
+
+  public async createMediaUrl(
+    request: CreateMediaUrlRequest,
+    signal?: AbortSignal,
+  ): Promise<MediaUrlResponse> {
+    return this.request(
+      "POST",
+      "/api/v1/media-urls",
+      request,
+      decodeMediaUrlResponse,
+      signal,
+    );
+  }
+
+  public prepareMediaOpen(): MediaOpenTarget {
+    return prepareBrowserMediaOpen();
   }
 
   public async openViewSet(
@@ -320,6 +350,30 @@ export class HttpApplicationClient implements ApplicationViewClient {
       ...(signal === undefined ? {} : { signal }),
     });
   }
+}
+
+export function prepareBrowserMediaOpen(): MediaOpenTarget {
+  const popup = globalThis.window?.open("about:blank", "_blank");
+  if (popup === undefined || popup === null) {
+    throw new ApplicationViewError(
+      "popup_blocked",
+      "Allow pop-ups to open this file in a new tab",
+    );
+  }
+  popup.opener = null;
+  let active = true;
+  return {
+    open: async (url) => {
+      if (!active) throw new Error("media tab is no longer available");
+      active = false;
+      popup.location.replace(url);
+    },
+    cancel: () => {
+      if (!active) return;
+      active = false;
+      popup.close();
+    },
+  };
 }
 
 export function validateTorrentByteUpload(

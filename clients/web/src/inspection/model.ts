@@ -4,6 +4,7 @@ import type {
   DiagnosticField,
   DiagnosticSubject,
   DhtInspectionView,
+  MediaFileAvailability,
   PeerDisconnectReason,
   PeerFlagView,
   PeerMseMethodView,
@@ -303,6 +304,7 @@ export interface FileRow {
   readonly padding: boolean;
   readonly doneBytes: string;
   readonly verifiedBytes: string;
+  readonly mediaAvailability: MediaFileAvailability;
   readonly storagePath: string | null;
 }
 
@@ -572,6 +574,11 @@ export type InspectionCommand =
       readonly type: "download_files";
       readonly torrentId: string;
       readonly fileIndices: readonly number[];
+    }
+  | {
+      readonly type: "open_file";
+      readonly torrentId: string;
+      readonly fileIndex: number;
     }
   | { readonly type: "choose_download_root"; readonly repairRoot?: string }
   | { readonly type: "set_default_download_root"; readonly rootId: string }

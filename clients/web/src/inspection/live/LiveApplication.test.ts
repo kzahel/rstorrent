@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AddTorrentBytesRequest,
   ApiHello,
+  CreateMediaUrlRequest,
   DhtInspectionView,
   OpenViewSetRequest,
   OpenViewSetResponse,
@@ -17,7 +18,7 @@ import type {
   ViewSetUpdate,
   ViewSpec,
 } from "../../api";
-import type { ApplicationViewClient } from "../../api/client";
+import type { ApplicationViewClient, MediaOpenTarget } from "../../api/client";
 import { HttpApiError } from "../../api/client";
 import type { InspectionSnapshot } from "../model";
 import { LiveApplication } from "./LiveApplication";
@@ -36,6 +37,8 @@ class FakeLiveClient implements ApplicationViewClient {
     readonly request: AddTorrentBytesRequest;
     readonly source: ArrayBuffer;
   }[] = [];
+  readonly mediaRequests: CreateMediaUrlRequest[] = [];
+  readonly openedMediaUrls: string[] = [];
   openCount = 0;
   private rejectPoll: ((error: Error) => void) | null = null;
 
@@ -143,6 +146,29 @@ class FakeLiveClient implements ApplicationViewClient {
     return null;
   }
 
+  async createMediaUrl(request: CreateMediaUrlRequest) {
+    this.mediaRequests.push(request);
+    return {
+      torrent_id: request.torrent_id,
+      file_index: request.file_index,
+      outcome: {
+        type: "created" as const,
+        url: "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        idle_timeout_millis: "1800000",
+        absolute_timeout_millis: "86400000",
+      },
+    };
+  }
+
+  prepareMediaOpen(): MediaOpenTarget {
+    return {
+      open: async (url) => {
+        this.openedMediaUrls.push(url);
+      },
+      cancel: () => {},
+    };
+  }
+
   async openViewSet(request: OpenViewSetRequest): Promise<OpenViewSetResponse> {
     this.opens.push(request);
     this.openCount += 1;
@@ -198,6 +224,27 @@ class FakeLiveClient implements ApplicationViewClient {
 }
 
 describe("LiveApplication", () => {
+  it("creates and opens an ephemeral URL outside the durable command path", async () => {
+    const client = new FakeLiveClient();
+    const application = await LiveApplication.open(client);
+
+    await expect(
+      application.dispatch({
+        type: "open_file",
+        torrentId: TORRENT_ID,
+        fileIndex: 3,
+      }),
+    ).resolves.toEqual({ accepted: true, message: "Opening file" });
+    expect(client.mediaRequests).toEqual([
+      { torrent_id: TORRENT_ID, file_index: 3 },
+    ]);
+    expect(client.openedMediaUrls).toEqual([
+      "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ]);
+    expect(client.requests).toHaveLength(0);
+    await application.close();
+  });
+
   it("maps exact payload work and typed ETA without numeric conversion", async () => {
     const client = new FakeLiveClient();
     const application = await LiveApplication.open(client);
@@ -896,6 +943,7 @@ function snapshotFor(view: ViewSpec, generation: number): ViewSetUpdate {
               padding: false,
               done_bytes: "16384",
               verified_bytes: "0",
+              media_availability: "unverified",
             },
           ],
         },

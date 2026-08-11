@@ -5,6 +5,7 @@ import type {
   ApplicationServerFrame,
   ChooseDownloadRootResponse,
   IndexRange,
+  MediaUrlResponse,
   OpenViewSetResponse,
   ResponseEnvelope,
   ServiceSnapshot,
@@ -207,6 +208,9 @@ export function decodeApplicationServerFrame(
         case "view_set_updated":
         case "view_set_closed":
           break;
+        case "media_url":
+          validateMediaUrlResponse(value.result.response);
+          break;
       }
       break;
     case "call_error":
@@ -268,6 +272,41 @@ export function decodeChooseDownloadRootResponse(
   );
   if (value.root !== null) validateStorageRoot(value.root);
   return value;
+}
+
+export function decodeMediaUrlResponse(source: string): MediaUrlResponse {
+  const value = generated<MediaUrlResponse>(
+    "MediaUrlResponse",
+    parseBoundedJson(source, MAX_FRAME_BYTES, "media URL response"),
+  );
+  validateMediaUrlResponse(value);
+  return value;
+}
+
+function validateMediaUrlResponse(value: MediaUrlResponse): void {
+  torrentId(value.torrent_id);
+  boundedInteger(value.file_index, "media file index", 0, MAX_U32);
+  if (value.outcome.type === "created") {
+    const source = boundedUtf8String(value.outcome.url, "media URL", 1_024);
+    let url: URL;
+    try {
+      url = new URL(source);
+    } catch {
+      throw new ContractError("media URL is invalid");
+    }
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      !/^\/media\/v1\/[A-Za-z0-9_-]{43}$/.test(url.pathname)
+    ) {
+      throw new ContractError("media URL is not a bounded HTTP capability");
+    }
+    decimal(value.outcome.idle_timeout_millis, "media URL idle timeout");
+    decimal(value.outcome.absolute_timeout_millis, "media URL absolute timeout");
+  }
 }
 
 export function decodeOpenViewSetResponse(source: string): OpenViewSetResponse {

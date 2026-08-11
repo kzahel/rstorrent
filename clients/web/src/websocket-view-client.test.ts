@@ -84,6 +84,57 @@ class FakeWebSocket implements ApplicationWebSocket {
 }
 
 describe("multiplexed application WebSocket adapter", () => {
+  it("creates an ephemeral media URL through the application call", async () => {
+    let socket: FakeWebSocket | undefined;
+    const factory: ApplicationWebSocketFactory = (url) => {
+      socket = new FakeWebSocket(url, (frame, active) => {
+        queueMicrotask(() => {
+          if (frame.type === "connect") {
+            active.server(connected());
+          } else if (
+            frame.type === "call" &&
+            frame.operation.type === "create_media_url"
+          ) {
+            active.server({
+              type: "result",
+              call_id: frame.call_id,
+              result: {
+                type: "media_url",
+                response: {
+                  torrent_id: frame.operation.torrent_id,
+                  file_index: frame.operation.file_index,
+                  outcome: {
+                    type: "created",
+                    url: "http://127.0.0.1:43121/media/v1/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                    idle_timeout_millis: "1800000",
+                    absolute_timeout_millis: "86400000",
+                  },
+                },
+              },
+            });
+          }
+        });
+      });
+      return socket;
+    };
+    const client = new WebSocketApplicationViewClient(
+      "http://127.0.0.1:3030/",
+      "token",
+      factory,
+      clientInstanceId,
+    );
+    const response = client.createMediaUrl({
+      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      file_index: 2,
+    });
+    socket?.open();
+    await expect(response).resolves.toMatchObject({
+      file_index: 2,
+      outcome: { type: "created" },
+    });
+    await client.close();
+  });
+
   it("uses one socket for calls and acknowledges a batch only on the next pull", async () => {
     const sockets: FakeWebSocket[] = [];
     const acknowledgements: string[] = [];

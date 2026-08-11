@@ -6,6 +6,8 @@ import type {
   ApplicationClientFrame,
   ApplicationServerFrame,
   ChooseDownloadRootRequest,
+  CreateMediaUrlRequest,
+  MediaUrlResponse,
   OpenViewSetRequest,
   OpenViewSetResponse,
   RequestEnvelope,
@@ -19,6 +21,7 @@ import {
   HttpApplicationClient,
   type ApplicationUpdateStream,
   type ApplicationViewClient,
+  type MediaOpenTarget,
   validateTorrentByteUpload,
 } from "./api/client";
 import { ContractError, decodeApplicationServerFrame } from "./validation";
@@ -200,6 +203,28 @@ export class WebSocketApplicationViewClient
   ): Promise<StorageRootSnapshot | null> {
     this.ensureOpen();
     return this.platformClient.chooseDownloadRoot(request, signal);
+  }
+
+  public async createMediaUrl(
+    request: CreateMediaUrlRequest,
+    signal?: AbortSignal,
+  ): Promise<MediaUrlResponse> {
+    const result = await this.call(
+      {
+        type: "create_media_url",
+        torrent_id: request.torrent_id,
+        file_index: request.file_index,
+      },
+      signal,
+    );
+    if (result.type !== "media_url") {
+      throw new ContractError("create media URL returned the wrong result type");
+    }
+    return result.response;
+  }
+
+  public prepareMediaOpen(): MediaOpenTarget {
+    return this.platformClient.prepareMediaOpen();
   }
 
   public async openViewSet(

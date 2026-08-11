@@ -237,7 +237,7 @@ export type FileSelectionView = "wanted" | "skipped";
 
 export type FileCatalogState = "metadata_pending" | "available" | "torrent_missing";
 
-export type FileView = { file_id: string, file_index: number, path: Array<string>, length_bytes: string, torrent_offset_bytes: string, first_piece: number | null, last_piece: number | null, selection: FileSelectionView | null, padding: boolean, done_bytes: string, verified_bytes: string, };
+export type FileView = { file_id: string, file_index: number, path: Array<string>, length_bytes: string, torrent_offset_bytes: string, first_piece: number | null, last_piece: number | null, selection: FileSelectionView | null, padding: boolean, done_bytes: string, verified_bytes: string, media_availability: MediaFileAvailability, };
 
 export type TrackerCatalogState = "available" | "torrent_missing";
 
@@ -277,6 +277,14 @@ export type ChooseDownloadRootRequest = { repair_root?: string | null, };
 
 export type ChooseDownloadRootResponse = { root: StorageRootSnapshot | null, };
 
+export type CreateMediaUrlRequest = { torrent_id: string, file_index: number, };
+
+export type MediaFileAvailability = "available" | "metadata_unavailable" | "invalid_file" | "padding" | "not_published" | "checking" | "unverified" | "storage_unavailable" | "removing" | "server_unavailable" | "resource_limit";
+
+export type MediaUrlOutcome = { "type": "created", url: string, idle_timeout_millis: string, absolute_timeout_millis: string, } | { "type": "unavailable", reason: MediaFileAvailability, };
+
+export type MediaUrlResponse = { torrent_id: string, file_index: number, outcome: MediaUrlOutcome, };
+
 export type ApiEncoding = "json" | "cbor";
 
 export type DeliveryMode = "poll" | "long_poll" | "stream";
@@ -303,9 +311,9 @@ export type UpdateBatch = { api_version: number, view_set_id: string, epoch: str
 
 export type OpenViewSetResponse = { view_set_id: string, lease_millis: string, effective_queue_bytes: number, effective_views: Array<ViewSpec>, initial: UpdateBatch, };
 
-export type ApplicationCall = { "type": "dispatch", request: RequestEnvelope, } | { "type": "open_view_set", request: OpenViewSetRequest, } | { "type": "update_view_set", view_set_id: string, request: UpdateViewSetRequest, } | { "type": "close_view_set", view_set_id: string, };
+export type ApplicationCall = { "type": "dispatch", request: RequestEnvelope, } | { "type": "open_view_set", request: OpenViewSetRequest, } | { "type": "update_view_set", view_set_id: string, request: UpdateViewSetRequest, } | { "type": "close_view_set", view_set_id: string, } | { "type": "create_media_url", torrent_id: string, file_index: number, };
 
-export type ApplicationCallResult = { "type": "command_response", response: ResponseEnvelope, } | { "type": "view_set_opened", response: OpenViewSetResponse, } | { "type": "view_set_updated" } | { "type": "view_set_closed" };
+export type ApplicationCallResult = { "type": "command_response", response: ResponseEnvelope, } | { "type": "view_set_opened", response: OpenViewSetResponse, } | { "type": "view_set_updated" } | { "type": "view_set_closed" } | { "type": "media_url", response: MediaUrlResponse, };
 
 export type ApplicationConnectionErrorCode = "authentication_failed" | "invalid_version" | "invalid_message" | "invalid_call" | "resource_limit" | "unknown_view_set" | "consumer_busy" | "view_set_closed" | "unknown_stream" | "invalid_cursor" | "response_too_large" | "internal";
 

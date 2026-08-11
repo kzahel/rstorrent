@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rstorrent_gateway::{
     ApiError, ApiErrorCode, ApiErrorEnvelope, ApplicationClientFrame, ApplicationConnectionError,
     ApplicationConnectionErrorCode, ApplicationConnectionLimits, ApplicationServerFrame,
-    ChooseDownloadRootRequest, ChooseDownloadRootResponse,
+    ChooseDownloadRootRequest, ChooseDownloadRootResponse, CreateMediaUrlRequest,
 };
 use rstorrent_session::{
     ActiveDownloadsClampReason, ActivePiece, ActivePieceStageView, AddTorrentBytesRequest,
@@ -24,7 +24,8 @@ use rstorrent_session::{
     FileIndexRange, FilePriority, FileSelectionIntent, FileSelectionView, FileView,
     HttpsServerAuthenticationPolicy, IndexRange, Ipv6PinholeFailureStage, Ipv6PinholeStatus,
     ListenerBindFailureReason, ListenerPolicy, ListenerStatus, MagnetExportResult,
-    MagnetExportSource, OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
+    MagnetExportSource, MediaFileAvailability, MediaUrlOutcome, MediaUrlResponse,
+    OpenViewSetOptions, OpenViewSetRequest, OpenViewSetResponse, PeerDirection,
     PeerDisconnectReason, PeerFieldCapabilities, PeerFlagView, PeerLifecycle, PeerMseMethodView,
     PeerRequestPhase, PeerRole, PeerSourceView, PeerTransportKind, PeerView,
     PortMappingFailureStage, PortMappingMechanism, PortMappingPolicy, PortMappingStatus,
@@ -227,6 +228,10 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ApiErrorEnvelope>(&mut declarations)?;
     append::<ChooseDownloadRootRequest>(&mut declarations)?;
     append::<ChooseDownloadRootResponse>(&mut declarations)?;
+    append::<CreateMediaUrlRequest>(&mut declarations)?;
+    append::<MediaFileAvailability>(&mut declarations)?;
+    append::<MediaUrlOutcome>(&mut declarations)?;
+    append::<MediaUrlResponse>(&mut declarations)?;
     append::<ApiEncoding>(&mut declarations)?;
     append::<DeliveryMode>(&mut declarations)?;
     append::<ApiVersion>(&mut declarations)?;
@@ -270,6 +275,8 @@ fn write_schema(output: &Path) -> Result<(), Box<dyn Error>> {
     add_schema::<ApiErrorEnvelope>(&mut definitions, "ApiErrorEnvelope")?;
     add_schema::<ChooseDownloadRootRequest>(&mut definitions, "ChooseDownloadRootRequest")?;
     add_schema::<ChooseDownloadRootResponse>(&mut definitions, "ChooseDownloadRootResponse")?;
+    add_schema::<CreateMediaUrlRequest>(&mut definitions, "CreateMediaUrlRequest")?;
+    add_schema::<MediaUrlResponse>(&mut definitions, "MediaUrlResponse")?;
     add_schema::<ApiHello>(&mut definitions, "ApiHello")?;
     add_schema::<AddTorrentBytesRequest>(&mut definitions, "AddTorrentBytesRequest")?;
     add_schema::<RequestEnvelope>(&mut definitions, "RequestEnvelope")?;
