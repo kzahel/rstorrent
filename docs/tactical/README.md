@@ -637,13 +637,18 @@ that scope and its cleanup or compatibility rules explicitly.
   and full tracker lifecycle into the standalone resumable path, and proves
   controlled pinned-libtorrent trust plus bounded public dispatch.
 - [`137-product-utp-path-mtu-discovery.md`](137-product-utp-path-mtu-discovery.md):
-  active; implements fragmentation-protected dynamic IPv4 product-uTP MTU,
-  conservative fixed-548 fallback, path revalidation, and controlled platform
-  evidence.
+  complete; implements fragmentation-protected dynamic IPv4 product-uTP MTU,
+  conservative fixed-548 fallback, path revalidation, protected-send repair,
+  and controlled desktop/Android platform evidence.
 - [`138-verified-http-file-serving.md`](138-verified-http-file-serving.md):
   complete; implements verified logical-file reads, bounded volatile
   capabilities, shared gateway/Tauri HTTP serving, React/Tauri Open, and
   proportional Android compatibility evidence.
+- [`139-incomplete-file-streaming-demand.md`](139-incomplete-file-streaming-demand.md):
+  source-reviewed and ready for explicit implementation authorization;
+  defines compact current/ahead demand, verified active-storage reads,
+  time-critical peer scheduling, progressive HTTP fulfillment, and bounded
+  browser/Tauri client integration.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

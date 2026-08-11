@@ -383,19 +383,21 @@ Tactical
 logical-file reads, bounded volatile capabilities, the shared gateway/Tauri
 media router, and the React/Tauri Files `Open` action pass repository, web,
 desktop, and Android compatibility gates. Android retains its native
-complete-file open and starts no HTTP listener. Maintainer direction now
-reactivates Tactical `137` for end-to-end implementation. Tactical `137` is
-now complete with controlled desktop, Android AVD, and repository evidence.
+complete-file open and starts no HTTP listener. Maintainer direction
+subsequently reactivated Tactical `137` for end-to-end implementation; it is
+complete with controlled desktop, Android AVD, and repository evidence.
 
 ## Current Queue
 
 ### Now
 
-- **Campaign review after dynamic uTP path-MTU closure.** Tactical
-  [`137`](../tactical/137-product-utp-path-mtu-discovery.md) is complete. The
-  sole **Now** is maintainer selection of the next bounded tactical; no new
-  implementation slice is authorized implicitly. Durable seeding goals remain
-  the leading ready policy-planning candidate below.
+- **Incomplete-file streaming review and implementation decision.** Source-
+  reviewed Tactical
+  [`139`](../tactical/139-incomplete-file-streaming-demand.md) defines compact
+  current/ahead demand, verified active-storage reads, time-critical peer
+  scheduling, and progressive HTTP fulfillment. Maintainer direction selected
+  and authorized this planning record, not implementation. Review and explicit
+  implementation authorization are the sole **Now**.
 
 ### Next
 
@@ -409,8 +411,7 @@ Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,
 NAT traversal, v2 and hybrid torrents,
-playback-oriented file priorities, dynamic
-VPN and metered-network controls, incomplete-file streaming, and production
+dynamic VPN and metered-network controls, and production
 remote access remain
 important. Tactical `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
@@ -435,7 +436,8 @@ Linux/Android/macOS platform adapters, revalidation/downward recovery,
 protected-send product runtime integration, controlled path, efficiency,
 rate, and pinned-libtorrent application evidence. Both Android ABIs and the
 API 34 AVD option/send/replacement/application/cleanup matrix pass. The next
-bounded tactical awaits maintainer selection.
+bounded engine/product candidate is source-reviewed Tactical `139`; its
+implementation still awaits explicit maintainer direction.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

@@ -4,8 +4,9 @@ Topic: `http-file-serving-and-streaming`
 
 Status: Product and architecture direction accepted on 2026-08-07. Completed
 Tactical [`138`](../tactical/138-verified-http-file-serving.md) implements
-bounded HTTP reads of verified torrent files end to end. Incomplete-file
-streaming remains a later separately authorized slice.
+bounded HTTP reads of verified torrent files end to end. Source-reviewed
+Tactical [`139`](../tactical/139-incomplete-file-streaming-demand.md) now owns
+the incomplete-file slice; implementation still requires explicit direction.
 
 ## Purpose And Scope
 
@@ -69,12 +70,14 @@ The local JSTorrent reference implements that product layer explicitly:
 
 - `desktop/io-daemon/src/media.rs` registers opaque stream tokens, serves
   `GET`/`HEAD`, implements HTTP ranges, and emits bounded response chunks;
+- `packages/engine/src/core/streaming-scheduler.ts` merges tokenized transient
+  demand without rewriting durable Skip selection;
 - `packages/engine/src/node-io-daemon/engine-http-stream-bridge.ts` binds a
   stream session to one torrent/file and waits for requested verified ranges;
 - `packages/engine/src/streaming/streaming-playback-session.ts` owns playhead
-  demand and cancellation; and
-- `packages/engine/src/core/file-priority-manager.ts` overlays temporary
-  streaming piece and file priority without rewriting durable user selection.
+  current/ahead demand and cancellation; and
+- `packages/engine/src/node-io-daemon/daemon-runtime.ts` performs progressive
+  wait-then-read response fulfillment.
 
 Adopt the separation among HTTP response ownership, stream-session demand,
 and torrent scheduling. Do not inherit JSTorrent's companion-daemon topology:
@@ -236,12 +239,15 @@ cannot assume a stable path or lend a path to the client. Symlink, replacement,
 length, generation, grant-loss, and dynamic-handle behavior stay behind the
 existing storage authorities.
 
-## Future Incomplete-File Streaming
+## Planned Incomplete-File Streaming
 
 Incomplete streaming extends the verified reader; it does not weaken it. An
 HTTP request for an absent range registers bounded transient demand, waits
 until all intersecting pieces are hash verified, and only then reads and emits
-the bytes.
+the bytes. Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) is the source-
+reviewed, decision-complete execution plan. It is not active until explicit
+implementation authorization.
 
 The stream-session owner must:
 
@@ -263,7 +269,7 @@ The stream-session owner must:
   body, capability, torrent, profile, or application terminates.
 
 Players commonly open more than one range, seek, probe container metadata at
-the tail, and abandon responses. A future tactical therefore needs scripted
+the tail, and abandon responses. Tactical `139` therefore requires scripted
 HTTP clients and real player-shaped traces; completing pieces in monotonically
 increasing order is not sufficient evidence.
 
@@ -276,7 +282,7 @@ application/profile owner
        -> bounded capability registry
        -> bounded HTTP request owners
             -> verified logical-range read
-            -> future: stream-demand lease + verified-range wait
+            -> planned: stream-demand lease + verified-range wait
   -> profile/torrent/storage generation authorities
   -> shutdown
        -> stop accepts
@@ -327,7 +333,7 @@ The verified-serving tactical should include:
 - unchanged workspace, adapters, hosted gateway, Tauri, and proportional
   Android build evidence.
 
-Incomplete streaming later adds deterministic seek/probe/look-ahead traces,
+Tactical `139` adds deterministic seek/probe/look-ahead traces,
 piece-boundary and padding fixtures, corruption and retry, stalled peers,
 storage pressure, several concurrent streams, exact hash verification, and
 controlled libtorrent scheduling comparison. Public swarms are optional and
@@ -371,7 +377,8 @@ and deliberate deferrals.
 
 ## Recommended Next Work
 
-Only after explicit selection should a separate **incomplete-file streaming**
-tactical add stream-demand ownership, verified-range waits, and time-critical
-scheduling. Stable sharing, remote exposure, playback UI, and transcoding
-remain independent product decisions.
+Review and, if accepted, explicitly authorize Tactical `139` to add stream-
+demand ownership, verified-range waits, time-critical scheduling, and
+progressive HTTP fulfillment. Stable sharing, remote exposure, playback UI,
+Android streaming presentation, and transcoding remain independent product
+decisions.
