@@ -30,13 +30,14 @@ Eventual iOS product root behavior is accepted in shape but unimplemented.
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 physically proves app-owned Documents and coordinated, security-scoped
-restoration of an app-owned bookmarked fixture. System-picker automation did
-not reach a separate local-provider root, so external **On My iPhone** and File
-Provider support remained unproven. Completed Tactical
+restoration of an app-owned bookmarked fixture. Completed Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
-therefore proves stable app-owned persistence and interrupted recovery and
-compiles picker-root registration off. App-owned Documents is the sole root
-assumption for the first complete iOS product tactical.
+proves stable app-owned persistence and interrupted recovery. Its later
+physical picker controls reject iCloud as ubiquitous but leave a distinct
+**On My iPhone** directory unclassifiable after the public File Provider
+lookup fails. Picker-root registration therefore remains compiled off, and
+app-owned Documents is the sole root assumption for the first complete iOS
+product tactical.
 
 ## Scope
 
@@ -289,12 +290,13 @@ Tactical `116` proves app-owned Documents plus non-stale bookmark restoration,
 balanced security scope, and coordination around Rust-owned I/O on a physical
 device. Tactical `123` adds a versioned opaque app-owned record, generation-
 fenced interrupted-workspace recovery, exact resource accounting, and a
-fail-closed classifier. Physical UI automation still could not reach a
-separate local **On My iPhone** directory, and the required iCloud negative
-control did not run. Picker selection is consequently classification-only:
-it cannot persist a bookmark or root or invoke Rust. External local-provider,
-iCloud, offloaded-item, third-party-provider, relocation, and cloud-export
-behavior require separate tacticals.
+fail-closed classifier. Physical picker controls report the separate local
+**On My iPhone** directory as `unclassifiable/provider_lookup_failed` and the
+iCloud negative control as `unsupported_provider/ubiquitous`; both report
+local and internal volume flags. Picker selection consequently remains
+classification-only: it cannot persist a bookmark or root or invoke Rust.
+External local-provider, iCloud, offloaded-item, third-party-provider,
+relocation, and cloud-export behavior require separate tacticals.
 
 ## User-Visible Publication Layout
 

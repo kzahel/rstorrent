@@ -89,9 +89,11 @@ selection, bookmarks and security-scope lifetime, File Provider coordination,
 background-task integration, and other Apple lifecycle work. Rust still owns
 peer networking, hashing, scheduling, persistence, and payload I/O. Tactical
 `116` proves the bounded direct-I/O seam, and Tactical `123` proves app-owned
-Documents persistence and recovery on a physical device. Because the required
-local/iCloud classification controls could not run, picker-root registration
-is compiled off. Payload callbacks through Swift are not the fallback.
+Documents persistence and recovery on a physical device. Its completed picker
+controls reject iCloud as ubiquitous but cannot positively classify the
+separate local directory after a public File Provider lookup failure, so
+picker-root registration remains compiled off. Payload callbacks through
+Swift are not the fallback.
 
 ### Generated Kotlin boundary
 

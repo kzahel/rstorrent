@@ -1,9 +1,9 @@
 import Foundation
 
 enum ProbeRootPolicy {
-    // Physical automation cannot currently exercise a distinct On My iPhone
-    // directory and an iCloud negative control. Keep the picker available only
-    // as a non-mutating classifier until both controls graduate this gate.
+    // Physical controls classify iCloud as ubiquitous, but the distinct local
+    // directory remains unclassifiable after its File Provider lookup fails.
+    // Keep the picker non-mutating rather than infer locality from volume flags.
     static let selectedRootRegistrationEnabled = false
 }
 

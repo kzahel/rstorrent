@@ -180,8 +180,10 @@ distribution, background policy, and UI reuse strategy wait for a dedicated
 product tactical. Tactical `116` records physical storage, direct TCP/UDP, and
 lifecycle feasibility; Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
-records app-owned root persistence and recovery and disables picker-backed
-roots. The first client tactical may assume only app-owned Documents.
+records app-owned root persistence and recovery. Its physical picker controls
+reject iCloud but cannot positively classify a distinct local directory, so
+picker-backed roots remain disabled. The first client tactical may assume only
+app-owned Documents.
 
 Desktop product content is web UI. Native desktop code is limited to the
 application shell and operating-system integration such as process and window

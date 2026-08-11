@@ -237,9 +237,11 @@ Tactical
 complete with the accepted app-owned-only outcome. A versioned opaque probe
 root, fail-closed eligibility state, per-operation coordination, exact partial-
 workspace recovery, and balanced resource evidence pass on a physical iPhone.
-The required separate On My iPhone and iCloud controls could not run because
-physical XCTest automation timed out and iPhone Mirroring was unavailable, so
-picker registration is compiled off and no provider support is claimed.
+The later dedicated-testbed run reaches both physical picker controls. iCloud
+is rejected as ubiquitous, while a separate On My iPhone directory remains
+unclassifiable after its public File Provider lookup fails; both report local
+and internal volume flags. Picker registration is therefore still compiled
+off and no provider support is claimed.
 
 Tactical
 [`117`](../tactical/117-jstorrent-shaped-android-product-ui.md) is complete.

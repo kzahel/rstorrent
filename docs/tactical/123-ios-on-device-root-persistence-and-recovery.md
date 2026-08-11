@@ -1,11 +1,12 @@
 # Tactical 123: iOS On-Device Root Persistence And Recovery
 
-Status: Complete on 2026-08-10 with the accepted app-owned-only outcome.
+Status: Complete on 2026-08-10 with the accepted app-owned-only outcome;
+physical picker controls completed on 2026-08-11 and preserve that result.
 Maintainer review accepts an on-device-only payload-root policy for the first
-eventual iOS implementation. The physical app-owned matrix passes; picker-root
-registration is compiled off because the required local/iCloud controls could
-not be exercised on the authorized device. This does not authorize or claim a
-complete iOS client.
+eventual iOS implementation. The physical app-owned matrix passes. A distinct
+system-picked local directory fails closed as unclassifiable, while iCloud is
+rejected as ubiquitous, so picker-root registration remains compiled off.
+This does not authorize or claim a complete iOS client.
 
 Topics: `product-direction`, `product-surfaces-and-migration`,
 `client-surfaces`, `download-roots`, `client-persistence`,
@@ -86,7 +87,7 @@ The first complete iOS client tactical may therefore assume app-owned
 Documents and, only if graduated here, a selected **On My iPhone** root. It may
 not infer general File Provider support from either case.
 
-## Current Evidence And Gap
+## Starting Evidence And Gap
 
 Tactical `116` already proves on an iPhone SE (3rd generation) running iOS
 26.6 that the real Rust `StorageFilePool`, positional file operations, SHA-1,
@@ -726,28 +727,60 @@ lifecycle evidence, not indefinite torrent background authority.
 
 ### Picker gate and accepted negative result
 
-The authorized physical UI-test attempt failed before application interaction
-because the device timed out while enabling XCTest automation mode, reproducing
-the Tactical `116` limitation. Apple iPhone Mirroring was also unavailable for
-this Mac/device pairing. Therefore neither a distinct empty **On My iPhone**
-directory nor an empty iCloud Drive directory was selected. No cloud directory
-was created, read, bookmarked, registered, or mutated, and no provider
-identifier was retained.
+The first authorized physical UI-test attempt timed out before application
+interaction while enabling XCTest automation mode, reproducing the Tactical
+`116` limitation. Apple iPhone Mirroring was also unavailable for this
+Mac/device pairing. The later dedicated-testbed follow-up resumed after a
+physical Touch ID prompt to enable UI automation was approved by the
+maintainer. The testbed `prepare` gate then passed and semantic automation
+reached the system document picker on the same iPhone and signed build.
 
-This absent control cannot graduate selected-local storage. The implementation
-responds by disabling picker-root registration entirely, so there is no need
-to run bookmark relaunch, permission, repair, rename/move, or selected-root
-force-close cases. Those cases are inapplicable until a future tactical first
-obtains both physical classification controls and deliberately changes the
-compiled policy. App-owned Documents is consequently the sole supported root
-result for the first iOS client tactical.
+A dedicated empty **On My iPhone** directory produced this bounded result on
+two selections:
 
-The final signed build was installed fresh after that policy was compiled in.
-It reported one app-owned root at generation 1, selected roots disabled with
-`fallback=false`, passing Rust storage and networking, descriptors 7/8/7, and
-zero terminal Swift resources. The probe app was then uninstalled. Temporary
-evidence and build output were removed, the simulator copy was uninstalled,
-and no cloud control directory or other provider content required cleanup.
+```text
+class=unclassifiable reason=provider_lookup_failed
+fileURL=true directory=true symlink=false overlapsAppOwned=false
+ubiquitous=false local=true internal=true provider=failed
+bookmark=false root=false rust=false
+```
+
+The empty iCloud Drive root was selected as the separately authorized negative
+control without creating cloud content. It produced:
+
+```text
+class=unsupported_provider reason=ubiquitous
+fileURL=true directory=true symlink=false overlapsAppOwned=false
+ubiquitous=true local=true internal=true provider=failed
+bookmark=false root=false rust=false
+```
+
+Both selections reported the volume as local and internal, demonstrating why
+those flags cannot establish torrent-root locality by themselves. The
+ubiquitous observation rejects iCloud before persistence or mutation, but the
+failed public File Provider lookup prevents the distinct local directory from
+graduating. The repeated local result was identical. Each classifier run
+peaked at one security scope, coordinator, eligibility request, and root
+operation; every current count returned to zero.
+
+The registry remained `schema=1 roots=1 appGeneration=1
+selectedGeneration=nil pending=none` after every selection. No bookmark,
+selected-root record, Rust call, payload file, provider identifier, or fallback
+was produced. Selected-local bookmark, permission, repair, rename/move, and
+force-close cases are therefore inapplicable: the positive eligibility gate
+never passed. App-owned Documents remains the sole supported root result for
+the first iOS client tactical.
+
+A final relaunch repeated app-owned storage with the expected SHA-1 and
+65,536/40,960-byte geometry, rejected the rename collision, cleaned its
+workspace, returned the Rust pool to zero cached and owned handles, and
+returned process descriptors from eight to seven. Swift current resources
+were all zero. The three exact empty folders created while operating the
+picker were deleted through Files; **On My iPhone** then contained only the
+pre-existing JSTorrent directory and the probe app's own directory. The probe
+app was uninstalled; a final Files snapshot then showed only the pre-existing
+JSTorrent directory. Temporary evidence, screenshots, and build output were
+removed. No iCloud content was created or required cleanup.
 
 ### Physical testbed follow-up
 
@@ -785,13 +818,22 @@ background run completed the finite continued-processing task, expired the
 ordinary UIKit assertion after 42 seconds, and retained zero current scopes,
 coordinators, root operations, or eligibility requests.
 
-No document-picker selection occurred during this follow-up, so the enabled
-policy and support claims do not change. Resume only with the maintainer near
-the phone: run the provider `probe`, `doctor`, and `prepare` sequence, complete
-any local authentication prompt, then hold one transactional session across a
-fresh semantic snapshot and the dedicated empty **On My iPhone** and iCloud
-classification controls. Do not enable selected-root registration from the
-mere fact that the runner reconnects.
+On 2026-08-11 the resumed `prepare` exposed the human-attended Touch ID prompt
+to enable XCTest UI automation. The maintainer approved it; there is no testbed
+bypass for that protected device authorization. `prepare`, `probe`, and
+`doctor` then passed, with the latter reporting Agent Device 0.20.5, the iPhone
+SE (3rd generation) on iOS 26.6 connected and unlocked over USB, Developer
+Mode and Developer Tools security enabled, valid signing, and a ready XCTest
+cache.
+
+One transactional semantic session reached the probe's folder picker and the
+Files locations view. It selected and classified the dedicated empty **On My
+iPhone** directory, selected the empty iCloud Drive root as the non-mutating
+negative control, and repeated the local selection. The exact results and
+resource bounds are recorded in the picker-gate section above. The testbed
+also selected only the three run-owned empty folders for deletion and verified
+that the two pre-existing local directories remained. This completes the
+previous resume checkpoint without changing the app-owned-only support policy.
 
 ## Deliberate Non-Goals And Next Boundary
 
