@@ -29,7 +29,9 @@ use crate::mse::{
     MseHandshakeSink, record_mse_handshake,
 };
 use crate::network::{AddressFamilyPolicy, NetworkConfig, PeerEncryptionPolicy};
-use crate::peer::{DialAttempt, DialAttemptId, MseEndpointState, PeerFailure, UtpDialDecision};
+use crate::peer::{
+    DialAttempt, DialAttemptId, MseEndpointState, PeerFailure, UtpConnectOutcome, UtpDialDecision,
+};
 use crate::peer_budget::{PeerBudget, PeerBudgetDirection, PeerBudgetPermit, PeerBudgetRejection};
 use crate::peer_io::{NETWORK_READ_LENGTH, PeerIo, PeerIoError, record_bytes};
 use crate::peer_runtime::{PeerTransport, connection_id};
@@ -182,12 +184,14 @@ pub(crate) async fn connect(
     network: NetworkConfig,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let mse_dh = MseDhWorkOwner::new();
+    let mut utp_outcome = None;
     let result = connect_with_progress(
         attempt,
         info_hash,
         advertise_extensions,
         network,
         None,
+        &mut utp_outcome,
         ConnectResources {
             progress: None,
             byte_metric_sink: None,
@@ -207,6 +211,7 @@ async fn connect_with_progress(
     advertise_extensions: bool,
     network: NetworkConfig,
     utp: Option<UtpHandle>,
+    utp_outcome: &mut Option<UtpConnectOutcome>,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
     let address = attempt.endpoint().address();
@@ -236,6 +241,7 @@ async fn connect_with_progress(
             .connect_with_timeout(address, network.peer_connect_timeout)
             .await;
         if let Ok(stream) = stream {
+            *utp_outcome = Some(UtpConnectOutcome::Connected);
             return connect_utp_with_progress(
                 stream,
                 attempt,
@@ -246,6 +252,7 @@ async fn connect_with_progress(
             )
             .await;
         }
+        *utp_outcome = Some(UtpConnectOutcome::Failed);
     }
     connect_tcp_with_progress(attempt, info_hash, advertise_extensions, network, resources).await
 }
@@ -1066,13 +1073,14 @@ pub(crate) enum PeerSetEvent {
     },
     DialCompleted {
         attempt: DialAttempt,
+        utp_outcome: Option<UtpConnectOutcome>,
         result: Box<ConnectedPeerResult>,
     },
     Peer(PeerTaskEvent),
 }
 
 type ConnectedPeerResult = Result<(PeerConnection, Handshake), PeerSocketError>;
-type PendingDialResult = (DialAttempt, ConnectedPeerResult);
+type PendingDialResult = (DialAttempt, Option<UtpConnectOutcome>, ConnectedPeerResult);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PeerDialProgress {
@@ -1226,6 +1234,7 @@ impl PeerSocketSet {
         self.pending_attempts
             .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
+            let mut utp_outcome = None;
             let result = tokio::select! {
                 biased;
                 _ = cancellation.cancelled() => Err(PeerSocketError::Cancelled),
@@ -1236,6 +1245,7 @@ impl PeerSocketSet {
                     advertise_extensions,
                     network,
                     utp,
+                    &mut utp_outcome,
                     ConnectResources {
                         progress: Some(&progress),
                         byte_metric_sink,
@@ -1245,7 +1255,7 @@ impl PeerSocketSet {
                     },
                 ) => result,
             };
-            (attempt, result)
+            (attempt, utp_outcome, result)
         });
         Ok(())
     }
@@ -1299,12 +1309,13 @@ impl PeerSocketSet {
                 .map(PeerSetEvent::Peer)
                 .ok_or(PeerSetError::EventQueueClosed),
             joined = self.pending.join_next() => {
-                let (attempt, result) = joined
+                let (attempt, utp_outcome, result) = joined
                     .expect("pending dial set is nonempty")
                     .map_err(PeerSetError::TaskJoin)?;
                 self.pending_attempts.remove(&attempt.id());
                 Ok(PeerSetEvent::DialCompleted {
                     attempt,
+                    utp_outcome,
                     result: Box::new(result),
                 })
             }
@@ -1324,23 +1335,22 @@ impl PeerSocketSet {
         Ok(attempt)
     }
 
-    pub(crate) async fn shutdown(mut self) -> Result<Vec<DialAttempt>, PeerSetError> {
+    pub(crate) async fn shutdown(
+        mut self,
+    ) -> Result<Vec<(DialAttempt, Option<UtpConnectOutcome>)>, PeerSetError> {
         for task in self.tasks.values() {
             task.cancel();
         }
         for (_, task) in self.tasks {
             task.join.await.map_err(PeerSetError::TaskJoin)?;
         }
-        let pending = self
-            .pending_attempts
-            .values()
-            .map(|(attempt, _)| *attempt)
-            .collect::<Vec<_>>();
         for (_, cancellation) in self.pending_attempts.into_values() {
             cancellation.cancel();
         }
+        let mut pending = Vec::new();
         while let Some(joined) = self.pending.join_next().await {
-            drop(joined.map_err(PeerSetError::TaskJoin)?);
+            let (attempt, utp_outcome, _) = joined.map_err(PeerSetError::TaskJoin)?;
+            pending.push((attempt, utp_outcome));
         }
         Ok(pending)
     }
@@ -1466,7 +1476,7 @@ mod tests {
     use crate::network::{NetworkConfig, NetworkPolicy, PeerEncryptionPolicy};
     use crate::peer::{
         DialAttempt, MseEndpointState, PeerEndpoint, PeerObservation, PeerRegistry,
-        PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource,
+        PeerRegistryConfig, PeerSelectionContext, PeerSelector, PeerSource, UtpConnectOutcome,
     };
     use crate::peer_budget::{PeerBudget, PeerBudgetConfig, PeerBudgetPhase};
     use crate::{PeerTransport, SessionUdpService, UtpService};
@@ -1505,12 +1515,14 @@ mod tests {
         sink: Arc<RecordingMseSink>,
     ) -> Result<(PeerConnection, rstorrent_protocol::peer_wire::Handshake), PeerSocketError> {
         let mse_dh = MseDhWorkOwner::new();
+        let mut utp_outcome = None;
         let result = connect_with_progress(
             attempt,
             info_hash,
             advertise_extensions,
             network,
             None,
+            &mut utp_outcome,
             ConnectResources {
                 progress: None,
                 byte_metric_sink: Some(sink.clone()),
@@ -1903,9 +1915,11 @@ mod tests {
         {
             PeerSetEvent::DialCompleted {
                 attempt: actual,
+                utp_outcome,
                 result,
             } => {
                 assert_eq!(actual, attempt);
+                assert_eq!(utp_outcome, None);
                 let Ok((connection, _)) = *result else {
                     panic!("dial unexpectedly failed");
                 };
@@ -2050,7 +2064,14 @@ mod tests {
             .expect("uTP handshake deadline")
             .expect("uTP handshake event")
         {
-            PeerSetEvent::DialCompleted { result, .. } => result.expect("uTP dial succeeds").0,
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Connected));
+                result.expect("uTP dial succeeds").0
+            }
             event => panic!("unexpected uTP event {event:?}"),
         };
         assert_eq!(connection.transport(), PeerTransport::Utp);
@@ -2068,6 +2089,226 @@ mod tests {
         let server_terminal = server_utp.shutdown().await.expect("server uTP shutdown");
         assert_eq!(client_terminal.active_connections, 0);
         assert_eq!(server_terminal.active_connections, 0);
+        client_udp.shutdown().await.expect("client UDP shutdown");
+        server_udp.shutdown().await.expect("server UDP shutdown");
+    }
+
+    #[tokio::test]
+    async fn utp_handshake_failure_retains_transport_capability_outcome() {
+        const INFO_HASH: [u8; 20] = [0x81; 20];
+        let client_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let server_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind server UDP");
+        let server_address = server_socket.local_addr().expect("server address");
+        let (mut client_udp, _) = SessionUdpService::start(client_socket).expect("client UDP");
+        let (mut server_udp, _) = SessionUdpService::start(server_socket).expect("server UDP");
+        let client_utp = UtpService::start(&mut client_udp).expect("client uTP");
+        let mut server_utp = UtpService::start(&mut server_udp).expect("server uTP");
+        let server = tokio::spawn(async move {
+            let mut stream = server_utp.accept().await.expect("uTP stream");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read uTP handshake");
+            stream
+                .write_all(&encode_handshake([0x82; 20], [0x83; 20]))
+                .await
+                .expect("write mismatched handshake");
+            stream.flush().await.expect("flush handshake");
+            server_utp
+        });
+        let attempt = test_attempt_for(server_address);
+        let mut sockets = PeerSocketSet::new();
+        sockets
+            .begin_dial(
+                attempt,
+                INFO_HASH,
+                false,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ),
+                PeerDialServices {
+                    utp: Some(client_utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin dial");
+        assert!(matches!(
+            sockets.next_event().await.expect("uTP phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Utp,
+                ..
+            }
+        ));
+        match sockets.next_event().await.expect("dial completion") {
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Connected));
+                assert!(matches!(
+                    *result,
+                    Err(PeerSocketError::Handshake(
+                        rstorrent_protocol::peer_wire::HandshakeError::InfoHashMismatch
+                    ))
+                ));
+            }
+            event => panic!("unexpected event {event:?}"),
+        }
+        assert!(
+            sockets
+                .shutdown()
+                .await
+                .expect("socket shutdown")
+                .is_empty()
+        );
+        let server_utp = server.await.expect("server task");
+        assert_eq!(
+            client_utp
+                .shutdown()
+                .await
+                .expect("client uTP shutdown")
+                .active_connections,
+            0
+        );
+        assert_eq!(
+            server_utp
+                .shutdown()
+                .await
+                .expect("server uTP shutdown")
+                .active_connections,
+            0
+        );
+        client_udp.shutdown().await.expect("client UDP shutdown");
+        server_udp.shutdown().await.expect("server UDP shutdown");
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_utp_result_retains_no_capability_outcome() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
+        let target = listener.local_addr().expect("target");
+        let socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let (mut udp, _) = SessionUdpService::start(socket).expect("session UDP");
+        let utp = UtpService::start(&mut udp).expect("client uTP");
+        let attempt = test_attempt_for(target);
+        let mut sockets = PeerSocketSet::new();
+        sockets
+            .begin_dial(
+                attempt,
+                [0x91; 20],
+                false,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(5),
+                    Duration::from_secs(1),
+                ),
+                PeerDialServices {
+                    utp: Some(utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin dial");
+        timeout(Duration::from_secs(1), async {
+            while utp.snapshot().active_connections == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("uTP worker start");
+        let pending = timeout(Duration::from_secs(1), sockets.shutdown())
+            .await
+            .expect("socket shutdown deadline")
+            .expect("socket shutdown");
+        assert_eq!(pending, vec![(attempt, None)]);
+        assert_eq!(utp.snapshot().active_connections, 0);
+        assert_eq!(
+            utp.shutdown()
+                .await
+                .expect("uTP shutdown")
+                .active_connections,
+            0
+        );
+        udp.shutdown().await.expect("UDP shutdown");
+        drop(listener);
+    }
+
+    #[tokio::test]
+    async fn shutdown_after_utp_connect_retains_confirmed_outcome() {
+        let client_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let server_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind server UDP");
+        let server_address = server_socket.local_addr().expect("server address");
+        let (mut client_udp, _) = SessionUdpService::start(client_socket).expect("client UDP");
+        let (mut server_udp, _) = SessionUdpService::start(server_socket).expect("server UDP");
+        let client_utp = UtpService::start(&mut client_udp).expect("client uTP");
+        let mut server_utp = UtpService::start(&mut server_udp).expect("server uTP");
+        let (release_tx, release_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let stream = server_utp.accept().await.expect("uTP stream");
+            release_rx.await.expect("release server stream");
+            drop(stream);
+            server_utp
+        });
+        let attempt = test_attempt_for(server_address);
+        let mut sockets = PeerSocketSet::new();
+        sockets
+            .begin_dial(
+                attempt,
+                [0xa2; 20],
+                false,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(1),
+                    Duration::from_secs(5),
+                ),
+                PeerDialServices {
+                    utp: Some(client_utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin dial");
+        assert!(matches!(
+            sockets.next_event().await.expect("uTP phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Utp,
+                ..
+            }
+        ));
+        let pending = timeout(Duration::from_secs(1), sockets.shutdown())
+            .await
+            .expect("socket shutdown deadline")
+            .expect("socket shutdown");
+        assert_eq!(pending, vec![(attempt, Some(UtpConnectOutcome::Connected))]);
+        release_tx.send(()).expect("release server stream");
+        let server_utp = server.await.expect("server task");
+        assert_eq!(
+            client_utp
+                .shutdown()
+                .await
+                .expect("client uTP shutdown")
+                .active_connections,
+            0
+        );
+        assert_eq!(
+            server_utp
+                .shutdown()
+                .await
+                .expect("server uTP shutdown")
+                .active_connections,
+            0
+        );
         client_udp.shutdown().await.expect("client UDP shutdown");
         server_udp.shutdown().await.expect("server UDP shutdown");
     }
@@ -2134,7 +2375,14 @@ mod tests {
             .expect("fallback handshake deadline")
             .expect("fallback handshake event")
         {
-            PeerSetEvent::DialCompleted { result, .. } => result.expect("TCP fallback succeeds").0,
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Failed));
+                result.expect("TCP fallback succeeds").0
+            }
             event => panic!("unexpected fallback event {event:?}"),
         };
         assert_eq!(connection.transport(), PeerTransport::Tcp);
@@ -2146,6 +2394,198 @@ mod tests {
                 .shutdown()
                 .await
                 .expect("socket shutdown")
+                .is_empty()
+        );
+        let terminal = utp.shutdown().await.expect("uTP shutdown");
+        assert_eq!(terminal.active_connections, 0);
+        udp.shutdown().await.expect("UDP shutdown");
+        server.await.expect("TCP server task");
+    }
+
+    #[tokio::test]
+    async fn suppressed_endpoint_retries_tcp_without_another_utp_datagram() {
+        const INFO_HASH: [u8; 20] = [0xe5; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind TCP");
+        let target = listener.local_addr().expect("TCP target");
+        let server = tokio::spawn(async move {
+            for peer_id in [[0xf6; 20], [0xf7; 20]] {
+                let (mut stream, _) = listener.accept().await.expect("accept TCP");
+                let mut handshake = [0; HANDSHAKE_LENGTH];
+                stream
+                    .read_exact(&mut handshake)
+                    .await
+                    .expect("read TCP handshake");
+                decode_handshake(&handshake, INFO_HASH).expect("decode TCP handshake");
+                stream
+                    .write_all(&encode_handshake(INFO_HASH, peer_id))
+                    .await
+                    .expect("write TCP handshake");
+            }
+        });
+        let socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let (mut udp, _) = SessionUdpService::start(socket).expect("session UDP");
+        let utp = UtpService::start(&mut udp).expect("client uTP");
+        let endpoint = PeerEndpoint::new(target).expect("endpoint");
+        let mut registry = PeerRegistry::new(PeerRegistryConfig::default()).expect("registry");
+        registry
+            .observe(
+                PeerObservation::dialable(endpoint, PeerSource::Manual),
+                Duration::ZERO,
+            )
+            .expect("observe endpoint");
+        let budget = PeerBudget::new(PeerBudgetConfig {
+            configured_limit: 1,
+            incoming_slack: 0,
+            max_open_files: 10_000,
+        });
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+        );
+
+        let first_candidate = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("first candidate");
+        let first_attempt = registry
+            .begin_dial(
+                first_candidate,
+                PeerSelectionContext {
+                    now: Duration::ZERO,
+                },
+            )
+            .expect("first attempt");
+        let mut first_sockets = PeerSocketSet::with_budget(budget.clone());
+        first_sockets
+            .begin_dial(
+                first_attempt,
+                INFO_HASH,
+                false,
+                network,
+                PeerDialServices {
+                    utp: Some(utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin first dial");
+        assert!(matches!(
+            timeout(Duration::from_secs(1), first_sockets.next_event())
+                .await
+                .expect("first phase deadline")
+                .expect("first phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Tcp,
+                ..
+            }
+        ));
+        let first_connection = match first_sockets.next_event().await.expect("first completion") {
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, Some(UtpConnectOutcome::Failed));
+                registry
+                    .record_utp_outcome(
+                        first_attempt,
+                        Duration::from_millis(100),
+                        utp_outcome.expect("uTP outcome"),
+                    )
+                    .expect("record uTP failure");
+                result.expect("first TCP fallback").0
+            }
+            event => panic!("unexpected first event {event:?}"),
+        };
+        registry
+            .dial_succeeded(first_attempt, Duration::from_millis(101))
+            .expect("first dial succeeded");
+        drop(first_connection);
+        registry
+            .connection_closed(first_attempt, Duration::from_millis(102), None)
+            .expect("first connection closed");
+        assert!(
+            first_sockets
+                .shutdown()
+                .await
+                .expect("first shutdown")
+                .is_empty()
+        );
+        let sent_after_probe = utp.snapshot().datagrams_sent;
+        assert!(sent_after_probe > 0);
+
+        let second_candidate = PeerSelector
+            .select(
+                &registry,
+                PeerSelectionContext {
+                    now: Duration::from_secs(1),
+                },
+            )
+            .expect("second candidate");
+        let second_attempt = registry
+            .begin_dial(
+                second_candidate,
+                PeerSelectionContext {
+                    now: Duration::from_secs(1),
+                },
+            )
+            .expect("second attempt");
+        assert_eq!(
+            second_attempt.utp_decision(),
+            crate::peer::UtpDialDecision::TcpWhileSuppressed
+        );
+        let mut second_sockets = PeerSocketSet::with_budget(budget.clone());
+        second_sockets
+            .begin_dial(
+                second_attempt,
+                INFO_HASH,
+                false,
+                network,
+                PeerDialServices {
+                    utp: Some(utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin second dial");
+        assert!(matches!(
+            timeout(Duration::from_secs(1), second_sockets.next_event())
+                .await
+                .expect("second phase deadline")
+                .expect("second phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Tcp,
+                ..
+            }
+        ));
+        let second_connection = match second_sockets
+            .next_event()
+            .await
+            .expect("second completion")
+        {
+            PeerSetEvent::DialCompleted {
+                utp_outcome,
+                result,
+                ..
+            } => {
+                assert_eq!(utp_outcome, None);
+                result.expect("direct TCP retry").0
+            }
+            event => panic!("unexpected second event {event:?}"),
+        };
+        assert_eq!(utp.snapshot().datagrams_sent, sent_after_probe);
+        assert_eq!(budget.snapshot().total_high_water, 1);
+        drop(second_connection);
+        assert!(
+            second_sockets
+                .shutdown()
+                .await
+                .expect("second shutdown")
                 .is_empty()
         );
         let terminal = utp.shutdown().await.expect("uTP shutdown");

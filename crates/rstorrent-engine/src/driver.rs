@@ -2193,6 +2193,20 @@ impl TorrentPeerCoordinator {
             .map_err(DownloadError::PeerRegistry)
     }
 
+    fn record_utp_outcome(
+        &mut self,
+        attempt: DialAttempt,
+        outcome: Option<crate::peer::UtpConnectOutcome>,
+    ) -> Result<(), DownloadError> {
+        let Some(outcome) = outcome else {
+            return Ok(());
+        };
+        let now = self.elapsed();
+        self.peers
+            .with_state(|state| state.registry.record_utp_outcome(attempt, now, outcome))
+            .map_err(DownloadError::PeerRegistry)
+    }
+
     fn dial_cancelled(&mut self, attempt: DialAttempt) -> Result<(), DownloadError> {
         let connection = connection_id(attempt);
         let now = self.elapsed();
@@ -2897,56 +2911,62 @@ impl TorrentPeerCoordinator {
                 MetadataSupervisorEvent::PolicyCheck => {}
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::DialCompleted {
                     attempt,
+                    utp_outcome,
                     result,
-                })) => match *result {
-                    Ok((connection, handshake)) => {
-                        let admission = self.dial_succeeded(attempt, &connection, &handshake)?;
-                        if let Some(failure) = admission_rejection_failure(admission) {
-                            self.connection_closed(attempt, Some(failure))?;
-                            continue;
-                        }
-                        self.control
-                            .metadata_peer_connected(attempt, handshake.supports_extensions());
-                        let cancellation = CancellationToken::new();
-                        worker_cancellations.insert(attempt.id(), (attempt, cancellation.clone()));
-                        let control = self.control.clone();
-                        let metadata = metadata.clone();
-                        let admission_cancellation = connection.budget_cancellation();
-                        workers.spawn(async move {
-                            run_metadata_peer(
-                                connection,
-                                handshake,
-                                cancellation,
-                                admission_cancellation,
-                                control,
-                                metadata,
-                            )
-                            .await
-                        });
-                    }
-                    Err(error) => {
-                        if matches!(&error, PeerSocketError::Cancelled) {
-                            self.dial_cancelled(attempt)?;
-                            self.control.metadata_peer_finished(
-                                attempt.id(),
-                                MetadataPeerStage::Cancelled,
-                                Some("metadata dial cancelled"),
-                            );
-                        } else {
-                            let detail = error.to_string();
-                            if let Some(endpoint) = error.mse_endpoint_update() {
-                                self.update_mse_endpoint(attempt, endpoint)?;
+                })) => {
+                    self.record_utp_outcome(attempt, utp_outcome)?;
+                    match *result {
+                        Ok((connection, handshake)) => {
+                            let admission =
+                                self.dial_succeeded(attempt, &connection, &handshake)?;
+                            if let Some(failure) = admission_rejection_failure(admission) {
+                                self.connection_closed(attempt, Some(failure))?;
+                                continue;
                             }
-                            self.dial_failed(attempt, error.peer_failure())?;
-                            self.last_error = Some(download_peer_socket_error(error));
-                            self.control.metadata_peer_finished(
-                                attempt.id(),
-                                MetadataPeerStage::Failed,
-                                Some(&detail),
-                            );
+                            self.control
+                                .metadata_peer_connected(attempt, handshake.supports_extensions());
+                            let cancellation = CancellationToken::new();
+                            worker_cancellations
+                                .insert(attempt.id(), (attempt, cancellation.clone()));
+                            let control = self.control.clone();
+                            let metadata = metadata.clone();
+                            let admission_cancellation = connection.budget_cancellation();
+                            workers.spawn(async move {
+                                run_metadata_peer(
+                                    connection,
+                                    handshake,
+                                    cancellation,
+                                    admission_cancellation,
+                                    control,
+                                    metadata,
+                                )
+                                .await
+                            });
+                        }
+                        Err(error) => {
+                            if matches!(&error, PeerSocketError::Cancelled) {
+                                self.dial_cancelled(attempt)?;
+                                self.control.metadata_peer_finished(
+                                    attempt.id(),
+                                    MetadataPeerStage::Cancelled,
+                                    Some("metadata dial cancelled"),
+                                );
+                            } else {
+                                let detail = error.to_string();
+                                if let Some(endpoint) = error.mse_endpoint_update() {
+                                    self.update_mse_endpoint(attempt, endpoint)?;
+                                }
+                                self.dial_failed(attempt, error.peer_failure())?;
+                                self.last_error = Some(download_peer_socket_error(error));
+                                self.control.metadata_peer_finished(
+                                    attempt.id(),
+                                    MetadataPeerStage::Failed,
+                                    Some(&detail),
+                                );
+                            }
                         }
                     }
-                },
+                }
                 MetadataSupervisorEvent::Socket(Ok(PeerSetEvent::Peer(_))) => {
                     cleanup_metadata_attempts(
                         self,
@@ -3176,7 +3196,12 @@ async fn cleanup_metadata_attempts(
 
     match std::mem::take(sockets).shutdown().await {
         Ok(pending) => {
-            for attempt in pending {
+            for (attempt, utp_outcome) in pending {
+                if let Err(error) = peers.record_utp_outcome(attempt, utp_outcome)
+                    && first_error.is_none()
+                {
+                    first_error = Some(error);
+                }
                 if let Err(error) = peers.dial_cancelled(attempt)
                     && first_error.is_none()
                 {
@@ -5526,6 +5551,9 @@ async fn cleanup_content_connections(
                 first_error = Some(download_peer_set_error(error));
             }
             pending_before_shutdown
+                .into_iter()
+                .map(|attempt| (attempt, None))
+                .collect()
         }
     };
     for attempt in active {
@@ -5535,7 +5563,12 @@ async fn cleanup_content_connections(
             first_error = Some(error);
         }
     }
-    for attempt in pending {
+    for (attempt, utp_outcome) in pending {
+        if let Err(error) = peers.record_utp_outcome(attempt, utp_outcome)
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
         if let Err(error) = peers.dial_cancelled(attempt)
             && first_error.is_none()
         {
@@ -6139,11 +6172,16 @@ async fn run_selective_swarm_loop(
             ContentSupervisorEvent::Peer(PeerSetEvent::DialPhase { attempt, transport }) => {
                 peers.transport_connected(attempt, transport)?;
             }
-            ContentSupervisorEvent::Peer(PeerSetEvent::DialCompleted { attempt, result }) => {
+            ContentSupervisorEvent::Peer(PeerSetEvent::DialCompleted {
+                attempt,
+                utp_outcome,
+                result,
+            }) => {
                 download
                     .state
                     .finish_dial(pending_dial_id(attempt))
                     .map_err(DownloadError::Swarm)?;
+                peers.record_utp_outcome(attempt, utp_outcome)?;
                 match *result {
                     Ok((connection, handshake)) => {
                         let admission = peers.dial_succeeded(attempt, &connection, &handshake)?;
