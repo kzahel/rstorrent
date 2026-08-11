@@ -65,11 +65,11 @@ fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction
 default, retains explicit `TcpOnly` isolation, and graduates that exact BEP 29
 subset to **Partial**. It does not add persisted policy, UDP mapping,
 tracker/DHT incoming-endpoint advertisement, public incoming reachability,
-IPv6 uTP, MSE-over-uTP, racing, or dynamic product MTU. Ready Tactical
+IPv6 uTP, MSE-over-uTP, racing, or dynamic product MTU. Tactical
 [`137`](../tactical/137-product-utp-path-mtu-discovery.md) plans safe
 fragmentation-protected dynamic IPv4 product MTU and fixed-548 platform
-fallback. No implementation or evidence has landed, so the **Partial** claim
-and every listed limit remain unchanged.
+fallback but was superseded before implementation. No behavior or evidence
+has landed, so the **Partial** claim and every listed limit remain unchanged.
 
 Tactical [`074`](../tactical/074-context-specific-metainfo-limits.md) replaced
 the former global one-MiB relationship with context-specific metainfo limits.

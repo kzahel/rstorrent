@@ -1,10 +1,12 @@
 # Tactical 137: Product uTP Path-MTU Discovery
 
-Status: **Ready on 2026-08-11; implementation has not started.** Maintainer
-direction selected dynamic uTP MTU as the next bounded engine campaign after
-Tactical `136`. This planning commit is the sole authoritative **Now** and
-does not authorize a dependency, unsafe code, public-network activity, or
-physical-device work.
+Status: **Superseded before implementation on 2026-08-11.** Maintainer
+direction initially selected dynamic uTP MTU after Tactical `136`, then
+explicitly reprioritized verified HTTP file serving as Tactical `138`. No
+implementation, dependency, unsafe code, public-network activity, or
+physical-device work landed. This remains a decision-complete future engine
+candidate but is not the authoritative **Now** and requires explicit
+reactivation.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `protocol-support`,
@@ -372,7 +374,9 @@ requires diagnosis, not threshold relaxation.
 ## Staged Execution And Commit Plan
 
 1. Commit this source-first tactical and activate it as the sole **Now**. No
-   behavior changes in this stage.
+   behavior changes in this stage. This planning stage completed; the tactical
+   was subsequently superseded before Stage 2 by explicit maintainer
+   reprioritization to Tactical `138`.
 2. Prove the safe platform option boundary and exact shared-socket exclusion
    design with focused tests. Stop for human review before adding a dependency,
    unsafe isolation, or a materially different socket owner. Commit the

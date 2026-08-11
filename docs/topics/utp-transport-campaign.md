@@ -40,10 +40,11 @@ selected bounded default enablement recommendation A. Tactical
 common application default is now `PreferUtp`, desktop/Android lifecycle and
 build gates plus controlled fallback pass, and the implemented BEP 29 subset
 is **Partial**. Tacticals `134`, `135`, and `136` subsequently completed their
-independent rate-policy, storage, and tracker work. Maintainer direction now
-selects ready Tactical
-[`137`](../tactical/137-product-utp-path-mtu-discovery.md) as the authoritative
-**Now**; its dynamic product-MTU implementation has not started.
+independent rate-policy, storage, and tracker work. Maintainer direction then
+selected ready Tactical
+[`137`](../tactical/137-product-utp-path-mtu-discovery.md), but reprioritized
+verified HTTP file serving before implementation. Tactical `137` remains a
+future engine candidate and is not the authoritative **Now**.
 
 ## Scope And Ownership
 
@@ -75,7 +76,8 @@ the single authoritative **Now**.
   explicit diagnostic construction override. There is no persisted setting,
   presentation, UDP mapping, tracker/DHT incoming-endpoint advertisement, or
   public incoming-reachability claim.
-- Ready Tactical `137` owns the next bounded uTP slice: activate the existing
+- Superseded-before-implementation Tactical `137` defines the next bounded uTP
+  candidate: activate the existing
   548--1,472-byte IPv4 search only behind positively verified fragmentation-
   protected sends and one shared DHT/uTP egress exclusion boundary. It adds
   path revalidation, conservative fixed-548 fallback, controlled packet-count
@@ -273,7 +275,7 @@ The normative starting points are BEP 29 for the wire protocol and
 behavior and mature failure cases still require implementation and
 interoperability oracles.
 
-Ready Tactical `137` additionally uses
+Tactical `137` additionally uses
 [RFC 8899](https://www.rfc-editor.org/rfc/rfc8899.html) for Datagram
 Packetization Layer PMTU base, protected-probe, confirmation, revalidation,
 and black-hole behavior. It records uTP's packet-sequenced fragmentable retry
@@ -831,14 +833,14 @@ closed with the WAN cohort evidence-limited and every controlled gate
 passing; bounded default-off product composition Tactical `131` and
 default-readiness Tactical `132` are complete; and product-default Tactical
 `133` is complete with the exact fixed-548 IPv4/plaintext subset graduated to
-Partial; ready Tactical `137` is the sole authoritative Now and has not begun
-implementation.**
+Partial; Tactical `137` was superseded before implementation by active product
+Tactical `138`.**
 
 Authoritative priority remains
-[`capability-readiness.md`](capability-readiness.md). The next action is to
-execute Tactical `137`'s safe fragmentation-option/shared-egress feasibility
-stage after implementation authorization, stopping before any new dependency
-or unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
+[`capability-readiness.md`](capability-readiness.md). After the current product
+work, explicit reactivation may execute Tactical `137`'s safe fragmentation-
+option/shared-egress feasibility stage, stopping before any new dependency or
+unsafe boundary. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

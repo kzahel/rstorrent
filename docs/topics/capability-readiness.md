@@ -378,28 +378,32 @@ gates, and a bounded Ubuntu public dispatch rerun pass. That rerun later
 stalled after six verified pieces, so it closes the tracker integration gap
 without authorizing a peer-policy change from one changing-swarm sample.
 
-Ready Tactical
-[`137`](../tactical/137-product-utp-path-mtu-discovery.md) is the selected
-next implementation plan. It owns safe fragmentation-protected IPv4 uTP
-probing through the shared DHT/uTP socket, fixed-548 fallback where capability
-is not proved, path revalidation, and controlled desktop/Android efficiency
-evidence. No implementation, dependency, unsafe code, or new protocol claim
-has landed.
+Active Tactical
+[`138`](../tactical/138-verified-http-file-serving.md) is the selected
+implementation plan. It owns verified logical-file reads, bounded volatile
+capabilities, one shared gateway/Tauri media router, the React/Tauri Open
+surface, and proportional Android compatibility evidence. Ready Tactical
+`137` was superseded before implementation and remains a future engine
+candidate.
 
 ## Current Queue
 
 ### Now
 
-- **Product uTP path-MTU discovery.** Ready Tactical
-  [`137`](../tactical/137-product-utp-path-mtu-discovery.md) is the sole
-  implementation plan. It starts product IPv4 uTP at 548 bytes, probes toward
-  1,472 only behind verified fragmentation protection and shared-socket
-  isolation, retains fixed 548 elsewhere, and requires controlled
-  pinned-libtorrent, efficiency, macOS, and Android evidence. Implementation
-  has not started.
+- **Verified HTTP file serving.** Active Tactical
+  [`138`](../tactical/138-verified-http-file-serving.md) is the sole
+  implementation plan. It serves only non-padding published files whose
+  intersecting pieces are verified, through bounded file capabilities and one
+  shared gateway/Tauri media router. It owns exact single-range GET/HEAD,
+  cancellation, path/SAF semantics, React/Tauri Open, and proportional Android
+  compatibility evidence.
 
 ### Next
 
+- Product uTP path-MTU discovery remains decision-complete in superseded
+  Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md). It may
+  be explicitly reactivated after Tactical `138`; none of its planned dynamic
+  MTU behavior or evidence has landed.
 - Durable seeding goals remain a separate policy-planning candidate. Tactical
   `134` now owns finite rate allocation, hot-path fairness, and cancellation;
   ratio/time goals still own durable accounting and torrent lifecycle.
@@ -411,8 +415,8 @@ multi-interface and BEP 45 multi-address binding,
 local service discovery,
 NAT traversal, v2 and hybrid torrents,
 playback-oriented file priorities, dynamic
-VPN and metered-network controls, verified HTTP file serving, incomplete-file
-streaming, and production remote access remain
+VPN and metered-network controls, incomplete-file streaming, and production
+remote access remain
 important. Tactical `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
 records positive physical capability as unknown on the current hardware after
@@ -430,9 +434,9 @@ cleaned-up local-send timeouts exhausted the external attempt budget. Tactical
 `132` also records one successful ordinary-swarm metadata observation with
 both TCP and uTP and complete cleanup. Ordinary runtime currently stays fixed
 at 548 bytes, while completed Tactical `133` makes the bounded
-IPv4/plaintext path a product default and the BEP 29 claim **Partial**. Ready
-Tactical `137` owns dynamic product MTU; none of its planned behavior or
-evidence has landed.
+IPv4/plaintext path a product default and the BEP 29 claim **Partial**.
+Tactical `137` remains unimplemented and was superseded as **Now** by explicit
+verified-serving priority.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product
@@ -489,7 +493,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. Tactical `113` implements one independent finite-lease IPv6 firewall-pinhole slot and typed product status under the same reachability coordinator; deterministic and scripted-gateway evidence pass. Its live negative control passes, but the observed gateway rejects `AddPinhole` with typed `606`, so no physical off-network incoming IPv6 or cleanup claim is made. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tacticals `127` and `130` prove both first-sample mapped-public-path directions, a six-profile real-socket matrix, hostile lifecycle bounds, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole. Tacticals `131` and `132` add ordinary application composition, endpoint capability memory, suppression/backoff, PEX refresh, exact expiry recovery, and one ordinary-swarm metadata observation with both transports. Completed Tactical `133` makes the existing fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction default. Its exact 2,097,883-byte pinned-libtorrent gate passes default incoming uTP, default outgoing uTP, and joined TCP fallback; explicit `TcpOnly` retains TCP/Fast/MSE isolation. Ready Tactical `137` owns fragmentation-protected dynamic IPv4 product MTU, but no implementation or evidence has landed. Mapping, tracker/DHT incoming-endpoint advertisement, public incoming reachability, persisted presentation, portable per-datagram fragmentation protection, a repeatable WAN cohort, IPv6 uTP, MSE-over-uTP, racing, and dynamic product MTU therefore remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
+| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tacticals `127` and `130` prove both first-sample mapped-public-path directions, a six-profile real-socket matrix, hostile lifecycle bounds, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole. Tacticals `131` and `132` add ordinary application composition, endpoint capability memory, suppression/backoff, PEX refresh, exact expiry recovery, and one ordinary-swarm metadata observation with both transports. Completed Tactical `133` makes the existing fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction default. Its exact 2,097,883-byte pinned-libtorrent gate passes default incoming uTP, default outgoing uTP, and joined TCP fallback; explicit `TcpOnly` retains TCP/Fast/MSE isolation. Tactical `137` plans fragmentation-protected dynamic IPv4 product MTU but was superseded before implementation; no behavior or evidence landed. Mapping, tracker/DHT incoming-endpoint advertisement, public incoming reachability, persisted presentation, portable per-datagram fragmentation protection, a repeatable WAN cohort, IPv6 uTP, MSE-over-uTP, racing, and dynamic product MTU therefore remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

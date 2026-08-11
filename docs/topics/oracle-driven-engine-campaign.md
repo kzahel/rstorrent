@@ -74,11 +74,11 @@ focused driver now supports authenticated HTTP(S) plus bounded final
 lifecycle. Its authorized Ubuntu rerun closes the original dispatch gap and
 records one later post-discovery stall after six pieces without inferring a
 new implementation direction. Maintainer direction then selected ready
-Tactical
-[`137`](../tactical/137-product-utp-path-mtu-discovery.md) as the sole
-authoritative **Now**. It plans fragmentation-protected dynamic IPv4 product
-uTP with fixed-548 fallback, shared-socket isolation, path revalidation, and
-controlled desktop/Android evidence; implementation has not started. The
+Tactical [`137`](../tactical/137-product-utp-path-mtu-discovery.md), but
+explicitly reprioritized verified HTTP file serving before implementation.
+Active Tactical [`138`](../tactical/138-verified-http-file-serving.md) is the
+sole authoritative product **Now**. Tactical `137` remains an unimplemented
+future engine candidate with its dynamic-MTU plan intact. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -413,9 +413,9 @@ evidence, and an API 34 AVD product gate. Tactical `129` is superseded before
 implementation; Tactical `135` completes controlled plaintext/RC4 near parity
 and the smaller-piece matrix. Tactical `136` completes the shared tracker
 operation executor, focused-driver authenticated HTTP(S), bounded direct
-lifecycle, controlled interoperability, and the public dispatch rerun. The
-sole authoritative Now is ready product-uTP path-MTU Tactical `137`; no
-implementation has started.
+lifecycle, controlled interoperability, and the public dispatch rerun.
+Tactical `137` was superseded before implementation; active product Tactical
+`138` is the sole authoritative **Now**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -467,12 +467,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: after explicit implementation authorization, execute
-Tactical `137` Stage 2 by proving the safe fragmentation-option and shared-
-socket egress boundary. Stop before adding a dependency, unsafe isolation, or
-relaxing `forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
+Next engine-campaign action: no engine implementation is currently active.
+After Tactical `138`, explicit reactivation may resume Tactical `137` at Stage
+2 by proving the safe fragmentation-option and shared-socket egress boundary.
+Stop before adding a dependency, unsafe isolation, or relaxing
+`forbid(unsafe_code)`. The post-discovery Ubuntu stall remains one
 non-reproducible changing-swarm observation and is not authority for changes in
-this tactical.
+that tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

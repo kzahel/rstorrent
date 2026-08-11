@@ -637,10 +637,13 @@ that scope and its cleanup or compatibility rules explicitly.
   and full tracker lifecycle into the standalone resumable path, and proves
   controlled pinned-libtorrent trust plus bounded public dispatch.
 - [`137-product-utp-path-mtu-discovery.md`](137-product-utp-path-mtu-discovery.md):
-  ready; plans fragmentation-protected dynamic IPv4 product-uTP MTU over the
-  shared DHT/uTP socket, conservative fixed-548 fallback, path revalidation,
-  controlled performance/interop, and desktop/Android evidence. No
-  implementation has started.
+  superseded before implementation; retains the decision-complete plan for
+  fragmentation-protected dynamic IPv4 product-uTP MTU, conservative fixed-548
+  fallback, path revalidation, and controlled platform evidence.
+- [`138-verified-http-file-serving.md`](138-verified-http-file-serving.md):
+  active; implements verified logical-file reads, bounded volatile
+  capabilities, shared gateway/Tauri HTTP serving, React/Tauri Open, and
+  proportional Android compatibility evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

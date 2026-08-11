@@ -2,11 +2,10 @@
 
 Topic: `http-file-serving-and-streaming`
 
-Status: Product and architecture direction accepted on 2026-08-07. RSTorrent
-should first expose bounded HTTP reads of verified torrent files, then extend
-the same surface with explicitly owned demand for incomplete-file streaming.
-No implementation tactical, listener, command, schema, or public compatibility
-claim is authorized by this topic alone.
+Status: Product and architecture direction accepted on 2026-08-07. Active
+Tactical [`138`](../tactical/138-verified-http-file-serving.md) is authorized
+on 2026-08-11 to implement bounded HTTP reads of verified torrent files end to
+end. Incomplete-file streaming remains a later separately authorized slice.
 
 ## Purpose And Scope
 
@@ -222,11 +221,14 @@ The first HTTP contract is deliberately narrow:
   to `application/octet-stream` without content probing.
 
 Creating or reading a URL does not start, resume, restore, relocate, unskip,
-repair, recheck, or otherwise mutate a torrent. The first tactical may require
-a completely verified published file/torrent so it can prove the HTTP and
-storage boundary without also introducing range-wait scheduling. The exact
-eligibility rule must be typed and visible to the caller rather than inferred
-from an HTTP failure.
+repair, recheck, or otherwise mutate a torrent. Tactical `138` accepts a
+non-padding published file when every intersecting piece is verified; the
+whole torrent need not be complete. Paused and archived content remains
+readable, current Skip selection does not invalidate already authoritative
+bytes, and active/staging, checking, removing, incomplete, errored, or
+unavailable-root content does not qualify. The rule is typed and visible to
+the caller and rechecked at capability creation rather than inferred from an
+HTTP failure.
 
 Path-backed and SAF-backed content must share logical semantics. The server
 cannot assume a stable path or lend a path to the client. Symlink, replacement,
@@ -347,13 +349,7 @@ cannot substitute for deterministic ownership evidence.
 
 ## Recommended Next Work
 
-Create one bounded **verified HTTP file serving** tactical before changing
-code. It should finalize exact capability/session/read bounds, define the
-logical verified-file reader and platform subset, inspect pinned libtorrent
-read/storage tests and the exact JSTorrent serving tests, implement one router
-in both hosting modes, and close deterministic resource, adapter, and client
-interoperability gates.
-
-Only after that contract is stable should a separate **incomplete-file
-streaming** tactical add stream-demand ownership, verified-range waits, and
-time-critical scheduling. Neither tactical is authorized merely by this topic.
+Execute active Tactical `138` through its verified-reader, capability,
+gateway/Tauri, client, platform, and resource gates. Only after that contract
+is stable should a separate **incomplete-file streaming** tactical add
+stream-demand ownership, verified-range waits, and time-critical scheduling.
