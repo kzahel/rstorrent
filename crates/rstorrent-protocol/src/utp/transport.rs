@@ -885,6 +885,35 @@ impl TransportState {
         Ok(None)
     }
 
+    /// Emits only an already-owed receive acknowledgement, regardless of its
+    /// normal delayed-ACK deadline. It never admits application payload.
+    pub fn poll_pending_acknowledgement(
+        &mut self,
+        local_timestamp: TimestampMicros,
+    ) -> Result<Option<TransportEmission>, TransportError> {
+        if self.pending_emission.is_some()
+            || self.acknowledgements.snapshot().pending_packets == 0
+            || matches!(
+                self.connection.snapshot().phase,
+                ConnectionPhase::Reset | ConnectionPhase::Closed
+            )
+        {
+            return Ok(None);
+        }
+        let intent = self.connection.state_intent()?;
+        self.acknowledgements.acknowledge();
+        Ok(Some(self.install_pending_emission(TransportEmission {
+            intent,
+            timestamp: local_timestamp,
+            timestamp_difference_micros: self.timestamp_difference_micros,
+            payload: Vec::new(),
+            retransmission: false,
+            mtu_probe: false,
+            fragmentable_mtu_retry: false,
+            dont_fragment: false,
+        })))
+    }
+
     pub fn on_send_result(
         &mut self,
         sequence_number: SequenceNumber,
@@ -1761,6 +1790,60 @@ mod tests {
         assert_eq!(retransmission.payload, first.payload);
         assert!(retransmission.intent.selective_ack.is_none());
         assert_eq!(retransmission.datagram_bytes(), IPV4_UDP_PAYLOAD_FLOOR);
+    }
+
+    #[test]
+    fn terminal_courtesy_ack_emits_only_already_pending_receive_state() {
+        let (mut initiator, mut acceptor) = connected_pair();
+        initiator.queue_data(b"received before drop").unwrap();
+        let data = initiator
+            .poll_transmit(1_000, TimestampMicros::new(1_000))
+            .unwrap()
+            .unwrap();
+        initiator
+            .on_send_result(data.intent.sequence_number, DatagramSendResult::Sent, 1_000)
+            .unwrap();
+        acceptor
+            .incoming(
+                decode_packet(&data.encode().unwrap()).unwrap(),
+                2_000,
+                TimestampMicros::new(2_000),
+            )
+            .unwrap();
+        assert!(
+            acceptor
+                .snapshot()
+                .acknowledgements
+                .deadline_micros
+                .is_some_and(|deadline| deadline > 2_000)
+        );
+
+        let acknowledgement = acceptor
+            .poll_pending_acknowledgement(TimestampMicros::new(2_001))
+            .unwrap()
+            .expect("pending DATA has a courtesy ACK");
+        assert_eq!(acknowledgement.intent.packet_type, PacketType::State);
+        assert!(acknowledgement.payload.is_empty());
+        assert!(!acknowledgement.dont_fragment);
+        assert!(
+            acceptor
+                .poll_pending_acknowledgement(TimestampMicros::new(2_002))
+                .unwrap()
+                .is_none()
+        );
+        acceptor
+            .on_send_result(
+                acknowledgement.intent.sequence_number,
+                DatagramSendResult::Sent,
+                2_002,
+            )
+            .unwrap();
+        assert!(
+            acceptor
+                .poll_pending_acknowledgement(TimestampMicros::new(2_003))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

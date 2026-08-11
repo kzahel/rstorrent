@@ -1150,6 +1150,7 @@ struct DhtEvidence {
 
 #[derive(Debug, Serialize)]
 struct UtpEvidence {
+    path_mtu_profile: String,
     active_connections_after_shutdown: usize,
     connection_high_water: usize,
     incoming_half_open_after_shutdown: usize,
@@ -1170,12 +1171,17 @@ struct UtpEvidence {
     sent_byte_high_water: usize,
     selected_mtu_min_bytes: Option<usize>,
     selected_mtu_max_bytes: Option<usize>,
+    mtu_probes_started_high_water: u64,
+    mtu_probes_acknowledged_high_water: u64,
+    mtu_probes_failed_high_water: u64,
+    mtu_downward_recoveries_high_water: u64,
     worker_panics: u64,
 }
 
 impl From<UtpServiceSnapshot> for UtpEvidence {
     fn from(snapshot: UtpServiceSnapshot) -> Self {
         Self {
+            path_mtu_profile: snapshot.path_mtu_profile.as_str().to_owned(),
             active_connections_after_shutdown: snapshot.active_connections,
             connection_high_water: snapshot.connection_high_water,
             incoming_half_open_after_shutdown: snapshot.incoming_half_open,
@@ -1196,6 +1202,10 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             sent_byte_high_water: snapshot.sent_byte_high_water,
             selected_mtu_min_bytes: snapshot.selected_mtu_min_bytes,
             selected_mtu_max_bytes: snapshot.selected_mtu_max_bytes,
+            mtu_probes_started_high_water: snapshot.mtu_probes_started_high_water,
+            mtu_probes_acknowledged_high_water: snapshot.mtu_probes_acknowledged_high_water,
+            mtu_probes_failed_high_water: snapshot.mtu_probes_failed_high_water,
+            mtu_downward_recoveries_high_water: snapshot.mtu_downward_recoveries_high_water,
             worker_panics: snapshot.worker_panics,
         }
     }
@@ -1216,6 +1226,14 @@ struct UdpEvidence {
     utp_datagrams_classified: u64,
     utp_datagram_bytes_classified: u64,
     utp_datagrams_dropped: u64,
+    protected_sends_attempted: u64,
+    protected_sends_sent: u64,
+    protected_sends_message_too_large: u64,
+    protected_sends_failed: u64,
+    fragmentation_restore_failures: u64,
+    fragmentation_repairs_succeeded: u64,
+    maximum_datagram_bytes_sent: usize,
+    ipv4_fragmentation_protection: String,
 }
 
 impl From<SessionUdpSnapshot> for UdpEvidence {
@@ -1234,6 +1252,14 @@ impl From<SessionUdpSnapshot> for UdpEvidence {
             utp_datagrams_classified: snapshot.utp_datagrams_classified,
             utp_datagram_bytes_classified: snapshot.utp_datagram_bytes_classified,
             utp_datagrams_dropped: snapshot.utp_datagrams_dropped,
+            protected_sends_attempted: snapshot.protected_sends_attempted,
+            protected_sends_sent: snapshot.protected_sends_sent,
+            protected_sends_message_too_large: snapshot.protected_sends_message_too_large,
+            protected_sends_failed: snapshot.protected_sends_failed,
+            fragmentation_restore_failures: snapshot.fragmentation_restore_failures,
+            fragmentation_repairs_succeeded: snapshot.fragmentation_repairs_succeeded,
+            maximum_datagram_bytes_sent: snapshot.maximum_datagram_bytes_sent,
+            ipv4_fragmentation_protection: format!("{:?}", snapshot.ipv4_fragmentation_protection),
         }
     }
 }

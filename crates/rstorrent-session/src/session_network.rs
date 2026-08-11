@@ -16,8 +16,8 @@ use rstorrent_engine::{
     MseHandshakeSink, NetworkConfig, PeerAdvertisementEndpoint, PeerBudget, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransportPolicy, SessionSocketConfig, SessionSocketError,
     SessionSocketFamilySet, SessionSocketFamilyState, SessionSocketSet, SessionUdpError,
-    SessionUdpHandle, SessionUdpService, TorrentBandwidth, TorrentTransferRateLimits, UtpHandle,
-    UtpRuntimeError, UtpService,
+    SessionUdpHandle, SessionUdpRepairRequest, SessionUdpService, TorrentBandwidth,
+    TorrentTransferRateLimits, UtpHandle, UtpRuntimeError, UtpService,
 };
 use rstorrent_engine::{
     BandwidthDirectionSnapshot, BandwidthError, SessionBandwidth, SessionBandwidthHandle,
@@ -870,11 +870,17 @@ impl SessionNetworkRuntime {
             self.initial_mapping_generation,
         ));
         let (settings_sender, settings_receiver) = watch::channel(None);
+        let udp_repairs = owner
+            .session_udp
+            .as_ref()
+            .expect("session UDP exists when reconciliation starts")
+            .subscribe_repairs();
         let cancellation = self.reconciliation_cancellation.clone();
         let convergence = self.convergence.clone();
         self.reconciliation_task = Some(tokio::spawn(run_session_network(
             owner,
             settings_receiver,
+            udp_repairs,
             convergence,
             cancellation,
             views,
@@ -1035,6 +1041,7 @@ impl Drop for SessionNetworkRuntime {
 async fn run_session_network(
     mut owner: SessionNetworkOwner,
     mut settings: watch::Receiver<Option<SettingsAttempt>>,
+    mut udp_repairs: watch::Receiver<Option<SessionUdpRepairRequest>>,
     convergence: Arc<Mutex<SettingsConvergenceModel>>,
     cancellation: CancellationToken,
     views: ViewHub,
@@ -1060,6 +1067,59 @@ async fn run_session_network(
                     (peer_limit_pending, mapping_expiry_pending) = owner
                         .reconcile(attempt, &convergence, &views, &cancellation)
                         .await;
+                }
+            }
+            changed = udp_repairs.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let request = {
+                    let current = udp_repairs.borrow_and_update();
+                    *current
+                };
+                if let Some(request) = request {
+                    match owner
+                        .session_udp
+                        .as_mut()
+                        .expect("session UDP exists during policy repair")
+                        .repair_fragmentation_policy(request)
+                        .await
+                    {
+                        Ok(true) => {
+                            let generation = owner
+                                .session_udp
+                                .as_ref()
+                                .and_then(|udp| udp.generation_for(request.family))
+                                .map_or_else(|| "unavailable".to_owned(), |value| value.to_string());
+                            let _ = views.record_diagnostic(
+                                DiagnosticSeverity::Warning,
+                                category::PEER_CONNECTION,
+                                "session_udp_fragmentation_policy_repaired",
+                                None,
+                                "A contaminated UDP socket generation was retired and rebound",
+                                &[
+                                    ("family", &request.family.to_string()),
+                                    ("retired_generation", &request.generation.to_string()),
+                                    ("replacement_generation", &generation),
+                                ],
+                            );
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            let _ = views.record_diagnostic(
+                                DiagnosticSeverity::Error,
+                                category::PEER_CONNECTION,
+                                "session_udp_fragmentation_policy_repair_failed",
+                                None,
+                                "A contaminated UDP socket generation was retired but could not be rebound",
+                                &[
+                                    ("family", &request.family.to_string()),
+                                    ("retired_generation", &request.generation.to_string()),
+                                    ("detail", &error.to_string()),
+                                ],
+                            );
+                        }
+                    }
                 }
             }
             _ = peer_poll.tick(), if peer_limit_pending.is_some() => {

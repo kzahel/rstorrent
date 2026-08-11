@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use rstorrent_protocol::dht::MAX_DATAGRAM_SIZE;
-use rstorrent_protocol::utp::{IPV4_UDP_PAYLOAD_CEILING, UTP_HEADER_SIZE, UTP_VERSION};
+use rstorrent_protocol::utp::{
+    DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING, UTP_HEADER_SIZE, UTP_VERSION,
+};
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, MutexGuard, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -17,7 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::network::AddressFamily;
 use crate::udp_fragmentation::{
-    Ipv4FragmentationProtectionStatus, verify_ipv4_fragmentation_protection,
+    Ipv4FragmentationProtectionStatus, Ipv4ProtectedSendError, Ipv4ProtectedSendResult,
+    try_send_ipv4_fragmentation_protected, verify_ipv4_fragmentation_protection,
 };
 
 pub const SESSION_UDP_DHT_QUEUE: usize = 64;
@@ -44,7 +47,24 @@ pub struct SessionUdpSnapshot {
     pub egress_waiters: usize,
     pub egress_waiter_high_water: usize,
     pub retired_egress_rejections: u64,
+    pub protected_sends_attempted: u64,
+    pub protected_sends_sent: u64,
+    pub protected_sends_would_block: u64,
+    pub protected_sends_message_too_large: u64,
+    pub protected_sends_failed: u64,
+    pub fragmentation_restore_failures: u64,
+    pub fragmentation_repairs_requested: u64,
+    pub fragmentation_repairs_succeeded: u64,
+    pub fragmentation_repairs_failed: u64,
+    pub maximum_datagram_bytes_sent: usize,
     pub ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionUdpRepairRequest {
+    pub family: AddressFamily,
+    pub generation: u64,
+    pub local_address: SocketAddr,
 }
 
 #[derive(Debug)]
@@ -59,6 +79,12 @@ pub enum SessionUdpError {
     RetiredGeneration {
         family: AddressFamily,
         generation: u64,
+    },
+    FragmentationProtectionUnavailable(Ipv4FragmentationProtectionStatus),
+    FragmentationPolicyContaminated {
+        family: AddressFamily,
+        generation: u64,
+        detail: String,
     },
     UtpTransportTaken,
     TaskJoin(String),
@@ -83,6 +109,18 @@ impl fmt::Display for SessionUdpError {
                 formatter,
                 "session UDP {family} generation {generation} retired before send"
             ),
+            Self::FragmentationProtectionUnavailable(status) => write!(
+                formatter,
+                "session UDP IPv4 fragmentation protection is unavailable: {status:?}"
+            ),
+            Self::FragmentationPolicyContaminated {
+                family,
+                generation,
+                detail,
+            } => write!(
+                formatter,
+                "session UDP {family} generation {generation} was fenced after uncertain fragmentation-policy restoration: {detail}"
+            ),
             Self::UtpTransportTaken => write!(formatter, "session uTP transport was already taken"),
             Self::TaskJoin(error) => write!(formatter, "session UDP task join failed: {error}"),
         }
@@ -96,6 +134,8 @@ impl Error for SessionUdpError {
             Self::MissingFamily(_)
             | Self::StaleGeneration { .. }
             | Self::RetiredGeneration { .. }
+            | Self::FragmentationProtectionUnavailable(_)
+            | Self::FragmentationPolicyContaminated { .. }
             | Self::UtpTransportTaken
             | Self::TaskJoin(_) => None,
         }
@@ -178,19 +218,28 @@ struct SessionUdpFamilyCurrent {
 struct SessionUdpEgress {
     generation: u64,
     family: AddressFamily,
+    local_address: SocketAddr,
     socket: Arc<UdpSocket>,
     exclusion: Mutex<()>,
     active: AtomicBool,
     ipv4_fragmentation_protection: Ipv4FragmentationProtectionStatus,
+    repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
     stats: Arc<SessionUdpStats>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 enum SessionUdpEgressError {
     Retired {
         family: AddressFamily,
         generation: u64,
     },
+    FragmentationProtectionUnavailable(Ipv4FragmentationProtectionStatus),
+    FragmentationPolicyContaminated {
+        family: AddressFamily,
+        generation: u64,
+        detail: String,
+    },
+    ProtectedSend(Ipv4ProtectedSendError),
 }
 
 impl SessionUdpEgress {
@@ -199,7 +248,9 @@ impl SessionUdpEgress {
         family: AddressFamily,
         socket: Arc<UdpSocket>,
         stats: Arc<SessionUdpStats>,
+        repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
     ) -> Result<Self, SessionUdpError> {
+        let local_address = socket.local_addr().map_err(SessionUdpError::Io)?;
         let ipv4_fragmentation_protection = if family == AddressFamily::Ipv4 {
             verify_ipv4_fragmentation_protection(&socket).map_err(SessionUdpError::Io)?
         } else {
@@ -208,10 +259,12 @@ impl SessionUdpEgress {
         Ok(Self {
             generation,
             family,
+            local_address,
             socket,
             exclusion: Mutex::new(()),
             active: AtomicBool::new(true),
             ipv4_fragmentation_protection,
+            repair_sender,
             stats,
         })
     }
@@ -229,7 +282,84 @@ impl SessionUdpEgress {
                 generation: self.generation,
             });
         }
-        Ok(self.socket.send_to(bytes, target).await)
+        let result = self.socket.send_to(bytes, target).await;
+        if let Ok(length) = result {
+            self.stats.record_datagram_sent(length);
+        }
+        Ok(result)
+    }
+
+    async fn send_utp(
+        &self,
+        bytes: &[u8],
+        target: SocketAddr,
+        dont_fragment: bool,
+    ) -> Result<Result<(usize, DatagramSendResult), io::Error>, SessionUdpEgressError> {
+        if !dont_fragment {
+            return self
+                .send_to(bytes, target)
+                .await
+                .map(|result| result.map(|length| (length, DatagramSendResult::Sent)));
+        }
+        let _guard = self.lock().await;
+        if !self.active.load(Ordering::Acquire) {
+            self.stats.record_retired_egress_rejection();
+            return Err(SessionUdpEgressError::Retired {
+                family: self.family,
+                generation: self.generation,
+            });
+        }
+        if self.family != AddressFamily::Ipv4
+            || self.ipv4_fragmentation_protection != Ipv4FragmentationProtectionStatus::Verified
+        {
+            return Err(SessionUdpEgressError::FragmentationProtectionUnavailable(
+                self.ipv4_fragmentation_protection,
+            ));
+        }
+
+        self.stats.record_protected_send_attempted();
+        match try_send_ipv4_fragmentation_protected(&self.socket, bytes, target) {
+            Ok(Ipv4ProtectedSendResult::Sent(length)) => {
+                self.stats.record_protected_send_sent(length);
+                Ok(Ok((length, DatagramSendResult::Sent)))
+            }
+            Ok(Ipv4ProtectedSendResult::WouldBlock) => {
+                self.stats.record_protected_send_would_block();
+                Ok(Ok((0, DatagramSendResult::WouldBlock)))
+            }
+            Ok(Ipv4ProtectedSendResult::MessageTooLarge) => {
+                self.stats.record_protected_send_message_too_large();
+                Ok(Ok((0, DatagramSendResult::MessageTooLarge)))
+            }
+            Err(error) if error.restore_is_uncertain() => {
+                Err(self.fence_contaminated_policy(error.to_string()))
+            }
+            Err(error) => {
+                self.stats.record_protected_send_failed();
+                Err(SessionUdpEgressError::ProtectedSend(error))
+            }
+        }
+    }
+
+    async fn writable(&self) -> io::Result<()> {
+        self.socket.writable().await
+    }
+
+    fn fence_contaminated_policy(&self, detail: String) -> SessionUdpEgressError {
+        self.active.store(false, Ordering::Release);
+        self.stats.record_fragmentation_restore_failure();
+        self.stats.record_fragmentation_repair_requested();
+        self.repair_sender
+            .send_replace(Some(SessionUdpRepairRequest {
+                family: self.family,
+                generation: self.generation,
+                local_address: self.local_address,
+            }));
+        SessionUdpEgressError::FragmentationPolicyContaminated {
+            family: self.family,
+            generation: self.generation,
+            detail,
+        }
     }
 
     async fn lock(&self) -> MutexGuard<'_, ()> {
@@ -409,6 +539,11 @@ impl SessionUdpTransport {
                 Err(SessionUdpEgressError::Retired { family, generation }) => {
                     return Err(SessionUdpError::RetiredGeneration { family, generation });
                 }
+                Err(
+                    SessionUdpEgressError::FragmentationProtectionUnavailable(_)
+                    | SessionUdpEgressError::FragmentationPolicyContaminated { .. }
+                    | SessionUdpEgressError::ProtectedSend(_),
+                ) => unreachable!("ordinary UDP send cannot change fragmentation policy"),
             }
         }
         unreachable!("session UDP send attempts are statically bounded")
@@ -483,7 +618,8 @@ impl SessionUtpSendHandle {
         generation: u64,
         bytes: &[u8],
         target: SocketAddr,
-    ) -> Result<usize, SessionUdpError> {
+        dont_fragment: bool,
+    ) -> Result<(usize, DatagramSendResult), SessionUdpError> {
         let family = AddressFamily::of(target.ip());
         let egress = {
             let current = self.current_guard();
@@ -499,7 +635,7 @@ impl SessionUtpSendHandle {
             }
             entry.egress.clone()
         };
-        match egress.send_to(bytes, target).await {
+        match egress.send_utp(bytes, target, dont_fragment).await {
             Ok(result) => result.map_err(SessionUdpError::Io),
             Err(SessionUdpEgressError::Retired { .. }) => {
                 let current = self
@@ -513,7 +649,45 @@ impl SessionUtpSendHandle {
                     current,
                 })
             }
+            Err(SessionUdpEgressError::FragmentationProtectionUnavailable(status)) => {
+                Err(SessionUdpError::FragmentationProtectionUnavailable(status))
+            }
+            Err(SessionUdpEgressError::FragmentationPolicyContaminated {
+                family,
+                generation,
+                detail,
+            }) => Err(SessionUdpError::FragmentationPolicyContaminated {
+                family,
+                generation,
+                detail,
+            }),
+            Err(SessionUdpEgressError::ProtectedSend(error)) => {
+                Err(SessionUdpError::Io(io::Error::other(error.to_string())))
+            }
         }
+    }
+
+    pub(crate) async fn writable(
+        &self,
+        generation: u64,
+        target: SocketAddr,
+    ) -> Result<(), SessionUdpError> {
+        let family = AddressFamily::of(target.ip());
+        let egress = {
+            let current = self.current_guard();
+            let Some(entry) = current.families.get(&family) else {
+                return Err(SessionUdpError::MissingFamily(family));
+            };
+            if entry.generation != generation {
+                return Err(SessionUdpError::StaleGeneration {
+                    family,
+                    requested: generation,
+                    current: Some(entry.generation),
+                });
+            }
+            entry.egress.clone()
+        };
+        egress.writable().await.map_err(SessionUdpError::Io)
     }
 
     fn current_guard(&self) -> RwLockReadGuard<'_, SessionUdpCurrent> {
@@ -539,6 +713,16 @@ struct SessionUdpStats {
     egress_waiters: AtomicUsize,
     egress_waiter_high_water: AtomicUsize,
     retired_egress_rejections: AtomicU64,
+    protected_sends_attempted: AtomicU64,
+    protected_sends_sent: AtomicU64,
+    protected_sends_would_block: AtomicU64,
+    protected_sends_message_too_large: AtomicU64,
+    protected_sends_failed: AtomicU64,
+    fragmentation_restore_failures: AtomicU64,
+    fragmentation_repairs_requested: AtomicU64,
+    fragmentation_repairs_succeeded: AtomicU64,
+    fragmentation_repairs_failed: AtomicU64,
+    maximum_datagram_bytes_sent: AtomicUsize,
 }
 
 impl SessionUdpStats {
@@ -567,6 +751,24 @@ impl SessionUdpStats {
             egress_waiters: self.egress_waiters.load(Ordering::Relaxed),
             egress_waiter_high_water: self.egress_waiter_high_water.load(Ordering::Relaxed),
             retired_egress_rejections: self.retired_egress_rejections.load(Ordering::Relaxed),
+            protected_sends_attempted: self.protected_sends_attempted.load(Ordering::Relaxed),
+            protected_sends_sent: self.protected_sends_sent.load(Ordering::Relaxed),
+            protected_sends_would_block: self.protected_sends_would_block.load(Ordering::Relaxed),
+            protected_sends_message_too_large: self
+                .protected_sends_message_too_large
+                .load(Ordering::Relaxed),
+            protected_sends_failed: self.protected_sends_failed.load(Ordering::Relaxed),
+            fragmentation_restore_failures: self
+                .fragmentation_restore_failures
+                .load(Ordering::Relaxed),
+            fragmentation_repairs_requested: self
+                .fragmentation_repairs_requested
+                .load(Ordering::Relaxed),
+            fragmentation_repairs_succeeded: self
+                .fragmentation_repairs_succeeded
+                .load(Ordering::Relaxed),
+            fragmentation_repairs_failed: self.fragmentation_repairs_failed.load(Ordering::Relaxed),
+            maximum_datagram_bytes_sent: self.maximum_datagram_bytes_sent.load(Ordering::Relaxed),
             ipv4_fragmentation_protection,
         }
     }
@@ -584,6 +786,48 @@ impl SessionUdpStats {
 
     fn record_retired_egress_rejection(&self) {
         saturating_add(&self.retired_egress_rejections, 1);
+    }
+
+    fn record_protected_send_attempted(&self) {
+        saturating_add(&self.protected_sends_attempted, 1);
+    }
+
+    fn record_protected_send_sent(&self, bytes: usize) {
+        saturating_add(&self.protected_sends_sent, 1);
+        self.record_datagram_sent(bytes);
+    }
+
+    fn record_datagram_sent(&self, bytes: usize) {
+        self.maximum_datagram_bytes_sent
+            .fetch_max(bytes, Ordering::Relaxed);
+    }
+
+    fn record_protected_send_would_block(&self) {
+        saturating_add(&self.protected_sends_would_block, 1);
+    }
+
+    fn record_protected_send_message_too_large(&self) {
+        saturating_add(&self.protected_sends_message_too_large, 1);
+    }
+
+    fn record_protected_send_failed(&self) {
+        saturating_add(&self.protected_sends_failed, 1);
+    }
+
+    fn record_fragmentation_restore_failure(&self) {
+        saturating_add(&self.fragmentation_restore_failures, 1);
+    }
+
+    fn record_fragmentation_repair_requested(&self) {
+        saturating_add(&self.fragmentation_repairs_requested, 1);
+    }
+
+    fn record_fragmentation_repair_succeeded(&self) {
+        saturating_add(&self.fragmentation_repairs_succeeded, 1);
+    }
+
+    fn record_fragmentation_repair_failed(&self) {
+        saturating_add(&self.fragmentation_repairs_failed, 1);
     }
 
     fn record_datagram(&self, bytes: usize) {
@@ -640,6 +884,7 @@ pub struct SessionUdpService {
     utp_ingress: Option<mpsc::Receiver<SessionUtpIngress>>,
     utp_ingress_sender: mpsc::Sender<SessionUtpIngress>,
     generation_sender: watch::Sender<SessionUdpGenerations>,
+    repair_sender: watch::Sender<Option<SessionUdpRepairRequest>>,
     stats: Arc<SessionUdpStats>,
 }
 
@@ -677,12 +922,14 @@ impl SessionUdpService {
         let (ingress_sender, ingress) = mpsc::channel(SESSION_UDP_DHT_QUEUE);
         let (utp_ingress_sender, utp_ingress) = mpsc::channel(SESSION_UDP_UTP_QUEUE);
         let stats = Arc::new(SessionUdpStats::default());
+        let (repair_sender, _) = watch::channel(None);
         let generation = 1;
         let egress = Arc::new(SessionUdpEgress::new(
             generation,
             family,
             socket.clone(),
             stats.clone(),
+            repair_sender.clone(),
         )?);
         let current = Arc::new(RwLock::new(SessionUdpCurrent {
             families: BTreeMap::from([(
@@ -723,6 +970,7 @@ impl SessionUdpService {
                 utp_ingress: Some(utp_ingress),
                 utp_ingress_sender: utp_ingress_sender.clone(),
                 generation_sender,
+                repair_sender,
                 stats: stats.clone(),
             },
             SessionUdpTransport {
@@ -759,6 +1007,55 @@ impl SessionUdpService {
         self.handle.snapshot()
     }
 
+    pub(crate) fn ipv4_fragmentation_protection_status(&self) -> Ipv4FragmentationProtectionStatus {
+        self.snapshot().ipv4_fragmentation_protection
+    }
+
+    pub fn subscribe_repairs(&self) -> watch::Receiver<Option<SessionUdpRepairRequest>> {
+        self.repair_sender.subscribe()
+    }
+
+    pub async fn repair_fragmentation_policy(
+        &mut self,
+        request: SessionUdpRepairRequest,
+    ) -> Result<bool, SessionUdpError> {
+        let is_current_contaminated = self
+            .handle
+            .current_guard()
+            .families
+            .get(&request.family)
+            .is_some_and(|entry| {
+                entry.generation == request.generation
+                    && !entry.egress.active.load(Ordering::Acquire)
+                    && entry.local_address == request.local_address
+            });
+        if !is_current_contaminated {
+            return Ok(false);
+        }
+
+        self.remove_family(request.family).await?;
+        let replacement = match UdpSocket::bind(request.local_address).await {
+            Ok(socket) => socket,
+            Err(error) => {
+                self.stats.record_fragmentation_repair_failed();
+                return Err(SessionUdpError::Io(io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to rebind contaminated session UDP {} generation {} at {}: {error}",
+                        request.family, request.generation, request.local_address
+                    ),
+                )));
+            }
+        };
+        if let Err(error) = self.replace_socket(replacement).await {
+            self.stats.record_fragmentation_repair_failed();
+            return Err(error);
+        }
+        self.stats.record_fragmentation_repair_succeeded();
+        self.repair_sender.send_replace(None);
+        Ok(true)
+    }
+
     pub(crate) fn take_utp_transport(&mut self) -> Result<SessionUtpTransport, SessionUdpError> {
         let ingress = self
             .utp_ingress
@@ -784,6 +1081,7 @@ impl SessionUdpService {
             family,
             socket.clone(),
             self.stats.clone(),
+            self.repair_sender.clone(),
         )?);
         let candidate = start_generation(
             generation,
@@ -1140,7 +1438,8 @@ mod tests {
         let target = remote.local_addr().unwrap();
 
         let dht_send = tokio::spawn(async move { dht.send_to(b"dht", target).await });
-        let utp_send = tokio::spawn(async move { send.send_to(generation, b"utp", target).await });
+        let utp_send =
+            tokio::spawn(async move { send.send_to(generation, b"utp", target, false).await });
         wait_for_egress_waiters(&handle, 2).await;
         assert_eq!(handle.snapshot().egress_waiter_high_water, 2);
 
@@ -1190,6 +1489,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn uncertain_policy_restore_fences_and_rebinds_the_generation() {
+        let (mut service, dht) = service().await;
+        let handle = service.handle();
+        let original_address = service.local_address();
+        let original_generation = service.generation();
+        let mut repairs = service.subscribe_repairs();
+        let egress = handle
+            .current_guard()
+            .families
+            .get(&AddressFamily::Ipv4)
+            .unwrap()
+            .egress
+            .clone();
+
+        assert!(matches!(
+            egress.fence_contaminated_policy("injected uncertain restore".to_owned()),
+            SessionUdpEgressError::FragmentationPolicyContaminated {
+                family: AddressFamily::Ipv4,
+                generation: 1,
+                ..
+            }
+        ));
+        assert!(!egress.active.load(Ordering::Acquire));
+        drop(egress);
+        timeout(Duration::from_secs(1), repairs.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        let request = repairs
+            .borrow_and_update()
+            .expect("repair request is published");
+        assert_eq!(request.local_address, original_address);
+        assert!(service.repair_fragmentation_policy(request).await.unwrap());
+        assert_eq!(service.local_address(), original_address);
+        assert_ne!(service.generation(), original_generation);
+        let snapshot = service.snapshot();
+        assert_eq!(snapshot.fragmentation_restore_failures, 1);
+        assert_eq!(snapshot.fragmentation_repairs_requested, 1);
+        assert_eq!(snapshot.fragmentation_repairs_succeeded, 1);
+        assert_eq!(snapshot.fragmentation_repairs_failed, 0);
+        assert!(repairs.borrow().is_none());
+
+        drop(dht);
+        let terminal = service.shutdown().await.unwrap();
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.egress_waiters, 0);
+    }
+
+    #[tokio::test]
     async fn construction_reports_fragmentation_protection_capability() {
         let (service, dht) = service().await;
         let status = service.snapshot().ipv4_fragmentation_protection;
@@ -1202,6 +1550,46 @@ mod tests {
         );
         drop(dht);
         service.shutdown().await.unwrap();
+    }
+
+    #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn protected_utp_send_restores_policy_and_reports_typed_result() {
+        let (mut service, dht) = service().await;
+        let utp = service.take_utp_transport().unwrap();
+        let generation = utp.generation_for(AddressFamily::Ipv4).unwrap();
+        let remote = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = remote.local_addr().unwrap();
+        let send = utp.send_handle();
+        send.writable(generation, target).await.unwrap();
+
+        assert_eq!(
+            send.send_to(generation, b"protected", target, true)
+                .await
+                .unwrap(),
+            (9, DatagramSendResult::Sent)
+        );
+        let mut bytes = [0; 16];
+        let (length, source) = timeout(Duration::from_secs(1), remote.recv_from(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&bytes[..length], b"protected");
+        assert_eq!(source, service.local_address());
+        let snapshot = service.snapshot();
+        assert_eq!(snapshot.protected_sends_attempted, 1);
+        assert_eq!(snapshot.protected_sends_sent, 1);
+        assert_eq!(snapshot.protected_sends_would_block, 0);
+        assert_eq!(snapshot.protected_sends_message_too_large, 0);
+        assert_eq!(snapshot.protected_sends_failed, 0);
+        assert_eq!(snapshot.fragmentation_restore_failures, 0);
+        assert_eq!(snapshot.maximum_datagram_bytes_sent, 9);
+
+        drop(utp);
+        drop(dht);
+        let terminal = service.shutdown().await.unwrap();
+        assert_eq!(terminal.tasks, 0);
+        assert_eq!(terminal.egress_waiters, 0);
     }
 
     #[tokio::test]
@@ -1295,7 +1683,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             utp.send_handle()
-                .send_to(first_generation, b"stale", target)
+                .send_to(first_generation, b"stale", target, false)
                 .await,
             Err(SessionUdpError::StaleGeneration {
                 family: AddressFamily::Ipv4,

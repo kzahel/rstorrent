@@ -944,11 +944,26 @@ fn udp_json(snapshot: SessionUdpSnapshot) -> Value {
         "utp_datagrams_classified": snapshot.utp_datagrams_classified,
         "utp_datagram_bytes_classified": snapshot.utp_datagram_bytes_classified,
         "utp_datagrams_dropped": snapshot.utp_datagrams_dropped,
+        "egress_waiters": snapshot.egress_waiters,
+        "egress_waiter_high_water": snapshot.egress_waiter_high_water,
+        "retired_egress_rejections": snapshot.retired_egress_rejections,
+        "protected_sends_attempted": snapshot.protected_sends_attempted,
+        "protected_sends_sent": snapshot.protected_sends_sent,
+        "protected_sends_would_block": snapshot.protected_sends_would_block,
+        "protected_sends_message_too_large": snapshot.protected_sends_message_too_large,
+        "protected_sends_failed": snapshot.protected_sends_failed,
+        "fragmentation_restore_failures": snapshot.fragmentation_restore_failures,
+        "fragmentation_repairs_requested": snapshot.fragmentation_repairs_requested,
+        "fragmentation_repairs_succeeded": snapshot.fragmentation_repairs_succeeded,
+        "fragmentation_repairs_failed": snapshot.fragmentation_repairs_failed,
+        "maximum_datagram_bytes_sent": snapshot.maximum_datagram_bytes_sent,
+        "ipv4_fragmentation_protection": format!("{:?}", snapshot.ipv4_fragmentation_protection),
     })
 }
 
 fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
     json!({
+        "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
         "connection_high_water": snapshot.connection_high_water,
         "incoming_half_open": snapshot.incoming_half_open,
@@ -988,6 +1003,10 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "mtu_probes_started_high_water": snapshot.mtu_probes_started_high_water,
         "mtu_probes_acknowledged_high_water": snapshot.mtu_probes_acknowledged_high_water,
         "mtu_probes_failed_high_water": snapshot.mtu_probes_failed_high_water,
+        "mtu_revalidations_started_high_water": snapshot.mtu_revalidations_started_high_water,
+        "mtu_revalidations_acknowledged_high_water": snapshot.mtu_revalidations_acknowledged_high_water,
+        "mtu_revalidations_failed_high_water": snapshot.mtu_revalidations_failed_high_water,
+        "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
         "mtu_probe_datagrams_sent": snapshot.mtu_probe_datagrams_sent,
         "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
         "worker_panics": snapshot.worker_panics,

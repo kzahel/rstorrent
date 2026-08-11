@@ -32,6 +32,7 @@ use crate::session_udp::{
     SessionUdpError, SessionUdpGenerations, SessionUdpService, SessionUtpSendHandle,
     SessionUtpTransport,
 };
+use crate::udp_fragmentation::Ipv4FragmentationProtectionStatus;
 
 pub const MAX_UTP_CONNECTIONS: usize = 64;
 pub const MAX_INCOMING_UTP_HALF_OPEN: usize = 16;
@@ -62,7 +63,8 @@ impl UtpRuntimeConfig {
         }
     }
 
-    const fn fixed() -> Self {
+    #[must_use]
+    pub const fn fixed_ipv4() -> Self {
         Self {
             floor_datagram_bytes: UTP_RUNTIME_DATAGRAM_BYTES,
             ceiling_datagram_bytes: UTP_RUNTIME_DATAGRAM_BYTES,
@@ -74,10 +76,36 @@ impl UtpRuntimeConfig {
             .map_err(TransportError::from)?;
         Ok(self)
     }
+
+    const fn profile(self) -> UtpPathMtuProfile {
+        if self.floor_datagram_bytes == self.ceiling_datagram_bytes {
+            UtpPathMtuProfile::Fixed548
+        } else {
+            UtpPathMtuProfile::DynamicIpv4
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UtpPathMtuProfile {
+    #[default]
+    Fixed548,
+    DynamicIpv4,
+}
+
+impl UtpPathMtuProfile {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Fixed548 => "fixed_548",
+            Self::DynamicIpv4 => "dynamic_ipv4",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct UtpServiceSnapshot {
+    pub path_mtu_profile: UtpPathMtuProfile,
     pub active_connections: usize,
     pub connection_high_water: usize,
     pub incoming_half_open: usize,
@@ -117,6 +145,10 @@ pub struct UtpServiceSnapshot {
     pub mtu_probes_started_high_water: u64,
     pub mtu_probes_acknowledged_high_water: u64,
     pub mtu_probes_failed_high_water: u64,
+    pub mtu_revalidations_started_high_water: u64,
+    pub mtu_revalidations_acknowledged_high_water: u64,
+    pub mtu_revalidations_failed_high_water: u64,
+    pub mtu_downward_recoveries_high_water: u64,
     pub mtu_probe_datagrams_sent: u64,
     pub mtu_fragmentable_retry_datagrams_sent: u64,
     pub worker_panics: u64,
@@ -129,6 +161,7 @@ pub enum UtpRuntimeError {
     Codec(UtpCodecError),
     Entropy(String),
     UnsupportedFamily(AddressFamily),
+    DynamicPathMtuUnavailable(Ipv4FragmentationProtectionStatus),
     ConnectionLimit,
     ConnectionIdCollision,
     ConnectTimedOut(Duration),
@@ -146,6 +179,10 @@ impl fmt::Display for UtpRuntimeError {
             Self::UnsupportedFamily(family) => {
                 write!(formatter, "uTP runtime does not yet support {family}")
             }
+            Self::DynamicPathMtuUnavailable(status) => write!(
+                formatter,
+                "dynamic IPv4 uTP path MTU is unavailable: fragmentation protection is {status:?}"
+            ),
             Self::ConnectionLimit => formatter.write_str("uTP connection limit reached"),
             Self::ConnectionIdCollision => {
                 formatter.write_str("uTP connection ID entropy collision limit reached")
@@ -167,6 +204,7 @@ impl Error for UtpRuntimeError {
             Self::Codec(error) => Some(error),
             Self::Entropy(_)
             | Self::UnsupportedFamily(_)
+            | Self::DynamicPathMtuUnavailable(_)
             | Self::ConnectionLimit
             | Self::ConnectionIdCollision
             | Self::ConnectTimedOut(_)
@@ -334,7 +372,14 @@ pub struct UtpService {
 
 impl UtpService {
     pub fn start(udp: &mut SessionUdpService) -> Result<Self, UtpRuntimeError> {
-        Self::start_with_config(udp, UtpRuntimeConfig::fixed())
+        let config = if udp.ipv4_fragmentation_protection_status()
+            == Ipv4FragmentationProtectionStatus::Verified
+        {
+            UtpRuntimeConfig::diagnostic_ipv4_path_mtu()
+        } else {
+            UtpRuntimeConfig::fixed_ipv4()
+        };
+        Self::start_with_config(udp, config)
     }
 
     pub fn start_diagnostic(
@@ -349,10 +394,17 @@ impl UtpService {
         config: UtpRuntimeConfig,
     ) -> Result<Self, UtpRuntimeError> {
         let config = config.validate()?;
+        let profile = config.profile();
+        let capability = udp.ipv4_fragmentation_protection_status();
+        if profile == UtpPathMtuProfile::DynamicIpv4
+            && capability != Ipv4FragmentationProtectionStatus::Verified
+        {
+            return Err(UtpRuntimeError::DynamicPathMtuUnavailable(capability));
+        }
         let transport = udp.take_utp_transport()?;
         let (commands, command_ingress) = mpsc::channel(UTP_SERVICE_COMMAND_QUEUE);
         let (incoming_sender, incoming) = mpsc::channel(UTP_INCOMING_STREAM_QUEUE);
-        let stats = Arc::new(UtpStats::default());
+        let stats = Arc::new(UtpStats::with_profile(profile));
         let cancellation = CancellationToken::new();
         let task = tokio::spawn(run_service(
             transport,
@@ -796,6 +848,7 @@ impl AtomicUsizeRange {
 
 #[derive(Debug, Default)]
 struct UtpStats {
+    path_mtu_profile: UtpPathMtuProfile,
     active_connections: AtomicUsize,
     connection_high_water: AtomicUsize,
     incoming_half_open: AtomicUsize,
@@ -827,12 +880,23 @@ struct UtpStats {
     mtu_probes_started_high_water: AtomicU64,
     mtu_probes_acknowledged_high_water: AtomicU64,
     mtu_probes_failed_high_water: AtomicU64,
+    mtu_revalidations_started_high_water: AtomicU64,
+    mtu_revalidations_acknowledged_high_water: AtomicU64,
+    mtu_revalidations_failed_high_water: AtomicU64,
+    mtu_downward_recoveries_high_water: AtomicU64,
     mtu_probe_datagrams_sent: AtomicU64,
     mtu_fragmentable_retry_datagrams_sent: AtomicU64,
     worker_panics: AtomicU64,
 }
 
 impl UtpStats {
+    fn with_profile(path_mtu_profile: UtpPathMtuProfile) -> Self {
+        Self {
+            path_mtu_profile,
+            ..Self::default()
+        }
+    }
+
     fn snapshot(&self) -> UtpServiceSnapshot {
         let (smoothed_rtt_min_micros, smoothed_rtt_max_micros) =
             self.smoothed_rtt_micros.snapshot();
@@ -848,6 +912,7 @@ impl UtpStats {
         let (mtu_candidate_min_bytes, mtu_candidate_max_bytes) =
             self.mtu_candidate_bytes.snapshot();
         UtpServiceSnapshot {
+            path_mtu_profile: self.path_mtu_profile,
             active_connections: self.active_connections.load(Ordering::Relaxed),
             connection_high_water: self.connection_high_water.load(Ordering::Relaxed),
             incoming_half_open: self.incoming_half_open.load(Ordering::Relaxed),
@@ -901,6 +966,18 @@ impl UtpStats {
                 .mtu_probes_acknowledged_high_water
                 .load(Ordering::Relaxed),
             mtu_probes_failed_high_water: self.mtu_probes_failed_high_water.load(Ordering::Relaxed),
+            mtu_revalidations_started_high_water: self
+                .mtu_revalidations_started_high_water
+                .load(Ordering::Relaxed),
+            mtu_revalidations_acknowledged_high_water: self
+                .mtu_revalidations_acknowledged_high_water
+                .load(Ordering::Relaxed),
+            mtu_revalidations_failed_high_water: self
+                .mtu_revalidations_failed_high_water
+                .load(Ordering::Relaxed),
+            mtu_downward_recoveries_high_water: self
+                .mtu_downward_recoveries_high_water
+                .load(Ordering::Relaxed),
             mtu_probe_datagrams_sent: self.mtu_probe_datagrams_sent.load(Ordering::Relaxed),
             mtu_fragmentable_retry_datagrams_sent: self
                 .mtu_fragmentable_retry_datagrams_sent
@@ -972,6 +1049,14 @@ impl UtpStats {
             .fetch_max(snapshot.mtu.probes_acknowledged, Ordering::Relaxed);
         self.mtu_probes_failed_high_water
             .fetch_max(snapshot.mtu.probes_failed, Ordering::Relaxed);
+        self.mtu_revalidations_started_high_water
+            .fetch_max(snapshot.mtu.revalidations_started, Ordering::Relaxed);
+        self.mtu_revalidations_acknowledged_high_water
+            .fetch_max(snapshot.mtu.revalidations_acknowledged, Ordering::Relaxed);
+        self.mtu_revalidations_failed_high_water
+            .fetch_max(snapshot.mtu.revalidations_failed, Ordering::Relaxed);
+        self.mtu_downward_recoveries_high_water
+            .fetch_max(snapshot.mtu.downward_recoveries, Ordering::Relaxed);
         if let Some(receive) = snapshot.connection.receive {
             self.delivered_byte_high_water
                 .fetch_max(receive.byte_high_water, Ordering::Relaxed);
@@ -1601,7 +1686,10 @@ impl UtpWorker {
             tokio::select! {
                 biased;
                 _ = self.cancellation.cancelled() => return Ok(WorkerTerminal::ServiceCancelled),
-                _ = self.stream_cancellation.cancelled() => return Ok(WorkerTerminal::ConsumerDropped),
+                _ = self.stream_cancellation.cancelled() => {
+                    self.send_pending_courtesy_ack().await?;
+                    return Ok(WorkerTerminal::ConsumerDropped);
+                },
                 changed = self.generations.changed() => {
                     if changed.is_err()
                         || self.generations.borrow_and_update().generation_for(self.key.family)
@@ -1614,14 +1702,14 @@ impl UtpWorker {
                     Some(bytes) => self.handle_incoming(&bytes)?,
                     None => return Ok(WorkerTerminal::ServiceCancelled),
                 },
-                control = self.controls.recv() => match control {
-                    Some(control) => self.handle_control(control),
-                    None if self.writes.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
-                    None => {}
-                },
                 write = self.writes.recv(), if can_accept_write => match write {
                     Some(bytes) => self.state.queue_data(&bytes)?,
                     None if self.controls.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
+                    None => {}
+                },
+                control = self.controls.recv(), if self.writes.is_empty() => match control {
+                    Some(control) => self.handle_control(control),
+                    None if self.writes.is_closed() => return Ok(WorkerTerminal::ConsumerDropped),
                     None => {}
                 },
                 _ = wait_for_deadline(deadline) => {}
@@ -1719,10 +1807,15 @@ impl UtpWorker {
             let bytes = emission.encode()?;
             let send_result = match self
                 .send
-                .send_to(self.key.generation, &bytes, self.key.remote)
+                .send_to(
+                    self.key.generation,
+                    &bytes,
+                    self.key.remote,
+                    emission.dont_fragment,
+                )
                 .await
             {
-                Ok(length) if length == bytes.len() => {
+                Ok((length, DatagramSendResult::Sent)) if length == bytes.len() => {
                     sent_any = true;
                     saturating_increment(&self.stats.datagrams_sent, 1);
                     saturating_increment(
@@ -1744,18 +1837,19 @@ impl UtpWorker {
                     }
                     DatagramSendResult::Sent
                 }
-                Ok(length) => {
+                Ok((length, DatagramSendResult::Sent)) => {
                     return Err(UtpRuntimeError::Udp(SessionUdpError::Io(io::Error::new(
                         io::ErrorKind::WriteZero,
                         format!("uTP datagram wrote {length} of {} bytes", bytes.len()),
                     ))));
                 }
-                Err(SessionUdpError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => {
+                Ok((_, DatagramSendResult::WouldBlock)) => {
+                    self.send
+                        .writable(self.key.generation, self.key.remote)
+                        .await?;
                     DatagramSendResult::WouldBlock
                 }
-                Err(SessionUdpError::Io(error)) if is_message_too_large(&error) => {
-                    DatagramSendResult::MessageTooLarge
-                }
+                Ok((_, DatagramSendResult::MessageTooLarge)) => DatagramSendResult::MessageTooLarge,
                 Err(error @ SessionUdpError::StaleGeneration { .. }) => {
                     return Err(UtpRuntimeError::Udp(error));
                 }
@@ -1769,6 +1863,39 @@ impl UtpWorker {
         }
         tokio::task::yield_now().await;
         Ok(sent_any)
+    }
+
+    async fn send_pending_courtesy_ack(&mut self) -> Result<(), UtpRuntimeError> {
+        let Some(emission) = self
+            .state
+            .poll_pending_acknowledgement(self.clock.timestamp())?
+        else {
+            return Ok(());
+        };
+        let sequence_number = emission.intent.sequence_number;
+        let bytes = emission.encode()?;
+        match self
+            .send
+            .send_to(self.key.generation, &bytes, self.key.remote, false)
+            .await
+        {
+            Ok((length, DatagramSendResult::Sent)) if length == bytes.len() => {
+                saturating_increment(&self.stats.datagrams_sent, 1);
+                saturating_increment(
+                    &self.stats.datagram_bytes_sent,
+                    u64::try_from(length).unwrap_or(u64::MAX),
+                );
+                self.state.on_send_result(
+                    sequence_number,
+                    DatagramSendResult::Sent,
+                    self.clock.now_micros(),
+                )?;
+            }
+            Ok((_, DatagramSendResult::Sent)) => {}
+            Ok((_, DatagramSendResult::WouldBlock | DatagramSendResult::MessageTooLarge)) => {}
+            Err(_) => {}
+        }
+        Ok(())
     }
 
     fn maybe_publish(&mut self, sent_any: bool) -> Result<(), UtpRuntimeError> {
@@ -1862,12 +1989,6 @@ fn classify_worker_error(error: UtpRuntimeError) -> WorkerTerminal {
     }
 }
 
-fn is_message_too_large(error: &io::Error) -> bool {
-    error
-        .raw_os_error()
-        .is_some_and(|raw| rustix::io::Errno::from_raw_os_error(raw) == rustix::io::Errno::MSGSIZE)
-}
-
 async fn wait_for_deadline(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => sleep_until(deadline).await,
@@ -1944,8 +2065,95 @@ mod tests {
     async fn service() -> (SessionUdpService, crate::SessionUdpTransport, UtpService) {
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let (mut udp, dht) = SessionUdpService::start(socket).unwrap();
-        let utp = UtpService::start(&mut udp).unwrap();
+        let utp = UtpService::start_diagnostic(&mut udp, UtpRuntimeConfig::fixed_ipv4()).unwrap();
         (udp, dht, utp)
+    }
+
+    #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn product_start_selects_dynamic_mtu_only_for_verified_capability() {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (mut udp, dht) = SessionUdpService::start(socket).unwrap();
+        assert_eq!(
+            udp.snapshot().ipv4_fragmentation_protection,
+            Ipv4FragmentationProtectionStatus::Verified
+        );
+        let utp = UtpService::start(&mut udp).unwrap();
+        assert_eq!(
+            utp.snapshot().path_mtu_profile,
+            UtpPathMtuProfile::DynamicIpv4
+        );
+        utp.shutdown().await.unwrap();
+        drop(dht);
+        udp.shutdown().await.unwrap();
+    }
+
+    #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn product_dynamic_mtu_sends_protected_probes_and_delivers_exact_bytes() {
+        let left_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let right_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (mut left_udp, left_dht) = SessionUdpService::start(left_socket).unwrap();
+        let (mut right_udp, right_dht) = SessionUdpService::start(right_socket).unwrap();
+        let left_utp = UtpService::start(&mut left_udp).unwrap();
+        let mut right_utp = UtpService::start(&mut right_udp).unwrap();
+        let left_handle = left_utp.handle();
+        let right_address = right_udp.local_address();
+        let (left, right) = timeout(Duration::from_secs(2), async {
+            tokio::join!(left_handle.connect(right_address), right_utp.accept())
+        })
+        .await
+        .expect("product dynamic uTP connection timeout");
+        let mut left = left.unwrap();
+        let mut right = right.expect("incoming product dynamic uTP stream");
+        let payload = (0..256 * 1024)
+            .map(|index| u8::try_from(index % 251).unwrap())
+            .collect::<Vec<_>>();
+
+        timeout(Duration::from_secs(10), async {
+            let sending = async {
+                left.write_all(&payload).await.unwrap();
+                left.shutdown().await.unwrap();
+            };
+            let receiving = async {
+                let mut received = Vec::new();
+                right.read_to_end(&mut received).await.unwrap();
+                assert_eq!(received.len(), payload.len(), "received byte count");
+                assert_eq!(received, payload);
+                right.shutdown().await.unwrap();
+            };
+            tokio::join!(sending, receiving);
+        })
+        .await
+        .expect("product dynamic uTP transfer timeout");
+        drop(left);
+        drop(right);
+
+        let left_terminal = left_utp.shutdown().await.unwrap();
+        let right_terminal = right_utp.shutdown().await.unwrap();
+        assert_eq!(
+            left_terminal.path_mtu_profile,
+            UtpPathMtuProfile::DynamicIpv4
+        );
+        assert_eq!(
+            right_terminal.path_mtu_profile,
+            UtpPathMtuProfile::DynamicIpv4
+        );
+        assert!(left_terminal.selected_mtu_max_bytes.unwrap() >= 1_456);
+        assert!(left_terminal.mtu_probes_acknowledged_high_water > 0);
+        let left_udp_snapshot = left_udp.snapshot();
+        assert!(left_udp_snapshot.protected_sends_sent > 0);
+        assert!(left_udp_snapshot.maximum_datagram_bytes_sent >= 1_456);
+        assert_eq!(left_udp_snapshot.fragmentation_restore_failures, 0);
+
+        drop(left_dht);
+        drop(right_dht);
+        let left_udp_terminal = left_udp.shutdown().await.unwrap();
+        let right_udp_terminal = right_udp.shutdown().await.unwrap();
+        assert_eq!(left_udp_terminal.tasks, 0);
+        assert_eq!(right_udp_terminal.tasks, 0);
+        assert_eq!(left_udp_terminal.egress_waiters, 0);
+        assert_eq!(right_udp_terminal.egress_waiters, 0);
     }
 
     async fn connected_pair() -> (

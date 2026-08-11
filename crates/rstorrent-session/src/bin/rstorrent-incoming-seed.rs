@@ -850,6 +850,7 @@ async fn session_udp_endpoint(service: &ApplicationService) -> Result<String, Se
 
 fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_json::Value {
     serde_json::json!({
+        "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
         "connection_high_water": snapshot.connection_high_water,
         "incoming_half_open": snapshot.incoming_half_open,
@@ -859,6 +860,11 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
         "selected_mtu_min_bytes": snapshot.selected_mtu_min_bytes,
         "selected_mtu_max_bytes": snapshot.selected_mtu_max_bytes,
+        "mtu_probes_started_high_water": snapshot.mtu_probes_started_high_water,
+        "mtu_probes_acknowledged_high_water": snapshot.mtu_probes_acknowledged_high_water,
+        "mtu_probes_failed_high_water": snapshot.mtu_probes_failed_high_water,
+        "mtu_revalidations_started_high_water": snapshot.mtu_revalidations_started_high_water,
+        "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
         "worker_panics": snapshot.worker_panics,
     })
 }

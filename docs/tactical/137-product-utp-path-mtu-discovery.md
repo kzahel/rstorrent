@@ -7,8 +7,10 @@ Stage 2's shared-egress and safe platform-option boundary is complete.
 Maintainer review approved target-specific `dontfrag 1.0.1` for macOS;
 existing `rustix` remains the Linux/Android adapter, both Android native ABIs
 cross-build, and actual macOS set/get/restore passes. Stage 3 deterministic
-revalidation and downward recovery are complete; product packetization remains
-fixed at 548 while Stage 4 integrates protected sends. No unsafe project code,
+revalidation and downward recovery and Stage 4 protected-send/product runtime
+integration are complete. Verified IPv4 sockets now select dynamic product
+packetization; other capabilities fail closed at 548. Stage 5 controlled
+interop, rate, and efficiency evidence is current. No unsafe project code,
 public-network activity, or physical-device work is authorized.
 
 Topics: `utp-transport-campaign`, `capability-readiness`,
@@ -450,6 +452,56 @@ Stage 3 evidence:
 - `cargo test -p rstorrent-protocol --lib`: 204 passed, 2 ignored, plus
   protocol all-target Clippy with warnings denied.
 
+## Stage 4 Protected-Send And Product Evidence
+
+The shared per-family egress boundary now carries each transport emission's
+fragmentation-protection intent. A protected IPv4 attempt acquires the same
+exclusion used by DHT and ordinary uTP, reads the prior policy, installs and
+rereads the protected value, performs exactly one synchronous nonblocking
+send attempt, then restores and rereads the exact prior value before releasing
+the boundary. Sent, would-block, and message-too-large are typed protocol
+feedback. A would-block result restores first and waits for socket readiness
+before the worker retries. Generic transaction fault tests cover send error,
+partial set failure, mismatched restore, and panic; no `.await` occurs while
+the socket policy differs.
+
+An uncertain restore sets the generation inactive while still holding the
+egress boundary and publishes one latest-value repair request. The existing
+session-network reconciliation task—not a detached send owner—removes and
+joins the contaminated generation, rebinds its exact local endpoint, verifies
+the replacement capability, and publishes a new generation. A focused fault
+test proves the old generation is fenced, exact endpoint is retained,
+generation identity changes, repair counters advance, and terminal tasks and
+waiters reach zero.
+
+`UtpService::start` now selects `dynamic_ipv4` only when the current IPv4
+socket reports `Verified`; all other statuses select the explicit `fixed_548`
+profile. Diagnostic construction rejects an attempted dynamic profile without
+the same positive capability. UDP and uTP snapshots and harness JSON now name
+the profile, option status, protected-send outcomes, maximum sent datagram,
+revalidation/downward counters, restoration failures, and repair outcomes.
+
+A real macOS product-profile loopback transfer sends and verifies 256 KiB,
+acknowledges protected probes, selects at least 1,456 payload bytes, observes
+no restoration failure, and terminates every worker and UDP owner. This test
+exposed two bounded pre-existing lifecycle races which were repaired rather
+than hidden: shutdown controls now wait behind the final queued application
+write, and consumer-drop termination sends an already-owed transport STATE
+acknowledgement before releasing the worker. The latter never sends queued
+application payload and has an independent pure transition test.
+
+Stage 4 evidence at this checkpoint:
+
+- actual macOS verification and protected send both restore the prior false
+  `IP_DONTFRAG` value;
+- shared DHT/uTP exclusion, cancellation cleanup, replacement fencing,
+  injected contamination repair, typed protected-send feedback, product
+  profile selection, and exact dynamic transfer tests pass;
+- `cargo test -p rstorrent-engine --lib`: 512 passed, 7 ignored before the
+  final added courtesy-ACK test count is reconciled at closure;
+- engine and session all-target Clippy pass with warnings denied; and
+- workspace all-target compilation and formatting/diff checks pass.
+
 ## Validation Matrix
 
 | Layer | Required evidence |
@@ -487,6 +539,8 @@ requires diagnosis, not threshold relaxation.
 4. Carry protected-send intent and typed feedback through the generation-
    fenced runtime, enable dynamic construction only behind positively verified
    capability, and commit scripted shared-DHT/lifecycle evidence.
+   Complete, including exact restore, same-owner repair, product activation,
+   structured evidence, and real macOS dynamic transfer.
 5. Extend the controlled application/libtorrent fixture and alternating
    fixed/dynamic rate/performance matrix. Commit exact interoperability,
    efficiency, and resource evidence.

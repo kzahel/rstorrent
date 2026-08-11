@@ -90,9 +90,14 @@ the single authoritative **Now**.
   actual macOS set/get/exact-restore proof. Pure state now revalidates after 15
   minutes, reopens from the conservative base after an isolated floor failure,
   preserves the exact fragmentable retry, and fences repeated fast-loss
-  signals by one RTT. No protected product probe, unsafe project code, setting,
-  external run, or protocol-claim change has landed; runtime integration is
-  the current stage.
+  signals by one RTT. Stage 4 now carries protected intent through the shared
+  egress transaction, restores and rereads before unlock, repairs a
+  contaminated generation through the existing session owner, and selects
+  dynamic product MTU only for a positively verified IPv4 socket. A 256 KiB
+  macOS product transfer selected at least 1,456 bytes with exact content and
+  zero terminal ownership. No unsafe project code, setting, external run, or
+  protocol-claim change has landed; controlled interop/rate evidence is the
+  current stage.
 - Completed Tactical `132` removes the repeated five-second tax without a
   second cache. Each bounded per-torrent endpoint record is unknown,
   advertised, confirmed, or suppressed. Actual uTP transport results update
@@ -845,11 +850,13 @@ default-readiness Tactical `132` are complete; and product-default Tactical
 Partial; product Tactical `138` completed, and Tactical `137` is reactivated;
 its Stage 2 shared-egress and safe platform-option boundary passes, including
 the approved macOS adapter; deterministic Stage 3 revalidation/downward
-recovery passes and Stage 4 runtime integration is current.**
+recovery and Stage 4 protected-send/product runtime integration pass, and
+Stage 5 controlled interop/rate evidence is current.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Execute Tactical `137`'s
-protected-send and capability-gated product integration stage. Reachability, tracker/DHT incoming-endpoint advertisement,
+controlled application/libtorrent and alternating fixed/dynamic efficiency
+stage. Reachability, tracker/DHT incoming-endpoint advertisement,
 presentation, permanent network change, different host, and a broader uTP
 support claim remain separate decisions; no public-swarm attempt is authorized
 by this tactical.

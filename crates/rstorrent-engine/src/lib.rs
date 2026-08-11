@@ -166,7 +166,8 @@ pub use session_socket::{
 };
 pub use session_udp::{
     SESSION_UDP_DHT_QUEUE, SESSION_UDP_UTP_DATAGRAM_BYTES, SESSION_UDP_UTP_QUEUE, SessionUdpError,
-    SessionUdpHandle, SessionUdpService, SessionUdpSnapshot, SessionUdpTransport,
+    SessionUdpHandle, SessionUdpRepairRequest, SessionUdpService, SessionUdpSnapshot,
+    SessionUdpTransport,
 };
 pub use storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, MAX_STORAGE_OBSERVATION_TOKEN_BYTES,
@@ -203,5 +204,6 @@ pub use utp_diagnostic::{
 pub use utp_runtime::{
     MAX_INCOMING_UTP_HALF_OPEN, MAX_UTP_APPLICATION_WRITE_BYTES, MAX_UTP_CONNECTIONS,
     UTP_CONNECTION_DATAGRAM_QUEUE, UTP_INCOMING_STREAM_QUEUE, UTP_RUNTIME_DATAGRAM_BYTES,
-    UtpHandle, UtpRuntimeConfig, UtpRuntimeError, UtpService, UtpServiceSnapshot, UtpStream,
+    UtpHandle, UtpPathMtuProfile, UtpRuntimeConfig, UtpRuntimeError, UtpService,
+    UtpServiceSnapshot, UtpStream,
 };
