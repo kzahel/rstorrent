@@ -26,12 +26,12 @@ sustained large-transfer gap, rejects checkpoint sync, observation overhead,
 resumable semantics, and storage-worker count as primary causes, and selects
 storage intake backlog for ready Tactical
 [`129`](../tactical/129-bounded-storage-intake-watermark.md). Explicit
-maintainer direction subsequently supersedes that unimplemented bounded plan
-with active near-parity Tactical
+maintainer direction subsequently superseded that unimplemented bounded plan
+with completed near-parity Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md). It retains the
-independent watermark as its first stage and requires at least `0.95x` pinned
+independent watermark as its first stage and required at least `0.95x` pinned
 libtorrent on both matched sustained plaintext and forced-RC4 cohorts before
-closing.
+closing. The final retained cohorts exceed both gates.
 
 ## Hierarchical Transfer-Rate Evidence: 2026-08-11
 

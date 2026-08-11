@@ -63,10 +63,11 @@ the bounded BEP 29 claim graduated to **Partial**. Product-policy Tactical
 with hierarchical session/torrent peer-transfer limits across TCP/uTP,
 generated first-party controls, controlled desktop/full-duplex evidence, and
 an API 34 AVD product gate. Explicit maintainer near-parity direction
-supersedes unimplemented Tactical `129` with active Tactical
+superseded unimplemented Tactical `129` with completed Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) as the
-authoritative **Now**, and Tactical `122`'s classified Ubuntu result leaves
-focused-driver HTTP(S) tracker dispatch available after it. The
+controlled TCP storage result. Tactical `122`'s classified Ubuntu result now
+leaves focused-driver HTTP(S) tracker dispatch as the authoritative planning
+**Now**. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -398,7 +399,9 @@ bounded Partial BEP 29 claim; Tactical `134` completes durable hierarchical
 session/torrent peer-transfer rate policy, common TCP/uTP duplex enforcement,
 generated React/Compose controls, controlled cap/fairness/full-duplex
 evidence, and an API 34 AVD product gate. Tactical `129` is superseded before
-implementation; Tactical `135` is active as the sole authoritative Now.**
+implementation; Tactical `135` completes controlled plaintext/RC4 near parity
+and the smaller-piece matrix. Focused-driver HTTP(S) tracker dispatch is the
+sole authoritative planning Now.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -412,15 +415,13 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md). One joined
-session bandwidth owner now applies durable Unlimited-or-finite upload and
-download limits at both session and torrent levels across initiated and
-accepted TCP/uTP peer streams. Unequal three-peer/one-peer controlled
-downloads finish within 2.8% under one session cap; independent session-cap,
-torrent-cap, full-duplex, exact-hash, schema-18 restart, web, Android
-cross-build, API 34 AVD, and complete repository gates pass. The counted scope
-is established peer-stream bytes; automatic network policy, total-device
-accounting, and seeding goals remain separate.
+[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). A separate 1
+MiB storage-intake watermark preserves the larger resident ceilings, and one
+fixed-buffer blocking hash task per physical span replaces per-16-KiB task
+dispatch and allocation. Four-run plaintext, forced-RC4, and 256 KiB--16 MiB
+piece cohorts reach `1.146x`--`1.336x` pinned libtorrent with exact integrity,
+bounded resources, complete failure/liveness and repository gates, and both
+Android ABI builds. Pending-write input remains unselected.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -451,15 +452,13 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute active Tactical
-[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). Preserve the
-resident-payload safety ceiling and selected 1 MiB storage-intake watermark.
-The retained per-span hash-read dispatch change raises the primary plaintext
-median to `1.146x` pinned libtorrent, forced RC4 to `1.225x`, and every
-smaller-piece row to at least `1.213x`. Pending-write input is not selected.
-Run the remaining failure/liveness/resource, repository, and Android gates.
-Do not combine further bandwidth policy, public-swarm work, or protocol
-breadth with this campaign.
+Next executable action: perform source-first planning for bounded HTTP(S)
+tracker dispatch in the focused resumable driver's nested manager. Tactical
+`122` proves the missing composition on the official HTTPS-only Ubuntu
+torrent. Inspect the pinned libtorrent implementation and tests, the existing
+application tracker owner, and relevant JSTorrent history before creating a
+new tactical. No implementation is authorized until that ownership and
+interoperability contract exists.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

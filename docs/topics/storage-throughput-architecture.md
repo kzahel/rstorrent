@@ -60,7 +60,7 @@ Completed Tactical
 finds that sustained single-torrent throughput degrades monotonically as the
 current coupled resident/storage intake allowance grows from 8 to 64 MiB.
 Tactical [`129`](../tactical/129-bounded-storage-intake-watermark.md) was
-superseded before implementation by active Tactical
+superseded before implementation by completed Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md). The broader
 slice now separates a hysteretic storage-intake watermark from the larger
 resident safety ceiling and storage-channel capacity. A four-run controlled
@@ -74,8 +74,8 @@ span raises the primary plaintext median from 449.3 to 565.7 MiB/s, or
 `1.146x` the paired libtorrent median, while retaining sequential handle
 acquisition and the session pool bound. Forced RC4 and all three smaller-piece
 rows subsequently reach `1.213x`--`1.336x`. The campaign therefore does not
-select pending-write input; failure, resource, repository, and Android gates
-remain before closure.
+select pending-write input. Its failure, resource, repository, and Android
+gates pass before closure.
 
 ## Purpose And Scope
 

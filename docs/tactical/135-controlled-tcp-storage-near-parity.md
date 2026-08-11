@@ -1,6 +1,6 @@
 # Tactical 135: Controlled TCP Storage Near-Parity
 
-Status: **Active** on 2026-08-11. Explicit maintainer direction broadens the
+Status: **Completed** on 2026-08-11. Explicit maintainer direction broadened the
 unimplemented queue-watermark Tactical
 [`129`](129-bounded-storage-intake-watermark.md) into a measured near-parity
 campaign. Tactical `129` is incorporated here and superseded before code
@@ -348,8 +348,43 @@ queues at most 49/69, and RSS at most 32,440,320 bytes. The selected code is
 clean commit `25e3761`; raw JSON and payload artifacts are not retained.
 
 Pending-write read-through is not selected: the measured gap it was meant to
-address is gone. Full failure/liveness/resource validation, complete
-repository gates, and both Android builds remain before closure.
+address is gone.
+
+### Completion validation
+
+The retained code and existing layered suites satisfy the remaining
+correctness and liveness matrix. The complete 502-test engine suite covers
+delayed writes/hashes and checkpoints, independent execution limits, full
+command/completion queues, write and hash cancellation, typed checkpoint and
+storage failure, oversized-piece liveness, generation joins in both orders,
+selection fencing, cross-file/part/padding layouts, publication recovery, and
+session/root fairness. The first workspace run encountered the unrelated
+scripted metadata timing test
+`tracker_discovery_continues_while_metadata_peer_stalls` after 494 passes; its
+exact rerun passed, and a complete repeated workspace run passed with 495
+engine tests and seven opt-in tests ignored.
+
+Final commands and outcomes:
+
+- `cargo fmt --all -- --check`: pass;
+- `cargo clippy --workspace -- -D warnings`: pass;
+- `cargo test --workspace`: pass on the complete repeat after the exact flaky
+  test passed;
+- the locked controlled diagnosis, public comparator contract, and public
+  comparator suites: 32 tests passed;
+- `experiments/android-engine-bootstrap/build.sh`: x86_64 and arm64-v8a
+  release libraries built, UniFFI regenerated, the debug APK assembled, and
+  Android unit tests passed; only existing Kotlin deprecation warnings were
+  emitted; and
+- `git diff --check`: pass, with no retained benchmark report, payload, or
+  temporary artifact.
+
+The stopping condition is satisfied. RSTorrent is above the declared
+near-parity threshold on matched plaintext and forced RC4 and above every
+small-piece non-regression floor, with exact integrity, bounded resources,
+failure/liveness coverage, both Android ABIs, and complete repository gates.
+This result is a controlled same-host TCP storage-path claim, not a public
+swarm or arbitrary-device throughput promise.
 
 ## Validation Matrix
 
