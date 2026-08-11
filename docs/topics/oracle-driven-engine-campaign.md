@@ -66,11 +66,14 @@ an API 34 AVD product gate. Explicit maintainer near-parity direction
 superseded unimplemented Tactical `129` with completed Tactical
 [`135`](../tactical/135-controlled-tcp-storage-near-parity.md) as the
 controlled TCP storage result. Tactical `122`'s classified Ubuntu result then
-selected active Tactical
+selected Tactical
 [`136`](../tactical/136-shared-tracker-operation-executor.md) as the
-authoritative implementation **Now**. It extracts a shared task-free tracker
-operation executor before composing authenticated HTTP(S) into the focused
-direct driver. The
+authoritative implementation **Now**. It is complete: one task-free tracker
+operation executor serves the separate application and direct owners, and the
+focused driver now supports authenticated HTTP(S) plus bounded final
+lifecycle. Its authorized Ubuntu rerun closes the original dispatch gap and
+records one later post-discovery stall after six pieces without inferring a
+new implementation direction. The campaign is at a selection checkpoint. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -403,9 +406,11 @@ session/torrent peer-transfer rate policy, common TCP/uTP duplex enforcement,
 generated React/Compose controls, controlled cap/fairness/full-duplex
 evidence, and an API 34 AVD product gate. Tactical `129` is superseded before
 implementation; Tactical `135` completes controlled plaintext/RC4 near parity
-and the smaller-piece matrix. Active Tactical `136` owns the shared tracker
-operation executor and focused-driver authenticated HTTP(S) composition as the
-sole authoritative Now.**
+and the smaller-piece matrix. Tactical `136` completes the shared tracker
+operation executor, focused-driver authenticated HTTP(S), bounded direct
+lifecycle, controlled interoperability, and the public dispatch rerun. The
+sole authoritative Now is the campaign selection checkpoint recorded in
+`capability-readiness.md`.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -419,13 +424,13 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`135`](../tactical/135-controlled-tcp-storage-near-parity.md). A separate 1
-MiB storage-intake watermark preserves the larger resident ceilings, and one
-fixed-buffer blocking hash task per physical span replaces per-16-KiB task
-dispatch and allocation. Four-run plaintext, forced-RC4, and 256 KiB--16 MiB
-piece cohorts reach `1.146x`--`1.336x` pinned libtorrent with exact integrity,
-bounded resources, complete failure/liveness and repository gates, and both
-Android ABI builds. Pending-write input remains unselected.
+[`136`](../tactical/136-shared-tracker-operation-executor.md). One task-free
+UDP/HTTP/HTTPS executor now serves the separate application and focused direct
+lifecycle owners. Scripted HTTP lifecycle/fallback/cancellation, authenticated
+pinned-libtorrent HTTPS with an untrusted control, repository/web/Android
+gates, and the bounded Ubuntu dispatch rerun pass. The public run verified six
+pieces before a later stall; that changing-swarm observation is not authority
+for a new peer-policy slice.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -456,13 +461,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: implement Tactical `136`'s first code slice by
-extracting one task-free tracker-operation executor and moving the application
-owner onto it without behavior drift. Its source-first record covers the
-pinned libtorrent implementation and tests, the existing application owner,
-and relevant JSTorrent history. The following slice composes authenticated
-HTTP(S) into the focused resumable driver's nested manager and closes with
-controlled and bounded public evidence.
+Next executable action: perform the campaign selection checkpoint. Review the
+post-discovery Ubuntu stall as one non-reproducible changing-swarm observation;
+do not implement against it without a deterministic reproduction. Select that
+bounded diagnosis or the existing durable-seeding candidate before creating
+and activating another tactical.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

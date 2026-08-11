@@ -44,19 +44,16 @@ all three cases. Tracker owners consume only the selected endpoint and do not
 own or infer gateway state. Scripted coverage passes; off-LAN incoming IPv6
 evidence remains pending.
 Completed Tactical
-[`122`](../tactical/122-paired-public-download-performance-cohorts.md) exposes
+[`122`](../tactical/122-paired-public-download-performance-cohorts.md) exposed
 one narrower integration boundary: the focused resumable download driver's
-nested tracker manager still dispatches only UDP. Its Ubuntu 26.04 public run
-rejected both HTTPS rows and found no peer, while the existing long-lived
-application owner retains its controlled and public HTTP(S) evidence. Direct-
-manager HTTP(S) dispatch is therefore a source-first follow-up candidate, not
-a regression of the application tracker capability.
-Active Tactical
-[`136`](../tactical/136-shared-tracker-operation-executor.md) accepts that
-follow-up. It preserves separate application and direct lifecycle owners while
-extracting their common task-free UDP/HTTP/HTTPS announce operation boundary;
-the application continues disabling the nested owner so product torrents do
-not announce twice.
+nested tracker manager dispatched only UDP. Completed Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) closes that gap.
+It preserves separate application and direct lifecycle owners while sharing
+one task-free UDP/HTTP/HTTPS announce executor; the application continues
+disabling the nested owner so product torrents do not announce twice. The
+direct owner now retains HTTP tracker IDs, sends bounded completed/stopped
+announces after successful content, and uses authenticated system trust for
+HTTPS.
 
 ## Scope
 
@@ -130,8 +127,9 @@ other discovery sources. Pause, archive, removal, generation replacement, and
 session shutdown explicitly stop and join the registration. Focused direct
 engine APIs retain their nested manager for standalone use, but application
 driver configurations disable it so the product has only the session owner.
-That nested manager currently supports only UDP transport; callers that pass
-HTTP(S) records receive a scheduled typed failure rather than an announce.
+That nested manager supports UDP, HTTP, and authenticated HTTPS through the
+same operation executor while retaining its independent schedule, join set,
+result queue, and cancellation owner.
 
 Magnet `tr` parameters do not encode BEP 12 tier structure, so retained UDP,
 HTTP, and HTTPS trackers form one initially shuffled synthetic tier. Failure
@@ -377,6 +375,33 @@ completed the controlled pinned-libtorrent SAF transfer and remained
 `encrypted_unauthenticated`. Tracker rows otherwise report
 `encrypted_system_trust` from the policy captured at operation start, whether
 the handshake succeeds or fails.
+
+Tactical `136` moves the former driver-local UDP mechanics into one task-free
+operation executor shared by the application and focused owners. The outer
+owners still own schedules, tasks, generations, counters, ports, continuation,
+and peer registries. Raw magnets retain all bounded UDP/HTTP/HTTPS rows; full
+request targets remain private while diagnostics expose a redacted origin.
+The focused owner survives the content-discovery handoff and sends
+`completed` then bounded `stopped` with `numwant=0` and per-row HTTP tracker-ID
+reuse.
+
+A scripted HTTP-only magnet discovered the sole peer and independently
+verified exact content through this direct owner. Mixed HTTP-failure-to-UDP
+fallback, stalled-HTTP cancellation/socket closure, and clean finalization
+after an already exhausted tracker owner pass. A controlled
+authenticated HTTPS tracker introduced the direct resumable driver to pinned
+libtorrent `2.0.13.0`, exact payload SHA-1
+`576143b2992ecf25c780ff41c79552f3bb50941b` passed, and the tracker observed
+exactly `started`, `completed`, `stopped`. An untrusted-certificate control
+produced zero accepted HTTP requests.
+
+The clean 2026-08-11 Ubuntu 26.04 comparison confirms the original public
+boundary is closed: both official HTTPS rows produced two response batches
+and two reported peers, the first candidate arrived at 0.148 seconds, first
+payload at 4.203 seconds, and six pieces / 1,572,864 bytes verified. RSTorrent
+then missed the 10% target at 120.003 seconds while libtorrent reached it in
+5.399 seconds. That later one-peer stall is a dated changing-swarm observation,
+not tracker failure or authority for a new peer-policy change.
 
 ## Current Limits And Next Work
 

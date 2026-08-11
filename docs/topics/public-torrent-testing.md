@@ -119,9 +119,9 @@ both owners and independently verified all 276,445,467 bytes. Its Ubuntu 26.04
 pair classified `reference_only`: libtorrent verified 293,289,984 bytes at the
 10% milestone in 4.731 seconds, while RSTorrent received no tracker response
 or peer candidate before its 120-second boundary. The public probe uses the
-focused direct engine manager, whose tracker task currently rejects HTTP(S)
-endpoints; the long-lived application owner already supports them. The result
-therefore identifies a direct-driver integration gap rather than contradicting
+focused direct engine manager, which at that commit rejected HTTP(S)
+endpoints; the long-lived application owner already supported them. The result
+therefore identified a direct-driver integration gap rather than contradicting
 the earlier application HTTPS evidence or measuring Ubuntu payload throughput.
 
 Tactical `132`'s single authorized 2026-08-11 attempt reused the catalogued
@@ -137,9 +137,20 @@ contained no file and was removed. This is a dated outbound default-readiness
 observation, not incoming reachability, stable swarm performance, or a general
 BEP 29 claim. The tactical authorizes no repeat.
 
-Active Tactical
-[`136`](../tactical/136-shared-tracker-operation-executor.md) owns that direct-
-manager HTTP(S) integration through one shared task-free operation executor.
+Completed Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) closes that
+direct-manager integration boundary through one shared task-free operation
+executor. Its clean 2026-08-11 `matched-plain-30` Ubuntu rerun again classified
+`reference_only`, but for a different reason: both official HTTPS rows now
+returned, two batches reported two peers, the first candidate arrived at
+0.148 seconds, and payload began at 4.203 seconds. RSTorrent verified six
+pieces / 1,572,864 bytes before the 120.003-second boundary; libtorrent reached
+the 10% target at 292,651,008 bytes in 5.399 seconds. Cleanup completed without
+forced termination and the 292-KiB raw report was removed. The original
+tracker-dispatch gap is therefore closed. The later one-peer stall is one
+dated changing-swarm observation and does not authorize a peer-policy change
+or provide an Ubuntu throughput ratio.
+
 Separate later breadth remains a bounded application-level Debian run on a
 host with native routed IPv6 and an Arch DHT-only cohort. Do not add a
 product-wide force-family setting or hard-code a dated DNS address merely to

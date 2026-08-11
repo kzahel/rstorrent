@@ -632,10 +632,10 @@ that scope and its cleanup or compatibility rules explicitly.
   ceilings and amortizes hash reads to reach controlled plaintext/RC4 and
   smaller-piece near parity with exact integrity and bounded resources.
 - [`136-shared-tracker-operation-executor.md`](136-shared-tracker-operation-executor.md):
-  active authoritative **Now**; extracts one task-free UDP/HTTP/HTTPS announce
-  executor shared by the application and focused direct owners, then composes
-  authenticated HTTP(S) into the standalone resumable path without adding a
-  second product tracker owner.
+  complete; extracts one task-free UDP/HTTP/HTTPS announce executor shared by
+  the application and focused direct owners, composes authenticated HTTP(S)
+  and full tracker lifecycle into the standalone resumable path, and proves
+  controlled pinned-libtorrent trust plus bounded public dispatch.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

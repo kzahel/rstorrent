@@ -1,8 +1,8 @@
 # Code Organization And Refactoring
 
 Status: Living guidance with its latest quantitative snapshot measured at
-source commit `c545e91`; direction was reconciled on 2026-08-10 at `c34b7be`
-after completed Tacticals
+source commit `c545e91`; direction was reconciled on 2026-08-11 after
+completed Tacticals
 [`079`](../tactical/079-engine-driver-source-shape.md),
 [`080`](../tactical/080-session-view-subsystem-boundaries.md), and the
 feature-driven ownership work through completed
@@ -12,8 +12,9 @@ evidence-limited
 and completed Tacticals
 [`114`](../tactical/114-session-wide-concurrent-torrent-admission.md),
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md),
-and [`119`](../tactical/119-deterministic-utp-transport-core.md). The crate
-graph remains appropriate. Tactical `114` extracted pure admission, durable
+and [`119`](../tactical/119-deterministic-utp-transport-core.md), plus
+[`136`](../tactical/136-shared-tracker-operation-executor.md). The crate graph
+remains appropriate. Tactical `114` extracted pure admission, durable
 queue, newest-schema, and session-resource owners while retaining the
 application lifecycle and SQLite transaction authorities. Tactical `116`
 then extracted immutable artifact geometry, exact logical storage references
@@ -32,6 +33,15 @@ the application callback/test topology, historical store internals, and role-
 specific peer bootstrap paths exposed by MSE. No standalone refactor is
 selected. The completed storage slice does not justify a generic resume,
 storage, or recovery framework.
+
+Completed Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) resolves one
+concrete direct/application duplication seam. A private task-free
+`driver/tracker_operation.rs` owns one UDP/HTTP/HTTPS announce execution while
+the separate application and direct managers retain their schedules, tasks,
+cancellation, counters, ports, continuation state, and peer sinks. No generic
+transport trait, manager embedding framework, crate split, or product-owner
+unification was needed.
 
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds one
@@ -542,13 +552,19 @@ child could make that standalone-engine compatibility owner explicit while
 leaving the facade responsible for public entry points and top-level download
 orchestration.
 
-This is conditional, not a recommendation to delete or unify the two
-lifetimes. The direct path still supports focused engine APIs and tests, and
-it intentionally lacks the application owner's HTTP/HTTPS tracker transport.
-Select this story only when another direct-engine discovery or metadata
-change would otherwise expand the facade, or when the product decides the
-compatibility surface can change. Preserve public paths and do not make the
-session advertisement owner a dependency of the download driver.
+Tactical `136` extracted the operation seam this pressure justified. The
+direct path now supports UDP/HTTP/HTTPS through the same task-free executor as
+the application while retaining its smaller download-scoped manager and full
+final lifecycle. The remaining private `TrackerManager`, direct DHT retry,
+content-discovery tasks, and metadata coordinator do not yet justify a larger
+embedding framework or facade extraction.
+
+This remains conditional, not a recommendation to delete or unify the two
+lifetimes. Select another direct-owner extraction only when a concrete
+discovery or metadata change would otherwise expand the facade, or when the
+product decides the compatibility surface can change. Preserve public paths
+and do not make the session advertisement owner a dependency of the download
+driver.
 
 ### 7. Android Product Graduation
 
@@ -670,6 +686,12 @@ lifecycle, or navigation problem remains.
 
 ## History
 
+- **2026-08-11:** Completed Tactical `136`. One private task-free tracker
+  operation module now serves application and focused direct managers across
+  UDP/HTTP/HTTPS, with explicit input/outcome values and transport-local token
+  or tracker-ID continuation. Both real lifecycle owners remain concrete; no
+  trait framework, crate split, session-owner dependency, or daemon boundary
+  was introduced.
 - **2026-08-10:** Completed Tactical `125`. The shared session UDP owner now
   isolates DHT/uTP queues, the runtime gives every uTP connection one bounded
   worker/cancellation/join path, and the private two-variant `PeerStream`

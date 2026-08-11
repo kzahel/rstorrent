@@ -1,9 +1,9 @@
 # Tactical 136: Shared Tracker Operation Executor
 
-Status: **Active**. Explicit maintainer authorization on 2026-08-11 selected
-the focused resumable driver's missing HTTP(S) composition, required this
-source-first tactical, and authorized end-to-end implementation plus logical
-commits.
+Status: **Completed 2026-08-11**. Explicit maintainer authorization on
+2026-08-11 selected the focused resumable driver's missing HTTP(S)
+composition, required this source-first tactical, and authorized end-to-end
+implementation plus logical commits.
 
 Topics: `tracker-discovery`, `capability-readiness`,
 `oracle-driven-engine-campaign`, `public-torrent-testing`
@@ -12,14 +12,14 @@ Topics: `tracker-discovery`, `capability-readiness`,
 
 Tactical [`122`](122-paired-public-download-performance-cohorts.md) exposed a
 real alternate-engine-entry-point gap rather than an HTTPS wire failure. The
-focused public probe passes retained HTTP and HTTPS `TrackerConfig` rows into
-the resumable driver's nested tracker manager, but
-`driver.rs::run_active_tracker_manager` rejects every non-UDP endpoint before
-DNS, TCP, TLS, or HTTP. The official Ubuntu 26.04 metainfo contained only HTTPS
-rows, so RSTorrent found no candidate and transferred no payload while pinned
-libtorrent reached the 10% target. Raw standalone magnet intake has a second
-facet of the same gap: `configured_magnet_trackers` filters the already-bounded
-UDP/HTTP/HTTPS catalog down to UDP before constructing the schedule.
+focused public probe passed retained HTTP and HTTPS `TrackerConfig` rows into
+the resumable driver's nested tracker manager, but the manager rejected every
+non-UDP endpoint before DNS, TCP, TLS, or HTTP. The official Ubuntu 26.04
+metainfo contained only HTTPS rows, so RSTorrent found no candidate and
+transferred no payload while pinned libtorrent reached the 10% target. Raw
+standalone magnet intake had a second facet of the same gap:
+`configured_magnet_trackers` filtered the already-bounded UDP/HTTP/HTTPS
+catalog down to UDP before constructing the schedule.
 
 The long-lived application path is not missing HTTP(S). Tactical
 [`095`](095-bounded-http-https-tracker-transport.md) and Tactical
@@ -365,6 +365,93 @@ Each slice leaves the workspace formatted and its focused tests passing before
 commit. A partial slice must continue reporting unsupported direct HTTP(S)
 truthfully and must not change the application support claim.
 
+## Completion Record
+
+The tactical landed in five logical commits:
+
+- `1051724` records the source-first ownership and evidence contract;
+- `41c8f65` extracts `driver/tracker_operation.rs` and moves the application
+  owner onto the shared task-free UDP/HTTP/HTTPS executor;
+- `67962d3` composes the direct manager with authenticated system-trust
+  HTTP(S), common address outcomes, HTTP tracker-ID continuation, all retained
+  raw-magnet transports, and the generalized `trackers` configuration; and
+- `7e8f0d6` returns the tracker owner after content discovery so successful
+  focused downloads send bounded `completed` and `stopped` announces, while
+  adding direct lifecycle, fallback, cancellation, and HTTPS interoperability
+  evidence; and
+- `0f4e2f0` makes successful finalization join an already exhausted tracker
+  owner cleanly while retaining task-panic reporting.
+
+The final shape retains two lifecycle owners and one transport operation
+implementation. The application continues passing an explicit empty nested
+catalog. The direct owner retains one schedule, one supervised task, its
+eight-operation ceiling, its supplied session permit, per-row UDP tokens and
+HTTP tracker IDs, and a five-second finalization deadline. Content discovery
+returns that owner rather than dropping it, so success sends `completed` then
+`stopped`; failure and cancellation still use immediate joined shutdown.
+
+Raw magnets now preserve all bounded UDP, HTTP, and HTTPS rows. Full request
+URLs remain private to operations, while schedule snapshots and activity
+events expose only redacted scheme/host/port labels. A stopped announce uses
+`numwant=0` and the bounded stop deadline. No dependency, trait framework,
+daemon, IPC surface, persistence schema, product setting, or second product
+tracker owner was added.
+
+## Completed Evidence
+
+Deterministic and scripted Rust evidence proves:
+
+- a raw-magnet HTTP tracker is the sole discovery source for an exact
+  hash-verified payload and receives `started`, `completed`, and `stopped`
+  with tracker-ID reuse;
+- a declared HTTP failure falls through to the configured UDP tier;
+- stalled direct HTTP cancellation joins the manager and closes the socket;
+- an owner exhausted before another discovery source completes can be joined
+  without turning the successful download into a false tracker failure;
+- direct and application mixed transports retain their ceilings, retry and
+  endpoint-generation behavior; and
+- the complete `driver::tests::discovery_metadata` group passes 34 tests with
+  only its two public probes ignored.
+
+`tests/interop/http_tracker_direct.py` used a locally generated matching chain
+and pinned libtorrent `2.0.13.0`. The authenticated direct path received the
+sole peer through HTTPS, independently hash-verified payload SHA-1
+`576143b2992ecf25c780ff41c79552f3bb50941b`, and produced exactly
+`started`, `completed`, `stopped`. Its untrusted-certificate control produced
+zero accepted HTTP requests or lifecycle events. The fixture and all
+certificates, metainfo, profiles, and payloads were temporary and removed.
+
+The clean final tree passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace -- -D warnings`;
+- `cargo test --workspace`;
+- `npm run typecheck --prefix clients/web`;
+- `npm run test --prefix clients/web` with 241 tests passing and two skipped;
+- warning-denying engine clippy with `test-platform-root` and all targets;
+- the controlled direct HTTPS harness above; and
+- `experiments/android-engine-bootstrap/build.sh`, including release
+  `x86_64-linux-android` and `aarch64-linux-android`, both UniFFI bindings,
+  Android unit tests, and the debug APK.
+
+The authorized public command was one direct-metainfo Ubuntu 26.04
+`matched-plain-30` pair, 10% target, 120 seconds per owner, ten-second cleanup,
+and 10-GiB hard network authorization. It ran from clean commit `7e8f0d6` and
+completed its report and cleanup. Libtorrent reached 292,651,008 verified
+bytes in 5.399 seconds. RSTorrent no longer failed at tracker dispatch: two
+HTTPS response batches reported two peers, the first candidate arrived at
+0.148 seconds, first payload at 4.203 seconds, and six pieces / 1,572,864
+bytes verified before the 120.003-second boundary. The pair therefore still
+classified `reference_only`, but the original zero-response/zero-candidate
+HTTP(S) integration gap is closed. The later one-peer stall is one dated
+changing-swarm observation, not authority for another implementation slice.
+The 292-KiB raw report and all temporary artifacts were removed after this
+summary.
+
+Every stopping condition owned by this tactical is satisfied. Separate
+future work may reproduce the post-discovery public stall deterministically,
+but this tactical does not infer peer-policy work from one public sample.
+
 ## Escalation Contract
 
 The user has authorized this tactical, logical commits, controlled local
@@ -375,4 +462,3 @@ certificate/name validation, adding a new public API or setting, modifying the
 global operation ceiling, using a real private tracker credential, expanding
 into proxy/web-seed/scrape support, or performing external/destructive action
 outside the recorded harness cleanup.
-

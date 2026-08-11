@@ -367,18 +367,26 @@ Four-run TCP-only medians reach `1.146x` pinned libtorrent for plaintext,
 matrix, with exact integrity, bounded resources, both Android builds, and
 complete repository gates. Pending-write hash input remains unselected.
 
+Tactical
+[`136`](../tactical/136-shared-tracker-operation-executor.md) is complete.
+One task-free UDP/HTTP/HTTPS operation executor now serves the separate
+application and focused direct lifecycle owners. The direct path retains raw-
+magnet HTTP(S), authenticated system trust, tracker IDs, common peer outcomes,
+and bounded completed/stopped finalization. Scripted HTTP lifecycle/fallback/
+cancellation, controlled pinned-libtorrent HTTPS, repository/web/Android
+gates, and a bounded Ubuntu public dispatch rerun pass. That rerun later
+stalled after six verified pieces, so it closes the tracker integration gap
+without authorizing a peer-policy change from one changing-swarm sample.
+
 ## Current Queue
 
 ### Now
 
-- Active Tactical
-  [`136`](../tactical/136-shared-tracker-operation-executor.md) is the single
-  authoritative **Now**. It extracts one task-free UDP/HTTP/HTTPS operation
-  executor shared by the application and focused direct lifecycle owners,
-  then composes authenticated HTTP(S) into the standalone resumable path.
-  Tactical `122` proved the gap on the official HTTPS-only Ubuntu torrent;
-  explicit maintainer authorization now supplies the bounded ownership and
-  interoperability contract required before implementation.
+- **Campaign selection checkpoint.** Tactical `136` is complete. Its public
+  rerun closes the focused HTTP(S) dispatch gap but records one post-discovery
+  stall after six verified pieces. No new implementation is authorized from
+  that single changing-swarm sample; select either a deterministic liveness
+  reproduction or the existing durable-seeding candidate before more code.
 
 ### Next
 
@@ -451,8 +459,8 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Explicit magnet peer hints | Implemented | deterministic, runtime, interop | Hints are bounded and feed the registry, but are not a general discovery mechanism. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Scheduled UDP tracker announces | Implemented | deterministic, runtime, interop, web, AVD, live | One long-lived session owner provides UDP connect/announce, fallback, backoff, retransmission, token reuse, interval/corrective reannounce, exact counters, started/completed/stopped lifecycle, the selected TCP endpoint or port-`1` sentinel, and an eight-operation ceiling shared with HTTP/HTTPS. Controlled tracker-only and mapped off-LAN discovery-to-seed evidence passes. | [`tracker-discovery`](tracker-discovery.md) |
 | Multiple magnet trackers | Partial | deterministic, runtime, interop, live | Up to eight startup operations contribute peers, but magnet trackers form one synthetic tier because magnets contain no BEP 12 tier structure. | [`tracker-discovery`](tracker-discovery.md) |
-| Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web | Outer `announce-list`/`announce`, tier and source survive restart; UDP/HTTP/HTTPS rows share application-owner tier scheduling and the eight-operation ceiling, and controlled imported trackers complete content. The focused direct driver's nested manager dispatches only UDP. | [`tracker-discovery`](tracker-discovery.md) |
-| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | The long-lived application owner provides bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, and connection-family projection. Controlled libtorrent discovery, authenticated transfer, platform trust, and official Ubuntu HTTPS application smokes pass. HTTPS defaults to desktop/Android platform validation; one hidden compatibility value is encrypted but unauthenticated. The focused resumable driver's nested manager remains UDP-only, so its Ubuntu 26.04 comparison found no peer. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
+| Metainfo tracker tiers | Implemented | deterministic, runtime, interop, web, live | Outer `announce-list`/`announce`, tier and source survive restart. UDP/HTTP/HTTPS rows share the transport operation executor and each lifecycle owner's eight-operation schedule ceiling; controlled imported application and focused-direct trackers complete exact content. | [`tracker-discovery`](tracker-discovery.md) |
+| HTTP and HTTPS trackers | Implemented | deterministic, runtime, interop, web, desktop, AVD, live | The long-lived application owner provides bounded HTTP/1.1 requests, Basic auth, five redirects, gzip/`x-gzip`, permissive hostile bencode, tracker IDs and BEP 31, compact/noncompact IPv4/IPv6 peers, policy/family DNS, lifecycle/cancellation, metadata-only activation, and connection-family projection. The focused resumable owner now uses the same task-free operation executor with system trust, tracker-ID continuation, mixed-transport fallback, cancellation, and completed/stopped lifecycle. Controlled libtorrent discovery/authenticated transfers, platform trust, and official Ubuntu HTTPS dispatch pass. One hidden application compatibility value remains encrypted but unauthenticated. Proxies, scrape, other authentication, custom roots/pins, and a public reliability claim are absent. | [`tracker-discovery`](tracker-discovery.md) |
 | DHT | Partial | deterministic, runtime, interop, live | One bounded actor owns independent IPv4/IPv6 identities, routing, tokens, transactions, traversals, peer values, native-family bootstrap, warm state, incoming queries, private gating, merged product lookups, and family-port self-announcement. One session scheduler survives download completion; controlled DHT-only discovery passes in both families, mapped off-LAN IPv4 seed discovery passes, and a native public IPv6 node reached 40 routing nodes and 41 valid responses during successful merged metadata acquisition. Foreign-family bootstrap optimization, BEP 5 `PORT`, and incoming IPv6 reachability remain absent. | [`dht-discovery`](dht-discovery.md) |
 | Peer exchange | Implemented | deterministic, runtime, interop | Verified-public BEP 11 uses bounded directional BEP 10 negotiation, 16-KiB/50-contact messages, 50-per-source and 200-per-torrent admission, a 4,096-event shared timeline, exact provenance/privacy cleanup, and the ordinary registry/dial owner. A controlled complementary two-hop pinned-libtorrent run captures one addition, an oracle-observed RSTorrent drop, and exact 16-MiB completion; underpopulated recent-peer exemptions, BEP 40, and durable PEX state remain absent. | [`peer-lifecycle`](peer-lifecycle.md), [`protocol-support`](protocol-support.md) |
 | Local service discovery | Absent | none | Interface, multicast, and local-network policy are unimplemented. | [`protocol-support`](protocol-support.md) |
@@ -515,7 +523,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |
-| Comparative live performance harness | Implemented | deterministic, interop, web, live | Named hardware profiles retain row-specific 1/10 GiB engine gates, per-view/adversarial application ratios, environment applicability, and artifact-producing CI. The schema-v2 public comparator adds isolated RSTorrent/libtorrent workers, matched plaintext/RC4 profiles, exact metainfo, independent verification, process resources, atomic owner checkpoints, bounded cleanup, and discovery-versus-active-transfer timing. Its first quick run completed in about three minutes: libtorrent's Big Buck Bunny active phase was about 19% faster, while Ubuntu exposed the direct driver's HTTP(S)-tracker gap. Public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
+| Comparative live performance harness | Implemented | deterministic, interop, web, live | Named hardware profiles retain row-specific 1/10 GiB engine gates, per-view/adversarial application ratios, environment applicability, and artifact-producing CI. The schema-v2 public comparator adds isolated RSTorrent/libtorrent workers, matched plaintext/RC4 profiles, exact metainfo, independent verification, process resources, atomic owner checkpoints, bounded cleanup, and discovery-versus-active-transfer timing. Its first quick run found Big Buck Bunny's libtorrent active phase about 19% faster and exposed the focused HTTP(S) gap. The post-fix Ubuntu rerun received two tracker batches and verified six pieces before a later 120-second stall, closing dispatch without yielding a throughput ratio. Public speed remains a distribution rather than a CI threshold. | [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 | Multi-torrent queue and resource budgets | Implemented | deterministic, persistence, runtime, interop, web, physical | Schema 17 stores automatic queue order and configured limit; desktop defaults to three and Android clamps effectively to two. One application owner admits exact generations under shared memory, storage/hash, tracker, outbound, peer, file-handle, and hierarchical transfer-rate ceilings. Controlled performance gates, 100-runnable/500-complete scale, headless queue/settings actions, and physical Pixel promotion/cleanup pass; seed ranking and adaptive platform pressure remain later. | [`application-control`](application-control.md), [`performance-and-live-evidence`](performance-and-live-evidence.md) |
 
 ## Maintenance Contract

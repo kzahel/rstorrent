@@ -210,11 +210,24 @@ Ubuntu Server classified `reference_only`. Libtorrent found candidates in
 0.157 seconds and verified 293,289,984 bytes at the 10% milestone in 4.731
 seconds, averaging 63.04 MiB/s during its 4.437-second active phase. RSTorrent
 received no tracker response or candidate and timed out at 120.003 seconds.
-The exact implementation boundary explains the result: the resumable path can
-carry HTTP(S) tracker configurations, but the direct driver tracker manager
-rejects non-UDP endpoints. Ubuntu's official metainfo supplies only HTTPS
-trackers. This is a discovery integration gap and produces no Ubuntu
-throughput ratio.
+The exact implementation boundary at that commit explains the result: the
+resumable path could carry HTTP(S) tracker configurations, but its direct
+tracker manager rejected non-UDP endpoints. Ubuntu's official metainfo
+supplies only HTTPS trackers. This identified a discovery integration gap and
+produced no Ubuntu throughput ratio.
+
+Completed Tactical `136` authorized one clean, bounded repeat after closing
+that gap. On 2026-08-11 both official HTTPS rows returned two response batches
+and two reported peers; RSTorrent saw its first candidate at 0.148 seconds,
+first payload at 4.203 seconds, and verified six pieces / 1,572,864 bytes. It
+then timed out at 120.003 seconds without reaching 10%. Libtorrent reached
+292,651,008 verified bytes at the target in 5.399 seconds. The pair remains
+`reference_only`, now because RSTorrent stalled after successful discovery
+rather than before it. This closes the HTTP(S) dispatch gap but still yields
+no comparable Ubuntu throughput ratio. One changing-swarm stall is not a
+performance regression claim or authority for a peer-policy change. Both
+workers cleaned without forced termination, the repository remained clean,
+and the 292-KiB raw report was removed after reconciliation.
 
 ## Purpose
 
