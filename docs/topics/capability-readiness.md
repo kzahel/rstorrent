@@ -391,16 +391,20 @@ complete with controlled desktop, Android AVD, and repository evidence.
 
 ### Now
 
-- **Incomplete-file streaming review and implementation decision.** Source-
-  reviewed Tactical
-  [`139`](../tactical/139-incomplete-file-streaming-demand.md) defines compact
-  current/ahead demand, verified active-storage reads, time-critical peer
-  scheduling, and progressive HTTP fulfillment. Maintainer direction selected
-  and authorized this planning record, not implementation. Review and explicit
-  implementation authorization are the sole **Now**.
+- **Incoming uTP reachability.** Maintainer direction selected and authorized
+  end-to-end Tactical
+  [`140`](../tactical/140-incoming-utp-reachability.md). It independently maps
+  the concrete TCP and UDP listeners, keeps tracker advertisement on TCP,
+  moves IPv4 DHT peer advertisement to the active uTP UDP endpoint, and closes
+  with controlled plus bounded off-LAN incoming-uTP evidence. It is the sole
+  **Now**.
 
 ### Next
 
+- Source-ready Tactical
+  [`139`](../tactical/139-incomplete-file-streaming-demand.md) remains the
+  first review candidate. Its planning record is unchanged and implementation
+  is not authorized by Tactical `140`.
 - Durable seeding goals remain a separate policy-planning candidate. Tactical
   `134` now owns finite rate allocation, hot-path fairness, and cancellation;
   ratio/time goals still own durable accounting and torrent lifecycle.
@@ -435,9 +439,10 @@ Completed Tactical `137` supplies the shared-egress seam, safe
 Linux/Android/macOS platform adapters, revalidation/downward recovery,
 protected-send product runtime integration, controlled path, efficiency,
 rate, and pinned-libtorrent application evidence. Both Android ABIs and the
-API 34 AVD option/send/replacement/application/cleanup matrix pass. The next
-bounded engine/product candidate is source-reviewed Tactical `139`; its
-implementation still awaits explicit maintainer direction.
+API 34 AVD option/send/replacement/application/cleanup matrix pass. The active
+bounded engine/product slice is Tactical `140`; source-reviewed Tactical `139`
+retains the first **Next** position and still awaits explicit implementation
+direction.
 Tactical
 [`100`](../tactical/100-bep53-select-only-and-duplicate-add-feedback.md)
 completed the BEP 53 slice and its deliberately narrow duplicate-add product

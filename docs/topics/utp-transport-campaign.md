@@ -46,7 +46,9 @@ selected ready Tactical
 verified HTTP file serving before implementation. Tactical `138` is complete,
 and maintainer direction reactivated Tactical `137` with end-to-end
 implementation and logical commits authorized. Tactical `137` is now complete;
-the readiness queue holds the next-tactical review as authoritative **Now**.
+incoming-uTP reachability Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) is the authoritative
+**Now**.
 
 ## Scope And Ownership
 

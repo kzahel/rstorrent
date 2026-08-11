@@ -80,10 +80,12 @@ Tactical [`138`](../tactical/138-verified-http-file-serving.md) is complete.
 Maintainer direction reactivated Tactical `137` for end-to-end implementation
 with logical commits. Tactical `137` is now complete through controlled
 desktop evidence, both Android ABIs, the API 34 AVD, and repository closure.
-Source-reviewed Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) is now selected.
-Review and explicit implementation authorization for that tactical are the
-sole authoritative **Now**. The completed maximum-throughput storage campaign
+Maintainer direction selected and authorized incoming-uTP reachability
+Tactical [`140`](../tactical/140-incoming-utp-reachability.md) as the sole
+authoritative **Now**. Source-reviewed Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md) remains the first
+**Next** candidate without implementation authorization. The completed
+maximum-throughput storage campaign
 remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -433,9 +435,11 @@ alternating pairs reduce median DATA datagrams 62.97%, and the exact capped
 ordinary-application/libtorrent cohort passes in both roles. Stage 6 proves
 both Android native ABIs, API 34 option/send/replacement behavior, an exact
 private-gateway application uTP transfer with no TCP masking, terminal
-cleanup, and complete repository gates. Review and explicit implementation
-authorization for selected source-ready Tactical `139` are the sole
-authoritative **Now**; implementation is not yet authorized.
+cleanup, and complete repository gates. Active Tactical `140` now owns
+independent TCP/UDP mapping, transport-truthful tracker/DHT advertisement,
+and controlled plus bounded off-LAN incoming-uTP evidence. It is the sole
+authoritative **Now**. Source-ready Tactical `139` remains first **Next** and
+is not implementation-authorized.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -487,12 +491,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: review source-ready Tactical
-[`139`](../tactical/139-incomplete-file-streaming-demand.md) and decide whether
-to authorize its implementation. Maintainer direction selected and authorized
-the planning record after completed Tactical `137`, but did not authorize code
-changes. No later uTP gap, durable seeding policy, or other candidate becomes
-implementation authority merely because the path-MTU slice completed. The
+Next engine-campaign action: execute active Tactical
+[`140`](../tactical/140-incoming-utp-reachability.md) through its independent
+mapping, truthful discovery, generated-contract, Android, controlled
+interoperability, and bounded off-LAN gates. Then reconcile its evidence and
+return to review source-ready Tactical
+[`139`](../tactical/139-incomplete-file-streaming-demand.md). The
 post-discovery Ubuntu stall remains one non-reproducible changing-swarm
 observation and is not authority for an unplanned change.
 

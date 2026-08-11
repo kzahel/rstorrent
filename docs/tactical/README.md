@@ -649,6 +649,10 @@ that scope and its cleanup or compatibility rules explicitly.
   defines compact current/ahead demand, verified active-storage reads,
   time-critical peer scheduling, progressive HTTP fulfillment, and bounded
   browser/Tauri client integration.
+- [`140-incoming-utp-reachability.md`](140-incoming-utp-reachability.md):
+  active; maps the concrete product UDP/uTP listener independently from TCP,
+  keeps tracker and DHT advertisement transport-truthful, and requires
+  controlled plus bounded off-LAN incoming-uTP evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

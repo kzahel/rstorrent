@@ -797,8 +797,10 @@ After completed Tactical `084`, the campaign direction does not yet settle:
 - how to choose among multiple interfaces or successful external mappings;
 - how VPN, metered networks, Android background lifecycle, and local-network
   permission affect listening and mapping;
-- the eventual product-policy relationship among the DHT UDP port, the
-  [controlled uTP runtime](utp-transport-campaign.md), and UDP mapping; and
+- active Tactical
+  [`140`](../tactical/140-incoming-utp-reachability.md) owns the product-policy
+  relationship among the DHT UDP port, the ordinary uTP runtime, and UDP
+  mapping; and
 - when IPv6 firewall pinholes, LSD, or BEP 55 become independently justified
   tacticals. Incoming MSE/PE is implemented in Tactical `111`; bounded PEX is
   complete in Tactical
