@@ -1,8 +1,9 @@
 # Tactical 132: uTP Default-Readiness Evidence
 
-Status: **Active**. Tactical `131`'s product-enablement review selected this
-bounded recommendation A on 2026-08-11. Shipped/default clients remain
-TCP-only throughout this tactical.
+Status: **Complete**. Tactical `131`'s product-enablement review selected this
+bounded recommendation A on 2026-08-11. The stopping condition is satisfied
+and the campaign is at its product-default human review. Shipped/default
+clients remain TCP-only.
 
 Topics: `utp-transport-campaign`, `peer-lifecycle`, `protocol-support`,
 `public-torrent-testing`, `performance-and-live-evidence`,
@@ -237,6 +238,96 @@ socket, channel, task, or application type enters `peer.rs`.
 The public run is supporting evidence only. Its success criterion is a safe,
 truthful, fully cleaned observation; finding no uTP peer or timing out does not
 rewrite deterministic results.
+
+## Execution Result
+
+Commits `d917393`, `7da3609`, `782a9a2`, `ac6aec0`, and `c4034f0` implement the
+source-first plan, bounded endpoint memory, joined dial outcome path,
+real-socket recovery proof, and explicit public profile/harness.
+
+The volatile `PeerRecord` state now distinguishes unknown, advertised,
+confirmed, and suppressed uTP capability. One failed uTP transport attempt
+suppresses only that endpoint for five minutes; later failures double to the
+one-hour cap, exact expiry permits a re-probe, and BEP 11's valid uTP flag
+immediately restores advertised support. Transport success confirms before
+the BitTorrent handshake. Direct TCP, cancellation without an outcome, TCP
+failure, protocol failure, duplicate outcomes, and stale generations cannot
+invent or erase uTP evidence. The existing 1,000-record retention bound owns
+all memory, with no cache, persistence, task, or timer added.
+
+The socket/driver owner carries at most one `UtpConnectOutcome` through joined
+completion and applies it before settling the logical dial. The controlled
+real-socket matrix now proves uTP success, transport success followed by a
+peer-wire failure, cancellation before and after transport result, first uTP-
+to-TCP fallback, a suppressed retry with no additional uTP datagram, and an
+exact-deadline uTP recovery. The repeated endpoint retains one record,
+generation, and peer-budget permit per logical dial; both uTP services and
+both session UDP owners join at zero. Pure tests separately cover PEX refresh,
+repeated failure, saturation, overflow, eviction, source removal, and stale or
+duplicate callbacks.
+
+The 2026-08-11 application-backed pinned-libtorrent `2.0.13.0` rerun verified
+the exact 2,097,883-byte fixture and SHA-1
+`cdce24126a8e65854d876c0b83ad3ba19748f6dc` in all three roles. Incoming uTP
+completed in 1.366584 seconds, outgoing uTP in 0.269759 seconds, and the TCP-
+only fallback in 5.342963 seconds after three uTP datagrams and two
+retransmissions. Each exposed exactly one final application transport,
+retained fixed 548-byte uTP where attempted, reported zero worker panics, and
+joined cleanly. The unchanged incomplete-duplex suite passed ordinary TCP,
+accepted and initiated Fast paths, RSTorrent-to-RSTorrent Fast, and forced MSE
+with `utp: null`.
+
+The single authorized public attempt ran from clean commit `c4034f0` at
+2026-08-11T02:39:28Z. The explicit `product-utp` profile verified the
+catalogued Big Buck Bunny metadata in 2.862383 seconds and exited in 2.876334
+seconds. It received two tracker batches containing 147 peers and made 50
+logical dial attempts. Endpoint-free high waters observed one connected peer,
+one TCP peer, one uTP peer, seven confirmed-uTP records, eight suppressed
+records, and 142 unknown records. The uTP owner reached 30 connections, sent
+137 datagrams/3,127 bytes with 56 retransmissions, selected exactly 548 bytes,
+and held at most 16 connection datagrams, one retransmission entry, 8,448
+delivered bytes, 110 unsent bytes, and 119 sent bytes. Session UDP held at most
+two tasks, five DHT datagrams, and 16 classified uTP datagrams. It reported no
+malformed, unknown-connection, stale-generation, route, DHT, or uTP queue
+drops and no worker panic. Shutdown retained zero connection, half-open, UDP
+task, DHT queue, or uTP queue ownership; stderr and the fresh temporary root
+were empty. Both IPv4 and IPv6 DHT families participated, but discovered no
+peer values in this short sample; this is transport/default-readiness evidence,
+not incoming reachability or a performance threshold.
+
+The tactical's focused and controlled gates pass. `cargo fmt --all -- --check`,
+workspace Clippy with warnings denied, the complete workspace tests, and all
+three dedicated public-harness contract tests pass. The first workspace test
+invocation sampled one unrelated timing-sensitive metadata timeout assertion
+before all eight details were visible; that exact case passed three immediate
+repetitions and the unmodified complete workspace rerun passed. No default,
+setting, mapping, tracker/DHT incoming-endpoint advertisement, incoming-port
+policy, generated contract, client, fixed MTU, or BEP 29 claim changed.
+
+## Product-Default Review
+
+The evidence supports recommendation A:
+
+1. **A — bounded default enablement (recommended):** create one source-first
+   tactical that changes the shipped application construction default from
+   `TcpOnly` to the existing `PreferUtp`, validates desktop and Android startup,
+   fallback, cancellation, and resource closure, and graduates the exact BEP
+   29 product subset from **Unsupported** to **Partial**. Keep fixed 548-byte
+   IPv4/plaintext selection, endpoint memory, sequential TCP fallback, and all
+   current limits. Add no setting, mapping, tracker/DHT incoming-endpoint
+   advertisement, MSE-over-uTP, IPv6 uTP, racing, or dynamic MTU.
+2. **B — retain default-off uTP:** close the active campaign at the proven
+   programmatic capability and promote queued Tactical `129`. This avoids a
+   product-policy change but leaves the ordinary path TCP-only despite passing
+   controlled and public readiness evidence.
+3. **C — require reachability before default:** plan UDP mapping and truthful
+   advertisement before enabling uTP. This is broader and is not recommended:
+   outbound default readiness no longer depends on incoming NAT capability,
+   while mapping, announce-port semantics, and product status have distinct
+   owners and risk.
+
+No choice is implicit. Recommendation A requires the human review because it
+changes every shipped client's construction policy and protocol claim.
 
 ## Execution Order
 

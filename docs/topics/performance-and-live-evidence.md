@@ -16,6 +16,9 @@ Closed Tactical `130` records the complementary bulk-send direction, an
 evidence-limited bidirectional cohort, passing fixed real-socket impairment
 profiles, and controlled diagnostic MTU measurements. These remain controlled
 observations rather than public-swarm or product performance claims.
+Completed Tactical `132` records one 2.862-second metadata-only ordinary-swarm
+uTP readiness observation with both transports, bounded resources, and exact
+cleanup. It is not a throughput baseline.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the
@@ -1026,6 +1029,43 @@ and produce zero congestion reductions or timeout collapses. This measures the
 runtime state/feedback loop, not Internet PMTU: the portable shared UDP sender
 does not apply per-emission fragmentation intent to the OS socket. Ordinary
 runtime therefore remains fixed at 548 bytes.
+
+## Public Product-uTP Metadata Observation: 2026-08-11
+
+Completed Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md) ran exactly one
+explicit `product-utp` profile from clean commit `c4034f0`. It used the stable
+catalogued Big Buck Bunny magnet, no peer hints, a fresh temporary root, a
+metadata-only target, 30 peer/pending slots, a 64 MiB buffered-payload ceiling,
+a 512 MiB wire ceiling, a 180-second owner deadline, and one ten-second total
+cleanup deadline. It did not map or advertise an incoming endpoint.
+
+Verified metadata arrived in 2.862383 seconds and the process exited in
+2.876334 seconds. Two tracker response batches supplied 147 peers and the
+engine made 50 logical dial attempts. Endpoint-free peer high waters were one
+connected, one TCP, one uTP, seven confirmed-uTP records, eight suppressed
+records, and 142 unknown records. This changing swarm therefore exercised
+both successful uTP selection and TCP fallback; the retained per-endpoint
+counts reveal no addresses.
+
+The fixed uTP owner reached 30 connection workers, sent 137 datagrams/3,127
+bytes, retransmitted 56 datagrams/1,120 bytes, and selected exactly 548 bytes.
+Its connection-datagram and retransmission queues reached 16 and one;
+delivered, unsent, and sent-byte high waters were 8,448, 110, and 119. Shared
+session UDP reached two tasks, a DHT queue of five, and a uTP route queue of
+16. It received 303 datagrams/91,812 bytes, classified 69 uTP datagrams/23,281
+bytes, and reported zero malformed, unknown-connection, stale-generation,
+route, DHT, or uTP drops and zero worker panics. Terminal connections, half-
+opens, UDP tasks, DHT queue entries, and uTP queue entries were all zero;
+stderr and the output root were empty, and the root was removed.
+
+IPv4 DHT reached 12 nodes and 228 responses; IPv6 participated with one node
+and one response. Neither family supplied a peer value during the short run,
+so tracker discovery owned this sample. These numbers are dated compatibility
+and default-readiness evidence. They do not establish incoming UDP
+reachability, congestion fairness, stable discovery latency, or a performance
+threshold, and no repeat public attempt is authorized by the completed
+tactical.
 
 ## Comparator Outcome
 

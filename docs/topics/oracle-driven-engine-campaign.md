@@ -52,10 +52,14 @@ intake watermark Tactical
 implementation, explicit maintainer priority resumed uTP and activated
 Tactical [`130`](../tactical/130-utp-transport-solidification.md). It is now
 closed with every controlled gate passing and its fresh bidirectional WAN
-cohort evidence-limited. The authoritative **Now** is the required pre-product
-human review; Tactical `129` remains ready and queued intact. Tactical `122`'s
-classified Ubuntu result leaves focused-driver HTTP(S) tracker dispatch
-available after that queued item. The
+cohort evidence-limited. Human review selected default-off composition
+Tactical [`131`](../tactical/131-bounded-product-utp-composition.md), then
+default-readiness Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md); both are complete.
+The authoritative **Now** is Tactical `132`'s product-default human review.
+Tactical `129` remains ready and queued intact, and Tactical `122`'s classified
+Ubuntu result leaves focused-driver HTTP(S) tracker dispatch available after
+that queued item. The
 completed maximum-throughput storage campaign remains recorded in
 [`storage-throughput-architecture.md`](storage-throughput-architecture.md),
 and high-impact BEP breadth still follows the core common-denominator parity
@@ -379,8 +383,10 @@ diagnosis; Tactical `129` is ready and queued; and uTP transport-solidification
 Tactical `130` is closed with its WAN cohort evidence-limited and every
 controlled gate passing; and Tactical `131` completes bounded default-off
 application composition, exact incoming/outgoing/fallback product interop, and
-the default-TCP regression; and active Tactical `132` executes its selected
-bounded endpoint-memory and default-readiness evidence follow-on**.
+the default-TCP regression; and Tactical `132` completes bounded endpoint
+memory, mixed socket recovery, retained product interop, and one successful
+metadata-only public observation. The campaign is at its product-default
+human review**.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -394,13 +400,16 @@ continued processing, and force-close recovery; external File Provider access
 remains explicitly unproven.
 
 Latest completed tactical:
-[`131`](../tactical/131-bounded-product-utp-composition.md). One construction-
-only policy composes fixed-548 IPv4/plaintext uTP into the application while
-every shipped/default client remains TCP-only. Exact pinned-libtorrent
-application transfers pass with one incoming uTP peer, one outgoing uTP peer,
-and one final TCP peer after a joined uTP timeout. The exact 2,097,883-byte
-fixture, actual peer transport views, one logical permit/generation, bounded
-runtime counters, default TCP/Fast/MSE regressions, and terminal cleanup pass.
+[`132`](../tactical/132-utp-default-readiness-evidence.md). Volatile endpoint
+uTP capability lives in the existing bounded peer record; joined outcomes,
+five-minute-to-one-hour suppression, direct-TCP repeats, PEX refresh, and
+exact-deadline recovery pass without a cache or task. The exact application
+incoming/outgoing/fallback suite and default TCP/Fast/MSE regression pass. One
+authorized Big Buck Bunny `product-utp` profile verified metadata in 2.862383
+seconds while observing both TCP and uTP, fixed 548-byte MTU, bounded queues,
+no drops or panics, terminal zero UDP/uTP ownership, and an empty removed
+temporary root. Shipped/default clients and the BEP 29 claim remain unchanged
+at the product-default review.
 
 Latest closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -430,12 +439,15 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next executable action: execute active Tactical
-[`132`](../tactical/132-utp-default-readiness-evidence.md) from its pure endpoint
-capability transitions through controlled mixed evidence and one bounded
-metadata-only public observation. Shipped defaults remain TCP-only. Default
-enablement, reachability/advertisement, presentation, dependency, permanent
-network change, and support-claim authority remain separate gates.
+Next executable action: conduct Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md)'s product-default
+human review. Recommendation A is a bounded tactical to make the existing
+`PreferUtp` construction policy the shipped default, validate affected
+desktop/Android lifecycle and fallback, and graduate only the implemented BEP
+29 subset to **Partial**. Shipped defaults remain TCP-only until that choice.
+Reachability and tracker/DHT incoming-endpoint advertisement, presentation,
+dependency, permanent network change, and broader support authority remain
+separate gates.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the
@@ -456,6 +468,15 @@ shared-UI, and headless-browser evidence is recorded in the tactical.
 
 Last completed evidence:
 
+- commits `d917393`, `7da3609`, `782a9a2`, `ac6aec0`, and `c4034f0` complete
+  Tactical `132`'s source-first plan, bounded endpoint capability memory,
+  joined socket/driver outcome path, repeated direct-TCP and expiry-recovery
+  socket evidence, and explicit one-shot public profile. The retained
+  application suite again hash-verifies all three 2,097,883-byte roles; the
+  default TCP/Fast/MSE suite remains uTP-free. The one authorized public run
+  verifies Big Buck Bunny metadata in 2.862383 seconds with one TCP/one uTP
+  high water, seven confirmed and eight suppressed endpoints, fixed 548-byte
+  MTU, no drops/panics, zero terminal UDP/uTP ownership, and no artifact;
 - commits `8d56a55`, `98e02cc`, and `7f2ba5e` complete Tactical `131`'s
   source-first plan, joined default-off session composition, eligible
   transport selection, cancellation-safe sequential TCP fallback, actual

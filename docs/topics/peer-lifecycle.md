@@ -260,6 +260,16 @@ into the application behind a default-off constructor policy. Selected uTP is
 published atomically with an outgoing connecting generation; joined fallback
 updates that same generation to TCP. Every shipped/default client remains TCP-
 only and no second peer model was introduced.
+Completed Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md) adds capability
+memory inside that same bounded endpoint record. The dial attempt copies one
+task-free `Try` or `TcpWhileSuppressed` decision; only its actual uTP transport
+outcome, applied before logical settlement, confirms or suppresses support.
+The five-minute-to-one-hour retry deadline uses the existing torrent clock and
+wake path. A valid PEX uTP flag refreshes advertised support, while TCP,
+cancellation without a transport result, peer-wire failure, and stale or
+duplicate completions cannot mutate a newer generation. No peer cache, timer
+task, persistence, or endpoint-retention rule was added.
 
 Outgoing observation begins before transport work, advances through transport and
 BitTorrent handshake, keeps one connection generation through metadata-to-
@@ -507,6 +517,17 @@ then reports TCP through handshake and completion. The same attempt, record,
 peer-budget permit, cancellation owner, trust result, and terminal cleanup
 span both transports. Default TCP/Fast/MSE application regressions still pass
 without a uTP service.
+Completed Tactical
+[`132`](../tactical/132-utp-default-readiness-evidence.md) proves the retained
+record and generation across repeated real sockets. One endpoint first joins a
+failed uTP subattempt and succeeds over TCP, then reconnects directly over TCP
+without another uTP datagram while suppressed, and finally succeeds over uTP
+at the exact retry deadline. One permit and generation own each logical dial;
+both client/server uTP and UDP owners terminate at zero. Separate deterministic
+coverage proves advertised/confirmed/suppressed transitions, PEX recovery,
+backoff cap and saturation, overflow, eviction, source removal, and stale or
+duplicate outcome rejection. The public metadata-only observation reports
+only record-state high waters, never retained peer endpoints.
 
 Completed Tactical
 [`090`](../tactical/090-peer-id-duplicate-connection-resolution.md) records

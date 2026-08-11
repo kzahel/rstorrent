@@ -7,7 +7,9 @@ geometry for five WebTorrent works plus current Debian, Ubuntu, Arch Linux,
 and Linux Mint images from their official project pages. Tactical `122` also
 records a bounded paired Big Buck Bunny completion and Ubuntu discovery
 failure classification. Public runs remain opt-in, headless, bounded, and
-supporting evidence only.
+supporting evidence only. Tactical `132` adds one explicit default-readiness
+Big Buck Bunny metadata observation with fixed product uTP and endpoint-free
+transport/resource aggregates.
 
 ## Scope
 
@@ -121,6 +123,19 @@ focused direct engine manager, whose tracker task currently rejects HTTP(S)
 endpoints; the long-lived application owner already supports them. The result
 therefore identifies a direct-driver integration gap rather than contradicting
 the earlier application HTTPS evidence or measuring Ubuntu payload throughput.
+
+Tactical `132`'s single authorized 2026-08-11 attempt reused the catalogued
+Big Buck Bunny magnet without fetching or retaining metainfo. Its explicit
+headless `product-utp` profile verified metadata in 2.862383 seconds and
+cleaned in 2.876334 seconds. Two tracker batches reported 147 peers; 50 logical
+dials observed both TCP and uTP, with high waters of seven confirmed-uTP and
+eight suppressed endpoints. Fixed uTP reached 30 connection workers, sent 137
+datagrams with 56 retransmissions, and selected exactly 548 bytes. All UDP/uTP
+queues stayed within their bounds with zero drops or panics and terminal zero
+tasks, connections, half-opens, and queued datagrams. The fresh temporary root
+contained no file and was removed. This is a dated outbound default-readiness
+observation, not incoming reachability, stable swarm performance, or a general
+BEP 29 claim. The tactical authorizes no repeat.
 
 The next source-first candidate is that direct-manager HTTP(S) integration.
 Separate later breadth remains a bounded application-level Debian run on a
