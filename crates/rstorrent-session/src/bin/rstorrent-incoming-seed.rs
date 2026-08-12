@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rstorrent_engine::dht::BootstrapNode;
-use rstorrent_engine::{SelectiveStorage, torrent_storage_paths_for_metainfo};
+use rstorrent_engine::{
+    IncomingPeerServiceSnapshot, SelectiveStorage, torrent_storage_paths_for_metainfo,
+};
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
@@ -288,6 +290,7 @@ async fn run() -> Result<(), SeedHarnessError> {
             "queued_requests_high_water": snapshot.queued_requests_high_water,
             "read_high_water": snapshot.read_high_water,
             "payload_bytes_sent": snapshot.payload_bytes_sent,
+            "rejection_counts": incoming_rejection_counts_json(&snapshot),
             "bandwidth": bandwidth,
             "utp": service.utp_snapshot().map(utp_snapshot_json),
             "peers": snapshot_view(&service, ViewSelector::Torrent {
@@ -344,6 +347,7 @@ async fn run() -> Result<(), SeedHarnessError> {
         "read_high_water": final_snapshot.read_high_water,
         "read_bytes_high_water": final_snapshot.read_bytes_high_water,
         "writer_send_buffer_high_water": final_snapshot.writer_send_buffer_high_water,
+        "rejection_counts": incoming_rejection_counts_json(&final_snapshot),
         "mapping_tasks_after_shutdown": 0,
         "mappings_after_shutdown": 0,
         "pinholes_after_shutdown": 0,
@@ -923,6 +927,7 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
     serde_json::json!({
         "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
+        "connections_started": snapshot.connections_started,
         "connection_high_water": snapshot.connection_high_water,
         "incoming_half_open": snapshot.incoming_half_open,
         "incoming_half_open_high_water": snapshot.incoming_half_open_high_water,
@@ -982,6 +987,16 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "retry_exhausted_connections": snapshot.retry_exhausted_connections,
         "worker_panics": snapshot.worker_panics,
     })
+}
+
+fn incoming_rejection_counts_json(snapshot: &IncomingPeerServiceSnapshot) -> serde_json::Value {
+    serde_json::Value::Object(
+        snapshot
+            .rejection_counts
+            .iter()
+            .map(|(reason, count)| (format!("{reason:?}"), serde_json::json!(count)))
+            .collect(),
+    )
 }
 
 fn session_udp_snapshot_json(snapshot: rstorrent_engine::SessionUdpSnapshot) -> serde_json::Value {

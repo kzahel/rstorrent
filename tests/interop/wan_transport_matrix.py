@@ -541,7 +541,10 @@ def seed_transport_evidence(
     if implementation == "libtorrent":
         return stopped.get("libtorrent_stats")
     if transport == "utp":
-        return stopped.get("utp_before_shutdown")
+        evidence = dict(stopped.get("utp_before_shutdown") or {})
+        evidence["incoming_rejection_counts"] = stopped.get("rejection_counts", {})
+        evidence["payload_bytes_sent"] = stopped.get("payload_bytes_sent")
+        return evidence
     return {
         "connection_high_water": stopped.get("connection_high_water"),
         "established_high_water": stopped.get("established_high_water"),

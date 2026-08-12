@@ -1196,6 +1196,7 @@ struct DhtEvidence {
 struct UtpEvidence {
     path_mtu_profile: String,
     active_connections_after_shutdown: usize,
+    connections_started: u64,
     connection_high_water: usize,
     incoming_half_open_after_shutdown: usize,
     incoming_half_open_high_water: usize,
@@ -1261,6 +1262,7 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
         Self {
             path_mtu_profile: snapshot.path_mtu_profile.as_str().to_owned(),
             active_connections_after_shutdown: snapshot.active_connections,
+            connections_started: snapshot.connections_started,
             connection_high_water: snapshot.connection_high_water,
             incoming_half_open_after_shutdown: snapshot.incoming_half_open,
             incoming_half_open_high_water: snapshot.incoming_half_open_high_water,

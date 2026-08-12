@@ -14,10 +14,28 @@ from wan_transport_matrix import (
     _rstorrent_transport_evidence,
     require_repository_revision,
     run_matrix,
+    seed_transport_evidence,
 )
 
 
 class WanTransportMatrixTests(unittest.TestCase):
+    def test_seed_utp_evidence_retains_only_aggregate_lifecycle_diagnostics(self) -> None:
+        evidence = seed_transport_evidence(
+            {
+                "utp_before_shutdown": {"connections_started": 4},
+                "rejection_counts": {"NoRequestTimeout": 3},
+                "payload_bytes_sent": 64 * 1024 * 1024,
+                "recent_rejections": [{"remote": "forbidden"}],
+            },
+            "rstorrent",
+            "utp",
+        )
+
+        self.assertEqual(evidence["connections_started"], 4)
+        self.assertEqual(evidence["incoming_rejection_counts"], {"NoRequestTimeout": 3})
+        self.assertEqual(evidence["payload_bytes_sent"], 64 * 1024 * 1024)
+        self.assertNotIn("recent_rejections", evidence)
+
     def test_rstorrent_timing_separates_connect_and_payload(self) -> None:
         self.assertEqual(
             _rstorrent_timing(

@@ -109,6 +109,7 @@ impl UtpPathMtuProfile {
 pub struct UtpServiceSnapshot {
     pub path_mtu_profile: UtpPathMtuProfile,
     pub active_connections: usize,
+    pub connections_started: u64,
     pub connection_high_water: usize,
     pub incoming_half_open: usize,
     pub incoming_half_open_high_water: usize,
@@ -867,6 +868,7 @@ impl AtomicUsizeRange {
 struct UtpStats {
     path_mtu_profile: UtpPathMtuProfile,
     active_connections: AtomicUsize,
+    connections_started: AtomicU64,
     connection_high_water: AtomicUsize,
     incoming_half_open: AtomicUsize,
     incoming_half_open_high_water: AtomicUsize,
@@ -944,6 +946,7 @@ impl UtpStats {
         UtpServiceSnapshot {
             path_mtu_profile: self.path_mtu_profile,
             active_connections: self.active_connections.load(Ordering::Relaxed),
+            connections_started: self.connections_started.load(Ordering::Relaxed),
             connection_high_water: self.connection_high_water.load(Ordering::Relaxed),
             incoming_half_open: self.incoming_half_open.load(Ordering::Relaxed),
             incoming_half_open_high_water: self
@@ -1046,6 +1049,7 @@ impl UtpStats {
     }
 
     fn connection_started(&self, incoming: bool) {
+        saturating_increment(&self.connections_started, 1);
         let active = self
             .active_connections
             .fetch_add(1, Ordering::AcqRel)
@@ -2423,6 +2427,7 @@ mod tests {
         assert_eq!(left_terminal.active_connections, 0);
         assert_eq!(right_terminal.active_connections, 0);
         for terminal in [left_terminal, right_terminal] {
+            assert_eq!(terminal.connections_started, 1);
             assert_eq!(terminal.selected_mtu_min_bytes, Some(548));
             assert_eq!(terminal.selected_mtu_max_bytes, Some(548));
             assert_eq!(terminal.mtu_candidate_min_bytes, Some(548));
