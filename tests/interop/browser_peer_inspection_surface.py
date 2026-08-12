@@ -366,6 +366,7 @@ def run(
                 response_delay_seconds=3,
                 seeders=37,
                 leechers=11,
+                expected_listen_port=None,
             )
             tracker.start()
         vite_port = reserve_loopback_port()

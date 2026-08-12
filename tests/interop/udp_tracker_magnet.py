@@ -45,7 +45,7 @@ STARTED_EVENT = 2
 CONNECTION_ID = 0x0102030405060708
 UNKNOWN_MAGNET_LEFT = 16 * 1024
 NUM_WANT = 200
-ANNOUNCED_PORT = 6881
+ANNOUNCED_PORT = 1
 DIAGNOSTIC_PEER_ID = b"-RS0001-000000000000"
 ANNOUNCE_FORMAT = "!QII20s20sQQQIIIiH"
 
@@ -74,6 +74,7 @@ class OneShotUdpTracker:
         leechers: int = 1,
         expected_left: int = UNKNOWN_MAGNET_LEFT,
         expected_peer_id: bytes | None = DIAGNOSTIC_PEER_ID,
+        expected_listen_port: int | None = ANNOUNCED_PORT,
     ) -> None:
         self.info_hash = bytes.fromhex(info_hash)
         self.peer_port = peer_port
@@ -82,6 +83,8 @@ class OneShotUdpTracker:
         self.leechers = leechers
         self.expected_left = expected_left
         self.expected_peer_id = expected_peer_id
+        self.expected_listen_port = expected_listen_port
+        self.observed_listen_port: int | None = None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(("127.0.0.1", 0))
         self.socket.settimeout(10)
@@ -187,8 +190,18 @@ class OneShotUdpTracker:
                 )
             if event != STARTED_EVENT or announced_ip != 0:
                 raise ScenarioFailure("UDP announce has the wrong event or IP field")
-            if key == 0 or num_want != NUM_WANT or listen_port != ANNOUNCED_PORT:
-                raise ScenarioFailure("UDP announce has the wrong key, peer limit, or port")
+            self.observed_listen_port = listen_port
+            valid_listen_port = (
+                listen_port != 0
+                if self.expected_listen_port is None
+                else listen_port == self.expected_listen_port
+            )
+            if key == 0 or num_want != NUM_WANT or not valid_listen_port:
+                raise ScenarioFailure(
+                    "UDP announce has the wrong key, peer limit, or port: "
+                    f"key_nonzero={key != 0} num_want={num_want} "
+                    f"listen_port={listen_port} expected={self.expected_listen_port}"
+                )
 
             if self.response_delay_seconds > 0:
                 time.sleep(self.response_delay_seconds)
@@ -243,23 +256,29 @@ def run_rstorrent_leech(
         tracker = OneShotUdpTracker(fixture.info_hash, peer_port)
         tracker.start()
         output_root = fixture.torrent_path.parent / f"tracker-output-{ordinal}"
-        completed = subprocess.run(
-            [
-                str(binary),
-                "--magnet",
-                tracker_magnet(fixture.info_hash, tracker.port),
-                "--output",
-                str(output_root),
-                "--timeout-seconds",
-                str(METADATA_TIMEOUT_SECONDS),
-                "--max-buffered-payload-bytes",
-                str(DEFAULT_PAYLOAD_ALLOWANCE),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=PROCESS_TIMEOUT_SECONDS,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    str(binary),
+                    "--magnet",
+                    tracker_magnet(fixture.info_hash, tracker.port),
+                    "--output",
+                    str(output_root),
+                    "--timeout-seconds",
+                    str(METADATA_TIMEOUT_SECONDS),
+                    "--max-buffered-payload-bytes",
+                    str(DEFAULT_PAYLOAD_ALLOWANCE),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=PROCESS_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise ScenarioFailure(
+                "tracker magnet diagnostic timed out with "
+                f"requests={tracker.requests} tracker_failure={tracker.failure}"
+            ) from error
         tracker.join()
         diagnostics.extend(alert.message() for alert in session.pop_alerts())
         if completed.returncode != 0:

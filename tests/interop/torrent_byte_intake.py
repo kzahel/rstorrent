@@ -227,16 +227,34 @@ class Gateway:
             self.process.stderr.close()
 
 
-def torrent(snapshot: dict[str, Any], info_hash: str) -> dict[str, Any] | None:
+def added_torrent_id(response: dict[str, Any]) -> str:
+    result = response.get("result")
+    add = (
+        result.get("result")
+        if isinstance(result, dict) and result.get("type") == "add_torrent"
+        else None
+    )
+    torrent_id = add.get("torrent_id") if isinstance(add, dict) else None
+    if (
+        not isinstance(torrent_id, str)
+        or len(torrent_id) != 35
+        or not torrent_id.startswith("t1-")
+        or any(character not in "0123456789abcdef" for character in torrent_id[3:])
+    ):
+        raise ScenarioFailure(f"add response lacks a canonical torrent ID: {response}")
+    return torrent_id
+
+
+def torrent(snapshot: dict[str, Any], torrent_id: str) -> dict[str, Any] | None:
     return next(
-        (item for item in snapshot["torrents"] if item["torrent_id"] == info_hash),
+        (item for item in snapshot["torrents"] if item["torrent_id"] == torrent_id),
         None,
     )
 
 
 def wait_torrent(
     gateway: Gateway,
-    info_hash: str,
+    torrent_id: str,
     predicate: Any,
     label: str,
     timeout_seconds: float = 30,
@@ -245,35 +263,35 @@ def wait_torrent(
     ordinal = 0
     row = None
     while time.monotonic() < deadline:
-        row = torrent(gateway.snapshot(f"poll-{label}-{ordinal}"), info_hash)
+        row = torrent(gateway.snapshot(f"poll-{label}-{ordinal}"), torrent_id)
         if row is not None and predicate(row):
             return row
         ordinal += 1
         time.sleep(0.05)
-    raise ScenarioFailure(f"torrent {info_hash} did not reach {label}: {row}")
+    raise ScenarioFailure(f"torrent {torrent_id} did not reach {label}: {row}")
 
 
-def wait_removed(gateway: Gateway, info_hash: str) -> None:
+def wait_removed(gateway: Gateway, torrent_id: str) -> None:
     deadline = time.monotonic() + 20
     ordinal = 0
     while time.monotonic() < deadline:
-        if torrent(gateway.snapshot(f"poll-removed-{ordinal}"), info_hash) is None:
+        if torrent(gateway.snapshot(f"poll-removed-{ordinal}"), torrent_id) is None:
             return
         ordinal += 1
         time.sleep(0.05)
-    raise ScenarioFailure(f"torrent {info_hash} was not removed")
+    raise ScenarioFailure(f"torrent {torrent_id} was not removed")
 
 
-def remove(gateway: Gateway, info_hash: str, request_id: str) -> None:
+def remove(gateway: Gateway, torrent_id: str, request_id: str) -> None:
     gateway.command(
         request_id,
         {
             "type": "remove_torrent",
-            "torrent_id": info_hash,
+            "torrent_id": torrent_id,
             "data": "delete_managed",
         },
     )
-    wait_removed(gateway, info_hash)
+    wait_removed(gateway, torrent_id)
 
 
 def tracker_intake_case(
@@ -301,37 +319,47 @@ def tracker_intake_case(
         tracker = OneShotUdpTracker(
             info_hash,
             peer_port,
+            expected_left=torrent_info.total_size(),
             expected_peer_id=None,
+            expected_listen_port=None,
         )
         tracker.start()
         metainfo = lt.bdecode(torrent_path.read_bytes())
         metainfo[b"announce"] = f"udp://127.0.0.1:{tracker.port}/announce".encode()
         source = bytes(lt.bencode(metainfo))
         gateway = Gateway(gateway_binary, profile, storage, "loopback_only")
-        gateway.upload("upload-tracker-torrent", source, start_content=True)
+        uploaded = gateway.upload("upload-tracker-torrent", source, start_content=True)
+        torrent_id = added_torrent_id(uploaded)
         tracker.join()
         row = wait_torrent(
             gateway,
-            info_hash,
+            torrent_id,
             lambda item: item["state"] == "complete",
             "complete",
         )
+        duplicate = gateway.upload(
+            "duplicate-tracker-torrent", source, start_content=True
+        )
+        if added_torrent_id(duplicate) != torrent_id:
+            raise ScenarioFailure("duplicate .torrent upload changed its opaque owner")
         published = storage / ROOT_NAME / payload_path.name
         actual_hash = compare_payloads(payload_path, published)
         gateway.stop()
         gateway = Gateway(gateway_binary, profile, storage, "offline")
-        restarted = torrent(gateway.snapshot("restart-tracker-torrent"), info_hash)
+        restarted = torrent(gateway.snapshot("restart-tracker-torrent"), torrent_id)
         if restarted is None or restarted["state"] != "complete":
             raise ScenarioFailure(f"tracker torrent did not restart complete: {restarted}")
-        remove(gateway, info_hash, "remove-tracker-torrent")
+        remove(gateway, torrent_id, "remove-tracker-torrent")
         if published.exists():
             raise ScenarioFailure("managed tracker-intake payload survived removal")
         return {
             "info_hash": info_hash,
+            "torrent_id": torrent_id,
             "source_bytes": len(source),
             "payload_bytes": torrent_info.total_size(),
             "payload_sha1": actual_hash,
             "tracker_requests": tracker.requests,
+            "tracker_listen_port": tracker.observed_listen_port,
             "restart_state": restarted["state"],
             "piece_count": row["piece_count"],
         }
@@ -431,7 +459,7 @@ def large_metadata_case(
     gateway = None
     try:
         gateway = Gateway(gateway_binary, profile, storage, "loopback_only")
-        gateway.command(
+        added = gateway.command(
             "add-large-magnet",
             {
                 "type": "add_magnet",
@@ -441,39 +469,41 @@ def large_metadata_case(
                 "skip_files": [],
             },
         )
+        torrent_id = added_torrent_id(added)
         acquired = wait_torrent(
             gateway,
-            info_hash,
+            torrent_id,
             lambda item: item["metadata_available"],
             "metadata-ready",
             120,
         )
         gateway.command(
-            "pause-large-magnet", {"type": "pause", "torrent_id": info_hash}
+            "pause-large-magnet", {"type": "pause", "torrent_id": torrent_id}
         )
         wait_torrent(
             gateway,
-            info_hash,
+            torrent_id,
             lambda item: item["state"] == "paused",
             "paused",
         )
         gateway.stop()
         gateway = Gateway(gateway_binary, profile, storage, "offline")
-        restarted = torrent(gateway.snapshot("restart-large-magnet"), info_hash)
+        restarted = torrent(gateway.snapshot("restart-large-magnet"), torrent_id)
         if (
             restarted is None
             or not restarted["metadata_available"]
             or restarted["piece_count"] != piece_count
         ):
             raise ScenarioFailure(f"large metadata did not restart exactly: {restarted}")
-        remove(gateway, info_hash, "remove-large-magnet")
+        remove(gateway, torrent_id, "remove-large-magnet")
         explicit_source = exact_outer(info, EXPLICIT_SOURCE_BYTES)
-        gateway.upload(
+        explicit_added = gateway.upload(
             "upload-maximum-explicit-torrent", explicit_source, start_content=False
         )
+        explicit_torrent_id = added_torrent_id(explicit_added)
         explicit = wait_torrent(
             gateway,
-            info_hash,
+            explicit_torrent_id,
             lambda item: item["metadata_available"] and item["state"] == "paused",
             "explicit-metadata-ready",
             120,
@@ -481,7 +511,7 @@ def large_metadata_case(
         gateway.stop()
         gateway = Gateway(gateway_binary, profile, storage, "offline")
         explicit_restarted = torrent(
-            gateway.snapshot("restart-maximum-explicit-torrent"), info_hash
+            gateway.snapshot("restart-maximum-explicit-torrent"), explicit_torrent_id
         )
         if (
             explicit_restarted is None
@@ -491,9 +521,11 @@ def large_metadata_case(
             raise ScenarioFailure(
                 f"maximum explicit source did not restart exactly: {explicit_restarted}"
             )
-        remove(gateway, info_hash, "remove-maximum-explicit-torrent")
+        remove(gateway, explicit_torrent_id, "remove-maximum-explicit-torrent")
         return {
             "info_hash": info_hash,
+            "torrent_id": torrent_id,
+            "explicit_torrent_id": explicit_torrent_id,
             "metadata_bytes": len(info),
             "metadata_blocks": probe_result["diagnostics"]["metadata_blocks"],
             "metadata_requests": probe_result["diagnostics"]["metadata_requests"],
