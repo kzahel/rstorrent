@@ -415,35 +415,34 @@ and starts no HTTP listener.
 ### Now
 
 - **Execute Tactical
-  [`142`](../tactical/142-wan-transport-performance-matrix.md).** Explicit
-  maintainer direction replaces Tactical `141`'s narrow pair budget with a
-  resumable cross-engine/cross-role/cross-host TCP/uTP matrix. The lab and
-  focused sender repair are complete; 56 post-repair cells verify 13.125 GiB
-  through full 8/64/256 MiB grids and the remote-seed 1 GiB half. The current
-  checkpoint is targeted analysis of size-dependent RSTorrent uTP peer-wire
-  protocol failures and reconnects, not more undirected bulk traffic.
+  [`143`](../tactical/143-dual-identity-and-persistence-foundation.md).**
+  Explicit maintainer direction on 2026-08-12 activates the decision-complete
+  v1-preserving identity and schema-19 persistence foundation. Begin with the
+  pure typed identity values and bounded full/wire registries, then proceed
+  through the documented reset, storage-artifact, application-contract, and
+  cross-platform gates without accepting v2 product input or wire behavior.
 
 ### Next
 
-- Execute focused Tactical
-  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-  under Tactical `142`. First carry an exact composed stream across repeated
-  16-bit uTP sequence-number cycles with richer terminal-reason capture, then
-  repair the causal reliability boundary and target at least `0.85x` matched
-  pinned-libtorrent uTP throughput without weakening delay/fairness behavior.
-- Retain the separate remote-placement RSTorrent TCP seed disconnect and the
-  interrupted local-seed 1 GiB libtorrent uTP control as typed evidence. Do
-  not mix either into the next uTP reliability repair without new causal
-  evidence.
+- Complete Tactical `143`'s pure identity and registry gate before the
+  persistence reset changes, preserving the staged stopping conditions in the
+  tactical.
 
 ### Later
+
+Paused Tactical
+[`142`](../tactical/142-wan-transport-performance-matrix.md) retains its 56
+post-repair cells and exact analysis checkpoint. Ready child Tactical
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+resumes only after this explicitly reprioritized identity foundation. The
+separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
+seed 1 GiB libtorrent uTP control remain typed evidence outside that future
+repair.
 
 Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,
-NAT traversal, the planned but inactive
-[v2 and hybrid identity foundation](../tactical/143-dual-identity-and-persistence-foundation.md),
-dynamic VPN and metered-network controls, and production
+NAT traversal, dynamic VPN and metered-network controls, and production
 remote access remain
 important. Tactical `112` now owns IPv6 DHT operation and dual-stack
 listening. Closed Tactical `113` implements IPv6 firewall-pinhole control but
@@ -503,7 +502,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
-| v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | Planned Tactical `143` is the inactive identity/persistence foundation; BEP 52 still requires later metainfo, integrity, storage, wire, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`protocol-support`](protocol-support.md) |
+| v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | Active Tactical `143` owns the v1-preserving identity/persistence foundation; BEP 52 still requires later metainfo, integrity, storage, wire, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
 

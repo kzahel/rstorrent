@@ -3,14 +3,14 @@
 Topic: `bittorrent-v2-and-hybrid`
 
 Status: Research and campaign direction accepted on 2026-08-12. RSTorrent
-still rejects v2 and hybrid metainfo and magnets deterministically. Planned
-Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) is the
-decision-complete first foundation but remains inactive. This topic records
-the source dossier, accepted architecture direction, resettable pre-release
-persistence policy, and proposed tactical sequence. It does not change Tactical
-[`142`](../tactical/142-wan-transport-performance-matrix.md) as the sole
-authoritative **Now**.
+still rejects v2 and hybrid metainfo and magnets deterministically. Maintainer
+direction now activates Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) as the
+decision-complete identity and persistence foundation and pauses Tactical
+[`142`](../tactical/142-wan-transport-performance-matrix.md) at its recorded
+analysis checkpoint. This topic records the source dossier, accepted
+architecture direction, resettable pre-release persistence policy, and
+proposed tactical sequence.
 
 ## Scope And Owning Role
 
@@ -534,13 +534,11 @@ human review gate.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) retains Tactical `142` as
-the sole **Now** and v2/hybrid torrents as **Later**. Recording this plan does
-not activate implementation.
+[`capability-readiness.md`](capability-readiness.md) selects Tactical `143` as
+the sole **Now** and pauses Tactical `142` at its exact analysis checkpoint.
 
-When readiness selects the campaign, activate planned Tactical
+Execute Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) rather
-than drafting implementation from this umbrella topic alone. It records the
-exact owner encoding, reset boundary, owner/task/cancellation map, resource
-limits, source findings, v1 regression gate, and stopping condition required
-before code changes.
+than implementing from this umbrella topic alone. It records the exact owner
+encoding, reset boundary, owner/task/cancellation map, resource limits, source
+findings, v1 regression gate, and stopping condition required for this slice.

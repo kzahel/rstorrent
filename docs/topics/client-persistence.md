@@ -173,7 +173,7 @@ verified content may be restored or must be checked again.
 The accepted future
 [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) campaign may replace
 the current v1-keyed database, have-state, part-file, and retained-source
-formats together. Planned Tactical
+formats together. Active Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) now owns
 that first replacement: a schema-19 fresh catalog, opaque owner IDs, full
 protocol aliases, version-2 have and part-file identity, and a reset of

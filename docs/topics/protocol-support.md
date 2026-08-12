@@ -209,7 +209,7 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | [BEP 43: Read-only DHT Nodes](https://www.bittorrent.org/beps/bep_0043.html) | Partial | KRPC parses and emits `ro`; nodes declaring read-only are not admitted from incoming queries. Deterministic codec and admission tests pass. | Product policy does not yet select read-only mode for uncontactable, metered, VPN, or Android lifecycle states. |
 | [BEP 47: Padding files and extended file attributes](https://www.bittorrent.org/beps/bep_0047.html) | Partial | Multi-file `p` attributes produce synthetic zero ranges for verification without writing padding files. Deterministic storage-layout and controlled selective-file evidence passes. | Symlinks are explicitly rejected. Executable, hidden, and per-file SHA-1 attributes are not product behavior. |
 | [BEP 48: Tracker Protocol Extension: Scrape](https://www.bittorrent.org/beps/bep_0048.html) | Unsupported | None. | Tracker scrape values and application presentation are absent. |
-| [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Metainfo and magnet parsers explicitly reject v2 and hybrid identities. | The accepted [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) topic owns the separate SHA-256 identity, file-tree, piece-layer, aligned-storage, hybrid-validation, hash-exchange, persistence, and interoperability campaign. |
+| [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Metainfo and magnet parsers explicitly reject v2 and hybrid identities. Active Tactical [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes only internal identity and persistence ownership while preserving those rejections. | The accepted [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) topic owns the separate SHA-256 identity, file-tree, piece-layer, aligned-storage, hybrid-validation, hash-exchange, persistence, and interoperability campaign. |
 | [BEP 53: Magnet URI extension - Select specific file indices for download](https://www.bittorrent.org/beps/bep_0053.html) | Supported | Strict bounded repeated `so` parsing and canonical compact ranges; pre-metadata restart; skipped-default plus bounded wanted exceptions; metadata-time catalog/padding filtering; additive duplicate promotion; typed idempotent duplicate outcomes; active-owner fencing; generated adapters; and React reveal/feedback pass. The pinned libtorrent magnet suite passes its select-only, malformed, bounds, and round-trip cases. | Zero-based indices are limited to the product's 374,998-file catalog and at most 4,096 materialized exceptions. Ordinary duplicates remain no-ops; only explicit `so` promotes files. BEP 53 adds no peer-wire message, so interoperability is an intake/oracle and existing hash-verified payload composition claim, not wire observation of `so`. |
 | [BEP 55: Holepunch extension](https://www.bittorrent.org/beps/bep_0055.html) | Unsupported | None. | Depends on PEX, uTP, extension negotiation, incoming reachability, address policy, and NAT behavior. |
 
@@ -285,9 +285,10 @@ Protocol breadth follows the current ownership campaign:
    advertisement ownership while keeping multi-address fan-out outside any
    full BEP 7 claim; and
 6. evaluate incoming service, uTP, hole punching, web seeds, and v2 only after
-   their prerequisite owners and validation plans exist; the accepted
-   [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) topic now records
-   the v2 plan without activating it.
+   their prerequisite owners and validation plans exist. Explicit maintainer
+   direction now activates the bounded identity/persistence foundation from
+   [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) without changing
+   the **Unsupported** BEP 52 claim.
 
 This order is a default, not a promise to implement every listed proposal.
 New real-swarm evidence may reorder common interoperability work, but it must

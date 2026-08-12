@@ -1,9 +1,9 @@
 # Tactical 143: Dual Identity And Persistence Foundation
 
-Status: **Planned and inactive.** Maintainer direction on 2026-08-12 approves
-this decision-complete plan, but does not activate implementation. Tactical
-[`142`](142-wan-transport-performance-matrix.md) remains the sole authoritative
-**Now**.
+Status: **Active.** Maintainer direction on 2026-08-12 authorizes end-to-end
+implementation with logical commits. Tactical
+[`142`](142-wan-transport-performance-matrix.md) is paused at its recorded
+analysis checkpoint, and this tactical is the sole authoritative **Now**.
 
 Topics: `bittorrent-v2-and-hybrid`, `client-persistence`,
 `application-control`, `application-view-api`, `client-surfaces`,
@@ -575,7 +575,8 @@ This tactical does not:
   general orphan-artifact cleaner;
 - create v2 or hybrid torrent files;
 - add a UUID/randomness/database/identity framework dependency; or
-- change Tactical 142's active status or claim any BEP 52 support.
+- resume Tactical `142` or its child Tactical `145`, or claim any BEP 52
+  support.
 
 The next tactical remains runtime-free BEP 52 metainfo, geometry, and Merkle
 work. It may use the v2 identity slots created here, but activation still
