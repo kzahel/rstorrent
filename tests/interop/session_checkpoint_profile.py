@@ -17,6 +17,11 @@ from pathlib import Path
 
 import libtorrent as lt
 
+from application_identity import (
+    HAVE_STATE_HEADER_LENGTH,
+    torrent_id_blob,
+    torrent_id_from_add,
+)
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -26,6 +31,7 @@ from first_verified_piece import (
 )
 from magnet_metadata import create_fixture, magnet_uri
 from session_resume import (
+    PEER_TIMEOUT_SECONDS,
     build_binary,
     derive_durable_state,
     envelope,
@@ -67,7 +73,7 @@ class ProfileResult:
 
 def read_checkpoint_state(
     database_path: Path,
-    info_hash: str,
+    torrent_id: str,
 ) -> tuple[int, int, int, str]:
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
@@ -76,9 +82,9 @@ def read_checkpoint_state(
                    desired_state, payload_state, verification_requested,
                    verification_completed, quarantine_reason
             FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
@@ -105,12 +111,13 @@ def read_checkpoint_state(
             quarantine_reason,
         )
         return int(updated_revision), 0, 0, state
-    if len(have_state) != 34 + (piece_count + 7) // 8:
+    if len(have_state) != HAVE_STATE_HEADER_LENGTH + (piece_count + 7) // 8:
         raise ScenarioFailure("durable have state has unexpected geometry")
     verified = sum(
         1
         for index in range(piece_count)
-        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+        if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
+        & (1 << (7 - index % 8))
     )
     state = derive_durable_state(
         raw_info,
@@ -127,13 +134,13 @@ def read_checkpoint_state(
 
 def wait_for_metadata_checkpoint(
     database_path: Path,
-    info_hash: str,
+    torrent_id: str,
 ) -> tuple[float, int, int, int]:
     deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         try:
             revision, piece_count, verified, state = read_checkpoint_state(
-                database_path, info_hash
+                database_path, torrent_id
             )
         except (sqlite3.Error, ScenarioFailure):
             time.sleep(POLL_SECONDS)
@@ -178,7 +185,7 @@ def run_once(
             binary,
             profile_root,
             payload_root,
-            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
+            timeout_seconds=PEER_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
             storage_write_concurrency=write_concurrency,
             storage_hash_concurrency=hash_concurrency,
@@ -189,29 +196,31 @@ def run_once(
                 "type": "add_magnet",
                 "magnet": magnet_uri(fixture.info_hash, f"127.0.0.1:{port}"),
                 "storage_root": "downloads",
+                "start_content": True,
                 "skip_files": [],
             },
         )
         total_started = time.monotonic()
-        exchange(process, add)
+        torrent_id = torrent_id_from_add(exchange(process, add))
         (
             transfer_started,
             baseline_revision,
             piece_count,
             baseline_verified,
-        ) = wait_for_metadata_checkpoint(database_path, fixture.info_hash)
+        ) = wait_for_metadata_checkpoint(database_path, torrent_id)
         completion = wait_for_complete(
             process,
             fixture,
+            torrent_id,
             timeout_seconds=PROCESS_TIMEOUT_SECONDS,
         )
         transfer_seconds = time.monotonic() - transfer_started
         total_seconds = time.monotonic() - total_started
         final_revision, final_piece_count, final_verified, state = read_checkpoint_state(
-            database_path, fixture.info_hash
+            database_path, torrent_id
         )
         raw_info, durable_piece_count, durable_verified, durable_state = (
-            read_durable_state(database_path, fixture.info_hash)
+            read_durable_state(database_path, torrent_id)
         )
         if bytes(raw_info or b"") != fixture.info_bytes:
             raise ScenarioFailure("completion changed exact raw info bytes")

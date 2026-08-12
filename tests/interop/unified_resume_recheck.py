@@ -20,6 +20,11 @@ from typing import Any
 
 import libtorrent as lt
 
+from application_identity import (
+    HAVE_STATE_HEADER_LENGTH,
+    torrent_id_blob,
+    torrent_id_from_add,
+)
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -219,8 +224,8 @@ def final_file(root: Path, fixture: Fixture, file: FixtureFile) -> Path:
     return root.joinpath(fixture.name, *file.path)
 
 
-def staging_root(root: Path, fixture: Fixture) -> Path:
-    return root / f".{fixture.info_hash}.rstorrent-staging"
+def staging_root(root: Path, torrent_id: str) -> Path:
+    return root / f".{torrent_id}.rstorrent-staging"
 
 
 def verify_final(root: Path, fixture: Fixture) -> dict[str, str]:
@@ -243,16 +248,16 @@ def verify_final(root: Path, fixture: Fixture) -> dict[str, str]:
     return hashes
 
 
-def read_sqlite_state(database: Path, info_hash: str) -> tuple[str, str, list[int]]:
+def read_sqlite_state(database: Path, torrent_id: str) -> tuple[str, str, list[int]]:
     with sqlite3.connect(database, timeout=1) as connection:
         row = connection.execute(
             """
             SELECT raw_info, piece_count, have_state, desired_state,
                    payload_state, verification_requested,
                    verification_completed, quarantine_reason
-            FROM torrents WHERE lower(hex(info_hash)) = ?
+            FROM torrents WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
@@ -272,7 +277,8 @@ def read_sqlite_state(database: Path, info_hash: str) -> tuple[str, str, list[in
         have = [
             index
             for index in range(piece_count)
-            if have_state[34 + index // 8] & (1 << (7 - index % 8))
+            if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
+            & (1 << (7 - index % 8))
         ]
     state = derive_durable_state(
         raw_info,
@@ -320,21 +326,24 @@ def wait_for_publication_stage(
     raise ScenarioFailure(f"session did not reach publication stage {stage}")
 
 
-def add_fixture(process: subprocess.Popen[str], fixture: Fixture, port: int) -> None:
-    exchange(
-        process,
-        envelope(
-            "add",
-            {
-                "type": "add_magnet",
-                "magnet": (
-                    f"magnet:?xt=urn:btih:{fixture.info_hash}"
-                    f"&x.pe=127.0.0.1:{port}"
-                ),
-                "storage_root": "downloads",
-                "skip_files": [],
-            },
-        ),
+def add_fixture(process: subprocess.Popen[str], fixture: Fixture, port: int) -> str:
+    return torrent_id_from_add(
+        exchange(
+            process,
+            envelope(
+                "add",
+                {
+                    "type": "add_magnet",
+                    "magnet": (
+                        f"magnet:?xt=urn:btih:{fixture.info_hash}"
+                        f"&x.pe=127.0.0.1:{port}"
+                    ),
+                    "storage_root": "downloads",
+                    "start_content": True,
+                    "skip_files": [],
+                },
+            ),
+        )
     )
 
 
@@ -446,8 +455,8 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
         )
         upload_before = seed_handle.status().total_payload_upload
         process = start_process(binary, profile, payload)
-        add_fixture(process, fixture, port)
-        wait_for_complete(process, fixture)
+        torrent_id = add_fixture(process, fixture, port)
+        wait_for_complete(process, fixture, torrent_id)
         initial_upload = seed_handle.status().total_payload_upload - upload_before
         if initial_upload != fixture.torrent_info.total_size():
             raise ScenarioFailure("fresh download did not transfer exact payload bytes")
@@ -458,12 +467,13 @@ def run_topology_case(binary: Path, shape: str) -> TopologyResult:
             process,
             envelope(
                 "force-recheck",
-                {"type": "force_recheck", "torrent_id": fixture.info_hash},
+                {"type": "force_recheck", "torrent_id": torrent_id},
             ),
         )
         wait_for_complete(
             process,
             fixture,
+            torrent_id,
             minimum_revision=int(force["revision"]) + 2,
         )
         repair_upload = seed_handle.status().total_payload_upload - repair_before
@@ -547,13 +557,13 @@ def run_publication_crash(binary: Path, stage: str) -> PublicationCrashResult:
             publication_delay_millis=PUBLICATION_DELAY_MILLIS,
             trace_publication_stages=True,
         )
-        add_fixture(process, fixture, port)
+        torrent_id = add_fixture(process, fixture, port)
         wait_for_publication_stage(process, stage, diagnostics)
         process.kill()
         process.wait(timeout=5)
         process = None
-        state, storage_state, old_have = read_sqlite_state(database, fixture.info_hash)
-        staging = staging_root(payload, fixture)
+        state, storage_state, old_have = read_sqlite_state(database, torrent_id)
+        staging = staging_root(payload, torrent_id)
         final = payload / fixture.name
         if staging.exists() == final.exists():
             raise ScenarioFailure("publication crash retained neither or both primary sides")
@@ -570,9 +580,9 @@ def run_publication_crash(binary: Path, stage: str) -> PublicationCrashResult:
         seed_session = None
         gc.collect()
         process = start_process(binary, profile, payload)
-        wait_for_complete(process, fixture)
+        wait_for_complete(process, fixture, torrent_id)
         final_hashes = verify_final(payload, fixture)
-        _, _, restart_have = read_sqlite_state(database, fixture.info_hash)
+        _, _, restart_have = read_sqlite_state(database, torrent_id)
         stop_process(process, graceful=True)
         process = None
         result = PublicationCrashResult(

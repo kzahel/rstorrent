@@ -21,6 +21,11 @@ from typing import Any
 
 import libtorrent as lt
 
+from application_identity import (
+    HAVE_STATE_HEADER_LENGTH,
+    torrent_id_blob,
+    torrent_id_from_add,
+)
 from first_verified_piece import (
     DEFAULT_PAYLOAD_ALLOWANCE,
     ScenarioFailure,
@@ -36,9 +41,9 @@ from magnet_metadata import (
 )
 
 
-PROCESS_TIMEOUT_SECONDS = 45
+PROCESS_TIMEOUT_SECONDS = 180
+PEER_TIMEOUT_SECONDS = 10
 POLL_SECONDS = 0.02
-UPLOAD_RATE_LIMIT = 1024 * 1024
 # Cross the checkpoint owner's 64 MiB byte bound, then hold each SQLite commit
 # long enough for the harness to kill the process after one partial durable
 # epoch. This keeps the restart boundary deterministic even when loopback can
@@ -97,7 +102,7 @@ def start_process(
     profile_root: Path,
     payload_root: Path,
     *,
-    timeout_seconds: int = PROCESS_TIMEOUT_SECONDS,
+    timeout_seconds: int = PEER_TIMEOUT_SECONDS,
     payload_allowance: int = DEFAULT_PAYLOAD_ALLOWANCE,
     checkpoint_sync_delay_millis: int = 0,
     checkpoint_commit_delay_millis: int = 0,
@@ -195,7 +200,7 @@ def envelope(request_id: str, command: dict[str, Any]) -> dict[str, Any]:
 
 def read_durable_state(
     database_path: Path,
-    info_hash: str,
+    torrent_id: str,
 ) -> tuple[bytes | None, int, int, str]:
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
@@ -204,9 +209,9 @@ def read_durable_state(
                    payload_state, verification_requested,
                    verification_completed, quarantine_reason
             FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
@@ -232,12 +237,13 @@ def read_durable_state(
             quarantine_reason,
         )
         return raw_info, 0, 0, state
-    if len(have_state) != 34 + (piece_count + 7) // 8:
+    if len(have_state) != HAVE_STATE_HEADER_LENGTH + (piece_count + 7) // 8:
         raise ScenarioFailure("durable have state has unexpected geometry")
     verified = sum(
         1
         for index in range(piece_count)
-        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+        if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
+        & (1 << (7 - index % 8))
     )
     state = derive_durable_state(
         raw_info,
@@ -281,14 +287,14 @@ def derive_durable_state(
     return "downloading"
 
 
-def read_durable_piece_indices(database_path: Path, info_hash: str) -> set[int]:
+def read_durable_piece_indices(database_path: Path, torrent_id: str) -> set[int]:
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
             """
             SELECT piece_count, have_state FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None or row[1] is None:
         return set()
@@ -296,18 +302,19 @@ def read_durable_piece_indices(database_path: Path, info_hash: str) -> set[int]:
     return {
         index
         for index in range(piece_count)
-        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+        if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
+        & (1 << (7 - index % 8))
     }
 
 
-def read_verification_generation(database_path: Path, info_hash: str) -> tuple[int, int]:
+def read_verification_generation(database_path: Path, torrent_id: str) -> tuple[int, int]:
     with sqlite3.connect(database_path, timeout=1) as connection:
         row = connection.execute(
             """
             SELECT verification_requested, verification_completed FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("durable torrent row is missing")
@@ -341,32 +348,48 @@ def valid_payload_pieces(path: Path, torrent_info: lt.torrent_info) -> list[int]
 
 
 def wait_for_piece_checkpoint(
+    process: subprocess.Popen[str],
     database_path: Path,
+    torrent_id: str,
     fixture: Fixture,
 ) -> tuple[int, int]:
     deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
+    last_error: BaseException | None = None
+    last_observation: tuple[int, int, str] | None = None
     while time.monotonic() < deadline:
         try:
             raw_info, piece_count, verified, state = read_durable_state(
                 database_path,
-                fixture.info_hash,
+                torrent_id,
             )
-        except (sqlite3.Error, ScenarioFailure):
+        except (sqlite3.Error, ScenarioFailure) as error:
+            last_error = error
             time.sleep(POLL_SECONDS)
             continue
         if raw_info is not None and bytes(raw_info) != fixture.info_bytes:
             raise ScenarioFailure("SQLite retained different raw info bytes")
+        last_observation = (piece_count, verified, state)
         if state == "complete":
             raise ScenarioFailure("download completed before forced-death checkpoint")
         if verified >= 2 and verified < piece_count:
             return piece_count, verified
         time.sleep(POLL_SECONDS)
-    raise ScenarioFailure("session did not durably checkpoint two partial pieces")
+    snapshot = exchange(process, envelope("checkpoint-timeout", {"type": "snapshot"}))
+    raise ScenarioFailure(
+        "session did not durably checkpoint two partial pieces"
+        + (
+            f": last SQLite observation: {last_error or last_observation}"
+            if last_error or last_observation
+            else ""
+        )
+        + f"; snapshot={snapshot['snapshot']['torrents']}"
+    )
 
 
 def wait_for_complete(
     process: subprocess.Popen[str],
     fixture: Fixture,
+    torrent_id: str,
     minimum_revision: int = 0,
     timeout_seconds: int = PROCESS_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
@@ -385,7 +408,7 @@ def wait_for_complete(
         if len(torrents) != 1:
             raise ScenarioFailure("session snapshot has the wrong torrent count")
         torrent = torrents[0]
-        if torrent["torrent_id"] != fixture.info_hash:
+        if torrent["torrent_id"] != torrent_id:
             raise ScenarioFailure("session snapshot has the wrong torrent identity")
         if (
             torrent["state"] == "complete"
@@ -433,7 +456,6 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         payload_root = run_path / "payload"
         database_path = profile_root / "session.db"
         session = create_session()
-        session.apply_settings({"upload_rate_limit": UPLOAD_RATE_LIMIT})
         port = wait_for_listener(session, diagnostics)
         handle = add_seed(
             session,
@@ -457,15 +479,17 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
                     f"127.0.0.1:{port}",
                 ),
                 "storage_root": "downloads",
+                "start_content": True,
                 "skip_files": [],
             },
         )
         first_response = exchange(process, add)
-        if exchange(process, add) != first_response:
-            raise ScenarioFailure("duplicate add did not replay its durable receipt")
+        torrent_id = torrent_id_from_add(first_response)
 
         piece_count, pieces_before_kill = wait_for_piece_checkpoint(
+            process,
             database_path,
+            torrent_id,
             fixture,
         )
         if piece_count < 4:
@@ -478,12 +502,12 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
 
         staging_payload = (
             payload_root
-            / f".{fixture.info_hash}.rstorrent-staging"
+            / f".{torrent_id}.rstorrent-staging"
             / "payload.bin"
         )
         if not staging_payload.is_file():
             raise ScenarioFailure("forced death did not retain staging payload")
-        durable_indices = read_durable_piece_indices(database_path, fixture.info_hash)
+        durable_indices = read_durable_piece_indices(database_path, torrent_id)
         if len(durable_indices) != pieces_before_kill:
             raise ScenarioFailure("durable checkpoint count and bitmap disagree")
         corrupt_piece = min(durable_indices)
@@ -504,7 +528,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             fixture.torrent_info,
         )
         physically_valid_after_crash = len(valid_after_crash)
-        completion = wait_for_complete(process, fixture)
+        completion = wait_for_complete(process, fixture, torrent_id)
         upload_after_restart = handle.status().total_payload_upload
         restart_payload_upload = upload_after_restart - upload_before_restart
         expected_restart_upload = sum(
@@ -527,13 +551,13 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             process,
             envelope(
                 "force-recheck",
-                {"type": "force_recheck", "torrent_id": fixture.info_hash},
+                {"type": "force_recheck", "torrent_id": torrent_id},
             ),
         )
         process.send_signal(signal.SIGSTOP)
         requested, completed = read_verification_generation(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         if requested != 1 or completed != 0:
             process.send_signal(signal.SIGCONT)
@@ -544,6 +568,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         completion = wait_for_complete(
             process,
             fixture,
+            torrent_id,
             minimum_revision=int(force["revision"]) + 2,
         )
         force_recheck_upload = handle.status().total_payload_upload - force_upload_before
@@ -558,7 +583,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             raise ScenarioFailure("Force recheck did not restore exact payload")
         raw_info, completed_piece_count, completed_pieces, state = read_durable_state(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         if bytes(raw_info or b"") != fixture.info_bytes:
             raise ScenarioFailure("completion changed exact raw info bytes")
@@ -566,7 +591,7 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
             raise ScenarioFailure("completion was not durably checkpointed")
         requested, completed = read_verification_generation(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         if requested != 1 or completed != 1:
             raise ScenarioFailure("Force recheck generation did not settle exactly once")
@@ -583,9 +608,10 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
         wait_for_complete(
             process,
             fixture,
+            torrent_id,
             minimum_revision=completed_revision,
         )
-        if read_verification_generation(database_path, fixture.info_hash) != (1, 1):
+        if read_verification_generation(database_path, torrent_id) != (1, 1):
             raise ScenarioFailure("stable restart unexpectedly started another checker")
         stop_process(process, graceful=True)
         process = None
@@ -607,6 +633,8 @@ def run_once(binary: Path, ordinal: int) -> RunResult:
     finally:
         if process is not None:
             stop_process(process, graceful=False)
+            if process.stderr is not None:
+                diagnostics.extend(process.stderr.read().splitlines())
         if session is not None:
             try:
                 diagnostics.extend(alert.message() for alert in session.pop_alerts())

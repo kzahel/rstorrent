@@ -2336,6 +2336,7 @@ def run_product_incomplete_duplex_profile(
     complement_transport: ReverseTransport | None = None
     proxy: Any | None = None
     baseline_fds = 0
+    torrent_id: str | None = None
     output_root = f"{probe.grant_path(grant_storage)}/duplex-tree"
     staging_root = f"{probe.grant_path(grant_storage)}/.duplex-tree.rstorrent-staging"
     part_path = f"{probe.grant_path(grant_storage)}/.duplex-tree.rstorrent-parts"
@@ -2358,7 +2359,8 @@ def run_product_incomplete_duplex_profile(
         while time.monotonic() < deadline:
             logs = product_logs(target)
             if any(
-                f"torrent={fixture.info_hash}" in line
+                torrent_id is not None
+                and f"torrent={torrent_id}" in line
                 and "state=DOWNLOADING" in line
                 and "verified=2 " in line
                 for line in logs.splitlines()
@@ -2406,6 +2408,7 @@ def run_product_incomplete_duplex_profile(
             f"magnet:?xt=urn:btih:{fixture.info_hash}&dn=duplex-tree"
             f"&x.pe=127.0.0.1:{stage_transport.device_port}"
         )
+        add_count = product_add_count(target, fixture.info_hash)
         started = target.shell(
             [
                 "am",
@@ -2429,6 +2432,9 @@ def run_product_incomplete_duplex_profile(
             started.returncode != 0 and "Starting:" not in started.stdout
         ):
             raise BootstrapFailure("could not start Android incomplete SAF torrent")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
         wait_partial_verified()
         time.sleep(3)
         retained_pieces = stage_proxy.retained_pieces
@@ -2480,7 +2486,7 @@ def run_product_incomplete_duplex_profile(
         )
         unavailable_logs = wait_product_log(
             target,
-            f"torrent={fixture.info_hash}",
+            f"torrent={torrent_id}",
             "incomplete torrent after SAF root failure",
         )
         if "state=AWAITING_STORAGE" not in unavailable_logs:
@@ -2539,7 +2545,7 @@ def run_product_incomplete_duplex_profile(
         )
         metrics, fd_high_water = wait_product_publication(
             target,
-            fixture.info_hash,
+            torrent_id,
             baseline_fds,
         )
         deadline = time.monotonic() + 45
@@ -2585,10 +2591,10 @@ def run_product_incomplete_duplex_profile(
         if metrics["pending_high_water"] > 16:
             raise BootstrapFailure(f"Android incomplete SAF broker bound failed: {metrics}")
 
-        request_product_torrent_action(target, fixture.info_hash, "remove")
+        request_product_torrent_action(target, torrent_id, "remove")
         wait_product_log(
             target,
-            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            f"saf_removal_confirmed torrent={torrent_id}",
             "incomplete SAF removal",
         )
         return {
@@ -2596,7 +2602,8 @@ def run_product_incomplete_duplex_profile(
             "profile": "product-incomplete-duplex",
             "run": ordinal,
             "identity": identity,
-            "torrent_id": fixture.info_hash,
+            "torrent_id": torrent_id,
+            "v1_info_hash": fixture.info_hash,
             "provider_failure": "awaiting_storage",
             "provider_repair": "resumed",
             "staged_pieces": retained_pieces,
@@ -2672,6 +2679,7 @@ def run_product_mse_profile(
         magnet = (
             f"magnet:?xt=urn:btih:{fixture.info_hash}&dn={fixture.name}{peer_hints}"
         )
+        add_count = product_add_count(target, fixture.info_hash)
         started = target.shell(
             [
                 "am",
@@ -2692,6 +2700,9 @@ def run_product_mse_profile(
             started.returncode != 0 and "Starting:" not in started.stdout
         ):
             raise BootstrapFailure("could not add Android product MSE magnet")
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
 
         def sample_oracle_methods() -> None:
             for index, candidate in enumerate(fixtures):
@@ -2706,7 +2717,7 @@ def run_product_mse_profile(
 
         metrics, fd_high_water = wait_product_publication(
             target,
-            fixture.info_hash,
+            torrent_id,
             baseline_fds,
             sample_oracle_methods,
         )
@@ -2782,7 +2793,8 @@ def run_product_mse_profile(
             "profile": "product-mse",
             "run": ordinal,
             "identity": identity,
-            "torrent_id": fixture.info_hash,
+            "torrent_id": torrent_id,
+            "v1_info_hash": fixture.info_hash,
             "publication_name": fixture.name,
             "forced_rc4_attempts": len(observed_rc4),
             "mse_dh": {
@@ -2906,6 +2918,7 @@ def run_product_concurrent_downloads_profile(
     output_roots = [f"{grant_root}/{fixture.name}" for fixture in fixtures]
     staging_roots = [f"{grant_root}/.{fixture.name}.rstorrent-staging" for fixture in fixtures]
     part_roots = [f"{grant_root}/.{fixture.name}.rstorrent-parts" for fixture in fixtures]
+    torrent_ids: list[str] = []
     try:
         clear_application(target)
         prepare_product_saf(target, probe, grant_storage)
@@ -2935,6 +2948,7 @@ def run_product_concurrent_downloads_profile(
                 f"magnet:?xt=urn:btih:{fixture.info_hash}&dn={fixture.name}"
                 f"&x.pe=127.0.0.1:{transport.device_port}"
             )
+            add_count = product_add_count(target, fixture.info_hash)
             started = target.shell(
                 [
                     "am",
@@ -2952,7 +2966,12 @@ def run_product_concurrent_downloads_profile(
                 started.returncode != 0 and "Starting:" not in started.stdout
             ):
                 raise BootstrapFailure("could not add Android concurrent product magnet")
+            torrent_ids.append(
+                wait_product_torrent_id(target, fixture.info_hash, add_count)
+            )
             time.sleep(0.1)
+        staging_roots = [f"{grant_root}/.{owner}.rstorrent-staging" for owner in torrent_ids]
+        part_roots = [f"{grant_root}/.{owner}.rstorrent-parts" for owner in torrent_ids]
 
         active = request_download_admission_evidence(target, "active")
         expected_active = {
@@ -2992,10 +3011,10 @@ def run_product_concurrent_downloads_profile(
 
         storage_metrics = []
         fd_high_water = baseline_fds
-        for fixture in fixtures:
+        for torrent_id in torrent_ids:
             metrics, observed_fds = wait_product_publication(
                 target,
-                fixture.info_hash,
+                torrent_id,
                 baseline_fds,
             )
             storage_metrics.append(metrics)
@@ -3057,7 +3076,8 @@ def run_product_concurrent_downloads_profile(
             "profile": "product-concurrent-downloads",
             "run": ordinal,
             "identity": identity,
-            "torrents": [fixture.info_hash for fixture in fixtures],
+            "torrents": torrent_ids,
+            "v1_info_hashes": [fixture.info_hash for fixture in fixtures],
             "active_admission": active,
             "terminal_admission": terminal,
             "bandwidth": {

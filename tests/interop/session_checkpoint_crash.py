@@ -18,6 +18,11 @@ from pathlib import Path
 
 import libtorrent as lt
 
+from application_identity import (
+    HAVE_STATE_HEADER_LENGTH,
+    torrent_id_blob,
+    torrent_id_from_add,
+)
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -28,6 +33,7 @@ from first_verified_piece import (
 from magnet_metadata import create_fixture, magnet_uri
 from session_checkpoint_profile import read_checkpoint_state
 from session_resume import (
+    PEER_TIMEOUT_SECONDS,
     build_binary,
     envelope,
     exchange,
@@ -115,14 +121,14 @@ def parse_checkpoint_marker(line: str) -> dict[str, str] | None:
     return fields
 
 
-def read_durable_piece_indices(database: Path, info_hash: str) -> set[int]:
+def read_durable_piece_indices(database: Path, torrent_id: str) -> set[int]:
     with sqlite3.connect(database, timeout=1) as connection:
         row = connection.execute(
             """
             SELECT piece_count, have_state FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None or row[1] is None:
         return set()
@@ -130,18 +136,19 @@ def read_durable_piece_indices(database: Path, info_hash: str) -> set[int]:
     return {
         index
         for index in range(piece_count)
-        if have_state[34 + index // 8] & (1 << (7 - index % 8))
+        if have_state[HAVE_STATE_HEADER_LENGTH + index // 8]
+        & (1 << (7 - index % 8))
     }
 
 
-def read_verification_generation(database: Path, info_hash: str) -> tuple[int, int]:
+def read_verification_generation(database: Path, torrent_id: str) -> tuple[int, int]:
     with sqlite3.connect(database, timeout=1) as connection:
         row = connection.execute(
             """
             SELECT verification_requested, verification_completed FROM torrents
-            WHERE lower(hex(info_hash)) = ?
+            WHERE torrent_id = ?
             """,
-            (info_hash,),
+            (torrent_id_blob(torrent_id),),
         ).fetchone()
     if row is None:
         raise ScenarioFailure("stable neighbor row is missing")
@@ -151,6 +158,7 @@ def read_verification_generation(database: Path, info_hash: str) -> tuple[int, i
 def wait_for_target_complete(
     process: subprocess.Popen[str],
     fixture,
+    torrent_id: str,
     expected_torrents: int,
 ) -> dict:
     deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
@@ -165,7 +173,7 @@ def wait_for_target_complete(
         if len(torrents) != expected_torrents:
             raise ScenarioFailure("restart snapshot has the wrong torrent count")
         torrent = next(
-            (row for row in torrents if row["torrent_id"] == fixture.info_hash),
+            (row for row in torrents if row["torrent_id"] == torrent_id),
             None,
         )
         if torrent is None:
@@ -264,12 +272,13 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             binary,
             profile_root,
             payload_root,
-            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
+            timeout_seconds=PEER_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
         )
-        exchange(
-            process,
-            envelope(
+        stable_torrent_id = torrent_id_from_add(
+            exchange(
+                process,
+                envelope(
                 "add-stable-neighbor",
                 {
                     "type": "add_magnet",
@@ -278,29 +287,32 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
                         f"127.0.0.1:{port}",
                     ),
                     "storage_root": "downloads",
+                    "start_content": True,
                     "skip_files": [],
                 },
-            ),
+                ),
+            )
         )
-        wait_for_complete(process, stable_fixture)
+        wait_for_complete(process, stable_fixture, stable_torrent_id)
         stop_process(process, graceful=True)
         process = None
-        if read_verification_generation(database_path, stable_fixture.info_hash) != (0, 0):
+        if read_verification_generation(database_path, stable_torrent_id) != (0, 0):
             raise ScenarioFailure("stable neighbor unexpectedly entered checking")
 
         process = start_process(
             binary,
             profile_root,
             payload_root,
-            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
+            timeout_seconds=PEER_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
             checkpoint_sync_delay_millis=scenario.sync_delay_millis,
             checkpoint_commit_delay_millis=scenario.commit_delay_millis,
             trace_checkpoint_stages=True,
         )
-        exchange(
-            process,
-            envelope(
+        torrent_id = torrent_id_from_add(
+            exchange(
+                process,
+                envelope(
                 "add",
                 {
                     "type": "add_magnet",
@@ -309,9 +321,11 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
                         f"127.0.0.1:{port}",
                     ),
                     "storage_root": "downloads",
+                    "start_content": True,
                     "skip_files": [],
                 },
-            ),
+                ),
+            )
         )
         marker = wait_for_crash_boundary(process, scenario, diagnostics)
         if marker["checkpoint_stage"] != scenario.stage:
@@ -322,10 +336,10 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
 
         revision, piece_count, verified, state = read_checkpoint_state(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         raw_info, durable_piece_count, durable_verified, durable_state = (
-            read_durable_state(database_path, fixture.info_hash)
+            read_durable_state(database_path, torrent_id)
         )
         if bytes(raw_info or b"") != fixture.info_bytes:
             raise ScenarioFailure("crash changed exact raw info bytes")
@@ -343,14 +357,14 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             )
         durable_indices = read_durable_piece_indices(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         if len(durable_indices) != verified:
             raise ScenarioFailure("durable have count and bitmap disagree")
 
         staging_payload = (
             payload_root
-            / f".{fixture.info_hash}.rstorrent-staging"
+            / f".{torrent_id}.rstorrent-staging"
             / "payload.bin"
         )
         valid_after_crash = valid_payload_pieces(
@@ -362,10 +376,10 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             binary,
             profile_root,
             payload_root,
-            timeout_seconds=PROCESS_TIMEOUT_SECONDS,
+            timeout_seconds=PEER_TIMEOUT_SECONDS,
             payload_allowance=PAYLOAD_ALLOWANCE,
         )
-        wait_for_target_complete(process, fixture, expected_torrents=2)
+        wait_for_target_complete(process, fixture, torrent_id, expected_torrents=2)
         restart_payload_upload = (
             handle.status().total_payload_upload - upload_before_restart
         )
@@ -391,13 +405,13 @@ def run_once(binary: Path, scenario: CrashScenario) -> CrashResult:
             raise ScenarioFailure(f"{scenario.name} restart payload differs from seed")
         _, final_piece_count, final_verified, final_state = read_durable_state(
             database_path,
-            fixture.info_hash,
+            torrent_id,
         )
         if final_state != "complete" or final_verified != final_piece_count:
             raise ScenarioFailure(f"{scenario.name} restart was not fully durable")
         stable_requested, stable_completed = read_verification_generation(
             database_path,
-            stable_fixture.info_hash,
+            stable_torrent_id,
         )
         if (stable_requested, stable_completed) != (0, 0):
             raise ScenarioFailure("crashing torrent caused stable neighbor checking")

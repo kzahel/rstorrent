@@ -21,6 +21,7 @@ from typing import Any
 
 import libtorrent as lt
 
+from application_identity import torrent_id_from_add
 from first_verified_piece import (
     ScenarioFailure,
     add_seed,
@@ -288,13 +289,15 @@ def run_case(
                 },
             ),
         )
+        torrent_ids: dict[int, str] = {}
         for fixture in fixtures[:count]:
             explicit_peers = "".join(
                 f"&x.pe=127.0.0.1:{port}" for port in seed_ports[fixture.index]
             )
-            exchange(
-                process,
-                envelope(
+            torrent_ids[fixture.index] = torrent_id_from_add(
+                exchange(
+                    process,
+                    envelope(
                     f"add-{fixture.index}",
                     {
                         "type": "add_magnet",
@@ -306,7 +309,8 @@ def run_case(
                         "start_content": rate_policy is None,
                         "skip_files": [],
                     },
-                ),
+                    ),
+                )
             )
             if rate_policy is not None:
                 torrent_rate = rate_policy.torrent_download_bytes_per_second[fixture.index]
@@ -316,7 +320,7 @@ def run_case(
                         f"rate-{fixture.index}",
                         {
                             "type": "set_torrent_transfer_limits",
-                            "torrent_id": fixture.info_hash,
+                            "torrent_id": torrent_ids[fixture.index],
                             "limits": {
                                 "upload": transfer_rate_limit(None),
                                 "download": transfer_rate_limit(torrent_rate),
@@ -338,12 +342,15 @@ def run_case(
                     process,
                     envelope(
                         f"resume-{fixture.index}",
-                        {"type": "resume", "torrent_id": fixture.info_hash},
+                        {
+                            "type": "resume",
+                            "torrent_id": torrent_ids[fixture.index],
+                        },
                     ),
                 )
         completion_seconds: dict[str, float] = {}
         progress_samples: dict[str, list[tuple[float, int]]] = {
-            fixture.info_hash: [(0.0, 0)] for fixture in fixtures[:count]
+            torrent_ids[fixture.index]: [(0.0, 0)] for fixture in fixtures[:count]
         }
         rss_high_water = 0
         cpu_seconds = 0.0

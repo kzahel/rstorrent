@@ -18,6 +18,7 @@ from pathlib import Path
 
 import libtorrent as lt
 
+from application_identity import torrent_id_from_add
 from first_verified_piece import ScenarioFailure, add_seed, create_session, wait_for_listener
 from mse_peer_encryption import BT_HEADER, TcpProxy
 from torrent_byte_intake import Gateway, repository_root, verify_reference
@@ -113,7 +114,9 @@ def build_gateway(repository: Path) -> Path:
     return binary
 
 
-def media_url(gateway: Gateway, fixture: Fixture, proxy: TcpProxy) -> str:
+def media_url(
+    gateway: Gateway, fixture: Fixture, torrent_id: str, proxy: TcpProxy
+) -> str:
     deadline = time.monotonic() + 10
     last_outcome: dict[str, object] | None = None
     while time.monotonic() < deadline:
@@ -121,7 +124,7 @@ def media_url(gateway: Gateway, fixture: Fixture, proxy: TcpProxy) -> str:
             "POST",
             "/api/v1/media-urls",
             json.dumps(
-                {"torrent_id": fixture.info_hash, "file_index": fixture.media_index},
+                {"torrent_id": torrent_id, "file_index": fixture.media_index},
                 separators=(",", ":"),
             ).encode(),
             "application/json",
@@ -139,7 +142,7 @@ def media_url(gateway: Gateway, fixture: Fixture, proxy: TcpProxy) -> str:
         time.sleep(0.05)
     snapshot = gateway.snapshot("streaming-url-timeout")
     torrent = next(
-        (item for item in snapshot["torrents"] if item["torrent_id"] == fixture.info_hash),
+        (item for item in snapshot["torrents"] if item["torrent_id"] == torrent_id),
         None,
     )
     raise ScenarioFailure(
@@ -178,7 +181,7 @@ def head_range(url: str) -> None:
             raise ScenarioFailure("range HEAD did not retain the empty 206 contract")
 
 
-def wait_published(gateway: Gateway, fixture: Fixture) -> float:
+def wait_published(gateway: Gateway, torrent_id: str) -> float:
     started = time.monotonic()
     deadline = started + TIMEOUT_SECONDS
     ordinal = 0
@@ -189,7 +192,7 @@ def wait_published(gateway: Gateway, fixture: Fixture) -> float:
             (
                 item
                 for item in snapshot["torrents"]
-                if item["torrent_id"] == fixture.info_hash
+                if item["torrent_id"] == torrent_id
             ),
             None,
         )
@@ -252,17 +255,19 @@ def run(output: Path | None) -> dict[str, object]:
                 f"magnet:?xt=urn:btih:{fixture.info_hash}"
                 f"&x.pe={proxy.endpoint[0]}:{proxy.endpoint[1]}"
             )
-            gateway.command(
-                "add-streaming-fixture",
-                {
+            torrent_id = torrent_id_from_add(
+                gateway.command(
+                    "add-streaming-fixture",
+                    {
                     "type": "add_magnet",
                     "magnet": magnet,
                     "storage_root": "downloads",
                     "start_content": True,
                     "skip_files": [],
-                },
+                    },
+                )
             )
-            url = media_url(gateway, fixture, proxy)
+            url = media_url(gateway, fixture, torrent_id, proxy)
             head_range(url)
             baseline = sum(
                 len(parse_requests(bytes(trace.client_to_upstream)))
@@ -313,7 +318,7 @@ def run(output: Path | None) -> dict[str, object]:
                     f"received={len(error.partial)} missing={error.expected} "
                     f"snapshot={snapshot}"
                 ) from error
-            publication_seconds = wait_published(gateway, fixture)
+            publication_seconds = wait_published(gateway, torrent_id)
 
             all_requests = [
                 request
