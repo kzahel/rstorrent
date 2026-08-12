@@ -184,7 +184,7 @@ def prepare_remote(host: str, sizes_mib: tuple[int, ...]) -> dict[str, Any]:
         "set -eu; "
         f'printf "%s\\n" {shlex.quote(revision)} > "{REMOTE_BASE}/staged-revision"; '
         f'cd "{REMOTE_SOURCE}"; '
-        '"$HOME/.cargo/bin/cargo" build --release '
+        'CARGO_BUILD_JOBS=1 "$HOME/.cargo/bin/cargo" build --release '
         "-p rstorrent-engine --bin rstorrent-public-probe "
         "-p rstorrent-session --bin rstorrent-incoming-seed",
         timeout_seconds=2 * 60 * 60,
@@ -371,6 +371,10 @@ def _rstorrent_transport_evidence(result: dict[str, Any]) -> dict[str, Any]:
             "peer_methods",
         )
     }
+    safe_diagnostics["utility_timeline"] = diagnostics.get("utility_timeline")
+    safe_diagnostics["utility_timeline_coalesced_samples"] = diagnostics.get(
+        "utility_timeline_coalesced_samples"
+    )
     return {
         "effective_settings": result.get("effective_settings"),
         "utp": result.get("utp_evidence"),

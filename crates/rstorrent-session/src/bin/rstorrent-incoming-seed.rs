@@ -939,6 +939,9 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
         "retransmission_bytes_sent": snapshot.retransmission_bytes_sent,
         "retransmission_queue_high_water": snapshot.retransmission_queue_high_water,
+        "in_flight_packet_high_water": snapshot.in_flight_packet_high_water,
+        "in_flight_byte_high_water": snapshot.in_flight_byte_high_water,
+        "pending_ack_packet_high_water": snapshot.pending_ack_packet_high_water,
         "loss_reduction_high_water": snapshot.loss_reduction_high_water,
         "timeout_collapse_high_water": snapshot.timeout_collapse_high_water,
         "delivered_byte_high_water": snapshot.delivered_byte_high_water,
@@ -970,6 +973,7 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
         "mtu_probe_datagrams_sent": snapshot.mtu_probe_datagrams_sent,
         "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
+        "retry_exhausted_connections": snapshot.retry_exhausted_connections,
         "worker_panics": snapshot.worker_panics,
     })
 }

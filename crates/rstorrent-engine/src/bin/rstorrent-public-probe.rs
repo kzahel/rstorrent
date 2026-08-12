@@ -254,6 +254,8 @@ struct UtilitySample {
     known_peers: Option<usize>,
     eligible_peers: Option<usize>,
     connecting_peers: Option<usize>,
+    backed_off_peers: Option<usize>,
+    failure_limited_peers: Option<usize>,
     connected_peers: Option<usize>,
     unchoked_peers: Option<usize>,
     wanted_peers: Option<usize>,
@@ -322,6 +324,8 @@ impl UtilityTimeline {
             known_peers: registry.map(|value| value.total),
             eligible_peers: registry.map(|value| value.eligible),
             connecting_peers: registry.map(|value| value.dialing),
+            backed_off_peers: registry.map(|value| value.backed_off),
+            failure_limited_peers: registry.map(|value| value.failure_limited),
             connected_peers: swarm.map(|value| value.connected_peers),
             unchoked_peers: swarm.map(|value| value.unchoked_peers),
             wanted_peers: Some(
@@ -842,6 +846,8 @@ struct PeerMethodEvidence {
     utp_confirmed_high_water: usize,
     utp_suppressed_high_water: usize,
     utp_suppression_failures_high_water: u8,
+    peer_failure_high_water: u32,
+    last_peer_failure: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -971,14 +977,33 @@ impl TorrentPeerActivitySink for ProbeTorrentPeerSink {
         _active: bool,
         snapshot: rstorrent_engine::peer::PeerRegistrySnapshot,
     ) {
-        use rstorrent_engine::peer::UtpEndpointState;
+        use rstorrent_engine::peer::{PeerFailure, UtpEndpointState};
 
         let mut unknown = 0;
         let mut advertised = 0;
         let mut confirmed = 0;
         let mut suppressed = 0;
         let mut suppression_failures = 0;
+        let mut last_failure = None;
         for record in snapshot.records {
+            if last_failure
+                .as_ref()
+                .is_none_or(|(failures, _)| record.history.total_failures >= *failures)
+                && let Some(failure) = record.history.last_failure
+            {
+                last_failure = Some((
+                    record.history.total_failures,
+                    match failure {
+                        PeerFailure::Connect => "connect",
+                        PeerFailure::Handshake => "handshake",
+                        PeerFailure::SelfConnection => "self_connection",
+                        PeerFailure::DuplicatePeerId => "duplicate_peer_id",
+                        PeerFailure::Protocol => "protocol",
+                        PeerFailure::RemoteClosed => "remote_closed",
+                    }
+                    .to_owned(),
+                ));
+            }
             match record.history.utp_endpoint {
                 UtpEndpointState::Unknown => unknown += 1,
                 UtpEndpointState::Advertised => advertised += 1,
@@ -993,6 +1018,12 @@ impl TorrentPeerActivitySink for ProbeTorrentPeerSink {
             .evidence
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some((failures, failure)) = last_failure
+            && failures >= evidence.peer_failure_high_water
+        {
+            evidence.peer_failure_high_water = failures;
+            evidence.last_peer_failure = Some(failure);
+        }
         evidence.utp_endpoint_snapshots = evidence.utp_endpoint_snapshots.saturating_add(1);
         evidence.utp_unknown_high_water = evidence.utp_unknown_high_water.max(unknown);
         evidence.utp_advertised_high_water = evidence.utp_advertised_high_water.max(advertised);
@@ -1181,6 +1212,9 @@ struct UtpEvidence {
     retransmission_datagrams_sent: u64,
     retransmission_bytes_sent: u64,
     retransmission_queue_high_water: usize,
+    in_flight_packet_high_water: usize,
+    in_flight_byte_high_water: usize,
+    pending_ack_packet_high_water: usize,
     loss_reduction_high_water: u64,
     timeout_collapse_high_water: u64,
     delivered_byte_high_water: usize,
@@ -1212,6 +1246,7 @@ struct UtpEvidence {
     mtu_downward_recoveries_high_water: u64,
     mtu_probe_datagrams_sent: u64,
     mtu_fragmentable_retry_datagrams_sent: u64,
+    retry_exhausted_connections: u64,
     worker_panics: u64,
 }
 
@@ -1236,6 +1271,9 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             retransmission_datagrams_sent: snapshot.retransmission_datagrams_sent,
             retransmission_bytes_sent: snapshot.retransmission_bytes_sent,
             retransmission_queue_high_water: snapshot.retransmission_queue_high_water,
+            in_flight_packet_high_water: snapshot.in_flight_packet_high_water,
+            in_flight_byte_high_water: snapshot.in_flight_byte_high_water,
+            pending_ack_packet_high_water: snapshot.pending_ack_packet_high_water,
             loss_reduction_high_water: snapshot.loss_reduction_high_water,
             timeout_collapse_high_water: snapshot.timeout_collapse_high_water,
             delivered_byte_high_water: snapshot.delivered_byte_high_water,
@@ -1268,6 +1306,7 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             mtu_downward_recoveries_high_water: snapshot.mtu_downward_recoveries_high_water,
             mtu_probe_datagrams_sent: snapshot.mtu_probe_datagrams_sent,
             mtu_fragmentable_retry_datagrams_sent: snapshot.mtu_fragmentable_retry_datagrams_sent,
+            retry_exhausted_connections: snapshot.retry_exhausted_connections,
             worker_panics: snapshot.worker_panics,
         }
     }
@@ -2864,6 +2903,8 @@ mod tests {
             known_peers: None,
             eligible_peers: None,
             connecting_peers: None,
+            backed_off_peers: None,
+            failure_limited_peers: None,
             connected_peers: None,
             unchoked_peers: None,
             wanted_peers: None,

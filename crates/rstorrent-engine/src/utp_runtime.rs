@@ -125,6 +125,9 @@ pub struct UtpServiceSnapshot {
     pub retransmission_datagrams_sent: u64,
     pub retransmission_bytes_sent: u64,
     pub retransmission_queue_high_water: usize,
+    pub in_flight_packet_high_water: usize,
+    pub in_flight_byte_high_water: usize,
+    pub pending_ack_packet_high_water: usize,
     pub loss_reduction_high_water: u64,
     pub timeout_collapse_high_water: u64,
     pub delivered_byte_high_water: usize,
@@ -156,6 +159,7 @@ pub struct UtpServiceSnapshot {
     pub mtu_downward_recoveries_high_water: u64,
     pub mtu_probe_datagrams_sent: u64,
     pub mtu_fragmentable_retry_datagrams_sent: u64,
+    pub retry_exhausted_connections: u64,
     pub worker_panics: u64,
 }
 
@@ -873,6 +877,9 @@ struct UtpStats {
     retransmission_datagrams_sent: AtomicU64,
     retransmission_bytes_sent: AtomicU64,
     retransmission_queue_high_water: AtomicUsize,
+    in_flight_packet_high_water: AtomicUsize,
+    in_flight_byte_high_water: AtomicUsize,
+    pending_ack_packet_high_water: AtomicUsize,
     loss_reduction_high_water: AtomicU64,
     timeout_collapse_high_water: AtomicU64,
     delivered_byte_high_water: AtomicUsize,
@@ -896,6 +903,7 @@ struct UtpStats {
     mtu_downward_recoveries_high_water: AtomicU64,
     mtu_probe_datagrams_sent: AtomicU64,
     mtu_fragmentable_retry_datagrams_sent: AtomicU64,
+    retry_exhausted_connections: AtomicU64,
     worker_panics: AtomicU64,
 }
 
@@ -950,6 +958,11 @@ impl UtpStats {
             retransmission_queue_high_water: self
                 .retransmission_queue_high_water
                 .load(Ordering::Relaxed),
+            in_flight_packet_high_water: self.in_flight_packet_high_water.load(Ordering::Relaxed),
+            in_flight_byte_high_water: self.in_flight_byte_high_water.load(Ordering::Relaxed),
+            pending_ack_packet_high_water: self
+                .pending_ack_packet_high_water
+                .load(Ordering::Relaxed),
             loss_reduction_high_water: self.loss_reduction_high_water.load(Ordering::Relaxed),
             timeout_collapse_high_water: self.timeout_collapse_high_water.load(Ordering::Relaxed),
             delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
@@ -997,6 +1010,7 @@ impl UtpStats {
             mtu_fragmentable_retry_datagrams_sent: self
                 .mtu_fragmentable_retry_datagrams_sent
                 .load(Ordering::Relaxed),
+            retry_exhausted_connections: self.retry_exhausted_connections.load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
         }
     }
@@ -1047,6 +1061,14 @@ impl UtpStats {
             .fetch_max(snapshot.connection.send.byte_high_water, Ordering::Relaxed);
         self.retransmission_queue_high_water.fetch_max(
             snapshot.retransmissions.packet_high_water,
+            Ordering::Relaxed,
+        );
+        self.in_flight_packet_high_water
+            .fetch_max(snapshot.in_flight_packet_high_water, Ordering::Relaxed);
+        self.in_flight_byte_high_water
+            .fetch_max(snapshot.in_flight_byte_high_water, Ordering::Relaxed);
+        self.pending_ack_packet_high_water.fetch_max(
+            usize::from(snapshot.acknowledgements.pending_packets),
             Ordering::Relaxed,
         );
         self.loss_reduction_high_water
@@ -1176,9 +1198,10 @@ fn handle_worker_join(
     let (key, report) = joined.map_err(|error| UtpRuntimeError::TaskJoin(error.to_string()))?;
     routes.remove(&key);
     match report {
-        Ok(report) => {
-            let _ = report.terminal;
-        }
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::RetryExhausted,
+        }) => saturating_increment(&stats.retry_exhausted_connections, 1),
+        Ok(_) => {}
         Err(_) => saturating_increment(&stats.worker_panics, 1),
     }
     Ok(())
@@ -2898,6 +2921,28 @@ mod tests {
             },
         )]);
         let stats = UtpStats::default();
+        handle_worker_join(
+            Some(Ok((
+                key,
+                Ok(WorkerReport {
+                    terminal: WorkerTerminal::RetryExhausted,
+                }),
+            ))),
+            &mut routes,
+            &stats,
+        )
+        .unwrap();
+        assert!(routes.is_empty());
+        assert_eq!(stats.snapshot().retry_exhausted_connections, 1);
+
+        let (ingress, _) = mpsc::channel(1);
+        routes.insert(
+            key,
+            UtpRoute {
+                ingress,
+                cancellation: CancellationToken::new(),
+            },
+        );
         let panic: WorkerPanic = Box::new("controlled worker panic");
         handle_worker_join(Some(Ok((key, Err(panic)))), &mut routes, &stats).unwrap();
         assert!(routes.is_empty());

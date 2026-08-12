@@ -542,6 +542,12 @@ def run_case(
                     .get("peer_methods"),
                     "utp": leech["rstorrent"].get("utp_evidence"),
                     "udp": leech["rstorrent"].get("udp_evidence"),
+                    "utility_timeline": leech["rstorrent"]
+                    .get("diagnostics", {})
+                    .get("utility_timeline"),
+                    "utility_timeline_coalesced_samples": leech["rstorrent"]
+                    .get("diagnostics", {})
+                    .get("utility_timeline_coalesced_samples"),
                 }
             ),
             "seed_terminal": {
