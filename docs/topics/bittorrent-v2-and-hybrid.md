@@ -3,10 +3,12 @@
 Topic: `bittorrent-v2-and-hybrid`
 
 Status: Research and campaign direction accepted on 2026-08-12. RSTorrent
-still rejects v2 and hybrid metainfo and magnets deterministically; no v2
-implementation tactical is active. This topic records the source dossier,
-accepted architecture direction, resettable pre-release persistence policy,
-and proposed tactical sequence. It does not change Tactical
+still rejects v2 and hybrid metainfo and magnets deterministically. Planned
+Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) is the
+decision-complete first foundation but remains inactive. This topic records
+the source dossier, accepted architecture direction, resettable pre-release
+persistence policy, and proposed tactical sequence. It does not change Tactical
 [`142`](../tactical/142-wan-transport-performance-matrix.md) as the sole
 authoritative **Now**.
 
@@ -83,12 +85,14 @@ those facts instead of overloading `[u8; 20]`:
 - no zero hash, length inference, or untagged 20-byte value may stand in for a
   missing identity.
 
-The recommended persistence shape is one stable internal torrent key plus a
+The accepted persistence shape is one stable internal torrent key plus a
 unique protocol-identity alias set. This avoids re-keying a live torrent when
 metadata obtained from a v1-only or v2-only magnet reveals that it is hybrid.
-The exact internal key encoding is a tactical decision, but it must be
-independent from truncated wire identity. No two live torrent owners may
-silently share one protocol identity; an alias collision is an explicit
+Planned Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) selects a
+nonzero opaque 16-byte owner rendered as `t1-` plus 32 lowercase hexadecimal
+digits, independent from truncated wire identity. No two live torrent owners
+may silently share one protocol identity; an alias collision is an explicit
 conflict that must fail closed or enter a separately designed reconciliation
 path.
 
@@ -395,13 +399,14 @@ connection and disconnects because its v1 piece model cannot safely continue;
 it does not supply the required Merkle, storage, hash-exchange, or hybrid
 runtime design.
 
-## Proposed Tactical Campaign
+## Planned Tactical Campaign
 
-The exact tactical numbers are intentionally unassigned until readiness
-selects this work. Adjacent stages may be combined only when the resulting
-scope remains bounded and its stopping condition becomes clearer.
+The first stage now has a decision-complete but inactive tactical. Later
+numbers remain unassigned until readiness selects them. Adjacent stages may be
+combined only when the resulting scope remains bounded and its stopping
+condition becomes clearer.
 
-### 1. Identity and resettable persistence foundation
+### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
 Introduce typed v1/v2 identity, one stable torrent owner with protocol aliases,
 versioned wire-key lookup, and the replacement session/have/part-file/source
@@ -508,8 +513,6 @@ language and evidence links.
 
 ## Open Decisions For The Implementing Tacticals
 
-- Choose the concrete stable internal torrent-key encoding and external
-  application-ID representation while preserving identity aliases.
 - Decide whether an explicitly imported layer-incomplete v2 `.torrent` is
   rejected strictly or admitted as typed partial metadata that must fetch
   hashes before transfer.
@@ -535,9 +538,9 @@ human review gate.
 the sole **Now** and v2/hybrid torrents as **Later**. Recording this plan does
 not activate implementation.
 
-When readiness selects the campaign, create the first numbered tactical for
-the identity and resettable-persistence foundation. It must read this topic,
-the active source-first runbook, every focused topic it names, the exact pinned
-BEPs, and the relevant libtorrent source and tests. It must restate the reset
-targets, owner/task/cancellation map, resource limits, v1 regression gate, and
-stopping condition before changing code.
+When readiness selects the campaign, activate planned Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) rather
+than drafting implementation from this umbrella topic alone. It records the
+exact owner encoding, reset boundary, owner/task/cancellation map, resource
+limits, source findings, v1 regression gate, and stopping condition required
+before code changes.

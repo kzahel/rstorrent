@@ -437,8 +437,8 @@ and starts no HTTP listener.
 Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,
-NAT traversal,
-[v2 and hybrid torrents](bittorrent-v2-and-hybrid.md),
+NAT traversal, the planned but inactive
+[v2 and hybrid identity foundation](../tactical/143-dual-identity-and-persistence-foundation.md),
 dynamic VPN and metered-network controls, and production
 remote access remain
 important. Tactical `112` now owns IPv6 DHT operation and dual-stack
@@ -499,7 +499,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
-| v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | BEP 52 requires the accepted separate identity, integrity, storage, persistence, and interoperability campaign. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`protocol-support`](protocol-support.md) |
+| v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | Planned Tactical `143` is the inactive identity/persistence foundation; BEP 52 still requires later metainfo, integrity, storage, wire, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
 
