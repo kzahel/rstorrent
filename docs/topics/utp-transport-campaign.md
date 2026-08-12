@@ -56,7 +56,11 @@ selection of the next bounded slice. Measurement-only Tactical
 evidence-limited: one exact 8 MiB uTP leg passed at 0.096759 MiB/s active, but
 remote-oracle evidence defects left zero complete TCP/uTP pairs before the
 physical budget expired. Every pair attempt cleaned exactly, the defects are
-repaired without an engine change, and another WAN cohort requires review.
+repaired without an engine change. Explicit maintainer direction now activates
+Tactical [`142`](../tactical/142-wan-transport-performance-matrix.md): one
+resumable cross-engine, cross-role, both-direction TCP/uTP WAN matrix over
+8 MiB through 1 GiB, followed by controlled causal isolation before any
+RSTorrent transport repair.
 
 ## Scope And Ownership
 

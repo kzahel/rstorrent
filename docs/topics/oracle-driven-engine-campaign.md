@@ -88,10 +88,12 @@ public incoming-uTP transfer plus exact cleanup. Tactical
 through controlled pinned-libtorrent streaming, browser/Tauri, both Android
 ABIs, API 34 AVD, and complete repository evidence. Explicit maintainer
 direction then selected measurement-only Tactical
-[`141`](../tactical/141-product-wan-tcp-utp-comparison.md). It is now closed
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md). It is closed
 evidence-limited with one retained exact uTP case, zero complete TCP/uTP pairs,
-and exact cleanup. Review of that stopping condition is the sole authoritative
-**Now**.
+and exact cleanup. Explicit maintainer direction now activates Tactical
+[`142`](../tactical/142-wan-transport-performance-matrix.md) as the sole
+authoritative **Now**: a resumable, multi-size, cross-engine, cross-role, both-
+direction WAN matrix plus causal diagnosis before any RSTorrent repair.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -525,11 +527,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: human review of Tactical `141`'s evidence-limited
-stopping condition. Recommendation A is a new bounded measurement tactical
-using the hardened single-connection oracle; it requires new public-traffic
-authority. Declining that follow-up returns **Now** to durable seeding goals.
-The single retained uTP rate is not authority for an implementation response.
+Next engine-campaign action: implement Tactical `142`'s case-addressable lab,
+prove every 8 MiB engine/role/placement/transport cell, and proceed through its
+larger baseline. The maintainer explicitly authorizes repeated multi-gigabyte
+direct-public-path traffic. The single Tactical `141` uTP rate remains
+insufficient for an implementation response; Tactical `142` must isolate a
+causal RSTorrent owner and a controlled reproduction before a repair tactical.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

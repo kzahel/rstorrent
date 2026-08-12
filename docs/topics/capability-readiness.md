@@ -414,20 +414,21 @@ and starts no HTTP listener.
 
 ### Now
 
-- **Review closed evidence-limited Tactical
-  [`141`](../tactical/141-product-wan-tcp-utp-comparison.md).** Its authorized
-  physical budget retained one exact 8 MiB uTP case but zero complete TCP/uTP
-  pairs. The harness defects are repaired after the budget, every attempt
-  cleaned exactly, and no ratio or engine direction follows. Recommendation A
-  is a new bounded measurement tactical using the hardened oracle; it requires
-  explicit authority for more public traffic.
+- **Execute Tactical
+  [`142`](../tactical/142-wan-transport-performance-matrix.md).** Explicit
+  maintainer direction replaces Tactical `141`'s narrow pair budget with a
+  resumable 64-cell cross-engine/cross-role/cross-host TCP/uTP matrix over
+  8 MiB through 1 GiB. The lab must classify path, host, storage, send,
+  receive, and interaction effects before selecting a focused RSTorrent fix.
 
 ### Next
 
-- If review selects measurement follow-up, create a new tactical with its own
-  attempt and traffic bounds; do not reopen Tactical `141` silently.
-- If review declines more WAN measurement, return **Now** to durable seeding
-  goals. The single retained uTP rate does not justify transport tuning.
+- Complete the case-addressable lab and all 8 MiB WAN cells before the larger
+  baseline. If the controls isolate an existing RSTorrent owner, create the
+  focused repair tactical before changing production transport code.
+- If the matrix instead identifies a path, ISP, host, or storage ceiling,
+  record that limit without inventing an engine repair and return **Now** to
+  durable seeding goals.
 
 ### Later
 

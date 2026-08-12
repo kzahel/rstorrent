@@ -660,6 +660,11 @@ that scope and its cleanup or compatibility rules explicitly.
   entries and one premature completion-milestone check left zero complete
   pairs. Every attempt cleaned exactly; the repaired single-connection oracle
   has no further WAN authorization in this tactical.
+- [`142-wan-transport-performance-matrix.md`](142-wan-transport-performance-matrix.md):
+  active; builds a resumable cross-engine, cross-role, cross-host TCP/uTP WAN
+  matrix over 8 MiB through 1 GiB fixtures, classifies host/path/storage versus
+  RSTorrent behavior, and selects a focused repair only from controlled causal
+  evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

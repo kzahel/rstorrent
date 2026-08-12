@@ -31,6 +31,12 @@ TCP/uTP comparison. Its replacement budget retained one exact 8,389,339-byte
 uTP case at 0.096759 MiB/s active and 0.094237 MiB/s connection-inclusive,
 but no TCP case and no complete pair. The result supplies neither a ratio nor
 a tuning direction; every attempt removed both mappings and all artifacts.
+Active Tactical `142` replaces that narrow attempt with a case-addressable
+64-cell baseline across both engines, roles, physical directions, transports,
+and 8 MiB through 1 GiB sizes. It retains host storage and route calibration,
+per-case process/transport telemetry, atomic resume, and exact cleanup so a
+slow RSTorrent uTP cell can be separated from the Pi SD card, either ISP, or
+ordinary TCP/storage behavior before a repair is selected.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the
