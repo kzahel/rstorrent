@@ -456,9 +456,9 @@ mod tests {
     use axum::extract::{Path, State};
     use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
     use rstorrent_session::{
-        ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, ConfiguredStorageRoot,
-        MediaRangeError, MediaUrlOutcome, NetworkConfig, NetworkPolicy, RequestEnvelope,
-        SessionStore, StorageState,
+        ApplicationConfig, ApplicationService, CONTROL_VERSION, Command, CommandResult,
+        ConfiguredStorageRoot, MediaRangeError, MediaUrlOutcome, NetworkConfig, NetworkPolicy,
+        RequestEnvelope, SessionStore, StorageState,
     };
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -509,7 +509,7 @@ mod tests {
         std::fs::create_dir_all(&payload_root).expect("create payload root");
         let payload = b"0123456789-media-payload";
         let raw_info = single_file_info("movie.MP4", payload, 7);
-        let torrent_id = encode_info_hash(Sha1::digest(&raw_info).into());
+        let info_hash = encode_info_hash(Sha1::digest(&raw_info).into());
         let roots = vec![ConfiguredStorageRoot::path(
             "downloads",
             payload_root.clone(),
@@ -530,19 +530,23 @@ mod tests {
             &roots,
         )
         .expect("open fixture store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-media-http".to_owned(),
                 expected_revision: None,
                 command: Command::AddMagnet {
-                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
+                    magnet: format!("magnet:?xt=urn:btih:{info_hash}"),
                     storage_root: "downloads".to_owned(),
                     start_content: false,
                     skip_files: Vec::new(),
                 },
             })
             .expect("add fixture torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("missing media add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
