@@ -23,7 +23,7 @@ use rstorrent_engine::{
     ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
     SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
     StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
-    StorageFileRole, StorageObjectKind, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
+    StorageFileRole, StorageObjectKind, TorrentId, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
     TrackerSource, TrackerTransport, VerifiedFileError, VerifiedFileReader,
     decide_namespace_transition, download_magnet_metadata_with_external_discovery,
     resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
@@ -759,7 +759,7 @@ impl ApplicationService {
                     metainfo.clone(),
                     file_index_usize,
                     self.storage_file_pool.clone(),
-                    torrent_id.clone(),
+                    resume.torrent_id,
                     self.media.read_jobs(),
                 )),
                 StorageRootLocation::PlatformCapability
@@ -858,7 +858,7 @@ impl ApplicationService {
                     have.pieces(),
                     file_index_usize,
                     self.storage_file_pool.clone(),
-                    &torrent_id,
+                    resume.torrent_id,
                     read_jobs,
                 )
                 .await
@@ -2842,7 +2842,9 @@ impl ApplicationService {
                     return Ok(());
                 }
             };
-            if encode_info_hash(metainfo.info_hash) != torrent_id {
+            if resume.info_hashes.v1_hash().map(|hash| hash.into_bytes())
+                != Some(metainfo.info_hash)
+            {
                 self.store_mut()?.mark_needs_repair(
                     torrent_id,
                     "stored metadata does not match torrent identity",
@@ -2928,6 +2930,7 @@ impl ApplicationService {
                     });
                     resume_magnet_with_control(
                         ResumableMagnetDownloadConfig {
+                            torrent_id: resume.torrent_id,
                             magnet,
                             storage_root: PathBuf::new(),
                             network,
@@ -2973,7 +2976,7 @@ impl ApplicationService {
         {
             let metainfo = parse_durable_metainfo(raw_info)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let paths = torrent_storage_paths(&root_path, &metainfo.name, metainfo.info_hash)
+            let paths = torrent_storage_paths(&root_path, &metainfo.name, resume.torrent_id)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let collision = [
                 ("output", paths.output),
@@ -3053,6 +3056,7 @@ impl ApplicationService {
             ResumeValidationIntent::FastEligible
         };
         let config = ResumableMagnetDownloadConfig {
+            torrent_id: resume.torrent_id,
             magnet: resume.magnet,
             storage_root: root_path,
             network: self.network,
@@ -3736,10 +3740,10 @@ fn delete_path_artifacts(
                     "managed storage has no durable publication name".to_owned(),
                 )
             })?;
-            let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
+            let torrent_id = torrent_id.parse::<TorrentId>().map_err(|_| {
                 ApplicationError::Configuration("invalid torrent identity".to_owned())
             })?;
-            let paths = torrent_storage_paths(root, publication_name, info_hash)
+            let paths = torrent_storage_paths(root, publication_name, torrent_id)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let output_exists = std::fs::symlink_metadata(&paths.output).is_ok();
             let staging_exists = std::fs::symlink_metadata(&paths.staging).is_ok();
@@ -5521,10 +5525,10 @@ fn filesystem_content_base(
             .join(root)
     };
     let path = if let Some(publication_name) = publication_name {
-        let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
-            ApplicationError::Configuration("invalid torrent identity".to_owned())
-        })?;
-        torrent_storage_paths(&root, publication_name, info_hash)
+        let torrent_id = torrent_id
+            .parse::<TorrentId>()
+            .map_err(|_| ApplicationError::Configuration("invalid torrent identity".to_owned()))?;
+        torrent_storage_paths(&root, publication_name, torrent_id)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?
             .output
     } else {

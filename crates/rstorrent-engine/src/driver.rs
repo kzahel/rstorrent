@@ -41,6 +41,7 @@ use crate::active_seed_content::{ActiveSeedContent, ActiveUploadFailureSignal};
 use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
 use crate::http_tracker::{HTTP_TRACKER_TIMEOUT, HttpTrackerClients, TrackerRetryDirective};
+use crate::identity::{ContentFingerprint, TorrentId};
 use crate::incoming::{
     IncomingPeerHandle, SeedRegistration, SeedRegistrationToken, SessionUploadMembership,
 };
@@ -73,9 +74,9 @@ use crate::resume_validation::{
 };
 use crate::selective_storage::{
     DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectiveStorage,
-    SelectiveStorageError, VERIFICATION_CHUNK_LENGTH, remove_selective_part_if_present,
-    remove_selective_staging_if_present, torrent_storage_paths_for_output_with_shape,
-    validate_publication_name,
+    SelectiveStorageError, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
+    remove_selective_part_if_present, remove_selective_staging_if_present,
+    torrent_storage_paths_for_output_with_shape, validate_publication_name,
 };
 use crate::streaming::{
     MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
@@ -249,6 +250,7 @@ impl DownloadResourceLimits {
 
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
+    pub torrent_id: TorrentId,
     pub metainfo_path: PathBuf,
     pub peer: SocketAddr,
     pub output_path: PathBuf,
@@ -260,6 +262,7 @@ pub struct DownloadConfig {
 
 #[derive(Clone, Debug)]
 pub struct MagnetDownloadConfig {
+    pub torrent_id: TorrentId,
     pub magnet: String,
     pub output_path: PathBuf,
     pub network: NetworkConfig,
@@ -271,6 +274,7 @@ pub struct MagnetDownloadConfig {
 
 #[derive(Clone, Debug)]
 pub struct ResumableMagnetDownloadConfig {
+    pub torrent_id: TorrentId,
     pub magnet: String,
     /// Selected containing directory. Verified multi-file metadata supplies
     /// the recognizable publication directory beneath this root.
@@ -315,6 +319,7 @@ pub trait DownloadCheckpointSink: Send + Sync {
 
 #[derive(Clone, Debug)]
 struct ContentDownloadConfig {
+    artifact_identity: TorrentArtifactIdentity,
     output_path: PathBuf,
     max_buffered_payload_bytes: usize,
     storage_intake_high_watermark_bytes: usize,
@@ -3468,8 +3473,12 @@ async fn run_magnet_download_with_peers(
     magnet: Magnet,
     peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
-    let (_raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+    let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     let content_config = ContentDownloadConfig {
+        artifact_identity: TorrentArtifactIdentity {
+            torrent_id: config.torrent_id,
+            content_fingerprint: ContentFingerprint::for_info_bytes(&raw_info),
+        },
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
         storage_intake_high_watermark_bytes: config
@@ -3592,6 +3601,10 @@ async fn run_resumable_magnet_download(
             config.storage_root.join(&metainfo.name)
         };
         let content_config = ContentDownloadConfig {
+            artifact_identity: TorrentArtifactIdentity {
+                torrent_id: config.torrent_id,
+                content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
+            },
             output_path,
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
             storage_intake_high_watermark_bytes: config
@@ -3644,8 +3657,13 @@ async fn run_resumable_magnet_download(
             peers.close_current(None)?;
             return Err(DownloadError::Checkpoint(message));
         }
+        let content_fingerprint = ContentFingerprint::for_info_bytes(&raw_info);
         resume.raw_info = Some(raw_info.into());
         let content_config = ContentDownloadConfig {
+            artifact_identity: TorrentArtifactIdentity {
+                torrent_id: config.torrent_id,
+                content_fingerprint,
+            },
             output_path: config.storage_root.join(&metainfo.name),
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
             storage_intake_high_watermark_bytes: config
@@ -3952,6 +3970,8 @@ async fn run_download(
     peer_state: Option<(PeerBudget, TorrentPeerHandle)>,
 ) -> Result<DownloadReport, DownloadError> {
     let metainfo_bytes = read_bounded_metainfo(&config.metainfo_path).await?;
+    let raw_info = Metainfo::info_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
+        .map_err(DownloadError::Metainfo)?;
     let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
     let mut peers = match peer_state {
@@ -3975,6 +3995,10 @@ async fn run_download(
         )?,
     };
     let content_config = ContentDownloadConfig {
+        artifact_identity: TorrentArtifactIdentity {
+            torrent_id: config.torrent_id,
+            content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
+        },
         output_path: config.output_path,
         max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
         storage_intake_high_watermark_bytes: config
@@ -6811,6 +6835,7 @@ async fn run_selective_download(
     let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
         let (storage, resumed) = SelectiveStorage::create_with_platform(
             platform,
+            config.artifact_identity,
             &metainfo,
             layout.clone(),
             selection.clone(),
@@ -6829,6 +6854,7 @@ async fn run_selective_download(
         match (descriptors, &resume) {
             (Some(descriptors), None) => (
                 SelectiveStorage::create_with_descriptors(
+                    config.artifact_identity,
                     &metainfo,
                     layout.clone(),
                     selection.clone(),
@@ -6842,7 +6868,7 @@ async fn run_selective_download(
             (None, Some(resume)) => {
                 let paths = torrent_storage_paths_for_output_with_shape(
                     config.output_path.clone(),
-                    metainfo.info_hash,
+                    config.artifact_identity.torrent_id,
                     PublicationShape::from_metainfo(&metainfo),
                 )
                 .map_err(DownloadError::SelectiveStorage)?;
@@ -6850,7 +6876,7 @@ async fn run_selective_download(
                     Some(pool) => {
                         SelectiveStorage::resume_with_paths_and_pool_expected(
                             paths,
-                            &metainfo,
+                            config.artifact_identity,
                             layout.clone(),
                             selection.clone(),
                             verified_pieces.clone(),
@@ -6862,7 +6888,7 @@ async fn run_selective_download(
                     None => {
                         SelectiveStorage::resume_with_paths_expected(
                             paths,
-                            &metainfo,
+                            config.artifact_identity,
                             layout.clone(),
                             selection.clone(),
                             verified_pieces.clone(),
@@ -6883,6 +6909,7 @@ async fn run_selective_download(
                     Some(pool) => {
                         SelectiveStorage::create_with_pool(
                             config.output_path.clone(),
+                            config.artifact_identity,
                             &metainfo,
                             layout.clone(),
                             selection.clone(),
@@ -6893,6 +6920,7 @@ async fn run_selective_download(
                     None => {
                         SelectiveStorage::create(
                             config.output_path.clone(),
+                            config.artifact_identity,
                             &metainfo,
                             layout.clone(),
                             selection.clone(),
@@ -6916,6 +6944,7 @@ async fn run_selective_download(
                 let initialize = resume.initialize_descriptors && descriptor_is_empty;
                 let storage = if initialize {
                     SelectiveStorage::create_with_descriptors(
+                        config.artifact_identity,
                         &metainfo,
                         layout.clone(),
                         selection.clone(),
@@ -6926,6 +6955,7 @@ async fn run_selective_download(
                     .map_err(DownloadError::SelectiveStorage)?
                 } else {
                     SelectiveStorage::resume_with_descriptors(
+                        config.artifact_identity,
                         &metainfo,
                         layout.clone(),
                         selection.clone(),

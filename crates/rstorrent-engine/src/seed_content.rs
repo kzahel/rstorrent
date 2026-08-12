@@ -12,6 +12,7 @@ use rstorrent_protocol::peer_wire::BlockRequest;
 use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
 
 use crate::artifact_layout::{ArtifactLayoutError, PublicationShape, PublishedArtifactLayout};
+use crate::identity::TorrentId;
 use crate::positional_io::read_exact_at;
 use crate::selective_storage::{
     PlatformStorageSpec, SelectiveStorageError, torrent_storage_paths_for_metainfo,
@@ -51,12 +52,13 @@ impl VerifiedFileReader {
         verified: &[bool],
         file_index: usize,
         pool: StorageFilePool,
-        storage_id: &str,
+        torrent_id: TorrentId,
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
         let layout = TorrentLayout::from_metainfo(metainfo);
-        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo, torrent_id)
             .map_err(VerifiedFileError::StoragePlan)?;
+        let storage_id = torrent_id.to_string();
         let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
             .map_err(VerifiedFileError::ArtifactLayout)?;
         let logical = artifact
@@ -66,7 +68,7 @@ impl VerifiedFileReader {
         let namespace_reference = StorageFileReference::new(
             pool.clone(),
             StorageFileKey {
-                storage_id: storage_id.to_owned(),
+                storage_id: storage_id.clone(),
                 namespace_generation: 1,
                 role: StorageFileRole::Namespace,
             },
@@ -79,7 +81,7 @@ impl VerifiedFileReader {
         let reference = StorageFileReference::new(
             pool,
             StorageFileKey {
-                storage_id: storage_id.to_owned(),
+                storage_id,
                 namespace_generation: 1,
                 role: StorageFileRole::Payload(file_index),
             },
@@ -384,40 +386,35 @@ pub struct SeedContent {
 impl SeedContent {
     pub async fn open_published(
         storage_root: &Path,
+        torrent_id: TorrentId,
         metainfo: &Metainfo,
         verified: &[bool],
         skipped: &[usize],
     ) -> Result<Self, SeedContentError> {
         let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
             .expect("default seed file pool is valid");
-        Self::open_published_with_pool(
-            storage_root,
-            metainfo,
-            verified,
-            skipped,
-            pool,
-            &hex(metainfo.info_hash),
-        )
-        .await
+        Self::open_published_with_pool(storage_root, torrent_id, metainfo, verified, skipped, pool)
+            .await
     }
 
     pub async fn open_published_with_pool(
         storage_root: &Path,
+        torrent_id: TorrentId,
         metainfo: &Metainfo,
         verified: &[bool],
         skipped: &[usize],
         pool: StorageFilePool,
-        storage_id: &str,
     ) -> Result<Self, SeedContentError> {
         let layout = TorrentLayout::from_metainfo(metainfo);
-        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo, torrent_id)
             .map_err(SeedContentError::StoragePlan)?;
+        let storage_id = torrent_id.to_string();
         let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
             .map_err(SeedContentError::ArtifactLayout)?;
         let namespace_reference = StorageFileReference::new(
             pool.clone(),
             StorageFileKey {
-                storage_id: storage_id.to_owned(),
+                storage_id: storage_id.clone(),
                 namespace_generation: 1,
                 role: StorageFileRole::Namespace,
             },
@@ -434,7 +431,7 @@ impl SeedContent {
                 StorageFileReference::new(
                     pool.clone(),
                     StorageFileKey {
-                        storage_id: storage_id.to_owned(),
+                        storage_id: storage_id.clone(),
                         namespace_generation: 1,
                         role: StorageFileRole::Payload(file.file_index),
                     },
@@ -1008,16 +1005,6 @@ impl Drop for OwnedCounterGuard {
     }
 }
 
-fn hex(bytes: [u8; 20]) -> String {
-    use std::fmt::Write as _;
-
-    let mut encoded = String::with_capacity(40);
-    for byte in bytes {
-        write!(&mut encoded, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::OpenOptions;
@@ -1029,6 +1016,7 @@ mod tests {
     use rstorrent_protocol::peer_wire::BlockRequest;
 
     use crate::artifact_layout::PublicationShape;
+    use crate::identity::TorrentId;
     use crate::selective_storage::PlatformStorageSpec;
     use crate::storage_file_pool::{
         PlatformStorageFailure, PlatformStorageFailureKind, PlatformStorageOperation,
@@ -1040,6 +1028,10 @@ mod tests {
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn test_torrent_id() -> TorrentId {
+        TorrentId::new([0x61; 16]).expect("nonzero test owner")
+    }
 
     fn root(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -1112,9 +1104,10 @@ mod tests {
         tokio::fs::write(root.join("single.bin"), b"abcdefg")
             .await
             .expect("write payload");
-        let content = SeedContent::open_published(&root, &single(), &[true, true], &[])
-            .await
-            .expect("open seed content");
+        let content =
+            SeedContent::open_published(&root, test_torrent_id(), &single(), &[true, true], &[])
+                .await
+                .expect("open seed content");
         assert_eq!(content.availability(), [true, true]);
         assert_eq!(content.piece_lengths().expect("piece lengths"), [4, 3]);
         assert_eq!(
@@ -1154,11 +1147,11 @@ mod tests {
         let pool = StorageFilePool::new(1, None).expect("create one-handle pool");
         let content = SeedContent::open_published_with_pool(
             &root,
+            test_torrent_id(),
             &multi(),
             &[true, true, true],
             &[],
             pool.clone(),
-            "multi-seed",
         )
         .await
         .expect("open seed content");
@@ -1207,13 +1200,25 @@ mod tests {
         tokio::fs::write(root.join("tree/c"), b"gh")
             .await
             .expect("write c");
-        let truncated = SeedContent::open_published(&root, &multi(), &[true, true, true], &[])
-            .await
-            .expect("open with masked source");
+        let truncated = SeedContent::open_published(
+            &root,
+            test_torrent_id(),
+            &multi(),
+            &[true, true, true],
+            &[],
+        )
+        .await
+        .expect("open with masked source");
         assert_eq!(truncated.availability(), [false, false, true]);
-        let skipped = SeedContent::open_published(&root, &multi(), &[true, true, true], &[0])
-            .await
-            .expect("open skipped source");
+        let skipped = SeedContent::open_published(
+            &root,
+            test_torrent_id(),
+            &multi(),
+            &[true, true, true],
+            &[0],
+        )
+        .await
+        .expect("open skipped source");
         assert_eq!(skipped.availability(), [false, false, true]);
         assert!(matches!(
             skipped
@@ -1235,9 +1240,10 @@ mod tests {
         tokio::fs::write(root.join("single.bin"), b"abcdefg")
             .await
             .expect("write payload");
-        let content = SeedContent::open_published(&root, &single(), &[true, true], &[])
-            .await
-            .expect("open seed content");
+        let content =
+            SeedContent::open_published(&root, test_torrent_id(), &single(), &[true, true], &[])
+                .await
+                .expect("open seed content");
         tokio::fs::write(root.join("single.bin"), b"short")
             .await
             .expect("truncate payload");
@@ -1278,7 +1284,7 @@ mod tests {
             &[true, false, false],
             0,
             pool.clone(),
-            "verified-file",
+            test_torrent_id(),
             read_jobs.clone(),
         )
         .await
@@ -1294,7 +1300,7 @@ mod tests {
                 &[true, false, false],
                 1,
                 pool.clone(),
-                "verified-file",
+                test_torrent_id(),
                 read_jobs.clone(),
             )
             .await,
@@ -1307,7 +1313,7 @@ mod tests {
                 &[true, true, true],
                 2,
                 pool,
-                "verified-file",
+                test_torrent_id(),
                 read_jobs,
             )
             .await,

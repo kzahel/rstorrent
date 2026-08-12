@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
-use std::fmt::Write as _;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -18,6 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::artifact_layout::PublicationShape;
 use crate::checkpoint::DurabilityTarget;
+use crate::identity::{ContentFingerprint, TorrentId};
 use crate::namespace_transition::{
     NamespaceAction, NamespaceState, NamespaceTransitionError, NamespaceTransitionInput,
     NamespaceTransitionOutcome, decide_namespace_transition,
@@ -280,10 +280,28 @@ pub struct TorrentStoragePaths {
     pub publication_shape: PublicationShape,
     /// Recognizable final file or directory beneath the selected storage root.
     pub output: PathBuf,
-    /// Hidden, full-info-hash-owned file or directory used before publication.
+    /// Hidden, opaque-owner-keyed file or directory used before publication.
     pub staging: PathBuf,
-    /// Hidden, full-info-hash-owned selective part file.
+    /// Hidden, opaque-owner-keyed selective part file.
     pub part: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TorrentArtifactIdentity {
+    pub torrent_id: TorrentId,
+    pub content_fingerprint: ContentFingerprint,
+}
+
+impl TorrentArtifactIdentity {
+    fn part_file(self, layout: &TorrentLayout) -> PartFileIdentity {
+        PartFileIdentity {
+            torrent_id: self.torrent_id,
+            content_fingerprint: self.content_fingerprint,
+            piece_count: layout.piece_count(),
+            piece_length: layout.piece_length(),
+            total_length: layout.total_length(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1252,6 +1270,7 @@ fn rename_noreplace_blocking(source: &Path, destination: &Path) -> Result<(), io
 impl SelectiveStorage {
     pub async fn create(
         output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1262,11 +1281,12 @@ impl SelectiveStorage {
             part: selective_part_path(&output_root)?,
             output: output_root,
         };
-        Self::create_with_paths(paths, metainfo, layout, selection).await
+        Self::create_with_paths(paths, artifact_identity, layout, selection).await
     }
 
     pub(crate) async fn create_with_pool(
         output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1278,23 +1298,23 @@ impl SelectiveStorage {
             part: selective_part_path(&output_root)?,
             output: output_root,
         };
-        Self::create_with_paths_and_pool(paths, metainfo, layout, selection, pool).await
+        Self::create_with_paths_and_pool(paths, artifact_identity, layout, selection, pool).await
     }
 
     pub(crate) async fn create_with_paths(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
     ) -> Result<Self, SelectiveStorageError> {
         let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
             .expect("default storage file limit is nonzero");
-        Self::create_with_paths_and_pool(paths, metainfo, layout, selection, pool).await
+        Self::create_with_paths_and_pool(paths, artifact_identity, layout, selection, pool).await
     }
 
     pub(crate) async fn create_with_paths_and_pool(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
         pool: StorageFilePool,
@@ -1315,7 +1335,7 @@ impl SelectiveStorage {
             return Err(SelectiveStorageError::ExistingPartFile(part_path));
         }
 
-        let storage_id = storage_instance_id(metainfo.info_hash);
+        let storage_id = storage_instance_id(artifact_identity.torrent_id);
         let mut files = Vec::with_capacity(layout.files().len());
         for (file_index, metainfo_file) in layout.files().iter().enumerate() {
             if metainfo_file.padding || !selection.is_wanted(file_index) {
@@ -1350,12 +1370,7 @@ impl SelectiveStorage {
             part_path.clone(),
         );
 
-        let identity = PartFileIdentity {
-            info_hash: metainfo.info_hash,
-            piece_count: layout.piece_count(),
-            piece_length: layout.piece_length(),
-            total_length: layout.total_length(),
-        };
+        let identity = artifact_identity.part_file(&layout);
         let piece_count = layout.piece_count();
         let skipped_sources = vec![None; layout.files().len()];
 
@@ -1385,6 +1400,7 @@ impl SelectiveStorage {
 
     pub async fn create_with_platform(
         spec: PlatformStorageSpec,
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1396,7 +1412,7 @@ impl SelectiveStorage {
                 "platform publication shape",
             ));
         }
-        if spec.storage_id != storage_instance_id(metainfo.info_hash) {
+        if spec.storage_id != storage_instance_id(artifact_identity.torrent_id) {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "platform storage identity",
             ));
@@ -1442,12 +1458,7 @@ impl SelectiveStorage {
             }
         }
         let part_reference = platform_storage_reference(&spec, StorageFileRole::Part, Vec::new());
-        let identity = PartFileIdentity {
-            info_hash: metainfo.info_hash,
-            piece_count: layout.piece_count(),
-            piece_length: layout.piece_length(),
-            total_length: layout.total_length(),
-        };
+        let identity = artifact_identity.part_file(&layout);
         let piece_count = layout.piece_count();
         let resumed = if spec.managed {
             if spec.published {
@@ -1491,6 +1502,7 @@ impl SelectiveStorage {
     }
 
     pub async fn create_with_descriptors(
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1595,12 +1607,7 @@ impl SelectiveStorage {
             }
         }
 
-        let identity = PartFileIdentity {
-            info_hash: metainfo.info_hash,
-            piece_count: layout.piece_count(),
-            piece_length: layout.piece_length(),
-            total_length: layout.total_length(),
-        };
+        let identity = artifact_identity.part_file(&layout);
         let part_file = PartFile::create_preopened(descriptors.part_file, identity).await?;
         let validation_reopen = descriptors
             .reopened_part_file
@@ -1635,6 +1642,7 @@ impl SelectiveStorage {
     }
 
     pub async fn resume_with_descriptors(
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1689,12 +1697,7 @@ impl SelectiveStorage {
             }
         }
 
-        let identity = PartFileIdentity {
-            info_hash: metainfo.info_hash,
-            piece_count: layout.piece_count(),
-            piece_length: layout.piece_length(),
-            total_length: layout.total_length(),
-        };
+        let identity = artifact_identity.part_file(&layout);
         let part_file = PartFile::open_preopened(descriptors.part_file, identity).await?;
         let validation_reopen = descriptors
             .reopened_part_file
@@ -1729,6 +1732,7 @@ impl SelectiveStorage {
 
     pub async fn resume(
         output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
         metainfo: &Metainfo,
         layout: TorrentLayout,
         selection: FileSelection,
@@ -1740,24 +1744,32 @@ impl SelectiveStorage {
             part: selective_part_path(&output_root)?,
             output: output_root,
         };
-        Self::resume_with_paths(paths, metainfo, layout, selection, verified).await
+        Self::resume_with_paths(paths, artifact_identity, layout, selection, verified).await
     }
 
     pub(crate) async fn resume_with_paths(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
             .expect("default storage file limit is nonzero");
-        Self::resume_with_paths_and_pool(paths, metainfo, layout, selection, verified, pool).await
+        Self::resume_with_paths_and_pool(
+            paths,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            pool,
+        )
+        .await
     }
 
     pub(crate) async fn resume_with_paths_expected(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
         verified: Vec<bool>,
@@ -1767,7 +1779,7 @@ impl SelectiveStorage {
             .expect("default storage file limit is nonzero");
         Self::resume_with_paths_and_pool_expected(
             paths,
-            metainfo,
+            artifact_identity,
             layout,
             selection,
             verified,
@@ -1779,21 +1791,27 @@ impl SelectiveStorage {
 
     pub(crate) async fn resume_with_paths_and_pool(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
         verified: Vec<bool>,
         pool: StorageFilePool,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         Self::resume_with_paths_and_pool_expected(
-            paths, metainfo, layout, selection, verified, pool, None,
+            paths,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            pool,
+            None,
         )
         .await
     }
 
     pub(crate) async fn resume_with_paths_and_pool_expected(
         paths: TorrentStoragePaths,
-        metainfo: &Metainfo,
+        artifact_identity: TorrentArtifactIdentity,
         layout: TorrentLayout,
         selection: FileSelection,
         verified: Vec<bool>,
@@ -1811,7 +1829,7 @@ impl SelectiveStorage {
             staging: staging_root,
             part: part_path,
         } = paths;
-        let storage_id = storage_instance_id(metainfo.info_hash);
+        let storage_id = storage_instance_id(artifact_identity.torrent_id);
         // Recheck must observe the current namespace instead of an open handle
         // retained by the preceding download/check generation.
         pool.invalidate_storage(&storage_id);
@@ -1857,7 +1875,7 @@ impl SelectiveStorage {
                     staging: staging_root,
                     part: part_path,
                 },
-                metainfo,
+                artifact_identity,
                 layout,
                 selection,
                 pool,
@@ -1967,12 +1985,7 @@ impl SelectiveStorage {
             }
         }
 
-        let identity = PartFileIdentity {
-            info_hash: metainfo.info_hash,
-            piece_count: layout.piece_count(),
-            piece_length: layout.piece_length(),
-            total_length: layout.total_length(),
-        };
+        let identity = artifact_identity.part_file(&layout);
         let part_reference = path_storage_reference(
             &pool,
             &storage_id,
@@ -4173,6 +4186,7 @@ pub async fn verify_prepared_platform_files(
 
 pub async fn validate_published_fast_resume_with_path(
     storage_root: &Path,
+    artifact_identity: TorrentArtifactIdentity,
     metainfo: &Metainfo,
     verified: &[bool],
     skipped: &[usize],
@@ -4180,10 +4194,11 @@ pub async fn validate_published_fast_resume_with_path(
 ) -> Result<FastResumeValidation, SelectiveStorageError> {
     let layout = TorrentLayout::from_metainfo(metainfo);
     let selection = FileSelection::new(&layout, skipped)?;
-    let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)?;
+    let paths =
+        torrent_storage_paths_for_metainfo(storage_root, metainfo, artifact_identity.torrent_id)?;
     let (mut storage, resumed) = SelectiveStorage::resume_with_paths_and_pool_expected(
         paths,
-        metainfo,
+        artifact_identity,
         layout,
         selection,
         verified.to_vec(),
@@ -4196,6 +4211,7 @@ pub async fn validate_published_fast_resume_with_path(
 
 pub async fn validate_published_fast_resume_with_platform(
     spec: PlatformStorageSpec,
+    artifact_identity: TorrentArtifactIdentity,
     metainfo: &Metainfo,
     verified: &[bool],
     skipped: &[usize],
@@ -4204,6 +4220,7 @@ pub async fn validate_published_fast_resume_with_platform(
     let selection = FileSelection::new(&layout, skipped)?;
     let (mut storage, resumed) = SelectiveStorage::create_with_platform(
         spec,
+        artifact_identity,
         metainfo,
         layout,
         selection,
@@ -4329,12 +4346,12 @@ pub fn selective_part_path(output_root: &Path) -> Result<PathBuf, SelectiveStora
 pub fn torrent_storage_paths(
     storage_root: &Path,
     publication_name: &str,
-    info_hash: [u8; 20],
+    torrent_id: TorrentId,
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     torrent_storage_paths_with_shape(
         storage_root,
         publication_name,
-        info_hash,
+        torrent_id,
         PublicationShape::Tree,
     )
 }
@@ -4342,11 +4359,12 @@ pub fn torrent_storage_paths(
 pub fn torrent_storage_paths_for_metainfo(
     storage_root: &Path,
     metainfo: &Metainfo,
+    torrent_id: TorrentId,
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     torrent_storage_paths_with_shape(
         storage_root,
         &metainfo.name,
-        metainfo.info_hash,
+        torrent_id,
         PublicationShape::from_metainfo(metainfo),
     )
 }
@@ -4354,12 +4372,12 @@ pub fn torrent_storage_paths_for_metainfo(
 pub fn torrent_storage_paths_with_shape(
     storage_root: &Path,
     publication_name: &str,
-    info_hash: [u8; 20],
+    torrent_id: TorrentId,
     publication_shape: PublicationShape,
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     validate_publication_name(publication_name)?;
     let output = storage_root.join(publication_name);
-    torrent_storage_paths_for_output_with_shape(output, info_hash, publication_shape)
+    torrent_storage_paths_for_output_with_shape(output, torrent_id, publication_shape)
 }
 
 pub fn validate_publication_name(publication_name: &str) -> Result<(), SelectiveStorageError> {
@@ -4383,25 +4401,20 @@ fn is_internal_artifact_name(name: &str) -> bool {
     [".rstorrent-staging", ".rstorrent-parts"]
         .into_iter()
         .any(|suffix| {
-            name.strip_suffix(suffix).is_some_and(|hash| {
-                hash.len() == 40 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-            })
+            name.strip_suffix(suffix)
+                .is_some_and(|owner| owner.parse::<TorrentId>().is_ok())
         })
 }
 
 pub(crate) fn torrent_storage_paths_for_output_with_shape(
     output: PathBuf,
-    info_hash: [u8; 20],
+    torrent_id: TorrentId,
     publication_shape: PublicationShape,
 ) -> Result<TorrentStoragePaths, SelectiveStorageError> {
     let parent = output
         .parent()
         .ok_or(SelectiveStorageError::InvalidOutputPath)?;
-    let mut artifact_name = String::with_capacity(40);
-    for byte in info_hash {
-        write!(&mut artifact_name, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    let artifact_base = parent.join(artifact_name);
+    let artifact_base = parent.join(torrent_id.to_string());
     let staging = selective_staging_path(&artifact_base)?;
     let part = selective_part_path(&artifact_base)?;
     if output == staging || output == part || staging == part {
@@ -4453,12 +4466,8 @@ fn joined_path(root: &Path, components: &[String]) -> PathBuf {
     path
 }
 
-fn storage_instance_id(info_hash: [u8; 20]) -> String {
-    let mut id = String::with_capacity(40);
-    for byte in info_hash {
-        write!(&mut id, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    id
+fn storage_instance_id(torrent_id: TorrentId) -> String {
+    torrent_id.to_string()
 }
 
 fn path_storage_reference(
@@ -4490,14 +4499,14 @@ fn platform_storage_reference(
             let namespace = if spec.published {
                 spec.publication_name.clone()
             } else {
-                format!(".{}.rstorrent-staging", spec.publication_name)
+                format!(".{}.rstorrent-staging", spec.storage_id)
             };
             match spec.publication_shape {
                 PublicationShape::File => vec![namespace],
                 PublicationShape::Tree => std::iter::once(namespace).chain(components).collect(),
             }
         }
-        StorageFileRole::Part => vec![format!(".{}.rstorrent-parts", spec.publication_name)],
+        StorageFileRole::Part => vec![format!(".{}.rstorrent-parts", spec.storage_id)],
     };
     StorageFileReference::new(
         spec.pool.clone(),
@@ -4559,6 +4568,7 @@ mod tests {
     use sha1::{Digest, Sha1};
 
     use crate::checkpoint::DurabilityTarget;
+    use crate::identity::{ContentFingerprint, TorrentId};
     use crate::resume_validation::{ResumeStorageEvidence, ResumeValidationRejectReason};
     use crate::storage_file_pool::{StorageFileAccess, StorageFilePool, platform_storage_channel};
 
@@ -4566,14 +4576,26 @@ mod tests {
         BlockingHashResult, DescriptorFile, DescriptorStorage, PlatformStorageSpec,
         PreparedFileHash, PublicationShape, ResumeArtifactState, ResumedStorage, SelectiveStorage,
         SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan,
-        SelectiveWriteStats, VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors,
-        materialization_path, remove_selective_part_if_present,
-        remove_selective_staging_if_present, selective_part_path, selective_staging_path,
-        storage_instance_id, torrent_storage_paths, torrent_storage_paths_for_metainfo,
-        verify_prepared_descriptors, verify_prepared_platform_files,
+        SelectiveWriteStats, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
+        await_blocking_hash, collect_descriptors, materialization_path,
+        remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
+        selective_staging_path, storage_instance_id, torrent_storage_paths,
+        torrent_storage_paths_for_metainfo, verify_prepared_descriptors,
+        verify_prepared_platform_files,
     };
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn test_torrent_id() -> TorrentId {
+        TorrentId::new([0x51; 16]).expect("nonzero test owner")
+    }
+
+    fn test_artifact_identity() -> TorrentArtifactIdentity {
+        TorrentArtifactIdentity {
+            torrent_id: test_torrent_id(),
+            content_fingerprint: ContentFingerprint::from_digest([0x52; 32]),
+        }
+    }
 
     fn test_path(name: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -4640,36 +4662,36 @@ mod tests {
     }
 
     #[test]
-    fn torrent_paths_use_visible_name_and_full_hash_artifacts() {
+    fn torrent_paths_use_visible_name_and_opaque_owner_artifacts() {
         let root = test_path("torrent-paths");
-        let paths = torrent_storage_paths(&root, "Visible Name", [0xab; 20])
+        let paths = torrent_storage_paths(&root, "Visible Name", test_torrent_id())
             .expect("plan torrent storage paths");
 
         assert_eq!(paths.output, root.join("Visible Name"));
         assert_eq!(paths.publication_shape, PublicationShape::Tree);
         assert_eq!(
             paths.staging,
-            root.join(format!(".{}.rstorrent-staging", "ab".repeat(20)))
+            root.join(format!(".{}.rstorrent-staging", test_torrent_id()))
         );
         assert_eq!(
             paths.part,
-            root.join(format!(".{}.rstorrent-parts", "ab".repeat(20)))
+            root.join(format!(".{}.rstorrent-parts", test_torrent_id()))
         );
         assert_eq!(
-            torrent_storage_paths(&root, "Каталог", [1; 20])
+            torrent_storage_paths(&root, "Каталог", test_torrent_id())
                 .expect("plan Unicode publication")
                 .output,
             root.join("Каталог")
         );
         let maximum_name = "x".repeat(255);
         assert_eq!(
-            torrent_storage_paths(&root, &maximum_name, [2; 20])
+            torrent_storage_paths(&root, &maximum_name, test_torrent_id())
                 .expect("plan maximum publication name")
                 .output,
             root.join(&maximum_name)
         );
         assert!(matches!(
-            torrent_storage_paths(&root, &"x".repeat(256), [3; 20]),
+            torrent_storage_paths(&root, &"x".repeat(256), test_torrent_id()),
             Err(SelectiveStorageError::InvalidPublicationName)
         ));
         for invalid in [
@@ -4679,24 +4701,24 @@ mod tests {
             "nested/name",
             "nested\\name",
             "C:name",
-            ".0123456789abcdef0123456789abcdef01234567.rstorrent-staging",
-            ".0123456789ABCDEF0123456789ABCDEF01234567.rstorrent-parts",
+            ".t1-0123456789abcdef0123456789abcdef.rstorrent-staging",
+            ".t1-fedcba9876543210fedcba9876543210.rstorrent-parts",
         ] {
             assert!(matches!(
-                torrent_storage_paths(&root, invalid, [0; 20]),
+                torrent_storage_paths(&root, invalid, test_torrent_id()),
                 Err(SelectiveStorageError::InvalidPublicationName)
             ));
         }
 
         let single = single_file_fixture();
-        let single_paths = torrent_storage_paths_for_metainfo(&root, &single)
+        let single_paths = torrent_storage_paths_for_metainfo(&root, &single, test_torrent_id())
             .expect("plan single-file storage paths");
         assert_eq!(single_paths.publication_shape, PublicationShape::File);
         assert_eq!(single_paths.output, root.join("single.bin"));
 
         let multi = fixture();
         assert_eq!(
-            torrent_storage_paths_for_metainfo(&root, &multi)
+            torrent_storage_paths_for_metainfo(&root, &multi, test_torrent_id())
                 .expect("plan multi-file storage paths")
                 .publication_shape,
             PublicationShape::Tree
@@ -4708,14 +4730,18 @@ mod tests {
         let root = test_path("publication-no-replace");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan single-file paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan single-file paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage =
-            SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout, selection)
-                .await
-                .expect("create storage");
+        let mut storage = SelectiveStorage::create_with_paths(
+            paths.clone(),
+            test_artifact_identity(),
+            layout,
+            selection,
+        )
+        .await
+        .expect("create storage");
         storage
             .write_block(0, 0, vec![0x31; 16_384])
             .await
@@ -4753,8 +4779,8 @@ mod tests {
         let root = test_path("artifact-reconciliation");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan single-file paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan single-file paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
         tokio::fs::write(&paths.output, vec![0; metainfo.total_length as usize])
@@ -4763,7 +4789,7 @@ mod tests {
         assert!(matches!(
             SelectiveStorage::resume_with_paths_expected(
                 paths.clone(),
-                &metainfo,
+                test_artifact_identity(),
                 layout.clone(),
                 selection.clone(),
                 vec![false; layout.piece_count()],
@@ -4781,7 +4807,7 @@ mod tests {
         assert!(matches!(
             SelectiveStorage::resume_with_paths_expected(
                 paths,
-                &metainfo,
+                test_artifact_identity(),
                 layout.clone(),
                 selection,
                 vec![false; layout.piece_count()],
@@ -4835,10 +4861,15 @@ mod tests {
         };
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await
-                .expect("create storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("create storage");
         for request in layout.request_ranges(0, &selection).expect("requests") {
             let begin = request.begin as usize;
             storage
@@ -4873,9 +4904,15 @@ mod tests {
         let metainfo = fixture();
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create storage");
+        let storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("create storage");
         let route = storage.files[0]
             .as_ref()
             .expect("first wanted file")
@@ -4968,6 +5005,7 @@ mod tests {
         let pool = StorageFilePool::new(1, None).expect("single-handle file pool");
         let mut storage = SelectiveStorage::create_with_pool(
             output.clone(),
+            test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection.clone(),
@@ -5058,9 +5096,15 @@ mod tests {
         };
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("storage");
         storage
             .write_block(0, 0, b"abcd".to_vec())
             .await
@@ -5098,10 +5142,15 @@ mod tests {
         let bytes = torrent_bytes(&metainfo);
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await
-                .expect("storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("storage");
         for request in layout.request_ranges(0, &selection).expect("requests") {
             let begin = request.begin as usize;
             storage
@@ -5140,9 +5189,15 @@ mod tests {
             .collect::<Vec<_>>();
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("storage");
         storage
             .write_block(0, 0, bytes[..16_384].to_vec())
             .await
@@ -5198,10 +5253,15 @@ mod tests {
         };
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await
-                .expect("create storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout.clone(),
+            selection.clone(),
+        )
+        .await
+        .expect("create storage");
         for request in layout.request_ranges(0, &selection).expect("requests") {
             storage
                 .write_block(0, request.begin, vec![3; request.length as usize])
@@ -5297,9 +5357,15 @@ mod tests {
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1]).expect("selection");
         let bytes = torrent_bytes(&metainfo);
-        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create selected storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("create selected storage");
         let checkpoint_handles = storage
             .checkpoint_handles()
             .await
@@ -5455,7 +5521,7 @@ mod tests {
         let spec = PlatformStorageSpec {
             pool: pool.clone(),
             root_id: "downloads".to_owned(),
-            storage_id: storage_instance_id(metainfo.info_hash),
+            storage_id: storage_instance_id(test_torrent_id()),
             publication_shape: PublicationShape::from_metainfo(&metainfo),
             publication_name: metainfo.name.clone(),
             namespace_generation: 0,
@@ -5464,6 +5530,7 @@ mod tests {
         };
         let (mut storage, resumed) = SelectiveStorage::create_with_platform(
             spec.clone(),
+            test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection,
@@ -5516,7 +5583,7 @@ mod tests {
             .expect("hash prepared platform files");
         pool.invalidate_storage(&spec.storage_id);
         std::fs::rename(
-            root.join(format!(".{}.rstorrent-staging", metainfo.name)),
+            root.join(format!(".{}.rstorrent-staging", spec.storage_id)),
             root.join(&metainfo.name),
         )
         .expect("publish fake provider tree");
@@ -5535,6 +5602,7 @@ mod tests {
         }
         let validation = super::validate_published_fast_resume_with_platform(
             published.clone(),
+            test_artifact_identity(),
             &metainfo,
             &committed,
             &[1, 2],
@@ -5553,6 +5621,7 @@ mod tests {
             .expect("oversize platform selected file");
         let oversized = super::validate_published_fast_resume_with_platform(
             published.clone(),
+            test_artifact_identity(),
             &metainfo,
             &committed,
             &[1, 2],
@@ -5575,6 +5644,7 @@ mod tests {
         drop(storage);
         let (mut resumed, resumed_state) = SelectiveStorage::create_with_platform(
             published.clone(),
+            test_artifact_identity(),
             &metainfo,
             layout.clone(),
             resumed_selection,
@@ -5618,10 +5688,15 @@ mod tests {
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         let bytes = torrent_bytes(&metainfo);
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection)
-                .await
-                .expect("create selected storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout.clone(),
+            selection,
+        )
+        .await
+        .expect("create selected storage");
 
         assert_eq!(storage.selected_bytes(), 73_000);
         assert_eq!(storage.skipped_bytes(), 57_000);
@@ -5750,7 +5825,7 @@ mod tests {
         let root = test_path("resume");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan resumable storage paths");
         let output = paths.output.clone();
         let layout = TorrentLayout::from_metainfo(&metainfo);
@@ -5758,7 +5833,7 @@ mod tests {
         let bytes = torrent_bytes(&metainfo);
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             vec![false; layout.piece_count()],
@@ -5792,7 +5867,7 @@ mod tests {
         verified[0] = true;
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             verified.clone(),
@@ -5814,7 +5889,7 @@ mod tests {
 
         let (storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection,
             verified,
@@ -5837,7 +5912,7 @@ mod tests {
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths,
-            &metainfo,
+            test_artifact_identity(),
             layout,
             selection,
             vec![false; 5],
@@ -5859,8 +5934,8 @@ mod tests {
         let root = test_path("published-geometry");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan published paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
         let bytes = vec![0x5a; metainfo.total_length as usize];
@@ -5878,7 +5953,7 @@ mod tests {
 
         let (mut exact, resumed) = SelectiveStorage::resume_with_paths_expected(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             vec![false; layout.piece_count()],
@@ -5912,7 +5987,7 @@ mod tests {
             .expect("extend published file");
         let (mut oversized, resumed) = SelectiveStorage::resume_with_paths_expected(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection,
             vec![false; layout.piece_count()],
@@ -5955,8 +6030,8 @@ mod tests {
         let root = test_path("fast-resume-exact");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan published paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
         tokio::fs::write(&paths.output, vec![0x41; metainfo.total_length as usize])
@@ -5969,7 +6044,7 @@ mod tests {
                 .expect("write same-length publication");
             let (mut storage, resumed) = SelectiveStorage::resume_with_paths_expected(
                 paths.clone(),
-                &metainfo,
+                test_artifact_identity(),
                 layout.clone(),
                 selection.clone(),
                 vec![true; layout.piece_count()],
@@ -5996,8 +6071,8 @@ mod tests {
         let root = test_path("fast-resume-oversized");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan published paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
         tokio::fs::write(
@@ -6008,7 +6083,7 @@ mod tests {
         .expect("write oversized publication");
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths_expected(
             paths,
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection,
             vec![true; layout.piece_count()],
@@ -6034,14 +6109,14 @@ mod tests {
         let root = test_path("fast-resume-part-extent");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         let bytes = torrent_bytes(&metainfo);
         let (mut storage, _) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             vec![false; layout.piece_count()],
@@ -6067,7 +6142,7 @@ mod tests {
         committed[0] = true;
         let (mut exact, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             committed.clone(),
@@ -6097,10 +6172,15 @@ mod tests {
             .await
             .expect("truncate part payload");
         drop(part);
-        let (mut truncated, resumed) =
-            SelectiveStorage::resume_with_paths(paths, &metainfo, layout, selection, committed)
-                .await
-                .expect("inventory truncated part slot");
+        let (mut truncated, resumed) = SelectiveStorage::resume_with_paths(
+            paths,
+            test_artifact_identity(),
+            layout,
+            selection,
+            committed,
+        )
+        .await
+        .expect("inventory truncated part slot");
         assert_eq!(
             truncated
                 .validate_fast_resume(resumed)
@@ -6117,8 +6197,8 @@ mod tests {
         let root = test_path("published-replaced-handle");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = single_file_fixture();
-        let paths =
-            torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan published paths");
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+            .expect("plan published paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("selection");
         let pool = StorageFilePool::new(4, None).expect("file pool");
@@ -6130,7 +6210,7 @@ mod tests {
 
         let (mut first, _) = SelectiveStorage::resume_with_paths_and_pool_expected(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             vec![false; layout.piece_count()],
@@ -6150,7 +6230,7 @@ mod tests {
             .expect("write replacement publication");
         let (mut second, _) = SelectiveStorage::resume_with_paths_and_pool_expected(
             paths,
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection,
             vec![false; layout.piece_count()],
@@ -6179,14 +6259,14 @@ mod tests {
         let root = test_path("resume-promote");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let skipped = FileSelection::new(&layout, &[1, 2]).expect("initial selection");
         let bytes = torrent_bytes(&metainfo);
         let (mut storage, _) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             skipped.clone(),
             vec![false; layout.piece_count()],
@@ -6214,7 +6294,7 @@ mod tests {
         verified[0] = true;
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout,
             promoted,
             verified,
@@ -6246,14 +6326,14 @@ mod tests {
         let root = test_path("resume-new-boundary-route");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         let bytes = torrent_bytes(&metainfo);
         let (mut storage, _) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             vec![false; layout.piece_count()],
@@ -6282,7 +6362,7 @@ mod tests {
         committed[0] = true;
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             selection.clone(),
             committed,
@@ -6336,14 +6416,14 @@ mod tests {
         let root = test_path("resume-retain-skipped");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let all_wanted = FileSelection::new(&layout, &[]).expect("initial selection");
         let bytes = torrent_bytes(&metainfo);
         let (mut storage, _) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             all_wanted.clone(),
             vec![false; layout.piece_count()],
@@ -6373,7 +6453,7 @@ mod tests {
         verified[0] = true;
         let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout,
             lowered,
             verified,
@@ -6404,14 +6484,14 @@ mod tests {
         let root = test_path("live-selection-reconcile");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let skipped = FileSelection::new(&layout, &[1]).expect("initial selection");
         let bytes = torrent_bytes(&metainfo);
         let mut storage = SelectiveStorage::create_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             skipped.clone(),
         )
@@ -6473,14 +6553,14 @@ mod tests {
         let root = test_path("live-selection-missing-span");
         tokio::fs::create_dir(&root).await.expect("create root");
         let metainfo = fixture();
-        let paths = torrent_storage_paths(&root, &metainfo.name, metainfo.info_hash)
+        let paths = torrent_storage_paths(&root, &metainfo.name, test_torrent_id())
             .expect("plan storage paths");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let skipped = FileSelection::new(&layout, &[1]).expect("initial selection");
         let bytes = torrent_bytes(&metainfo);
         let mut storage = SelectiveStorage::create_with_paths(
             paths.clone(),
-            &metainfo,
+            test_artifact_identity(),
             layout.clone(),
             skipped.clone(),
         )
@@ -6563,6 +6643,7 @@ mod tests {
             }],
         };
         let mut storage = SelectiveStorage::create_with_descriptors(
+            test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection,
@@ -6670,6 +6751,7 @@ mod tests {
         let bytes = torrent_bytes(&metainfo);
         let descriptors = descriptor_manifest(&root, &[0, 3, 4, 6], &[]);
         let mut storage = SelectiveStorage::create_with_descriptors(
+            test_artifact_identity(),
             &metainfo,
             layout.clone(),
             selection.clone(),
@@ -6719,6 +6801,7 @@ mod tests {
         let mut verified = vec![false; layout.piece_count()];
         verified[0] = true;
         let mut resumed = SelectiveStorage::resume_with_descriptors(
+            test_artifact_identity(),
             &metainfo,
             layout,
             selection,
@@ -6844,6 +6927,7 @@ mod tests {
             let layout = TorrentLayout::from_metainfo(&metainfo);
             let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
             let result = SelectiveStorage::create_with_descriptors(
+                test_artifact_identity(),
                 &metainfo,
                 layout,
                 selection,
@@ -6914,9 +6998,15 @@ mod tests {
         let metainfo = fixture();
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[2]).expect("selection");
-        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create selected storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("create selected storage");
 
         storage
             .write_block(2, 0, vec![0; 16_384])
@@ -6950,9 +7040,15 @@ mod tests {
         let metainfo = fixture();
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
-        let mut storage = SelectiveStorage::create(output.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create selected storage");
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("create selected storage");
         for piece in [0, 2, 3, 4] {
             storage.record_verified(piece).expect("record verification");
         }
@@ -6990,8 +7086,14 @@ mod tests {
             .await
             .expect("create existing output");
         assert!(matches!(
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await,
+            SelectiveStorage::create(
+                output.clone(),
+                test_artifact_identity(),
+                &metainfo,
+                layout.clone(),
+                selection.clone()
+            )
+            .await,
             Err(SelectiveStorageError::ExistingOutput(_))
         ));
         assert!(tokio::fs::try_exists(&output).await.expect("output state"));
@@ -7004,8 +7106,14 @@ mod tests {
             .await
             .expect("create existing staging");
         assert!(matches!(
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection.clone())
-                .await,
+            SelectiveStorage::create(
+                output.clone(),
+                test_artifact_identity(),
+                &metainfo,
+                layout.clone(),
+                selection.clone()
+            )
+            .await,
             Err(SelectiveStorageError::ExistingStaging(_))
         ));
         assert!(
@@ -7022,7 +7130,14 @@ mod tests {
             .await
             .expect("create existing part");
         assert!(matches!(
-            SelectiveStorage::create(output.clone(), &metainfo, layout, selection).await,
+            SelectiveStorage::create(
+                output.clone(),
+                test_artifact_identity(),
+                &metainfo,
+                layout,
+                selection
+            )
+            .await,
             Err(SelectiveStorageError::ExistingPartFile(_))
         ));
         assert_eq!(

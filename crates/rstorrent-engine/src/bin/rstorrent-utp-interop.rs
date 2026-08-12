@@ -20,7 +20,7 @@ use rstorrent_engine::{
     AddressFamilyPolicy, IncomingPeerHandle, IncomingPeerRuntime, IncomingPeerServiceConfig,
     IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig, NetworkPolicy,
     PeerConnectionObservation, PeerEncryptionPolicy, PeerTransport, SeedContent, SeedRegistration,
-    SessionUdpService, SessionUdpSnapshot, TorrentPeerActivitySink, TorrentPeerHandle,
+    SessionUdpService, SessionUdpSnapshot, TorrentId, TorrentPeerActivitySink, TorrentPeerHandle,
     UtpRuntimeConfig, UtpService, UtpServiceSnapshot, download_controlled_utp,
 };
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo, MetainfoMode};
@@ -532,8 +532,11 @@ async fn run_seed(
     let incoming = incoming_runtime.handle();
     let peer_sink = Arc::new(RecordingPeerSink::default());
     let torrent_peers = TorrentPeerHandle::new(peer_sink.clone())?;
+    let torrent_id =
+        TorrentId::generate().map_err(|error| std::io::Error::other(error.to_string()))?;
     let content = SeedContent::open_published(
         storage_root,
+        torrent_id,
         &metainfo,
         &vec![true; metainfo.piece_count()],
         &[],

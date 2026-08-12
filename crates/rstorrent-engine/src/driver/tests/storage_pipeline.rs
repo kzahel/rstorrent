@@ -293,6 +293,7 @@ async fn slow_storage_preserves_multi_peer_resident_payload_bound() {
     let mut download = tokio::spawn(async move {
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -414,6 +415,7 @@ async fn cancellation_joins_storage_with_queued_writes() {
     let mut download = tokio::spawn(async move {
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: payload_len,
                 storage_intake_high_watermark_bytes: payload_len,
@@ -516,6 +518,7 @@ async fn cancellation_joins_storage_during_piece_hash() {
     let mut download = tokio::spawn(async move {
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -870,6 +873,7 @@ async fn storage_command_backpressure_is_bounded_and_completes() {
         Duration::from_secs(5),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload.len(),
                 storage_intake_high_watermark_bytes: payload.len(),
@@ -975,6 +979,7 @@ async fn storage_pressure_cannot_starve_dht_intake_or_dial_refill() {
     let download = tokio::spawn(async move {
         let result = run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: payload_limit,
                 storage_intake_high_watermark_bytes: payload_limit,

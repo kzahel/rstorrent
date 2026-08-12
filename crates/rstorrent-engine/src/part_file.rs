@@ -5,6 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::identity::{ContentFingerprint, TorrentId};
 use crate::positional_io::{read_exact_at, write_all_at};
 use crate::storage_file_pool::{
     PlatformStorageFailureKind, StorageFileAccess, StorageFileKey, StorageFileLease,
@@ -14,15 +15,16 @@ use crate::storage_file_pool::{
 use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 
 const MAGIC: &[u8; 8] = b"RSPART01";
-const VERSION: u32 = 1;
-const FIXED_HEADER_LENGTH: usize = 64;
+const VERSION: u32 = 2;
+const FIXED_HEADER_LENGTH: usize = 96;
 const HEADER_ALIGNMENT: usize = 1024;
 const SLOT_ENTRY_LENGTH: usize = 4;
 const MISSING_SLOT: i32 = -1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PartFileIdentity {
-    pub info_hash: [u8; 20],
+    pub torrent_id: TorrentId,
+    pub content_fingerprint: ContentFingerprint,
     pub piece_count: usize,
     pub piece_length: u32,
     pub total_length: u64,
@@ -323,14 +325,15 @@ impl PartFile {
                 .map_err(|_| PartFileError::OffsetOverflow)?
                 .to_be_bytes(),
         );
-        header[16..36].copy_from_slice(&identity.info_hash);
-        header[36..40].copy_from_slice(
+        header[16..32].copy_from_slice(identity.torrent_id.as_bytes());
+        header[32..64].copy_from_slice(identity.content_fingerprint.as_bytes());
+        header[64..68].copy_from_slice(
             &u32::try_from(identity.piece_count)
                 .map_err(|_| PartFileError::OffsetOverflow)?
                 .to_be_bytes(),
         );
-        header[40..44].copy_from_slice(&identity.piece_length.to_be_bytes());
-        header[44..52].copy_from_slice(&identity.total_length.to_be_bytes());
+        header[68..72].copy_from_slice(&identity.piece_length.to_be_bytes());
+        header[72..80].copy_from_slice(&identity.total_length.to_be_bytes());
         for piece_index in 0..identity.piece_count {
             let entry = slot_entry_offset(piece_index)?;
             header[entry..entry + SLOT_ENTRY_LENGTH].copy_from_slice(&MISSING_SLOT.to_be_bytes());
@@ -484,21 +487,24 @@ impl PartFile {
                 expected: expected_header_u32,
             });
         }
-        if header[52..64].iter().any(|byte| *byte != 0) {
+        if header[80..96].iter().any(|byte| *byte != 0) {
             return Err(PartFileError::NonzeroReserved);
         }
-        if header[16..36] != expected.info_hash {
-            return Err(PartFileError::LayoutMismatch("info hash"));
+        if header[16..32] != *expected.torrent_id.as_bytes() {
+            return Err(PartFileError::LayoutMismatch("torrent ID"));
         }
-        if read_u32(&header[36..40])
+        if header[32..64] != *expected.content_fingerprint.as_bytes() {
+            return Err(PartFileError::LayoutMismatch("content fingerprint"));
+        }
+        if read_u32(&header[64..68])
             != u32::try_from(expected.piece_count).map_err(|_| PartFileError::OffsetOverflow)?
         {
             return Err(PartFileError::LayoutMismatch("piece count"));
         }
-        if read_u32(&header[40..44]) != expected.piece_length {
+        if read_u32(&header[68..72]) != expected.piece_length {
             return Err(PartFileError::LayoutMismatch("piece length"));
         }
-        if read_u64(&header[44..52]) != expected.total_length {
+        if read_u64(&header[72..80]) != expected.total_length {
             return Err(PartFileError::LayoutMismatch("total length"));
         }
 
@@ -1010,6 +1016,7 @@ mod tests {
 
     use tokio::io::{AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
+    use crate::identity::{ContentFingerprint, TorrentId};
     use crate::storage_file_pool::StorageFileAccess;
     use rstorrent_protocol::metainfo::MAX_PIECE_LENGTH;
 
@@ -1030,7 +1037,8 @@ mod tests {
 
     fn identity() -> PartFileIdentity {
         PartFileIdentity {
-            info_hash: [7; 20],
+            torrent_id: TorrentId::new([7; 16]).expect("test owner"),
+            content_fingerprint: ContentFingerprint::from_digest([8; 32]),
             piece_count: 5,
             piece_length: 32_768,
             total_length: 133_304,
@@ -1177,18 +1185,25 @@ mod tests {
         );
 
         let mut mismatch = identity();
-        mismatch.info_hash[0] = 8;
+        mismatch.torrent_id = TorrentId::new([9; 16]).expect("other owner");
         assert!(matches!(
             PartFile::open(path.clone(), mismatch).await,
-            Err(PartFileError::LayoutMismatch("info hash"))
+            Err(PartFileError::LayoutMismatch("torrent ID"))
         ));
 
-        overwrite(&path, 52, &[1]).await;
+        let mut mismatch = identity();
+        mismatch.content_fingerprint = ContentFingerprint::from_digest([10; 32]);
+        assert!(matches!(
+            PartFile::open(path.clone(), mismatch).await,
+            Err(PartFileError::LayoutMismatch("content fingerprint"))
+        ));
+
+        overwrite(&path, 80, &[1]).await;
         assert!(matches!(
             PartFile::open(path.clone(), identity()).await,
             Err(PartFileError::NonzeroReserved)
         ));
-        overwrite(&path, 52, &[0]).await;
+        overwrite(&path, 80, &[0]).await;
 
         let padding_offset =
             u64::try_from(FIXED_HEADER_LENGTH + identity().piece_count * 4).expect("offset");
@@ -1221,10 +1236,10 @@ mod tests {
         ));
         overwrite(&path, 0, super::MAGIC).await;
 
-        overwrite(&path, 8, &2_u32.to_be_bytes()).await;
+        overwrite(&path, 8, &1_u32.to_be_bytes()).await;
         assert!(matches!(
             PartFile::open(path.clone(), identity()).await,
-            Err(PartFileError::UnsupportedVersion(2))
+            Err(PartFileError::UnsupportedVersion(1))
         ));
         overwrite(&path, 8, &super::VERSION.to_be_bytes()).await;
 
@@ -1412,7 +1427,8 @@ mod tests {
     #[test]
     fn computes_large_piece_slot_offsets_with_u64_geometry() {
         let large = PartFileIdentity {
-            info_hash: [9; 20],
+            torrent_id: TorrentId::new([9; 16]).expect("large owner"),
+            content_fingerprint: ContentFingerprint::from_digest([10; 32]),
             piece_count: 26_214,
             piece_length: MAX_PIECE_LENGTH,
             total_length: 26_214_u64 * u64::from(MAX_PIECE_LENGTH),

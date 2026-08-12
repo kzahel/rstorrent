@@ -160,12 +160,12 @@ pub use selective_storage::{
     FastResumeValidation, MAX_ACTIVE_FILE_READ_BYTES, MAX_UPLOAD_READ_SEGMENTS,
     MaterializationReport, PlatformStorageSpec, PreparedFileHash, ResumeArtifactState,
     ResumedStorage, SelectionReconcileReport, SelectiveFileReadPlan, SelectiveStorage,
-    SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats, TorrentStoragePaths,
-    remove_selective_part_if_present, remove_selective_staging_if_present, selective_part_path,
-    selective_staging_path, torrent_storage_paths, torrent_storage_paths_for_metainfo,
-    torrent_storage_paths_with_shape, validate_publication_name,
-    validate_published_fast_resume_with_path, validate_published_fast_resume_with_platform,
-    verify_prepared_platform_files,
+    SelectiveStorageError, SelectiveUploadReadPlan, SelectiveWriteStats, TorrentArtifactIdentity,
+    TorrentStoragePaths, remove_selective_part_if_present, remove_selective_staging_if_present,
+    selective_part_path, selective_staging_path, torrent_storage_paths,
+    torrent_storage_paths_for_metainfo, torrent_storage_paths_with_shape,
+    validate_publication_name, validate_published_fast_resume_with_path,
+    validate_published_fast_resume_with_platform, verify_prepared_platform_files,
 };
 pub use session_resources::{
     SessionDownloadResourceSnapshot, SessionDownloadResources, SessionStorageRootResourceSnapshot,

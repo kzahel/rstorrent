@@ -39,6 +39,7 @@ async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -103,6 +104,7 @@ async fn one_entry_multi_file_uses_same_pipeline_and_publishes_a_tree() {
 
     let report = run_content_download(
         ContentDownloadConfig {
+            artifact_identity: test_artifact_identity(),
             output_path: output.clone(),
             max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
             storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -147,12 +149,13 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("plan managed storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
         paths.clone(),
-        &metainfo,
+        test_artifact_identity(),
         layout.clone(),
         selection.clone(),
     )
@@ -199,6 +202,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let result = resume_magnet(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -258,7 +262,8 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan storage");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("plan storage");
     tokio::fs::write(&paths.output, &payload)
         .await
         .expect("write complete publication");
@@ -274,6 +279,7 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
 
     let report = resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -354,6 +360,7 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
     let peer_address = unused_peer.local_addr().expect("unused peer address");
     let task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -418,13 +425,18 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("managed paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("managed paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let all_wanted = FileSelection::new(&layout, &[]).expect("all files wanted");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout.clone(), all_wanted)
-            .await
-            .expect("create staging storage");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths.clone(),
+        test_artifact_identity(),
+        layout.clone(),
+        all_wanted,
+    )
+    .await
+    .expect("create staging storage");
     for (piece_index, payload) in [first.as_slice(), second.as_slice()]
         .into_iter()
         .enumerate()
@@ -441,7 +453,7 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
     let skipped = FileSelection::new(&layout, &[1]).expect("second file skipped");
     let (mut storage, resumed) = SelectiveStorage::resume_with_paths(
         paths,
-        &metainfo,
+        test_artifact_identity(),
         layout.clone(),
         skipped.clone(),
         vec![false; layout.piece_count()],
@@ -519,13 +531,18 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("managed paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("managed paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths, &metainfo, layout.clone(), selection.clone())
-            .await
-            .expect("create staged storage");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths,
+        test_artifact_identity(),
+        layout.clone(),
+        selection.clone(),
+    )
+    .await
+    .expect("create staged storage");
     for (piece_index, payload) in [first, second].into_iter().enumerate() {
         let piece_index = u32::try_from(piece_index).expect("piece index");
         storage
@@ -688,12 +705,13 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("plan managed storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
         paths.clone(),
-        &metainfo,
+        test_artifact_identity(),
         layout.clone(),
         selection.clone(),
     )
@@ -744,6 +762,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let report = resume_magnet(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -807,13 +826,18 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
     tokio::fs::create_dir(&root)
         .await
         .expect("create duplex storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("duplex paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("duplex paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("duplex selection");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout.clone(), selection)
-            .await
-            .expect("create duplex staging");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths.clone(),
+        test_artifact_identity(),
+        layout.clone(),
+        selection,
+    )
+    .await
+    .expect("create duplex staging");
     storage
         .write_block(0, 0, pieces[0].clone())
         .await
@@ -835,6 +859,7 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let report = resume_magnet(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -897,14 +922,18 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create incoming duplex storage root");
-    let paths =
-        torrent_storage_paths_for_metainfo(&root, &metainfo).expect("incoming duplex paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("incoming duplex paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("incoming duplex selection");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create incoming duplex staging");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths.clone(),
+        test_artifact_identity(),
+        layout,
+        selection,
+    )
+    .await
+    .expect("create incoming duplex staging");
     storage
         .write_block(0, 0, pieces[0].clone())
         .await
@@ -945,6 +974,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1036,8 +1066,8 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
     tokio::fs::create_dir(&root)
         .await
         .expect("create disconnecting peer storage root");
-    let paths =
-        torrent_storage_paths_for_metainfo(&root, &metainfo).expect("disconnecting peer paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("disconnecting peer paths");
     let idle_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind disconnecting peer idle source");
@@ -1068,6 +1098,7 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1149,13 +1180,18 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create read-failure storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("read-failure paths");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("read-failure paths");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("read-failure selection");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout, selection)
-            .await
-            .expect("create read-failure staging");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths.clone(),
+        test_artifact_identity(),
+        layout,
+        selection,
+    )
+    .await
+    .expect("create read-failure staging");
     storage
         .write_block(0, 0, payload[..MIN_PAYLOAD_ALLOWANCE].to_vec())
         .await
@@ -1192,6 +1228,7 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1322,13 +1359,18 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
     tokio::fs::create_dir(&root)
         .await
         .expect("create storage root");
-    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo).expect("plan managed storage");
+    let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
+        .expect("plan managed storage");
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
-    let mut storage =
-        SelectiveStorage::create_with_paths(paths.clone(), &metainfo, layout.clone(), selection)
-            .await
-            .expect("create staged payload");
+    let mut storage = SelectiveStorage::create_with_paths(
+        paths.clone(),
+        test_artifact_identity(),
+        layout.clone(),
+        selection,
+    )
+    .await
+    .expect("create staged payload");
     for piece_index in 0..layout.piece_count() {
         let piece_index_u32 = u32::try_from(piece_index).expect("bounded piece index");
         let offset = piece_index * MIN_PAYLOAD_ALLOWANCE;
@@ -1362,6 +1404,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
         .expect("unused cancellation peer address");
     let task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -1432,7 +1475,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
         tokio::fs::create_dir(&root)
             .await
             .expect("create publication fault root");
-        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo)
+        let paths = torrent_storage_paths_for_metainfo(&root, &metainfo, test_torrent_id())
             .expect("plan publication fault storage");
         stage_single_file_payload(&paths, &metainfo, &payload).await;
         let unused_peer = TcpListener::bind("127.0.0.1:0")
@@ -1447,6 +1490,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
         });
         let failed = resume_magnet(
             ResumableMagnetDownloadConfig {
+                torrent_id: test_torrent_id(),
                 magnet: format!(
                     "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                     hex(&metainfo.info_hash)
@@ -1492,6 +1536,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
 
         let recovered = resume_magnet(
             ResumableMagnetDownloadConfig {
+                torrent_id: test_torrent_id(),
                 magnet: format!(
                     "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                     hex(&metainfo.info_hash)
@@ -1553,6 +1598,7 @@ async fn timeout_removes_unverified_staging_output() {
     });
 
     let result = download_verified_piece(DownloadConfig {
+        torrent_id: test_torrent_id(),
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),
@@ -1600,6 +1646,7 @@ async fn selective_timeout_removes_owned_staging_and_part_paths() {
     });
 
     let result = download_verified_piece(DownloadConfig {
+        torrent_id: test_torrent_id(),
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),
@@ -1654,6 +1701,7 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
     let download_control = control.clone();
     let download_task = tokio::spawn(download_verified_piece_with_control(
         DownloadConfig {
+            torrent_id: test_torrent_id(),
             metainfo_path: metainfo_path.clone(),
             peer: address,
             output_path: output_path.clone(),
@@ -1751,6 +1799,7 @@ async fn preexisting_selective_part_file_is_preserved() {
     let address = listener.local_addr().expect("listener address");
 
     let result = download_verified_piece(DownloadConfig {
+        torrent_id: test_torrent_id(),
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),

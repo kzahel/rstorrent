@@ -9,7 +9,8 @@ use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
     DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
     DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    PeerEncryptionPolicy, download_magnet_with_control, download_verified_piece_with_control,
+    PeerEncryptionPolicy, TorrentId, download_magnet_with_control,
+    download_verified_piece_with_control,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
@@ -344,6 +345,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
         .with_encryption(encryption);
     match (metainfo_path, magnet, peer) {
         (Some(metainfo_path), None, Some(peer)) => Ok(DownloadCommand::Metainfo(DownloadConfig {
+            torrent_id: TorrentId::generate().map_err(|error| error.to_string())?,
             metainfo_path,
             peer,
             output_path,
@@ -354,6 +356,7 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
         })),
         (None, Some(magnet), None) => Ok(DownloadCommand::Magnet {
             config: MagnetDownloadConfig {
+                torrent_id: TorrentId::generate().map_err(|error| error.to_string())?,
                 magnet,
                 output_path,
                 network,

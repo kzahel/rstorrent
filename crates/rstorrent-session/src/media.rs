@@ -11,7 +11,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rstorrent_engine::{
     ActiveFileError, ActiveFileReader, DownloadControl, PlatformStorageSpec, StorageFilePool,
-    StreamingDemandError, StreamingDemandLease, VerifiedFileError, VerifiedFileReader,
+    StreamingDemandError, StreamingDemandLease, TorrentId, VerifiedFileError, VerifiedFileReader,
 };
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::TorrentLayout;
@@ -167,7 +167,7 @@ pub(crate) enum PublishedMediaSource {
         metainfo: Arc<Metainfo>,
         file_index: usize,
         pool: StorageFilePool,
-        storage_id: String,
+        torrent_id: TorrentId,
         read_jobs: Arc<Semaphore>,
     },
     Platform {
@@ -184,7 +184,7 @@ impl PublishedMediaSource {
         metainfo: Metainfo,
         file_index: usize,
         pool: StorageFilePool,
-        storage_id: String,
+        torrent_id: TorrentId,
         read_jobs: Arc<Semaphore>,
     ) -> Self {
         Self::Path {
@@ -192,7 +192,7 @@ impl PublishedMediaSource {
             metainfo: Arc::new(metainfo),
             file_index,
             pool,
-            storage_id,
+            torrent_id,
             read_jobs,
         }
     }
@@ -241,7 +241,7 @@ impl PublishedMediaSource {
                 metainfo,
                 file_index,
                 pool,
-                storage_id,
+                torrent_id,
                 read_jobs,
             } => {
                 VerifiedFileReader::open_published_with_pool(
@@ -250,7 +250,7 @@ impl PublishedMediaSource {
                     &verified,
                     *file_index,
                     pool.clone(),
-                    storage_id,
+                    *torrent_id,
                     read_jobs.clone(),
                 )
                 .await

@@ -72,6 +72,7 @@ impl TestMetainfoParse for Metainfo {
 }
 use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
 use crate::dht::{BootstrapNode, DhtConfig, DhtService};
+use crate::identity::{ContentFingerprint, TorrentId};
 use crate::network::{AddressFamilyPolicy, NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
@@ -80,8 +81,8 @@ use crate::peer::{
 use crate::peer_runtime::PeerConnectionLifecycle;
 use crate::selective_storage::{
     CheckpointFileReference, CheckpointHandles, SelectiveStorage, SelectiveStorageError,
-    selective_part_path, selective_staging_path, selective_staging_path as staging_path,
-    torrent_storage_paths_for_metainfo,
+    TorrentArtifactIdentity, selective_part_path, selective_staging_path,
+    selective_staging_path as staging_path, torrent_storage_paths_for_metainfo,
 };
 use crate::storage_file_pool::StorageFileLease;
 use crate::swarm::{
@@ -95,6 +96,17 @@ use crate::{
 use super::control::CheckerPieceOutcome;
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn test_torrent_id() -> TorrentId {
+    TorrentId::new([0x41; 16]).expect("nonzero test owner")
+}
+
+fn test_artifact_identity() -> TorrentArtifactIdentity {
+    TorrentArtifactIdentity {
+        torrent_id: test_torrent_id(),
+        content_fingerprint: ContentFingerprint::from_digest([0x42; 32]),
+    }
+}
 
 #[derive(Default)]
 struct RecordingCheckpointSink {
@@ -324,9 +336,15 @@ async fn single_file_content_storage(
     let layout = TorrentLayout::from_metainfo(&metainfo);
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     ContentStorage(Box::new(
-        SelectiveStorage::create(output, &metainfo, layout, selection)
-            .await
-            .expect("create unified torrent storage"),
+        SelectiveStorage::create(
+            output,
+            test_artifact_identity(),
+            &metainfo,
+            layout,
+            selection,
+        )
+        .await
+        .expect("create unified torrent storage"),
     ))
 }
 
@@ -1298,6 +1316,7 @@ async fn run_adverse_reassignment_case(action: AdverseRequestAction) {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -1375,7 +1394,7 @@ async fn stage_single_file_payload(
     let selection = FileSelection::new(&layout, &[]).expect("all files wanted");
     let mut storage = SelectiveStorage::create_with_paths(
         paths.clone(),
-        metainfo,
+        test_artifact_identity(),
         layout.clone(),
         selection.clone(),
     )
@@ -2525,6 +2544,7 @@ async fn assert_tracker_wait_cancels_without_socket_leaks() {
     let task_control = control.clone();
     let task = tokio::spawn(download_magnet_with_control(
         MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&tr=udp%3A%2F%2F{tracker_address}",
                 "00".repeat(20)

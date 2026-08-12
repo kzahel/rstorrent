@@ -10,6 +10,7 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
+use rstorrent_protocol::identity::{InfoHashes, V1InfoHash};
 use rstorrent_protocol::magnet::{
     FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet, TrackerUrl,
     TrackerUrlTransport,
@@ -143,7 +144,8 @@ pub struct StoredTracker {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResumeRecord {
-    pub torrent_id: String,
+    pub torrent_id: TorrentId,
+    pub info_hashes: InfoHashes,
     pub magnet: String,
     pub storage_root: String,
     pub skip_files: Vec<u32>,
@@ -1057,11 +1059,10 @@ impl SessionStore {
                 ));
             }
         };
-        let operational_magnet = row.0.unwrap_or_else(|| {
-            let v1 = read_v1_info_hash(&self.connection, &torrent_id)
-                .expect("validated catalog has one v1 identity in this tactical");
-            format!("magnet:?xt=urn:btih:{}", encode_info_hash(v1))
-        });
+        let v1_info_hash = V1InfoHash::new(read_v1_info_hash(&self.connection, &torrent_id)?);
+        let operational_magnet = row
+            .0
+            .unwrap_or_else(|| format!("magnet:?xt=urn:btih:{v1_info_hash}"));
         let desired_running = match row.7.as_str() {
             "running" => true,
             "paused" => false,
@@ -1105,7 +1106,8 @@ impl SessionStore {
             PayloadState::FinalOwned => ManagedArtifactState::Published,
         };
         Ok(ResumeRecord {
-            torrent_id: torrent_id.to_string(),
+            torrent_id,
+            info_hashes: InfoHashes::v1(v1_info_hash),
             magnet: operational_magnet,
             storage_root: row.1,
             skip_files,

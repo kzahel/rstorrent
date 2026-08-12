@@ -3871,7 +3871,8 @@ mod tests {
         tokio::fs::write(root.join("seed.bin"), payload)
             .await
             .expect("write published payload");
-        let content = SeedContent::open_published(&root, &metainfo, &[true, true], &[])
+        let torrent_id = crate::TorrentId::new([0x71; 16]).expect("nonzero test owner");
+        let content = SeedContent::open_published(&root, torrent_id, &metainfo, &[true, true], &[])
             .await
             .expect("open seed content");
         let peer_activity = Arc::new(TestPeerActivity::default());
@@ -4595,10 +4596,19 @@ mod tests {
             crate::selective_storage::selective_staging_path(&output).expect("active staging path");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("active selection");
-        let mut storage =
-            SelectiveStorage::create(output.clone(), &metainfo, layout.clone(), selection)
-                .await
-                .expect("create active storage");
+        let artifact_identity = crate::TorrentArtifactIdentity {
+            torrent_id: crate::TorrentId::new([0x72; 16]).expect("nonzero test owner"),
+            content_fingerprint: crate::ContentFingerprint::for_info_bytes(&raw_info),
+        };
+        let mut storage = SelectiveStorage::create(
+            output.clone(),
+            artifact_identity,
+            &metainfo,
+            layout.clone(),
+            selection,
+        )
+        .await
+        .expect("create active storage");
         storage
             .write_block(0, 0, b"abcd".to_vec())
             .await

@@ -14,7 +14,7 @@ use rstorrent_engine::{
     DownloadResourceLimits, MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget,
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
-    ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot,
+    ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot, TorrentId,
     TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
     UtpService, UtpServiceSnapshot, download_verified_piece_with_peer_state,
     resume_magnet_with_control, select_global_ipv6,
@@ -1649,6 +1649,31 @@ async fn run(config: Config) -> ProbeResult {
         }
     };
 
+    let torrent_id = match TorrentId::generate() {
+        Ok(torrent_id) => torrent_id,
+        Err(error) => {
+            return result(
+                &config,
+                started,
+                ProbeResultSources {
+                    sink: sink.as_ref(),
+                    peer_sink: peer_sink.as_ref(),
+                    diagnostics: &control.diagnostic_snapshot(),
+                    utility_timeline: &utility_timeline,
+                },
+                None,
+                None,
+                None,
+                TerminalState {
+                    outcome: "harness_error",
+                    integrity_verified: false,
+                    cleanup_succeeded: true,
+                    detail: Some(format!("create torrent owner: {error}")),
+                },
+            );
+        }
+    };
+
     let torrent_peers = match TorrentPeerHandle::new(peer_sink.clone()) {
         Ok(handle) => handle,
         Err(error) => {
@@ -1732,6 +1757,7 @@ async fn run(config: Config) -> ProbeResult {
     let task_control = control.clone();
     let mut task = if config.nonresumable_execution {
         let direct_config = DownloadConfig {
+            torrent_id,
             metainfo_path: prepared
                 .metainfo_path
                 .expect("nonresumable diagnostic input is gated to metainfo"),
@@ -1754,6 +1780,7 @@ async fn run(config: Config) -> ProbeResult {
         ))
     } else {
         let download_config = ResumableMagnetDownloadConfig {
+            torrent_id,
             magnet: prepared.magnet,
             storage_root: config.output.clone(),
             network,

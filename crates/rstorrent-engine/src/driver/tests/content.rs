@@ -149,6 +149,7 @@ async fn capable_peer_grows_pipeline_beyond_initial_request_window() {
         Duration::from_secs(5),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload_limit,
                 storage_intake_high_watermark_bytes: payload_limit,
@@ -227,6 +228,7 @@ async fn request_pipeline_exceeds_independently_bounded_resident_payload() {
         Duration::from_secs(5),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -296,6 +298,7 @@ async fn multi_peer_split_availability_completes_and_joins_every_socket() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -378,6 +381,7 @@ async fn endgame_cancel_reaches_loser_before_slow_storage_completes() {
     let mut download = tokio::spawn(async move {
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -484,6 +488,7 @@ async fn sole_corrupt_source_is_banned_and_clean_peer_retries_piece() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -688,6 +693,7 @@ async fn ambiguous_corrupt_generation_records_suspects_without_false_bans() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -804,6 +810,7 @@ async fn useful_peer_at_end_of_full_pending_cohort_completes_promptly() {
         Duration::from_secs(2),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -868,6 +875,7 @@ async fn cancellation_joins_a_full_silent_pending_cohort() {
     let download = tokio::spawn(async move {
         let result = run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: task_output,
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -972,6 +980,7 @@ async fn full_choked_set_is_replaced_by_an_eligible_useful_peer() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -1052,6 +1061,7 @@ async fn full_irrelevant_set_is_replaced_by_a_wanted_piece_peer() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: 2 * MIN_PAYLOAD_ALLOWANCE,
@@ -1108,6 +1118,7 @@ async fn full_choked_set_without_an_alternative_waits_without_churn() {
     let result = {
         let mut download = Box::pin(run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -1190,6 +1201,7 @@ async fn unrelated_messages_do_not_prevent_expiry_and_late_payload_is_safe() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,
@@ -1269,6 +1281,7 @@ async fn sampled_stall_moves_a_burst_peers_window_to_a_healthy_peer() {
         Duration::from_secs(7),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: payload_limit,
                 storage_intake_high_watermark_bytes: payload_limit,
@@ -1346,6 +1359,7 @@ async fn tracker_peer_discovered_during_content_becomes_useful() {
     let result = timeout(
         Duration::from_secs(3),
         download_magnet(MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={metadata_address}&\
                      tr=udp%3A%2F%2F{tracker_address}%2Fannounce",
@@ -1404,6 +1418,7 @@ async fn pex_is_the_only_source_for_a_useful_second_hop() {
     let report = timeout(
         Duration::from_secs(3),
         download_magnet(MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={bootstrap_address}",
                 hex(&info_hash)
@@ -1482,6 +1497,7 @@ async fn dht_peer_discovered_during_content_becomes_useful() {
         Duration::from_secs(3),
         run_content_download(
             ContentDownloadConfig {
+                artifact_identity: test_artifact_identity(),
                 output_path: output.clone(),
                 max_buffered_payload_bytes: MIN_PAYLOAD_ALLOWANCE,
                 storage_intake_high_watermark_bytes: MIN_PAYLOAD_ALLOWANCE,

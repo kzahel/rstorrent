@@ -31,6 +31,13 @@ impl TorrentId {
     pub const fn into_bytes(self) -> [u8; 16] {
         self.0
     }
+
+    pub fn generate() -> Result<Self, getrandom::Error> {
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes)?;
+        bytes[0] |= 0x80;
+        Ok(Self(bytes))
+    }
 }
 
 impl fmt::Display for TorrentId {
@@ -421,6 +428,13 @@ mod tests {
             Err(TorrentIdError::Prefix)
         );
         assert_eq!("t1-ab".parse::<TorrentId>(), Err(TorrentIdError::Length));
+    }
+
+    #[test]
+    fn generated_torrent_id_is_nonzero_and_canonical() {
+        let id = TorrentId::generate().expect("operating-system entropy");
+        assert_ne!(id.as_bytes(), &[0; 16]);
+        assert_eq!(id.to_string().parse(), Ok(id));
     }
 
     #[test]

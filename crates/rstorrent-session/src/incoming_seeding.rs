@@ -10,13 +10,13 @@ use rstorrent_engine::{
     FastResumeValidation, IncomingPeerError, IncomingPeerHandle, PlatformStorageFailureKind,
     PlatformStorageSpec, PublicationShape, ResumeAdmissionOutcome, ResumeValidationIntent,
     ResumeValidationRejectReason, SeedContent, SeedContentError, SeedRegistration,
-    SeedRegistrationToken, SelectiveStorageError, StorageFilePool, TorrentPeerHandle,
-    decide_resume_admission, validate_published_fast_resume_with_path,
+    SeedRegistrationToken, SelectiveStorageError, StorageFilePool, TorrentArtifactIdentity,
+    TorrentPeerHandle, decide_resume_admission, validate_published_fast_resume_with_path,
     validate_published_fast_resume_with_platform,
 };
 use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo};
 
-use crate::control::{StorageState, TorrentState, decode_info_hash};
+use crate::control::{StorageState, TorrentState};
 use crate::store::{ResumeRecord, StorageRootLocation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -122,10 +122,10 @@ impl IncomingSeeding {
                     });
                 }
             };
-        let identity = decode_info_hash(&resume.torrent_id).ok_or_else(|| {
-            IncomingSeedingError::InvalidDurableState("invalid torrent identity".to_owned())
+        let v1_info_hash = resume.info_hashes.v1_hash().ok_or_else(|| {
+            IncomingSeedingError::InvalidDurableState("v1 torrent identity is absent".to_owned())
         })?;
-        if identity != metainfo.info_hash {
+        if v1_info_hash.into_bytes() != metainfo.info_hash {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "stored metadata does not match torrent identity".to_owned(),
@@ -153,6 +153,10 @@ impl IncomingSeeding {
                 token: None,
             });
         }
+        let artifact_identity = TorrentArtifactIdentity {
+            torrent_id: resume.torrent_id,
+            content_fingerprint: have.content_fingerprint(),
+        };
         let skipped = resume
             .skip_files
             .iter()
@@ -164,13 +168,14 @@ impl IncomingSeeding {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        storage_file_pool.invalidate_storage(&resume.torrent_id);
+        storage_file_pool.invalidate_storage(&resume.torrent_id.to_string());
         let root = root.expect("eligible seed has a configured root");
         let validation_started = Instant::now();
         let validation = match root {
             StorageRootLocation::Path(root) => {
                 validate_published_fast_resume_with_path(
                     root,
+                    artifact_identity,
                     &metainfo,
                     have.pieces(),
                     &skipped,
@@ -181,6 +186,7 @@ impl IncomingSeeding {
             StorageRootLocation::PlatformCapability => {
                 validate_published_fast_resume_with_platform(
                     platform_spec(resume, &metainfo, storage_file_pool),
+                    artifact_identity,
                     &metainfo,
                     have.pieces(),
                     &skipped,
@@ -232,11 +238,11 @@ impl IncomingSeeding {
             StorageRootLocation::Path(root) => {
                 SeedContent::open_published_with_pool(
                     root,
+                    resume.torrent_id,
                     &metainfo,
                     have.pieces(),
                     &skipped,
                     storage_file_pool.clone(),
-                    &resume.torrent_id,
                 )
                 .await
             }
@@ -309,7 +315,7 @@ fn platform_spec(
     PlatformStorageSpec {
         pool: storage_file_pool.clone(),
         root_id: resume.storage_root.clone(),
-        storage_id: resume.torrent_id.clone(),
+        storage_id: resume.torrent_id.to_string(),
         publication_name: metainfo.name.clone(),
         publication_shape: PublicationShape::from_metainfo(metainfo),
         namespace_generation: 1,

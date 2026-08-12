@@ -362,6 +362,7 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -478,6 +479,7 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -725,6 +727,7 @@ async fn authenticated_https_tracker_introduces_pinned_libtorrent_peer() {
         Duration::from_secs(60),
         resume_magnet_with_control(
             ResumableMagnetDownloadConfig {
+                torrent_id: test_torrent_id(),
                 magnet,
                 storage_root,
                 network,
@@ -2150,6 +2153,7 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
+            torrent_id: test_torrent_id(),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -2260,6 +2264,7 @@ async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
     let unused_tracker_address = unused_tracker.local_addr().expect("unused tracker address");
 
     let report = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!(
             "magnet:?xt=urn:btih:{}&x.pe={unsupported_address}&x.pe={address}&\
                  tr=udp%3A%2F%2F{unused_tracker_address}",
@@ -2371,6 +2376,7 @@ async fn trackerless_dht_peer_completes_metadata_and_content_path() {
         .expect("start DHT client");
 
     let report = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2423,6 +2429,7 @@ async fn verified_private_metadata_purges_dht_only_peer_before_content() {
         .expect("start DHT client");
 
     let result = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2459,6 +2466,7 @@ async fn invalid_premetadata_bitfield_fails_before_storage_creation() {
     ));
 
     let result = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2512,6 +2520,7 @@ async fn magnet_peer_without_extension_support_fails_before_storage() {
     });
 
     let result = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2562,6 +2571,7 @@ async fn magnet_peer_disconnect_during_metadata_fails_before_storage() {
     });
 
     let result = download_magnet(MagnetDownloadConfig {
+        torrent_id: test_torrent_id(),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
