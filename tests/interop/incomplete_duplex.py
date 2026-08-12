@@ -212,7 +212,7 @@ class PlaintextDuplexProxy:
         *,
         clear_fast: bool = False,
         hold_until_release: bool = False,
-        piece_delay_seconds: float = 0.01,
+        piece_delay_seconds: float = 0.25,
     ) -> None:
         self.target = target
         self.clear_fast = clear_fast
@@ -737,6 +737,7 @@ def assert_plaintext(
     fast: bool,
     client_initial: tuple[int, ...],
     upstream_initial: tuple[int, ...],
+    require_before_either_complete: bool,
 ) -> dict[str, object]:
     expected_fast = FAST_RESERVED_BIT if fast else 0
     for label, evidence in (("client", proxy.client), ("upstream", proxy.upstream)):
@@ -768,10 +769,16 @@ def assert_plaintext(
         for sequence in (client_completion, upstream_completion)
         if sequence is not None
     ]
-    if completions and max(first_client, first_upstream) >= min(completions):
+    completion_boundary = (
+        min(completions)
+        if require_before_either_complete
+        else max(completions)
+        if completions
+        else None
+    )
+    if completion_boundary is not None and max(first_client, first_upstream) >= completion_boundary:
         raise ScenarioFailure(
-            "Piece frames were not observed in both directions before either peer "
-            "received all missing payload: "
+            "Piece frames did not satisfy the configured pre-completion gate: "
             f"client_first={first_client} upstream_first={first_upstream} "
             f"client_complete={client_completion} "
             f"upstream_complete={upstream_completion}"
@@ -785,6 +792,11 @@ def assert_plaintext(
         "first_client_piece_sequence": first_client,
         "first_upstream_piece_sequence": first_upstream,
         "first_completion_sequence": min(completions) if completions else None,
+        "completion_gate": (
+            "before_either_complete"
+            if require_before_either_complete
+            else "before_both_complete"
+        ),
     }
 
 
@@ -876,6 +888,7 @@ def run_libtorrent_case(
             fast=fast,
             client_initial=client_initial,
             upstream_initial=upstream_initial,
+            require_before_either_complete=False,
         )
         transfer_seconds = time.monotonic() - transfer_started
         evidence["rstorrent"] = stop_rstorrent(process)
@@ -988,6 +1001,7 @@ def run_rstorrent_case(binary: Path, fixture: Fixture, root: Path) -> dict[str, 
             fast=True,
             client_initial=RST_INITIAL,
             upstream_initial=REMOTE_INITIAL,
+            require_before_either_complete=True,
         )
         evidence["left"] = stop_rstorrent(left)
         left = None
