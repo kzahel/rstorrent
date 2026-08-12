@@ -162,6 +162,7 @@ async fn run() -> Result<(), SeedHarnessError> {
     let (tcp_mapping_status, udp_mapping_status) = mapping_statuses;
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
+        "torrent_id": torrent_id.to_string(),
         "info_hash": hex(metainfo.info_hash),
         "listen": ready.listen_address.to_string(),
         "registrations": ready.registrations,
@@ -303,13 +304,13 @@ async fn run() -> Result<(), SeedHarnessError> {
             "bandwidth": bandwidth,
             "utp": service.utp_snapshot().map(utp_snapshot_json),
             "peers": snapshot_view(&service, ViewSelector::Torrent {
-                torrent_id: hex(metainfo.info_hash),
+                torrent_id: torrent_id.to_string(),
             }, ViewProjection::Peers).await?,
             "swarm": snapshot_view(&service, ViewSelector::Torrent {
-                torrent_id: hex(metainfo.info_hash),
+                torrent_id: torrent_id.to_string(),
             }, ViewProjection::Swarm).await?,
             "summary": snapshot_view(&service, ViewSelector::Torrent {
-                torrent_id: hex(metainfo.info_hash),
+                torrent_id: torrent_id.to_string(),
             }, ViewProjection::Summary).await?,
         });
         stdout

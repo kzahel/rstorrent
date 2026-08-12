@@ -1018,6 +1018,7 @@ def run_gateway_view_evidence(
     gateway_binary: Path,
     leech_binary: Path,
     fixture: Fixture,
+    torrent_id: str,
 ) -> dict[str, object]:
     gateway: subprocess.Popen[str] | None = None
     views: GatewayViews | None = None
@@ -1028,7 +1029,7 @@ def run_gateway_view_evidence(
             fixture.profile_root,
             fixture.storage_root,
         )
-        views = GatewayViews.open(gateway_address, fixture.info_hash)
+        views = GatewayViews.open(gateway_address, torrent_id)
         ready = {"listen": views.listener}
         libtorrent_output = fixture.torrent_path.parent / "gateway-libtorrent-output"
         libtorrent_output.mkdir()
@@ -1126,7 +1127,7 @@ def run_gateway_view_evidence(
                 "gateway views did not reach empty Peers and retained Swarm state"
             )
 
-        dispatch_pause(gateway_address, fixture.info_hash)
+        dispatch_pause(gateway_address, torrent_id)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             views.poll(50)
@@ -1223,7 +1224,12 @@ def run(repository: Path) -> None:
                 concurrent,
             )
             gateway_evidence = (
-                run_gateway_view_evidence(gateway_binary, leech_binary, fixture)
+                run_gateway_view_evidence(
+                    gateway_binary,
+                    leech_binary,
+                    fixture,
+                    string_field(restarted.ready, "torrent_id"),
+                )
                 if fixture.name == "single"
                 else None
             )

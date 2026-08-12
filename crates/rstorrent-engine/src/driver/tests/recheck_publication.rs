@@ -1795,8 +1795,17 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
 async fn preexisting_selective_part_file_is_preserved() {
     let metainfo_path = test_path("selective-existing.torrent");
     let output_path = test_path("selective-existing");
-    let part = selective_part_path(&output_path).expect("part path");
-    tokio::fs::write(&metainfo_path, two_file_metainfo())
+    let outer = two_file_metainfo();
+    let identity = test_identity_from_outer(&outer);
+    let metainfo = Metainfo::from_bytes(&outer).expect("parse metainfo");
+    let paths = torrent_storage_paths_for_output_with_shape(
+        output_path.clone(),
+        identity.torrent_id(),
+        PublicationShape::from_metainfo(&metainfo),
+    )
+    .expect("storage paths");
+    let part = paths.part;
+    tokio::fs::write(&metainfo_path, outer)
         .await
         .expect("write metainfo");
     tokio::fs::write(&part, b"owned elsewhere")
@@ -1808,7 +1817,7 @@ async fn preexisting_selective_part_file_is_preserved() {
     let address = listener.local_addr().expect("listener address");
 
     let result = download_verified_piece(DownloadConfig {
-        identity: test_identity_from_outer(&two_file_metainfo()),
+        identity,
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),
@@ -1829,7 +1838,7 @@ async fn preexisting_selective_part_file_is_preserved() {
         b"owned elsewhere"
     );
 
-    let _ = tokio::fs::remove_dir_all(selective_staging_path(&output_path).expect("staging")).await;
+    let _ = tokio::fs::remove_dir_all(paths.staging).await;
     let _ = tokio::fs::remove_file(part).await;
     let _ = tokio::fs::remove_file(metainfo_path).await;
 }

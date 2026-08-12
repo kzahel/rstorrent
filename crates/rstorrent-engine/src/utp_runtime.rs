@@ -3009,8 +3009,10 @@ mod tests {
 
     #[test]
     fn emission_turn_is_bounded_below_per_connection_ingress() {
-        assert!(MAX_EMISSIONS_PER_TURN > 0);
-        assert!(MAX_EMISSIONS_PER_TURN < UTP_CONNECTION_DATAGRAM_QUEUE);
+        const {
+            assert!(MAX_EMISSIONS_PER_TURN > 0);
+            assert!(MAX_EMISSIONS_PER_TURN < UTP_CONNECTION_DATAGRAM_QUEUE);
+        }
         assert_eq!(MAX_EMISSIONS_PER_TURN, UTP_CONNECTION_DATAGRAM_QUEUE / 4);
     }
 

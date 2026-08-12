@@ -4592,14 +4592,19 @@ mod tests {
             .await
             .expect("create active root");
         let output = root.join("seed.bin");
-        let staging =
-            crate::selective_storage::selective_staging_path(&output).expect("active staging path");
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[]).expect("active selection");
         let artifact_identity = crate::TorrentArtifactIdentity {
             torrent_id: crate::TorrentId::new([0x72; 16]).expect("nonzero test owner"),
             content_fingerprint: crate::ContentFingerprint::for_info_bytes(&raw_info),
         };
+        let staging = crate::torrent_storage_paths_for_metainfo(
+            &root,
+            &metainfo,
+            artifact_identity.torrent_id,
+        )
+        .expect("active storage paths")
+        .staging;
         let mut storage = SelectiveStorage::create(
             output.clone(),
             artifact_identity,

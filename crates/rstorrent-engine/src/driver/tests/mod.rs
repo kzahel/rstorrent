@@ -85,6 +85,7 @@ use crate::selective_storage::{
     CheckpointFileReference, CheckpointHandles, SelectiveStorage, SelectiveStorageError,
     TorrentArtifactIdentity, selective_part_path, selective_staging_path,
     selective_staging_path as staging_path, torrent_storage_paths_for_metainfo,
+    torrent_storage_paths_for_output_with_shape,
 };
 use crate::storage_file_pool::StorageFileLease;
 use crate::swarm::{
@@ -93,6 +94,7 @@ use crate::swarm::{
 };
 use crate::{
     ByteMetric, ByteMetricSink, CheckerPhase, CheckerProgress, DiskCheckpointStage, DiskPieceStage,
+    PublicationShape,
 };
 
 use super::control::CheckerPieceOutcome;
@@ -343,10 +345,12 @@ fn resource_limits(bytes: usize) -> DownloadResourceLimits {
 
 fn test_path(name: &str) -> PathBuf {
     let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "rstorrent-driver-test-{}-{sequence}-{name}",
+    let root = std::env::temp_dir().join(format!(
+        "rstorrent-driver-test-{}-{sequence}",
         std::process::id()
-    ))
+    ));
+    std::fs::create_dir(&root).expect("create isolated test parent");
+    root.join(name)
 }
 
 async fn single_file_content_storage(
