@@ -221,6 +221,8 @@ def start_seed(
     case_root: Path,
     binaries: LocalBinaries,
     deadline: float,
+    *,
+    network_scope: str = "loopback",
 ) -> tuple[RoleProcess, str, int, dict[str, Any]]:
     if implementation == "libtorrent":
         arguments = _fixture_arguments(fixture, deadline - time.monotonic())
@@ -234,7 +236,7 @@ def start_seed(
                 "--storage-root",
                 str(fixture.seed_root),
                 "--network-scope",
-                "loopback",
+                network_scope,
             ],
             f"libtorrent {transport} seed",
             accepts_commands=True,
@@ -288,6 +290,8 @@ def run_leecher(
     peer_port: int,
     binaries: LocalBinaries,
     deadline: float,
+    *,
+    network_scope: str = "loopback",
 ) -> dict[str, Any]:
     if implementation == "libtorrent":
         arguments = _fixture_arguments(fixture, deadline - time.monotonic())
@@ -301,7 +305,7 @@ def run_leecher(
                 "--storage-root",
                 str(output_root),
                 "--network-scope",
-                "loopback",
+                network_scope,
                 "--peer-address",
                 peer_address,
                 "--peer-port",
