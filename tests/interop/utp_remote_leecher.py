@@ -36,6 +36,7 @@ from utp_remote_seed import (
 TRANSFER_TIMEOUT_SECONDS = 180.0
 MAX_TRANSFER_TIMEOUT_SECONDS = 600.0
 MILESTONE_FRACTIONS = (1, 25, 50, 75, 100)
+PROGRESS_MILESTONE_FRACTIONS = (1, 25, 50, 75)
 
 
 class RemoteLeecherFailure(RuntimeError):
@@ -113,11 +114,11 @@ def transport_settings(local_address: str, port: int, transport: str) -> dict[st
         "enable_outgoing_tcp": tcp,
         "enable_incoming_utp": utp,
         "enable_outgoing_utp": utp,
-        "allow_multiple_connections_per_ip": True,
+        "allow_multiple_connections_per_ip": False,
         "in_enc_policy": int(lt.enc_policy.pe_disabled),
         "out_enc_policy": int(lt.enc_policy.pe_disabled),
         "proxy_type": 0,
-        "connections_limit": 4,
+        "connections_limit": 1,
         "max_peerlist_size": 8,
         "alert_queue_size": 256,
         "alert_mask": int(
@@ -131,7 +132,7 @@ def transport_settings(local_address: str, port: int, transport: str) -> dict[st
 
 def create_transport_session(
     local_address: str, port: int, transport: str
-) -> tuple[lt.session, dict[str, bool]]:
+) -> tuple[lt.session, dict[str, bool | int]]:
     expected = transport_settings(local_address, port, transport)
     session = lt.session(expected)
     applied = session.get_settings()
@@ -144,10 +145,19 @@ def create_transport_session(
         "enable_lsd",
         "enable_upnp",
         "enable_natpmp",
+        "allow_multiple_connections_per_ip",
     )
     evidence = {name: bool(applied[name]) for name in names}
     expected_evidence = {name: bool(expected[name]) for name in names}
-    if evidence != expected_evidence or int(applied["proxy_type"]) != 0:
+    evidence["proxy_type"] = int(applied["proxy_type"])
+    evidence["connections_limit"] = int(applied["connections_limit"])
+    if (
+        evidence != {
+            **expected_evidence,
+            "proxy_type": 0,
+            "connections_limit": 1,
+        }
+    ):
         raise RemoteLeecherFailure("libtorrent did not apply exact transport settings")
     return session, evidence
 
@@ -155,7 +165,7 @@ def create_transport_session(
 def milestone_thresholds(payload_bytes: int) -> dict[str, int]:
     return {
         str(percent): max(1, (payload_bytes * percent + 99) // 100)
-        for percent in MILESTONE_FRACTIONS
+        for percent in PROGRESS_MILESTONE_FRACTIONS
     }
 
 
@@ -262,6 +272,7 @@ def run(arguments: argparse.Namespace) -> None:
                     milestones[name] = observed_at - transfer_started
             if status.is_seeding:
                 completed_at = observed_at
+                milestones["100"] = completed_at - transfer_started
                 break
             time.sleep(0.01 if first_payload_at is not None else POLL_SECONDS)
         else:

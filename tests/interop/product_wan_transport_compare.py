@@ -173,7 +173,7 @@ def verify_installed_mapping(
         )
 
 
-def expected_transport_settings(transport: str) -> dict[str, bool]:
+def expected_transport_settings(transport: str) -> dict[str, bool | int]:
     if transport not in {"tcp", "utp"}:
         raise WanFailure("transport evidence selection is invalid")
     tcp = transport == "tcp"
@@ -187,6 +187,9 @@ def expected_transport_settings(transport: str) -> dict[str, bool]:
         "enable_lsd": False,
         "enable_upnp": False,
         "enable_natpmp": False,
+        "allow_multiple_connections_per_ip": False,
+        "proxy_type": 0,
+        "connections_limit": 1,
     }
 
 

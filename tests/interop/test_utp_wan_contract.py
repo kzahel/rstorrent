@@ -56,6 +56,10 @@ class UtpWanContractTests(unittest.TestCase):
         self.assertTrue(utp["enable_outgoing_utp"])
         self.assertEqual(tcp["proxy_type"], 0)
         self.assertEqual(utp["proxy_type"], 0)
+        self.assertFalse(tcp["allow_multiple_connections_per_ip"])
+        self.assertFalse(utp["allow_multiple_connections_per_ip"])
+        self.assertEqual(tcp["connections_limit"], 1)
+        self.assertEqual(utp["connections_limit"], 1)
 
         tcp_session, tcp_applied = create_transport_session(
             "127.0.0.1", 42000, "tcp"
@@ -93,7 +97,6 @@ class UtpWanContractTests(unittest.TestCase):
                 "25": 2_097_335,
                 "50": 4_194_670,
                 "75": 6_292_005,
-                "100": payload_bytes,
             },
         )
 
