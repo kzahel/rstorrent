@@ -75,6 +75,8 @@ enum Profile {
     ProductDefault,
     ProductUtp,
     DhtOnly,
+    WanTcp,
+    WanUtp,
 }
 
 impl Profile {
@@ -85,6 +87,8 @@ impl Profile {
             "product-default" | "full-reference" => Ok(Self::ProductDefault),
             "product-utp" => Ok(Self::ProductUtp),
             "dht-only" | "dht" => Ok(Self::DhtOnly),
+            "wan-tcp" => Ok(Self::WanTcp),
+            "wan-utp" => Ok(Self::WanUtp),
             _ => Err(format!("unknown comparison profile {value}")),
         }
     }
@@ -94,6 +98,7 @@ impl Profile {
             Self::MatchedPlain30 | Self::MatchedRc430 => Discovery::Tracker,
             Self::ProductDefault | Self::ProductUtp => Discovery::Full,
             Self::DhtOnly => Discovery::Dht,
+            Self::WanTcp | Self::WanUtp => Discovery::Direct,
         }
     }
 
@@ -102,6 +107,7 @@ impl Profile {
             Self::MatchedPlain30 => PeerEncryptionPolicy::Disabled,
             Self::MatchedRc430 => PeerEncryptionPolicy::Required,
             Self::ProductDefault | Self::ProductUtp | Self::DhtOnly => PeerEncryptionPolicy::Allow,
+            Self::WanTcp | Self::WanUtp => PeerEncryptionPolicy::Disabled,
         }
     }
 
@@ -117,6 +123,7 @@ impl Profile {
             Self::MatchedPlain30 | Self::MatchedRc430 => 30,
             Self::ProductDefault | Self::DhtOnly => 200,
             Self::ProductUtp => 30,
+            Self::WanTcp | Self::WanUtp => 1,
         }
     }
 
@@ -127,11 +134,13 @@ impl Profile {
             Self::ProductDefault => "product-default",
             Self::ProductUtp => "product-utp",
             Self::DhtOnly => "dht-only",
+            Self::WanTcp => "wan-tcp",
+            Self::WanUtp => "wan-utp",
         }
     }
 
     const fn enables_utp(self) -> bool {
-        matches!(self, Self::ProductUtp)
+        matches!(self, Self::ProductUtp | Self::WanUtp)
     }
 }
 
@@ -155,11 +164,16 @@ enum Discovery {
     Tracker,
     Dht,
     Full,
+    Direct,
 }
 
 impl Discovery {
     const fn enables_dht(self) -> bool {
         matches!(self, Self::Dht | Self::Full)
+    }
+
+    const fn enables_trackers(self) -> bool {
+        matches!(self, Self::Tracker | Self::Full)
     }
 }
 
@@ -757,6 +771,7 @@ struct EffectiveSettings {
     incoming_connections: bool,
     outgoing_tcp: bool,
     outgoing_utp: bool,
+    outgoing_tcp_fallback: bool,
     session_connection_limit: usize,
     torrent_connection_limit: usize,
     pending_dial_limit: usize,
@@ -776,11 +791,8 @@ impl EffectiveSettings {
         Self {
             network_policy: "online",
             address_families: ["ipv4", "ipv6"],
-            tracker: !matches!(profile, Profile::DhtOnly),
-            dht: matches!(
-                profile,
-                Profile::ProductDefault | Profile::ProductUtp | Profile::DhtOnly
-            ),
+            tracker: profile.discovery().enables_trackers(),
+            dht: profile.discovery().enables_dht(),
             pex: profile.peer_exchange(),
             lsd: false,
             upnp: false,
@@ -789,6 +801,7 @@ impl EffectiveSettings {
             incoming_connections: false,
             outgoing_tcp: true,
             outgoing_utp: profile.enables_utp(),
+            outgoing_tcp_fallback: matches!(profile, Profile::WanUtp),
             session_connection_limit: profile.connection_limit(),
             torrent_connection_limit: 30,
             pending_dial_limit: 30,
@@ -801,7 +814,7 @@ impl EffectiveSettings {
             upload_rate_limit_bytes_per_second: 0,
             upload_slots: 8,
             encryption: match profile {
-                Profile::MatchedPlain30 => "disabled",
+                Profile::MatchedPlain30 | Profile::WanTcp | Profile::WanUtp => "disabled",
                 Profile::MatchedRc430 => "required-rc4",
                 Profile::ProductDefault | Profile::ProductUtp | Profile::DhtOnly => "allow",
             },
@@ -1424,37 +1437,39 @@ async fn main() -> ExitCode {
     }
 }
 
-struct LiveDhtRuntime {
-    service: DhtService,
+struct LiveUdpRuntime {
+    dht: Option<DhtService>,
     utp: Option<UtpService>,
     udp: SessionUdpService,
     evidence: DhtEvidenceTracker,
 }
 
-async fn start_live_dht(enable_utp: bool) -> Result<LiveDhtRuntime, String> {
+async fn start_live_udp(enable_dht: bool, enable_utp: bool) -> Result<LiveUdpRuntime, String> {
     let ipv4 = UdpSocket::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
         .await
-        .map_err(|error| format!("bind IPv4 DHT socket: {error}"))?;
+        .map_err(|error| format!("bind IPv4 session UDP socket: {error}"))?;
     let (mut udp, transport) = SessionUdpService::start(ipv4)
         .map_err(|error| format!("start session UDP owner: {error}"))?;
     let mut evidence = DhtEvidenceTracker::default();
-    match select_global_ipv6().await {
-        Ok(address) => {
-            let ipv6 = match UdpSocket::bind(SocketAddr::from((address, 0))).await {
-                Ok(socket) => socket,
-                Err(error) => {
+    if enable_dht {
+        match select_global_ipv6().await {
+            Ok(address) => {
+                let ipv6 = match UdpSocket::bind(SocketAddr::from((address, 0))).await {
+                    Ok(socket) => socket,
+                    Err(error) => {
+                        let _ = udp.shutdown().await;
+                        return Err(format!("bind selected IPv6 DHT socket: {error}"));
+                    }
+                };
+                if let Err(error) = udp.replace_socket(ipv6).await {
                     let _ = udp.shutdown().await;
-                    return Err(format!("bind selected IPv6 DHT socket: {error}"));
+                    return Err(format!("start IPv6 session UDP generation: {error}"));
                 }
-            };
-            if let Err(error) = udp.replace_socket(ipv6).await {
-                let _ = udp.shutdown().await;
-                return Err(format!("start IPv6 session UDP generation: {error}"));
             }
-        }
-        Err(_) => {
-            evidence.ipv6_startup_error =
-                Some("global IPv6 session generation unavailable".to_owned());
+            Err(_) => {
+                evidence.ipv6_startup_error =
+                    Some("global IPv6 session generation unavailable".to_owned());
+            }
         }
     }
     let mut utp = if enable_utp {
@@ -1468,22 +1483,27 @@ async fn start_live_dht(enable_utp: bool) -> Result<LiveDhtRuntime, String> {
     } else {
         None
     };
-    let config = DhtConfig::for_network(NetworkPolicy::Online);
-    match DhtService::start_with_transport(config, transport).await {
-        Ok(service) => Ok(LiveDhtRuntime {
-            service,
-            utp,
-            udp,
-            evidence,
-        }),
-        Err(error) => {
-            if let Some(utp) = utp.take() {
-                let _ = utp.shutdown().await;
+    let dht = if enable_dht {
+        let config = DhtConfig::for_network(NetworkPolicy::Online);
+        match DhtService::start_with_transport(config, transport).await {
+            Ok(service) => Some(service),
+            Err(error) => {
+                if let Some(utp) = utp.take() {
+                    let _ = utp.shutdown().await;
+                }
+                let _ = udp.shutdown().await;
+                return Err(error.to_string());
             }
-            let _ = udp.shutdown().await;
-            Err(error.to_string())
         }
-    }
+    } else {
+        None
+    };
+    Ok(LiveUdpRuntime {
+        dht,
+        utp,
+        udp,
+        evidence,
+    })
 }
 
 async fn run(config: Config) -> ProbeResult {
@@ -1546,8 +1566,13 @@ async fn run(config: Config) -> ProbeResult {
         }
     };
 
-    let mut dht = if config.profile.discovery().enables_dht() {
-        match start_live_dht(config.profile.enables_utp()).await {
+    let mut live_udp = if config.profile.discovery().enables_dht() || config.profile.enables_utp() {
+        match start_live_udp(
+            config.profile.discovery().enables_dht(),
+            config.profile.enables_utp(),
+        )
+        .await
+        {
             Ok(runtime) => Some(runtime),
             Err(error) => {
                 return result(
@@ -1566,7 +1591,7 @@ async fn run(config: Config) -> ProbeResult {
                         outcome: "error",
                         integrity_verified: false,
                         cleanup_succeeded: false,
-                        detail: Some(format!("DHT startup failed: {error}")),
+                        detail: Some(format!("session UDP startup failed: {error}")),
                     },
                 );
             }
@@ -1574,7 +1599,7 @@ async fn run(config: Config) -> ProbeResult {
     } else {
         None
     };
-    if let Some(handle) = dht
+    if let Some(handle) = live_udp
         .as_ref()
         .and_then(|runtime| runtime.utp.as_ref().map(UtpService::handle))
     {
@@ -1635,7 +1660,9 @@ async fn run(config: Config) -> ProbeResult {
             artifact_state: ResumeArtifactState::None,
             resume_validation: ResumeValidationIntent::FastEligible,
             download_missing: true,
-            dht: dht.as_ref().map(|runtime| runtime.service.handle()),
+            dht: live_udp
+                .as_ref()
+                .and_then(|runtime| runtime.dht.as_ref().map(DhtService::handle)),
             trackers: prepared.trackers,
         };
         let checkpoints = Arc::new(ProbeCheckpointSink);
@@ -1654,8 +1681,10 @@ async fn run(config: Config) -> ProbeResult {
 
     loop {
         let elapsed = started.elapsed();
-        if let Some(runtime) = dht.as_mut() {
-            let observations = runtime.service.subscribe_observations();
+        if let Some(runtime) = live_udp.as_mut()
+            && let Some(service) = runtime.dht.as_ref()
+        {
+            let observations = service.subscribe_observations();
             runtime.evidence.sample(&observations.borrow(), elapsed);
         }
         if sink.reached(Target::Metadata)
@@ -1702,22 +1731,25 @@ async fn run(config: Config) -> ProbeResult {
             }
         }
     }
-    let dht_evidence = dht.as_mut().map(|runtime| {
-        let observations = runtime.service.subscribe_observations();
-        std::mem::take(&mut runtime.evidence).finish(&observations.borrow(), started.elapsed())
+    let dht_evidence = live_udp.as_mut().and_then(|runtime| {
+        runtime.dht.as_ref().map(|service| {
+            let observations = service.subscribe_observations();
+            std::mem::take(&mut runtime.evidence).finish(&observations.borrow(), started.elapsed())
+        })
     });
     let mut utp_evidence = None;
     let mut udp_evidence = None;
-    if let Some(mut runtime) = dht.take() {
+    if let Some(mut runtime) = live_udp.take() {
         if let Some(utp) = runtime.utp.take() {
             match tokio::time::timeout(remaining_cleanup(), utp.shutdown()).await {
                 Ok(Ok(snapshot)) => utp_evidence = Some(snapshot.into()),
                 Ok(Err(_)) | Err(_) => cleanup_succeeded = false,
             }
         }
-        if tokio::time::timeout(remaining_cleanup(), runtime.service.shutdown())
-            .await
-            .map_or(true, |result| result.is_err())
+        if let Some(service) = runtime.dht.take()
+            && tokio::time::timeout(remaining_cleanup(), service.shutdown())
+                .await
+                .map_or(true, |result| result.is_err())
         {
             cleanup_succeeded = false;
         }
@@ -1817,7 +1849,7 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
                 magnet.push_str(&peer.to_string());
                 magnet
             });
-            let trackers = if matches!(config.profile.discovery(), Discovery::Dht) {
+            let trackers = if !config.profile.discovery().enables_trackers() {
                 Vec::new()
             } else {
                 projection
@@ -1988,7 +2020,7 @@ fn result(
         effective_settings: EffectiveSettings::for_profile(config.profile),
         capabilities: Capabilities {
             network_policy: "online",
-            tracker: !matches!(config.profile.discovery(), Discovery::Dht),
+            tracker: config.profile.discovery().enables_trackers(),
             dht: config.profile.discovery().enables_dht(),
             pex: config.profile.peer_exchange(),
             incoming_connections: false,
@@ -2395,10 +2427,10 @@ mod tests {
     };
 
     use super::{
-        DownloadActivityEvent, DownloadActivitySink, EffectiveSettings, Geometry,
-        IntegerDistribution, MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot, ProbeInput,
-        ProbeSink, Profile, UtilitySample, UtilityTimeline, crosses, integer_distribution,
-        parse_args,
+        Discovery, DownloadActivityEvent, DownloadActivitySink, EffectiveSettings, Geometry,
+        IntegerDistribution, MAX_UTILITY_SAMPLES, Milestones, ObservationSnapshot,
+        PeerEncryptionPolicy, ProbeInput, ProbeSink, Profile, UtilitySample, UtilityTimeline,
+        crosses, integer_distribution, parse_args,
     };
 
     fn required_arguments() -> Vec<String> {
@@ -2479,6 +2511,32 @@ mod tests {
         assert!(!settings.incoming_connections);
         assert!(!settings.upnp);
         assert!(!EffectiveSettings::for_profile(Profile::ProductDefault).outgoing_utp);
+    }
+
+    #[test]
+    fn wan_profiles_are_direct_single_peer_and_transport_explicit() {
+        for (name, expected) in [("wan-tcp", Profile::WanTcp), ("wan-utp", Profile::WanUtp)] {
+            let mut arguments = required_arguments();
+            arguments.extend(["--profile".to_owned(), name.to_owned()]);
+            let config = parse_args(arguments).expect("direct WAN profile arguments");
+            assert_eq!(config.profile, expected);
+            assert_eq!(config.profile.discovery(), Discovery::Direct);
+            assert_eq!(config.profile.connection_limit(), 1);
+            assert!(!config.profile.peer_exchange());
+            assert_eq!(config.profile.encryption(), PeerEncryptionPolicy::Disabled);
+        }
+        let tcp = EffectiveSettings::for_profile(Profile::WanTcp);
+        assert!(tcp.outgoing_tcp);
+        assert!(!tcp.outgoing_utp);
+        assert!(!tcp.outgoing_tcp_fallback);
+        assert!(!tcp.tracker);
+        assert!(!tcp.dht);
+        let utp = EffectiveSettings::for_profile(Profile::WanUtp);
+        assert!(utp.outgoing_tcp);
+        assert!(utp.outgoing_utp);
+        assert!(utp.outgoing_tcp_fallback);
+        assert!(!utp.tracker);
+        assert!(!utp.dht);
     }
 
     #[test]

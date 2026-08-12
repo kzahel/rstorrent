@@ -31,6 +31,8 @@ CANONICAL_PROFILES = (
     "matched-rc4-30",
     "product-default",
     "dht-only",
+    "wan-tcp",
+    "wan-utp",
 )
 PROFILE_ALIASES = {
     "common": "matched-plain-30",
@@ -474,15 +476,17 @@ def normalize_profile(profile: str) -> str:
 def comparison_profile(profile: str) -> dict[str, Any]:
     profile = normalize_profile(profile)
     matched = profile in ("matched-plain-30", "matched-rc4-30")
+    wan = profile in ("wan-tcp", "wan-utp")
+    wan_utp = profile == "wan-utp"
     dht_only = profile == "dht-only"
     product = profile == "product-default"
     encryption = "required-rc4" if profile == "matched-rc4-30" else (
-        "disabled" if matched else "allow"
+        "disabled" if matched or wan else "allow"
     )
     rstorrent = {
         "network_policy": "online",
         "address_families": ["ipv4", "ipv6"],
-        "tracker": not dht_only,
+        "tracker": not (dht_only or wan),
         "dht": dht_only or product,
         "pex": product or dht_only,
         "lsd": False,
@@ -491,8 +495,11 @@ def comparison_profile(profile: str) -> dict[str, Any]:
         "web_seed": False,
         "incoming_connections": False,
         "outgoing_tcp": True,
-        "outgoing_utp": False,
-        "session_connection_limit": 30 if matched else 200,
+        "outgoing_utp": wan_utp,
+        # RSTorrent retains sequential TCP fallback in the direct-uTP
+        # diagnostic. Observed TCP makes that case invalid.
+        "outgoing_tcp_fallback": wan_utp,
+        "session_connection_limit": 1 if wan else (30 if matched else 200),
         "torrent_connection_limit": 30,
         "pending_dial_limit": 30,
         "connection_attempts_per_second": 30,
@@ -511,12 +518,12 @@ def comparison_profile(profile: str) -> dict[str, Any]:
         "enable_lsd": False,
         "enable_upnp": False,
         "enable_natpmp": False,
-        "enable_incoming_utp": False,
-        "enable_incoming_tcp": False,
-        "enable_outgoing_utp": product or dht_only,
-        "enable_outgoing_tcp": True,
-        "connections_limit": 30 if matched else 200,
-        "connection_speed": 30,
+        "enable_incoming_utp": wan_utp,
+        "enable_incoming_tcp": profile == "wan-tcp",
+        "enable_outgoing_utp": wan_utp or product or dht_only,
+        "enable_outgoing_tcp": not wan_utp,
+        "connections_limit": 1 if wan else (30 if matched else 200),
+        "connection_speed": 1 if wan else 30,
         "peer_connect_timeout": 15,
         "request_timeout": 60,
         "request_queue_time": 3,
@@ -525,23 +532,25 @@ def comparison_profile(profile: str) -> dict[str, Any]:
         "upload_rate_limit": 0,
         "unchoke_slots_limit": 8,
         "out_enc_policy": "forced" if profile == "matched-rc4-30" else (
-            "disabled" if matched else "enabled"
+            "disabled" if matched or wan else "enabled"
         ),
         "in_enc_policy": "forced" if profile == "matched-rc4-30" else (
-            "disabled" if matched else "enabled"
+            "disabled" if matched or wan else "enabled"
         ),
         "allowed_enc_level": "rc4" if profile == "matched-rc4-30" else "both",
         "prefer_rc4": profile == "matched-rc4-30",
         "pex": product or dht_only,
         "web_seed": product,
-        "tracker": not dht_only,
+        "tracker": not (dht_only or wan),
     }
     result = {
         "name": profile,
         "semantic_version": 1,
         "rstorrent": rstorrent,
         "libtorrent": libtorrent,
-        "comparison_kind": "matched" if matched else "product-capability",
+        "comparison_kind": "wan-direct" if wan else (
+            "matched" if matched else "product-capability"
+        ),
     }
     result["sha256"] = hashlib.sha256(
         json.dumps(result, sort_keys=True, separators=(",", ":")).encode()

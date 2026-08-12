@@ -176,6 +176,24 @@ class PublicCompareContractTests(unittest.TestCase):
         self.assertRegex(plain["sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(plain, comparison_profile("common"))
 
+    def test_wan_profiles_are_direct_single_peer_and_transport_exact(self) -> None:
+        tcp = comparison_profile("wan-tcp")
+        utp = comparison_profile("wan-utp")
+        for profile in (tcp, utp):
+            self.assertEqual(profile["comparison_kind"], "wan-direct")
+            self.assertEqual(profile["rstorrent"]["session_connection_limit"], 1)
+            self.assertFalse(profile["rstorrent"]["tracker"])
+            self.assertFalse(profile["rstorrent"]["dht"])
+            self.assertFalse(profile["rstorrent"]["pex"])
+            self.assertEqual(profile["libtorrent"]["connections_limit"], 1)
+            self.assertFalse(profile["libtorrent"]["enable_dht"])
+            self.assertFalse(profile["libtorrent"]["tracker"])
+        self.assertTrue(tcp["libtorrent"]["enable_outgoing_tcp"])
+        self.assertFalse(tcp["libtorrent"]["enable_outgoing_utp"])
+        self.assertFalse(utp["libtorrent"]["enable_outgoing_tcp"])
+        self.assertTrue(utp["libtorrent"]["enable_outgoing_utp"])
+        self.assertTrue(utp["rstorrent"]["outgoing_tcp_fallback"])
+
     def test_resource_math_and_cleanup_ancestry_are_bounded(self) -> None:
         payload = 1024 * 1024 * 1024
         self.assertEqual(wire_payload_ceiling(payload), payload * 3 // 2)

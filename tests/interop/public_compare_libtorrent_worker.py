@@ -116,7 +116,7 @@ def libtorrent_settings(profile: str) -> tuple[dict[str, Any], dict[str, Any]]:
         "dht": dht,
         "pex": symbolic["pex"],
         "incoming_connections": False,
-        "tcp_outgoing": True,
+        "tcp_outgoing": symbolic["enable_outgoing_tcp"],
         "utp_outgoing": symbolic["enable_outgoing_utp"],
         "web_seed": symbolic["web_seed"],
         "websocket_trackers": False,
