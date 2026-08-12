@@ -19,6 +19,7 @@ from typing import Any, TextIO
 from public_compare_contract import comparison_profile, parse_metainfo, verify_payload
 from wan_transport_fixture import Fixture, create_fixture
 from wan_transport_matrix_contract import IMPLEMENTATIONS, MIB, TRANSPORTS
+from wan_transport_resources import ResourceSampler
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -292,6 +293,7 @@ def run_leecher(
     deadline: float,
     *,
     network_scope: str = "loopback",
+    collect_resources: bool = False,
 ) -> dict[str, Any]:
     if implementation == "libtorrent":
         arguments = _fixture_arguments(fixture, deadline - time.monotonic())
@@ -314,6 +316,14 @@ def run_leecher(
             f"libtorrent {transport} leecher",
             accepts_commands=False,
         )
+        sampler = (
+            ResourceSampler.local(
+                process.process.pid, max(60, int(deadline - time.monotonic()))
+            )
+            if collect_resources
+            else None
+        )
+        resource_evidence = None
         try:
             started = process.read_event(deadline)
             ready = process.read_event(deadline)
@@ -327,6 +337,10 @@ def run_leecher(
                 ) from error
         finally:
             process.cleanup()
+            if sampler is not None:
+                resource_evidence = sampler.finish()
+        if resource_evidence is not None:
+            complete["resource_evidence"] = resource_evidence
         if (
             started.get("event") != "started"
             or ready.get("event") != "ready"
@@ -364,6 +378,14 @@ def run_leecher(
         f"RSTorrent {transport} leecher",
         accepts_commands=False,
     )
+    sampler = (
+        ResourceSampler.local(
+            process.process.pid, max(60, int(deadline - time.monotonic()))
+        )
+        if collect_resources
+        else None
+    )
+    resource_evidence = None
     try:
         result = process.read_event(deadline)
         try:
@@ -377,6 +399,8 @@ def run_leecher(
             ) from error
     finally:
         process.cleanup()
+        if sampler is not None:
+            resource_evidence = sampler.finish()
     if (
         result.get("outcome") != "milestone_reached"
         or result.get("cleanup_succeeded") is not True
@@ -419,6 +443,7 @@ def run_leecher(
             "active_payload_seconds": round(active, 6),
         },
         "rstorrent": result,
+        "resource_evidence": resource_evidence,
     }
 
 

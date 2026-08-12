@@ -25,6 +25,7 @@ from wan_transport_matrix_contract import (
     TRANSPORTS,
     CaseKey,
     Journal,
+    MatrixContractError,
     assert_redacted,
     manifest,
     pending_cases,
@@ -41,6 +42,7 @@ from wan_transport_roles_controlled import (
     start_seed,
     stop_seed,
 )
+from wan_transport_resources import ResourceError, ResourceSampler
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -247,6 +249,26 @@ def _remote_role(host: str, command: str, label: str, accepts_commands: bool) ->
     )
 
 
+def remote_role_pid(host: str, pid_file: str) -> int:
+    if not REMOTE_RUN_PATTERN.fullmatch(str(PurePosixPath(pid_file).parent)):
+        raise WanMatrixError("remote role PID path escaped its run")
+    completed = run_ssh(
+        host,
+        "set -eu; attempts=0; "
+        f'while test ! -s "{pid_file}"; do '
+        "attempts=$((attempts + 1)); test $attempts -le 100; sleep 0.1; done; "
+        f'cat "{pid_file}"',
+        timeout_seconds=30,
+    )
+    try:
+        pid = int(completed.stdout.strip())
+    except ValueError as error:
+        raise WanMatrixError("remote role PID is malformed") from error
+    if pid <= 1:
+        raise WanMatrixError("remote role PID is outside its bound")
+    return pid
+
+
 def _remote_fixture_arguments(fixture: Fixture, timeout_seconds: float) -> str:
     root = f"{REMOTE_FIXTURES}/{fixture.size_mib}m"
     return (
@@ -266,10 +288,13 @@ def start_remote_seed(
     fixture: Fixture,
     remote_run: str,
     deadline: float,
-) -> tuple[RoleProcess, int, dict[str, Any]]:
+) -> tuple[RoleProcess, int, int, dict[str, Any]]:
     fixture_root = f"{REMOTE_FIXTURES}/{fixture.size_mib}m"
+    owner_prefix = f'printf "%s\\n" $$ > "{remote_run}/seed.pid"; '
     if implementation == "libtorrent":
         command = (
+            owner_prefix
+            +
             f'exec "{REMOTE_PYTHON}" '
             f'"{REMOTE_SOURCE}/tests/interop/wan_transport_libtorrent_role.py" seed '
             f"{_remote_fixture_arguments(fixture, deadline - time.monotonic())} "
@@ -285,6 +310,8 @@ def start_remote_seed(
     elif implementation == "rstorrent":
         selected = "--utp" if transport == "utp" else "--tcp-only"
         command = (
+            owner_prefix
+            +
             f'exec "{REMOTE_SOURCE}/target/release/rstorrent-incoming-seed" '
             f'--profile-root "{remote_run}/seed-profile" '
             f'--storage-root "{fixture_root}/seed" '
@@ -304,7 +331,7 @@ def start_remote_seed(
     if not isinstance(port, int) or not 1 <= port <= 65_535:
         process.cleanup()
         raise WanMatrixError("remote seed reported an invalid listener port")
-    return process, port, ready
+    return process, port, remote_role_pid(host, f"{remote_run}/seed.pid"), ready
 
 
 def _rstorrent_timing(result: dict[str, Any]) -> dict[str, float]:
@@ -363,8 +390,11 @@ def run_remote_leecher(
     deadline: float,
 ) -> dict[str, Any]:
     output_root = f"{remote_run}/leech"
+    owner_prefix = f'printf "%s\\n" $$ > "{remote_run}/leech.pid"; '
     if implementation == "libtorrent":
         command = (
+            owner_prefix
+            +
             f'exec "{REMOTE_PYTHON}" '
             f'"{REMOTE_SOURCE}/tests/interop/wan_transport_libtorrent_role.py" leech '
             f"{_remote_fixture_arguments(fixture, deadline - time.monotonic())} "
@@ -372,6 +402,12 @@ def run_remote_leecher(
             f"--transport {transport} --peer-address {peer_address} --peer-port {peer_port}"
         )
         process = _remote_role(host, command, "remote libtorrent leecher", False)
+        sampler = ResourceSampler.remote(
+            host,
+            remote_role_pid(host, f"{remote_run}/leech.pid"),
+            min(43_260, max(60, int(deadline - time.monotonic()))),
+        )
+        resource_evidence = None
         try:
             started = process.read_event(deadline)
             ready = process.read_event(deadline)
@@ -379,6 +415,7 @@ def run_remote_leecher(
             process.wait_success(deadline)
         finally:
             process.cleanup()
+            resource_evidence = sampler.finish()
         if not (
             started.get("event") == "started"
             and ready.get("event") == "ready"
@@ -389,11 +426,14 @@ def run_remote_leecher(
         return {
             "timing": complete.get("timing"),
             "transport_evidence": complete.get("libtorrent_stats"),
+            "resource_evidence": resource_evidence,
         }
     if implementation != "rstorrent":
         raise WanMatrixError("remote leecher implementation is unknown")
     profile = comparison_profile(f"wan-{transport}")
     command = (
+        owner_prefix
+        +
         f'exec "{REMOTE_SOURCE}/target/release/rstorrent-public-probe" '
         f'--metainfo "{REMOTE_FIXTURES}/{fixture.size_mib}m/fixture.torrent" '
         f"--expected-info-hash {fixture.info_hash} "
@@ -404,11 +444,18 @@ def run_remote_leecher(
         f"--peer-hint {peer_address}:{peer_port}"
     )
     process = _remote_role(host, command, "remote RSTorrent leecher", False)
+    sampler = ResourceSampler.remote(
+        host,
+        remote_role_pid(host, f"{remote_run}/leech.pid"),
+        min(43_260, max(60, int(deadline - time.monotonic()))),
+    )
+    resource_evidence = None
     try:
         result = process.read_event(deadline)
         process.wait_success(deadline)
     finally:
         process.cleanup()
+        resource_evidence = sampler.finish()
     if not (
         result.get("outcome") == "milestone_reached"
         and result.get("cleanup_succeeded") is True
@@ -424,6 +471,7 @@ def run_remote_leecher(
     return {
         "timing": _rstorrent_timing(result),
         "transport_evidence": _rstorrent_transport_evidence(result),
+        "resource_evidence": resource_evidence,
     }
 
 
@@ -496,6 +544,8 @@ def execute_case(
     mapping_protocol = "TCP" if case.transport == "tcp" else "UDP"
     cleanup_errors: list[str] = []
     stopped: dict[str, Any] | None = None
+    seed_sampler: ResourceSampler | None = None
+    seed_resource_evidence: dict[str, Any] | None = None
     try:
         remote_run = create_remote_run(host)
         if case.direction == "local-seed":
@@ -508,16 +558,25 @@ def execute_case(
                 deadline,
                 network_scope="wan",
             )
+            seed_sampler = ResourceSampler.local(
+                seed_process.process.pid,
+                min(43_260, max(60, int(deadline - time.monotonic()))),
+            )
             mapping_attempted = True
             mapping = add_mapping(mapping_port, mapping_protocol)
         else:
-            seed_process, mapping_port, _ = start_remote_seed(
+            seed_process, mapping_port, seed_pid, _ = start_remote_seed(
                 host,
                 case.seed,
                 case.transport,
                 fixture,
                 remote_run,
                 deadline,
+            )
+            seed_sampler = ResourceSampler.remote(
+                host,
+                seed_pid,
+                min(43_260, max(60, int(deadline - time.monotonic()))),
             )
             mapping_attempted = True
             mapping = remote_mapping(host, "map", mapping_port, mapping_protocol)
@@ -553,6 +612,7 @@ def execute_case(
                 binaries,
                 deadline,
                 network_scope="wan",
+                collect_resources=True,
             )
             descriptor = parse_metainfo(fixture.metainfo.read_bytes())
             verification = verify_payload(descriptor, local_output)
@@ -565,6 +625,7 @@ def execute_case(
                     if case.leech == "libtorrent"
                     else _rstorrent_transport_evidence(local["rstorrent"])
                 ),
+                "resource_evidence": local.get("resource_evidence"),
             }
         stopped = stop_seed(
             seed_process,
@@ -574,6 +635,9 @@ def execute_case(
             deadline,
         )
         seed_process = None
+        if seed_sampler is not None:
+            seed_resource_evidence = seed_sampler.finish()
+            seed_sampler = None
         return {
             "timing": leech["timing"],
             "integrity": {
@@ -585,6 +649,10 @@ def execute_case(
             "seed_transport_evidence": seed_transport_evidence(
                 stopped, case.seed, case.transport
             ),
+            "resources": {
+                "seed": seed_resource_evidence,
+                "leech": leech.get("resource_evidence"),
+            },
             "route_class": "ordinary-internet",
             "mapping": {
                 "verified": True,
@@ -608,6 +676,8 @@ def execute_case(
                 seed_process.cleanup()
             except BaseException:
                 cleanup_errors.append("seed-process")
+        if seed_sampler is not None:
+            seed_sampler.cleanup()
         if mapping_attempted and mapping_port is not None:
             try:
                 if case.direction == "local-seed":
@@ -683,7 +753,13 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
             }
         except WanMatrixCleanupError:
             raise
-        except (ControlledRoleError, WanMatrixError, OSError, subprocess.SubprocessError) as error:
+        except (
+            ControlledRoleError,
+            ResourceError,
+            WanMatrixError,
+            OSError,
+            subprocess.SubprocessError,
+        ) as error:
             record = {
                 "schema_version": 1,
                 "event": "case-terminal",
@@ -743,7 +819,14 @@ def main() -> int:
             raise WanMatrixError("case limit is outside its bound")
         print(json.dumps(run_matrix(arguments), indent=2, sort_keys=True))
         return 0
-    except (ControlledRoleError, WanMatrixError, OSError, subprocess.SubprocessError) as error:
+    except (
+        ControlledRoleError,
+        MatrixContractError,
+        ResourceError,
+        WanMatrixError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as error:
         print(f"WAN matrix failed: {error}", file=sys.stderr)
         return 1
 
