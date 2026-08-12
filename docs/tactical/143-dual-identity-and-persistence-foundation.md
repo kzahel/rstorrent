@@ -1,7 +1,8 @@
 # Tactical 143: Dual Identity And Persistence Foundation
 
-Status: **Active.** Maintainer direction on 2026-08-12 authorizes end-to-end
-implementation with logical commits. Tactical
+Status: **Active through the pure identity-value gate.** Maintainer direction
+on 2026-08-12 authorizes end-to-end implementation with logical commits.
+Tactical
 [`142`](142-wan-transport-performance-matrix.md) is paused at its recorded
 analysis checkpoint, and this tactical is the sole authoritative **Now**.
 
@@ -504,6 +505,30 @@ The audit classifies every `info_hash`, `torrent_id`, and `[u8; 20]` occurrence
 by semantic role before replacement. It must not mechanically rename DHT node
 IDs, peer IDs, v1 piece hashes, or unrelated SHA-1 fields.
 
+### Semantic inventory result
+
+The 2026-08-12 production-source audit classifies the current occurrences as
+follows. Test, diagnostic-bin, and interop-fixture occurrences follow the
+production owner they construct rather than establishing another identity
+meaning.
+
+| Meaning | Current owners | Foundation action |
+| --- | --- | --- |
+| Full protocol identity | protocol metainfo, magnet and metadata values; session source authorization | use `V1InfoHash` now and nonempty `InfoHashes` at shared owner boundaries |
+| Explicit 20-byte wire key | peer handshake, tracker requests, DHT get/announce, MSE `skey`, incoming routing and peer picking | require `SwarmKey` selection before the existing exact byte codec |
+| Stable torrent owner | session rows/receipts/queue, application maps/generations, engine registration maps, upload scheduling and bandwidth ownership | replace with `TorrentId`; never recover owner meaning from wire bytes |
+| Artifact identity and namespace | have state, part header, staging/parts paths, storage instance IDs, path/SAF cleanup plans | use `TorrentId` plus `ContentFingerprint` and the version-2 formats |
+| Retained genuine 20-byte values | peer IDs, v1 piece hashes, DHT node IDs/token SHA-1, MSE derived hashes, allowed-fast/picker derivation and diagnostic payload SHA-1 | retain the protocol-defined byte shape; wrap only when an existing typed owner already applies |
+| Presentation/export | `torrent_id` routes, JSON/schema/TypeScript/UniFFI/Kotlin values, diagnostics and magnet export | route with canonical opaque ID and expose full tagged protocol hashes separately |
+
+The first source re-open reconfirmed BEP 52's full-SHA-256 authority and
+wire-only truncation, BEP 9's full `btmh`, and the pinned libtorrent alias,
+metadata-conflict, magnet and resume cases already named above. The managed
+external checkouts remain at their exact pins. The JSTorrent sibling remains
+at the recorded exact commit; its worktree has unrelated pre-existing
+attachment and documentation changes, which were not modified or used as
+source material.
+
 ## Implementation Stages And Gates
 
 1. **Inventory and baseline:** classify identity uses, record exact focused
@@ -537,6 +562,36 @@ IDs, peer IDs, v1 piece hashes, or unrelated SHA-1 fields.
 Each stage lands only after its focused tests pass. Intermediate commits may
 not claim a usable mixed old/new profile; the implementation branch remains a
 single replacement epoch and the final baseline proves the integrated shape.
+
+## Execution Checkpoint
+
+Stages 1 and 2 are complete. The exact pinned BEP and libtorrent sources and
+tests named above were re-opened, the current Rust identity occurrences were
+classified by semantic role, and no source or fixture was copied. The new
+runtime-free protocol values preserve all-zero hashes as present, reject an
+empty identity set, retain full 32-byte v2 equality, and require an explicit
+version-tagged wire projection. The engine now owns canonical nonzero
+`TorrentId`, exact raw-info `ContentFingerprint`, and a task-free registry
+bounded at 1,024 owners and 2,048 aliases. Registry insertion and expansion
+are atomic on conflict; equal v1/truncated-v2 bytes remain separate; and a v2
+truncation collision is ambiguous until membership changes.
+
+Validation completed at this checkpoint:
+
+- `cargo test -p rstorrent-protocol -p rstorrent-engine
+  -p rstorrent-session`;
+- `cargo clippy -p rstorrent-protocol -p rstorrent-engine --lib --
+  -D warnings` and `cargo fmt --all -- --check`;
+- `npm run generate --prefix clients/web`, `npm run typecheck --prefix
+  clients/web`, and `npm run test --prefix clients/web` with 247 passing and
+  two skipped tests; and
+- `experiments/android-engine-bootstrap/build.sh`, including both supported
+  native ABIs, regenerated UniFFI bindings, Kotlin unit tests, and the debug
+  APK.
+
+No runtime or persistence consumer uses the new types yet, no input behavior
+changed, and BEP 52 remains unsupported. The next executable stage is the
+schema-19 catalog/reset boundary.
 
 ## Validation Matrix
 

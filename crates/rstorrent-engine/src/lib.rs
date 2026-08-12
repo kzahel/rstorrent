@@ -10,6 +10,7 @@ mod checkpoint;
 pub mod dht;
 mod driver;
 mod http_tracker;
+mod identity;
 mod incoming;
 mod metadata_seed;
 mod metrics;
@@ -90,6 +91,10 @@ pub use driver::{
 #[cfg(feature = "test-platform-root")]
 #[doc(hidden)]
 pub use http_tracker::install_test_platform_root;
+pub use identity::{
+    ContentFingerprint, IdentityLookup, IdentityMutation, IdentityRegistry, IdentityRegistryError,
+    MAX_IDENTITY_ALIASES, MAX_TORRENT_OWNERS, TorrentId, TorrentIdError, WireIdentityLookup,
+};
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,
     DEFAULT_INCOMING_KEEPALIVE_INTERVAL, DEFAULT_INCOMING_NO_REQUEST_TIMEOUT,
