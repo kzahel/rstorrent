@@ -1,36 +1,55 @@
 use std::error::Error;
 use std::fmt;
 
+use rstorrent_engine::{ContentFingerprint, TorrentId};
 use rstorrent_protocol::metainfo::MAX_METAINFO_PIECES;
 
 const HAVE_MAGIC: &[u8; 8] = b"RSTHAVE\0";
-const HAVE_VERSION: u16 = 1;
-const HAVE_HEADER_LENGTH: usize = 8 + 2 + 20 + 4;
+const HAVE_VERSION: u16 = 2;
+const HAVE_HEADER_LENGTH: usize = 8 + 2 + 16 + 32 + 4;
 pub const MAX_DURABLE_PIECES: usize = MAX_METAINFO_PIECES;
 pub const MAX_DURABLE_HAVE_STATE_BYTES: usize = HAVE_HEADER_LENGTH + MAX_DURABLE_PIECES.div_ceil(8);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HaveState {
-    info_hash: [u8; 20],
+    torrent_id: TorrentId,
+    content_fingerprint: ContentFingerprint,
     pieces: Vec<bool>,
 }
 
 impl HaveState {
-    pub fn empty(info_hash: [u8; 20], piece_count: usize) -> Result<Self, HaveError> {
+    pub fn empty(
+        torrent_id: TorrentId,
+        content_fingerprint: ContentFingerprint,
+        piece_count: usize,
+    ) -> Result<Self, HaveError> {
         validate_piece_count(piece_count)?;
         Ok(Self {
-            info_hash,
+            torrent_id,
+            content_fingerprint,
             pieces: vec![false; piece_count],
         })
     }
 
-    pub fn from_pieces(info_hash: [u8; 20], pieces: Vec<bool>) -> Result<Self, HaveError> {
+    pub fn from_pieces(
+        torrent_id: TorrentId,
+        content_fingerprint: ContentFingerprint,
+        pieces: Vec<bool>,
+    ) -> Result<Self, HaveError> {
         validate_piece_count(pieces.len())?;
-        Ok(Self { info_hash, pieces })
+        Ok(Self {
+            torrent_id,
+            content_fingerprint,
+            pieces,
+        })
     }
 
-    pub fn info_hash(&self) -> [u8; 20] {
-        self.info_hash
+    pub fn torrent_id(&self) -> TorrentId {
+        self.torrent_id
+    }
+
+    pub fn content_fingerprint(&self) -> ContentFingerprint {
+        self.content_fingerprint
     }
 
     pub fn pieces(&self) -> &[bool] {
@@ -58,7 +77,8 @@ impl HaveState {
         let mut bytes = Vec::with_capacity(HAVE_HEADER_LENGTH + self.pieces.len().div_ceil(8));
         bytes.extend_from_slice(HAVE_MAGIC);
         bytes.extend_from_slice(&HAVE_VERSION.to_be_bytes());
-        bytes.extend_from_slice(&self.info_hash);
+        bytes.extend_from_slice(self.torrent_id.as_bytes());
+        bytes.extend_from_slice(self.content_fingerprint.as_bytes());
         bytes.extend_from_slice(&(self.pieces.len() as u32).to_be_bytes());
         bytes.resize(HAVE_HEADER_LENGTH + self.pieces.len().div_ceil(8), 0);
         for (index, verified) in self.pieces.iter().enumerate() {
@@ -71,7 +91,8 @@ impl HaveState {
 
     pub fn decode(
         bytes: &[u8],
-        expected_info_hash: [u8; 20],
+        expected_torrent_id: TorrentId,
+        expected_content_fingerprint: ContentFingerprint,
         expected_piece_count: usize,
     ) -> Result<Self, HaveError> {
         validate_piece_count(expected_piece_count)?;
@@ -89,14 +110,25 @@ impl HaveState {
         if version != HAVE_VERSION {
             return Err(HaveError::UnsupportedVersion(version));
         }
-        let info_hash: [u8; 20] = bytes[10..30]
-            .try_into()
-            .expect("fixed info-hash field is twenty bytes");
-        if info_hash != expected_info_hash {
-            return Err(HaveError::InfoHashMismatch);
+        let torrent_id = TorrentId::new(
+            bytes[10..26]
+                .try_into()
+                .expect("fixed torrent ID field is sixteen bytes"),
+        )
+        .map_err(|_| HaveError::InvalidTorrentId)?;
+        if torrent_id != expected_torrent_id {
+            return Err(HaveError::TorrentIdMismatch);
+        }
+        let content_fingerprint = ContentFingerprint::from_digest(
+            bytes[26..58]
+                .try_into()
+                .expect("fixed content fingerprint field is thirty-two bytes"),
+        );
+        if content_fingerprint != expected_content_fingerprint {
+            return Err(HaveError::ContentFingerprintMismatch);
         }
         let piece_count = u32::from_be_bytes(
-            bytes[30..34]
+            bytes[58..62]
                 .try_into()
                 .expect("fixed piece-count field is four bytes"),
         ) as usize;
@@ -122,7 +154,11 @@ impl HaveState {
         for (index, piece) in pieces.iter_mut().enumerate() {
             *piece = bytes[HAVE_HEADER_LENGTH + index / 8] & (1 << (7 - index % 8)) != 0;
         }
-        Ok(Self { info_hash, pieces })
+        Ok(Self {
+            torrent_id,
+            content_fingerprint,
+            pieces,
+        })
     }
 }
 
@@ -133,7 +169,9 @@ pub enum HaveError {
     InvalidLength,
     InvalidMagic,
     UnsupportedVersion(u16),
-    InfoHashMismatch,
+    InvalidTorrentId,
+    TorrentIdMismatch,
+    ContentFingerprintMismatch,
     PieceCountMismatch { expected: usize, actual: usize },
     NonzeroPadding,
 }
@@ -155,7 +193,11 @@ impl fmt::Display for HaveError {
             Self::UnsupportedVersion(version) => {
                 write!(formatter, "have state version {version} is unsupported")
             }
-            Self::InfoHashMismatch => write!(formatter, "have state info hash does not match"),
+            Self::InvalidTorrentId => write!(formatter, "have state torrent ID is invalid"),
+            Self::TorrentIdMismatch => write!(formatter, "have state torrent ID does not match"),
+            Self::ContentFingerprintMismatch => {
+                write!(formatter, "have state content fingerprint does not match")
+            }
             Self::PieceCountMismatch { expected, actual } => write!(
                 formatter,
                 "have state piece count {actual} does not match expected {expected}"
@@ -179,14 +221,19 @@ fn validate_piece_count(piece_count: usize) -> Result<(), HaveError> {
 
 #[cfg(test)]
 mod tests {
+    use rstorrent_engine::{ContentFingerprint, TorrentId};
+
     use super::{
         HAVE_HEADER_LENGTH, HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES,
     };
 
     #[test]
     fn round_trips_boundary_bit_counts() {
+        let owner = TorrentId::new([7; 16]).expect("owner");
+        let fingerprint = ContentFingerprint::from_digest([8; 32]);
         for piece_count in [1, 7, 8, 9, 15, 16, 17] {
-            let mut state = HaveState::empty([7; 20], piece_count).expect("bounded state");
+            let mut state =
+                HaveState::empty(owner, fingerprint, piece_count).expect("bounded state");
             state.set(0, true).expect("first piece");
             state
                 .set(piece_count - 1, true)
@@ -194,7 +241,7 @@ mod tests {
             let encoded = state.encode();
             assert_eq!(encoded.len(), HAVE_HEADER_LENGTH + piece_count.div_ceil(8));
             assert_eq!(
-                HaveState::decode(&encoded, [7; 20], piece_count).expect("decode"),
+                HaveState::decode(&encoded, owner, fingerprint, piece_count).expect("decode"),
                 state
             );
         }
@@ -202,44 +249,63 @@ mod tests {
 
     #[test]
     fn rejects_shape_identity_version_and_padding() {
-        let state = HaveState::empty([1; 20], 9).expect("bounded state");
+        let owner = TorrentId::new([1; 16]).expect("owner");
+        let other_owner = TorrentId::new([2; 16]).expect("other owner");
+        let fingerprint = ContentFingerprint::from_digest([3; 32]);
+        let other_fingerprint = ContentFingerprint::from_digest([4; 32]);
+        let state = HaveState::empty(owner, fingerprint, 9).expect("bounded state");
         let encoded = state.encode();
 
         assert_eq!(
-            HaveState::decode(&encoded, [2; 20], 9),
-            Err(HaveError::InfoHashMismatch)
+            HaveState::decode(&encoded, other_owner, fingerprint, 9),
+            Err(HaveError::TorrentIdMismatch)
+        );
+        assert_eq!(
+            HaveState::decode(&encoded, owner, other_fingerprint, 9),
+            Err(HaveError::ContentFingerprintMismatch)
         );
         assert!(matches!(
-            HaveState::decode(&encoded, [1; 20], 8),
+            HaveState::decode(&encoded, owner, fingerprint, 8),
             Err(HaveError::PieceCountMismatch { .. })
         ));
 
         let mut invalid = encoded.clone();
-        invalid[8..10].copy_from_slice(&2_u16.to_be_bytes());
+        invalid[8..10].copy_from_slice(&3_u16.to_be_bytes());
         assert_eq!(
-            HaveState::decode(&invalid, [1; 20], 9),
-            Err(HaveError::UnsupportedVersion(2))
+            HaveState::decode(&invalid, owner, fingerprint, 9),
+            Err(HaveError::UnsupportedVersion(3))
         );
 
         let mut invalid = encoded;
         *invalid.last_mut().expect("bitfield byte") = 1;
         assert_eq!(
-            HaveState::decode(&invalid, [1; 20], 9),
+            HaveState::decode(&invalid, owner, fingerprint, 9),
             Err(HaveError::NonzeroPadding)
+        );
+
+        let mut zero_owner = state.encode();
+        zero_owner[10..26].fill(0);
+        assert_eq!(
+            HaveState::decode(&zero_owner, owner, fingerprint, 9),
+            Err(HaveError::InvalidTorrentId)
         );
     }
 
     #[test]
     fn accepts_exact_durable_piece_boundary_and_rejects_the_next_piece() {
-        let state = HaveState::empty([9; 20], MAX_DURABLE_PIECES).expect("exact maximum");
+        let owner = TorrentId::new([9; 16]).expect("owner");
+        let fingerprint = ContentFingerprint::from_digest([10; 32]);
+        let state =
+            HaveState::empty(owner, fingerprint, MAX_DURABLE_PIECES).expect("exact maximum");
         let encoded = state.encode();
         assert_eq!(encoded.len(), MAX_DURABLE_HAVE_STATE_BYTES);
         assert_eq!(
-            HaveState::decode(&encoded, [9; 20], MAX_DURABLE_PIECES).expect("decode maximum"),
+            HaveState::decode(&encoded, owner, fingerprint, MAX_DURABLE_PIECES)
+                .expect("decode maximum"),
             state
         );
         assert_eq!(
-            HaveState::empty([9; 20], MAX_DURABLE_PIECES + 1),
+            HaveState::empty(owner, fingerprint, MAX_DURABLE_PIECES + 1),
             Err(HaveError::InvalidPieceCount {
                 actual: MAX_DURABLE_PIECES + 1,
                 maximum: MAX_DURABLE_PIECES,

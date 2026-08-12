@@ -453,6 +453,7 @@ impl ApplicationService {
                 )?
             }
         };
+        let profile_reset_report = store.pending_profile_reset_report()?;
         let mut snapshot = store.snapshot()?;
         let active_client_settings = snapshot.client_settings.clone();
         let stored_storage_roots = store.storage_roots()?;
@@ -576,6 +577,26 @@ impl ApplicationService {
                 ("persistence_mode", config.persistence.diagnostic_name()),
             ],
         )?;
+        if let Some(report) = profile_reset_report {
+            let previous_schema_version = report.previous_schema_version.to_string();
+            let discarded_categories = report.discarded_categories.join(",");
+            let database_basenames = report.database_basenames_considered.join(",");
+            let external_payload_modified = report.external_payload_modified.to_string();
+            service.views.record_diagnostic(
+                DiagnosticSeverity::Warning,
+                category::LIFECYCLE_SESSION,
+                "profile_catalog_reset",
+                None,
+                "Pre-release session catalog was reset for the identity format epoch",
+                &[
+                    ("previous_schema", &previous_schema_version),
+                    ("discarded", &discarded_categories),
+                    ("database_files", &database_basenames),
+                    ("external_payload_modified", &external_payload_modified),
+                ],
+            )?;
+            service.store_mut()?.acknowledge_profile_reset_report()?;
+        }
         if let Some(detail) = dht_state_warning {
             service.views.record_diagnostic(
                 DiagnosticSeverity::Warning,
@@ -4426,8 +4447,12 @@ impl DownloadCheckpointSink for StoreCheckpointSink {
         let have = resume
             .have
             .ok_or_else(|| "metadata checkpoint did not create have state".to_owned())?;
-        let replacement = HaveState::from_pieces(have.info_hash(), verified_pieces.to_vec())
-            .map_err(|error| error.to_string())?;
+        let replacement = HaveState::from_pieces(
+            have.torrent_id(),
+            have.content_fingerprint(),
+            verified_pieces.to_vec(),
+        )
+        .map_err(|error| error.to_string())?;
         self.store().and_then(|mut store| {
             store
                 .complete_recheck_generation(&self.torrent_id, generation, &replacement)

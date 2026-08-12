@@ -18,6 +18,7 @@ mod file_views;
 mod have;
 mod incoming_seeding;
 mod media;
+mod profile_reset;
 mod reachability;
 mod session_network;
 mod session_utp;
@@ -57,6 +58,7 @@ pub use media::{
     MediaCapabilityLease, MediaFileAvailability, MediaOriginError, MediaRangeError, MediaReadError,
     MediaResolveError, MediaResourceSnapshot, MediaUrlOutcome, MediaUrlResponse,
 };
+pub use profile_reset::ProfileResetReport;
 pub use reachability::Ipv6PinholeDiagnosticResult;
 pub use rstorrent_engine::{
     DownloadResourceLimits, IncomingPeerServiceSnapshot, IncomingTcpBootstrap, NetworkConfig,

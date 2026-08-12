@@ -1,15 +1,6 @@
-//! SQLite schema facts and the newest bounded migration.
-//!
-//! Legacy migrations remain next to their one-off projection helpers in
-//! `store` for now. New schema work enters here so queue/state evolution does
-//! not further expand the store's command and projection owner.
+//! SQLite schema facts for the fresh dual-identity catalog epoch.
 
-use rusqlite::Connection;
-
-use crate::settings::{migrate_client_settings_to_v17, migrate_client_settings_to_v18};
-use crate::store::StoreError;
-
-pub(crate) const SCHEMA_VERSION: i64 = 18;
+pub(crate) const SCHEMA_VERSION: i64 = 19;
 
 pub(crate) const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -46,8 +37,9 @@ pub(crate) const DHT_TABLES_SQL: &str = "CREATE TABLE dht_state (
      ) WITHOUT ROWID;";
 
 pub(crate) const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
-        info_hash BLOB PRIMARY KEY
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
+        torrent_id BLOB PRIMARY KEY CHECK (
+            length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+        ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
         operation_id TEXT NOT NULL UNIQUE
             CHECK (length(operation_id) BETWEEN 1 AND 128),
         data_policy TEXT NOT NULL
@@ -60,8 +52,9 @@ pub(crate) const REMOVAL_TABLE_SQL: &str = "CREATE TABLE removal_jobs (
      ) WITHOUT ROWID;";
 
 pub(crate) const SOURCE_TABLES_SQL: &str = "CREATE TABLE torrent_source (
-        info_hash BLOB PRIMARY KEY
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
+        torrent_id BLOB PRIMARY KEY CHECK (
+            length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+        ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
         kind TEXT NOT NULL CHECK (kind IN ('magnet', 'metainfo')),
         fidelity TEXT NOT NULL CHECK (fidelity IN ('verbatim', 'canonicalized')),
         magnet TEXT CHECK (magnet IS NULL OR length(magnet) <= 16384),
@@ -74,89 +67,30 @@ pub(crate) const SOURCE_TABLES_SQL: &str = "CREATE TABLE torrent_source (
         )
      ) WITHOUT ROWID;
      CREATE TABLE torrent_trackers (
-        info_hash BLOB NOT NULL
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
+        torrent_id BLOB NOT NULL CHECK (
+            length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+        ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
         tier INTEGER NOT NULL CHECK (tier BETWEEN 0 AND 999993),
         position INTEGER NOT NULL CHECK (position BETWEEN 0 AND 999993),
         url TEXT NOT NULL CHECK (length(url) BETWEEN 1 AND 67108864),
         transport TEXT NOT NULL CHECK (transport IN ('udp', 'http', 'https')),
         source TEXT NOT NULL CHECK (source IN ('magnet', 'metainfo')),
-        PRIMARY KEY (info_hash, tier, position),
-        UNIQUE (info_hash, url)
+        PRIMARY KEY (torrent_id, tier, position),
+        UNIQUE (torrent_id, url)
      ) WITHOUT ROWID;
      CREATE TABLE torrent_peer_hints (
-        info_hash BLOB NOT NULL
-            REFERENCES torrents(info_hash) ON DELETE CASCADE,
+        torrent_id BLOB NOT NULL CHECK (
+            length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+        ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
         position INTEGER NOT NULL CHECK (position BETWEEN 0 AND 31),
         host TEXT NOT NULL CHECK (length(host) BETWEEN 1 AND 253),
         port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
         source TEXT NOT NULL CHECK (source = 'magnet'),
-        PRIMARY KEY (info_hash, position),
-        UNIQUE (info_hash, host, port)
+        PRIMARY KEY (torrent_id, position),
+        UNIQUE (torrent_id, host, port)
      ) WITHOUT ROWID;";
 
 pub(crate) const DOWNLOAD_QUEUE_INDEX_SQL: &str =
     "CREATE UNIQUE INDEX IF NOT EXISTS download_queue_order
      ON torrents(download_queue_position)
      WHERE download_queue_position IS NOT NULL;";
-
-pub(crate) fn migrate_to_v17(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v17(&transaction)?;
-    let has_queue_position = {
-        let mut statement = transaction.prepare("PRAGMA table_info(torrents)")?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-        columns
-            .collect::<Result<Vec<_>, _>>()?
-            .iter()
-            .any(|column| column == "download_queue_position")
-    };
-    if !has_queue_position {
-        transaction.execute_batch(
-            "ALTER TABLE torrents ADD COLUMN download_queue_position INTEGER;
-             WITH queued AS (
-            SELECT info_hash,
-                   (ROW_NUMBER() OVER (
-                       ORDER BY created_revision, info_hash
-                   ) - 1) * 1024 AS position
-            FROM torrents
-            WHERE payload_state <> 'final_owned'
-         )
-         UPDATE torrents
-         SET download_queue_position = (
-             SELECT position FROM queued
-             WHERE queued.info_hash = torrents.info_hash
-         )
-             WHERE info_hash IN (SELECT info_hash FROM queued);",
-        )?;
-    }
-    transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
-    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-pub(crate) fn migrate_to_v18(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v18(&transaction)?;
-    let columns = {
-        let mut statement = transaction.prepare("PRAGMA table_info(torrents)")?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-        columns.collect::<Result<Vec<_>, _>>()?
-    };
-    if !columns.iter().any(|column| column == "upload_rate_limit") {
-        transaction.execute_batch(
-            "ALTER TABLE torrents ADD COLUMN upload_rate_limit INTEGER NOT NULL DEFAULT 0
-             CHECK (upload_rate_limit = 0 OR upload_rate_limit BETWEEN 1024 AND 4294967295);",
-        )?;
-    }
-    if !columns.iter().any(|column| column == "download_rate_limit") {
-        transaction.execute_batch(
-            "ALTER TABLE torrents ADD COLUMN download_rate_limit INTEGER NOT NULL DEFAULT 0
-             CHECK (download_rate_limit = 0 OR download_rate_limit BETWEEN 1024 AND 4294967295);",
-        )?;
-    }
-    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    transaction.commit()?;
-    Ok(())
-}

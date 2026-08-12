@@ -1,5 +1,6 @@
 //! Transactional durable ordering for incomplete downloads.
 
+use rstorrent_engine::TorrentId;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::store::StoreError;
@@ -14,37 +15,37 @@ pub(crate) enum QueueEdge {
 
 pub(crate) fn append(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
 ) -> Result<bool, StoreError> {
-    place_missing(transaction, info_hash, QueueEdge::Bottom)
+    place_missing(transaction, torrent_id, QueueEdge::Bottom)
 }
 
 pub(crate) fn place_missing(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     edge: QueueEdge,
 ) -> Result<bool, StoreError> {
-    let current = queue_position(transaction, info_hash)?;
+    let current = queue_position(transaction, torrent_id)?;
     if current.is_some() {
         return Ok(false);
     }
     let position = edge_position(transaction, edge)?;
     let updated = transaction.execute(
-        "UPDATE torrents SET download_queue_position = ?2 WHERE info_hash = ?1",
-        params![info_hash.as_slice(), position],
+        "UPDATE torrents SET download_queue_position = ?2 WHERE torrent_id = ?1",
+        params![torrent_id.as_bytes().as_slice(), position],
     )?;
     if updated != 1 {
-        return Err(StoreError::UnknownTorrent(hex_info_hash(info_hash)));
+        return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
     }
     Ok(true)
 }
 
 pub(crate) fn move_to_edge(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     edge: QueueEdge,
 ) -> Result<bool, StoreError> {
-    let current = queue_position(transaction, info_hash)?
+    let current = queue_position(transaction, torrent_id)?
         .ok_or_else(|| StoreError::DurableState("torrent has no download queue position".into()))?;
     let boundary: Option<i64> = transaction.query_row(
         match edge {
@@ -59,18 +60,18 @@ pub(crate) fn move_to_edge(
     }
     let position = edge_position(transaction, edge)?;
     transaction.execute(
-        "UPDATE torrents SET download_queue_position = ?2 WHERE info_hash = ?1",
-        params![info_hash.as_slice(), position],
+        "UPDATE torrents SET download_queue_position = ?2 WHERE torrent_id = ?1",
+        params![torrent_id.as_bytes().as_slice(), position],
     )?;
     Ok(true)
 }
 
 pub(crate) fn is_at_edge(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     edge: QueueEdge,
 ) -> Result<bool, StoreError> {
-    let current = queue_position(transaction, info_hash)?;
+    let current = queue_position(transaction, torrent_id)?;
     let boundary: Option<i64> = transaction.query_row(
         match edge {
             QueueEdge::Top => "SELECT MIN(download_queue_position) FROM torrents",
@@ -84,16 +85,16 @@ pub(crate) fn is_at_edge(
 
 pub(crate) fn queue_position(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
 ) -> Result<Option<i64>, StoreError> {
     transaction
         .query_row(
-            "SELECT download_queue_position FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "SELECT download_queue_position FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes().as_slice()],
             |row| row.get(0),
         )
         .optional()?
-        .ok_or_else(|| StoreError::UnknownTorrent(hex_info_hash(info_hash)))
+        .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))
 }
 
 fn edge_position(transaction: &Transaction<'_>, edge: QueueEdge) -> Result<i64, StoreError> {
@@ -133,9 +134,9 @@ fn edge_position(transaction: &Transaction<'_>, edge: QueueEdge) -> Result<i64, 
 fn dense_renumber(transaction: &Transaction<'_>) -> Result<(), StoreError> {
     let ordered = {
         let mut statement = transaction.prepare(
-            "SELECT info_hash FROM torrents
+            "SELECT torrent_id FROM torrents
              WHERE download_queue_position IS NOT NULL
-             ORDER BY download_queue_position, info_hash",
+             ORDER BY download_queue_position, torrent_id",
         )?;
         let rows = statement.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
         rows.collect::<Result<Vec<_>, _>>()?
@@ -145,32 +146,23 @@ fn dense_renumber(transaction: &Transaction<'_>) -> Result<(), StoreError> {
          WHERE download_queue_position IS NOT NULL",
         [],
     )?;
-    for (index, info_hash) in ordered.iter().enumerate() {
+    for (index, torrent_id) in ordered.iter().enumerate() {
         let index = i64::try_from(index)
             .map_err(|_| StoreError::DurableState("download queue is too large".to_owned()))?;
         let position = index
             .checked_mul(QUEUE_STRIDE)
             .ok_or_else(|| StoreError::DurableState("download queue is too large".to_owned()))?;
         transaction.execute(
-            "UPDATE torrents SET download_queue_position = ?2 WHERE info_hash = ?1",
-            params![info_hash, position],
+            "UPDATE torrents SET download_queue_position = ?2 WHERE torrent_id = ?1",
+            params![torrent_id, position],
         )?;
     }
     Ok(())
 }
 
-fn hex_info_hash(info_hash: &[u8; 20]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(40);
-    for byte in info_hash {
-        encoded.push(HEX[(byte >> 4) as usize] as char);
-        encoded.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
+    use rstorrent_engine::TorrentId;
     use rusqlite::{Connection, params};
 
     use super::{QueueEdge, append, move_to_edge};
@@ -180,7 +172,7 @@ mod tests {
         connection
             .execute_batch(
                 "CREATE TABLE torrents (
-                    info_hash BLOB PRIMARY KEY,
+                    torrent_id BLOB PRIMARY KEY,
                     download_queue_position INTEGER
                  );
                  CREATE UNIQUE INDEX download_queue_order
@@ -191,16 +183,16 @@ mod tests {
         connection
     }
 
-    fn hash(value: u8) -> [u8; 20] {
-        [value; 20]
+    fn hash(value: u8) -> TorrentId {
+        TorrentId::new([value; 16]).expect("nonzero owner")
     }
 
     fn positions(connection: &Connection) -> Vec<u8> {
         let mut statement = connection
             .prepare(
-                "SELECT info_hash FROM torrents
+                "SELECT torrent_id FROM torrents
                  WHERE download_queue_position IS NOT NULL
-                 ORDER BY download_queue_position, info_hash",
+                 ORDER BY download_queue_position, torrent_id",
             )
             .expect("query");
         statement
@@ -210,18 +202,19 @@ mod tests {
             .collect()
     }
 
-    fn numbered_hash(value: u32) -> [u8; 20] {
-        let mut info_hash = [0; 20];
-        info_hash[..4].copy_from_slice(&value.to_be_bytes());
-        info_hash
+    fn numbered_hash(value: u32) -> TorrentId {
+        let mut torrent_id = [0; 16];
+        torrent_id[..4].copy_from_slice(&value.to_be_bytes());
+        torrent_id[15] = 1;
+        TorrentId::new(torrent_id).expect("numbered owner")
     }
 
     fn numbered_positions(connection: &Connection) -> Vec<u32> {
         let mut statement = connection
             .prepare(
-                "SELECT info_hash FROM torrents
+                "SELECT torrent_id FROM torrents
                  WHERE download_queue_position IS NOT NULL
-                 ORDER BY download_queue_position, info_hash",
+                 ORDER BY download_queue_position, torrent_id",
             )
             .expect("query");
         statement
@@ -240,8 +233,8 @@ mod tests {
         for value in 1..=3 {
             connection
                 .execute(
-                    "INSERT INTO torrents(info_hash) VALUES (?1)",
-                    [hash(value).as_slice()],
+                    "INSERT INTO torrents(torrent_id) VALUES (?1)",
+                    [hash(value).as_bytes().as_slice()],
                 )
                 .expect("insert");
             let transaction = connection.transaction().expect("transaction");
@@ -265,16 +258,16 @@ mod tests {
         for (value, position) in [(1, i64::MAX - 1), (2, i64::MAX)] {
             connection
                 .execute(
-                    "INSERT INTO torrents(info_hash, download_queue_position)
+                    "INSERT INTO torrents(torrent_id, download_queue_position)
                      VALUES (?1, ?2)",
-                    params![hash(value).as_slice(), position],
+                    params![hash(value).as_bytes().as_slice(), position],
                 )
                 .expect("insert");
         }
         connection
             .execute(
-                "INSERT INTO torrents(info_hash) VALUES (?1)",
-                [hash(3).as_slice()],
+                "INSERT INTO torrents(torrent_id) VALUES (?1)",
+                [hash(3).as_bytes().as_slice()],
             )
             .expect("insert");
         let transaction = connection.transaction().expect("transaction");
@@ -291,15 +284,15 @@ mod tests {
         let mut connection = database();
         let mut model = Vec::with_capacity(ENTRY_COUNT as usize);
         for value in 0..ENTRY_COUNT {
-            let info_hash = numbered_hash(value);
+            let torrent_id = numbered_hash(value);
             connection
                 .execute(
-                    "INSERT INTO torrents(info_hash) VALUES (?1)",
-                    [info_hash.as_slice()],
+                    "INSERT INTO torrents(torrent_id) VALUES (?1)",
+                    [torrent_id.as_bytes().as_slice()],
                 )
                 .expect("insert");
             let transaction = connection.transaction().expect("transaction");
-            assert!(append(&transaction, &info_hash).expect("append"));
+            assert!(append(&transaction, &torrent_id).expect("append"));
             transaction.commit().expect("commit");
             model.push(value);
         }

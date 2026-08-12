@@ -6,8 +6,7 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::{DhtIdentity, DhtSnapshot};
 use rstorrent_engine::{
-    PreparedFileHash, PublicationShape, torrent_storage_paths_for_metainfo,
-    validate_publication_name,
+    ContentFingerprint, PreparedFileHash, TorrentId, validate_publication_name,
 };
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
@@ -27,28 +26,27 @@ use crate::control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, Command, CommandResult,
     ErrorCode, FilePriority, FileSelectionIntent, MAX_FILE_SELECTION_ENTRIES, MagnetExportResult,
     MagnetExportSource, RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseEnvelope,
-    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, decode_info_hash,
-    encode_info_hash, parse_revision, validate_add_torrent_bytes_request, validate_identifier,
-    validate_request,
+    ServiceSnapshot, StorageState, TorrentSnapshot, TorrentState, encode_info_hash, parse_revision,
+    validate_add_torrent_bytes_request, validate_identifier, validate_request,
 };
 use crate::download_queue::{self, QueueEdge};
 use crate::durable_state::{
     DerivedStateInput, PayloadState, VerificationState, derive_torrent_state,
 };
 use crate::have::{HaveError, HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
+use crate::profile_reset::{
+    CatalogPreparation, DATABASE_FILENAME, ProfileResetReport, finish_catalog_creation,
+    prepare_catalog,
+};
 use crate::settings::{
     ClientSettings, SettingsPersistenceError, StorageRootAvailability, StorageRootSnapshot,
     StorageSettingsSnapshot, TorrentTransferLimits, TransferRateLimit, create_client_settings,
-    migrate_client_settings_to_v10, migrate_client_settings_to_v11, migrate_client_settings_to_v12,
-    migrate_client_settings_to_v15, migrate_client_settings_to_v16, read_client_settings,
-    replace_client_settings,
+    read_client_settings, replace_client_settings,
 };
 use crate::store_schema::{
     DHT_TABLES_SQL, DOWNLOAD_QUEUE_INDEX_SQL, REMOVAL_TABLE_SQL, SCHEMA_VERSION, SOURCE_TABLES_SQL,
-    migrate_to_v17, migrate_to_v18,
 };
 
-const DATABASE_FILENAME: &str = "session.db";
 const MAX_RECEIPTS: i64 = 1024;
 pub(crate) const EPHEMERAL_SESSION_MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_STORAGE_ROOTS: usize = 32;
@@ -322,6 +320,7 @@ impl SessionStore {
             operation: "create profile directory",
             source,
         })?;
+        let preparation = prepare_catalog(profile_root)?;
         let database_path = profile_root.join(DATABASE_FILENAME);
         let connection = Connection::open(&database_path)?;
         Self::initialize(
@@ -331,6 +330,7 @@ impl SessionStore {
             Some(database_path),
             None,
             initial_client_settings,
+            Some((profile_root, preparation)),
         )
     }
 
@@ -357,6 +357,7 @@ impl SessionStore {
             None,
             Some(EPHEMERAL_SESSION_MAX_BYTES),
             initial_client_settings,
+            None,
         )
     }
 
@@ -372,6 +373,7 @@ impl SessionStore {
             None,
             Some(maximum_bytes),
             &ClientSettings::default(),
+            None,
         )
     }
 
@@ -382,6 +384,7 @@ impl SessionStore {
         database_path: Option<PathBuf>,
         ephemeral_maximum_bytes: Option<u64>,
         initial_client_settings: &ClientSettings,
+        durable_preparation: Option<(&Path, CatalogPreparation)>,
     ) -> Result<Self, StoreError> {
         validate_identifier(
             profile_id,
@@ -398,26 +401,34 @@ impl SessionStore {
 
         if let Some(maximum_bytes) = ephemeral_maximum_bytes {
             configure_ephemeral_connection(&connection, maximum_bytes)?;
+            create_or_validate_schema_19(
+                &mut connection,
+                profile_id,
+                initial_client_settings,
+                None,
+            )?;
         } else {
             connection.busy_timeout(BUSY_TIMEOUT)?;
-            let journal_mode: String =
-                connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
-            if !journal_mode.eq_ignore_ascii_case("wal") {
-                connection.pragma_update(None, "journal_mode", "WAL")?;
-            }
-            let journal_mode: String =
-                connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
-            if !journal_mode.eq_ignore_ascii_case("wal") {
-                return Err(StoreError::RequiredPragma("journal_mode=WAL"));
-            }
-            connection.pragma_update(None, "synchronous", "FULL")?;
-            let synchronous: i64 =
-                connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
-            if synchronous != 2 {
-                return Err(StoreError::RequiredPragma("synchronous=FULL"));
+            let (profile_root, preparation) =
+                durable_preparation.expect("durable initialization has a profile preparation");
+            match preparation {
+                CatalogPreparation::Current => {
+                    configure_durable_connection(&connection)?;
+                    validate_schema_19(&connection, profile_id)?;
+                }
+                CatalogPreparation::Create { reset_report } => {
+                    connection.pragma_update(None, "synchronous", "FULL")?;
+                    create_or_validate_schema_19(
+                        &mut connection,
+                        profile_id,
+                        initial_client_settings,
+                        reset_report.as_ref(),
+                    )?;
+                    finish_catalog_creation(profile_root)?;
+                    configure_durable_connection(&connection)?;
+                }
             }
         }
-        migrate(&mut connection, profile_id, initial_client_settings)?;
         register_storage_roots(&mut connection, storage_roots)?;
 
         let store = Self {
@@ -444,6 +455,45 @@ impl SessionStore {
 
     pub fn revision(&self) -> Result<u64, StoreError> {
         read_revision(&self.connection)
+    }
+
+    pub fn pending_profile_reset_report(&self) -> Result<Option<ProfileResetReport>, StoreError> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT previous_schema_version, discarded_categories_json,
+                        database_basenames_json, external_payload_modified
+                 FROM profile_reset_report
+                 WHERE singleton = 1 AND startup_published = 0",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(|row| {
+            Ok(ProfileResetReport {
+                previous_schema_version: row.0,
+                discarded_categories: serde_json::from_str(&row.1)?,
+                database_basenames_considered: serde_json::from_str(&row.2)?,
+                external_payload_modified: row.3,
+            })
+        })
+        .transpose()
+    }
+
+    pub fn acknowledge_profile_reset_report(&mut self) -> Result<(), StoreError> {
+        self.connection.execute(
+            "UPDATE profile_reset_report SET startup_published = 1
+             WHERE singleton = 1 AND startup_published = 0",
+            [],
+        )?;
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<ServiceSnapshot, StoreError> {
@@ -778,10 +828,7 @@ impl SessionStore {
                         request.request_id.clone(),
                         self.revision()?,
                         ErrorCode::UnknownTorrent,
-                        format!(
-                            "torrent {} is not in the profile",
-                            torrent_id.to_ascii_lowercase()
-                        ),
+                        format!("torrent {torrent_id} is not in the profile"),
                     ),
                     Err(error) => return Err(error),
                 };
@@ -941,18 +988,19 @@ impl SessionStore {
     }
 
     pub fn load_resume(&self, torrent_id: &str) -> Result<ResumeRecord, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let row = self
             .connection
             .query_row(
                 "SELECT magnet, storage_root, raw_info, publication_name,
-                        piece_count, have_state, desired_state, payload_state,
+                        piece_count, content_fingerprint, have_state,
+                        desired_state, payload_state,
                         verification_requested, verification_completed,
                         quarantine_reason, download_queue_position
                  FROM torrents
-                WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?,
@@ -961,23 +1009,24 @@ impl SessionStore {
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<i64>>(4)?,
                         row.get::<_, Option<Vec<u8>>>(5)?,
-                        row.get::<_, String>(6)?,
+                        row.get::<_, Option<Vec<u8>>>(6)?,
                         row.get::<_, String>(7)?,
-                        row.get::<_, i64>(8)?,
+                        row.get::<_, String>(8)?,
                         row.get::<_, i64>(9)?,
-                        row.get::<_, Option<String>>(10)?,
-                        row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, Option<String>>(11)?,
+                        row.get::<_, Option<i64>>(12)?,
                     ))
                 },
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
-        let payload_state = PayloadState::parse(&row.7)
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
+        let payload_state = PayloadState::parse(&row.8)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
-        let verification_requested = u64::try_from(row.8).map_err(|_| {
+        let verification_requested = u64::try_from(row.9).map_err(|_| {
             StoreError::DurableState("invalid requested verification generation".to_owned())
         })?;
-        let verification_completed = u64::try_from(row.9).map_err(|_| {
+        let verification_completed = u64::try_from(row.10).map_err(|_| {
             StoreError::DurableState("invalid completed verification generation".to_owned())
         })?;
         let verification = VerificationState::new(verification_requested, verification_completed)
@@ -986,13 +1035,21 @@ impl SessionStore {
                 "completed verification exceeds requested generation".to_owned(),
             )
         })?;
-        let skip_files = read_selection(&self.connection, &info_hash)?;
-        let trackers = read_trackers(&self.connection, &info_hash)?;
-        let have = match (row.4, row.5) {
-            (None, None) => None,
-            (Some(piece_count), Some(bytes)) => {
+        let skip_files = read_selection(&self.connection, &torrent_id)?;
+        let trackers = read_trackers(&self.connection, &torrent_id)?;
+        let have = match (row.4, row.5, row.6) {
+            (None, None, None) => None,
+            (Some(piece_count), Some(fingerprint), Some(bytes)) => {
                 let piece_count = bounded_piece_count(piece_count)?;
-                Some(HaveState::decode(&bytes, info_hash, piece_count)?)
+                let fingerprint: [u8; 32] = fingerprint.try_into().map_err(|_| {
+                    StoreError::DurableState("invalid content fingerprint length".to_owned())
+                })?;
+                Some(HaveState::decode(
+                    &bytes,
+                    torrent_id,
+                    ContentFingerprint::from_digest(fingerprint),
+                    piece_count,
+                )?)
             }
             _ => {
                 return Err(StoreError::DurableState(
@@ -1000,10 +1057,12 @@ impl SessionStore {
                 ));
             }
         };
-        let operational_magnet = row
-            .0
-            .unwrap_or_else(|| format!("magnet:?xt=urn:btih:{}", encode_info_hash(info_hash)));
-        let desired_running = match row.6.as_str() {
+        let operational_magnet = row.0.unwrap_or_else(|| {
+            let v1 = read_v1_info_hash(&self.connection, &torrent_id)
+                .expect("validated catalog has one v1 identity in this tactical");
+            format!("magnet:?xt=urn:btih:{}", encode_info_hash(v1))
+        });
+        let desired_running = match row.7.as_str() {
             "running" => true,
             "paused" => false,
             _ => {
@@ -1021,7 +1080,7 @@ impl SessionStore {
             }
             _ => (true, false, None),
         };
-        let quarantine_reason = row.10.or(evidence_error);
+        let quarantine_reason = row.11.or(evidence_error);
         let state = derive_torrent_state(DerivedStateInput {
             metadata_available: row.2.is_some(),
             root_available: true,
@@ -1046,7 +1105,7 @@ impl SessionStore {
             PayloadState::FinalOwned => ManagedArtifactState::Published,
         };
         Ok(ResumeRecord {
-            torrent_id: torrent_id.to_ascii_lowercase(),
+            torrent_id: torrent_id.to_string(),
             magnet: operational_magnet,
             storage_root: row.1,
             skip_files,
@@ -1054,7 +1113,7 @@ impl SessionStore {
             state,
             storage_state,
             desired_running,
-            download_queue_position: row.11,
+            download_queue_position: row.12,
             raw_info: row.2,
             publication_name: row.3,
             managed_artifacts,
@@ -1066,24 +1125,26 @@ impl SessionStore {
     }
 
     fn export_magnet(&self, torrent_id: &str) -> Result<MagnetExportResult, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let publication_name = self
             .connection
             .query_row(
-                "SELECT publication_name FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "SELECT publication_name FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_ascii_lowercase()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
+
+        let v1_info_hash = read_v1_info_hash(&self.connection, &torrent_id)?;
 
         let source = self
             .connection
             .query_row(
                 "SELECT kind, fidelity, magnet, byte_length, sha256
-                 FROM torrent_source WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                 FROM torrent_source WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -1099,7 +1160,7 @@ impl SessionStore {
             && kind == "magnet"
             && usize::try_from(byte_length).ok() == Some(magnet.len())
             && digest == Sha256::digest(magnet.as_bytes()).as_slice()
-            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.info_hash == info_hash)
+            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.info_hash == v1_info_hash)
             && let Some(source) = match fidelity.as_str() {
                 "verbatim" => Some(MagnetExportSource::Verbatim),
                 "canonicalized" => Some(MagnetExportSource::Canonicalized),
@@ -1114,23 +1175,23 @@ impl SessionStore {
         }
 
         Ok(synthesize_magnet_export(
-            info_hash,
+            v1_info_hash,
             publication_name.as_deref(),
-            &read_trackers(&self.connection, &info_hash)?,
+            &read_trackers(&self.connection, &torrent_id)?,
         ))
     }
 
     pub fn load_removal(&self, torrent_id: &str) -> Result<RemovalRecord, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         self.connection
             .query_row(
                 "SELECT r.operation_id, t.storage_root, r.data_policy, r.state,
                         t.raw_info, t.publication_name, t.payload_state, r.error
                  FROM removal_jobs r
-                 JOIN torrents t ON t.info_hash = r.info_hash
-                 WHERE r.info_hash = ?1",
-                [info_hash.as_slice()],
+                 JOIN torrents t ON t.torrent_id = r.torrent_id
+                 WHERE r.torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| {
                     Ok(RemovalRow {
                         operation_id: row.get(0)?,
@@ -1145,17 +1206,17 @@ impl SessionStore {
                 },
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))
-            .and_then(|row| removal_record(torrent_id, row))
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))
+            .and_then(|row| removal_record(&torrent_id.to_string(), row))
     }
 
     pub fn load_removals(&self) -> Result<Vec<RemovalRecord>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT t.info_hash, r.operation_id, t.storage_root, r.data_policy,
+            "SELECT t.torrent_id, r.operation_id, t.storage_root, r.data_policy,
                     r.state, t.raw_info, t.publication_name, t.payload_state, r.error
              FROM removal_jobs r
-             JOIN torrents t ON t.info_hash = r.info_hash
-             ORDER BY t.info_hash",
+             JOIN torrents t ON t.torrent_id = r.torrent_id
+             ORDER BY t.torrent_id",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -1175,11 +1236,8 @@ impl SessionStore {
         let mut removals = Vec::new();
         for row in rows {
             let row = row?;
-            let info_hash: [u8; 20] = row
-                .0
-                .try_into()
-                .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
-            removals.push(removal_record(&encode_info_hash(info_hash), row.1)?);
+            let torrent_id = decode_stored_torrent_id(row.0)?;
+            removals.push(removal_record(&torrent_id.to_string(), row.1)?);
         }
         Ok(removals)
     }
@@ -1191,14 +1249,14 @@ impl SessionStore {
         state: RemovalState,
         error: Option<&str>,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let current = transaction
             .query_row(
                 "SELECT state FROM removal_jobs
-                 WHERE info_hash = ?1 AND operation_id = ?2",
-                params![info_hash.as_slice(), operation_id],
+                 WHERE torrent_id = ?1 AND operation_id = ?2",
+                params![torrent_id.as_bytes(), operation_id],
                 |row| row.get::<_, String>(0),
             )
             .optional()?
@@ -1225,9 +1283,9 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE removal_jobs
              SET state = ?3, error = ?4, updated_revision = ?5
-             WHERE info_hash = ?1 AND operation_id = ?2",
+             WHERE torrent_id = ?1 AND operation_id = ?2",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 operation_id,
                 state.as_str(),
                 error.map(bounded_error),
@@ -1240,8 +1298,8 @@ impl SessionStore {
             ));
         }
         transaction.execute(
-            "UPDATE torrents SET updated_revision = ?2 WHERE info_hash = ?1",
-            params![info_hash.as_slice(), sql_revision(revision)?],
+            "UPDATE torrents SET updated_revision = ?2 WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), sql_revision(revision)?],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1252,14 +1310,14 @@ impl SessionStore {
         torrent_id: &str,
         operation_id: &str,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let state = transaction
             .query_row(
                 "SELECT state FROM removal_jobs
-                 WHERE info_hash = ?1 AND operation_id = ?2",
-                params![info_hash.as_slice(), operation_id],
+                 WHERE torrent_id = ?1 AND operation_id = ?2",
+                params![torrent_id.as_bytes(), operation_id],
                 |row| row.get::<_, String>(0),
             )
             .optional()?
@@ -1275,11 +1333,11 @@ impl SessionStore {
         }
         let revision = increment_revision(&transaction)?;
         let removed = transaction.execute(
-            "DELETE FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "DELETE FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
         )?;
         if removed != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
@@ -1291,29 +1349,30 @@ impl SessionStore {
         raw_info: &[u8],
     ) -> Result<u64, StoreError> {
         validate_raw_info_length(raw_info)?;
-        let expected_info_hash = decode_info_hash(torrent_id)
+        let owner = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let metainfo = parse_durable_metainfo(raw_info)?;
-        if metainfo.info_hash != expected_info_hash {
+        if metainfo.info_hash != read_v1_info_hash(&self.connection, &owner)? {
             return Err(StoreError::DurableState(
                 "verified metadata does not match torrent identity".to_owned(),
             ));
         }
         validate_publication_name(&metainfo.name)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
-        let have = HaveState::empty(expected_info_hash, metainfo.piece_count())?.encode();
+        let fingerprint = ContentFingerprint::for_info_bytes(raw_info);
+        let have = HaveState::empty(owner, fingerprint, metainfo.piece_count())?.encode();
         validate_have_state_length(&have)?;
         let transaction = self.connection.transaction()?;
         let selection_default: String = transaction
             .query_row(
-                "SELECT selection_default FROM torrents WHERE info_hash = ?1",
-                [expected_info_hash.as_slice()],
+                "SELECT selection_default FROM torrents WHERE torrent_id = ?1",
+                [owner.as_bytes().as_slice()],
                 |row| row.get(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
         if selection_default == "skipped" {
-            let ranges = read_pending_ranges(&transaction, &expected_info_hash)
+            let ranges = read_pending_ranges(&transaction, &owner)
                 .map_err(|(_, message)| StoreError::DurableState(message))?;
             let mut selected = Vec::new();
             for range in ranges {
@@ -1340,10 +1399,10 @@ impl SessionStore {
             }
             for index in selected {
                 transaction.execute(
-                    "INSERT INTO file_selection(info_hash, file_index, wanted)
+                    "INSERT INTO file_selection(torrent_id, file_index, wanted)
                      VALUES (?1, ?2, 1)",
                     params![
-                        expected_info_hash.as_slice(),
+                        owner.as_bytes().as_slice(),
                         i64::try_from(index).map_err(|_| StoreError::DurableState(
                             "file index overflow".to_owned()
                         ))?
@@ -1351,8 +1410,8 @@ impl SessionStore {
                 )?;
             }
             transaction.execute(
-                "DELETE FROM pending_selection_ranges WHERE info_hash = ?1",
-                [expected_info_hash.as_slice()],
+                "DELETE FROM pending_selection_ranges WHERE torrent_id = ?1",
+                [owner.as_bytes().as_slice()],
             )?;
         } else if selection_default != "wanted" {
             return Err(StoreError::DurableState(
@@ -1364,16 +1423,18 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET raw_info = ?2,
-                 publication_name = ?3,
-                 piece_count = ?4,
-                 have_state = ?5,
+                 content_fingerprint = ?3,
+                 publication_name = ?4,
+                 piece_count = ?5,
+                 have_state = ?6,
                  payload_state = 'absent',
                  error = NULL,
-                 updated_revision = ?6
-             WHERE info_hash = ?1",
+                 updated_revision = ?7
+             WHERE torrent_id = ?1",
             params![
-                expected_info_hash.as_slice(),
+                owner.as_bytes().as_slice(),
                 raw_info,
+                fingerprint.as_bytes().as_slice(),
                 metainfo.name,
                 i64::try_from(metainfo.piece_count())
                     .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
@@ -1382,7 +1443,7 @@ impl SessionStore {
             ],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
@@ -1406,11 +1467,11 @@ impl SessionStore {
                 "durable piece batch must be nonempty".to_owned(),
             ));
         }
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
-        let (piece_count, bytes) = read_have_columns(&transaction, &info_hash)?;
-        let mut have = HaveState::decode(&bytes, info_hash, piece_count)?;
+        let (piece_count, fingerprint, bytes) = read_have_columns(&transaction, &torrent_id)?;
+        let mut have = HaveState::decode(&bytes, torrent_id, fingerprint, piece_count)?;
         for &piece_index in piece_indices {
             have.set(piece_index, true)?;
         }
@@ -1420,8 +1481,8 @@ impl SessionStore {
             "UPDATE torrents
              SET have_state = ?2,
                  updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), have.encode(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), have.encode(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1437,11 +1498,11 @@ impl SessionStore {
                 "invalidated piece batch must be nonempty".to_owned(),
             ));
         }
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
-        let (piece_count, bytes) = read_have_columns(&transaction, &info_hash)?;
-        let mut have = HaveState::decode(&bytes, info_hash, piece_count)?;
+        let (piece_count, fingerprint, bytes) = read_have_columns(&transaction, &torrent_id)?;
+        let mut have = HaveState::decode(&bytes, torrent_id, fingerprint, piece_count)?;
         for &piece_index in piece_indices {
             have.set(piece_index, false)?;
         }
@@ -1451,17 +1512,17 @@ impl SessionStore {
             "UPDATE torrents
              SET have_state = ?2,
                  updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), have.encode(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), have.encode(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
     }
 
     pub fn replace_have(&mut self, torrent_id: &str, have: &HaveState) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
-        if have.info_hash() != info_hash {
+        if have.torrent_id() != torrent_id {
             return Err(StoreError::DurableState(
                 "replacement have state has the wrong identity".to_owned(),
             ));
@@ -1469,8 +1530,8 @@ impl SessionStore {
         let encoded = have.encode();
         validate_have_state_length(&encoded)?;
         let transaction = self.connection.transaction()?;
-        let (piece_count, _) = read_have_columns(&transaction, &info_hash)?;
-        if have.pieces().len() != piece_count {
+        let (piece_count, fingerprint, _) = read_have_columns(&transaction, &torrent_id)?;
+        if have.pieces().len() != piece_count || have.content_fingerprint() != fingerprint {
             return Err(StoreError::DurableState(
                 "replacement have state has the wrong piece count".to_owned(),
             ));
@@ -1480,8 +1541,8 @@ impl SessionStore {
         transaction.execute(
             "UPDATE torrents
              SET have_state = ?2, updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), encoded, revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), encoded, revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1496,15 +1557,15 @@ impl SessionStore {
         &mut self,
         torrent_id: &str,
     ) -> Result<(u64, u64), StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let (requested, completed, updated_revision) = transaction
             .query_row(
                 "SELECT verification_requested, verification_completed, updated_revision
-                 FROM torrents WHERE info_hash = ?1 AND raw_info IS NOT NULL
+                 FROM torrents WHERE torrent_id = ?1 AND raw_info IS NOT NULL
                        AND have_state IS NOT NULL",
-                [info_hash.as_slice()],
+                [torrent_id.as_bytes()],
                 |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
@@ -1536,9 +1597,9 @@ impl SessionStore {
             "UPDATE torrents
              SET error = NULL, verification_requested = ?2,
                  updated_revision = ?3
-             WHERE info_hash = ?1 AND raw_info IS NOT NULL
+             WHERE torrent_id = ?1 AND raw_info IS NOT NULL
                    AND have_state IS NOT NULL",
-            params![info_hash.as_slice(), next_requested, revision_sql,],
+            params![torrent_id.as_bytes(), next_requested, revision_sql,],
         )?;
         if updated != 1 {
             return Err(StoreError::DurableState(
@@ -1557,21 +1618,21 @@ impl SessionStore {
         torrent_id: &str,
         have: &HaveState,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let requested = self
             .connection
             .query_row(
-                "SELECT verification_requested FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "SELECT verification_requested FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
         let generation = u64::try_from(requested).map_err(|_| {
             StoreError::DurableState("verification generation is invalid".to_owned())
         })?;
-        self.complete_recheck_generation(torrent_id, generation, have)
+        self.complete_recheck_generation(&torrent_id.to_string(), generation, have)
     }
 
     pub(crate) fn complete_recheck_generation(
@@ -1580,24 +1641,25 @@ impl SessionStore {
         generation: u64,
         have: &HaveState,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
-        if have.info_hash() != info_hash {
+        if have.torrent_id() != torrent_id {
             return Err(StoreError::DurableState(
                 "replacement have state has the wrong identity".to_owned(),
             ));
         }
         let transaction = self.connection.transaction()?;
-        let (piece_count, current_bytes) = read_have_columns(&transaction, &info_hash)?;
-        if have.pieces().len() != piece_count {
+        let (piece_count, fingerprint, current_bytes) =
+            read_have_columns(&transaction, &torrent_id)?;
+        if have.pieces().len() != piece_count || have.content_fingerprint() != fingerprint {
             return Err(StoreError::DurableState(
                 "replacement have state has the wrong piece count".to_owned(),
             ));
         }
         let (requested, completed, updated_revision) = transaction.query_row(
             "SELECT verification_requested, verification_completed, updated_revision
-             FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -1614,7 +1676,7 @@ impl SessionStore {
             ));
         }
         if completed == requested {
-            let current = HaveState::decode(&current_bytes, info_hash, piece_count)?;
+            let current = HaveState::decode(&current_bytes, torrent_id, fingerprint, piece_count)?;
             if &current == have {
                 return u64::try_from(updated_revision).map_err(|_| {
                     StoreError::DurableState("torrent revision is invalid".to_owned())
@@ -1632,8 +1694,8 @@ impl SessionStore {
                  error = NULL, quarantine_reason = NULL,
                  verification_completed = verification_requested,
                  updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), have.encode(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), have.encode(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1657,7 +1719,7 @@ impl SessionStore {
                 ));
             }
         };
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let revision = increment_revision(&transaction)?;
@@ -1670,29 +1732,29 @@ impl SessionStore {
                     ELSE download_queue_position
                  END,
                  updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), payload_state.as_str(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), payload_state.as_str(), revision_sql],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
     }
 
     pub fn mark_publication_prepared(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let (payload_state, updated_revision) = transaction
             .query_row(
                 "SELECT payload_state, updated_revision
-                 FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                 FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
         let payload_state = PayloadState::parse(&payload_state)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
         if payload_state == PayloadState::PublicationPending {
@@ -1710,8 +1772,8 @@ impl SessionStore {
             "UPDATE torrents
              SET error = NULL, payload_state = 'publication_pending',
                  updated_revision = ?2
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1722,7 +1784,7 @@ impl SessionStore {
         torrent_id: &str,
         message: Option<&str>,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let error = message.map(bounded_error);
         let transaction = self.connection.transaction()?;
@@ -1731,11 +1793,11 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET error = ?2, updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), error, revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), error, revision_sql],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
@@ -1746,22 +1808,22 @@ impl SessionStore {
         torrent_id: &str,
         files: &[PreparedFileHash],
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let raw_info = self
             .connection
             .query_row(
-                "SELECT raw_info FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "SELECT raw_info FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| row.get::<_, Option<Vec<u8>>>(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
         let metainfo = parse_durable_metainfo(&raw_info)?;
-        let skip_files = read_selection(&self.connection, &info_hash)?
+        let skip_files = read_selection(&self.connection, &torrent_id)?
             .into_iter()
             .map(|index| index as usize)
             .collect::<Vec<_>>();
@@ -1792,15 +1854,15 @@ impl SessionStore {
 
         let transaction = self.connection.transaction()?;
         transaction.execute(
-            "DELETE FROM prepared_files WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "DELETE FROM prepared_files WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
         )?;
         for file in &ordered {
             transaction.execute(
-                "INSERT INTO prepared_files(info_hash, file_index, length, sha1)
+                "INSERT INTO prepared_files(torrent_id, file_index, length, sha1)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
-                    info_hash.as_slice(),
+                    torrent_id.as_bytes(),
                     i64::try_from(file.file_index).map_err(|_| {
                         StoreError::DurableState("prepared file index overflow".to_owned())
                     })?,
@@ -1817,8 +1879,8 @@ impl SessionStore {
             "UPDATE torrents
              SET error = NULL, payload_state = 'publication_pending',
                  updated_revision = ?2
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), revision_sql],
         )?;
         transaction.commit()?;
         Ok(revision)
@@ -1828,13 +1890,13 @@ impl SessionStore {
         &self,
         torrent_id: &str,
     ) -> Result<Vec<PreparedFileRecord>, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let mut statement = self.connection.prepare(
             "SELECT file_index, length, sha1
-             FROM prepared_files WHERE info_hash = ?1 ORDER BY file_index",
+             FROM prepared_files WHERE torrent_id = ?1 ORDER BY file_index",
         )?;
-        let rows = statement.query_map([info_hash.as_slice()], |row| {
+        let rows = statement.query_map([torrent_id.as_bytes()], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, i64>(1)?,
@@ -1860,18 +1922,18 @@ impl SessionStore {
     }
 
     pub fn confirm_prepared_publication(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let (payload_state, updated_revision) = transaction
             .query_row(
                 "SELECT payload_state, updated_revision
-                 FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                 FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
         let payload_state = PayloadState::parse(&payload_state)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
         if payload_state == PayloadState::FinalOwned {
@@ -1884,8 +1946,8 @@ impl SessionStore {
             ));
         }
         let manifest_count: i64 = transaction.query_row(
-            "SELECT count(*) FROM prepared_files WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "SELECT count(*) FROM prepared_files WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| row.get(0),
         )?;
         if manifest_count == 0 {
@@ -1900,27 +1962,27 @@ impl SessionStore {
              SET error = NULL, payload_state = 'final_owned',
                  download_queue_position = NULL,
                  updated_revision = ?2
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), revision_sql],
         )?;
         transaction.execute(
-            "DELETE FROM prepared_files WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "DELETE FROM prepared_files WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
         )?;
         transaction.commit()?;
         Ok(revision)
     }
 
     pub fn begin_published_recheck(&mut self, torrent_id: &str) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let (payload_state, requested, completed, updated_revision) = transaction
             .query_row(
                 "SELECT payload_state, verification_requested,
                         verification_completed, updated_revision
-                 FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                 FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -1931,7 +1993,7 @@ impl SessionStore {
                 },
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
         let payload_state = PayloadState::parse(&payload_state)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
         if payload_state == PayloadState::FinalOwned {
@@ -1944,8 +2006,8 @@ impl SessionStore {
             ));
         }
         let manifest_count: i64 = transaction.query_row(
-            "SELECT count(*) FROM prepared_files WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "SELECT count(*) FROM prepared_files WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| row.get(0),
         )?;
         if manifest_count == 0 {
@@ -1967,40 +2029,44 @@ impl SessionStore {
              SET error = NULL, payload_state = 'final_owned',
                  download_queue_position = NULL,
                  verification_requested = ?2, updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), next_requested, revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), next_requested, revision_sql],
         )?;
         transaction.execute(
-            "DELETE FROM prepared_files WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "DELETE FROM prepared_files WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
         )?;
         transaction.commit()?;
         Ok(revision)
     }
 
     pub fn reset_have_from_metadata(&mut self, torrent_id: &str) -> Result<HaveState, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let raw_info = self
             .connection
             .query_row(
-                "SELECT raw_info FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "SELECT raw_info FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
                 |row| row.get::<_, Option<Vec<u8>>>(0),
             )
             .optional()?
-            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
         let metainfo = parse_durable_metainfo(&raw_info)?;
-        if metainfo.info_hash != info_hash {
+        if metainfo.info_hash != read_v1_info_hash(&self.connection, &torrent_id)? {
             return Err(StoreError::DurableState(
                 "stored metadata does not match torrent identity".to_owned(),
             ));
         }
-        let have = HaveState::empty(info_hash, metainfo.piece_count())?;
-        self.replace_have(torrent_id, &have)?;
+        let have = HaveState::empty(
+            torrent_id,
+            ContentFingerprint::for_info_bytes(&raw_info),
+            metainfo.piece_count(),
+        )?;
+        self.replace_have(&torrent_id.to_string(), &have)?;
         Ok(have)
     }
 
@@ -2009,29 +2075,29 @@ impl SessionStore {
         torrent_id: &str,
         message: &str,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let transaction = self.connection.transaction()?;
         let revision = increment_revision(&transaction)?;
         let updated = transaction.execute(
             "UPDATE torrents
              SET quarantine_reason = ?2, error = ?2, updated_revision = ?3
-             WHERE info_hash = ?1",
+             WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 bounded_error(message),
                 sql_revision(revision)?,
             ],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
     }
 
     pub fn mark_error(&mut self, torrent_id: &str, message: &str) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let error = bounded_error(message);
         let transaction = self.connection.transaction()?;
@@ -2041,11 +2107,11 @@ impl SessionStore {
             "UPDATE torrents
              SET error = ?2,
                  updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), error, revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), error, revision_sql],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
@@ -2057,7 +2123,7 @@ impl SessionStore {
         payload_state: PayloadState,
         error: Option<&str>,
     ) -> Result<u64, StoreError> {
-        let info_hash = decode_info_hash(torrent_id)
+        let torrent_id = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let error = error.map(bounded_error);
         let transaction = self.connection.transaction()?;
@@ -2071,16 +2137,16 @@ impl SessionStore {
                     ELSE download_queue_position
                  END,
                  error = ?3, updated_revision = ?4
-             WHERE info_hash = ?1",
+             WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 payload_state.as_str(),
                 error,
                 revision_sql
             ],
         )?;
         if updated != 1 {
-            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+            return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
         Ok(revision)
@@ -2118,6 +2184,11 @@ pub enum StoreError {
         actual: i64,
         maximum: i64,
     },
+    ProfileResetBusy,
+    UnsafeProfileFile {
+        basename: &'static str,
+        reason: String,
+    },
     RequiredPragma(&'static str),
     Configuration(String),
     UnknownTorrent(String),
@@ -2140,6 +2211,15 @@ impl fmt::Display for StoreError {
                 formatter,
                 "session schema {actual} is newer than supported version {maximum}"
             ),
+            Self::ProfileResetBusy => {
+                formatter.write_str("session database is busy and cannot be reset safely")
+            }
+            Self::UnsafeProfileFile { basename, reason } => {
+                write!(
+                    formatter,
+                    "unsafe session profile file {basename}: {reason}"
+                )
+            }
             Self::RequiredPragma(pragma) => {
                 write!(formatter, "session database could not enable {pragma}")
             }
@@ -2261,6 +2341,97 @@ fn configure_ephemeral_connection(
     Ok(())
 }
 
+fn decode_torrent_id(value: &str) -> Option<TorrentId> {
+    value.parse().ok()
+}
+
+fn decode_stored_torrent_id(bytes: Vec<u8>) -> Result<TorrentId, StoreError> {
+    let bytes: [u8; 16] = bytes
+        .try_into()
+        .map_err(|_| StoreError::DurableState("invalid torrent ID length".to_owned()))?;
+    TorrentId::new(bytes)
+        .map_err(|_| StoreError::DurableState("invalid zero torrent ID".to_owned()))
+}
+
+fn read_v1_info_hash(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+) -> Result<[u8; 20], StoreError> {
+    let bytes = connection
+        .query_row(
+            "SELECT full_hash FROM torrent_identities
+             WHERE torrent_id = ?1 AND protocol = 'v1'",
+            [torrent_id.as_bytes().as_slice()],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::DurableState(format!("torrent {torrent_id} has no v1 identity"))
+        })?;
+    bytes
+        .try_into()
+        .map_err(|_| StoreError::DurableState("invalid v1 identity length".to_owned()))
+}
+
+fn find_torrent_id_by_v1(
+    connection: &Connection,
+    info_hash: &[u8; 20],
+) -> Result<Option<TorrentId>, StoreError> {
+    connection
+        .query_row(
+            "SELECT torrent_id FROM torrent_identities
+             WHERE protocol = 'v1' AND full_hash = ?1",
+            [info_hash.as_slice()],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()?
+        .map(decode_stored_torrent_id)
+        .transpose()
+}
+
+fn allocate_torrent_id(transaction: &Transaction<'_>) -> Result<TorrentId, StoreError> {
+    for _ in 0..4 {
+        let bytes: Vec<u8> =
+            transaction.query_row("SELECT randomblob(16)", [], |row| row.get(0))?;
+        let Ok(torrent_id) = decode_stored_torrent_id(bytes) else {
+            continue;
+        };
+        let exists = transaction
+            .query_row(
+                "SELECT 1 FROM torrents WHERE torrent_id = ?1",
+                [torrent_id.as_bytes().as_slice()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            return Ok(torrent_id);
+        }
+    }
+    Err(StoreError::DurableState(
+        "could not allocate a unique nonzero torrent ID in four attempts".to_owned(),
+    ))
+}
+
+fn configure_durable_connection(connection: &Connection) -> Result<(), StoreError> {
+    let journal_mode: String =
+        connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if !journal_mode.eq_ignore_ascii_case("wal") {
+        connection.pragma_update(None, "journal_mode", "WAL")?;
+    }
+    let journal_mode: String =
+        connection.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if !journal_mode.eq_ignore_ascii_case("wal") {
+        return Err(StoreError::RequiredPragma("journal_mode=WAL"));
+    }
+    connection.pragma_update(None, "synchronous", "FULL")?;
+    let synchronous: i64 = connection.pragma_query_value(None, "synchronous", |row| row.get(0))?;
+    if synchronous != 2 {
+        return Err(StoreError::RequiredPragma("synchronous=FULL"));
+    }
+    Ok(())
+}
+
 fn database_page_usage(connection: &Connection) -> Result<DatabasePageUsage, StoreError> {
     Ok(DatabasePageUsage {
         page_size: pragma_u64(connection, "page_size")?,
@@ -2274,354 +2445,210 @@ fn pragma_u64(connection: &Connection, pragma: &str) -> Result<u64, StoreError> 
     u64::try_from(value).map_err(|_| StoreError::DurableState(format!("negative SQLite {pragma}")))
 }
 
-fn migrate(
+fn create_or_validate_schema_19(
     connection: &mut Connection,
     profile_id: &str,
     initial_client_settings: &ClientSettings,
+    reset_report: Option<&ProfileResetReport>,
 ) -> Result<(), StoreError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version > SCHEMA_VERSION {
+    if version != 0 {
+        return validate_schema_19(connection, profile_id);
+    }
+    let transaction = connection.transaction()?;
+    transaction.execute_batch(
+        "CREATE TABLE profile_state (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            profile_id TEXT NOT NULL UNIQUE,
+            revision INTEGER NOT NULL CHECK (revision >= 0)
+         );
+         CREATE TABLE profile_reset_report (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            previous_schema_version INTEGER NOT NULL CHECK (
+                previous_schema_version BETWEEN 1 AND 18
+            ),
+            discarded_categories_json TEXT NOT NULL CHECK (
+                length(discarded_categories_json) BETWEEN 2 AND 1024
+            ),
+            database_basenames_json TEXT NOT NULL CHECK (
+                length(database_basenames_json) BETWEEN 2 AND 256
+            ),
+            external_payload_modified INTEGER NOT NULL CHECK (
+                external_payload_modified = 0
+            ),
+            startup_published INTEGER NOT NULL DEFAULT 0 CHECK (
+                startup_published IN (0, 1)
+            )
+         );
+         CREATE TABLE storage_roots (
+            root_id TEXT PRIMARY KEY,
+            label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 256),
+            kind TEXT NOT NULL CHECK (kind IN ('path', 'platform')),
+            locator TEXT NOT NULL CHECK (length(locator) BETWEEN 1 AND 4096)
+         );
+         CREATE TABLE storage_settings (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            default_root TEXT
+                REFERENCES storage_roots(root_id)
+                ON UPDATE CASCADE ON DELETE SET NULL,
+            show_add_options INTEGER NOT NULL DEFAULT 1
+                CHECK (show_add_options IN (0, 1))
+         );
+         CREATE TABLE torrents (
+            torrent_id BLOB PRIMARY KEY CHECK (
+                length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+            ),
+            magnet TEXT CHECK (magnet IS NULL OR length(magnet) <= 16384),
+            storage_root TEXT NOT NULL
+                REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
+            desired_state TEXT NOT NULL
+                CHECK (desired_state IN ('running', 'paused')),
+            raw_info BLOB CHECK (
+                raw_info IS NULL OR length(raw_info) <= 67108864
+            ),
+            content_fingerprint BLOB CHECK (
+                content_fingerprint IS NULL OR length(content_fingerprint) = 32
+            ),
+            publication_name TEXT CHECK (
+                publication_name IS NULL OR
+                length(publication_name) BETWEEN 1 AND 255
+            ),
+            payload_state TEXT NOT NULL DEFAULT 'absent' CHECK (
+                payload_state IN (
+                    'absent', 'legacy_owned', 'work_owned',
+                    'publication_pending', 'final_owned'
+                )
+            ),
+            verification_requested INTEGER NOT NULL DEFAULT 0 CHECK (
+                verification_requested >= 0
+            ),
+            verification_completed INTEGER NOT NULL DEFAULT 0 CHECK (
+                verification_completed >= 0 AND
+                verification_completed <= verification_requested
+            ),
+            quarantine_reason TEXT CHECK (
+                quarantine_reason IS NULL OR length(quarantine_reason) <= 1024
+            ),
+            piece_count INTEGER CHECK (
+                piece_count IS NULL OR
+                (piece_count > 0 AND piece_count <= 2097152)
+            ),
+            have_state BLOB CHECK (
+                have_state IS NULL OR length(have_state) <= 262206
+            ),
+            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
+            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+            selection_default TEXT NOT NULL DEFAULT 'wanted'
+                CHECK (selection_default IN ('wanted', 'skipped')),
+            download_queue_position INTEGER,
+            upload_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+                upload_rate_limit = 0 OR
+                upload_rate_limit BETWEEN 1024 AND 4294967295
+            ),
+            download_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
+                download_rate_limit = 0 OR
+                download_rate_limit BETWEEN 1024 AND 4294967295
+            ),
+            created_revision INTEGER NOT NULL,
+            updated_revision INTEGER NOT NULL,
+            CHECK (
+                (raw_info IS NULL AND content_fingerprint IS NULL AND
+                 piece_count IS NULL AND have_state IS NULL) OR
+                (raw_info IS NOT NULL AND content_fingerprint IS NOT NULL AND
+                 piece_count IS NOT NULL AND have_state IS NOT NULL)
+            )
+         ) WITHOUT ROWID;
+         CREATE TABLE torrent_identities (
+            torrent_id BLOB NOT NULL CHECK (
+                length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+            ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
+            protocol TEXT NOT NULL CHECK (protocol IN ('v1', 'v2')),
+            full_hash BLOB NOT NULL CHECK (
+                (protocol = 'v1' AND length(full_hash) = 20) OR
+                (protocol = 'v2' AND length(full_hash) = 32)
+            ),
+            PRIMARY KEY (torrent_id, protocol),
+            UNIQUE (protocol, full_hash)
+         ) WITHOUT ROWID;
+         CREATE TABLE file_selection (
+            torrent_id BLOB NOT NULL CHECK (
+                length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+            ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
+            file_index INTEGER NOT NULL
+                CHECK (file_index >= 0 AND file_index < 374998),
+            wanted INTEGER NOT NULL CHECK (wanted IN (0, 1)),
+            PRIMARY KEY (torrent_id, file_index)
+         ) WITHOUT ROWID;
+         CREATE TABLE pending_selection_ranges (
+            torrent_id BLOB NOT NULL CHECK (
+                length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+            ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
+            range_start INTEGER NOT NULL CHECK (
+                range_start >= 0 AND range_start < 374998
+            ),
+            range_end INTEGER NOT NULL CHECK (
+                range_end >= range_start AND range_end < 374998
+            ),
+            PRIMARY KEY (torrent_id, range_start)
+         ) WITHOUT ROWID;
+         CREATE TABLE prepared_files (
+            torrent_id BLOB NOT NULL CHECK (
+                length(torrent_id) = 16 AND torrent_id <> zeroblob(16)
+            ) REFERENCES torrents(torrent_id) ON DELETE CASCADE,
+            file_index INTEGER NOT NULL
+                CHECK (file_index >= 0 AND file_index < 374998),
+            length INTEGER NOT NULL CHECK (length >= 0),
+            sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
+            PRIMARY KEY (torrent_id, file_index)
+         ) WITHOUT ROWID;
+         CREATE TABLE request_receipts (
+            receipt_order INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT NOT NULL UNIQUE,
+            request_json TEXT NOT NULL CHECK (length(request_json) <= 32768),
+            response_json TEXT NOT NULL CHECK (length(response_json) <= 1048576),
+            revision INTEGER NOT NULL CHECK (revision >= 0)
+         );",
+    )?;
+    transaction.execute(
+        "INSERT INTO profile_state(singleton, profile_id, revision)
+         VALUES (1, ?1, 0)",
+        [profile_id],
+    )?;
+    transaction.execute(
+        "INSERT INTO storage_settings(singleton, default_root, show_add_options)
+         VALUES (1, NULL, 1)",
+        [],
+    )?;
+    if let Some(report) = reset_report {
+        transaction.execute(
+            "INSERT INTO profile_reset_report(
+                singleton, previous_schema_version, discarded_categories_json,
+                database_basenames_json, external_payload_modified
+             ) VALUES (1, ?1, ?2, ?3, 0)",
+            params![
+                report.previous_schema_version,
+                serde_json::to_string(&report.discarded_categories)?,
+                serde_json::to_string(&report.database_basenames_considered)?,
+            ],
+        )?;
+    }
+    create_client_settings(&transaction, initial_client_settings)?;
+    transaction.execute_batch(DHT_TABLES_SQL)?;
+    transaction.execute_batch(REMOVAL_TABLE_SQL)?;
+    transaction.execute_batch(SOURCE_TABLES_SQL)?;
+    transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    transaction.commit()?;
+    validate_schema_19(connection, profile_id)
+}
+
+fn validate_schema_19(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version != SCHEMA_VERSION {
         return Err(StoreError::UnsupportedSchema {
             actual: version,
             maximum: SCHEMA_VERSION,
         });
-    }
-    if version == 0 {
-        let transaction = connection.transaction()?;
-        transaction.execute_batch(
-            "CREATE TABLE profile_state (
-                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-                profile_id TEXT NOT NULL UNIQUE,
-                revision INTEGER NOT NULL CHECK (revision >= 0)
-             );
-             CREATE TABLE storage_roots (
-                root_id TEXT PRIMARY KEY,
-                label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 256),
-                kind TEXT NOT NULL CHECK (kind IN ('path', 'platform')),
-                locator TEXT NOT NULL CHECK (length(locator) BETWEEN 1 AND 4096)
-             );
-             CREATE TABLE storage_settings (
-                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-                default_root TEXT
-                    REFERENCES storage_roots(root_id)
-                    ON UPDATE CASCADE ON DELETE SET NULL,
-                show_add_options INTEGER NOT NULL DEFAULT 1
-                    CHECK (show_add_options IN (0, 1))
-             );
-             CREATE TABLE torrents (
-                info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
-                magnet TEXT CHECK (magnet IS NULL OR length(magnet) <= 16384),
-                storage_root TEXT NOT NULL
-                    REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
-                desired_state TEXT NOT NULL
-                    CHECK (desired_state IN ('running', 'paused')),
-                raw_info BLOB CHECK (
-                    raw_info IS NULL OR length(raw_info) <= 67108864
-                ),
-                publication_name TEXT CHECK (
-                    publication_name IS NULL OR
-                    length(publication_name) BETWEEN 1 AND 255
-                ),
-                payload_state TEXT NOT NULL DEFAULT 'absent' CHECK (
-                    payload_state IN (
-                        'absent', 'legacy_owned', 'work_owned',
-                        'publication_pending', 'final_owned'
-                    )
-                ),
-                verification_requested INTEGER NOT NULL DEFAULT 0 CHECK (
-                    verification_requested >= 0
-                ),
-                verification_completed INTEGER NOT NULL DEFAULT 0 CHECK (
-                    verification_completed >= 0 AND
-                    verification_completed <= verification_requested
-                ),
-                quarantine_reason TEXT CHECK (
-                    quarantine_reason IS NULL OR length(quarantine_reason) <= 1024
-                ),
-                piece_count INTEGER CHECK (
-                    piece_count IS NULL OR
-                    (piece_count > 0 AND piece_count <= 2097152)
-                ),
-                have_state BLOB CHECK (
-                    have_state IS NULL OR length(have_state) <= 262178
-                ),
-                error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-                selection_default TEXT NOT NULL DEFAULT 'wanted'
-                    CHECK (selection_default IN ('wanted', 'skipped')),
-                download_queue_position INTEGER,
-                upload_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
-                    upload_rate_limit = 0 OR
-                    upload_rate_limit BETWEEN 1024 AND 4294967295
-                ),
-                download_rate_limit INTEGER NOT NULL DEFAULT 0 CHECK (
-                    download_rate_limit = 0 OR
-                    download_rate_limit BETWEEN 1024 AND 4294967295
-                ),
-                created_revision INTEGER NOT NULL,
-                updated_revision INTEGER NOT NULL,
-                CHECK (
-                    (piece_count IS NULL AND have_state IS NULL) OR
-                    (piece_count IS NOT NULL AND have_state IS NOT NULL)
-                )
-             );
-             CREATE TABLE file_selection (
-                info_hash BLOB NOT NULL
-                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
-                file_index INTEGER NOT NULL
-                    CHECK (file_index >= 0 AND file_index < 374998),
-                wanted INTEGER NOT NULL CHECK (wanted IN (0, 1)),
-                 PRIMARY KEY (info_hash, file_index)
-             ) WITHOUT ROWID;
-             CREATE TABLE pending_selection_ranges (
-                info_hash BLOB NOT NULL
-                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
-                range_start INTEGER NOT NULL CHECK (
-                    range_start >= 0 AND range_start < 374998
-                ),
-                range_end INTEGER NOT NULL CHECK (
-                    range_end >= range_start AND range_end < 374998
-                ),
-                PRIMARY KEY (info_hash, range_start)
-             ) WITHOUT ROWID;
-             CREATE TABLE prepared_files (
-                info_hash BLOB NOT NULL
-                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
-                file_index INTEGER NOT NULL
-                    CHECK (file_index >= 0 AND file_index < 374998),
-                length INTEGER NOT NULL CHECK (length >= 0),
-                sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
-                PRIMARY KEY (info_hash, file_index)
-             ) WITHOUT ROWID;
-             CREATE TABLE request_receipts (
-                receipt_order INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id TEXT NOT NULL UNIQUE,
-                request_json TEXT NOT NULL CHECK (length(request_json) <= 32768),
-                response_json TEXT NOT NULL CHECK (length(response_json) <= 1048576),
-                revision INTEGER NOT NULL CHECK (revision >= 0)
-             );",
-        )?;
-        transaction.execute(
-            "INSERT INTO profile_state(singleton, profile_id, revision)
-             VALUES (1, ?1, 0)",
-            [profile_id],
-        )?;
-        transaction.execute(
-            "INSERT INTO storage_settings(singleton, default_root, show_add_options)
-             VALUES (1, NULL, 1)",
-            [],
-        )?;
-        create_client_settings(&transaction, initial_client_settings)?;
-        transaction.execute_batch(DHT_TABLES_SQL)?;
-        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.execute_batch(SOURCE_TABLES_SQL)?;
-        transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
-        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        transaction.commit()?;
-    }
-    if version == 1 {
-        let transaction = connection.transaction()?;
-        transaction.pragma_update(None, "defer_foreign_keys", true)?;
-        transaction.execute_batch(
-            "ALTER TABLE file_selection RENAME TO file_selection_v1;
-             ALTER TABLE torrents RENAME TO torrents_v1;
-             CREATE TABLE torrents (
-                info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
-                magnet TEXT NOT NULL CHECK (length(magnet) <= 16384),
-                storage_root TEXT NOT NULL
-                    REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
-                desired_state TEXT NOT NULL
-                    CHECK (desired_state IN ('running', 'paused')),
-                state TEXT NOT NULL CHECK (
-                    state IN (
-                        'awaiting_metadata', 'awaiting_storage', 'checking',
-                        'downloading', 'awaiting_publication', 'paused',
-                        'complete', 'needs_repair', 'error'
-                    )
-                ),
-                storage_state TEXT NOT NULL CHECK (
-                    storage_state IN (
-                        'none', 'staging', 'prepared', 'published',
-                        'needs_repair'
-                    )
-                ),
-                raw_info BLOB CHECK (
-                    raw_info IS NULL OR length(raw_info) <= 1048576
-                ),
-                publication_name TEXT CHECK (
-                    publication_name IS NULL OR
-                    length(publication_name) BETWEEN 1 AND 255
-                ),
-                piece_count INTEGER CHECK (
-                    piece_count IS NULL OR
-                    (piece_count > 0 AND piece_count <= 26214)
-                ),
-                have_state BLOB CHECK (
-                    have_state IS NULL OR length(have_state) <= 3311
-                ),
-                error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-                created_revision INTEGER NOT NULL,
-                updated_revision INTEGER NOT NULL,
-                CHECK (
-                    (piece_count IS NULL AND have_state IS NULL) OR
-                    (piece_count IS NOT NULL AND have_state IS NOT NULL)
-                )
-             );
-             INSERT INTO torrents(
-                info_hash, magnet, storage_root, desired_state, state,
-                storage_state, raw_info, piece_count, have_state, error,
-                archived, created_revision, updated_revision
-             ) SELECT
-                info_hash, magnet, storage_root, desired_state, state,
-                storage_state, raw_info, piece_count, have_state, error,
-                0, created_revision, updated_revision
-             FROM torrents_v1;
-             CREATE TABLE file_selection (
-                info_hash BLOB NOT NULL
-                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
-                file_index INTEGER NOT NULL
-                    CHECK (file_index >= 0 AND file_index < 4096),
-                wanted INTEGER NOT NULL CHECK (wanted = 0),
-                PRIMARY KEY (info_hash, file_index)
-             ) WITHOUT ROWID;
-             INSERT INTO file_selection
-                SELECT * FROM file_selection_v1;
-             CREATE TABLE prepared_files (
-                info_hash BLOB NOT NULL
-                    REFERENCES torrents(info_hash) ON DELETE CASCADE,
-                file_index INTEGER NOT NULL
-                    CHECK (file_index >= 0 AND file_index < 4096),
-                length INTEGER NOT NULL CHECK (length >= 0),
-                sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
-                PRIMARY KEY (info_hash, file_index)
-             ) WITHOUT ROWID;
-             DROP TABLE file_selection_v1;
-             DROP TABLE torrents_v1;",
-        )?;
-        transaction.execute_batch(DHT_TABLES_SQL)?;
-        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", 4)?;
-        transaction.commit()?;
-    }
-    if version == 2 {
-        let transaction = connection.transaction()?;
-        transaction.execute_batch(DHT_TABLES_SQL)?;
-        transaction.execute(
-            "ALTER TABLE torrents ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
-             CHECK (archived IN (0, 1))",
-            [],
-        )?;
-        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", 4)?;
-        transaction.commit()?;
-    }
-    if version == 3 {
-        let transaction = connection.transaction()?;
-        transaction.execute(
-            "ALTER TABLE torrents ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
-             CHECK (archived IN (0, 1))",
-            [],
-        )?;
-        transaction.execute_batch(REMOVAL_TABLE_SQL)?;
-        transaction.pragma_update(None, "user_version", 4)?;
-        transaction.commit()?;
-    }
-    if (1..=4).contains(&version) {
-        let transaction = connection.transaction()?;
-        transaction.execute(
-            "ALTER TABLE storage_roots ADD COLUMN label TEXT NOT NULL DEFAULT 'Downloads'
-             CHECK (length(label) BETWEEN 1 AND 256)",
-            [],
-        )?;
-        transaction.execute(
-            "ALTER TABLE storage_roots ADD COLUMN kind TEXT NOT NULL DEFAULT 'path'
-             CHECK (kind IN ('path', 'platform'))",
-            [],
-        )?;
-        transaction.execute(
-            "UPDATE storage_roots
-             SET label = root_id,
-                 kind = CASE
-                    WHEN locator = 'platform-capability:' THEN 'platform'
-                    ELSE 'path'
-                 END",
-            [],
-        )?;
-        transaction.execute_batch(
-            "CREATE TABLE storage_settings (
-                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-                default_root TEXT
-                    REFERENCES storage_roots(root_id)
-                    ON UPDATE CASCADE ON DELETE SET NULL,
-                show_add_options INTEGER NOT NULL DEFAULT 1
-                    CHECK (show_add_options IN (0, 1))
-             );
-             INSERT INTO storage_settings(singleton, default_root, show_add_options)
-             VALUES (1, NULL, 1);",
-        )?;
-        transaction.pragma_update(None, "user_version", 5)?;
-        transaction.commit()?;
-    }
-    if (1..=5).contains(&version) {
-        let transaction = connection.transaction()?;
-        if version != 1 {
-            transaction.execute(
-                "ALTER TABLE torrents ADD COLUMN publication_name TEXT
-                 CHECK (
-                    publication_name IS NULL OR
-                    length(publication_name) BETWEEN 1 AND 255
-                 )",
-                [],
-            )?;
-        }
-        transaction.execute(
-            "ALTER TABLE torrents ADD COLUMN managed_artifacts TEXT NOT NULL
-             DEFAULT 'legacy' CHECK (
-                managed_artifacts IN (
-                    'legacy', 'none', 'staging', 'published'
-                )
-             )",
-            [],
-        )?;
-        transaction.pragma_update(None, "user_version", 6)?;
-        transaction.commit()?;
-    }
-    if (1..=6).contains(&version) {
-        migrate_piece_bounds_to_v7(connection)?;
-    }
-    if (1..=7).contains(&version) {
-        migrate_sources_and_intake_bounds_to_v8(connection)?;
-    }
-    if (1..=8).contains(&version) {
-        migrate_client_settings_to_v9(connection)?;
-    }
-    if (1..=9).contains(&version) {
-        migrate_client_settings_to_v10_store(connection)?;
-    }
-    if (1..=10).contains(&version) {
-        migrate_client_settings_to_v11_store(connection)?;
-    }
-    if (1..=11).contains(&version) {
-        migrate_client_settings_to_v12_store(connection)?;
-    }
-    if (1..=12).contains(&version) {
-        migrate_selection_to_v13(connection)?;
-    }
-    if (1..=13).contains(&version) {
-        migrate_payload_facts_to_v14(connection)?;
-    }
-    if (1..=14).contains(&version) {
-        migrate_client_settings_to_v15_store(connection)?;
-    }
-    if (1..=15).contains(&version) {
-        migrate_dual_stack_state_to_v16(connection)?;
-    }
-    if (1..=16).contains(&version) {
-        migrate_to_v17(connection)?;
-    }
-    if (1..=17).contains(&version) {
-        migrate_to_v18(connection)?;
     }
     let stored_profile: String = connection.query_row(
         "SELECT profile_id FROM profile_state WHERE singleton = 1",
@@ -2630,683 +2657,22 @@ fn migrate(
     )?;
     if stored_profile != profile_id {
         return Err(StoreError::Configuration(format!(
-            "profile directory belongs to {stored_profile}, not {profile_id}"
+            "session database belongs to profile {stored_profile}, not {profile_id}"
+        )));
+    }
+    let invalid_identity_owners: i64 = connection.query_row(
+        "SELECT count(*) FROM torrents t
+         WHERE (SELECT count(*) FROM torrent_identities i
+                WHERE i.torrent_id = t.torrent_id) NOT BETWEEN 1 AND 2",
+        [],
+        |row| row.get(0),
+    )?;
+    if invalid_identity_owners != 0 {
+        return Err(StoreError::DurableState(format!(
+            "{invalid_identity_owners} torrent owners do not have one or two protocol identities"
         )));
     }
     read_client_settings(connection)?;
-    Ok(())
-}
-
-struct PayloadMigrationResult {
-    info_hash: Vec<u8>,
-    payload_state: PayloadState,
-    quarantine_reason: Option<String>,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum ArtifactObservation {
-    Missing,
-    Exact,
-    Unsafe,
-}
-
-fn observe_artifact(path: &Path, shape: PublicationShape) -> ArtifactObservation {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => ArtifactObservation::Unsafe,
-        Ok(metadata)
-            if matches!(shape, PublicationShape::File) && metadata.file_type().is_file() =>
-        {
-            ArtifactObservation::Exact
-        }
-        Ok(metadata)
-            if matches!(shape, PublicationShape::Tree) && metadata.file_type().is_dir() =>
-        {
-            ArtifactObservation::Exact
-        }
-        Ok(_) => ArtifactObservation::Unsafe,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ArtifactObservation::Missing,
-        Err(_) => ArtifactObservation::Unsafe,
-    }
-}
-
-fn observe_part(path: &Path) -> ArtifactObservation {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
-            ArtifactObservation::Exact
-        }
-        Ok(_) => ArtifactObservation::Unsafe,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ArtifactObservation::Missing,
-        Err(_) => ArtifactObservation::Unsafe,
-    }
-}
-
-fn inspect_payload_migrations(
-    connection: &Connection,
-) -> Result<Vec<PayloadMigrationResult>, StoreError> {
-    let mut statement = connection.prepare(
-        "SELECT t.info_hash, t.raw_info, t.publication_name, t.storage_state,
-                t.managed_artifacts, r.kind, r.locator
-         FROM torrents t JOIN storage_roots r ON r.root_id = t.storage_root
-         ORDER BY t.info_hash",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, Vec<u8>>(0)?,
-            row.get::<_, Option<Vec<u8>>>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?,
-            row.get::<_, String>(5)?,
-            row.get::<_, String>(6)?,
-        ))
-    })?;
-    let mut results = Vec::new();
-    for row in rows {
-        let (info_hash, raw_info, publication_name, storage, managed, kind, locator) = row?;
-        let hash: [u8; 20] = info_hash.clone().try_into().map_err(|_| {
-            StoreError::DurableState("invalid schema-13 info-hash length".to_owned())
-        })?;
-        let pair = (storage.as_str(), managed.as_str());
-        let semantic = match pair {
-            (_, "legacy") => Some(PayloadState::LegacyOwned),
-            ("none", "none") => Some(PayloadState::Absent),
-            ("staging", "staging") => Some(PayloadState::WorkOwned),
-            ("prepared", "staging" | "published") => Some(PayloadState::PublicationPending),
-            ("published", "published") => Some(PayloadState::FinalOwned),
-            ("staging", "published") => Some(PayloadState::FinalOwned),
-            _ => None,
-        };
-        let mut payload_state = semantic.unwrap_or(PayloadState::Absent);
-        let mut quarantine = semantic
-            .is_none()
-            .then(|| "schema-13 payload state could not be mapped safely".to_owned());
-        if kind == "path" {
-            let inspected = raw_info.as_deref().map(parse_durable_metainfo).transpose();
-            match inspected {
-                Err(error) => quarantine = Some(bounded_error(&error.to_string())),
-                Ok(None) if payload_state != PayloadState::Absent => {
-                    quarantine = Some("owned payload has no verified metadata".to_owned());
-                }
-                Ok(None) => {}
-                Ok(Some(metainfo)) => {
-                    if publication_name
-                        .as_deref()
-                        .is_some_and(|name| name != metainfo.name)
-                    {
-                        quarantine = Some(
-                            "stored publication name does not match verified metadata".to_owned(),
-                        );
-                    } else if let Ok(paths) =
-                        torrent_storage_paths_for_metainfo(Path::new(&locator), &metainfo)
-                    {
-                        let shape = PublicationShape::from_metainfo(&metainfo);
-                        let final_side = observe_artifact(&paths.output, shape);
-                        let work_side = observe_artifact(&paths.staging, shape);
-                        let part = observe_part(&paths.part);
-                        if part == ArtifactObservation::Unsafe {
-                            quarantine =
-                                Some("selective part artifact has an unsafe type".to_owned());
-                        }
-                        match pair {
-                            (_, "legacy") => {
-                                let legacy = observe_artifact(
-                                    &Path::new(&locator).join(encode_info_hash(hash)),
-                                    shape,
-                                );
-                                if legacy != ArtifactObservation::Exact {
-                                    quarantine = Some(
-                                        "legacy owned payload is missing or unsafe".to_owned(),
-                                    );
-                                }
-                            }
-                            ("none", "none") => {
-                                if final_side != ArtifactObservation::Missing
-                                    || work_side != ArtifactObservation::Missing
-                                {
-                                    quarantine = Some(
-                                        "unowned row has an exact managed artifact".to_owned(),
-                                    );
-                                }
-                            }
-                            ("staging", "staging") => {
-                                if work_side != ArtifactObservation::Exact
-                                    || final_side != ArtifactObservation::Missing
-                                {
-                                    quarantine = Some(
-                                        "work-owned payload is missing, unsafe, or ambiguous"
-                                            .to_owned(),
-                                    );
-                                }
-                            }
-                            ("prepared", "staging" | "published") => {
-                                if !matches!(
-                                    (work_side, final_side),
-                                    (ArtifactObservation::Exact, ArtifactObservation::Missing)
-                                        | (
-                                            ArtifactObservation::Missing,
-                                            ArtifactObservation::Exact
-                                        )
-                                ) {
-                                    quarantine = Some(
-                                        "pending publication has no single safe artifact side"
-                                            .to_owned(),
-                                    );
-                                }
-                            }
-                            ("published", "published") => {
-                                if final_side != ArtifactObservation::Exact
-                                    || work_side != ArtifactObservation::Missing
-                                {
-                                    quarantine = Some(
-                                        "final-owned payload is missing, unsafe, or ambiguous"
-                                            .to_owned(),
-                                    );
-                                }
-                            }
-                            ("staging", "published") => match (work_side, final_side) {
-                                (ArtifactObservation::Missing, ArtifactObservation::Exact) => {
-                                    payload_state = PayloadState::FinalOwned;
-                                }
-                                (ArtifactObservation::Exact, ArtifactObservation::Missing) => {
-                                    payload_state = PayloadState::WorkOwned;
-                                }
-                                _ => {
-                                    quarantine = Some(
-                                        "defective schema-13 payload has no single safe artifact side"
-                                            .to_owned(),
-                                    );
-                                }
-                            },
-                            _ => {}
-                        }
-                    } else {
-                        quarantine = Some("stored publication path is invalid".to_owned());
-                    }
-                }
-            }
-        } else if kind == "platform" && pair == ("staging", "published") {
-            quarantine =
-                Some("platform payload ownership requires provider reconciliation".to_owned());
-        }
-        results.push(PayloadMigrationResult {
-            info_hash,
-            payload_state,
-            quarantine_reason: quarantine.map(|reason| bounded_error(&reason)),
-        });
-    }
-    Ok(results)
-}
-
-fn migrate_payload_facts_to_v14(connection: &mut Connection) -> Result<(), StoreError> {
-    let inspected = inspect_payload_migrations(connection)?;
-    let transaction = connection.transaction()?;
-    let columns = {
-        let mut statement = transaction.prepare("PRAGMA table_info(torrents)")?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-        columns.collect::<Result<Vec<_>, _>>()?
-    };
-    if !columns.iter().any(|column| column == "payload_state") {
-        transaction.execute_batch(
-            "ALTER TABLE torrents ADD COLUMN payload_state TEXT NOT NULL DEFAULT 'absent'
-            CHECK (payload_state IN (
-                'absent', 'legacy_owned', 'work_owned',
-                'publication_pending', 'final_owned'
-            ));
-         ALTER TABLE torrents ADD COLUMN verification_requested INTEGER NOT NULL DEFAULT 0
-            CHECK (verification_requested >= 0);
-         ALTER TABLE torrents ADD COLUMN verification_completed INTEGER NOT NULL DEFAULT 0
-            CHECK (
-                verification_completed >= 0 AND
-                verification_completed <= verification_requested
-            );
-         ALTER TABLE torrents ADD COLUMN quarantine_reason TEXT
-            CHECK (quarantine_reason IS NULL OR length(quarantine_reason) <= 1024);",
-        )?;
-    }
-    transaction.execute_batch(
-        "UPDATE torrents
-            SET payload_state = CASE
-                WHEN managed_artifacts = 'legacy'
-                    THEN 'legacy_owned'
-                WHEN storage_state = 'none' AND managed_artifacts = 'none'
-                    THEN 'absent'
-                WHEN storage_state = 'staging' AND managed_artifacts = 'staging'
-                    THEN 'work_owned'
-                WHEN storage_state = 'prepared' AND managed_artifacts IN ('staging', 'published')
-                    THEN 'publication_pending'
-                WHEN storage_state = 'published' AND managed_artifacts = 'published'
-                    THEN 'final_owned'
-                WHEN storage_state = 'staging' AND managed_artifacts = 'published'
-                    THEN 'final_owned'
-                ELSE 'absent'
-            END,
-                verification_requested = CASE
-                    WHEN raw_info IS NULL THEN 0 ELSE 1
-                END,
-                verification_completed = CASE
-                    WHEN raw_info IS NULL THEN 0
-                    WHEN state IN ('complete', 'downloading', 'paused')
-                         AND error IS NULL THEN 0
-                    ELSE 0
-                END,
-                quarantine_reason = CASE
-                    WHEN state IN ('needs_repair', 'error')
-                        THEN COALESCE(error, 'schema-13 torrent requires repair')
-                    WHEN managed_artifacts = 'legacy'
-                        THEN NULL
-                    WHEN (storage_state = 'none' AND managed_artifacts = 'none')
-                      OR (storage_state = 'staging' AND managed_artifacts = 'staging')
-                      OR (storage_state = 'prepared' AND managed_artifacts IN ('staging', 'published'))
-                      OR (storage_state = 'published' AND managed_artifacts = 'published')
-                      OR (storage_state = 'staging' AND managed_artifacts = 'published')
-                        THEN NULL
-                    ELSE 'schema-13 payload state could not be mapped safely'
-                END;",
-    )?;
-    for result in inspected {
-        transaction.execute(
-            "UPDATE torrents
-             SET payload_state = ?2,
-                 quarantine_reason = COALESCE(?3, quarantine_reason)
-             WHERE info_hash = ?1",
-            params![
-                result.info_hash,
-                result.payload_state.as_str(),
-                result.quarantine_reason,
-            ],
-        )?;
-    }
-    transaction.execute_batch(
-        "ALTER TABLE torrents DROP COLUMN state;
-         ALTER TABLE torrents DROP COLUMN storage_state;
-         ALTER TABLE torrents DROP COLUMN managed_artifacts;",
-    )?;
-    transaction.pragma_update(None, "user_version", 14)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_piece_bounds_to_v7(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    transaction.pragma_update(None, "defer_foreign_keys", true)?;
-    transaction.execute_batch(
-        "ALTER TABLE file_selection RENAME TO file_selection_v6;
-         ALTER TABLE prepared_files RENAME TO prepared_files_v6;
-         ALTER TABLE removal_jobs RENAME TO removal_jobs_v6;
-         ALTER TABLE torrents RENAME TO torrents_v6;
-         CREATE TABLE torrents (
-            info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
-            magnet TEXT NOT NULL CHECK (length(magnet) <= 16384),
-            storage_root TEXT NOT NULL
-                REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
-            desired_state TEXT NOT NULL
-                CHECK (desired_state IN ('running', 'paused')),
-            state TEXT NOT NULL CHECK (
-                state IN (
-                    'awaiting_metadata', 'awaiting_storage', 'checking',
-                    'downloading', 'awaiting_publication', 'paused',
-                    'complete', 'needs_repair', 'error'
-                )
-            ),
-            storage_state TEXT NOT NULL CHECK (
-                storage_state IN (
-                    'none', 'staging', 'prepared', 'published',
-                    'needs_repair'
-                )
-            ),
-            raw_info BLOB CHECK (
-                raw_info IS NULL OR length(raw_info) <= 1048576
-            ),
-            publication_name TEXT CHECK (
-                publication_name IS NULL OR
-                length(publication_name) BETWEEN 1 AND 255
-            ),
-            managed_artifacts TEXT NOT NULL DEFAULT 'none' CHECK (
-                managed_artifacts IN (
-                    'legacy', 'none', 'staging', 'published'
-                )
-            ),
-            piece_count INTEGER CHECK (
-                piece_count IS NULL OR
-                (piece_count > 0 AND piece_count <= 52428)
-            ),
-            have_state BLOB CHECK (
-                have_state IS NULL OR length(have_state) <= 6588
-            ),
-            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-            created_revision INTEGER NOT NULL,
-            updated_revision INTEGER NOT NULL,
-            CHECK (
-                (piece_count IS NULL AND have_state IS NULL) OR
-                (piece_count IS NOT NULL AND have_state IS NOT NULL)
-            )
-         );
-         INSERT INTO torrents(
-            info_hash, magnet, storage_root, desired_state, state,
-            storage_state, raw_info, publication_name, managed_artifacts,
-            piece_count, have_state, error, archived, created_revision,
-            updated_revision
-         ) SELECT
-            info_hash, magnet, storage_root, desired_state, state,
-            storage_state, raw_info, publication_name, managed_artifacts,
-            piece_count, have_state, error, archived, created_revision,
-            updated_revision
-         FROM torrents_v6;
-         CREATE TABLE file_selection (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            file_index INTEGER NOT NULL
-                CHECK (file_index >= 0 AND file_index < 4096),
-            wanted INTEGER NOT NULL CHECK (wanted = 0),
-            PRIMARY KEY (info_hash, file_index)
-         ) WITHOUT ROWID;
-         INSERT INTO file_selection SELECT * FROM file_selection_v6;
-         CREATE TABLE prepared_files (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            file_index INTEGER NOT NULL
-                CHECK (file_index >= 0 AND file_index < 4096),
-            length INTEGER NOT NULL CHECK (length >= 0),
-            sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
-            PRIMARY KEY (info_hash, file_index)
-         ) WITHOUT ROWID;
-         INSERT INTO prepared_files SELECT * FROM prepared_files_v6;
-         CREATE TABLE removal_jobs (
-            info_hash BLOB PRIMARY KEY
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            operation_id TEXT NOT NULL UNIQUE
-                CHECK (length(operation_id) BETWEEN 1 AND 128),
-            data_policy TEXT NOT NULL
-                CHECK (data_policy IN ('keep', 'delete_managed')),
-            state TEXT NOT NULL
-                CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
-            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-            created_revision INTEGER NOT NULL CHECK (created_revision >= 0),
-            updated_revision INTEGER NOT NULL CHECK (updated_revision >= 0)
-         ) WITHOUT ROWID;
-         INSERT INTO removal_jobs SELECT * FROM removal_jobs_v6;
-         DROP TABLE file_selection_v6;
-         DROP TABLE prepared_files_v6;
-         DROP TABLE removal_jobs_v6;
-         DROP TABLE torrents_v6;",
-    )?;
-    transaction.pragma_update(None, "user_version", 7)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_sources_and_intake_bounds_to_v8(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    transaction.pragma_update(None, "defer_foreign_keys", true)?;
-    transaction.execute_batch(
-        "DROP TABLE IF EXISTS torrent_peer_hints;
-         DROP TABLE IF EXISTS torrent_trackers;
-         DROP TABLE IF EXISTS torrent_source;
-         ALTER TABLE file_selection RENAME TO file_selection_v7;
-         ALTER TABLE prepared_files RENAME TO prepared_files_v7;
-         ALTER TABLE removal_jobs RENAME TO removal_jobs_v7;
-         ALTER TABLE torrents RENAME TO torrents_v7;
-         CREATE TABLE torrents (
-            info_hash BLOB PRIMARY KEY CHECK (length(info_hash) = 20),
-            magnet TEXT CHECK (magnet IS NULL OR length(magnet) <= 16384),
-            storage_root TEXT NOT NULL
-                REFERENCES storage_roots(root_id) ON UPDATE CASCADE,
-            desired_state TEXT NOT NULL
-                CHECK (desired_state IN ('running', 'paused')),
-            state TEXT NOT NULL CHECK (
-                state IN (
-                    'awaiting_metadata', 'awaiting_storage', 'checking',
-                    'downloading', 'awaiting_publication', 'paused',
-                    'complete', 'needs_repair', 'error'
-                )
-            ),
-            storage_state TEXT NOT NULL CHECK (
-                storage_state IN (
-                    'none', 'staging', 'prepared', 'published',
-                    'needs_repair'
-                )
-            ),
-            raw_info BLOB CHECK (
-                raw_info IS NULL OR length(raw_info) <= 67108864
-            ),
-            publication_name TEXT CHECK (
-                publication_name IS NULL OR
-                length(publication_name) BETWEEN 1 AND 255
-            ),
-            managed_artifacts TEXT NOT NULL DEFAULT 'none' CHECK (
-                managed_artifacts IN ('legacy', 'none', 'staging', 'published')
-            ),
-            piece_count INTEGER CHECK (
-                piece_count IS NULL OR
-                (piece_count > 0 AND piece_count <= 2097152)
-            ),
-            have_state BLOB CHECK (
-                have_state IS NULL OR length(have_state) <= 262178
-            ),
-            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-            created_revision INTEGER NOT NULL,
-            updated_revision INTEGER NOT NULL,
-            CHECK (
-                (piece_count IS NULL AND have_state IS NULL) OR
-                (piece_count IS NOT NULL AND have_state IS NOT NULL)
-            )
-         );
-         INSERT INTO torrents(
-            info_hash, magnet, storage_root, desired_state, state,
-            storage_state, raw_info, publication_name, managed_artifacts,
-            piece_count, have_state, error, archived, created_revision,
-            updated_revision
-         ) SELECT
-            info_hash, magnet, storage_root, desired_state, state,
-            storage_state, raw_info, publication_name, managed_artifacts,
-            piece_count, have_state, error, archived, created_revision,
-            updated_revision
-         FROM torrents_v7;
-         CREATE TABLE file_selection (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            file_index INTEGER NOT NULL
-                CHECK (file_index >= 0 AND file_index < 374998),
-            wanted INTEGER NOT NULL CHECK (wanted = 0),
-            PRIMARY KEY (info_hash, file_index)
-         ) WITHOUT ROWID;
-         INSERT INTO file_selection SELECT * FROM file_selection_v7;
-         CREATE TABLE prepared_files (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            file_index INTEGER NOT NULL
-                CHECK (file_index >= 0 AND file_index < 374998),
-            length INTEGER NOT NULL CHECK (length >= 0),
-            sha1 BLOB NOT NULL CHECK (length(sha1) = 20),
-            PRIMARY KEY (info_hash, file_index)
-         ) WITHOUT ROWID;
-         INSERT INTO prepared_files SELECT * FROM prepared_files_v7;
-         CREATE TABLE removal_jobs (
-            info_hash BLOB PRIMARY KEY
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            operation_id TEXT NOT NULL UNIQUE
-                CHECK (length(operation_id) BETWEEN 1 AND 128),
-            data_policy TEXT NOT NULL
-                CHECK (data_policy IN ('keep', 'delete_managed')),
-            state TEXT NOT NULL
-                CHECK (state IN ('pending', 'awaiting_platform', 'failed')),
-            error TEXT CHECK (error IS NULL OR length(error) <= 1024),
-            created_revision INTEGER NOT NULL CHECK (created_revision >= 0),
-            updated_revision INTEGER NOT NULL CHECK (updated_revision >= 0)
-         ) WITHOUT ROWID;
-         INSERT INTO removal_jobs SELECT * FROM removal_jobs_v7;
-         DROP TABLE file_selection_v7;
-         DROP TABLE prepared_files_v7;
-         DROP TABLE removal_jobs_v7;
-         DROP TABLE torrents_v7;",
-    )?;
-    transaction.execute_batch(SOURCE_TABLES_SQL)?;
-
-    let magnets = {
-        let mut statement = transaction.prepare(
-            "SELECT info_hash, magnet FROM torrents WHERE magnet IS NOT NULL ORDER BY info_hash",
-        )?;
-        let rows = statement.query_map([], |row| {
-            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?))
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()?
-    };
-    for (info_hash, source) in magnets {
-        let digest = Sha256::digest(source.as_bytes());
-        transaction.execute(
-            "INSERT INTO torrent_source(
-                info_hash, kind, fidelity, magnet, metainfo, byte_length, sha256
-             ) VALUES (?1, 'magnet', 'canonicalized', ?2, NULL, ?3, ?4)",
-            params![
-                info_hash.as_slice(),
-                source,
-                i64::try_from(source.len()).expect("magnet bound fits i64"),
-                digest.as_slice(),
-            ],
-        )?;
-        let magnet =
-            Magnet::parse(&source).map_err(|error| StoreError::DurableState(error.to_string()))?;
-        for (position, tracker) in magnet.trackers.iter().enumerate() {
-            transaction.execute(
-                "INSERT INTO torrent_trackers(
-                    info_hash, tier, position, url, transport, source
-                 ) VALUES (?1, 0, ?2, ?3, ?4, 'magnet')",
-                params![
-                    info_hash.as_slice(),
-                    i64::try_from(position).expect("magnet tracker count is bounded"),
-                    tracker.url(),
-                    tracker_transport_name(tracker.transport()),
-                ],
-            )?;
-        }
-        for (position, hint) in magnet.peer_hints.iter().enumerate() {
-            transaction.execute(
-                "INSERT INTO torrent_peer_hints(
-                    info_hash, position, host, port, source
-                 ) VALUES (?1, ?2, ?3, ?4, 'magnet')",
-                params![
-                    info_hash.as_slice(),
-                    i64::try_from(position).expect("magnet peer hint count is bounded"),
-                    hint.host,
-                    i64::from(hint.port),
-                ],
-            )?;
-        }
-    }
-    transaction.pragma_update(None, "user_version", 8)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_client_settings_to_v9(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    create_client_settings(&transaction, &ClientSettings::default())?;
-    transaction.pragma_update(None, "user_version", 9)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_client_settings_to_v10_store(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v10(&transaction)?;
-    transaction.pragma_update(None, "user_version", 10)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_client_settings_to_v11_store(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v11(&transaction)?;
-    transaction.pragma_update(None, "user_version", 11)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_client_settings_to_v12_store(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v12(&transaction)?;
-    transaction.pragma_update(None, "user_version", 12)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_client_settings_to_v15_store(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v15(&transaction)?;
-    transaction.pragma_update(None, "user_version", 15)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_dual_stack_state_to_v16(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    migrate_client_settings_to_v16(&transaction)?;
-    transaction.execute_batch(
-        "CREATE TABLE IF NOT EXISTS dht_identities (
-            family INTEGER NOT NULL CHECK (family IN (4, 6)),
-            identity_order INTEGER NOT NULL CHECK (
-                identity_order >= 0 AND identity_order < 8
-            ),
-            address BLOB NOT NULL CHECK (
-                (family = 4 AND length(address) = 4) OR
-                (family = 6 AND length(address) = 16)
-            ),
-            node_id BLOB NOT NULL CHECK (length(node_id) = 20),
-            PRIMARY KEY (family, identity_order),
-            UNIQUE (family, address)
-         ) WITHOUT ROWID;",
-    )?;
-    transaction.pragma_update(None, "user_version", 16)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn migrate_selection_to_v13(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection.transaction()?;
-    transaction.pragma_update(None, "defer_foreign_keys", true)?;
-    let has_selection_default = {
-        let mut statement = transaction.prepare("PRAGMA table_info(torrents)")?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-        columns
-            .collect::<Result<Vec<_>, _>>()?
-            .iter()
-            .any(|name| name == "selection_default")
-    };
-    if !has_selection_default {
-        transaction.execute_batch(
-            "ALTER TABLE torrents ADD COLUMN selection_default TEXT NOT NULL
-                DEFAULT 'wanted' CHECK (selection_default IN ('wanted', 'skipped'));",
-        )?;
-    }
-    transaction.execute_batch(
-        "DROP TABLE IF EXISTS pending_selection_ranges;
-         ALTER TABLE file_selection RENAME TO file_selection_v12;
-         CREATE TABLE file_selection (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            file_index INTEGER NOT NULL
-                CHECK (file_index >= 0 AND file_index < 374998),
-            wanted INTEGER NOT NULL CHECK (wanted IN (0, 1)),
-            PRIMARY KEY (info_hash, file_index)
-         ) WITHOUT ROWID;
-         INSERT INTO file_selection SELECT * FROM file_selection_v12;
-         DROP TABLE file_selection_v12;
-         CREATE TABLE pending_selection_ranges (
-            info_hash BLOB NOT NULL
-                REFERENCES torrents(info_hash) ON DELETE CASCADE,
-            range_start INTEGER NOT NULL CHECK (
-                range_start >= 0 AND range_start < 374998
-            ),
-            range_end INTEGER NOT NULL CHECK (
-                range_end >= range_start AND range_end < 374998
-            ),
-            PRIMARY KEY (info_hash, range_start)
-         ) WITHOUT ROWID;",
-    )?;
-    transaction.pragma_update(None, "user_version", 13)?;
-    transaction.commit()?;
     Ok(())
 }
 
@@ -3635,21 +3001,13 @@ fn add_torrent_bytes(
     let selection_default = prepared.selection_default;
     let selection_exceptions = &prepared.selection_exceptions;
     let metainfo = &projection.metainfo;
-    let torrent_id = encode_info_hash(metainfo.info_hash);
-    let exists = transaction
-        .query_row(
-            "SELECT 1 FROM torrents WHERE info_hash = ?1",
-            [metainfo.info_hash.as_slice()],
-            |_| Ok(()),
-        )
-        .optional()
-        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?
-        .is_some();
-    if exists {
+    if let Some(existing) = find_torrent_id_by_v1(transaction, &metainfo.info_hash)
+        .map_err(AddTorrentBytesError::Store)?
+    {
         return Ok((
             current_revision,
             add_result(
-                torrent_id,
+                existing.to_string(),
                 AddTorrentDisposition::AlreadyPresent,
                 current_revision,
             ),
@@ -3670,12 +3028,14 @@ fn add_torrent_bytes(
             format!("storage root {} is not configured", request.storage_root),
         ));
     }
-    let have = HaveState::empty(metainfo.info_hash, metainfo.piece_count())
+    let torrent_id = allocate_torrent_id(transaction).map_err(AddTorrentBytesError::Store)?;
+    let raw_info = &source[projection.info_span.clone()];
+    let fingerprint = ContentFingerprint::for_info_bytes(raw_info);
+    let have = HaveState::empty(torrent_id, fingerprint, metainfo.piece_count())
         .map_err(|error| {
             AddTorrentBytesError::Response(ErrorCode::ResourceLimit, error.to_string())
         })?
         .encode();
-    let raw_info = &source[projection.info_span.clone()];
     let revision = current_revision.checked_add(1).ok_or_else(|| {
         AddTorrentBytesError::Response(ErrorCode::Internal, "profile revision overflow".to_owned())
     })?;
@@ -3691,14 +3051,14 @@ fn add_torrent_bytes(
     transaction
         .execute(
             "INSERT INTO torrents(
-                info_hash, magnet, storage_root, desired_state, payload_state,
-                raw_info, publication_name, piece_count, have_state,
+                torrent_id, magnet, storage_root, desired_state, payload_state,
+                raw_info, content_fingerprint, publication_name, piece_count, have_state,
                 created_revision, updated_revision, selection_default
              ) VALUES (
-                ?1, NULL, ?2, ?3, 'absent', ?4, ?5, ?6, ?7, ?8, ?8, ?9
+                ?1, NULL, ?2, ?3, 'absent', ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10
              )",
             params![
-                metainfo.info_hash.as_slice(),
+                torrent_id.as_bytes().as_slice(),
                 request.storage_root,
                 if request.start_content {
                     "running"
@@ -3706,6 +3066,7 @@ fn add_torrent_bytes(
                     "paused"
                 },
                 raw_info,
+                fingerprint.as_bytes().as_slice(),
                 metainfo.name,
                 i64::try_from(metainfo.piece_count()).map_err(|_| {
                     AddTorrentBytesError::Response(
@@ -3723,17 +3084,26 @@ fn add_torrent_bytes(
             ],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
+    transaction
+        .execute(
+            "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+             VALUES (?1, 'v1', ?2)",
+            params![
+                torrent_id.as_bytes().as_slice(),
+                metainfo.info_hash.as_slice()
+            ],
+        )
+        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     if request.start_content {
-        download_queue::append(transaction, &metainfo.info_hash)
-            .map_err(AddTorrentBytesError::Store)?;
+        download_queue::append(transaction, &torrent_id).map_err(AddTorrentBytesError::Store)?;
     }
     transaction
         .execute(
             "INSERT INTO torrent_source(
-                info_hash, kind, fidelity, magnet, metainfo, byte_length, sha256
+                torrent_id, kind, fidelity, magnet, metainfo, byte_length, sha256
              ) VALUES (?1, 'metainfo', 'verbatim', NULL, ?2, ?3, ?4)",
             params![
-                metainfo.info_hash.as_slice(),
+                torrent_id.as_bytes().as_slice(),
                 source,
                 i64::try_from(source.len()).map_err(|_| {
                     AddTorrentBytesError::Response(
@@ -3754,10 +3124,10 @@ fn add_torrent_bytes(
         transaction
             .execute(
                 "INSERT INTO torrent_trackers(
-                    info_hash, tier, position, url, transport, source
+                    torrent_id, tier, position, url, transport, source
                  ) VALUES (?1, ?2, ?3, ?4, ?5, 'metainfo')",
                 params![
-                    metainfo.info_hash.as_slice(),
+                    torrent_id.as_bytes().as_slice(),
                     i64::from(tracker.tier),
                     i64::from(tracker.position),
                     tracker.url.as_str(),
@@ -3770,10 +3140,10 @@ fn add_torrent_bytes(
     for file_index in selection_exceptions {
         transaction
             .execute(
-                "INSERT INTO file_selection(info_hash, file_index, wanted)
+                "INSERT INTO file_selection(torrent_id, file_index, wanted)
                  VALUES (?1, ?2, ?3)",
                 params![
-                    metainfo.info_hash.as_slice(),
+                    torrent_id.as_bytes().as_slice(),
                     i64::from(*file_index),
                     exception_wanted
                 ],
@@ -3782,7 +3152,11 @@ fn add_torrent_bytes(
     }
     Ok((
         revision,
-        add_result(torrent_id, AddTorrentDisposition::Added, revision),
+        add_result(
+            torrent_id.to_string(),
+            AddTorrentDisposition::Added,
+            revision,
+        ),
     ))
 }
 
@@ -3791,7 +3165,7 @@ fn force_recheck(
     torrent_id: &str,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -3802,9 +3176,9 @@ fn force_recheck(
             "SELECT raw_info IS NOT NULL, payload_state,
                     verification_requested, verification_completed,
                     EXISTS(SELECT 1 FROM removal_jobs r
-                           WHERE r.info_hash = torrents.info_hash)
-             FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+                           WHERE r.torrent_id = torrents.torrent_id)
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, bool>(0)?,
@@ -3820,10 +3194,7 @@ fn force_recheck(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if row.4 {
@@ -3863,8 +3234,8 @@ fn force_recheck(
             "UPDATE torrents
              SET error = NULL, updated_revision = ?2,
                  verification_requested = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), revision_sql, requested,],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), revision_sql, requested,],
         )
         .map_err(internal_error)?;
     Ok(revision)
@@ -3876,7 +3247,7 @@ fn move_download_to_edge(
     edge: QueueEdge,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -3887,9 +3258,9 @@ fn move_download_to_edge(
             "SELECT download_queue_position IS NOT NULL,
                     payload_state <> 'final_owned', archived = 0,
                     NOT EXISTS(SELECT 1 FROM removal_jobs r
-                               WHERE r.info_hash = torrents.info_hash)
-             FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+                               WHERE r.torrent_id = torrents.torrent_id)
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, bool>(0)?,
@@ -3904,10 +3275,7 @@ fn move_download_to_edge(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if !(eligible.0 && eligible.1 && eligible.2 && eligible.3) {
@@ -3917,19 +3285,19 @@ fn move_download_to_edge(
                 .to_owned(),
         ));
     }
-    if download_queue::is_at_edge(transaction, &info_hash, edge)
+    if download_queue::is_at_edge(transaction, &torrent_id, edge)
         .map_err(|error| internal_message(&error.to_string()))?
     {
         return Ok(current_revision);
     }
     let revision = next_revision(transaction, current_revision)?;
-    download_queue::move_to_edge(transaction, &info_hash, edge)
+    download_queue::move_to_edge(transaction, &torrent_id, edge)
         .map_err(|error| internal_message(&error.to_string()))?;
     transaction
         .execute(
-            "UPDATE torrents SET updated_revision = ?2 WHERE info_hash = ?1",
+            "UPDATE torrents SET updated_revision = ?2 WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 i64::try_from(revision)
                     .map_err(|_| internal_message("profile revision overflow"))?
             ],
@@ -4036,7 +3404,6 @@ fn add_magnet(
 ) -> Result<(u64, AddTorrentResult), (ErrorCode, String)> {
     let magnet =
         Magnet::parse(source).map_err(|error| (ErrorCode::InvalidRequest, error.to_string()))?;
-    let torrent_id = encode_info_hash(magnet.info_hash);
     if !skip_files.is_empty() && magnet.select_only.is_some() {
         return Err((
             ErrorCode::InvalidRequest,
@@ -4045,27 +3412,31 @@ fn add_magnet(
     }
     let existing = transaction
         .query_row(
-            "SELECT raw_info, selection_default, payload_state,
+            "SELECT t.torrent_id, t.raw_info, t.selection_default, t.payload_state,
                     desired_state, archived, quarantine_reason,
                     EXISTS(SELECT 1 FROM removal_jobs r
-                           WHERE r.info_hash = torrents.info_hash)
-             FROM torrents WHERE info_hash = ?1",
+                           WHERE r.torrent_id = t.torrent_id)
+             FROM torrents t
+             JOIN torrent_identities i ON i.torrent_id = t.torrent_id
+             WHERE i.protocol = 'v1' AND i.full_hash = ?1",
             [magnet.info_hash.as_slice()],
             |row| {
                 Ok((
-                    row.get::<_, Option<Vec<u8>>>(0)?,
-                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, bool>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, bool>(6)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, bool>(7)?,
                 ))
             },
         )
         .optional()
         .map_err(internal_error)?;
     if let Some((
+        torrent_id,
         raw_info,
         selection_default,
         payload_state,
@@ -4075,6 +3446,8 @@ fn add_magnet(
         removing,
     )) = existing
     {
+        let torrent_id = decode_stored_torrent_id(torrent_id)
+            .map_err(|error| internal_message(&error.to_string()))?;
         if removing {
             return Err((
                 ErrorCode::InvalidTorrentState,
@@ -4085,7 +3458,7 @@ fn add_magnet(
             return Ok((
                 current_revision,
                 add_result(
-                    torrent_id,
+                    torrent_id.to_string(),
                     AddTorrentDisposition::AlreadyPresent,
                     current_revision,
                 ),
@@ -4105,7 +3478,7 @@ fn add_magnet(
             .map(|raw_info| {
                 plan_duplicate_selection(
                     transaction,
-                    &magnet.info_hash,
+                    &torrent_id,
                     raw_info,
                     &selection_default,
                     select_only.ranges(),
@@ -4113,7 +3486,7 @@ fn add_magnet(
             })
             .transpose()?;
         let pending_plan = if raw_info.is_none() {
-            union_pending_selection(transaction, &magnet.info_hash, select_only.ranges())?
+            union_pending_selection(transaction, &torrent_id, select_only.ranges())?
         } else {
             None
         };
@@ -4125,7 +3498,7 @@ fn add_magnet(
             return Ok((
                 current_revision,
                 add_result(
-                    torrent_id,
+                    torrent_id.to_string(),
                     AddTorrentDisposition::AlreadyPresent,
                     current_revision,
                 ),
@@ -4137,33 +3510,33 @@ fn add_magnet(
                 if *wanted_value {
                     transaction
                         .execute(
-                            "INSERT INTO file_selection(info_hash, file_index, wanted)
+                            "INSERT INTO file_selection(torrent_id, file_index, wanted)
                          VALUES (?1, ?2, 1)",
-                            params![magnet.info_hash.as_slice(), i64::from(*index)],
+                            params![torrent_id.as_bytes().as_slice(), i64::from(*index)],
                         )
                         .map_err(internal_error)?;
                 } else {
                     transaction
                         .execute(
                             "DELETE FROM file_selection
-                         WHERE info_hash = ?1 AND file_index = ?2 AND wanted = 0",
-                            params![magnet.info_hash.as_slice(), i64::from(*index)],
+                         WHERE torrent_id = ?1 AND file_index = ?2 AND wanted = 0",
+                            params![torrent_id.as_bytes().as_slice(), i64::from(*index)],
                         )
                         .map_err(internal_error)?;
                 }
             }
         }
         if let Some(ranges) = &pending_plan {
-            write_pending_ranges(transaction, &magnet.info_hash, ranges)?;
+            write_pending_ranges(transaction, &torrent_id, ranges)?;
         }
         let request_verification = raw_info.is_some() && desired_state == "running" && !archived;
         transaction
             .execute(
                 "UPDATE torrents SET updated_revision = ?2,
                     error = CASE WHEN ?3 THEN NULL ELSE error END
-                 WHERE info_hash = ?1",
+                 WHERE torrent_id = ?1",
                 params![
-                    magnet.info_hash.as_slice(),
+                    torrent_id.as_bytes().as_slice(),
                     sql_revision(revision).map_err(|e| internal_message(&e.to_string()))?,
                     request_verification,
                 ],
@@ -4172,7 +3545,7 @@ fn add_magnet(
         return Ok((
             revision,
             add_result(
-                torrent_id,
+                torrent_id.to_string(),
                 AddTorrentDisposition::SelectionExpanded {
                     newly_wanted_count: file_plan.as_ref().map(|(_, changes)| changes.len() as u32),
                 },
@@ -4195,6 +3568,8 @@ fn add_magnet(
             format!("storage root {storage_root} is not configured"),
         ));
     }
+    let torrent_id =
+        allocate_torrent_id(transaction).map_err(|error| internal_message(&error.to_string()))?;
     let revision = current_revision
         .checked_add(1)
         .ok_or_else(|| internal_message("profile revision overflow"))?;
@@ -4209,11 +3584,11 @@ fn add_magnet(
     transaction
         .execute(
             "INSERT INTO torrents(
-                info_hash, magnet, storage_root, desired_state, payload_state,
+                torrent_id, magnet, storage_root, desired_state, payload_state,
                 created_revision, updated_revision, selection_default
              ) VALUES (?1, ?2, ?3, ?4, 'absent', ?5, ?5, ?6)",
             params![
-                magnet.info_hash.as_slice(),
+                torrent_id.as_bytes().as_slice(),
                 canonical_magnet(&magnet),
                 storage_root,
                 if start_content { "running" } else { "paused" },
@@ -4226,16 +3601,26 @@ fn add_magnet(
             ],
         )
         .map_err(internal_error)?;
-    download_queue::append(transaction, &magnet.info_hash)
+    transaction
+        .execute(
+            "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+             VALUES (?1, 'v1', ?2)",
+            params![
+                torrent_id.as_bytes().as_slice(),
+                magnet.info_hash.as_slice()
+            ],
+        )
+        .map_err(internal_error)?;
+    download_queue::append(transaction, &torrent_id)
         .map_err(|error| internal_message(&error.to_string()))?;
     let source_digest = Sha256::digest(source.as_bytes());
     transaction
         .execute(
             "INSERT INTO torrent_source(
-                info_hash, kind, fidelity, magnet, metainfo, byte_length, sha256
+                torrent_id, kind, fidelity, magnet, metainfo, byte_length, sha256
              ) VALUES (?1, 'magnet', 'verbatim', ?2, NULL, ?3, ?4)",
             params![
-                magnet.info_hash.as_slice(),
+                torrent_id.as_bytes().as_slice(),
                 source,
                 i64::try_from(source.len())
                     .map_err(|_| internal_message("magnet length overflows i64"))?,
@@ -4247,10 +3632,10 @@ fn add_magnet(
         transaction
             .execute(
                 "INSERT INTO torrent_trackers(
-                    info_hash, tier, position, url, transport, source
+                    torrent_id, tier, position, url, transport, source
                  ) VALUES (?1, 0, ?2, ?3, ?4, 'magnet')",
                 params![
-                    magnet.info_hash.as_slice(),
+                    torrent_id.as_bytes().as_slice(),
                     i64::try_from(position)
                         .map_err(|_| internal_message("tracker position overflows i64"))?,
                     tracker.url(),
@@ -4263,10 +3648,10 @@ fn add_magnet(
         transaction
             .execute(
                 "INSERT INTO torrent_peer_hints(
-                    info_hash, position, host, port, source
+                    torrent_id, position, host, port, source
                  ) VALUES (?1, ?2, ?3, ?4, 'magnet')",
                 params![
-                    magnet.info_hash.as_slice(),
+                    torrent_id.as_bytes().as_slice(),
                     i64::try_from(position)
                         .map_err(|_| internal_message("peer hint position overflows i64"))?,
                     hint.host,
@@ -4278,18 +3663,22 @@ fn add_magnet(
     for file_index in skip_files {
         transaction
             .execute(
-                "INSERT INTO file_selection(info_hash, file_index, wanted)
+                "INSERT INTO file_selection(torrent_id, file_index, wanted)
                  VALUES (?1, ?2, 0)",
-                params![magnet.info_hash.as_slice(), i64::from(*file_index)],
+                params![torrent_id.as_bytes().as_slice(), i64::from(*file_index)],
             )
             .map_err(internal_error)?;
     }
     if let Some(selection) = &magnet.select_only {
-        write_pending_ranges(transaction, &magnet.info_hash, selection.ranges())?;
+        write_pending_ranges(transaction, &torrent_id, selection.ranges())?;
     }
     Ok((
         revision,
-        add_result(torrent_id, AddTorrentDisposition::Added, revision),
+        add_result(
+            torrent_id.to_string(),
+            AddTorrentDisposition::Added,
+            revision,
+        ),
     ))
 }
 
@@ -4307,7 +3696,7 @@ fn add_result(
 
 fn plan_duplicate_selection(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     raw_info: &[u8],
     selection_default: &str,
     ranges: &[MagnetFileIndexRange],
@@ -4323,7 +3712,7 @@ fn plan_duplicate_selection(
             ));
         }
     };
-    let (_, exceptions) = read_selection_state(transaction, info_hash)
+    let (_, exceptions) = read_selection_state(transaction, torrent_id)
         .map_err(|error| internal_message(&error.to_string()))?;
     let mut changes = Vec::new();
     for range in ranges {
@@ -4357,16 +3746,16 @@ fn plan_duplicate_selection(
 
 fn read_pending_ranges(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
 ) -> Result<Vec<MagnetFileIndexRange>, (ErrorCode, String)> {
     let mut statement = transaction
         .prepare(
             "SELECT range_start, range_end FROM pending_selection_ranges
-         WHERE info_hash = ?1 ORDER BY range_start",
+         WHERE torrent_id = ?1 ORDER BY range_start",
         )
         .map_err(internal_error)?;
     let rows = statement
-        .query_map([info_hash.as_slice()], |row| {
+        .query_map([torrent_id.as_bytes()], |row| {
             Ok(MagnetFileIndexRange {
                 start: row.get(0)?,
                 end: row.get(1)?,
@@ -4378,10 +3767,10 @@ fn read_pending_ranges(
 
 fn union_pending_selection(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     added: &[MagnetFileIndexRange],
 ) -> Result<Option<Vec<MagnetFileIndexRange>>, (ErrorCode, String)> {
-    let initial = read_pending_ranges(transaction, info_hash)?;
+    let initial = read_pending_ranges(transaction, torrent_id)?;
     let mut all = initial.clone();
     all.extend_from_slice(added);
     all.sort_unstable_by_key(|range| (range.start, range.end));
@@ -4403,19 +3792,19 @@ fn union_pending_selection(
 
 fn write_pending_ranges(
     transaction: &Transaction<'_>,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
     ranges: &[MagnetFileIndexRange],
 ) -> Result<(), (ErrorCode, String)> {
     transaction
         .execute(
-            "DELETE FROM pending_selection_ranges WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "DELETE FROM pending_selection_ranges WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
         )
         .map_err(internal_error)?;
     for range in ranges {
         transaction.execute(
-            "INSERT INTO pending_selection_ranges(info_hash, range_start, range_end) VALUES (?1, ?2, ?3)",
-            params![info_hash.as_slice(), i64::from(range.start), i64::from(range.end)],
+            "INSERT INTO pending_selection_ranges(torrent_id, range_start, range_end) VALUES (?1, ?2, ?3)",
+            params![torrent_id.as_bytes(), i64::from(range.start), i64::from(range.end)],
         ).map_err(internal_error)?;
     }
     Ok(())
@@ -4465,7 +3854,7 @@ fn set_file_priority_indices<I>(
 where
     I: Iterator<Item = u32> + Clone,
 {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -4474,13 +3863,13 @@ where
     let row = transaction
         .query_row(
             "SELECT t.raw_info, t.payload_state, t.quarantine_reason,
-                    r.info_hash IS NOT NULL,
+                    r.torrent_id IS NOT NULL,
                     t.selection_default, t.desired_state, t.archived,
                     t.download_queue_position
              FROM torrents t
-             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
-             WHERE t.info_hash = ?1",
-            [info_hash.as_slice()],
+             LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+             WHERE t.torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, Option<Vec<u8>>>(0)?,
@@ -4499,10 +3888,7 @@ where
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if row.3 {
@@ -4539,7 +3925,7 @@ where
             ));
         }
     }
-    let (selection_default, mut exceptions) = read_selection_state(transaction, &info_hash)
+    let (selection_default, mut exceptions) = read_selection_state(transaction, &torrent_id)
         .map_err(|error| internal_message(&error.to_string()))?;
     let initial_exceptions = exceptions.clone();
     for file_index in file_indices.clone() {
@@ -4571,7 +3957,7 @@ where
     let running_changed = set_running && row.5 != "running";
     let move_download_to_head = set_running
         && row.7.is_some()
-        && !download_queue::is_at_edge(transaction, &info_hash, QueueEdge::Top)
+        && !download_queue::is_at_edge(transaction, &torrent_id, QueueEdge::Top)
             .map_err(|error| internal_message(&error.to_string()))?;
     let append_reopened_download = selection_changed
         && priority == FilePriority::Normal
@@ -4593,18 +3979,18 @@ where
     if selection_changed {
         transaction
             .execute(
-                "DELETE FROM file_selection WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "DELETE FROM file_selection WHERE torrent_id = ?1",
+                [torrent_id.as_bytes()],
             )
             .map_err(internal_error)?;
         let exception_wanted = selection_default == FilePriority::Skip;
         for file_index in exceptions {
             transaction
                 .execute(
-                    "INSERT INTO file_selection(info_hash, file_index, wanted)
+                    "INSERT INTO file_selection(torrent_id, file_index, wanted)
                      VALUES (?1, ?2, ?3)",
                     params![
-                        info_hash.as_slice(),
+                        torrent_id.as_bytes(),
                         i64::from(file_index),
                         exception_wanted
                     ],
@@ -4621,9 +4007,9 @@ where
         .execute(
             "UPDATE torrents
              SET desired_state = ?2, error = NULL, updated_revision = ?3
-             WHERE info_hash = ?1",
+             WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 desired_state,
                 i64::try_from(revision)
                     .map_err(|_| internal_message("profile revision overflow"))?
@@ -4632,14 +4018,14 @@ where
         .map_err(internal_error)?;
     if set_running {
         if row.7.is_some() {
-            download_queue::move_to_edge(transaction, &info_hash, QueueEdge::Top)
+            download_queue::move_to_edge(transaction, &torrent_id, QueueEdge::Top)
                 .map_err(|error| internal_message(&error.to_string()))?;
         } else if selection_changed {
-            download_queue::place_missing(transaction, &info_hash, QueueEdge::Top)
+            download_queue::place_missing(transaction, &torrent_id, QueueEdge::Top)
                 .map_err(|error| internal_message(&error.to_string()))?;
         }
     } else if append_reopened_download {
-        download_queue::append(transaction, &info_hash)
+        download_queue::append(transaction, &torrent_id)
             .map_err(|error| internal_message(&error.to_string()))?;
     }
     Ok(revision)
@@ -4651,7 +4037,7 @@ fn set_desired_state(
     running: bool,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -4660,11 +4046,11 @@ fn set_desired_state(
     let row = transaction
         .query_row(
             "SELECT t.desired_state, t.quarantine_reason, t.payload_state,
-                    r.info_hash IS NOT NULL
+                    r.torrent_id IS NOT NULL
              FROM torrents t
-             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
-             WHERE t.info_hash = ?1",
-            [info_hash.as_slice()],
+             LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+             WHERE t.torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -4679,10 +4065,7 @@ fn set_desired_state(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if row.3 {
@@ -4716,12 +4099,12 @@ fn set_desired_state(
         .execute(
             "UPDATE torrents
              SET desired_state = ?2, error = NULL, updated_revision = ?3
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), desired, revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), desired, revision_sql],
         )
         .map_err(internal_error)?;
     if running && row.2 != PayloadState::FinalOwned.as_str() {
-        download_queue::append(transaction, &info_hash)
+        download_queue::append(transaction, &torrent_id)
             .map_err(|error| internal_message(&error.to_string()))?;
     }
     Ok(revision)
@@ -4733,7 +4116,7 @@ fn set_archived(
     archived: bool,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -4741,11 +4124,11 @@ fn set_archived(
     })?;
     let current = transaction
         .query_row(
-            "SELECT t.archived, r.info_hash IS NOT NULL
+            "SELECT t.archived, r.torrent_id IS NOT NULL
              FROM torrents t
-             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
-             WHERE t.info_hash = ?1",
-            [info_hash.as_slice()],
+             LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+             WHERE t.torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
         )
         .optional()
@@ -4753,10 +4136,7 @@ fn set_archived(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if current.1 {
@@ -4772,9 +4152,9 @@ fn set_archived(
     transaction
         .execute(
             "UPDATE torrents SET archived = ?2, updated_revision = ?3
-             WHERE info_hash = ?1",
+             WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 archived,
                 i64::try_from(revision)
                     .map_err(|_| internal_message("profile revision overflow"))?
@@ -4790,7 +4170,7 @@ fn begin_removal(
     policy: RemovalDataPolicy,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -4800,9 +4180,9 @@ fn begin_removal(
         .query_row(
             "SELECT r.state
              FROM torrents t
-             LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
-             WHERE t.info_hash = ?1",
-            [info_hash.as_slice()],
+             LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+             WHERE t.torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| row.get::<_, Option<String>>(0),
         )
         .optional()
@@ -4810,10 +4190,7 @@ fn begin_removal(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     if removal_state
@@ -4829,23 +4206,23 @@ fn begin_removal(
     let revision = next_revision(transaction, current_revision)?;
     let revision_sql =
         i64::try_from(revision).map_err(|_| internal_message("profile revision overflow"))?;
-    let operation_id = format!("remove-{revision}-{}", torrent_id.to_ascii_lowercase());
+    let operation_id = format!("remove-{revision}-{}", torrent_id);
     transaction
         .execute(
             "UPDATE torrents
              SET desired_state = 'paused', error = NULL,
                  updated_revision = ?2
-             WHERE info_hash = ?1",
-            params![info_hash.as_slice(), revision_sql],
+             WHERE torrent_id = ?1",
+            params![torrent_id.as_bytes(), revision_sql],
         )
         .map_err(internal_error)?;
     transaction
         .execute(
             "INSERT INTO removal_jobs(
-                info_hash, operation_id, data_policy, state, error,
+                torrent_id, operation_id, data_policy, state, error,
                 created_revision, updated_revision
              ) VALUES (?1, ?2, ?3, 'pending', NULL, ?4, ?4)
-             ON CONFLICT(info_hash) DO UPDATE SET
+             ON CONFLICT(torrent_id) DO UPDATE SET
                 operation_id = excluded.operation_id,
                 data_policy = excluded.data_policy,
                 state = 'pending',
@@ -4853,7 +4230,7 @@ fn begin_removal(
                 created_revision = excluded.created_revision,
                 updated_revision = excluded.updated_revision",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 operation_id,
                 policy.as_str(),
                 revision_sql
@@ -4887,7 +4264,7 @@ fn set_torrent_transfer_limits(
     limits: TorrentTransferLimits,
     current_revision: u64,
 ) -> Result<u64, (ErrorCode, String)> {
-    let info_hash = decode_info_hash(torrent_id).ok_or_else(|| {
+    let torrent_id = decode_torrent_id(torrent_id).ok_or_else(|| {
         (
             ErrorCode::InvalidRequest,
             "invalid torrent identity".to_owned(),
@@ -4896,8 +4273,8 @@ fn set_torrent_transfer_limits(
     let current = transaction
         .query_row(
             "SELECT upload_rate_limit, download_rate_limit
-             FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
@@ -4905,10 +4282,7 @@ fn set_torrent_transfer_limits(
         .ok_or_else(|| {
             (
                 ErrorCode::UnknownTorrent,
-                format!(
-                    "torrent {} is not in the profile",
-                    torrent_id.to_ascii_lowercase()
-                ),
+                format!("torrent {torrent_id} is not in the profile"),
             )
         })?;
     let desired = (limits.upload.persisted(), limits.download.persisted());
@@ -4921,9 +4295,9 @@ fn set_torrent_transfer_limits(
             "UPDATE torrents
              SET upload_rate_limit = ?2, download_rate_limit = ?3,
                  updated_revision = ?4
-             WHERE info_hash = ?1",
+             WHERE torrent_id = ?1",
             params![
-                info_hash.as_slice(),
+                torrent_id.as_bytes(),
                 desired.0,
                 desired.1,
                 i64::try_from(revision).map_err(|_| internal_message("revision overflow"))?,
@@ -4958,14 +4332,15 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     let revision = read_revision(connection)?;
     let queue_ordinals = read_download_queue_ordinals(connection)?;
     let mut statement = connection.prepare(
-        "SELECT t.info_hash, t.storage_root, t.raw_info, t.piece_count,
-                t.have_state, t.error, t.archived, r.state, r.error,
+        "SELECT t.torrent_id, t.storage_root, t.raw_info, t.piece_count,
+                t.have_state, t.content_fingerprint, t.error, t.archived,
+                r.state, r.error,
                 t.desired_state, t.payload_state, t.verification_requested,
                 t.verification_completed, t.quarantine_reason,
                 t.upload_rate_limit, t.download_rate_limit
          FROM torrents t
-         LEFT JOIN removal_jobs r ON r.info_hash = t.info_hash
-         ORDER BY t.info_hash",
+         LEFT JOIN removal_jobs r ON r.torrent_id = t.torrent_id
+         ORDER BY t.torrent_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -4974,33 +4349,30 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             row.get::<_, Option<Vec<u8>>>(2)?,
             row.get::<_, Option<i64>>(3)?,
             row.get::<_, Option<Vec<u8>>>(4)?,
-            row.get::<_, Option<String>>(5)?,
-            row.get::<_, bool>(6)?,
-            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<Vec<u8>>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, bool>(7)?,
             row.get::<_, Option<String>>(8)?,
-            row.get::<_, String>(9)?,
+            row.get::<_, Option<String>>(9)?,
             row.get::<_, String>(10)?,
-            row.get::<_, i64>(11)?,
+            row.get::<_, String>(11)?,
             row.get::<_, i64>(12)?,
-            row.get::<_, Option<String>>(13)?,
-            row.get::<_, i64>(14)?,
+            row.get::<_, i64>(13)?,
+            row.get::<_, Option<String>>(14)?,
             row.get::<_, i64>(15)?,
+            row.get::<_, i64>(16)?,
         ))
     })?;
     let mut torrents = Vec::new();
     for row in rows {
         let row = row?;
-        let info_hash: [u8; 20] = row
-            .0
-            .try_into()
-            .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
-        let torrent_id = encode_info_hash(info_hash);
-        let payload = PayloadState::parse(&row.10)
+        let torrent_id = decode_stored_torrent_id(row.0)?;
+        let payload = PayloadState::parse(&row.11)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
-        let requested = u64::try_from(row.11).map_err(|_| {
+        let requested = u64::try_from(row.12).map_err(|_| {
             StoreError::DurableState("invalid requested verification generation".to_owned())
         })?;
-        let completed = u64::try_from(row.12).map_err(|_| {
+        let completed = u64::try_from(row.13).map_err(|_| {
             StoreError::DurableState("invalid completed verification generation".to_owned())
         })?;
         let verification = VerificationState::new(requested, completed).ok_or_else(|| {
@@ -5012,19 +4384,30 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             Some(piece_count) => bounded_piece_count(piece_count)?,
             None => 0,
         };
-        let have = match (&row.4, piece_count) {
-            (Some(bytes), count) if count != 0 => HaveState::decode(bytes, info_hash, count).ok(),
-            (None, 0) => None,
+        let have = match (&row.4, &row.5, piece_count) {
+            (Some(bytes), Some(fingerprint), count) if count != 0 => {
+                fingerprint.clone().try_into().ok().and_then(|fingerprint| {
+                    HaveState::decode(
+                        bytes,
+                        torrent_id,
+                        ContentFingerprint::from_digest(fingerprint),
+                        count,
+                    )
+                    .ok()
+                })
+            }
+            (None, None, 0) => None,
             _ => None,
         };
-        let malformed_have =
-            row.4.is_some() != (piece_count != 0) || (row.4.is_some() && have.is_none());
+        let malformed_have = row.4.is_some() != (piece_count != 0)
+            || row.5.is_some() != (piece_count != 0)
+            || (row.4.is_some() && have.is_none());
         let (selection_default, selection_exceptions) =
-            read_selection_state(connection, &info_hash)?;
+            read_selection_state(connection, &torrent_id)?;
         let skip_files = if selection_default == FilePriority::Normal {
             selection_exceptions.clone()
         } else {
-            read_selection(connection, &info_hash)?
+            read_selection(connection, &torrent_id)?
         };
         let (has_wanted_pieces, all_wanted_verified, evidence_error) = match (&row.2, &have) {
             (Some(raw_info), Some(have)) => {
@@ -5035,11 +4418,11 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             }
             _ => (true, false, None),
         };
-        let quarantined = row.13.is_some() || malformed_have || evidence_error.is_some();
+        let quarantined = row.14.is_some() || malformed_have || evidence_error.is_some();
         let state = derive_torrent_state(DerivedStateInput {
             metadata_available: row.2.is_some(),
             root_available: true,
-            desired_running: row.9 == "running",
+            desired_running: row.10 == "running",
             has_wanted_pieces,
             payload,
             verification,
@@ -5061,7 +4444,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             have.as_ref().map_or(0, HaveState::verified_count)
         };
         torrents.push(TorrentSnapshot {
-            torrent_id,
+            torrent_id: torrent_id.to_string(),
             storage_root: row.1,
             state,
             storage_state,
@@ -5070,13 +4453,13 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
                 .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
             verified_piece_count: u32::try_from(verified_piece_count)
                 .map_err(|_| StoreError::DurableState("verified count overflow".to_owned()))?,
-            desired_running: row.9 == "running",
-            download_queue_position: queue_ordinals.get(&info_hash).copied(),
+            desired_running: row.10 == "running",
+            download_queue_position: queue_ordinals.get(&torrent_id).copied(),
             transfer_limits: TorrentTransferLimits {
-                upload: TransferRateLimit::from_persisted(row.14).map_err(|error| {
+                upload: TransferRateLimit::from_persisted(row.15).map_err(|error| {
                     StoreError::DurableState(format!("invalid torrent upload rate: {error}"))
                 })?,
-                download: TransferRateLimit::from_persisted(row.15).map_err(|error| {
+                download: TransferRateLimit::from_persisted(row.16).map_err(|error| {
                     StoreError::DurableState(format!("invalid torrent download rate: {error}"))
                 })?,
             },
@@ -5087,8 +4470,8 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             },
             selection_default,
             selection_exceptions,
-            archived: row.6,
-            removal_state: match row.7.as_deref() {
+            archived: row.7,
+            removal_state: match row.8.as_deref() {
                 Some(value) => {
                     Some(RemovalState::parse(value).ok_or_else(|| {
                         StoreError::DurableState("invalid removal state".to_owned())
@@ -5098,10 +4481,10 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
             },
             delete_managed_data_supported: true,
             force_recheck_available: row.2.is_some()
-                && row.7.is_none()
-                && row.13.is_none()
+                && row.8.is_none()
+                && row.14.is_none()
                 && payload.can_recheck(),
-            error: row.8.or(row.13).or(evidence_error).or(row.5),
+            error: row.9.or(row.14).or(evidence_error).or(row.6),
         });
     }
     Ok(ServiceSnapshot {
@@ -5115,21 +4498,19 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
 
 fn read_download_queue_ordinals(
     connection: &Connection,
-) -> Result<std::collections::BTreeMap<[u8; 20], u32>, StoreError> {
+) -> Result<std::collections::BTreeMap<TorrentId, u32>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT info_hash FROM torrents
+        "SELECT torrent_id FROM torrents
          WHERE download_queue_position IS NOT NULL
-         ORDER BY download_queue_position, info_hash",
+         ORDER BY download_queue_position, torrent_id",
     )?;
     let rows = statement.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
     let mut ordinals = std::collections::BTreeMap::new();
     for (index, row) in rows.enumerate() {
-        let info_hash: [u8; 20] = row?
-            .try_into()
-            .map_err(|_| StoreError::DurableState("invalid info-hash length".to_owned()))?;
+        let torrent_id = decode_stored_torrent_id(row?)?;
         let ordinal = u32::try_from(index + 1)
             .map_err(|_| StoreError::DurableState("download queue is too large".to_owned()))?;
-        ordinals.insert(info_hash, ordinal);
+        ordinals.insert(torrent_id, ordinal);
     }
     Ok(ordinals)
 }
@@ -5160,7 +4541,7 @@ fn removal_record(torrent_id: &str, row: RemovalRow) -> Result<RemovalRecord, St
         PayloadState::FinalOwned => ManagedArtifactState::Published,
     };
     Ok(RemovalRecord {
-        torrent_id: torrent_id.to_ascii_lowercase(),
+        torrent_id: torrent_id.to_string(),
         operation_id: row.operation_id,
         storage_root: row.storage_root,
         policy,
@@ -5173,14 +4554,14 @@ fn removal_record(torrent_id: &str, row: RemovalRow) -> Result<RemovalRecord, St
     })
 }
 
-fn read_selection(connection: &Connection, info_hash: &[u8; 20]) -> Result<Vec<u32>, StoreError> {
-    let (default, exceptions) = read_selection_state(connection, info_hash)?;
+fn read_selection(connection: &Connection, torrent_id: &TorrentId) -> Result<Vec<u32>, StoreError> {
+    let (default, exceptions) = read_selection_state(connection, torrent_id)?;
     if default == FilePriority::Normal {
         return Ok(exceptions);
     }
     let raw_info: Option<Vec<u8>> = connection.query_row(
-        "SELECT raw_info FROM torrents WHERE info_hash = ?1",
-        [info_hash.as_slice()],
+        "SELECT raw_info FROM torrents WHERE torrent_id = ?1",
+        [torrent_id.as_bytes()],
         |row| row.get(0),
     )?;
     let Some(raw_info) = raw_info else {
@@ -5200,11 +4581,11 @@ fn read_selection(connection: &Connection, info_hash: &[u8; 20]) -> Result<Vec<u
 
 fn read_selection_state(
     connection: &Connection,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
 ) -> Result<(FilePriority, Vec<u32>), StoreError> {
     let default: String = connection.query_row(
-        "SELECT selection_default FROM torrents WHERE info_hash = ?1",
-        [info_hash.as_slice()],
+        "SELECT selection_default FROM torrents WHERE torrent_id = ?1",
+        [torrent_id.as_bytes()],
         |row| row.get(0),
     )?;
     let (default, expected_wanted) = match default.as_str() {
@@ -5218,9 +4599,9 @@ fn read_selection_state(
     };
     let mut statement = connection.prepare(
         "SELECT file_index, wanted FROM file_selection
-         WHERE info_hash = ?1 ORDER BY file_index",
+         WHERE torrent_id = ?1 ORDER BY file_index",
     )?;
-    let rows = statement.query_map([info_hash.as_slice()], |row| {
+    let rows = statement.query_map([torrent_id.as_bytes()], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?))
     })?;
     let mut selection = Vec::new();
@@ -5248,15 +4629,15 @@ fn read_selection_state(
 
 fn read_trackers(
     connection: &Connection,
-    info_hash: &[u8; 20],
+    torrent_id: &TorrentId,
 ) -> Result<Vec<StoredTracker>, StoreError> {
     let mut statement = connection.prepare(
         "SELECT tier, position, url, transport, source
          FROM torrent_trackers
-         WHERE info_hash = ?1
+         WHERE torrent_id = ?1
          ORDER BY tier, position",
     )?;
-    let rows = statement.query_map([info_hash.as_slice()], |row| {
+    let rows = statement.query_map([torrent_id.as_bytes()], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, i64>(1)?,
@@ -5389,25 +4770,34 @@ fn sql_revision(revision: u64) -> Result<i64, StoreError> {
 
 fn read_have_columns(
     connection: &Connection,
-    info_hash: &[u8; 20],
-) -> Result<(usize, Vec<u8>), StoreError> {
+    torrent_id: &TorrentId,
+) -> Result<(usize, ContentFingerprint, Vec<u8>), StoreError> {
     let row = connection
         .query_row(
-            "SELECT piece_count, have_state FROM torrents WHERE info_hash = ?1",
-            [info_hash.as_slice()],
+            "SELECT piece_count, content_fingerprint, have_state
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes()],
             |row| {
                 Ok((
                     row.get::<_, Option<i64>>(0)?,
                     row.get::<_, Option<Vec<u8>>>(1)?,
+                    row.get::<_, Option<Vec<u8>>>(2)?,
                 ))
             },
         )
         .optional()?
-        .ok_or_else(|| StoreError::UnknownTorrent(encode_info_hash(*info_hash)))?;
+        .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
     match row {
-        (Some(piece_count), Some(bytes)) => {
+        (Some(piece_count), Some(fingerprint), Some(bytes)) => {
             validate_have_state_length(&bytes)?;
-            Ok((bounded_piece_count(piece_count)?, bytes))
+            let fingerprint: [u8; 32] = fingerprint.try_into().map_err(|_| {
+                StoreError::DurableState("invalid content fingerprint length".to_owned())
+            })?;
+            Ok((
+                bounded_piece_count(piece_count)?,
+                ContentFingerprint::from_digest(fingerprint),
+                bytes,
+            ))
         }
         _ => Err(StoreError::DurableState(
             "torrent has no verified metadata and have state".to_owned(),
@@ -5563,11 +4953,11 @@ fn canonical_magnet(magnet: &Magnet) -> String {
 }
 
 fn synthesize_magnet_export(
-    info_hash: [u8; 20],
+    torrent_id: [u8; 20],
     publication_name: Option<&str>,
     trackers: &[StoredTracker],
 ) -> MagnetExportResult {
-    let mut magnet = format!("magnet:?xt=urn:btih:{}", encode_info_hash(info_hash));
+    let mut magnet = format!("magnet:?xt=urn:btih:{}", encode_info_hash(torrent_id));
     if let Some(publication_name) = publication_name {
         let mut parameter = String::from("&dn=");
         percent_encode_query_value(&mut parameter, publication_name.as_bytes());
@@ -5663,7 +5053,6 @@ mod tests {
         synthesize_magnet_export,
     };
     use crate::ClientSettings;
-    use crate::durable_state::PayloadState;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
     use crate::{
         AddTorrentBytesRequest, CONTROL_VERSION, Command, ErrorCode, FileIndexRange, FilePriority,
@@ -5674,36 +5063,17 @@ mod tests {
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-    fn install_legacy_torrent_state_columns(connection: &Connection) {
-        connection
-            .execute_batch(
-                "ALTER TABLE torrents ADD COLUMN state TEXT NOT NULL DEFAULT 'paused';
-                 ALTER TABLE torrents ADD COLUMN storage_state TEXT NOT NULL DEFAULT 'none';
-                 ALTER TABLE torrents ADD COLUMN managed_artifacts TEXT NOT NULL DEFAULT 'none';
-                 UPDATE torrents SET
-                    state = CASE
-                        WHEN quarantine_reason IS NOT NULL THEN 'needs_repair'
-                        WHEN raw_info IS NULL THEN 'awaiting_metadata'
-                        WHEN desired_state = 'paused' THEN 'paused'
-                        WHEN payload_state = 'publication_pending' THEN 'awaiting_publication'
-                        ELSE 'downloading'
-                    END,
-                    storage_state = CASE payload_state
-                        WHEN 'work_owned' THEN 'staging'
-                        WHEN 'publication_pending' THEN 'prepared'
-                        WHEN 'legacy_owned' THEN 'published'
-                        WHEN 'final_owned' THEN 'published'
-                        ELSE 'none'
-                    END,
-                    managed_artifacts = CASE payload_state
-                        WHEN 'work_owned' THEN 'staging'
-                        WHEN 'publication_pending' THEN 'staging'
-                        WHEN 'legacy_owned' THEN 'legacy'
-                        WHEN 'final_owned' THEN 'published'
-                        ELSE 'none'
-                    END;",
-            )
-            .expect("install legacy torrent state columns");
+    fn added_torrent_id(response: &crate::ResponseEnvelope) -> String {
+        match response.result.as_ref().expect("add result") {
+            crate::CommandResult::AddTorrent { result } => result.torrent_id.clone(),
+            crate::CommandResult::ExportMagnet { .. } => panic!("unexpected magnet export"),
+        }
+    }
+
+    fn only_torrent_id(store: &SessionStore) -> String {
+        let snapshot = store.snapshot().expect("snapshot for sole torrent ID");
+        assert_eq!(snapshot.torrents.len(), 1, "fixture must have one torrent");
+        snapshot.torrents[0].torrent_id.clone()
     }
 
     #[test]
@@ -5778,7 +5148,7 @@ mod tests {
              &tr=https%3A%2F%2Ftracker.example%2Fannounce%3Fpasskey%3Dabc";
         let mut store =
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
+        let added = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-tracker-only".to_owned(),
@@ -5791,11 +5161,12 @@ mod tests {
                 },
             })
             .expect("persist tracker-only source");
+        let torrent_id = added_torrent_id(&added);
         drop(store);
 
         let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
         let resume = reopened
-            .load_resume("000102030405060708090a0b0c0d0e0f10111213")
+            .load_resume(&torrent_id)
             .expect("load resumed source");
         assert_eq!(
             resume.magnet,
@@ -5818,7 +5189,6 @@ mod tests {
     fn magnet_export_preserves_verified_source_and_falls_back_after_corruption() {
         let root = test_root("magnet-export-source");
         let configured = configured_root(&root);
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
         let source = "magnet:?dn=Original%20Name&ws=https%3A%2F%2Fseed.example%2Ffile\
              &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce\
              &xt=urn:btih:000102030405060708090A0B0C0D0E0F10111213";
@@ -5837,9 +5207,10 @@ mod tests {
             })
             .expect("add exact source");
         assert_eq!(added.revision, "1");
+        let torrent_id = added_torrent_id(&added);
 
         let export = store
-            .handle_durable(&export_request("export-verbatim", torrent_id))
+            .handle_durable(&export_request("export-verbatim", &torrent_id))
             .expect("export exact source");
         assert_eq!(export.revision, "1");
         let result = match export.result.expect("export result") {
@@ -5853,14 +5224,15 @@ mod tests {
         store
             .connection
             .execute(
-                "UPDATE torrent_source SET fidelity = 'canonicalized' WHERE info_hash = ?1",
-                [crate::control::decode_info_hash(torrent_id)
-                    .expect("hash")
+                "UPDATE torrent_source SET fidelity = 'canonicalized' WHERE torrent_id = ?1",
+                [super::decode_torrent_id(&torrent_id)
+                    .expect("owner")
+                    .as_bytes()
                     .as_slice()],
             )
             .expect("mark source as migrated canonical text");
         let canonicalized = store
-            .handle_durable(&export_request("export-canonicalized", torrent_id))
+            .handle_durable(&export_request("export-canonicalized", &torrent_id))
             .expect("export canonicalized source");
         let result = match canonicalized.result.expect("canonicalized result") {
             crate::CommandResult::ExportMagnet { result } => result,
@@ -5872,14 +5244,15 @@ mod tests {
         store
             .connection
             .execute(
-                "UPDATE torrent_source SET sha256 = zeroblob(32) WHERE info_hash = ?1",
-                [crate::control::decode_info_hash(torrent_id)
-                    .expect("hash")
+                "UPDATE torrent_source SET sha256 = zeroblob(32) WHERE torrent_id = ?1",
+                [super::decode_torrent_id(&torrent_id)
+                    .expect("owner")
+                    .as_bytes()
                     .as_slice()],
             )
             .expect("corrupt retained source digest");
         let fallback = store
-            .handle_durable(&export_request("export-fallback", torrent_id))
+            .handle_durable(&export_request("export-fallback", &torrent_id))
             .expect("fall back from corrupt source");
         assert_eq!(fallback.revision, "1");
         let result = match fallback.result.expect("fallback result") {
@@ -5897,7 +5270,7 @@ mod tests {
         let missing = store
             .handle_durable(&export_request(
                 "export-missing",
-                "ffffffffffffffffffffffffffffffffffffffff",
+                "t1-ffffffffffffffffffffffffffffffff",
             ))
             .expect("return typed missing result");
         assert!(matches!(
@@ -5921,11 +5294,12 @@ mod tests {
         let projection =
             Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
                 .expect("project rich metainfo");
-        let torrent_id = crate::control::encode_info_hash(projection.metainfo.info_hash);
+        let info_hash = crate::control::encode_info_hash(projection.metainfo.info_hash);
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
         let added = store
             .handle_torrent_bytes(&torrent_bytes_request("add-rich-metainfo", &source), source)
             .expect("add rich metainfo");
+        let torrent_id = added_torrent_id(&added);
         let export = store
             .handle_durable(&export_request("export-rich-metainfo", &torrent_id))
             .expect("export synthesized magnet");
@@ -5939,7 +5313,7 @@ mod tests {
         assert_eq!(
             result.magnet,
             format!(
-                "magnet:?xt=urn:btih:{torrent_id}\
+                "magnet:?xt=urn:btih:{info_hash}\
                  &dn=Test%20%26%20Stuff\
                  &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce\
                  &tr=https%3A%2F%2Fbackup.example%2Fannounce%3Fkey%3Dabc"
@@ -6021,7 +5395,7 @@ mod tests {
             rstorrent_protocol::metainfo::EXPLICIT_IMPORT_METAINFO_LIMITS,
         )
         .expect("fixture metainfo");
-        let torrent_id = crate::control::encode_info_hash(projection.metainfo.info_hash);
+        let info_hash = crate::control::encode_info_hash(projection.metainfo.info_hash);
         let raw_info = source[projection.info_span.clone()].to_vec();
         let request = torrent_bytes_request("add-torrent-bytes", &source);
         let mut store =
@@ -6032,6 +5406,7 @@ mod tests {
             .expect("accept source bytes");
         assert!(matches!(accepted.outcome, ResponseOutcome::Success { .. }));
         assert_eq!(accepted.revision, "1");
+        let torrent_id = added_torrent_id(&accepted);
         let stored_receipt: String = store
             .connection
             .query_row(
@@ -6064,7 +5439,7 @@ mod tests {
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
         assert_eq!(resume.state, TorrentState::Paused);
         assert!(!resume.desired_running);
-        assert_eq!(resume.magnet, format!("magnet:?xt=urn:btih:{torrent_id}"));
+        assert_eq!(resume.magnet, format!("magnet:?xt=urn:btih:{info_hash}"));
         assert_eq!(resume.trackers.len(), 1);
         assert_eq!(resume.trackers[0].tier, 0);
         assert_eq!(resume.trackers[0].position, 0);
@@ -6074,8 +5449,11 @@ mod tests {
             .connection
             .query_row(
                 "SELECT kind, fidelity, metainfo, sha256
-                 FROM torrent_source WHERE info_hash = ?1",
-                [projection.metainfo.info_hash.as_slice()],
+                 FROM torrent_source WHERE torrent_id = ?1",
+                [super::decode_torrent_id(&torrent_id)
+                    .expect("owner")
+                    .as_bytes()
+                    .as_slice()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("inspect exact source");
@@ -6086,8 +5464,11 @@ mod tests {
             .connection
             .query_row(
                 "SELECT url, transport, source FROM torrent_trackers
-                 WHERE info_hash = ?1",
-                [projection.metainfo.info_hash.as_slice()],
+                 WHERE torrent_id = ?1",
+                [super::decode_torrent_id(&torrent_id)
+                    .expect("owner")
+                    .as_bytes()
+                    .as_slice()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("inspect projected tracker");
@@ -6278,14 +5659,13 @@ mod tests {
         let configured = configured_root(&root);
         let mut store =
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let mut ids = Vec::new();
         for value in 1..=3 {
-            store
+            let added = store
                 .handle_durable(&add_hash_request(&format!("add-{value}"), value))
                 .expect("add queued torrent");
+            ids.push(added_torrent_id(&added));
         }
-        let ids = (1..=3)
-            .map(|value| format!("{value:02x}").repeat(20))
-            .collect::<Vec<_>>();
         assert_eq!(queued_ids(&store), ids);
 
         for (request_id, command) in [
@@ -6576,14 +5956,13 @@ mod tests {
 
         let request = add_request("ephemeral-replay");
         let accepted = first.handle_durable(&request).expect("accept request");
+        let torrent_id = added_torrent_id(&accepted);
         assert_eq!(
             first.handle_durable(&request).expect("replay request"),
             accepted
         );
         let mut conflict = request;
-        conflict.command = Command::Pause {
-            torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
-        };
+        conflict.command = Command::Pause { torrent_id };
         assert!(matches!(
             first
                 .handle_durable(&conflict)
@@ -6640,7 +6019,8 @@ mod tests {
                 skip_files: Vec::new(),
             },
         };
-        store.handle_durable(&request).expect("add pending magnet");
+        let added = store.handle_durable(&request).expect("add pending magnet");
+        let torrent_id = added_torrent_id(&added);
         let revision = store.revision().expect("revision before exhaustion");
 
         let error = store
@@ -6695,7 +6075,7 @@ mod tests {
             .query_row(
                 "SELECT length(s.metainfo), length(t.raw_info)
                    FROM torrent_source s
-                   JOIN torrents t USING (info_hash)",
+                   JOIN torrents t USING (torrent_id)",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -6768,7 +6148,7 @@ mod tests {
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
         let raw_info = multi_file_info();
         let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
-        store
+        let added = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "metadata-only-add".to_owned(),
@@ -6781,6 +6161,7 @@ mod tests {
                 },
             })
             .expect("add metadata-only torrent");
+        let torrent_id = added_torrent_id(&added);
         let pending = store.load_resume(&torrent_id).expect("load pending add");
         assert!(!pending.desired_running);
         assert_eq!(pending.state, TorrentState::Paused);
@@ -6861,6 +6242,7 @@ mod tests {
                 }
             })
         ));
+        let torrent_id = added_torrent_id(&first);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("resolve selection");
@@ -6933,6 +6315,7 @@ mod tests {
                 },
             })
             .expect("persist compact pending range");
+        let torrent_id = only_torrent_id(&store);
         let revision = store.revision().expect("add revision");
         assert!(matches!(
             store.record_metadata(&torrent_id, raw_info),
@@ -6967,6 +6350,7 @@ mod tests {
                 },
             })
             .expect("add running torrent");
+        let torrent_id = only_torrent_id(&store);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -7021,7 +6405,7 @@ mod tests {
             .expect("open store");
         let raw_info = multi_file_info();
         let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
-        store
+        let added = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "download-files-add".to_owned(),
@@ -7034,6 +6418,7 @@ mod tests {
                 },
             })
             .expect("add paused all-skipped torrent");
+        let torrent_id = added_torrent_id(&added);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -7240,6 +6625,147 @@ mod tests {
     }
 
     #[test]
+    fn recognized_profile_resets_to_empty_schema_nineteen_with_one_report() {
+        let root = test_root("schema-reset-19");
+        fs::create_dir_all(&root).expect("create profile root");
+        let database = root.join("session.db");
+        let connection = Connection::open(&database).expect("legacy database");
+        connection
+            .execute_batch(
+                "CREATE TABLE request_receipts(request_id TEXT PRIMARY KEY);
+                 INSERT INTO request_receipts VALUES ('old-receipt');
+                 PRAGMA user_version = 18;",
+            )
+            .expect("legacy catalog");
+        drop(connection);
+        let payload = root.join("payload-sentinel");
+        fs::write(&payload, b"untouched").expect("payload sentinel");
+
+        let mut store = SessionStore::open(&root, "default", &[]).expect("reset profile");
+        assert_eq!(store.revision().expect("fresh revision"), 0);
+        assert!(
+            store
+                .snapshot()
+                .expect("fresh snapshot")
+                .torrents
+                .is_empty()
+        );
+        let report = store
+            .pending_profile_reset_report()
+            .expect("read reset report")
+            .expect("reset report");
+        assert_eq!(report.previous_schema_version, 18);
+        assert_eq!(
+            report.database_basenames_considered,
+            ["session.db", "session.db-wal", "session.db-shm"]
+        );
+        assert!(!report.external_payload_modified);
+        assert_eq!(fs::read(&payload).expect("payload survives"), b"untouched");
+        let receipt_count: i64 = store
+            .connection
+            .query_row("SELECT count(*) FROM request_receipts", [], |row| {
+                row.get(0)
+            })
+            .expect("fresh receipt catalog");
+        assert_eq!(receipt_count, 0);
+        store
+            .acknowledge_profile_reset_report()
+            .expect("acknowledge report");
+        assert!(
+            store
+                .pending_profile_reset_report()
+                .expect("read acknowledged report")
+                .is_none()
+        );
+        drop(store);
+
+        let reopened = SessionStore::open(&root, "default", &[]).expect("reopen schema 19");
+        assert!(
+            reopened
+                .pending_profile_reset_report()
+                .expect("report remains acknowledged")
+                .is_none()
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
+    }
+
+    #[test]
+    fn schema_nineteen_enforces_owner_and_full_alias_authority() {
+        let mut store = SessionStore::open_ephemeral(
+            "identity-schema",
+            &[ConfiguredStorageRoot::platform("downloads")],
+        )
+        .expect("open schema 19");
+        let added = store
+            .handle_durable(&add_request("identity-owner"))
+            .expect("add owner");
+        let owner = super::decode_torrent_id(&added_torrent_id(&added)).expect("owner ID");
+        let stored_v1: Vec<u8> = store
+            .connection
+            .query_row(
+                "SELECT full_hash FROM torrent_identities
+                 WHERE torrent_id = ?1 AND protocol = 'v1'",
+                [owner.as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .expect("v1 alias");
+        assert_eq!(stored_v1.len(), 20);
+
+        store
+            .connection
+            .execute(
+                "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                 VALUES (?1, 'v2', ?2)",
+                rusqlite::params![owner.as_bytes().as_slice(), [7_u8; 32].as_slice()],
+            )
+            .expect("attach second protocol alias");
+        assert!(
+            store
+                .connection
+                .execute(
+                    "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                     VALUES (?1, 'v2', ?2)",
+                    rusqlite::params![owner.as_bytes().as_slice(), [8_u8; 32].as_slice()],
+                )
+                .is_err()
+        );
+        assert!(
+            store
+                .connection
+                .execute(
+                    "INSERT INTO torrents(
+                        torrent_id, storage_root, desired_state, payload_state,
+                        created_revision, updated_revision
+                     ) VALUES (zeroblob(16), 'downloads', 'paused', 'absent', 0, 0)",
+                    [],
+                )
+                .is_err()
+        );
+        let second = [9_u8; 16];
+        store
+            .connection
+            .execute(
+                "INSERT INTO torrents(
+                    torrent_id, storage_root, desired_state, payload_state,
+                    created_revision, updated_revision
+                 ) VALUES (?1, 'downloads', 'paused', 'absent', 0, 0)",
+                [second.as_slice()],
+            )
+            .expect("second owner");
+        assert!(
+            store
+                .connection
+                .execute(
+                    "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                     VALUES (?1, 'v1', ?2)",
+                    rusqlite::params![second.as_slice(), stored_v1],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
     fn selected_roots_default_deduplicate_persist_and_block_referenced_removal() {
         let root = test_root("selected-roots");
         let payload = root.join("chosen-payload");
@@ -7394,281 +6920,13 @@ mod tests {
     }
 
     #[test]
-    fn migrates_version_one_catalog_transactionally() {
-        let root = test_root("schema-v1");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        let request = add_request("add-before-migration");
-        let expected = store.handle_durable(&request).expect("add durable torrent");
-        let database_path = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        install_legacy_torrent_state_columns(&connection);
-        connection
-            .execute_batch(
-                "DROP TABLE prepared_files;
-                 DROP TABLE dht_identities;
-                 DROP TABLE dht_nodes;
-                 DROP TABLE dht_state;
-                 DROP TABLE removal_jobs;
-                 DROP TABLE client_settings;
-                 DROP TABLE storage_settings;
-                 ALTER TABLE storage_roots DROP COLUMN kind;
-                 ALTER TABLE storage_roots DROP COLUMN label;
-                 PRAGMA user_version = 1;",
-            )
-            .expect("downgrade fixture to the version-one shape");
-        drop(connection);
-
-        let mut migrated =
-            SessionStore::open(&root, "default", &[configured]).expect("migrate version one");
-        assert_eq!(migrated.snapshot().expect("snapshot").torrents.len(), 1);
-        assert_eq!(
-            migrated
-                .handle_durable(&request)
-                .expect("receipt survived migration"),
-            expected
-        );
-        let connection = Connection::open(database_path).expect("inspect migrated database");
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("read schema version");
-        assert_eq!(version, SCHEMA_VERSION);
-        let prepared_table: i64 = connection
-            .query_row(
-                "SELECT count(*) FROM sqlite_master
-                 WHERE type = 'table' AND name = 'prepared_files'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("inspect prepared table");
-        assert_eq!(prepared_table, 1);
-        drop(connection);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
-    fn migrates_version_three_catalog_with_retention_defaults() {
-        let root = test_root("schema-v3");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
-            .handle_durable(&add_request("add-before-v3-migration"))
-            .expect("add durable torrent");
-        let database_path = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        install_legacy_torrent_state_columns(&connection);
-        connection
-            .execute_batch(
-                "DROP TABLE removal_jobs;
-                 DROP TABLE client_settings;
-                 DROP TABLE storage_settings;
-                 ALTER TABLE storage_roots DROP COLUMN kind;
-                 ALTER TABLE storage_roots DROP COLUMN label;
-                 ALTER TABLE torrents DROP COLUMN archived;
-                 ALTER TABLE torrents DROP COLUMN publication_name;
-                 ALTER TABLE torrents DROP COLUMN managed_artifacts;
-                 PRAGMA user_version = 3;",
-            )
-            .expect("downgrade fixture to version-three shape");
-        drop(connection);
-
-        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v3");
-        let snapshot = migrated.snapshot().expect("migrated snapshot");
-        assert_eq!(snapshot.torrents.len(), 1);
-        assert!(!snapshot.torrents[0].archived);
-        assert_eq!(snapshot.torrents[0].removal_state, None);
-        let connection = Connection::open(database_path).expect("inspect migrated database");
-        let removal_table: i64 = connection
-            .query_row(
-                "SELECT count(*) FROM sqlite_master
-                 WHERE type = 'table' AND name = 'removal_jobs'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("inspect removal table");
-        assert_eq!(removal_table, 1);
-        drop(connection);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
-    fn migrates_version_five_without_guessing_a_publication_name() {
-        let root = test_root("schema-v5-publication");
-        let configured = configured_root(&root);
-        let raw_info =
-            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
-            .handle_durable(&RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "add-before-v5-migration".to_owned(),
-                expected_revision: None,
-                command: Command::AddMagnet {
-                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
-                    storage_root: "downloads".to_owned(),
-                    start_content: true,
-                    skip_files: Vec::new(),
-                },
-            })
-            .expect("add torrent");
-        store
-            .record_metadata(&torrent_id, raw_info)
-            .expect("record metadata");
-        let database_path = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        install_legacy_torrent_state_columns(&connection);
-        connection
-            .execute_batch(
-                "DROP TABLE client_settings;
-                 ALTER TABLE torrents DROP COLUMN publication_name;
-                 ALTER TABLE torrents DROP COLUMN managed_artifacts;
-                 PRAGMA user_version = 5;",
-            )
-            .expect("downgrade fixture to version-five shape");
-        drop(connection);
-
-        let mut migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v5");
-        let resume = migrated.load_resume(&torrent_id).expect("load legacy row");
-        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
-        assert_eq!(resume.publication_name, None);
-        migrated
-            .handle_durable(&RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "remove-migrated-v5".to_owned(),
-                expected_revision: None,
-                command: Command::RemoveTorrent {
-                    torrent_id: torrent_id.clone(),
-                    data: RemovalDataPolicy::DeleteManaged,
-                },
-            })
-            .expect("begin migrated removal");
-        assert_eq!(
-            migrated
-                .load_removal(&torrent_id)
-                .expect("load migrated removal")
-                .managed_artifacts,
-            ManagedArtifactState::Legacy
-        );
-        let version: i64 = Connection::open(database_path)
-            .expect("inspect migrated database")
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("read schema version");
-        assert_eq!(version, SCHEMA_VERSION);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
-    fn migrates_version_six_bounds_without_losing_related_rows() {
-        let root = test_root("schema-v6-bounds");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        let request = add_request("add-before-v6-migration");
-        store.handle_durable(&request).expect("add torrent");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
-        store
-            .handle_durable(&RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "remove-before-v6-migration".to_owned(),
-                expected_revision: None,
-                command: Command::RemoveTorrent {
-                    torrent_id: torrent_id.to_owned(),
-                    data: RemovalDataPolicy::Keep,
-                },
-            })
-            .expect("begin removal");
-        let database_path = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        install_legacy_torrent_state_columns(&connection);
-        let info_hash = crate::control::decode_info_hash(torrent_id).expect("fixture identity");
-        connection
-            .execute(
-                "INSERT INTO prepared_files(info_hash, file_index, length, sha1)
-                 VALUES (?1, 0, 0, ?2)",
-                rusqlite::params![info_hash.as_slice(), [0_u8; 20].as_slice()],
-            )
-            .expect("insert prepared row");
-        connection
-            .execute("DROP TABLE client_settings", [])
-            .expect("remove version-nine settings table");
-        connection
-            .pragma_update(None, "user_version", 6)
-            .expect("mark schema six");
-        drop(connection);
-
-        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate v6");
-        assert_eq!(migrated.snapshot().expect("snapshot").torrents.len(), 1);
-        assert_eq!(
-            migrated
-                .load_removal(torrent_id)
-                .expect("preserved removal")
-                .policy,
-            RemovalDataPolicy::Keep
-        );
-        let connection = Connection::open(database_path).expect("inspect migration");
-        for (table, expected) in [
-            ("file_selection", 2_i64),
-            ("prepared_files", 1_i64),
-            ("removal_jobs", 1_i64),
-        ] {
-            let count: i64 = connection
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .expect("count preserved rows");
-            assert_eq!(count, expected, "{table}");
-        }
-        let schema: String = connection
-            .query_row(
-                "SELECT sql FROM sqlite_master
-                 WHERE type = 'table' AND name = 'torrents'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("read torrent schema");
-        assert!(schema.contains("piece_count <= 2097152"));
-        assert!(schema.contains("length(have_state) <= 262178"));
-        drop(connection);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
     fn durable_geometry_and_resource_limits_are_exact() {
         let root = test_root("durable-resource-limits");
         let configured = configured_root(&root);
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open store");
         let raw_info = single_file_info_for_pieces(40_960, 256 * 1024);
         let torrent_id = crate::control::encode_info_hash(Sha1::digest(&raw_info).into());
-        store
+        let added = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-large-geometry".to_owned(),
@@ -7681,6 +6939,7 @@ mod tests {
                 },
             })
             .expect("add geometry");
+        let torrent_id = added_torrent_id(&added);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("persist 40,960-piece geometry");
@@ -7738,36 +6997,36 @@ mod tests {
             .to_owned();
         drop(store);
         let connection = Connection::open(database_path).expect("inspect exact schema bounds");
-        let exact_hash = [0x55_u8; 20];
+        let exact_id = [0x55_u8; 16];
         let exact_have = vec![0_u8; MAX_DURABLE_HAVE_STATE_BYTES];
         connection
             .execute(
                 "INSERT INTO torrents(
-                    info_hash, magnet, storage_root, desired_state, payload_state,
-                    piece_count, have_state, archived,
+                    torrent_id, magnet, storage_root, desired_state, payload_state,
+                    raw_info, content_fingerprint, piece_count, have_state, archived,
                     created_revision, updated_revision
                  ) VALUES (
                     ?1, 'magnet:', 'downloads', 'paused', 'absent',
-                    ?2, ?3, 0, 0, 0
+                    x'', zeroblob(32), ?2, ?3, 0, 0, 0
                  )",
-                rusqlite::params![exact_hash.as_slice(), MAX_DURABLE_PIECES as i64, exact_have],
+                rusqlite::params![exact_id.as_slice(), MAX_DURABLE_PIECES as i64, exact_have],
             )
             .expect("schema accepts exact durable bounds");
         assert!(
             connection
                 .execute(
-                    "UPDATE torrents SET piece_count = ?1 WHERE info_hash = ?2",
-                    rusqlite::params![(MAX_DURABLE_PIECES + 1) as i64, exact_hash.as_slice()],
+                    "UPDATE torrents SET piece_count = ?1 WHERE torrent_id = ?2",
+                    rusqlite::params![(MAX_DURABLE_PIECES + 1) as i64, exact_id.as_slice()],
                 )
                 .is_err()
         );
         assert!(
             connection
                 .execute(
-                    "UPDATE torrents SET have_state = ?1 WHERE info_hash = ?2",
+                    "UPDATE torrents SET have_state = ?1 WHERE torrent_id = ?2",
                     rusqlite::params![
                         vec![0_u8; MAX_DURABLE_HAVE_STATE_BYTES + 1],
-                        exact_hash.as_slice()
+                        exact_id.as_slice()
                     ],
                 )
                 .is_err()
@@ -7786,7 +7045,7 @@ mod tests {
         let configured = configured_root(&root);
         assert!(matches!(
             SessionStore::open(&root, "default", &[configured]),
-            Err(StoreError::Sqlite(_))
+            Err(StoreError::UnsafeProfileFile { .. })
         ));
         assert_eq!(
             fs::read(database).expect("read preserved corrupt database"),
@@ -7803,13 +7062,12 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]).expect("open session store");
         let request = add_request("add-1");
         let first = store.handle_durable(&request).expect("add");
+        let torrent_id = added_torrent_id(&first);
         assert_eq!(first.revision, "1");
         assert_eq!(store.handle_durable(&request).expect("retry"), first);
 
         let mut conflict = request.clone();
-        conflict.command = Command::Pause {
-            torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
-        };
+        conflict.command = Command::Pause { torrent_id };
         assert!(matches!(
             store.handle_durable(&conflict).expect("conflict").outcome,
             ResponseOutcome::Error {
@@ -7849,77 +7107,21 @@ mod tests {
     }
 
     #[test]
-    fn replays_pre_retention_request_receipts_with_safe_defaults() {
-        let root = test_root("legacy-receipt");
-        let configured = configured_root(&root);
-        let request = add_request("legacy-add");
-        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
-            .expect("open session store");
-        store.handle_durable(&request).expect("add torrent");
-        let database_path = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open receipt database");
-        let stored_response: String = connection
-            .query_row(
-                "SELECT response_json FROM request_receipts WHERE request_id = ?1",
-                [&request.request_id],
-                |row| row.get(0),
-            )
-            .expect("read stored response");
-        let mut legacy_response: serde_json::Value =
-            serde_json::from_str(&stored_response).expect("decode stored response fixture");
-        let torrent = legacy_response
-            .pointer_mut("/snapshot/torrents/0")
-            .and_then(serde_json::Value::as_object_mut)
-            .expect("stored response torrent");
-        assert!(torrent.remove("archived").is_some());
-        assert!(torrent.remove("delete_managed_data_supported").is_some());
-        connection
-            .execute(
-                "UPDATE request_receipts SET response_json = ?1 WHERE request_id = ?2",
-                rusqlite::params![
-                    serde_json::to_string(&legacy_response).expect("encode legacy response"),
-                    &request.request_id
-                ],
-            )
-            .expect("install legacy response fixture");
-        drop(connection);
-
-        let mut reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
-        let replay = reopened
-            .handle_durable(&request)
-            .expect("replay legacy receipt");
-        let ResponseOutcome::Success { snapshot } = replay.outcome else {
-            panic!("legacy receipt must remain a successful response");
-        };
-        let replayed_torrent = snapshot.torrents.first().expect("replayed torrent");
-        assert!(!replayed_torrent.archived);
-        assert_eq!(replayed_torrent.removal_state, None);
-        assert!(!replayed_torrent.delete_managed_data_supported);
-        drop(reopened);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
     fn archive_and_removal_generations_are_durable_and_idempotent() {
         let root = test_root("retention");
         let configured = configured_root(&root);
         let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
-        store
+        let added = store
             .handle_durable(&add_request("add-retention"))
             .expect("add torrent");
+        let torrent_id = added_torrent_id(&added);
 
         let archive = RequestEnvelope {
             version: CONTROL_VERSION,
             request_id: "archive".to_owned(),
             expected_revision: None,
             command: Command::Archive {
-                torrent_id: torrent_id.to_owned(),
+                torrent_id: torrent_id.clone(),
             },
         };
         store.handle_durable(&archive).expect("archive");
@@ -7939,7 +7141,7 @@ mod tests {
                 request_id: "restore-archive".to_owned(),
                 expected_revision: None,
                 command: Command::RestoreArchive {
-                    torrent_id: torrent_id.to_owned(),
+                    torrent_id: torrent_id.clone(),
                 },
             })
             .expect("restore archive");
@@ -7950,12 +7152,12 @@ mod tests {
             request_id: "remove".to_owned(),
             expected_revision: None,
             command: Command::RemoveTorrent {
-                torrent_id: torrent_id.to_owned(),
+                torrent_id: torrent_id.clone(),
                 data: RemovalDataPolicy::DeleteManaged,
             },
         };
         let accepted = store.handle_durable(&remove).expect("request removal");
-        let removal = store.load_removal(torrent_id).expect("load removal");
+        let removal = store.load_removal(&torrent_id).expect("load removal");
         assert_eq!(removal.policy, RemovalDataPolicy::DeleteManaged);
         assert_eq!(removal.state, RemovalState::Pending);
         assert_eq!(
@@ -7978,7 +7180,7 @@ mod tests {
 
         store
             .set_removal_state(
-                torrent_id,
+                &torrent_id,
                 &removal.operation_id,
                 RemovalState::Failed,
                 Some("provider unavailable"),
@@ -7986,12 +7188,12 @@ mod tests {
             .expect("record failure");
         drop(store);
         let mut reopened = SessionStore::open(&root, "default", &[]).expect("reopen");
-        let failed = reopened.load_removal(torrent_id).expect("durable failure");
+        let failed = reopened.load_removal(&torrent_id).expect("durable failure");
         assert_eq!(failed.state, RemovalState::Failed);
         assert_eq!(failed.error.as_deref(), Some("provider unavailable"));
         assert!(
             reopened
-                .finalize_removal(torrent_id, &failed.operation_id)
+                .finalize_removal(&torrent_id, &failed.operation_id)
                 .is_err()
         );
 
@@ -8006,16 +7208,16 @@ mod tests {
                 },
             })
             .expect("rearm removal");
-        let rearmed = reopened.load_removal(torrent_id).expect("rearmed job");
+        let rearmed = reopened.load_removal(&torrent_id).expect("rearmed job");
         assert_ne!(rearmed.operation_id, removal.operation_id);
         assert_eq!(rearmed.policy, RemovalDataPolicy::Keep);
         assert!(
             reopened
-                .finalize_removal(torrent_id, &removal.operation_id)
+                .finalize_removal(&torrent_id, &removal.operation_id)
                 .is_err()
         );
         reopened
-            .finalize_removal(torrent_id, &rearmed.operation_id)
+            .finalize_removal(&torrent_id, &rearmed.operation_id)
             .expect("finalize current generation");
         assert!(
             reopened
@@ -8040,8 +7242,8 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]).expect("open session store");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         let request = RequestEnvelope {
             version: CONTROL_VERSION,
             request_id: "add".to_owned(),
@@ -8053,7 +7255,8 @@ mod tests {
                 skip_files: Vec::new(),
             },
         };
-        store.handle_durable(&request).expect("add source");
+        let added = store.handle_durable(&request).expect("add source");
+        let torrent_id = added_torrent_id(&added);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -8086,7 +7289,7 @@ mod tests {
         reserved_info.extend_from_slice(b"aaaaaaaaaaaaaaaaaaaae");
         let reserved_hash: [u8; 20] = Sha1::digest(&reserved_info).into();
         let reserved_id = crate::control::encode_info_hash(reserved_hash);
-        store
+        let reserved = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-reserved-name".to_owned(),
@@ -8099,6 +7302,7 @@ mod tests {
                 },
             })
             .expect("add reserved-name source");
+        let reserved_id = added_torrent_id(&reserved);
         assert!(matches!(
             store.record_metadata(&reserved_id, &reserved_info),
             Err(StoreError::DurableState(_))
@@ -8118,8 +7322,8 @@ mod tests {
         raw_info.extend_from_slice(&[b'b'; 20]);
         raw_info.extend_from_slice(&[b'c'; 20]);
         raw_info.push(b'e');
-        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
@@ -8133,6 +7337,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        let torrent_id = only_torrent_id(&store);
         assert!(!store.snapshot().expect("metadata snapshot").torrents[0].force_recheck_available);
         store
             .record_metadata(&torrent_id, &raw_info)
@@ -8218,8 +7423,8 @@ mod tests {
             SessionStore::open(&root, "default", &[configured_root(&root)]).expect("open");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
@@ -8233,6 +7438,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        let torrent_id = only_torrent_id(&store);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -8262,8 +7468,8 @@ mod tests {
         raw_info.extend_from_slice(&[b'b'; 20]);
         raw_info.extend_from_slice(&[b'c'; 20]);
         raw_info.push(b'e');
-        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(&raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
@@ -8277,6 +7483,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        let torrent_id = only_torrent_id(&store);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -8299,10 +7506,8 @@ mod tests {
         let first_generation = checking.verification.requested();
         assert!(checking.verification.is_pending());
         assert_eq!(checking.state, TorrentState::Checking);
-        assert_eq!(
-            checking.have.expect("old have remains input").pieces(),
-            &[true, false, false]
-        );
+        let current_have = checking.have.as_ref().expect("old have remains input");
+        assert_eq!(current_have.pieces(), &[true, false, false]);
         assert_eq!(
             store.snapshot().expect("checking snapshot").torrents[0].verified_piece_count,
             0,
@@ -8330,8 +7535,12 @@ mod tests {
             first_generation
         );
 
-        let replacement =
-            HaveState::from_pieces(info_hash, vec![false, true, true]).expect("replacement have");
+        let replacement = HaveState::from_pieces(
+            current_have.torrent_id(),
+            current_have.content_fingerprint(),
+            vec![false, true, true],
+        )
+        .expect("replacement have");
         store
             .complete_recheck(&torrent_id, &replacement)
             .expect("complete running recheck");
@@ -8386,8 +7595,8 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]).expect("open session store");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         let request = RequestEnvelope {
             version: CONTROL_VERSION,
             request_id: "add".to_owned(),
@@ -8399,7 +7608,8 @@ mod tests {
                 skip_files: Vec::new(),
             },
         };
-        store.handle_durable(&request).expect("add source");
+        let added = store.handle_durable(&request).expect("add source");
+        let torrent_id = added_torrent_id(&added);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -8487,8 +7697,8 @@ mod tests {
             SessionStore::open(&root, "default", &[configured]).expect("open session store");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
@@ -8502,6 +7712,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        let torrent_id = only_torrent_id(&store);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -8549,8 +7760,8 @@ mod tests {
             .expect("open store");
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let torrent_id: [u8; 20] = Sha1::digest(raw_info).into();
+        let torrent_id = crate::control::encode_info_hash(torrent_id);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
@@ -8564,6 +7775,7 @@ mod tests {
                 },
             })
             .expect("add source");
+        let torrent_id = only_torrent_id(&store);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -8632,240 +7844,15 @@ mod tests {
     }
 
     #[test]
-    fn migrates_version_eight_to_default_client_settings() {
-        let root = test_root("schema-v8-client-settings");
-        let configured = configured_root(&root);
-        let store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        let database_path = store.database_path().unwrap().to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open schema eight fixture");
-        install_legacy_torrent_state_columns(&connection);
-        connection
-            .execute("DROP TABLE client_settings", [])
-            .expect("remove version-nine table");
-        connection
-            .pragma_update(None, "user_version", 8)
-            .expect("mark schema eight");
-        drop(connection);
-
-        let reopened = SessionStore::open(&root, "default", &[configured]).expect("migrate");
-        assert_eq!(
-            reopened.client_settings().expect("read migrated settings"),
-            ClientSettings::default()
-        );
-        assert_eq!(
-            reopened
-                .connection
-                .pragma_query_value::<i64, _>(None, "user_version", |row| row.get(0))
-                .expect("read schema version"),
-            SCHEMA_VERSION
-        );
-        drop(reopened);
-        fs::remove_dir_all(root).expect("remove profile");
-    }
-
-    #[test]
-    fn migrates_defective_schema_thirteen_final_side_without_payload_mutation() {
-        let root = test_root("schema-v13-defective-final");
-        let configured = configured_root(&root);
-        let raw_info =
-            b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
-        let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
-        let mut store = SessionStore::open(&root, "default", std::slice::from_ref(&configured))
-            .expect("open current store");
-        store
-            .handle_durable(&RequestEnvelope {
-                version: CONTROL_VERSION,
-                request_id: "add-defective-v13".to_owned(),
-                expected_revision: None,
-                command: Command::AddMagnet {
-                    magnet: format!("magnet:?xt=urn:btih:{torrent_id}"),
-                    storage_root: "downloads".to_owned(),
-                    start_content: true,
-                    skip_files: Vec::new(),
-                },
-            })
-            .expect("add torrent");
-        store
-            .record_metadata(&torrent_id, raw_info)
-            .expect("record metadata");
-        let database = store.database_path().expect("database path").to_owned();
-        drop(store);
-
-        let payload = root.join("payload/test");
-        fs::create_dir_all(payload.parent().expect("payload parent")).expect("create payload root");
-        let original = b"kept";
-        fs::write(&payload, original).expect("write final payload");
-        let connection = Connection::open(&database).expect("open schema fixture");
-        install_legacy_torrent_state_columns(&connection);
-        connection
-            .execute(
-                "UPDATE torrents
-                 SET state = 'downloading', storage_state = 'staging',
-                     managed_artifacts = 'published'
-                 WHERE info_hash = ?1",
-                [info_hash.as_slice()],
-            )
-            .expect("install exact defective pair");
-        connection
-            .pragma_update(None, "user_version", 13)
-            .expect("mark schema thirteen");
-        drop(connection);
-
-        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate");
-        let resume = migrated
-            .load_resume(&torrent_id)
-            .expect("load migrated row");
-        assert_eq!(resume.payload_state, PayloadState::FinalOwned);
-        assert!(resume.verification.is_pending());
-        assert_eq!(resume.quarantine_reason, None);
-        assert_eq!(resume.state, TorrentState::Checking);
-        assert_eq!(
-            fs::read(&payload).expect("read preserved payload"),
-            original
-        );
-        let columns = {
-            let mut statement = migrated
-                .connection
-                .prepare("PRAGMA table_info(torrents)")
-                .expect("prepare column query");
-            statement
-                .query_map([], |row| row.get::<_, String>(1))
-                .expect("query columns")
-                .collect::<Result<Vec<_>, _>>()
-                .expect("collect columns")
-        };
-        assert!(!columns.iter().any(|column| {
-            matches!(
-                column.as_str(),
-                "state" | "storage_state" | "managed_artifacts"
-            )
-        }));
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove profile");
-    }
-
-    #[test]
-    fn migrates_version_sixteen_to_default_setting_and_stable_queue_order() {
-        let root = test_root("schema-v16-download-queue");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
-            .handle_durable(&add_hash_request("add-second-hash-first", 2))
-            .expect("add first queue row");
-        store
-            .handle_durable(&add_hash_request("add-first-hash-second", 1))
-            .expect("add second queue row");
-        let database_path = store.database_path().expect("database path").to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        connection
-            .execute_batch(
-                "DROP INDEX download_queue_order;
-                 ALTER TABLE torrents DROP COLUMN download_queue_position;
-                 ALTER TABLE client_settings DROP COLUMN active_downloads;
-                 PRAGMA user_version = 16;",
-            )
-            .expect("downgrade fixture to version sixteen");
-        drop(connection);
-
-        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate");
-        assert_eq!(
-            migrated
-                .snapshot()
-                .expect("snapshot")
-                .client_settings
-                .active_downloads,
-            3
-        );
-        assert_eq!(
-            queued_ids(&migrated),
-            vec![
-                format!("{:02x}", 2).repeat(20),
-                format!("{:02x}", 1).repeat(20)
-            ]
-        );
-        let connection = Connection::open(database_path).expect("inspect migrated database");
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("schema version");
-        assert_eq!(version, SCHEMA_VERSION);
-        let index_count: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master
-                 WHERE type = 'index' AND name = 'download_queue_order'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("queue index");
-        assert_eq!(index_count, 1);
-        drop(connection);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
-    fn migrates_version_seventeen_to_unlimited_session_and_torrent_rates() {
-        let root = test_root("schema-v17-transfer-rates");
-        let configured = configured_root(&root);
-        let mut store =
-            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
-            .handle_durable(&add_hash_request("add-rate-migration", 7))
-            .expect("add torrent");
-        let database_path = store.database_path().expect("database path").to_owned();
-        drop(store);
-
-        let connection = Connection::open(&database_path).expect("open raw database");
-        connection
-            .execute_batch(
-                "ALTER TABLE torrents DROP COLUMN upload_rate_limit;
-                 ALTER TABLE torrents DROP COLUMN download_rate_limit;
-                 ALTER TABLE client_settings DROP COLUMN upload_rate_limit;
-                 ALTER TABLE client_settings DROP COLUMN download_rate_limit;
-                 PRAGMA user_version = 17;",
-            )
-            .expect("downgrade fixture to version seventeen");
-        drop(connection);
-
-        let migrated = SessionStore::open(&root, "default", &[configured]).expect("migrate");
-        let snapshot = migrated.snapshot().expect("migrated snapshot");
-        assert_eq!(
-            snapshot.client_settings.upload_rate_limit,
-            TransferRateLimit::Unlimited
-        );
-        assert_eq!(
-            snapshot.client_settings.download_rate_limit,
-            TransferRateLimit::Unlimited
-        );
-        assert_eq!(
-            snapshot.torrents[0].transfer_limits,
-            TorrentTransferLimits::default()
-        );
-        let version: i64 = migrated
-            .connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("schema version");
-        assert_eq!(version, SCHEMA_VERSION);
-        drop(migrated);
-        fs::remove_dir_all(root).expect("remove test profile");
-    }
-
-    #[test]
     fn torrent_transfer_limits_are_atomic_replayable_and_durable() {
         let root = test_root("torrent-transfer-limits");
         let configured = configured_root(&root);
         let mut store =
             SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
-        store
+        let added = store
             .handle_durable(&add_hash_request("add-rate-target", 8))
             .expect("add torrent");
-        let torrent_id = format!("{:02x}", 8).repeat(20);
+        let torrent_id = added_torrent_id(&added);
         let limits = TorrentTransferLimits {
             upload: TransferRateLimit::Limited {
                 bytes_per_second: 24 * 1_024,

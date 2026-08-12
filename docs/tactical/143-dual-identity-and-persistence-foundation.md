@@ -589,9 +589,26 @@ Validation completed at this checkpoint:
   native ABIs, regenerated UniFFI bindings, Kotlin unit tests, and the debug
   APK.
 
-No runtime or persistence consumer uses the new types yet, no input behavior
-changed, and BEP 52 remains unsupported. The next executable stage is the
-schema-19 catalog/reset boundary.
+Stage 3 and the have-state portion of Stage 4 are now complete. Durable and
+ephemeral stores use schema 19 with nonzero 16-byte owner keys, a one-or-two
+row tagged alias authority, opaque IDs at serialized control boundaries, and
+owner-keyed foreign keys throughout the catalog. Recognized schema versions
+1 through 18 are replaced rather than migrated. Replacement acquires an
+exclusive SQLite lock, removes only the three fixed database basenames, and
+uses a checksummed recovery marker in the authorized `session.db-shm` slot so
+interruption before or after database removal converges without inspecting or
+mutating payload roots. The replacement transaction records a one-shot reset
+report before the marker is cleared. Malformed, unversioned, future, busy,
+symlinked, and non-regular inputs fail closed.
+
+`HaveState` version 2 now binds its bitmap to both `TorrentId` and
+`ContentFingerprint`; the version-1 reader is gone. Focused store, reset,
+control, queue, and have-state tests pass, as does warning-denying session-lib
+Clippy. Runtime application fixtures have deliberately not been rewritten to
+hide their old hash-as-owner assumptions: the integrated session suite stays
+open until Stages 4 through 6 thread the new ownership model end to end. BEP
+52 remains unsupported. The next executable work is the part-file and storage
+namespace remainder of Stage 4, followed by typed v1 runtime threading.
 
 ## Validation Matrix
 

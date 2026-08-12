@@ -672,10 +672,11 @@ pub(crate) fn validate_identifier(
 }
 
 pub(crate) fn validate_torrent_id(value: &str) -> Result<(), (ErrorCode, String)> {
-    if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if value.parse::<rstorrent_engine::TorrentId>().is_err() {
         return Err((
             ErrorCode::InvalidRequest,
-            "torrent ID must be a 40-character hexadecimal v1 info hash".to_owned(),
+            "torrent ID must use the canonical t1- plus 32 lowercase hexadecimal grammar"
+                .to_owned(),
         ));
     }
     Ok(())
@@ -764,7 +765,7 @@ mod tests {
             request_id: "priority".to_owned(),
             expected_revision: None,
             command: Command::SetFilePriority {
-                torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+                torrent_id: "t1-000102030405060708090a0b0c0d0e0f".to_owned(),
                 file_indices: vec![1, 3],
                 priority: FilePriority::Skip,
             },
@@ -780,7 +781,7 @@ mod tests {
         assert!(validate_request(&request).is_err());
 
         request.command = Command::DownloadFiles {
-            torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+            torrent_id: "t1-000102030405060708090a0b0c0d0e0f".to_owned(),
             file_indices: vec![1, 3],
         };
         assert_eq!(validate_request(&request), Ok(()));
@@ -797,7 +798,7 @@ mod tests {
             request_id: "priority-ranges".to_owned(),
             expected_revision: None,
             command: Command::SetFilePriorityRanges {
-                torrent_id: "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+                torrent_id: "t1-000102030405060708090a0b0c0d0e0f".to_owned(),
                 ranges: vec![
                     FileIndexRange {
                         start: 1,
