@@ -34,6 +34,7 @@ PAYLOAD_LENGTH = 4 * 1024 * 1024 + 731
 PROCESS_TIMEOUT = 60
 SSDP_ENDPOINT = ("239.255.255.250", 1900)
 SERVICE_TYPE = "urn:schemas-upnp-org:service:WANIPConnection:2"
+SERVICE_TYPE_V1 = "urn:schemas-upnp-org:service:WANIPConnection:1"
 SSH_OPTIONS = (
     "-o",
     "BatchMode=yes",
@@ -216,7 +217,17 @@ def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def discover_control(local_address: str) -> tuple[str, str]:
+def discover_control(
+    local_address: str,
+    *,
+    service_types: tuple[str, ...] = (SERVICE_TYPE,),
+) -> tuple[str, str]:
+    if (
+        not service_types
+        or len(service_types) > 4
+        or any(not item for item in service_types)
+    ):
+        raise GateFailure("independent query service selection is invalid")
     request = (
         "M-SEARCH * HTTP/1.1\r\n"
         "HOST: 239.255.255.250:1900\r\n"
@@ -252,6 +263,7 @@ def discover_control(local_address: str) -> tuple[str, str]:
                         candidates.append((location, source[0]))
             if candidates:
                 break
+    selected: dict[str, tuple[str, str]] = {}
     for location, source in candidates[:8]:
         try:
             with urllib.request.urlopen(location, timeout=5) as response:
@@ -270,13 +282,17 @@ def discover_control(local_address: str) -> tuple[str, str]:
                 local_name(child.tag): (child.text or "").strip()
                 for child in service
             }
-            if values.get("serviceType") != SERVICE_TYPE:
+            service_type = values.get("serviceType")
+            if service_type not in service_types:
                 continue
             control = urllib.parse.urljoin(base, values.get("controlURL", ""))
             parsed = urllib.parse.urlsplit(control)
             if parsed.scheme == "http" and parsed.hostname == source:
-                return control, SERVICE_TYPE
-    raise GateFailure("independent query could not select the mapped IGD v2 service")
+                selected.setdefault(service_type, (control, service_type))
+    for service_type in service_types:
+        if service_type in selected:
+            return selected[service_type]
+    raise GateFailure("independent query could not select an accepted mapped IGD service")
 
 
 def query_mapping(

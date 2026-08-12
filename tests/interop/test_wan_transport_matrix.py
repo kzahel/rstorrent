@@ -6,10 +6,13 @@ import argparse
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from wan_transport_matrix import (
+    WanMatrixRevisionError,
     _rstorrent_timing,
     _rstorrent_transport_evidence,
+    require_repository_revision,
     run_matrix,
 )
 
@@ -74,6 +77,13 @@ class WanTransportMatrixTests(unittest.TestCase):
             self.assertEqual(result["execution"], "disabled-without-explicit-flag")
             self.assertFalse(arguments.journal.exists())
             self.assertFalse(arguments.work_root.exists())
+
+    def test_revision_guard_rejects_a_moved_checkout(self) -> None:
+        with patch(
+            "wan_transport_matrix.repository_revision", return_value="new-revision"
+        ):
+            with self.assertRaises(WanMatrixRevisionError):
+                require_repository_revision("selected-revision")
 
 
 if __name__ == "__main__":

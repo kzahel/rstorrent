@@ -16,6 +16,8 @@ from typing import Any
 
 from upnp_external_seeding import (
     GateFailure,
+    SERVICE_TYPE,
+    SERVICE_TYPE_V1,
     delete_mapping,
     discover_control,
     local_name,
@@ -26,6 +28,7 @@ from upnp_external_seeding import (
 MAPPING_DESCRIPTION = "RSTorrent-matrix"
 LEASE_SECONDS = 3_600
 MAX_SOAP_BYTES = 256 * 1024
+MAPPING_SERVICE_TYPES = (SERVICE_TYPE, SERVICE_TYPE_V1)
 
 
 class MappingError(RuntimeError):
@@ -122,7 +125,9 @@ def add_mapping(port: int, protocol: str) -> dict[str, Any]:
     if not 1 <= port <= 65_535 or protocol not in {"TCP", "UDP"}:
         raise MappingError("matrix mapping endpoint is invalid")
     local_address = local_route_address()
-    control, service = discover_control(local_address)
+    control, service = discover_control(
+        local_address, service_types=MAPPING_SERVICE_TYPES
+    )
     if query_mapping(control, service, port, protocol) is not None:
         raise MappingError("matrix external port is already mapped")
     _soap_values(
@@ -166,7 +171,9 @@ def remove_mapping(port: int, protocol: str) -> dict[str, Any]:
     if not 1 <= port <= 65_535 or protocol not in {"TCP", "UDP"}:
         raise MappingError("matrix mapping endpoint is invalid")
     local_address = local_route_address()
-    control, service = discover_control(local_address)
+    control, service = discover_control(
+        local_address, service_types=MAPPING_SERVICE_TYPES
+    )
     installed = query_mapping(control, service, port, protocol)
     if installed is not None:
         if installed.get("NewPortMappingDescription") != MAPPING_DESCRIPTION:

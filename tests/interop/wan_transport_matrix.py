@@ -17,7 +17,7 @@ from typing import Any
 
 from public_compare_contract import comparison_profile, parse_metainfo, verify_payload
 from wan_transport_fixture import Fixture, create_fixture
-from wan_transport_mapping import add_mapping, remove_mapping
+from wan_transport_mapping import MappingError, add_mapping, remove_mapping
 from wan_transport_matrix_contract import (
     DIRECTIONS,
     IMPLEMENTATIONS,
@@ -76,6 +76,10 @@ class WanMatrixError(RuntimeError):
 
 
 class WanMatrixCleanupError(WanMatrixError):
+    pass
+
+
+class WanMatrixRevisionError(WanMatrixError):
     pass
 
 
@@ -138,8 +142,32 @@ def repository_revision() -> str:
     ).stdout.strip()
 
 
-def prepare_remote(host: str, sizes_mib: tuple[int, ...]) -> dict[str, Any]:
-    revision = repository_revision()
+def require_repository_revision(expected: str) -> None:
+    if repository_revision() != expected:
+        raise WanMatrixRevisionError("repository revision changed during matrix execution")
+
+
+def remote_environment(host: str, revision: str) -> dict[str, Any]:
+    versions = run_ssh(
+        host,
+        "set -eu; "
+        '"$HOME/.cargo/bin/rustc" --version; '
+        f'"{REMOTE_PYTHON}" -c \'import libtorrent as lt; print(lt.version)\'; '
+        f'cat "{REMOTE_BASE}/staged-revision"',
+    ).stdout.splitlines()
+    if len(versions) != 3 or versions[1] != "2.0.13.0" or versions[2] != revision:
+        raise WanMatrixRevisionError("remote environment is not staged at the matrix revision")
+    return {
+        "revision": revision,
+        "rust_version": versions[0],
+        "libtorrent_version": versions[1],
+    }
+
+
+def prepare_remote(
+    host: str, sizes_mib: tuple[int, ...], revision: str
+) -> dict[str, Any]:
+    require_repository_revision(revision)
     run_ssh(
         host,
         f'set -eu; mkdir -p "{REMOTE_SOURCE}" "{REMOTE_FIXTURES}"',
@@ -179,6 +207,7 @@ def prepare_remote(host: str, sizes_mib: tuple[int, ...]) -> dict[str, Any]:
     )
     if staged.returncode != 0:
         raise WanMatrixError("remote source staging failed")
+    require_repository_revision(revision)
     run_ssh(
         host,
         "set -eu; "
@@ -206,21 +235,9 @@ def prepare_remote(host: str, sizes_mib: tuple[int, ...]) -> dict[str, Any]:
         if not isinstance(sha1, str) or not re.fullmatch(r"[0-9a-f]{40}", sha1):
             raise WanMatrixError("remote fixture omitted its exact SHA-1")
         fixture_hashes[size_mib] = sha1
-    versions = run_ssh(
-        host,
-        "set -eu; "
-        '"$HOME/.cargo/bin/rustc" --version; '
-        f'"{REMOTE_PYTHON}" -c \'import libtorrent as lt; print(lt.version)\'; '
-        f'cat "{REMOTE_BASE}/staged-revision"',
-    ).stdout.splitlines()
-    if len(versions) != 3 or versions[1] != "2.0.13.0" or versions[2] != revision:
-        raise WanMatrixError("remote version or revision evidence is inconsistent")
-    return {
-        "revision": revision,
-        "rust_version": versions[0],
-        "libtorrent_version": versions[1],
-        "fixture_sha1": fixture_hashes,
-    }
+    result = remote_environment(host, revision)
+    result["fixture_sha1"] = fixture_hashes
+    return result
 
 
 def create_remote_run(host: str) -> str:
@@ -537,19 +554,21 @@ def execute_case(
     binaries: LocalBinaries,
     fixture: Fixture,
     work_root: Path,
+    revision: str,
 ) -> dict[str, Any]:
     case_root = work_root / "runs" / case.case_id
     case_root.mkdir(parents=True, exist_ok=False)
     remote_run: str | None = None
     deadline = time.monotonic() + case.timeout_seconds
     seed_process: RoleProcess | None = None
-    mapping_attempted = False
+    mapping_owned = False
     mapping_port: int | None = None
     mapping_protocol = "TCP" if case.transport == "tcp" else "UDP"
     cleanup_errors: list[str] = []
     stopped: dict[str, Any] | None = None
     seed_sampler: ResourceSampler | None = None
     seed_resource_evidence: dict[str, Any] | None = None
+    primary_error: BaseException | None = None
     try:
         remote_run = create_remote_run(host)
         if case.direction == "local-seed":
@@ -566,8 +585,8 @@ def execute_case(
                 seed_process.process.pid,
                 min(43_260, max(60, int(deadline - time.monotonic()))),
             )
-            mapping_attempted = True
             mapping = add_mapping(mapping_port, mapping_protocol)
+            mapping_owned = True
         else:
             seed_process, mapping_port, seed_pid, _ = start_remote_seed(
                 host,
@@ -582,8 +601,8 @@ def execute_case(
                 seed_pid,
                 min(43_260, max(60, int(deadline - time.monotonic()))),
             )
-            mapping_attempted = True
             mapping = remote_mapping(host, "map", mapping_port, mapping_protocol)
+            mapping_owned = True
         peer_address = mapping.get("external_address")
         peer_port = mapping.get("external_port")
         if not isinstance(peer_address, str) or not isinstance(peer_port, int):
@@ -665,15 +684,12 @@ def execute_case(
             },
             "versions": {
                 "libtorrent_version": "2.0.13.0",
-                "revision": subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd=ROOT,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                ).stdout.strip(),
+                "revision": revision,
             },
         }
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
         if seed_process is not None:
             try:
@@ -682,7 +698,7 @@ def execute_case(
                 cleanup_errors.append("seed-process")
         if seed_sampler is not None:
             seed_sampler.cleanup()
-        if mapping_attempted and mapping_port is not None:
+        if mapping_owned and mapping_port is not None:
             try:
                 if case.direction == "local-seed":
                     remove_mapping(mapping_port, mapping_protocol)
@@ -700,9 +716,10 @@ def execute_case(
         except OSError:
             cleanup_errors.append("local-run")
         if cleanup_errors:
-            raise WanMatrixCleanupError(
-                "case cleanup failed for " + ",".join(sorted(cleanup_errors))
-            )
+            detail = "case cleanup failed for " + ",".join(sorted(cleanup_errors))
+            if primary_error is not None:
+                detail = f"case failed with {type(primary_error).__name__}; " + detail
+            raise WanMatrixCleanupError(detail) from primary_error
 
 
 def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -727,26 +744,42 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
             "case_ids": [case.case_id for case in cases],
             "execution": "disabled-without-explicit-flag",
         }
+    if not cases:
+        return {
+            "schema_version": 1,
+            "scenario": "wan-transport-performance-matrix",
+            "prepared": {"status": "not-needed"},
+            "summary": summarize(journal.load(repair_truncated_tail=True)),
+        }
+    revision = repository_revision()
     sizes = tuple(sorted({case.size_mib for case in cases}))
     if arguments.prepare_remote:
-        prepared = prepare_remote(host, sizes)
+        prepared = prepare_remote(host, sizes, revision)
     else:
-        prepared = {"status": "assumed-prepared"}
+        prepared = remote_environment(host, revision)
+        prepared["status"] = "verified-existing"
+    require_repository_revision(revision)
     binaries = build_binaries()
+    require_repository_revision(revision)
     fixtures = {
         size: create_fixture(arguments.work_root / "fixtures" / f"{size}m", size)
         for size in sizes
     }
+    require_repository_revision(revision)
     for case in cases:
         started = time.monotonic()
+        fatal_error: WanMatrixRevisionError | None = None
         try:
+            require_repository_revision(revision)
             result = execute_case(
                 case,
                 host,
                 binaries,
                 fixtures[case.size_mib],
                 arguments.work_root,
+                revision,
             )
+            require_repository_revision(revision)
             record = {
                 "schema_version": 1,
                 "event": "case-terminal",
@@ -759,11 +792,14 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
             raise
         except (
             ControlledRoleError,
+            MappingError,
             ResourceError,
             WanMatrixError,
             OSError,
             subprocess.SubprocessError,
         ) as error:
+            if isinstance(error, WanMatrixRevisionError):
+                fatal_error = error
             record = {
                 "schema_version": 1,
                 "event": "case-terminal",
@@ -789,6 +825,8 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
             file=sys.stderr,
             flush=True,
         )
+        if fatal_error is not None:
+            raise fatal_error
     return {
         "schema_version": 1,
         "scenario": "wan-transport-performance-matrix",
