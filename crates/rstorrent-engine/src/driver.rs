@@ -2604,6 +2604,11 @@ impl TorrentPeerCoordinator {
         self.publish_peer_runtime(false)
     }
 
+    fn record_content_error(&mut self, error: DownloadError) {
+        self.control.observe_content_error(Some(&error));
+        self.last_error = Some(error);
+    }
+
     fn publish_peer_runtime(&mut self, force: bool) -> Result<(), DownloadError> {
         self.peers
             .publish(true, force)
@@ -6313,7 +6318,7 @@ async fn run_selective_swarm_loop(
                     download.prune_contributor_attempts();
                 }
                 if let Some(failure) = failure {
-                    peers.last_error = Some(DownloadError::PeerTask(format!(
+                    peers.record_content_error(DownloadError::PeerTask(format!(
                         "incoming content peer stopped: {failure:?}"
                     )));
                 }
@@ -6478,7 +6483,7 @@ async fn run_selective_swarm_loop(
                 }
                 let failure = result.as_ref().err().map(PeerSocketError::peer_failure);
                 if let Err(error) = result {
-                    peers.last_error = Some(download_peer_socket_error(error));
+                    peers.record_content_error(download_peer_socket_error(error));
                 }
                 download.remove_outgoing_upload(id).await;
                 close_content_connection(peers, sockets, &mut download.state, id, failure).await?;

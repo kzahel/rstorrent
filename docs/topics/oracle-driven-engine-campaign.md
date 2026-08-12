@@ -561,7 +561,9 @@ Next engine-campaign action: execute focused Tactical
 under Tactical `142`. It starts with repeated 16-bit sequence-cycle
 reproduction and exact terminal-reason capture as the leading causal uTP
 action, then requires reliable single-connection transfers before bounded
-throughput repairs and matched-oracle WAN reruns. The
+throughput repairs and matched-oracle WAN reruns. Its terminal-provenance
+stage is implemented; the next executable action is the pure repeated-cycle
+transfer. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

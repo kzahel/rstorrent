@@ -15,10 +15,10 @@ use std::time::Duration;
 
 use futures_util::FutureExt;
 use rstorrent_protocol::utp::{
-    ConnectionError, ConnectionPhase, DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING,
+    AckDisposition, ConnectionError, ConnectionPhase, DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING,
     IPV4_UDP_PAYLOAD_FLOOR, IncomingDisposition, MAX_UNSENT_BYTES, PacketType, PathMtuState,
-    SendError, SequenceNumber, TimestampMicros, TransportError, TransportState, UTP_HEADER_SIZE,
-    UtpCodecError, decode_packet,
+    ReceiveDisposition, SendError, SequenceNumber, TimestampMicros, TransportError, TransportState,
+    UTP_HEADER_SIZE, UtpCodecError, decode_packet,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc::error::TrySendError;
@@ -105,7 +105,50 @@ impl UtpPathMtuProfile {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UtpTerminalKind {
+    Reset,
+    RetryExhausted,
+    Protocol,
+    Io,
+    WorkerPanic,
+}
+
+impl UtpTerminalKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reset => "reset",
+            Self::RetryExhausted => "retry_exhausted",
+            Self::Protocol => "protocol",
+            Self::Io => "io",
+            Self::WorkerPanic => "worker_panic",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UtpTerminalEvidence {
+    pub kind: UtpTerminalKind,
+    pub detail: String,
+    pub new_data_datagrams_sent: u64,
+    pub data_datagrams_received: u64,
+    pub sent_sequence_cycles: u64,
+    pub received_sequence_cycles: u64,
+    pub last_data_sequence_sent: Option<u16>,
+    pub last_data_sequence_received: Option<u16>,
+    pub duplicate_acknowledgements: u64,
+    pub stale_acknowledgements: u64,
+    pub future_acknowledgements: u64,
+    pub ambiguous_acknowledgements: u64,
+    pub duplicate_data_datagrams: u64,
+    pub too_far_ahead_data_datagrams: u64,
+    pub ambiguous_data_datagrams: u64,
+    pub fin_datagrams_received: u64,
+    pub reset_datagrams_received: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UtpServiceSnapshot {
     pub path_mtu_profile: UtpPathMtuProfile,
     pub active_connections: usize,
@@ -175,6 +218,7 @@ pub struct UtpServiceSnapshot {
     pub protocol_error_connections: u64,
     pub io_error_connections: u64,
     pub worker_panics: u64,
+    pub last_failure: Option<UtpTerminalEvidence>,
 }
 
 #[derive(Debug)]
@@ -933,6 +977,7 @@ struct UtpStats {
     protocol_error_connections: AtomicU64,
     io_error_connections: AtomicU64,
     worker_panics: AtomicU64,
+    last_failure: Mutex<Option<UtpTerminalEvidence>>,
 }
 
 impl UtpStats {
@@ -1070,7 +1115,19 @@ impl UtpStats {
             protocol_error_connections: self.protocol_error_connections.load(Ordering::Relaxed),
             io_error_connections: self.io_error_connections.load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
+            last_failure: self
+                .last_failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone(),
         }
+    }
+
+    fn record_failure(&self, evidence: UtpTerminalEvidence) {
+        *self
+            .last_failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(evidence);
     }
 
     fn connection_started(&self, incoming: bool) {
@@ -1285,30 +1342,57 @@ fn handle_worker_join(
     routes.remove(&key);
     match report {
         Ok(WorkerReport {
-            terminal: WorkerTerminal::RetryExhausted,
-        }) => saturating_increment(&stats.retry_exhausted_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::Graceful,
-        }) => saturating_increment(&stats.graceful_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::Reset,
-        }) => saturating_increment(&stats.reset_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::ConsumerDropped,
-        }) => saturating_increment(&stats.consumer_dropped_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::GenerationChanged,
-        }) => saturating_increment(&stats.generation_changed_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::ServiceCancelled,
-        }) => saturating_increment(&stats.service_cancelled_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::Protocol(_),
-        }) => saturating_increment(&stats.protocol_error_connections, 1),
-        Ok(WorkerReport {
-            terminal: WorkerTerminal::Io(_),
-        }) => saturating_increment(&stats.io_error_connections, 1),
-        Err(_) => saturating_increment(&stats.worker_panics, 1),
+            terminal,
+            telemetry,
+        }) => {
+            if let Some(evidence) = telemetry.terminal_evidence(&terminal) {
+                stats.record_failure(evidence);
+            }
+            match terminal {
+                WorkerTerminal::RetryExhausted => {
+                    saturating_increment(&stats.retry_exhausted_connections, 1);
+                }
+                WorkerTerminal::Graceful => {
+                    saturating_increment(&stats.graceful_connections, 1);
+                }
+                WorkerTerminal::Reset => saturating_increment(&stats.reset_connections, 1),
+                WorkerTerminal::ConsumerDropped => {
+                    saturating_increment(&stats.consumer_dropped_connections, 1);
+                }
+                WorkerTerminal::GenerationChanged => {
+                    saturating_increment(&stats.generation_changed_connections, 1);
+                }
+                WorkerTerminal::ServiceCancelled => {
+                    saturating_increment(&stats.service_cancelled_connections, 1);
+                }
+                WorkerTerminal::Protocol(_) => {
+                    saturating_increment(&stats.protocol_error_connections, 1);
+                }
+                WorkerTerminal::Io(_) => saturating_increment(&stats.io_error_connections, 1),
+            }
+        }
+        Err(_) => {
+            saturating_increment(&stats.worker_panics, 1);
+            stats.record_failure(UtpTerminalEvidence {
+                kind: UtpTerminalKind::WorkerPanic,
+                detail: "uTP worker panicked; payload and panic detail withheld".to_owned(),
+                new_data_datagrams_sent: 0,
+                data_datagrams_received: 0,
+                sent_sequence_cycles: 0,
+                received_sequence_cycles: 0,
+                last_data_sequence_sent: None,
+                last_data_sequence_received: None,
+                duplicate_acknowledgements: 0,
+                stale_acknowledgements: 0,
+                future_acknowledgements: 0,
+                ambiguous_acknowledgements: 0,
+                duplicate_data_datagrams: 0,
+                too_far_ahead_data_datagrams: 0,
+                ambiguous_data_datagrams: 0,
+                fin_datagrams_received: 0,
+                reset_datagrams_received: 0,
+            });
+        }
     }
     Ok(())
 }
@@ -1666,6 +1750,160 @@ enum WorkerTerminal {
     Io(String),
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct WorkerTelemetry {
+    new_data_datagrams_sent: u64,
+    data_datagrams_received: u64,
+    sent_sequence_cycles: u64,
+    received_sequence_cycles: u64,
+    last_data_sequence_sent: Option<u16>,
+    last_data_sequence_received: Option<u16>,
+    duplicate_acknowledgements: u64,
+    stale_acknowledgements: u64,
+    future_acknowledgements: u64,
+    ambiguous_acknowledgements: u64,
+    duplicate_data_datagrams: u64,
+    too_far_ahead_data_datagrams: u64,
+    ambiguous_data_datagrams: u64,
+    fin_datagrams_received: u64,
+    reset_datagrams_received: u64,
+}
+
+impl WorkerTelemetry {
+    fn record_sent(&mut self, sequence_number: SequenceNumber, retransmission: bool) {
+        if retransmission {
+            return;
+        }
+        let sequence_number = sequence_number.get();
+        if self.last_data_sequence_sent == Some(u16::MAX) && sequence_number == 0 {
+            self.sent_sequence_cycles = self.sent_sequence_cycles.saturating_add(1);
+        }
+        self.last_data_sequence_sent = Some(sequence_number);
+        self.new_data_datagrams_sent = self.new_data_datagrams_sent.saturating_add(1);
+    }
+
+    fn record_received(
+        &mut self,
+        packet_type: PacketType,
+        sequence_number: SequenceNumber,
+        acknowledgement: Option<AckDisposition>,
+        receive: Option<ReceiveDisposition>,
+    ) {
+        match acknowledgement {
+            Some(AckDisposition::Duplicate) => {
+                self.duplicate_acknowledgements = self.duplicate_acknowledgements.saturating_add(1);
+            }
+            Some(AckDisposition::Stale { .. }) => {
+                self.stale_acknowledgements = self.stale_acknowledgements.saturating_add(1);
+            }
+            Some(AckDisposition::Future) => {
+                self.future_acknowledgements = self.future_acknowledgements.saturating_add(1);
+            }
+            Some(AckDisposition::Ambiguous) => {
+                self.ambiguous_acknowledgements = self.ambiguous_acknowledgements.saturating_add(1);
+            }
+            Some(
+                AckDisposition::Cumulative
+                | AckDisposition::Selective
+                | AckDisposition::CumulativeAndSelective,
+            )
+            | None => {}
+        }
+        match packet_type {
+            PacketType::Data => {
+                let sequence_number = sequence_number.get();
+                if self.last_data_sequence_received == Some(u16::MAX) && sequence_number == 0 {
+                    self.received_sequence_cycles = self.received_sequence_cycles.saturating_add(1);
+                }
+                self.last_data_sequence_received = Some(sequence_number);
+                self.data_datagrams_received = self.data_datagrams_received.saturating_add(1);
+                match receive {
+                    Some(
+                        ReceiveDisposition::Duplicate | ReceiveDisposition::ConflictingDuplicate,
+                    ) => {
+                        self.duplicate_data_datagrams =
+                            self.duplicate_data_datagrams.saturating_add(1);
+                    }
+                    Some(ReceiveDisposition::TooFarAhead { .. }) => {
+                        self.too_far_ahead_data_datagrams =
+                            self.too_far_ahead_data_datagrams.saturating_add(1);
+                    }
+                    Some(ReceiveDisposition::AmbiguousSequence) => {
+                        self.ambiguous_data_datagrams =
+                            self.ambiguous_data_datagrams.saturating_add(1);
+                    }
+                    Some(
+                        ReceiveDisposition::Delivered
+                        | ReceiveDisposition::Buffered
+                        | ReceiveDisposition::AfterFin
+                        | ReceiveDisposition::ConflictingFin,
+                    )
+                    | None => {}
+                }
+            }
+            PacketType::Fin => {
+                self.fin_datagrams_received = self.fin_datagrams_received.saturating_add(1);
+            }
+            PacketType::Reset => {
+                self.reset_datagrams_received = self.reset_datagrams_received.saturating_add(1);
+            }
+            PacketType::State | PacketType::Syn => {}
+        }
+    }
+
+    fn terminal_evidence(&self, terminal: &WorkerTerminal) -> Option<UtpTerminalEvidence> {
+        let (kind, detail) = match terminal {
+            WorkerTerminal::Reset => (UtpTerminalKind::Reset, "peer reset".to_owned()),
+            WorkerTerminal::RetryExhausted => (
+                UtpTerminalKind::RetryExhausted,
+                "retransmission limit exhausted".to_owned(),
+            ),
+            WorkerTerminal::Protocol(detail) => {
+                (UtpTerminalKind::Protocol, bounded_terminal_detail(detail))
+            }
+            WorkerTerminal::Io(_) => (
+                UtpTerminalKind::Io,
+                "uTP runtime I/O failure; detail withheld".to_owned(),
+            ),
+            WorkerTerminal::Graceful
+            | WorkerTerminal::ConsumerDropped
+            | WorkerTerminal::GenerationChanged
+            | WorkerTerminal::ServiceCancelled => return None,
+        };
+        Some(UtpTerminalEvidence {
+            kind,
+            detail,
+            new_data_datagrams_sent: self.new_data_datagrams_sent,
+            data_datagrams_received: self.data_datagrams_received,
+            sent_sequence_cycles: self.sent_sequence_cycles,
+            received_sequence_cycles: self.received_sequence_cycles,
+            last_data_sequence_sent: self.last_data_sequence_sent,
+            last_data_sequence_received: self.last_data_sequence_received,
+            duplicate_acknowledgements: self.duplicate_acknowledgements,
+            stale_acknowledgements: self.stale_acknowledgements,
+            future_acknowledgements: self.future_acknowledgements,
+            ambiguous_acknowledgements: self.ambiguous_acknowledgements,
+            duplicate_data_datagrams: self.duplicate_data_datagrams,
+            too_far_ahead_data_datagrams: self.too_far_ahead_data_datagrams,
+            ambiguous_data_datagrams: self.ambiguous_data_datagrams,
+            fin_datagrams_received: self.fin_datagrams_received,
+            reset_datagrams_received: self.reset_datagrams_received,
+        })
+    }
+}
+
+fn bounded_terminal_detail(detail: &str) -> String {
+    const MAX_TERMINAL_DETAIL_BYTES: usize = 256;
+    if detail.len() <= MAX_TERMINAL_DETAIL_BYTES {
+        return detail.to_owned();
+    }
+    let mut end = MAX_TERMINAL_DETAIL_BYTES;
+    while !detail.is_char_boundary(end) {
+        end -= 1;
+    }
+    detail[..end].to_owned()
+}
+
 impl WorkerTerminal {
     fn stream_terminal(&self) -> UtpStreamTerminal {
         let (kind, detail) = match self {
@@ -1703,6 +1941,7 @@ impl WorkerTerminal {
 #[derive(Clone, Debug)]
 struct WorkerReport {
     terminal: WorkerTerminal,
+    telemetry: WorkerTelemetry,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1756,6 +1995,7 @@ fn spawn_worker(
         remote_eof: false,
         eof_sent: false,
         incoming_half_open: incoming,
+        telemetry: WorkerTelemetry::default(),
     };
     workers.spawn(async move {
         let result = AssertUnwindSafe(worker.run()).catch_unwind().await;
@@ -1793,6 +2033,7 @@ struct UtpWorker {
     remote_eof: bool,
     eof_sent: bool,
     incoming_half_open: bool,
+    telemetry: WorkerTelemetry,
 }
 
 impl UtpWorker {
@@ -1813,7 +2054,10 @@ impl UtpWorker {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(terminal.stream_terminal());
         self.read_notification.notify_waiters();
-        WorkerReport { terminal }
+        WorkerReport {
+            terminal,
+            telemetry: self.telemetry,
+        }
     }
 
     async fn run_loop(&mut self) -> Result<WorkerTerminal, UtpRuntimeError> {
@@ -1927,12 +2171,28 @@ impl UtpWorker {
 
     fn handle_incoming(&mut self, bytes: &[u8]) -> Result<(), UtpRuntimeError> {
         let packet = decode_packet(bytes)?;
+        let packet_type = packet.header.packet_type;
+        let sequence_number = packet.header.sequence_number;
         let outcome =
             self.state
                 .incoming(packet, self.clock.now_micros(), self.clock.timestamp())?;
         if outcome.connection.disposition != IncomingDisposition::Accepted {
             return Ok(());
         }
+        self.telemetry.record_received(
+            packet_type,
+            sequence_number,
+            outcome
+                .connection
+                .acknowledgement
+                .as_ref()
+                .map(|acknowledgement| acknowledgement.disposition),
+            outcome
+                .connection
+                .receive
+                .as_ref()
+                .map(|receive| receive.disposition),
+        );
         if let Some(receive) = outcome.connection.receive {
             for delivered in receive.delivered {
                 self.append_delivery(delivered.bytes);
@@ -2012,6 +2272,10 @@ impl UtpWorker {
                     sent_any = true;
                     self.stats
                         .record_datagram_sent(emission.intent.packet_type, length);
+                    if emission.intent.packet_type == PacketType::Data {
+                        self.telemetry
+                            .record_sent(emission.intent.sequence_number, emission.retransmission);
+                    }
                     if emission.retransmission {
                         saturating_increment(&self.stats.retransmission_datagrams_sent, 1);
                         saturating_increment(
@@ -3048,6 +3312,12 @@ mod tests {
                 key,
                 Ok(WorkerReport {
                     terminal: WorkerTerminal::RetryExhausted,
+                    telemetry: WorkerTelemetry {
+                        new_data_datagrams_sent: 65_537,
+                        sent_sequence_cycles: 1,
+                        last_data_sequence_sent: Some(0),
+                        ..WorkerTelemetry::default()
+                    },
                 }),
             ))),
             &mut routes,
@@ -3055,7 +3325,13 @@ mod tests {
         )
         .unwrap();
         assert!(routes.is_empty());
-        assert_eq!(stats.snapshot().retry_exhausted_connections, 1);
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.retry_exhausted_connections, 1);
+        let failure = snapshot.last_failure.expect("retry evidence");
+        assert_eq!(failure.kind, UtpTerminalKind::RetryExhausted);
+        assert_eq!(failure.new_data_datagrams_sent, 65_537);
+        assert_eq!(failure.sent_sequence_cycles, 1);
+        assert_eq!(failure.last_data_sequence_sent, Some(0));
 
         let (ingress, _) = mpsc::channel(1);
         routes.insert(
@@ -3069,5 +3345,41 @@ mod tests {
         handle_worker_join(Some(Ok((key, Err(panic)))), &mut routes, &stats).unwrap();
         assert!(routes.is_empty());
         assert_eq!(stats.snapshot().worker_panics, 1);
+        assert_eq!(
+            stats.snapshot().last_failure.unwrap().kind,
+            UtpTerminalKind::WorkerPanic
+        );
+    }
+
+    #[test]
+    fn terminal_telemetry_counts_cycles_and_bounded_failure_categories() {
+        let mut telemetry = WorkerTelemetry::default();
+        telemetry.record_sent(SequenceNumber::new(u16::MAX), false);
+        telemetry.record_sent(SequenceNumber::new(0), false);
+        telemetry.record_sent(SequenceNumber::new(0), true);
+        telemetry.record_received(
+            PacketType::Data,
+            SequenceNumber::new(u16::MAX),
+            Some(AckDisposition::Stale { distance: 1 }),
+            Some(ReceiveDisposition::Delivered),
+        );
+        telemetry.record_received(
+            PacketType::Data,
+            SequenceNumber::new(0),
+            Some(AckDisposition::Ambiguous),
+            Some(ReceiveDisposition::TooFarAhead { distance: 65 }),
+        );
+        let evidence = telemetry
+            .terminal_evidence(&WorkerTerminal::Protocol("x".repeat(300)))
+            .expect("protocol failure evidence");
+        assert_eq!(evidence.kind, UtpTerminalKind::Protocol);
+        assert_eq!(evidence.detail.len(), 256);
+        assert_eq!(evidence.new_data_datagrams_sent, 2);
+        assert_eq!(evidence.data_datagrams_received, 2);
+        assert_eq!(evidence.sent_sequence_cycles, 1);
+        assert_eq!(evidence.received_sequence_cycles, 1);
+        assert_eq!(evidence.stale_acknowledgements, 1);
+        assert_eq!(evidence.ambiguous_acknowledgements, 1);
+        assert_eq!(evidence.too_far_ahead_data_datagrams, 1);
     }
 }

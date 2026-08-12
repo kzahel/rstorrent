@@ -1,6 +1,7 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Active under parent Tactical 142.** Maintainer direction on
+Status: **Active under parent Tactical 142; Stage 1 terminal provenance is
+implemented.** Maintainer direction on
 2026-08-13 selects this tactical after Tactical `143` completed and activates
 continued uTP performance work with the goal of approaching pinned-libtorrent
 uTP throughput. This
@@ -161,6 +162,30 @@ Tactical `142` already inspected the local JSTorrent reference at
 `9895410beeed6aff554053769bd006a3fbd373ef`: its useful role helpers are
 TCP-oriented and it supplies no sustained uTP implementation oracle. The
 checkout has unrelated existing changes and remains read-only.
+
+## Implementation Evidence
+
+### Stage 1: terminal provenance
+
+The uTP worker now retains one bounded, endpoint-free last-failure record for
+RESET, retry exhaustion, protocol failure, runtime I/O failure, or worker
+panic. It includes newly sent and received DATA counts, sent and received
+16-bit sequence-cycle counts, last DATA sequence values, duplicate/stale/
+future/ambiguous ACK counts, duplicate/too-far-ahead/ambiguous receive counts,
+and FIN/RESET counts. Protocol detail is UTF-8 bounded to 256 bytes; runtime
+I/O, panic, payload, and endpoint detail is deliberately withheld.
+
+`rstorrent-public-probe`, `rstorrent-incoming-seed`, and the controlled uTP
+role serialize the same optional `last_failure` object. The download owner
+also retains the bounded exact content-peer task error separately from its
+coarse reconnect policy classification. Thus a future WAN reconnect can be
+placed at peer framing/I/O or inside uTP and, for uTP, relative to sequence
+reuse without retaining a packet timeline.
+
+Focused validation on 2026-08-13 passes 22 uTP runtime tests, the driver-control
+tests, both affected binary build surfaces, and 24 WAN/matrix Python contract
+tests. The next executable action is the pure repeated-cycle transfer; no
+transport or congestion behavior changed in this stage.
 
 ## Owner, Task, Cancellation, And Dependency Map
 

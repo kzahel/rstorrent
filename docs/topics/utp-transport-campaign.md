@@ -952,6 +952,10 @@ exact terminal-reason capture, causal reliability repair, and a subsequent
 `0.85x` matched-libtorrent uTP median target. Sequence wrap is a hypothesis,
 not a conclusion. The unrun local-seed 1 GiB cells are deliberately deferred
 at this review checkpoint.
+Its first active stage now preserves bounded endpoint-free worker failure,
+sequence-cycle, ACK/receive anomaly, FIN/RESET, and exact content-peer task
+evidence in every WAN role. No transport behavior changed; a deterministic
+repeated-cycle transfer is the next causal gate.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

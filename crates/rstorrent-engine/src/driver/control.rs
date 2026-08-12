@@ -358,6 +358,7 @@ pub struct DownloadDiagnosticSnapshot {
     pub content_peers_captured_at: Option<Duration>,
     pub content_peers: Vec<ContentPeerActivitySnapshot>,
     pub content_registry: Option<PeerRegistryCounts>,
+    pub content_last_error: Option<String>,
     pub peer_connections: Vec<PeerConnectionObservation>,
     pub metadata: MetadataAcquisitionSnapshot,
 }
@@ -455,6 +456,7 @@ struct DownloadControlInner {
     byte_metric_sink: Mutex<Option<SharedByteMetricSink>>,
     last_swarm_activity: Mutex<Option<SwarmActivitySnapshot>>,
     last_content_peers: Mutex<(Option<Duration>, Vec<ContentPeerActivitySnapshot>)>,
+    content_last_error: Mutex<Option<String>>,
     peer_registry_activity: Mutex<PeerRegistryActivityState>,
     peer_connections: Mutex<PeerConnectionDiagnosticState>,
     metadata_diagnostics: Mutex<MetadataDiagnosticState>,
@@ -825,6 +827,7 @@ impl DownloadControl {
                 byte_metric_sink: Mutex::new(None),
                 last_swarm_activity: Mutex::new(None),
                 last_content_peers: Mutex::new((None, Vec::new())),
+                content_last_error: Mutex::new(None),
                 peer_registry_activity: Mutex::new(PeerRegistryActivityState::default()),
                 peer_connections: Mutex::new(PeerConnectionDiagnosticState::default()),
                 metadata_diagnostics: Mutex::new(MetadataDiagnosticState::default()),
@@ -1486,6 +1489,12 @@ impl DownloadControl {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             (state.0, state.1.clone())
         };
+        let content_last_error = self
+            .inner
+            .content_last_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         let captured_at = self.diagnostic_elapsed();
         let peer_connections = self
             .inner
@@ -1524,6 +1533,7 @@ impl DownloadControl {
             content_peers_captured_at,
             content_peers,
             content_registry,
+            content_last_error,
             peer_connections,
             metadata,
         }
@@ -2189,6 +2199,18 @@ impl DownloadControl {
         if changed {
             self.emit(DownloadActivityEvent::SwarmState(Box::new(activity)));
         }
+    }
+
+    pub(super) fn observe_content_error(&self, error: Option<&DownloadError>) {
+        let Some(error) = error else {
+            return;
+        };
+        *self
+            .inner
+            .content_last_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(bounded_diagnostic_detail(&error.to_string()));
     }
 
     #[cfg(test)]
@@ -3372,5 +3394,17 @@ mod streaming_demand_tests {
         control
             .acquire_streaming_demand(interval(100, 100), None)
             .unwrap();
+    }
+
+    #[test]
+    fn content_terminal_detail_is_bounded_and_retained() {
+        let control = DownloadControl::new();
+        control.observe_content_error(Some(&DownloadError::PeerTask("x".repeat(512))));
+        let detail = control
+            .diagnostic_snapshot()
+            .content_last_error
+            .expect("content terminal detail");
+        assert_eq!(detail.len(), MAX_DIAGNOSTIC_ERROR_LENGTH);
+        assert!(detail.starts_with("peer task set: "));
     }
 }

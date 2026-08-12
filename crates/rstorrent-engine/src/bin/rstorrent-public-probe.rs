@@ -1060,6 +1060,7 @@ struct Diagnostics {
     content_dialing_candidates: Option<usize>,
     content_backed_off_candidates: Option<usize>,
     content_failure_limited_candidates: Option<usize>,
+    content_last_error: Option<String>,
     content_peers_captured_at_seconds: Option<f64>,
     content_peers: Vec<ContentPeerDiagnostics>,
     connected_peers: Option<usize>,
@@ -1256,10 +1257,51 @@ struct UtpEvidence {
     mtu_fragmentable_retry_datagrams_sent: u64,
     retry_exhausted_connections: u64,
     worker_panics: u64,
+    last_failure: Option<UtpFailureEvidence>,
+}
+
+#[derive(Debug, Serialize)]
+struct UtpFailureEvidence {
+    kind: String,
+    detail: String,
+    new_data_datagrams_sent: u64,
+    data_datagrams_received: u64,
+    sent_sequence_cycles: u64,
+    received_sequence_cycles: u64,
+    last_data_sequence_sent: Option<u16>,
+    last_data_sequence_received: Option<u16>,
+    duplicate_acknowledgements: u64,
+    stale_acknowledgements: u64,
+    future_acknowledgements: u64,
+    ambiguous_acknowledgements: u64,
+    duplicate_data_datagrams: u64,
+    too_far_ahead_data_datagrams: u64,
+    ambiguous_data_datagrams: u64,
+    fin_datagrams_received: u64,
+    reset_datagrams_received: u64,
 }
 
 impl From<UtpServiceSnapshot> for UtpEvidence {
     fn from(snapshot: UtpServiceSnapshot) -> Self {
+        let last_failure = snapshot.last_failure.map(|failure| UtpFailureEvidence {
+            kind: failure.kind.as_str().to_owned(),
+            detail: failure.detail,
+            new_data_datagrams_sent: failure.new_data_datagrams_sent,
+            data_datagrams_received: failure.data_datagrams_received,
+            sent_sequence_cycles: failure.sent_sequence_cycles,
+            received_sequence_cycles: failure.received_sequence_cycles,
+            last_data_sequence_sent: failure.last_data_sequence_sent,
+            last_data_sequence_received: failure.last_data_sequence_received,
+            duplicate_acknowledgements: failure.duplicate_acknowledgements,
+            stale_acknowledgements: failure.stale_acknowledgements,
+            future_acknowledgements: failure.future_acknowledgements,
+            ambiguous_acknowledgements: failure.ambiguous_acknowledgements,
+            duplicate_data_datagrams: failure.duplicate_data_datagrams,
+            too_far_ahead_data_datagrams: failure.too_far_ahead_data_datagrams,
+            ambiguous_data_datagrams: failure.ambiguous_data_datagrams,
+            fin_datagrams_received: failure.fin_datagrams_received,
+            reset_datagrams_received: failure.reset_datagrams_received,
+        });
         Self {
             path_mtu_profile: snapshot.path_mtu_profile.as_str().to_owned(),
             active_connections_after_shutdown: snapshot.active_connections,
@@ -1329,6 +1371,7 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             mtu_fragmentable_retry_datagrams_sent: snapshot.mtu_fragmentable_retry_datagrams_sent,
             retry_exhausted_connections: snapshot.retry_exhausted_connections,
             worker_panics: snapshot.worker_panics,
+            last_failure,
         }
     }
 }
@@ -2233,6 +2276,7 @@ fn diagnostic_result(
         content_dialing_candidates: content_registry.map(|value| value.dialing),
         content_backed_off_candidates: content_registry.map(|value| value.backed_off),
         content_failure_limited_candidates: content_registry.map(|value| value.failure_limited),
+        content_last_error: snapshot.content_last_error.clone(),
         content_peers_captured_at_seconds: snapshot
             .content_peers_captured_at
             .map(|value| value.as_secs_f64()),
@@ -2878,6 +2922,7 @@ mod tests {
             content_peers_captured_at: None,
             content_peers: Vec::new(),
             content_registry: None,
+            content_last_error: None,
             peer_connections: Vec::new(),
             metadata: MetadataAcquisitionSnapshot::default(),
         };

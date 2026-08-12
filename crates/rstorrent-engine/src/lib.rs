@@ -224,5 +224,5 @@ pub use utp_runtime::{
     MAX_INCOMING_UTP_HALF_OPEN, MAX_UTP_APPLICATION_WRITE_BYTES, MAX_UTP_CONNECTIONS,
     UTP_CONNECTION_DATAGRAM_QUEUE, UTP_INCOMING_STREAM_QUEUE, UTP_RUNTIME_DATAGRAM_BYTES,
     UtpHandle, UtpPathMtuProfile, UtpRuntimeConfig, UtpRuntimeError, UtpService,
-    UtpServiceSnapshot, UtpStream,
+    UtpServiceSnapshot, UtpStream, UtpTerminalEvidence, UtpTerminalKind,
 };

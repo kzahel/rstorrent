@@ -967,6 +967,27 @@ async fn session_udp_endpoint(service: &ApplicationService) -> Result<String, Se
 }
 
 fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_json::Value {
+    let last_failure = snapshot.last_failure.as_ref().map(|failure| {
+        serde_json::json!({
+            "kind": failure.kind.as_str(),
+            "detail": failure.detail,
+            "new_data_datagrams_sent": failure.new_data_datagrams_sent,
+            "data_datagrams_received": failure.data_datagrams_received,
+            "sent_sequence_cycles": failure.sent_sequence_cycles,
+            "received_sequence_cycles": failure.received_sequence_cycles,
+            "last_data_sequence_sent": failure.last_data_sequence_sent,
+            "last_data_sequence_received": failure.last_data_sequence_received,
+            "duplicate_acknowledgements": failure.duplicate_acknowledgements,
+            "stale_acknowledgements": failure.stale_acknowledgements,
+            "future_acknowledgements": failure.future_acknowledgements,
+            "ambiguous_acknowledgements": failure.ambiguous_acknowledgements,
+            "duplicate_data_datagrams": failure.duplicate_data_datagrams,
+            "too_far_ahead_data_datagrams": failure.too_far_ahead_data_datagrams,
+            "ambiguous_data_datagrams": failure.ambiguous_data_datagrams,
+            "fin_datagrams_received": failure.fin_datagrams_received,
+            "reset_datagrams_received": failure.reset_datagrams_received,
+        })
+    });
     serde_json::json!({
         "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
@@ -1029,6 +1050,7 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
         "retry_exhausted_connections": snapshot.retry_exhausted_connections,
         "worker_panics": snapshot.worker_panics,
+        "last_failure": last_failure,
     })
 }
 
