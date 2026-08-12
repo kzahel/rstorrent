@@ -88,8 +88,10 @@ public incoming-uTP transfer plus exact cleanup. Tactical
 through controlled pinned-libtorrent streaming, browser/Tauri, both Android
 ABIs, API 34 AVD, and complete repository evidence. Explicit maintainer
 direction then selected measurement-only Tactical
-[`141`](../tactical/141-product-wan-tcp-utp-comparison.md) as the sole
-authoritative **Now**.
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md). It is now closed
+evidence-limited with one retained exact uTP case, zero complete TCP/uTP pairs,
+and exact cleanup. Review of that stopping condition is the sole authoritative
+**Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -449,7 +451,10 @@ residue. Tactical `139` completes bounded incomplete-file stream demand,
 verified active logical reads, time-critical scheduling, progressive HTTP, the
 exact active-to-published handoff, shared client eligibility, controlled wire
 evidence, and proportional Android parity. Measurement-only Tactical `141` is
-active for three product-WAN TCP/uTP pairs; it cannot tune transport behavior.**
+closed evidence-limited after its bounded physical attempts retained one exact
+8 MiB uTP case but zero complete TCP/uTP pairs. Its reporter defects are
+repaired after the budget without changing engine behavior; no rate ratio or
+tuning direction follows.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -482,11 +487,13 @@ and local/remote process and artifact cleanup pass. One preceding mapped dial
 timed out with zero remote uTP packets and also cleaned exactly, so the result
 proves one product-owned public incoming path but not repeatability.
 
-Active external-measurement tactical:
+Latest closed external-measurement tactical:
 [`141`](../tactical/141-product-wan-tcp-utp-comparison.md). It owns three
 same-session, same-route 8 MiB TCP/uTP pairs against the pinned remote oracle,
-with active payload time separated from setup and at most one exactly cleaned
-replacement attempt. It is not authorized to tune either transport.
+with active payload time separated from setup. The authorized attempts all
+cleaned exactly but retained only one uTP case at 0.096759 MiB/s active and no
+TCP case, so it closed evidence-limited with no pair or ratio. The hardened
+post-budget oracle has not been rerun over the WAN.
 
 Earlier closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
@@ -518,9 +525,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `141` through three complete
-paired WAN samples or its explicit evidence-limited stopping condition, then
-reconcile the measurement before selecting any implementation response.
+Next engine-campaign action: human review of Tactical `141`'s evidence-limited
+stopping condition. Recommendation A is a new bounded measurement tactical
+using the hardened single-connection oracle; it requires new public-traffic
+authority. Declining that follow-up returns **Now** to durable seeding goals.
+The single retained uTP rate is not authority for an implementation response.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

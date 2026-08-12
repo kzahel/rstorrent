@@ -26,6 +26,11 @@ Median active time falls from 7.646 to 2.994 seconds and sampled seed CPU from
 0.15 to 0.06 seconds; median RSS stays near 10.7 MiB and queue high waters do
 not grow. This is a controlled packetization baseline, not a public-WAN speed
 claim.
+Closed evidence-limited Tactical `141` attempted a same-session public-WAN
+TCP/uTP comparison. Its replacement budget retained one exact 8,389,339-byte
+uTP case at 0.096759 MiB/s active and 0.094237 MiB/s connection-inclusive,
+but no TCP case and no complete pair. The result supplies neither a ratio nor
+a tuning direction; every attempt removed both mappings and all artifacts.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

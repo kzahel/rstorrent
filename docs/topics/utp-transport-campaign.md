@@ -51,7 +51,12 @@ Incoming-uTP reachability Tactical
 controlled gate passes, and a product-owned finite UDP mapping carries the
 exact off-LAN fixture over one incoming uTP and zero TCP peers with exact
 cleanup. Tactical `139` subsequently completed; capability readiness now owns
-selection of the next bounded slice.
+selection of the next bounded slice. Measurement-only Tactical
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md) is now closed
+evidence-limited: one exact 8 MiB uTP leg passed at 0.096759 MiB/s active, but
+remote-oracle evidence defects left zero complete TCP/uTP pairs before the
+physical budget expired. Every pair attempt cleaned exactly, the defects are
+repaired without an engine change, and another WAN cohort requires review.
 
 ## Scope And Ownership
 
@@ -753,6 +758,11 @@ advertisement and now proves one product-owned public incoming-uTP path.
 Persisted transport policy, public-DHT discovery over that path, IPv6 uTP,
 MSE-over-uTP, racing, and a repeatable WAN cohort remain explicit limits.
 
+Tactical `141` does not change those claims. Its single retained public uTP
+case used one uTP/zero TCP peers and exact content, but no TCP leg survived the
+strict pair contract. No TCP/uTP ratio, throughput baseline, congestion
+diagnosis, or implementation direction follows.
+
 ## Validation Contract
 
 Validation grows in layers; later evidence never substitutes for an earlier
@@ -899,10 +909,13 @@ cleanup, and complete repository gates; incoming-reachability Tactical `140`
 then adds independent product TCP/UDP mapping, transport-specific tracker/DHT
 advertisement, controlled DHT-only incoming uTP, and proportional Android
 evidence, then proves one product-owned public incoming-uTP transfer with zero
-mapping residue.**
+mapping residue; Tactical `141` later closes evidence-limited with one retained
+8 MiB uTP case, zero complete TCP/uTP pairs, exact cleanup, and no engine
+change.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
-completed; selecting the next bounded tactical is the current checkpoint.
+completed; human review of Tactical `141`'s evidence-limited stopping condition
+is the current checkpoint.
 Another WAN cohort, another NAT mechanism, IPv6 uTP, permanent network change,
 another host, and a broader uTP support claim remain separate decisions.

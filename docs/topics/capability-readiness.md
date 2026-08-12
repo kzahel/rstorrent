@@ -414,21 +414,20 @@ and starts no HTTP listener.
 
 ### Now
 
-- **Execute Tactical
-  [`141`](../tactical/141-product-wan-tcp-utp-comparison.md).** Explicit
-  maintainer direction selected a measurement-only same-session, same-route
-  product-WAN TCP/uTP comparison after Tactical `140` proved one public
-  incoming-uTP path but exposed poor unpaired transfer time. Three complete
-  8 MiB pairs, with at most one exactly cleaned replacement, will separate
-  active payload rate from mapping, SSH, process, and connection setup. This
-  does not authorize transport tuning from the result.
+- **Review closed evidence-limited Tactical
+  [`141`](../tactical/141-product-wan-tcp-utp-comparison.md).** Its authorized
+  physical budget retained one exact 8 MiB uTP case but zero complete TCP/uTP
+  pairs. The harness defects are repaired after the budget, every attempt
+  cleaned exactly, and no ratio or engine direction follows. Recommendation A
+  is a new bounded measurement tactical using the hardened oracle; it requires
+  explicit authority for more public traffic.
 
 ### Next
 
-- Close or classify Tactical `141` before selecting an implementation response.
-  A repeatable uTP deficit may justify bounded transport diagnosis; an
-  incomplete/noisy cohort may justify measurement follow-up. Durable seeding
-  goals remain the leading unrelated policy candidate.
+- If review selects measurement follow-up, create a new tactical with its own
+  attempt and traffic bounds; do not reopen Tactical `141` silently.
+- If review declines more WAN measurement, return **Now** to durable seeding
+  goals. The single retained uTP rate does not justify transport tuning.
 
 ### Later
 

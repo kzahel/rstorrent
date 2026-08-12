@@ -1,7 +1,7 @@
 # Tactical 141: Product WAN TCP/uTP Comparison
 
-Status: **Active on 2026-08-12.** Explicit maintainer direction selected the
-paired comparison proposed after Tactical
+Status: **Closed evidence-limited on 2026-08-12.** Explicit maintainer
+direction selected the paired comparison proposed after Tactical
 [`140`](140-incoming-utp-reachability.md). Autonomous source review,
 implementation, the already established `pimom` control peer, bounded public
 TCP/uTP traffic, exact cleanup, and logical commits are authorized. This is a
@@ -254,6 +254,65 @@ the exact pinned version field, and validates each pair before emitting a
 bounded redacted checkpoint. One complete replacement invocation is permitted.
 The worst-case cumulative payload bound above accounts for both invocations;
 no further physical retry is authorized by this tactical.
+
+## Closure Evidence
+
+The one permitted reporter-fixed invocation exhausted four exactly cleaned
+pair attempts without producing a complete pair:
+
+- attempts 1 and 3 started with TCP and were rejected because the remote
+  libtorrent peer list exceeded one entry; no case from either attempt was
+  admitted;
+- attempt 2 started with uTP and completed enough work to expose that all
+  payload bytes can arrive before `is_seeding` reports hash-verified
+  completion; the overly strict milestone equality rejected the case;
+- attempt 4 completed and retained the uTP leg, then its TCP leg hit the same
+  duplicate-peer guard; and
+- every attempt independently removed both mappings, remote processes and run
+  directory, and its local pair root. The cohort root was also removed and no
+  endpoint or machine identity entered the retained report.
+
+The one admissible case moved and SHA-1-verified all 8,389,339 bytes in
+82.686588 active seconds and 84.899310 connection-inclusive seconds:
+0.096759 and 0.094237 MiB/s respectively. It used one uTP and zero TCP peers,
+5,877 incoming and 5,909 outgoing uTP packets, zero packet loss, timeout,
+fast retransmit, or resend counters, and one product incoming/uTP connection
+at high water. This is one uTP observation, not a TCP comparison or a stable
+WAN baseline.
+
+Post-budget harness repair sets libtorrent `connections_limit = 1`, disables
+multiple connections per IP, retains both applied values, and records the
+100% milestone at verified `is_seeding` completion. Pinned settings and pure
+contracts pass. An unthrottled loopback TCP probe reached seeding without the
+former duplicate-peer failure, but completed within one progress observation
+and is intentionally ineligible as an active-throughput sample. Attempts to
+slow the loopback product with its diagnostic rate limiter timed out and are
+not retained as comparison evidence. The repaired harness has not been
+re-run over the WAN.
+
+The stopping condition is therefore the declared evidence-limited outcome:
+zero complete pairs, no cohort median or TCP/uTP ratio, no engine or product
+change, and no performance conclusion. A further physical comparison requires
+human review and a new bounded tactical; it must not be treated as a routine
+retry of this one.
+
+Recorded closure validation:
+
+- `test_product_wan_transport_compare.py`: 7 passed;
+- `test_utp_wan_contract.py`: 16 passed;
+- Python compilation for the fixture, remote seed/leecher, retained WAN owner,
+  comparator, and focused tests passed;
+- the retained controlled pinned-libtorrent uTP oracle passed;
+- `cargo fmt --all -- --check` and
+  `cargo clippy --workspace -- -D warnings` passed;
+- `cargo test -p rstorrent-session` passed 251 tests with 2 ignored, including
+  the incoming-seed binary contract; and
+- `cargo test --workspace` was not green: the engine library passed 530 tests
+  with 9 ignored, but
+  `bandwidth::tests::live_unlimited_change_wakes_waiter` failed because its new
+  finite bucket unexpectedly had quota. The exact isolated rerun failed the
+  same way. This Python/docs-only tactical did not change bandwidth code; the
+  failure is retained rather than treated as Tactical `141` evidence.
 
 ## Commit And Execution Sequence
 

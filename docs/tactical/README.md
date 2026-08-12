@@ -655,9 +655,11 @@ that scope and its cleanup or compatibility rules explicitly.
   incoming uTP plus Android lifecycle parity, and completes one exact product-
   owned public incoming-uTP transfer with zero-residue cleanup.
 - [`141-product-wan-tcp-utp-comparison.md`](141-product-wan-tcp-utp-comparison.md):
-  active; measures three same-session, same-route 8 MiB product-WAN TCP/uTP
-  pairs with forced pinned-libtorrent transports, active-payload timing, exact
-  integrity, and per-pair dual-mapping cleanup.
+  closed evidence-limited; the reporter-fixed physical budget retained one
+  exact 8 MiB uTP case at 0.096759 MiB/s active, but duplicate remote TCP peer
+  entries and one premature completion-milestone check left zero complete
+  pairs. Every attempt cleaned exactly; the repaired single-connection oracle
+  has no further WAN authorization in this tactical.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

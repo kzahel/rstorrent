@@ -99,6 +99,16 @@ found it absent, and all per-run processes and artifacts were removed. One
 preceding mapped dial timed out with zero remote uTP packets and also cleaned
 exactly, so the positive single-path result is not a repeatability claim.
 
+Closed evidence-limited Tactical
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md) reused the same
+ordinary product owner with simultaneous independently verified TCP and UDP
+mappings. Its bounded replacement invocation retained one exact 8 MiB uTP
+case, no TCP case, and zero complete pairs after remote-oracle evidence defects
+exhausted the attempt budget. Both mappings and every owner/artifact cleaned
+after every attempt. Product incoming reachability remains proven by Tactical
+`140`; no comparative rate or reachability-policy change follows from
+Tactical `141`.
+
 Tactical
 [`089`](../tactical/089-coordinated-session-listen-sockets.md) is complete.
 Schema version 11 persists a preferred listen port, default `6881`; one
