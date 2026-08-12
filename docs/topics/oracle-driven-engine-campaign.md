@@ -86,9 +86,10 @@ complete with every controlled gate passing and one exact product-owned
 public incoming-uTP transfer plus exact cleanup. Tactical
 [`139`](../tactical/139-incomplete-file-streaming-demand.md) is now complete
 through controlled pinned-libtorrent streaming, browser/Tauri, both Android
-ABIs, API 34 AVD, and complete repository evidence. No subsequent
-implementation tactical is authorized; capability readiness owns selection
-of the next bounded slice as the sole authoritative **Now**.
+ABIs, API 34 AVD, and complete repository evidence. Explicit maintainer
+direction then selected measurement-only Tactical
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md) as the sole
+authoritative **Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -447,8 +448,8 @@ parity, and one exact product-owned public incoming-uTP transfer with zero
 residue. Tactical `139` completes bounded incomplete-file stream demand,
 verified active logical reads, time-critical scheduling, progressive HTTP, the
 exact active-to-published handoff, shared client eligibility, controlled wire
-evidence, and proportional Android parity. The campaign has no active
-implementation tactical pending maintainer selection.
+evidence, and proportional Android parity. Measurement-only Tactical `141` is
+active for three product-WAN TCP/uTP pairs; it cannot tune transport behavior.**
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -481,6 +482,12 @@ and local/remote process and artifact cleanup pass. One preceding mapped dial
 timed out with zero remote uTP packets and also cleaned exactly, so the result
 proves one product-owned public incoming path but not repeatability.
 
+Active external-measurement tactical:
+[`141`](../tactical/141-product-wan-tcp-utp-comparison.md). It owns three
+same-session, same-route 8 MiB TCP/uTP pairs against the pinned remote oracle,
+with active payload time separated from setup and at most one exactly cleaned
+replacement attempt. It is not authorized to tune either transport.
+
 Earlier closed external-evidence tactical:
 [`130`](../tactical/130-utp-transport-solidification.md). It proves the
 complementary locally mapped WAN direction, exact six-profile real-socket
@@ -511,14 +518,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: select the next bounded source-first tactical in
-[`capability-readiness.md`](capability-readiness.md); do not infer
-implementation authorization from the retained queue. Durable seeding goals
-remain the leading policy candidate, while embedded playback, Android
-streaming presentation, and stable sharing have distinct ownership and
-security boundaries. The post-discovery Ubuntu stall remains one non-
-reproducible changing-swarm observation and is not authority for an unplanned
-change.
+Next engine-campaign action: execute Tactical `141` through three complete
+paired WAN samples or its explicit evidence-limited stopping condition, then
+reconcile the measurement before selecting any implementation response.
+Durable seeding goals remain the leading unrelated policy candidate, while
+embedded playback, Android streaming presentation, and stable sharing have
+distinct ownership and security boundaries. The post-discovery Ubuntu stall
+remains one non-reproducible changing-swarm observation and is not authority
+for an unplanned change.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) installs the

@@ -414,19 +414,21 @@ and starts no HTTP listener.
 
 ### Now
 
-- **Select the next bounded tactical.** Tactical
-  [`139`](../tactical/139-incomplete-file-streaming-demand.md) is complete and
-  no subsequent implementation is yet authorized. Durable seeding goals are
-  the retained policy candidate; embedded playback, Android streaming
-  presentation, and stable sharing remain separate candidates with different
-  ownership and security boundaries.
+- **Execute Tactical
+  [`141`](../tactical/141-product-wan-tcp-utp-comparison.md).** Explicit
+  maintainer direction selected a measurement-only same-session, same-route
+  product-WAN TCP/uTP comparison after Tactical `140` proved one public
+  incoming-uTP path but exposed poor unpaired transfer time. Three complete
+  8 MiB pairs, with at most one exactly cleaned replacement, will separate
+  active payload rate from mapping, SSH, process, and connection setup. This
+  does not authorize transport tuning from the result.
 
 ### Next
 
-- Once maintainers select a candidate, create its bounded source-first
-  tactical before implementation. Tactical `134` already owns finite rate
-  allocation, hot-path fairness, and cancellation; ratio/time seeding goals
-  would own durable accounting and torrent lifecycle instead.
+- Close or classify Tactical `141` before selecting an implementation response.
+  A repeatable uTP deficit may justify bounded transport diagnosis; an
+  incomplete/noisy cohort may justify measurement follow-up. Durable seeding
+  goals remain the leading unrelated policy candidate.
 
 ### Later
 

@@ -654,6 +654,10 @@ that scope and its cleanup or compatibility rules explicitly.
   tracker and DHT advertisement transport-truthful, proves controlled DHT-only
   incoming uTP plus Android lifecycle parity, and completes one exact product-
   owned public incoming-uTP transfer with zero-residue cleanup.
+- [`141-product-wan-tcp-utp-comparison.md`](141-product-wan-tcp-utp-comparison.md):
+  active; measures three same-session, same-route 8 MiB product-WAN TCP/uTP
+  pairs with forced pinned-libtorrent transports, active-payload timing, exact
+  integrity, and per-pair dual-mapping cleanup.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
