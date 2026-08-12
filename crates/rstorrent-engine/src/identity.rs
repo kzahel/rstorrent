@@ -12,6 +12,69 @@ use sha2::{Digest, Sha256};
 pub const MAX_TORRENT_OWNERS: usize = 1_024;
 pub const MAX_IDENTITY_ALIASES: usize = 2_048;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TorrentIdentityContext {
+    torrent_id: TorrentId,
+    info_hashes: InfoHashes,
+    swarm_key: SwarmKey,
+}
+
+impl TorrentIdentityContext {
+    pub fn new(
+        torrent_id: TorrentId,
+        info_hashes: InfoHashes,
+        swarm_key: SwarmKey,
+    ) -> Result<Self, TorrentIdentityContextError> {
+        let selected = match swarm_key {
+            SwarmKey::V1(hash) => info_hashes.v1_hash().is_some_and(|known| known == hash),
+            SwarmKey::V2Truncated(bytes) => info_hashes
+                .v2_hash()
+                .is_some_and(|known| known.swarm_key() == SwarmKey::V2Truncated(bytes)),
+        };
+        if !selected {
+            return Err(TorrentIdentityContextError::UnknownWireIdentity);
+        }
+        Ok(Self {
+            torrent_id,
+            info_hashes,
+            swarm_key,
+        })
+    }
+
+    pub fn v1(torrent_id: TorrentId, info_hash: V1InfoHash) -> Self {
+        Self {
+            torrent_id,
+            info_hashes: InfoHashes::v1(info_hash),
+            swarm_key: SwarmKey::V1(info_hash),
+        }
+    }
+
+    pub const fn torrent_id(self) -> TorrentId {
+        self.torrent_id
+    }
+
+    pub const fn info_hashes(self) -> InfoHashes {
+        self.info_hashes
+    }
+
+    pub const fn swarm_key(self) -> SwarmKey {
+        self.swarm_key
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TorrentIdentityContextError {
+    UnknownWireIdentity,
+}
+
+impl fmt::Display for TorrentIdentityContextError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("selected wire identity is not one of the torrent's full identities")
+    }
+}
+
+impl std::error::Error for TorrentIdentityContextError {}
+
 /// A stable application and engine owner, independent from protocol identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TorrentId([u8; 16]);
@@ -435,6 +498,22 @@ mod tests {
         let id = TorrentId::generate().expect("operating-system entropy");
         assert_ne!(id.as_bytes(), &[0; 16]);
         assert_eq!(id.to_string().parse(), Ok(id));
+    }
+
+    #[test]
+    fn context_requires_the_selected_wire_alias() {
+        let id = owner(9);
+        let identities = InfoHashes::hybrid(v1(1), v2(2));
+        assert_eq!(
+            TorrentIdentityContext::new(id, identities, SwarmKey::V1(v1(1)))
+                .expect("known v1 wire identity")
+                .torrent_id(),
+            id
+        );
+        assert_eq!(
+            TorrentIdentityContext::new(id, identities, SwarmKey::V1(v1(3))),
+            Err(TorrentIdentityContextError::UnknownWireIdentity)
+        );
     }
 
     #[test]

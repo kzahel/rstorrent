@@ -74,13 +74,13 @@ pub use driver::{
     DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
     DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink,
     DownloadConfig, DownloadControl, DownloadDiagnosticSnapshot, DownloadError, DownloadProgress,
-    DownloadReport, DownloadResourceLimits, FileSelectionUpdate, MagnetDownloadConfig,
-    MetadataAcquisitionPhase, MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
-    PathPublicationStage, ResumableMagnetDownloadConfig, StreamingDemandLease,
-    SwarmActivitySnapshot, download_magnet, download_magnet_metadata_with_control,
-    download_magnet_metadata_with_dht, download_magnet_metadata_with_dht_and_peers,
-    download_magnet_metadata_with_external_discovery, download_magnet_with_control,
-    download_verified_piece, download_verified_piece_with_control,
+    DownloadReport, DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig,
+    FileSelectionUpdate, MagnetDownloadConfig, MetadataAcquisitionPhase,
+    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
+    ResumableMagnetDownloadConfig, StreamingDemandLease, SwarmActivitySnapshot, download_magnet,
+    download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
+    download_magnet_metadata_with_dht_and_peers, download_magnet_metadata_with_external_discovery,
+    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
     download_verified_piece_with_peer_state, resume_magnet, resume_magnet_with_control,
 };
 #[cfg(feature = "descriptor-storage-diagnostics")]
@@ -93,7 +93,8 @@ pub use driver::{
 pub use http_tracker::install_test_platform_root;
 pub use identity::{
     ContentFingerprint, IdentityLookup, IdentityMutation, IdentityRegistry, IdentityRegistryError,
-    MAX_IDENTITY_ALIASES, MAX_TORRENT_OWNERS, TorrentId, TorrentIdError, WireIdentityLookup,
+    MAX_IDENTITY_ALIASES, MAX_TORRENT_OWNERS, TorrentId, TorrentIdError, TorrentIdentityContext,
+    TorrentIdentityContextError, WireIdentityLookup,
 };
 pub use incoming::{
     DEFAULT_INCOMING_HANDSHAKE_TIMEOUT, DEFAULT_INCOMING_INACTIVITY_TIMEOUT,

@@ -692,26 +692,6 @@ pub(crate) fn encode_info_hash(info_hash: [u8; 20]) -> String {
     output
 }
 
-pub(crate) fn decode_info_hash(value: &str) -> Option<[u8; 20]> {
-    if value.len() != 40 {
-        return None;
-    }
-    let mut output = [0_u8; 20];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        output[index] = (hex_digit(pair[0])? << 4) | hex_digit(pair[1])?;
-    }
-    Some(output)
-}
-
-fn hex_digit(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

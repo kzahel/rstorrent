@@ -10,18 +10,19 @@ use std::time::Duration;
 
 use rstorrent_engine::dht::BootstrapNode;
 use rstorrent_engine::{
-    IncomingPeerServiceSnapshot, SelectiveStorage, torrent_storage_paths_for_metainfo,
+    ContentFingerprint, IncomingPeerServiceSnapshot, SelectiveStorage, TorrentArtifactIdentity,
+    TorrentId, torrent_storage_paths_for_metainfo,
 };
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
     ApplicationConfig, ApplicationService, BandwidthRuntimeView, CONTROL_VERSION, ClientSettings,
-    Command, ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy, Ipv6PinholeDiagnosticResult,
-    Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PeerTransportPolicy,
-    PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
-    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TorrentTransferLimits,
-    TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
-    ViewUpdatePayload,
+    Command, CommandResult, ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy,
+    Ipv6PinholeDiagnosticResult, Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy,
+    PeerTransportPolicy, PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome,
+    SessionStore, SessionUdpStatus, StorageState, StoreError, SubscriptionSpec,
+    TorrentTransferLimits, TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector,
+    ViewSnapshot, ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -58,20 +59,28 @@ async fn run() -> Result<(), SeedHarnessError> {
         operation: "create storage root",
         source,
     })?;
-    if let Some(payload) = &arguments.fixture_payload {
-        stage_partial_fixture(payload, &arguments.storage_root, &metainfo, &arguments).await?;
-    }
     let storage_roots = vec![ConfiguredStorageRoot::path(
         "downloads",
         arguments.storage_root.clone(),
     )];
-    initialize_catalog(
+    let torrent_id = initialize_catalog(
         &arguments.profile_root,
         &storage_roots,
         &metainfo,
         &raw_info,
         &arguments,
     )?;
+    if let Some(payload) = &arguments.fixture_payload {
+        stage_partial_fixture(
+            payload,
+            &arguments.storage_root,
+            torrent_id,
+            &metainfo,
+            &raw_info,
+            &arguments,
+        )
+        .await?;
+    }
 
     let network_policy = if arguments.local_network_listener() {
         NetworkPolicy::Online
@@ -375,8 +384,8 @@ fn initialize_catalog(
     metainfo: &Metainfo,
     raw_info: &[u8],
     arguments: &Arguments,
-) -> Result<(), SeedHarnessError> {
-    let torrent_id = hex(metainfo.info_hash);
+) -> Result<TorrentId, SeedHarnessError> {
+    let info_hash = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
     let desired_settings = ClientSettings {
         listener: if arguments.local_network_listener() {
@@ -410,32 +419,44 @@ fn initialize_catalog(
         }
     }
     let partial = arguments.fixture_payload.is_some();
-    let existing = match store.load_resume(&torrent_id) {
-        Ok(resume)
-            if (!partial
-                && resume.state == rstorrent_session::TorrentState::Complete
-                && resume.storage_state == StorageState::Published)
-                || (partial
-                    && resume.state != rstorrent_session::TorrentState::Complete
-                    && resume.storage_state == StorageState::Staging) =>
+    let snapshot = store.snapshot()?;
+    let mut existing = None;
+    for torrent in &snapshot.torrents {
+        let resume = store.load_resume(&torrent.torrent_id)?;
+        if resume
+            .info_hashes
+            .v1_hash()
+            .is_some_and(|hash| hash.into_bytes() == metainfo.info_hash)
         {
-            true
+            existing = Some(resume);
+            break;
         }
-        Ok(_) => {
-            return Err(SeedHarnessError::Catalog(
-                "existing fixture catalog row does not match the requested mode".to_owned(),
-            ));
+    }
+    if let Some(resume) = existing {
+        let torrent_id = resume.torrent_id.to_string();
+        if (!partial
+            && resume.state == rstorrent_session::TorrentState::Complete
+            && resume.storage_state == StorageState::Published)
+            || (partial
+                && resume.state != rstorrent_session::TorrentState::Complete
+                && resume.storage_state == StorageState::Staging)
+        {
+            ensure_transfer_limits(&mut store, &torrent_id, arguments)?;
+            return Ok(resume.torrent_id);
         }
-        Err(StoreError::UnknownTorrent(_)) => false,
-        Err(error) => return Err(error.into()),
-    };
-    if existing {
-        return ensure_transfer_limits(&mut store, &torrent_id, arguments);
+        return Err(SeedHarnessError::Catalog(
+            "existing fixture catalog row does not match the requested mode".to_owned(),
+        ));
+    }
+    if !snapshot.torrents.is_empty() {
+        return Err(SeedHarnessError::Catalog(
+            "fixture profile belongs to a different torrent".to_owned(),
+        ));
     }
     let magnet = {
         let mut magnet = arguments.tracker.as_deref().map_or_else(
-            || format!("magnet:?xt=urn:btih:{torrent_id}"),
-            |tracker| format!("magnet:?xt=urn:btih:{torrent_id}&tr={tracker}"),
+            || format!("magnet:?xt=urn:btih:{info_hash}"),
+            |tracker| format!("magnet:?xt=urn:btih:{info_hash}&tr={tracker}"),
         );
         if let Some(peer) = arguments.peer {
             magnet.push_str("&x.pe=");
@@ -464,6 +485,14 @@ fn initialize_catalog(
             "fixture add request was rejected".to_owned(),
         ));
     }
+    let torrent_id = match response.result {
+        Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+        _ => {
+            return Err(SeedHarnessError::Catalog(
+                "fixture add response omitted its torrent owner".to_owned(),
+            ));
+        }
+    };
     store.record_metadata(&torrent_id, raw_info)?;
     if partial {
         store.record_pieces(&torrent_id, &arguments.initial_pieces)?;
@@ -476,7 +505,10 @@ fn initialize_catalog(
         store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
         store.mark_complete(&torrent_id)?;
     }
-    ensure_transfer_limits(&mut store, &torrent_id, arguments)
+    ensure_transfer_limits(&mut store, &torrent_id, arguments)?;
+    torrent_id.parse().map_err(|_| {
+        SeedHarnessError::Catalog("fixture add returned an invalid torrent owner".to_owned())
+    })
 }
 
 fn rate_limit(bytes_per_second: Option<u32>) -> TransferRateLimit {
@@ -515,7 +547,9 @@ fn ensure_transfer_limits(
 async fn stage_partial_fixture(
     payload_path: &std::path::Path,
     storage_root: &std::path::Path,
+    torrent_id: TorrentId,
     metainfo: &Metainfo,
+    raw_info: &[u8],
     arguments: &Arguments,
 ) -> Result<(), SeedHarnessError> {
     if arguments.initial_pieces.is_empty() {
@@ -548,13 +582,21 @@ async fn stage_partial_fixture(
     let layout = TorrentLayout::from_metainfo(metainfo);
     let selection = FileSelection::new(&layout, &arguments.skip_files)
         .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
-    let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo)
+    let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo, torrent_id)
         .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
-    let artifact_base = storage_root.join(hex(metainfo.info_hash));
-    let mut storage =
-        SelectiveStorage::create(artifact_base, metainfo, layout.clone(), selection.clone())
-            .await
-            .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
+    let artifact_identity = TorrentArtifactIdentity {
+        torrent_id,
+        content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
+    };
+    let mut storage = SelectiveStorage::create(
+        paths.output.clone(),
+        artifact_identity,
+        metainfo,
+        layout.clone(),
+        selection.clone(),
+    )
+    .await
+    .map_err(|error| SeedHarnessError::Catalog(error.to_string()))?;
     let piece_length = usize::try_from(metainfo.piece_length)
         .map_err(|_| SeedHarnessError::Catalog("piece length exceeds this platform".to_owned()))?;
     for &piece_index in &arguments.initial_pieces {

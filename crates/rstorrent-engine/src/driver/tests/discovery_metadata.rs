@@ -32,6 +32,10 @@ async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
     assert_eq!(online.registry_len(), 1);
 
     let offline = download_magnet_metadata_with_control(
+        test_identity([
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
+        ]),
         "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213\
              &x.pe=must-not-resolve.invalid:6881"
             .to_owned(),
@@ -136,6 +140,7 @@ async fn live_big_buck_bunny_metadata_probe() {
     control.set_activity_sink(activity.clone());
     let task_control = control.clone();
     let mut task = tokio::spawn(download_magnet_metadata_with_control(
+        test_identity(Magnet::parse(magnet).expect("valid magnet").info_hash),
         magnet.to_owned(),
         NetworkConfig::new(
             NetworkPolicy::Online,
@@ -220,8 +225,14 @@ async fn live_big_buck_bunny_trackerless_dht_metadata_probe() {
     control.set_activity_sink(activity.clone());
     let task_control = control.clone();
     let dht_handle = dht.handle();
+    let identity = test_identity(
+        Magnet::parse(&format!("magnet:?xt=urn:btih:{expected_info_hash}"))
+            .expect("valid magnet")
+            .info_hash,
+    );
     let mut task = tokio::spawn(async move {
         download_magnet_metadata_with_dht(
+            identity,
             format!("magnet:?xt=urn:btih:{expected_info_hash}"),
             NetworkConfig::new(
                 NetworkPolicy::Online,
@@ -362,7 +373,7 @@ async fn tracker_only_magnet_discovers_registry_peers_and_downloads() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(info_hash),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -479,7 +490,7 @@ async fn http_tracker_only_magnet_discovers_peer_and_verifies_download() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(info_hash),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -727,7 +738,7 @@ async fn authenticated_https_tracker_introduces_pinned_libtorrent_peer() {
         Duration::from_secs(60),
         resume_magnet_with_control(
             ResumableMagnetDownloadConfig {
-                torrent_id: test_torrent_id(),
+                identity: test_identity(info_hash),
                 magnet,
                 storage_root,
                 network,
@@ -1537,6 +1548,7 @@ async fn metadata_cancellation_publishes_empty_peers_after_joined_cleanup() {
     control.set_activity_sink(activity.clone());
     let task_control = control.clone();
     let task = tokio::spawn(download_magnet_metadata_with_control(
+        test_identity(info_hash),
         format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         loopback_network(Duration::from_secs(5)),
         task_control,
@@ -2153,7 +2165,7 @@ async fn magnet_registry_fails_over_and_hands_same_peer_to_content_download() {
 
     let report = run_magnet_download_with_peers(
         MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(info_hash),
             magnet,
             output_path: output_path.clone(),
             network,
@@ -2264,7 +2276,7 @@ async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
     let unused_tracker_address = unused_tracker.local_addr().expect("unused tracker address");
 
     let report = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!(
             "magnet:?xt=urn:btih:{}&x.pe={unsupported_address}&x.pe={address}&\
                  tr=udp%3A%2F%2F{unused_tracker_address}",
@@ -2376,7 +2388,7 @@ async fn trackerless_dht_peer_completes_metadata_and_content_path() {
         .expect("start DHT client");
 
     let report = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2429,7 +2441,7 @@ async fn verified_private_metadata_purges_dht_only_peer_before_content() {
         .expect("start DHT client");
 
     let result = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!("magnet:?xt=urn:btih:{}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2466,7 +2478,7 @@ async fn invalid_premetadata_bitfield_fails_before_storage_creation() {
     ));
 
     let result = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2520,7 +2532,7 @@ async fn magnet_peer_without_extension_support_fails_before_storage() {
     });
 
     let result = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),
@@ -2571,7 +2583,7 @@ async fn magnet_peer_disconnect_during_metadata_fails_before_storage() {
     });
 
     let result = download_magnet(MagnetDownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity(info_hash),
         magnet: format!("magnet:?xt=urn:btih:{}&x.pe={address}", hex(&info_hash)),
         output_path: output_path.clone(),
         network: loopback_network(Duration::from_secs(2)),

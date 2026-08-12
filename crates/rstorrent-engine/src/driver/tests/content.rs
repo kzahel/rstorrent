@@ -1359,7 +1359,7 @@ async fn tracker_peer_discovered_during_content_becomes_useful() {
     let result = timeout(
         Duration::from_secs(3),
         download_magnet(MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={metadata_address}&\
                      tr=udp%3A%2F%2F{tracker_address}%2Fannounce",
@@ -1418,7 +1418,7 @@ async fn pex_is_the_only_source_for_a_useful_second_hop() {
     let report = timeout(
         Duration::from_secs(3),
         download_magnet(MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={bootstrap_address}",
                 hex(&info_hash)

@@ -9,9 +9,12 @@ use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
 use rstorrent_engine::{
     DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
     DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    PeerEncryptionPolicy, TorrentId, download_magnet_with_control,
+    PeerEncryptionPolicy, TorrentId, TorrentIdentityContext, download_magnet_with_control,
     download_verified_piece_with_control,
 };
+use rstorrent_protocol::identity::V1InfoHash;
+use rstorrent_protocol::magnet::Magnet;
+use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
@@ -36,11 +39,22 @@ Options:\n\
 
 #[derive(Debug)]
 enum DownloadCommand {
-    Metainfo(DownloadConfig),
+    Metainfo(PendingMetainfoDownload),
     Magnet {
         config: MagnetDownloadConfig,
         dht_bootstrap: Option<SocketAddr>,
     },
+}
+
+#[derive(Debug)]
+struct PendingMetainfoDownload {
+    metainfo_path: PathBuf,
+    peer: SocketAddr,
+    output_path: PathBuf,
+    network: NetworkConfig,
+    resource_limits: DownloadResourceLimits,
+    skip_files: Vec<usize>,
+    materialize_files: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -95,6 +109,48 @@ async fn main() -> ExitCode {
     }
     let result = match config {
         DownloadCommand::Metainfo(config) => {
+            let bytes = match std::fs::read(&config.metainfo_path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return report_result(
+                        Err(DownloadError::Io {
+                            operation: "read metainfo for identity",
+                            source: error,
+                        }),
+                        control.snapshot(),
+                        activity.first_verified_piece(),
+                    );
+                }
+            };
+            let metainfo = match Metainfo::from_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS) {
+                Ok(metainfo) => metainfo,
+                Err(error) => {
+                    return report_result(
+                        Err(DownloadError::Metainfo(error)),
+                        control.snapshot(),
+                        activity.first_verified_piece(),
+                    );
+                }
+            };
+            let identity = match TorrentId::generate() {
+                Ok(torrent_id) => {
+                    TorrentIdentityContext::v1(torrent_id, V1InfoHash::new(metainfo.info_hash))
+                }
+                Err(error) => {
+                    eprintln!("identity allocation failed: {error}");
+                    return ExitCode::from(1);
+                }
+            };
+            let config = DownloadConfig {
+                identity,
+                metainfo_path: config.metainfo_path,
+                peer: config.peer,
+                output_path: config.output_path,
+                network: config.network,
+                resource_limits: config.resource_limits,
+                skip_files: config.skip_files,
+                materialize_files: config.materialize_files,
+            };
             download_verified_piece_with_control(config, control.clone()).await
         }
         DownloadCommand::Magnet {
@@ -344,29 +400,36 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
     let network = NetworkConfig::new(NetworkPolicy::LoopbackOnly, peer_timeout, peer_timeout)
         .with_encryption(encryption);
     match (metainfo_path, magnet, peer) {
-        (Some(metainfo_path), None, Some(peer)) => Ok(DownloadCommand::Metainfo(DownloadConfig {
-            torrent_id: TorrentId::generate().map_err(|error| error.to_string())?,
-            metainfo_path,
-            peer,
-            output_path,
-            network,
-            resource_limits,
-            skip_files,
-            materialize_files,
-        })),
-        (None, Some(magnet), None) => Ok(DownloadCommand::Magnet {
-            config: MagnetDownloadConfig {
-                torrent_id: TorrentId::generate().map_err(|error| error.to_string())?,
-                magnet,
+        (Some(metainfo_path), None, Some(peer)) => {
+            Ok(DownloadCommand::Metainfo(PendingMetainfoDownload {
+                metainfo_path,
+                peer,
                 output_path,
                 network,
                 resource_limits,
                 skip_files,
                 materialize_files,
-                dht: None,
-            },
-            dht_bootstrap,
-        }),
+            }))
+        }
+        (None, Some(magnet), None) => {
+            let parsed = Magnet::parse(&magnet).map_err(|error| error.to_string())?;
+            Ok(DownloadCommand::Magnet {
+                config: MagnetDownloadConfig {
+                    identity: TorrentIdentityContext::v1(
+                        TorrentId::generate().map_err(|error| error.to_string())?,
+                        V1InfoHash::new(parsed.info_hash),
+                    ),
+                    magnet,
+                    output_path,
+                    network,
+                    resource_limits,
+                    skip_files,
+                    materialize_files,
+                    dht: None,
+                },
+                dht_bootstrap,
+            })
+        }
         (Some(_), Some(_), _) => Err("--metainfo and --magnet are mutually exclusive".to_owned()),
         (None, None, _) => Err("exactly one of --metainfo or --magnet is required".to_owned()),
         (Some(_), None, None) => Err("--peer is required with --metainfo".to_owned()),

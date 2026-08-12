@@ -12,6 +12,7 @@ use rstorrent_protocol::extension::{
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
+use rstorrent_protocol::identity::SwarmKey;
 #[cfg(test)]
 use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, TrackerUrl, TrackerUrlTransport};
@@ -41,7 +42,7 @@ use crate::active_seed_content::{ActiveSeedContent, ActiveUploadFailureSignal};
 use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
 use crate::http_tracker::{HTTP_TRACKER_TIMEOUT, HttpTrackerClients, TrackerRetryDirective};
-use crate::identity::{ContentFingerprint, TorrentId};
+use crate::identity::{ContentFingerprint, TorrentIdentityContext};
 use crate::incoming::{
     IncomingPeerHandle, SeedRegistration, SeedRegistrationToken, SessionUploadMembership,
 };
@@ -250,7 +251,7 @@ impl DownloadResourceLimits {
 
 #[derive(Clone, Debug)]
 pub struct DownloadConfig {
-    pub torrent_id: TorrentId,
+    pub identity: TorrentIdentityContext,
     pub metainfo_path: PathBuf,
     pub peer: SocketAddr,
     pub output_path: PathBuf,
@@ -262,7 +263,7 @@ pub struct DownloadConfig {
 
 #[derive(Clone, Debug)]
 pub struct MagnetDownloadConfig {
-    pub torrent_id: TorrentId,
+    pub identity: TorrentIdentityContext,
     pub magnet: String,
     pub output_path: PathBuf,
     pub network: NetworkConfig,
@@ -274,7 +275,7 @@ pub struct MagnetDownloadConfig {
 
 #[derive(Clone, Debug)]
 pub struct ResumableMagnetDownloadConfig {
-    pub torrent_id: TorrentId,
+    pub identity: TorrentIdentityContext,
     pub magnet: String,
     /// Selected containing directory. Verified multi-file metadata supplies
     /// the recognizable publication directory beneath this root.
@@ -300,6 +301,17 @@ pub struct ResumableMagnetDownloadConfig {
     /// Authoritative operational tracker catalog. `None` uses the
     /// independently bounded UDP and HTTP(S) trackers parsed from the magnet URI.
     pub trackers: Option<Vec<TrackerConfig>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternalMagnetMetadataDownloadConfig {
+    pub identity: TorrentIdentityContext,
+    pub magnet: String,
+    pub network: NetworkConfig,
+    pub peer_budget: PeerBudget,
+    pub mse_dh: MseDhWorkOwner,
+    pub encryption: PeerEncryptionPolicyHandle,
+    pub torrent_peers: TorrentPeerHandle,
 }
 
 pub trait DownloadCheckpointSink: Send + Sync {
@@ -395,6 +407,7 @@ pub enum DownloadError {
         operation: &'static str,
     },
     InvalidResourceLimit(&'static str),
+    InvalidTorrentIdentity(&'static str),
     MetainfoTooLarge {
         maximum: usize,
     },
@@ -467,6 +480,9 @@ impl fmt::Display for DownloadError {
                 write!(formatter, "{operation} timeout must be nonzero")
             }
             Self::InvalidResourceLimit(message) => formatter.write_str(message),
+            Self::InvalidTorrentIdentity(message) => {
+                write!(formatter, "invalid torrent identity context: {message}")
+            }
             Self::MetainfoTooLarge { maximum } => {
                 write!(formatter, "metainfo exceeds input limit {maximum}")
             }
@@ -666,26 +682,44 @@ async fn resume_magnet_owned(
 }
 
 pub async fn download_magnet_metadata_with_control(
+    identity: TorrentIdentityContext,
     magnet: String,
     network: NetworkConfig,
     control: DownloadControl,
 ) -> Result<Vec<u8>, DownloadError> {
-    download_magnet_metadata_with_dht(magnet, network, control, None, PeerBudget::system_default())
-        .await
+    download_magnet_metadata_with_dht(
+        identity,
+        magnet,
+        network,
+        control,
+        None,
+        PeerBudget::system_default(),
+    )
+    .await
 }
 
 pub async fn download_magnet_metadata_with_dht(
+    identity: TorrentIdentityContext,
     magnet: String,
     network: NetworkConfig,
     control: DownloadControl,
     dht: Option<DhtHandle>,
     peer_budget: PeerBudget,
 ) -> Result<Vec<u8>, DownloadError> {
-    download_magnet_metadata_with_dht_and_peers(magnet, network, control, dht, peer_budget, None)
-        .await
+    download_magnet_metadata_with_dht_and_peers(
+        identity,
+        magnet,
+        network,
+        control,
+        dht,
+        peer_budget,
+        None,
+    )
+    .await
 }
 
 pub async fn download_magnet_metadata_with_dht_and_peers(
+    identity: TorrentIdentityContext,
     magnet: String,
     network: NetworkConfig,
     control: DownloadControl,
@@ -698,6 +732,7 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
         return Err(DownloadError::Cancelled);
     }
     let result = run_magnet_metadata(
+        identity,
         magnet,
         network,
         control.clone(),
@@ -717,29 +752,25 @@ pub async fn download_magnet_metadata_with_dht_and_peers(
 }
 
 pub async fn download_magnet_metadata_with_external_discovery(
-    magnet: String,
-    network: NetworkConfig,
+    config: ExternalMagnetMetadataDownloadConfig,
     control: DownloadControl,
-    peer_budget: PeerBudget,
-    mse_dh: MseDhWorkOwner,
-    encryption: PeerEncryptionPolicyHandle,
-    torrent_peers: TorrentPeerHandle,
 ) -> Result<Vec<u8>, DownloadError> {
-    validate_network_config(network)?;
+    validate_network_config(config.network)?;
     if control.is_cancelled() {
         return Err(DownloadError::Cancelled);
     }
     let result = run_magnet_metadata(
-        magnet,
-        network,
+        config.identity,
+        config.magnet,
+        config.network,
         control.clone(),
         None,
         Some(Vec::new()),
         TorrentPeerResources {
-            peer_budget,
-            torrent_peers: Some(torrent_peers),
-            mse_dh,
-            encryption,
+            peer_budget: config.peer_budget,
+            torrent_peers: Some(config.torrent_peers),
+            mse_dh: config.mse_dh,
+            encryption: config.encryption,
         },
     )
     .await;
@@ -973,6 +1004,25 @@ fn validate_network_config(config: NetworkConfig) -> Result<(), DownloadError> {
         });
     }
     Ok(())
+}
+
+fn validate_v1_runtime_identity(
+    identity: TorrentIdentityContext,
+    expected: [u8; 20],
+) -> Result<(), DownloadError> {
+    match identity.swarm_key() {
+        SwarmKey::V1(hash)
+            if hash.into_bytes() == expected && identity.info_hashes().v1_hash() == Some(hash) =>
+        {
+            Ok(())
+        }
+        SwarmKey::V1(_) => Err(DownloadError::InvalidTorrentIdentity(
+            "selected v1 key does not match the metainfo or magnet",
+        )),
+        SwarmKey::V2Truncated(_) => Err(DownloadError::InvalidTorrentIdentity(
+            "v2 wire operation is not implemented",
+        )),
+    }
 }
 
 fn preserves_existing_artifact(error: &DownloadError) -> bool {
@@ -3451,6 +3501,7 @@ async fn run_magnet_download(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
+    validate_v1_runtime_identity(config.identity, magnet.info_hash)?;
     let mut peers = TorrentPeerCoordinator::from_magnet(
         &magnet,
         config.network,
@@ -3476,7 +3527,7 @@ async fn run_magnet_download_with_peers(
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
-            torrent_id: config.torrent_id,
+            torrent_id: config.identity.torrent_id(),
             content_fingerprint: ContentFingerprint::for_info_bytes(&raw_info),
         },
         output_path: config.output_path,
@@ -3492,6 +3543,7 @@ async fn run_magnet_download_with_peers(
 }
 
 async fn run_magnet_metadata(
+    identity: TorrentIdentityContext,
     magnet: String,
     network: NetworkConfig,
     control: DownloadControl,
@@ -3500,6 +3552,7 @@ async fn run_magnet_metadata(
     resources: TorrentPeerResources,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
+    validate_v1_runtime_identity(identity, magnet.info_hash)?;
     let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
         &magnet,
         configured_trackers,
@@ -3550,6 +3603,7 @@ async fn run_resumable_magnet_download(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
+    validate_v1_runtime_identity(config.identity, magnet.info_hash)?;
     let dht = config.dht.clone();
     let configured_trackers = config.trackers.clone();
     let torrent_peers = config.torrent_peers.clone();
@@ -3602,7 +3656,7 @@ async fn run_resumable_magnet_download(
         };
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
-                torrent_id: config.torrent_id,
+                torrent_id: config.identity.torrent_id(),
                 content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
             },
             output_path,
@@ -3661,7 +3715,7 @@ async fn run_resumable_magnet_download(
         resume.raw_info = Some(raw_info.into());
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
-                torrent_id: config.torrent_id,
+                torrent_id: config.identity.torrent_id(),
                 content_fingerprint,
             },
             output_path: config.storage_root.join(&metainfo.name),
@@ -3974,6 +4028,7 @@ async fn run_download(
         .map_err(DownloadError::Metainfo)?;
     let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
+    validate_v1_runtime_identity(config.identity, metainfo.info_hash)?;
     let mut peers = match peer_state {
         Some((peer_budget, torrent_peers)) => {
             let mut peers = TorrentPeerCoordinator::new_with_peer_state(
@@ -3996,7 +4051,7 @@ async fn run_download(
     };
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
-            torrent_id: config.torrent_id,
+            torrent_id: config.identity.torrent_id(),
             content_fingerprint: ContentFingerprint::for_info_bytes(raw_info),
         },
         output_path: config.output_path,

@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
     DownloadControl, PeerConnectionDirection, PeerConnectionObservation, SeedRegistrationToken,
-    StorageFilePool, TorrentBandwidth, TorrentPeerActivitySink, TorrentPeerError,
-    TorrentPeerHandle, TrackerCounters,
+    StorageFilePool, TorrentBandwidth, TorrentIdentityContext, TorrentPeerActivitySink,
+    TorrentPeerError, TorrentPeerHandle, TrackerCounters,
 };
 use tokio::task::JoinHandle;
 
@@ -97,6 +97,7 @@ struct SeedRegistrationState {
 #[derive(Clone, Debug)]
 pub(crate) struct TorrentRuntimeHandle {
     generation: u64,
+    identity: TorrentIdentityContext,
     peers: TorrentPeerHandle,
     seed_registration: Arc<Mutex<SeedRegistrationState>>,
     tracker_counters: TrackerCounters,
@@ -105,6 +106,10 @@ pub(crate) struct TorrentRuntimeHandle {
 impl TorrentRuntimeHandle {
     pub(crate) fn generation(&self) -> u64 {
         self.generation
+    }
+
+    pub(crate) fn identity(&self) -> TorrentIdentityContext {
+        self.identity
     }
 
     pub(crate) fn peers(&self) -> TorrentPeerHandle {
@@ -301,13 +306,14 @@ pub(crate) struct TorrentRuntime {
 
 impl TorrentRuntime {
     pub(crate) fn new(
-        torrent_id: String,
+        identity: TorrentIdentityContext,
         generation: u64,
         views: ViewHub,
         advertised_endpoint: AdvertisedPeerEndpointSelector,
         bandwidth: TorrentBandwidth,
     ) -> Result<Self, TorrentPeerError> {
         let accepting_peer_events = Arc::new(AtomicBool::new(true));
+        let torrent_id = identity.torrent_id().to_string();
         let tracker_counters = TrackerCounters::unknown_metadata();
         let sink = Arc::new(TorrentPeerViewSink {
             torrent_id: torrent_id.clone(),
@@ -321,6 +327,7 @@ impl TorrentRuntime {
         peers.install_bandwidth(bandwidth);
         let handle = TorrentRuntimeHandle {
             generation,
+            identity,
             peers: peers.clone(),
             seed_registration: Arc::new(Mutex::new(SeedRegistrationState::default())),
             tracker_counters,

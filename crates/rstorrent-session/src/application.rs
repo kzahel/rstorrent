@@ -14,20 +14,22 @@ use rstorrent_engine::{
     DEFAULT_UPLOAD_READ_JOBS, DiscoveryAdvertisementError, DiscoveryAdvertisementHandle,
     DiscoveryAdvertisementRegistration, DiskCheckpointStage, DownloadActivityEvent,
     DownloadActivitySink, DownloadCheckpointSink, DownloadControl, DownloadError,
-    DownloadResourceLimits, FileSelectionUpdate, IncomingPeerError, IncomingPeerServiceSnapshot,
-    MseHandshakeObservation, MseHandshakeOutcome, MseHandshakeSink, NamespaceAction,
-    NamespaceState, NamespaceTransitionInput, NamespaceTransitionOutcome, NetworkConfig,
-    NetworkPolicy, PathPublicationStage, PeerEncryptionPolicy, PeerTransportPolicy,
-    PlatformStorageClient, PlatformStorageFailureKind, PlatformStorageSpec, PreparedFileHash,
-    PublicationShape, ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent,
-    ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
-    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
-    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
-    StorageFileRole, StorageObjectKind, TorrentId, TorrentPrivacy, TrackerConfig, TrackerEndpoint,
-    TrackerSource, TrackerTransport, VerifiedFileError, VerifiedFileReader,
-    decide_namespace_transition, download_magnet_metadata_with_external_discovery,
-    resume_magnet_with_control, torrent_storage_paths, verify_prepared_platform_files,
+    DownloadResourceLimits, ExternalMagnetMetadataDownloadConfig, FileSelectionUpdate,
+    IncomingPeerError, IncomingPeerServiceSnapshot, MseHandshakeObservation, MseHandshakeOutcome,
+    MseHandshakeSink, NamespaceAction, NamespaceState, NamespaceTransitionInput,
+    NamespaceTransitionOutcome, NetworkConfig, NetworkPolicy, PathPublicationStage,
+    PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
+    PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
+    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
+    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
+    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
+    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext,
+    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
+    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
+    download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
+    torrent_storage_paths, verify_prepared_platform_files,
 };
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
@@ -71,6 +73,20 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn v1_runtime_identity(
+    torrent_id: TorrentId,
+    info_hashes: InfoHashes,
+) -> Result<TorrentIdentityContext, ApplicationError> {
+    let v1 = info_hashes.v1_hash().ok_or_else(|| {
+        ApplicationError::Configuration(format!(
+            "torrent {} has no v1 identity for the v1 runtime",
+            torrent_id
+        ))
+    })?;
+    TorrentIdentityContext::new(torrent_id, info_hashes, SwarmKey::V1(v1))
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))
 }
 
 fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvailability {
@@ -519,8 +535,9 @@ impl ApplicationService {
             next_torrent_generation = next_torrent_generation.checked_add(1).ok_or_else(|| {
                 ApplicationError::Configuration("torrent runtime generation overflow".to_owned())
             })?;
+            let (torrent_id, info_hashes) = store.load_identities(&torrent.torrent_id)?;
             let runtime = TorrentRuntime::new(
-                torrent.torrent_id.clone(),
+                v1_runtime_identity(torrent_id, info_hashes)?,
                 generation,
                 views.clone(),
                 advertised_endpoint.clone(),
@@ -653,7 +670,7 @@ impl ApplicationService {
         file_index: u32,
     ) -> Result<MediaUrlResponse, ApplicationError> {
         let torrent_id = torrent_id.to_ascii_lowercase();
-        if crate::control::decode_info_hash(&torrent_id).is_none() {
+        if torrent_id.parse::<TorrentId>().is_err() {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
                 file_index,
@@ -959,8 +976,9 @@ impl ApplicationService {
                         "torrent runtime generation overflow".to_owned(),
                     )
                 })?;
+            let (owner, info_hashes) = self.store_mut()?.load_identities(torrent_id)?;
             let runtime = TorrentRuntime::new(
-                torrent_id.to_owned(),
+                v1_runtime_identity(owner, info_hashes)?,
                 generation,
                 self.views.clone(),
                 self.session_network().advertised_endpoint(),
@@ -975,13 +993,6 @@ impl ApplicationService {
             .torrent_runtimes
             .get_mut(torrent_id)
             .expect("torrent runtime exists after insertion"))
-    }
-
-    fn torrent_peers(
-        &mut self,
-        torrent_id: &str,
-    ) -> Result<rstorrent_engine::TorrentPeerHandle, ApplicationError> {
-        Ok(self.ensure_torrent_runtime(torrent_id)?.peers())
     }
 
     fn install_active_download(
@@ -1047,23 +1058,22 @@ impl ApplicationService {
             }
             _ => false,
         };
-        let add_magnet_duplicate = match &command {
+        let add_magnet_owner = match &command {
             Command::AddMagnet { magnet, .. } => {
                 let target = rstorrent_protocol::magnet::Magnet::parse(magnet)
                     .ok()
-                    .map(|magnet| encode_info_hash(magnet.info_hash));
-                if let Some(target) = target {
-                    self.store_mut()?
-                        .snapshot()?
-                        .torrents
-                        .iter()
-                        .any(|torrent| torrent.torrent_id == target)
-                } else {
-                    false
+                    .map(|magnet| V1InfoHash::new(magnet.info_hash));
+                match target {
+                    Some(target) => self
+                        .store_mut()?
+                        .find_v1_owner(target)?
+                        .map(|owner| owner.to_string()),
+                    None => None,
                 }
             }
-            _ => false,
+            _ => None,
         };
+        let add_magnet_duplicate = add_magnet_owner.is_some();
         let selected_root = match &command {
             Command::AddMagnet { storage_root, .. } if !add_magnet_duplicate => {
                 Some(storage_root.as_str())
@@ -1100,11 +1110,14 @@ impl ApplicationService {
             | Command::ForceRecheck { torrent_id }
             | Command::Archive { torrent_id }
             | Command::RemoveTorrent { torrent_id, .. } => Some(torrent_id.to_ascii_lowercase()),
-            Command::AddMagnet { magnet, .. } => rstorrent_protocol::magnet::Magnet::parse(magnet)
-                .ok()
-                .filter(|magnet| magnet.select_only.is_some())
-                .map(|magnet| encode_info_hash(magnet.info_hash))
-                .filter(|torrent_id| self.torrent_runtimes.contains_key(torrent_id)),
+            Command::AddMagnet { magnet, .. }
+                if rstorrent_protocol::magnet::Magnet::parse(magnet)
+                    .is_ok_and(|magnet| magnet.select_only.is_some()) =>
+            {
+                add_magnet_owner
+                    .clone()
+                    .filter(|torrent_id| self.torrent_runtimes.contains_key(torrent_id))
+            }
             _ => None,
         };
         let media_fence = match &command {
@@ -1187,16 +1200,21 @@ impl ApplicationService {
 
         let shutting_down = matches!(&command, Command::Shutdown);
         match command {
-            Command::AddMagnet { magnet, .. } => {
-                let torrent_id = rstorrent_protocol::magnet::Magnet::parse(&magnet)
-                    .map(|magnet| encode_info_hash(magnet.info_hash))
-                    .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-                let disposition = response.result.as_ref().map(|result| match result {
-                    CommandResult::AddTorrent { result } => &result.disposition,
+            Command::AddMagnet { .. } => {
+                let add_result = response.result.as_ref().map(|result| match result {
+                    CommandResult::AddTorrent { result } => result,
                     CommandResult::ExportMagnet { .. } => {
                         unreachable!("add-magnet response returned a magnet export")
                     }
                 });
+                let torrent_id = add_result
+                    .map(|result| result.torrent_id.clone())
+                    .ok_or_else(|| {
+                        ApplicationError::Configuration(
+                            "add-magnet response omitted its torrent owner".to_owned(),
+                        )
+                    })?;
+                let disposition = add_result.map(|result| &result.disposition);
                 match disposition {
                     Some(AddTorrentDisposition::Added) => {
                         self.views.record_diagnostic(
@@ -1456,12 +1474,9 @@ impl ApplicationService {
                 ));
             }
         };
-        let torrent_id = prepared.torrent_id();
+        let existing_owner = self.store_mut()?.find_v1_owner(prepared.v1_info_hash())?;
         let snapshot = self.store_mut()?.snapshot()?;
-        let duplicate = snapshot
-            .torrents
-            .iter()
-            .any(|torrent| torrent.torrent_id == torrent_id);
+        let duplicate = existing_owner.is_some();
         if !duplicate && !self.storage_roots.contains_key(&request.storage_root) {
             let known = snapshot
                 .storage
@@ -1509,16 +1524,22 @@ impl ApplicationService {
         if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
             return Ok(response);
         }
+        let add_result = response.result.as_ref().and_then(|result| match result {
+            CommandResult::AddTorrent { result } => Some(result),
+            CommandResult::ExportMagnet { .. } => None,
+        });
+        let torrent_id = add_result
+            .map(|result| result.torrent_id.clone())
+            .ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "add-torrent-bytes response omitted its torrent owner".to_owned(),
+                )
+            })?;
         self.refresh_views()?;
         self.reconcile_discovery_catalog().await?;
         if matches!(
-            response.result,
-            Some(CommandResult::AddTorrent {
-                result: crate::AddTorrentResult {
-                    disposition: AddTorrentDisposition::Added,
-                    ..
-                }
-            })
+            add_result.map(|result| &result.disposition),
+            Some(AddTorrentDisposition::Added)
         ) {
             self.views.record_diagnostic(
                 DiagnosticSeverity::Info,
@@ -2817,7 +2838,9 @@ impl ApplicationService {
             active.control.resume_checking();
             return Ok(());
         }
-        let torrent_peers = self.torrent_peers(torrent_id)?;
+        let runtime = self.ensure_torrent_runtime(torrent_id)?.handle();
+        let torrent_peers = runtime.peers();
+        let identity = runtime.identity();
         let resume = match self.load_resume_conservative(torrent_id) {
             Ok(resume) => resume,
             Err(error) => {
@@ -2901,13 +2924,16 @@ impl ApplicationService {
                 let encryption = self.session_network().encryption();
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
-                        magnet.clone(),
-                        network,
+                        ExternalMagnetMetadataDownloadConfig {
+                            identity,
+                            magnet: magnet.clone(),
+                            network,
+                            peer_budget: peer_budget.clone(),
+                            mse_dh: mse_dh.clone(),
+                            encryption: encryption.clone(),
+                            torrent_peers: torrent_peers.clone(),
+                        },
                         task_control.clone(),
-                        peer_budget.clone(),
-                        mse_dh.clone(),
-                        encryption.clone(),
-                        torrent_peers.clone(),
                     )
                     .await?;
                     checkpoints
@@ -2930,7 +2956,7 @@ impl ApplicationService {
                     });
                     resume_magnet_with_control(
                         ResumableMagnetDownloadConfig {
-                            torrent_id: resume.torrent_id,
+                            identity,
                             magnet,
                             storage_root: PathBuf::new(),
                             network,
@@ -3011,13 +3037,16 @@ impl ApplicationService {
             let encryption = self.session_network().encryption();
             let operation = async move {
                 let raw_info = download_magnet_metadata_with_external_discovery(
-                    magnet,
-                    network,
+                    ExternalMagnetMetadataDownloadConfig {
+                        identity,
+                        magnet,
+                        network,
+                        peer_budget,
+                        mse_dh,
+                        encryption,
+                        torrent_peers,
+                    },
                     task_control,
-                    peer_budget,
-                    mse_dh,
-                    encryption,
-                    torrent_peers,
                 )
                 .await?;
                 checkpoints
@@ -3056,7 +3085,7 @@ impl ApplicationService {
             ResumeValidationIntent::FastEligible
         };
         let config = ResumableMagnetDownloadConfig {
-            torrent_id: resume.torrent_id,
+            identity,
             magnet: resume.magnet,
             storage_root: root_path,
             network: self.network,
@@ -3467,9 +3496,7 @@ impl ApplicationService {
         counters.set_left(left);
         let registration = DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
-            info_hash: crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
-                ApplicationError::Configuration("invalid torrent identity".to_owned())
-            })?,
+            info_hash: handle.identity().swarm_key().into_bytes(),
             trackers: operational_trackers(&resume.trackers)?,
             desired_running: if complete {
                 resume.desired_running
@@ -3510,9 +3537,7 @@ impl ApplicationService {
         let Some(runtime) = self.torrent_runtimes.get(torrent_id) else {
             return Ok(());
         };
-        let info_hash = crate::control::decode_info_hash(torrent_id).ok_or_else(|| {
-            ApplicationError::Configuration("invalid torrent identity".to_owned())
-        })?;
+        let info_hash = runtime.handle().identity().swarm_key().into_bytes();
         self.session_network()
             .discovery_handle()
             .remove(info_hash, runtime.generation())
@@ -3926,8 +3951,7 @@ async fn reconcile_completed_advertisement(
     if !catalog_eligible {
         return discovery
             .remove(
-                crate::control::decode_info_hash(torrent_id)
-                    .ok_or_else(|| "invalid torrent identity".to_owned())?,
+                runtime.identity().swarm_key().into_bytes(),
                 runtime.generation(),
             )
             .await
@@ -3943,8 +3967,7 @@ async fn reconcile_completed_advertisement(
     discovery
         .upsert(DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
-            info_hash: crate::control::decode_info_hash(torrent_id)
-                .ok_or_else(|| "invalid torrent identity".to_owned())?,
+            info_hash: runtime.identity().swarm_key().into_bytes(),
             trackers: operational_trackers(&resume.trackers).map_err(|error| error.to_string())?,
             desired_running: resume.desired_running,
             complete: resume.state == TorrentState::Complete,
@@ -5730,6 +5753,7 @@ impl From<SubscriptionError> for ApplicationError {
     }
 }
 
+#[cfg(test)]
 fn encode_info_hash(info_hash: [u8; 20]) -> String {
     let mut output = String::with_capacity(40);
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -5760,6 +5784,7 @@ pub fn application_error_response(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::path::{Path, PathBuf};
@@ -5773,7 +5798,7 @@ mod tests {
         NetworkPolicy, PathPublicationStage, PeerBudgetDirection, PlatformStorageFailure,
         PlatformStorageFailureKind, PlatformStorageOperation, PublicationShape, StorageFileKey,
         StorageFileLocator, StorageFileReference, StorageFileRole, StorageObjectKind,
-        StorageObservation, platform_storage_channel, torrent_storage_paths,
+        StorageObservation, TorrentId, platform_storage_channel, torrent_storage_paths,
     };
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
@@ -5798,8 +5823,8 @@ mod tests {
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
-        CatalogPageRequest, ClientSettings, Command, ConfiguredStorageRoot, DeliveryPolicy,
-        DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
+        CatalogPageRequest, ClientSettings, Command, CommandResult, ConfiguredStorageRoot,
+        DeliveryPolicy, DhtLifecycleView, DiagnosticFilter, DiagnosticProfile, DiagnosticSeverity,
         EncryptionPolicy, FilePriority, HttpsServerAuthenticationPolicy, ListenerBindFailureReason,
         ListenerPolicy, ListenerStatus, MediaRangeError, MediaResolveError, MediaUrlOutcome,
         OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
@@ -5913,6 +5938,23 @@ mod tests {
                 skip_files: Vec::new(),
             },
         }
+    }
+
+    fn add_store_torrent(store: &mut SessionStore, request_id: &str, info_hash: &str) -> String {
+        let response = store
+            .handle_durable(&add_request(request_id, info_hash))
+            .expect("add fixture torrent");
+        match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("fixture add response omitted its torrent owner"),
+        }
+    }
+
+    fn owner_bytes(torrent_id: &str) -> [u8; 16] {
+        torrent_id
+            .parse::<TorrentId>()
+            .expect("valid fixture torrent owner")
+            .into_bytes()
     }
 
     fn multi_file_info() -> Vec<u8> {
@@ -6434,9 +6476,10 @@ mod tests {
                     .expect("bind held metadata peer"),
             );
         }
-        let ids = (1_u8..=4)
+        let info_hashes = (1_u8..=4)
             .map(|value| format!("{value:02x}").repeat(20))
             .collect::<Vec<_>>();
+        let mut ids = Vec::new();
         let mut store = SessionStore::open(
             configuration
                 .durable_profile_root()
@@ -6446,7 +6489,7 @@ mod tests {
         )
         .expect("open setup store");
         for (index, listener) in listeners.iter().enumerate() {
-            store
+            let response = store
                 .handle_durable(&RequestEnvelope {
                     version: CONTROL_VERSION,
                     request_id: format!("add-admission-{index}"),
@@ -6454,7 +6497,7 @@ mod tests {
                     command: Command::AddMagnet {
                         magnet: format!(
                             "magnet:?xt=urn:btih:{}&x.pe={}",
-                            ids[index],
+                            info_hashes[index],
                             listener.local_addr().expect("listener address")
                         ),
                         storage_root: "downloads".to_owned(),
@@ -6463,6 +6506,11 @@ mod tests {
                     },
                 })
                 .expect("persist queued magnet");
+            let torrent_id = match response.result {
+                Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+                _ => panic!("queued magnet add result"),
+            };
+            ids.push(torrent_id);
         }
         drop(store);
 
@@ -6518,7 +6566,13 @@ mod tests {
             .await
             .expect("third queue entry dials")
             .expect("accept third queue entry");
-        assert_eq!(service.active_download_ids(), ids[..3]);
+        assert_eq!(
+            service
+                .active_download_ids()
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            ids[..3].iter().cloned().collect::<BTreeSet<_>>()
+        );
         let increased_runtime = service.views.client_settings_for_testing();
         assert_eq!(increased_runtime.effective_active_downloads, 3);
         assert_eq!(increased_runtime.active_download_count, 3);
@@ -6589,8 +6643,8 @@ mod tests {
         );
         let first_info = single_file_info("first.bin", b"first", 5);
         let second_info = single_file_info("second.bin", b"second", 6);
-        let first_id = super::encode_info_hash(Sha1::digest(&first_info).into());
-        let second_id = super::encode_info_hash(Sha1::digest(&second_info).into());
+        let first_hash = super::encode_info_hash(Sha1::digest(&first_info).into());
+        let second_hash = super::encode_info_hash(Sha1::digest(&second_info).into());
         let (first_peer, release_first, first_task) = spawn_gated_metadata_peer(first_info).await;
         let (second_peer, second_task) = spawn_metadata_peer(second_info).await;
         let service = Arc::new(tokio::sync::Mutex::new(
@@ -6599,11 +6653,12 @@ mod tests {
                 .expect("open application"),
         ));
         ApplicationService::ensure_maintenance_owner(&service).await;
-        for (request_id, torrent_id, peer) in [
-            ("add-first-metadata", &first_id, first_peer),
-            ("add-second-metadata", &second_id, second_peer),
+        let mut ids = Vec::new();
+        for (request_id, info_hash, peer) in [
+            ("add-first-metadata", &first_hash, first_peer),
+            ("add-second-metadata", &second_hash, second_peer),
         ] {
-            service
+            let response = service
                 .lock()
                 .await
                 .dispatch(RequestEnvelope {
@@ -6611,7 +6666,7 @@ mod tests {
                     request_id: request_id.to_owned(),
                     expected_revision: None,
                     command: Command::AddMagnet {
-                        magnet: format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
+                        magnet: format!("magnet:?xt=urn:btih:{info_hash}&x.pe={peer}"),
                         storage_root: "downloads".to_owned(),
                         start_content: false,
                         skip_files: Vec::new(),
@@ -6619,7 +6674,13 @@ mod tests {
                 })
                 .await
                 .expect("add metadata acquisition");
+            ids.push(match response.result {
+                Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+                _ => panic!("metadata acquisition add result"),
+            });
         }
+        let first_id = ids[0].clone();
+        let second_id = ids[1].clone();
         assert_eq!(
             service.lock().await.active_download_ids(),
             vec![first_id.clone()]
@@ -6735,16 +6796,16 @@ mod tests {
         .expect("open setup store");
         let mut ids = Vec::new();
         for sequence in 1_u64..=100 {
-            let torrent_id = format!("{sequence:040x}");
+            let info_hash = format!("{sequence:040x}");
             let peer = usize::try_from(sequence - 1)
                 .ok()
                 .and_then(|index| listeners.get(index))
                 .map(|listener| listener.local_addr().expect("listener address"));
             let magnet = match peer {
-                Some(peer) => format!("magnet:?xt=urn:btih:{torrent_id}&x.pe={peer}"),
-                None => format!("magnet:?xt=urn:btih:{torrent_id}"),
+                Some(peer) => format!("magnet:?xt=urn:btih:{info_hash}&x.pe={peer}"),
+                None => format!("magnet:?xt=urn:btih:{info_hash}"),
             };
-            store
+            let response = store
                 .handle_durable(&RequestEnvelope {
                     version: CONTROL_VERSION,
                     request_id: format!("add-hundred-{sequence}"),
@@ -6757,7 +6818,10 @@ mod tests {
                     },
                 })
                 .expect("persist runnable magnet");
-            ids.push(torrent_id);
+            ids.push(match response.result {
+                Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+                _ => panic!("runnable magnet add result"),
+            });
         }
         drop(store);
 
@@ -6774,7 +6838,13 @@ mod tests {
                     .0,
             );
         }
-        assert_eq!(service.active_download_ids(), ids[..3]);
+        assert_eq!(
+            service
+                .active_download_ids()
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            ids[..3].iter().cloned().collect::<BTreeSet<_>>()
+        );
         let snapshot = service
             .store_mut()
             .expect("store")
@@ -6845,9 +6915,8 @@ mod tests {
             let raw_info = single_file_info(&name, payload, 4);
             let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
             let torrent_id = super::encode_info_hash(info_hash);
-            store
-                .handle_durable(&add_request(&format!("add-seed-{sequence}"), &torrent_id))
-                .expect("add complete seed row");
+            let torrent_id =
+                add_store_torrent(&mut store, &format!("add-seed-{sequence}"), &torrent_id);
             store
                 .record_metadata(&torrent_id, &raw_info)
                 .expect("record complete seed metadata");
@@ -7101,7 +7170,7 @@ mod tests {
             )));
             request_started.push(started_receiver);
             payload_releases.push(Some(release_sender));
-            store
+            let response = store
                 .handle_durable(&RequestEnvelope {
                     version: CONTROL_VERSION,
                     request_id: format!("add-controlled-payload-{index}"),
@@ -7114,6 +7183,10 @@ mod tests {
                     },
                 })
                 .expect("add controlled payload torrent");
+            let torrent_id = match response.result {
+                Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+                _ => panic!("controlled payload add result"),
+            };
             store
                 .record_metadata(&torrent_id, &raw_info)
                 .expect("record controlled metadata");
@@ -7404,7 +7477,7 @@ mod tests {
         let payload = b"hash verified HTTP tracker IPv6 payload".to_vec();
         let raw_info = single_file_info("tracker-ipv6.bin", &payload, payload.len());
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = super::encode_info_hash(info_hash);
+        let info_hash_hex = super::encode_info_hash(info_hash);
 
         let peer_listener = match TcpListener::bind("[::1]:0").await {
             Ok(listener) => listener,
@@ -7466,14 +7539,14 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open fixture store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-http-tracker-ipv6".to_owned(),
                 expected_revision: None,
                 command: Command::AddMagnet {
                     magnet: format!(
-                        "magnet:?xt=urn:btih:{torrent_id}&tr={}",
+                        "magnet:?xt=urn:btih:{info_hash_hex}&tr={}",
                         percent_encode_magnet_value(&tracker_url)
                     ),
                     storage_root: "downloads".to_owned(),
@@ -7482,6 +7555,10 @@ mod tests {
                 },
             })
             .expect("add tracker-only magnet");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("tracker-only add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record verified metadata");
@@ -7865,7 +7942,7 @@ mod tests {
         let mut service = ApplicationService::open(config(&root))
             .await
             .expect("open application");
-        service
+        let response = service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "metadata-only-tracker-add".to_owned(),
@@ -7882,6 +7959,10 @@ mod tests {
             })
             .await
             .expect("add metadata-only tracker magnet");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("metadata-only tracker add result"),
+        };
 
         let started = tokio::time::timeout(Duration::from_secs(2), announce_receiver.recv())
             .await
@@ -7928,8 +8009,12 @@ mod tests {
             Some(TrackerConnectionFamilyView::Ipv4)
         );
 
-        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
-            .expect("storage paths");
+        let owner = snapshot.torrents[0]
+            .torrent_id
+            .parse::<TorrentId>()
+            .expect("opaque owner");
+        let paths =
+            torrent_storage_paths(&root.join("payload"), "multi", owner).expect("storage paths");
         assert!(!paths.output.exists());
         assert!(!paths.staging.exists());
         assert!(!paths.part.exists());
@@ -7981,8 +8066,6 @@ mod tests {
     async fn torrent_bytes_metadata_only_add_restarts_without_payload_artifacts() {
         let root = test_root("torrent-bytes-metadata-only");
         let raw_info = multi_file_info();
-        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = super::encode_info_hash(info_hash);
         let mut source = b"d4:info".to_vec();
         source.extend_from_slice(&raw_info);
         source.push(b'e');
@@ -7998,6 +8081,10 @@ mod tests {
             .await
             .expect("add torrent bytes");
         assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("torrent bytes add result"),
+        };
         let resume = service
             .store_mut()
             .expect("store")
@@ -8006,8 +8093,12 @@ mod tests {
         assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
         assert_eq!(resume.state, TorrentState::Paused);
         assert!(!resume.desired_running);
-        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
-            .expect("storage paths");
+        let paths = torrent_storage_paths(
+            &root.join("payload"),
+            "multi",
+            torrent_id.parse().expect("opaque owner"),
+        )
+        .expect("storage paths");
         assert!(!paths.output.exists());
         assert!(!paths.staging.exists());
         assert!(!paths.part.exists());
@@ -8152,7 +8243,11 @@ mod tests {
         .expect("metadata-only add timed out");
         assert_eq!(snapshot.torrents[0].state, TorrentState::Paused);
         assert_eq!(snapshot.torrents[0].storage_state, StorageState::None);
-        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
+        let owner = snapshot.torrents[0]
+            .torrent_id
+            .parse::<TorrentId>()
+            .expect("opaque owner");
+        let paths = torrent_storage_paths(&root.join("payload"), "multi", owner)
             .expect("plan content paths");
         assert!(!paths.output.exists());
         assert!(!paths.staging.exists());
@@ -8222,7 +8317,7 @@ mod tests {
                 .contains("ephemeral")
         );
 
-        service
+        let response = service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "ephemeral-add".to_owned(),
@@ -8236,6 +8331,10 @@ mod tests {
             })
             .await
             .expect("add ephemeral metadata-only torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("ephemeral add result"),
+        };
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
                 tokio::task::yield_now().await;
@@ -8461,10 +8560,14 @@ mod tests {
         let mut service = ApplicationService::open(configuration.clone())
             .await
             .expect("open application");
-        service
+        let response = service
             .dispatch(add_request("add-transfer-limit-runtime", &torrent_id))
             .await
             .expect("add torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("transfer-limit add result"),
+        };
         let limits = crate::TorrentTransferLimits {
             upload: crate::TransferRateLimit::Limited {
                 bytes_per_second: 24 * 1_024,
@@ -9314,7 +9417,7 @@ mod tests {
     #[tokio::test]
     async fn command_mutation_publishes_a_typed_view_patch() {
         let root = test_root("view-patch");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let mut service = ApplicationService::open(config(&root))
             .await
             .expect("open service");
@@ -9335,10 +9438,14 @@ mod tests {
             ViewUpdatePayload::Snapshot { .. }
         ));
 
-        service
-            .dispatch(add_request("add", torrent_id))
+        let response = service
+            .dispatch(add_request("add", info_hash))
             .await
             .expect("add");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("view-patch add result"),
+        };
         let update = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             subscription.next_update(),
@@ -9354,7 +9461,7 @@ mod tests {
         assert!(
             serde_json::to_string(&patch)
                 .expect("serialize patch")
-                .contains(torrent_id)
+                .contains(&torrent_id)
         );
 
         service.shutdown().await.expect("shutdown");
@@ -9533,9 +9640,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-media", &torrent_id))
-            .expect("add media torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-media", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record media metadata");
@@ -9727,7 +9832,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open active media store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-active-media".to_owned(),
@@ -9740,6 +9845,10 @@ mod tests {
                 },
             })
             .expect("add active media torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("active media add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record active media metadata");
@@ -9918,7 +10027,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open handoff store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-media-handoff".to_owned(),
@@ -9931,6 +10040,10 @@ mod tests {
                 },
             })
             .expect("add handoff torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("media handoff add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record handoff metadata");
@@ -10060,9 +10173,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-complete-recheck", &torrent_id))
-            .expect("add complete torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-complete-recheck", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record complete metadata");
@@ -10167,9 +10278,13 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
+        let add_response = store
             .handle_durable(&add_request("add-pending-publication", &torrent_id))
             .expect("add pending publication");
+        let torrent_id = match add_response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pending publication add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record pending metadata");
@@ -10186,8 +10301,12 @@ mod tests {
 
         let payload_root = root.join("payload");
         fs::create_dir_all(&payload_root).expect("create payload root");
-        let paths = torrent_storage_paths(&payload_root, "pending.bin", info_hash)
-            .expect("plan pending publication paths");
+        let paths = torrent_storage_paths(
+            &payload_root,
+            "pending.bin",
+            torrent_id.parse().expect("opaque owner"),
+        )
+        .expect("plan pending publication paths");
         fs::write(&paths.staging, &payload).expect("write durable staging payload");
 
         let mut service = ApplicationService::open(configuration)
@@ -10233,9 +10352,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-complete-mismatch", &torrent_id))
-            .expect("add complete torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-complete-mismatch", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record complete metadata");
@@ -10303,9 +10420,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-paused-check", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-paused-check", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -10381,9 +10496,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-pause-checker", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-pause-checker", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record metadata");
@@ -10560,9 +10673,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-paused-recheck", &torrent_id))
-            .expect("add paused torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-paused-recheck", &torrent_id);
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record paused metadata");
@@ -10636,21 +10747,25 @@ mod tests {
     #[tokio::test]
     async fn pause_is_durable_and_prevents_restart() {
         let root = test_root("pause");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let mut service = ApplicationService::open(config(&root))
             .await
             .expect("open service");
-        service
-            .dispatch(add_request("add", torrent_id))
+        let response = service
+            .dispatch(add_request("add", info_hash))
             .await
             .expect("add");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pause add result"),
+        };
         let paused = service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "pause".to_owned(),
                 expected_revision: None,
                 command: Command::Pause {
-                    torrent_id: torrent_id.to_owned(),
+                    torrent_id: torrent_id.clone(),
                 },
             })
             .await
@@ -10751,7 +10866,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-paused-content".to_owned(),
@@ -10764,6 +10879,10 @@ mod tests {
                 },
             })
             .expect("add content torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("content add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record content metadata");
@@ -11121,7 +11240,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-file-priority".to_owned(),
@@ -11134,13 +11253,17 @@ mod tests {
                 },
             })
             .expect("add content torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("file-priority add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record content metadata");
         let blocked_raw_info = single_file_info("blocked.bin", b"blocked", 7);
         let blocked_info_hash: [u8; 20] = Sha1::digest(&blocked_raw_info).into();
         let blocked_torrent_id = super::encode_info_hash(blocked_info_hash);
-        store
+        let blocked_response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-blocked-download-file".to_owned(),
@@ -11153,6 +11276,10 @@ mod tests {
                 },
             })
             .expect("add blocked content torrent");
+        let blocked_torrent_id = match blocked_response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("blocked content add result"),
+        };
         store
             .record_metadata(&blocked_torrent_id, &blocked_raw_info)
             .expect("record blocked content metadata");
@@ -11262,8 +11389,12 @@ mod tests {
                 .expect("replacement generation did not connect"),
             Some(1)
         );
-        let paths = torrent_storage_paths(&root.join("payload"), "multi", info_hash)
-            .expect("plan storage paths");
+        let paths = torrent_storage_paths(
+            &root.join("payload"),
+            "multi",
+            torrent_id.parse().expect("opaque owner"),
+        )
+        .expect("plan storage paths");
         assert!(!paths.part.exists());
         service.shutdown().await.expect("shutdown");
         tokio::time::timeout(std::time::Duration::from_secs(1), peer_task)
@@ -11331,7 +11462,7 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "add-live-file-priority".to_owned(),
@@ -11344,6 +11475,10 @@ mod tests {
                 },
             })
             .expect("add content torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("live file-priority add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record content metadata");
@@ -11436,7 +11571,7 @@ mod tests {
     async fn owner_cleanup_failure_is_not_accepted_as_joined_pause() {
         let root = test_root("pause-cleanup-failure");
         let configuration = config(&root);
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let mut store = SessionStore::open(
             configuration
                 .durable_profile_root()
@@ -11445,16 +11580,14 @@ mod tests {
             &configuration.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-cleanup-failure", torrent_id))
-            .expect("add cleanup-failure torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-cleanup-failure", info_hash);
         store
             .handle_durable(&RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "pause-cleanup-failure".to_owned(),
                 expected_revision: None,
                 command: Command::Pause {
-                    torrent_id: torrent_id.to_owned(),
+                    torrent_id: torrent_id.clone(),
                 },
             })
             .expect("persist paused intent");
@@ -11467,7 +11600,7 @@ mod tests {
             &service.store,
             &service.storage_roots,
             &service.views,
-            torrent_id,
+            &torrent_id,
             Err(DownloadError::PeerCleanup {
                 failure: "download cancelled".to_owned(),
                 cleanup: "one peer connection remains".to_owned(),
@@ -11491,16 +11624,14 @@ mod tests {
         let raw_info =
             b"d6:lengthi4e4:name4:test12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let info_hash_hex = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
             config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-remove-path", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-remove-path", &info_hash_hex);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -11556,7 +11687,7 @@ mod tests {
     fn staging_cleanup_preserves_an_unowned_final_destination() {
         let root = test_root("staging-cleanup-conflict");
         let payload = root.join("payload");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
         let output = payload.join("named");
         let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
         let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
@@ -11594,7 +11725,7 @@ mod tests {
                 "publishing-cleanup-staging"
             });
             let payload = root.join("payload");
-            let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+            let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
             let owned = if final_visible {
                 payload.join("named")
             } else {
@@ -11625,7 +11756,7 @@ mod tests {
     fn publishing_cleanup_fails_closed_when_both_sides_exist() {
         let root = test_root("publishing-cleanup-ambiguous");
         let payload = root.join("payload");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
         let output = payload.join("named");
         let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
         fs::create_dir_all(&output).expect("create final");
@@ -11651,7 +11782,7 @@ mod tests {
     fn published_single_file_cleanup_uses_the_recorded_file_shape() {
         let root = test_root("published-single-cleanup");
         let payload = root.join("payload");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
         let output = payload.join("named.bin");
         fs::create_dir_all(&payload).expect("create payload root");
         fs::write(&output, b"owned").expect("write owned final file");
@@ -11678,7 +11809,7 @@ mod tests {
         let root = test_root("cleanup-symlink");
         let payload = root.join("payload");
         let outside = root.join("outside");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
         let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
         fs::create_dir_all(&payload).expect("create payload root");
         fs::create_dir_all(&outside).expect("create outside directory");
@@ -11711,44 +11842,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_managed_removal_cleans_legacy_hash_named_artifacts() {
+    async fn delete_managed_removal_does_not_adopt_legacy_hash_named_artifacts() {
         let root = test_root("remove-legacy-path");
         let config = config(&root);
         let raw_info = b"d5:filesld6:lengthi4e4:pathl8:file.bineee4:name5:named12:piece lengthi4e6:pieces20:aaaaaaaaaaaaaaaaaaaae";
         let info_hash: [u8; 20] = Sha1::digest(raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let legacy_id = crate::control::encode_info_hash(info_hash);
         let mut store = SessionStore::open(
             config.durable_profile_root().expect("durable profile root"),
             &config.profile_id,
             &config.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-remove-legacy-path", &torrent_id))
-            .expect("add torrent");
-        store
-            .record_metadata(&torrent_id, raw_info)
-            .expect("record metadata");
-        let database = store
-            .database_path()
-            .expect("durable database path")
-            .to_owned();
+        let torrent_id = add_store_torrent(&mut store, "add-remove-legacy-path", &legacy_id);
         drop(store);
-        let connection = Connection::open(database).expect("open raw database");
-        connection
-            .execute(
-                "UPDATE torrents
-                 SET publication_name = NULL, payload_state = 'legacy_owned'
-                 WHERE info_hash = ?1",
-                [info_hash.as_slice()],
-            )
-            .expect("clear publication name");
-        drop(connection);
 
         let payload = root.join("payload");
-        let output = payload.join(&torrent_id);
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        let output = payload.join(&legacy_id);
+        let staging = payload.join(format!(".{legacy_id}.rstorrent-staging"));
+        let part = payload.join(format!(".{legacy_id}.rstorrent-parts"));
         fs::create_dir_all(&output).expect("create legacy output");
         fs::write(output.join("payload.bin"), b"payload").expect("write output");
         fs::create_dir_all(&staging).expect("create legacy staging");
@@ -11770,9 +11882,9 @@ mod tests {
             })
             .await
             .expect("remove legacy torrent");
-        assert!(!output.exists());
-        assert!(!staging.exists());
-        assert!(!part.exists());
+        assert!(output.exists());
+        assert!(staging.exists());
+        assert!(part.exists());
         assert!(
             service
                 .store_mut()
@@ -11791,11 +11903,11 @@ mod tests {
     #[tokio::test]
     async fn keep_data_removal_preserves_managed_path_artifacts() {
         let root = test_root("remove-keep");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let payload = root.join("payload");
-        let output = payload.join(torrent_id);
-        let staging = payload.join(format!(".{torrent_id}.rstorrent-staging"));
-        let part = payload.join(format!(".{torrent_id}.rstorrent-parts"));
+        let output = payload.join(info_hash);
+        let staging = payload.join(format!(".{info_hash}.rstorrent-staging"));
+        let part = payload.join(format!(".{info_hash}.rstorrent-parts"));
         fs::create_dir_all(&output).expect("create output");
         fs::create_dir_all(&staging).expect("create staging");
         fs::write(output.join("payload.bin"), b"payload").expect("write output");
@@ -11805,17 +11917,21 @@ mod tests {
         let mut service = ApplicationService::open(config(&root))
             .await
             .expect("open service");
-        service
-            .dispatch(add_request("add-remove-keep", torrent_id))
+        let response = service
+            .dispatch(add_request("add-remove-keep", info_hash))
             .await
             .expect("add");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("keep-data add result"),
+        };
         service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "remove-keep".to_owned(),
                 expected_revision: None,
                 command: Command::RemoveTorrent {
-                    torrent_id: torrent_id.to_owned(),
+                    torrent_id,
                     data: RemovalDataPolicy::Keep,
                 },
             })
@@ -11850,9 +11966,7 @@ mod tests {
             &config.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-remove-failure", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-remove-failure", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -11934,9 +12048,7 @@ mod tests {
             &config.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-remove-restart", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-remove-restart", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -11992,9 +12104,7 @@ mod tests {
             &config.storage_roots,
         )
         .expect("open setup store");
-        store
-            .handle_durable(&add_request("add-remove-platform", &torrent_id))
-            .expect("add torrent");
+        let torrent_id = add_store_torrent(&mut store, "add-remove-platform", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -12103,20 +12213,25 @@ mod tests {
         );
 
         let metadata_pending = "000102030405060708090a0b0c0d0e0f10111213";
-        service
-            .dispatch(add_request(
+        let response = service
+            .store_mut()
+            .expect("store")
+            .handle_durable(&add_request(
                 "add-platform-without-metadata",
                 metadata_pending,
             ))
-            .await
             .expect("add metadata-pending platform torrent");
+        let metadata_pending = match response.result.as_ref() {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id.clone(),
+            _ => panic!("metadata-pending platform add result"),
+        };
         service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "remove-platform-without-metadata".to_owned(),
                 expected_revision: None,
                 command: Command::RemoveTorrent {
-                    torrent_id: metadata_pending.to_owned(),
+                    torrent_id: metadata_pending,
                     data: RemovalDataPolicy::DeleteManaged,
                 },
             })
@@ -12140,7 +12255,7 @@ mod tests {
     #[tokio::test]
     async fn tracker_retry_waiting_is_observed_without_another_command() {
         let root = test_root("tracker-retry-waiting");
-        let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+        let info_hash = "000102030405060708090a0b0c0d0e0f10111213";
         let mut service = ApplicationService::open(config(&root))
             .await
             .expect("open service");
@@ -12178,14 +12293,14 @@ mod tests {
             .await
             .expect("diagnostic snapshot");
 
-        service
+        let response = service
             .dispatch(RequestEnvelope {
                 version: CONTROL_VERSION,
                 request_id: "blocked-add".to_owned(),
                 expected_revision: None,
                 command: Command::AddMagnet {
                     magnet: format!(
-                        "magnet:?xt=urn:btih:{torrent_id}&tr=udp%3A%2F%2F192.0.2.1%3A6969%2Fannounce"
+                        "magnet:?xt=urn:btih:{info_hash}&tr=udp%3A%2F%2F192.0.2.1%3A6969%2Fannounce"
                     ),
                     storage_root: "downloads".to_owned(),
                     start_content: true,
@@ -12194,6 +12309,10 @@ mod tests {
             })
             .await
             .expect("add");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("tracker retry add result"),
+        };
 
         let waiting = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
@@ -12241,7 +12360,7 @@ mod tests {
             "missing scheduled tracker retry diagnostic"
         );
         let resume = service
-            .load_resume_conservative(torrent_id)
+            .load_resume_conservative(&torrent_id)
             .expect("resume state");
         assert!(resume.desired_running);
         assert_eq!(resume.state, TorrentState::AwaitingMetadata);
@@ -12324,9 +12443,7 @@ mod tests {
             &[configured_root],
         )
         .expect("open store");
-        store
-            .handle_durable(&add_request("add", &torrent_id))
-            .expect("add");
+        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -12408,16 +12525,15 @@ mod tests {
             &[configured_root],
         )
         .expect("open store");
-        store
-            .handle_durable(&add_request("add", &torrent_id))
-            .expect("add");
+        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
-        let healthy_id = "ffffffffffffffffffffffffffffffffffffffff";
-        store
-            .handle_durable(&add_request("add-healthy-neighbor", healthy_id))
-            .expect("add healthy neighboring torrent");
+        let healthy_id = add_store_torrent(
+            &mut store,
+            "add-healthy-neighbor",
+            "ffffffffffffffffffffffffffffffffffffffff",
+        );
         let database = store
             .database_path()
             .expect("durable database path")
@@ -12425,10 +12541,11 @@ mod tests {
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
+        let torrent_owner = owner_bytes(&torrent_id);
         connection
             .execute(
-                "UPDATE torrents SET raw_info = x'00' WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "UPDATE torrents SET raw_info = x'00' WHERE torrent_id = ?1",
+                [torrent_owner.as_slice()],
             )
             .expect("corrupt raw metadata");
         drop(connection);
@@ -12494,9 +12611,7 @@ mod tests {
             &[configured_root],
         )
         .expect("open store");
-        store
-            .handle_durable(&add_request("add", &torrent_id))
-            .expect("add");
+        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -12507,10 +12622,11 @@ mod tests {
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
+        let torrent_owner = owner_bytes(&torrent_id);
         connection
             .execute(
-                "UPDATE torrents SET publication_name = NULL WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "UPDATE torrents SET publication_name = NULL WHERE torrent_id = ?1",
+                [torrent_owner.as_slice()],
             )
             .expect("clear publication name");
         drop(connection);
@@ -12565,9 +12681,7 @@ mod tests {
             &[configured_root],
         )
         .expect("open store");
-        store
-            .handle_durable(&add_request("add", &torrent_id))
-            .expect("add");
+        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -12578,18 +12692,19 @@ mod tests {
         drop(store);
 
         let connection = Connection::open(database).expect("open raw database");
+        let torrent_owner = owner_bytes(&torrent_id);
         let mut have: Vec<u8> = connection
             .query_row(
-                "SELECT have_state FROM torrents WHERE info_hash = ?1",
-                [info_hash.as_slice()],
+                "SELECT have_state FROM torrents WHERE torrent_id = ?1",
+                [torrent_owner.as_slice()],
                 |row| row.get(0),
             )
             .expect("read have state");
         *have.last_mut().expect("bitfield byte") = 1;
         connection
             .execute(
-                "UPDATE torrents SET have_state = ?2 WHERE info_hash = ?1",
-                rusqlite::params![info_hash.as_slice(), have],
+                "UPDATE torrents SET have_state = ?2 WHERE torrent_id = ?1",
+                rusqlite::params![torrent_owner.as_slice(), have],
             )
             .expect("corrupt have padding");
         drop(connection);
@@ -12632,9 +12747,7 @@ mod tests {
             std::slice::from_ref(&configured_root),
         )
         .expect("open store");
-        store
-            .handle_durable(&add_request("add", &torrent_id))
-            .expect("add");
+        let torrent_id = add_store_torrent(&mut store, "add", &torrent_id);
         store
             .record_metadata(&torrent_id, raw_info)
             .expect("record metadata");
@@ -12788,7 +12901,7 @@ mod tests {
         let payload = b"abcdefg";
         let raw_info = single_file_info("seed.bin", payload, 4);
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        let torrent_id = crate::control::encode_info_hash(info_hash);
+        let info_hash_hex = crate::control::encode_info_hash(info_hash);
         let configuration = config(&root);
         persist_client_settings(
             &configuration,
@@ -12808,7 +12921,7 @@ mod tests {
         );
         fs::create_dir_all(root.join("payload")).expect("create payload root");
         fs::write(root.join("payload/seed.bin"), payload).expect("write published payload");
-        {
+        let torrent_id = {
             let mut store = SessionStore::open(
                 configuration
                     .durable_profile_root()
@@ -12817,9 +12930,7 @@ mod tests {
                 &configuration.storage_roots,
             )
             .expect("open fixture store");
-            store
-                .handle_durable(&add_request("add-seed", &torrent_id))
-                .expect("add seed catalog row");
+            let torrent_id = add_store_torrent(&mut store, "add-seed", &info_hash_hex);
             store
                 .record_metadata(&torrent_id, &raw_info)
                 .expect("record seed metadata");
@@ -12830,7 +12941,8 @@ mod tests {
                 .mark_storage_prepared(&torrent_id, StorageState::Published)
                 .expect("record published storage");
             store.mark_complete(&torrent_id).expect("complete seed");
-        }
+            torrent_id
+        };
 
         let mut first = ApplicationService::open(configuration.clone())
             .await

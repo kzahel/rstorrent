@@ -13,6 +13,7 @@ use rstorrent_protocol::extension::{
     ExtensionAdvertisement, PexContact, PexEndpoint, PexFlags, PexMessage,
     encode_extension_handshake as encode_recognized_extension_handshake, encode_pex_message,
 };
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
@@ -54,6 +55,7 @@ use super::{
     execute_content_storage_verification, execute_content_storage_writes,
     full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
     retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+    validate_v1_runtime_identity,
 };
 
 trait TestMetainfoParse: Sized {
@@ -72,7 +74,7 @@ impl TestMetainfoParse for Metainfo {
 }
 use crate::checkpoint::{CheckpointBatch, CheckpointIntent, DurabilityTarget};
 use crate::dht::{BootstrapNode, DhtConfig, DhtService};
-use crate::identity::{ContentFingerprint, TorrentId};
+use crate::identity::{ContentFingerprint, TorrentId, TorrentIdentityContext};
 use crate::network::{AddressFamilyPolicy, NetworkConfig, NetworkPolicy};
 use crate::peer::{
     DialAttempt, PeerEndpoint, PeerFailure, PeerObservation, PeerPhase, PeerRegistry,
@@ -106,6 +108,30 @@ fn test_artifact_identity() -> TorrentArtifactIdentity {
         torrent_id: test_torrent_id(),
         content_fingerprint: ContentFingerprint::from_digest([0x42; 32]),
     }
+}
+
+fn test_identity(info_hash: [u8; 20]) -> TorrentIdentityContext {
+    TorrentIdentityContext::v1(test_torrent_id(), V1InfoHash::new(info_hash))
+}
+
+#[test]
+fn v1_runtime_identity_rejects_mismatched_and_v2_keys() {
+    assert!(matches!(
+        validate_v1_runtime_identity(test_identity([1; 20]), [2; 20]),
+        Err(DownloadError::InvalidTorrentIdentity(_))
+    ));
+
+    let v2 = V2InfoHash::new([3; 32]);
+    let identity = TorrentIdentityContext::new(
+        test_torrent_id(),
+        InfoHashes::v2(v2),
+        SwarmKey::V2Truncated([3; 20]),
+    )
+    .expect("selected v2 key");
+    assert!(matches!(
+        validate_v1_runtime_identity(identity, [3; 20]),
+        Err(DownloadError::InvalidTorrentIdentity(_))
+    ));
 }
 
 #[derive(Default)]
@@ -2544,7 +2570,7 @@ async fn assert_tracker_wait_cancels_without_socket_leaks() {
     let task_control = control.clone();
     let task = tokio::spawn(download_magnet_with_control(
         MagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity([0; 20]),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&tr=udp%3A%2F%2F{tracker_address}",
                 "00".repeat(20)

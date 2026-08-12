@@ -15,10 +15,11 @@ use rstorrent_engine::{
     PeerBudgetConfig, PeerConnectionLifecycle, PeerConnectionObservation, PeerEncryptionPolicy,
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
     ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot, TorrentId,
-    TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig, TrackerEndpoint, TrackerSource,
-    UtpService, UtpServiceSnapshot, download_verified_piece_with_peer_state,
-    resume_magnet_with_control, select_global_ipv6,
+    TorrentIdentityContext, TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig,
+    TrackerEndpoint, TrackerSource, UtpService, UtpServiceSnapshot,
+    download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
 };
+use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoTrackerTransport,
@@ -1673,6 +1674,8 @@ async fn run(config: Config) -> ProbeResult {
             );
         }
     };
+    let identity =
+        TorrentIdentityContext::v1(torrent_id, V1InfoHash::new(config.expected_info_hash));
 
     let torrent_peers = match TorrentPeerHandle::new(peer_sink.clone()) {
         Ok(handle) => handle,
@@ -1757,7 +1760,7 @@ async fn run(config: Config) -> ProbeResult {
     let task_control = control.clone();
     let mut task = if config.nonresumable_execution {
         let direct_config = DownloadConfig {
-            torrent_id,
+            identity,
             metainfo_path: prepared
                 .metainfo_path
                 .expect("nonresumable diagnostic input is gated to metainfo"),
@@ -1780,7 +1783,7 @@ async fn run(config: Config) -> ProbeResult {
         ))
     } else {
         let download_config = ResumableMagnetDownloadConfig {
-            torrent_id,
+            identity,
             magnet: prepared.magnet,
             storage_root: config.output.clone(),
             network,

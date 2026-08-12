@@ -1275,14 +1275,14 @@ mod tests {
     #[tokio::test]
     async fn rejects_every_mismatched_layout_identity_field() {
         let cases = [
-            (36_u64, 4_u32.to_be_bytes().to_vec(), "piece count"),
+            (64_u64, 4_u32.to_be_bytes().to_vec(), "piece count"),
             (
-                40,
+                68,
                 (identity().piece_length + 1).to_be_bytes().to_vec(),
                 "piece length",
             ),
             (
-                44,
+                72,
                 (identity().total_length - 1).to_be_bytes().to_vec(),
                 "total length",
             ),

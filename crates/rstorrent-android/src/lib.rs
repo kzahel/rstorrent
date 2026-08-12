@@ -15,9 +15,11 @@ use rstorrent_engine::{
     DownloadControl, DownloadError, DownloadProgress, DownloadReport, DownloadResourceLimits,
     NetworkConfig, NetworkPolicy, PlatformStorageBroker, PlatformStorageFailure,
     PlatformStorageFailureKind, PlatformStorageOperation, StorageFileAccess, StorageFileRole,
-    StorageObjectKind, StorageObservation, download_verified_piece_to_descriptors_with_control,
-    download_verified_piece_with_control, plan_descriptor_storage, platform_storage_channel,
+    StorageObjectKind, StorageObservation, TorrentId, TorrentIdentityContext,
+    download_verified_piece_to_descriptors_with_control, download_verified_piece_with_control,
+    plan_descriptor_storage, platform_storage_channel,
 };
+use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
@@ -1437,9 +1439,18 @@ fn validate_config(config: EngineConfig) -> Result<(DownloadConfig, Duration), S
         ));
     }
 
+    let metainfo_path = PathBuf::from(config.metainfo_path);
+    let metainfo_bytes = std::fs::read(&metainfo_path)
+        .map_err(|error| format!("read metainfo for identity: {error}"))?;
+    let metainfo = Metainfo::from_bytes_with_limits(&metainfo_bytes, BEP9_METAINFO_LIMITS)
+        .map_err(|error| format!("parse metainfo for identity: {error}"))?;
+    let torrent_id = TorrentId::generate()
+        .map_err(|error| format!("allocate diagnostic torrent owner: {error}"))?;
+
     Ok((
         DownloadConfig {
-            metainfo_path: PathBuf::from(config.metainfo_path),
+            identity: TorrentIdentityContext::v1(torrent_id, V1InfoHash::new(metainfo.info_hash)),
+            metainfo_path,
             peer: SocketAddr::from((Ipv4Addr::LOCALHOST, config.peer_port)),
             output_path: PathBuf::from(config.output_path),
             network: NetworkConfig::new(
@@ -1572,6 +1583,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::NetworkPolicyDenied { .. }
         | DownloadError::InvalidNetworkTimeout { .. }
         | DownloadError::InvalidResourceLimit(_)
+        | DownloadError::InvalidTorrentIdentity(_)
         | DownloadError::Dht(rstorrent_engine::dht::DhtError::NetworkDisabled)
         | DownloadError::MetainfoTooLarge { .. }
         | DownloadError::Magnet(_)

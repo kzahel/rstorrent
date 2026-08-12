@@ -13,9 +13,10 @@ use rstorrent_engine::peer::PeerRegistrySnapshot;
 use rstorrent_engine::{
     DownloadConfig, DownloadControl, DownloadResourceLimits, IncomingPeerService,
     IncomingPeerServiceConfig, IncomingTcpBootstrap, NetworkConfig, NetworkPolicy, PeerBudget,
-    PeerConnectionObservation, SeedContent, SeedRegistration, TorrentId, TorrentPeerActivitySink,
-    TorrentPeerHandle, download_verified_piece_with_peer_state,
+    PeerConnectionObservation, SeedContent, SeedRegistration, TorrentId, TorrentIdentityContext,
+    TorrentPeerActivitySink, TorrentPeerHandle, download_verified_piece_with_peer_state,
 };
+use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 
 #[derive(Debug, Default)]
@@ -93,7 +94,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let task_control = control.clone();
     let download = tokio::spawn(download_verified_piece_with_peer_state(
         DownloadConfig {
-            torrent_id,
+            identity: TorrentIdentityContext::v1(torrent_id, V1InfoHash::new(metainfo.info_hash)),
             metainfo_path: arguments.metainfo,
             peer: arguments.peer,
             output_path: arguments.output,

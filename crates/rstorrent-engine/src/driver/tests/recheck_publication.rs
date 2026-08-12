@@ -5,6 +5,11 @@ use crate::{
     PeerBudget, ResumeValidationIntent, TorrentPeerHandle,
 };
 
+fn test_identity_from_outer(bytes: &[u8]) -> TorrentIdentityContext {
+    let metainfo = Metainfo::from_bytes(bytes).expect("valid test metainfo");
+    test_identity(metainfo.info_hash)
+}
+
 #[tokio::test]
 async fn multi_piece_single_file_uses_torrent_offsets_and_publishes() {
     let payload = (0..(3 * 16 * 1024 + 731))
@@ -202,7 +207,7 @@ async fn full_recheck_recovers_synced_single_file_with_empty_have() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let result = resume_magnet(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -279,7 +284,7 @@ async fn fast_resume_accepts_complete_publication_without_checker_or_hashing() {
 
     let report = resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -347,7 +352,7 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
     control.set_platform_storage(crate::PlatformStorageSpec {
         pool: pool.clone(),
         root_id: "downloads".to_owned(),
-        storage_id: hex(&metainfo.info_hash),
+        storage_id: test_torrent_id().to_string(),
         publication_name: metainfo.name.clone(),
         publication_shape: crate::PublicationShape::from_metainfo(&metainfo),
         namespace_generation: 1,
@@ -358,9 +363,9 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
         .await
         .expect("bind unused platform peer");
     let peer_address = unused_peer.local_addr().expect("unused peer address");
-    let task = tokio::spawn(resume_magnet_with_control(
+    let mut task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -384,7 +389,10 @@ async fn cancelling_platform_fast_resume_drops_observation_without_admission() {
         checkpoints.clone(),
         control.clone(),
     ));
-    let request = broker.next_request().await.expect("validation observation");
+    let request = tokio::select! {
+        request = broker.next_request() => request.expect("validation observation"),
+        result = &mut task => panic!("download ended before observation: {result:?}"),
+    };
     assert_eq!(request.operation, crate::PlatformStorageOperation::Observe);
     assert_eq!(pool.snapshot().platform_pending, 1);
     control.cancel();
@@ -762,7 +770,7 @@ async fn full_recheck_clears_stale_have_and_redownloads_only_corrupt_piece() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let report = resume_magnet(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -859,7 +867,7 @@ async fn outgoing_connection_uploads_verified_piece_before_torrent_completion() 
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let report = resume_magnet(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -974,7 +982,7 @@ async fn accepted_connection_uploads_and_downloads_before_torrent_completion() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1098,7 +1106,7 @@ async fn incoming_contributor_survives_disconnect_until_delayed_hash_finishes() 
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1228,7 +1236,7 @@ async fn active_upload_read_failure_retracts_route_and_stops_generation() {
     let checkpoints = Arc::new(RecordingCheckpointSink::default());
     let download_task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={idle_address}",
                 hex(&metainfo.info_hash)
@@ -1404,7 +1412,7 @@ async fn cancelling_full_recheck_stops_admission_and_joins_bounded_hashes() {
         .expect("unused cancellation peer address");
     let task = tokio::spawn(resume_magnet_with_control(
         ResumableMagnetDownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity(metainfo.info_hash),
             magnet: format!(
                 "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                 hex(&metainfo.info_hash)
@@ -1490,7 +1498,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
         });
         let failed = resume_magnet(
             ResumableMagnetDownloadConfig {
-                torrent_id: test_torrent_id(),
+                identity: test_identity(metainfo.info_hash),
                 magnet: format!(
                     "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                     hex(&metainfo.info_hash)
@@ -1536,7 +1544,7 @@ async fn publishing_intent_recovers_both_sides_of_atomic_rename() {
 
         let recovered = resume_magnet(
             ResumableMagnetDownloadConfig {
-                torrent_id: test_torrent_id(),
+                identity: test_identity(metainfo.info_hash),
                 magnet: format!(
                     "magnet:?xt=urn:btih:{}&x.pe={peer_address}",
                     hex(&metainfo.info_hash)
@@ -1584,6 +1592,7 @@ async fn timeout_removes_unverified_staging_output() {
     let mut metainfo = b"d4:infod6:lengthi1e4:name1:x12:piece lengthi16384e6:pieces20:".to_vec();
     metainfo.extend_from_slice(&[1; 20]);
     metainfo.extend_from_slice(b"ee");
+    let identity = test_identity_from_outer(&metainfo);
     tokio::fs::write(&metainfo_path, metainfo)
         .await
         .expect("write metainfo");
@@ -1598,7 +1607,7 @@ async fn timeout_removes_unverified_staging_output() {
     });
 
     let result = download_verified_piece(DownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity,
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),
@@ -1646,7 +1655,7 @@ async fn selective_timeout_removes_owned_staging_and_part_paths() {
     });
 
     let result = download_verified_piece(DownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity_from_outer(&two_file_metainfo()),
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),
@@ -1701,7 +1710,7 @@ async fn cancellation_is_terminal_and_removes_owned_artifacts() {
     let download_control = control.clone();
     let download_task = tokio::spawn(download_verified_piece_with_control(
         DownloadConfig {
-            torrent_id: test_torrent_id(),
+            identity: test_identity_from_outer(&two_file_metainfo()),
             metainfo_path: metainfo_path.clone(),
             peer: address,
             output_path: output_path.clone(),
@@ -1799,7 +1808,7 @@ async fn preexisting_selective_part_file_is_preserved() {
     let address = listener.local_addr().expect("listener address");
 
     let result = download_verified_piece(DownloadConfig {
-        torrent_id: test_torrent_id(),
+        identity: test_identity_from_outer(&two_file_metainfo()),
         metainfo_path: metainfo_path.clone(),
         peer: address,
         output_path: output_path.clone(),

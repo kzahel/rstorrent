@@ -10,7 +10,7 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::bencode::ParseError;
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
-use rstorrent_protocol::identity::{InfoHashes, V1InfoHash};
+use rstorrent_protocol::identity::{InfoHashes, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{
     FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet, TrackerUrl,
     TrackerUrlTransport,
@@ -192,8 +192,8 @@ pub(crate) struct PreparedTorrentBytes {
 }
 
 impl PreparedTorrentBytes {
-    pub(crate) fn torrent_id(&self) -> String {
-        encode_info_hash(self.projection.metainfo.info_hash)
+    pub(crate) fn v1_info_hash(&self) -> V1InfoHash {
+        V1InfoHash::new(self.projection.metainfo.info_hash)
     }
 }
 
@@ -457,6 +457,22 @@ impl SessionStore {
 
     pub fn revision(&self) -> Result<u64, StoreError> {
         read_revision(&self.connection)
+    }
+
+    pub(crate) fn find_v1_owner(
+        &self,
+        info_hash: V1InfoHash,
+    ) -> Result<Option<TorrentId>, StoreError> {
+        find_torrent_id_by_v1(&self.connection, info_hash.as_bytes())
+    }
+
+    pub(crate) fn load_identities(
+        &self,
+        torrent_id: &str,
+    ) -> Result<(TorrentId, InfoHashes), StoreError> {
+        let torrent_id = decode_torrent_id(torrent_id)
+            .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
+        Ok((torrent_id, read_info_hashes(&self.connection, &torrent_id)?))
     }
 
     pub fn pending_profile_reset_report(&self) -> Result<Option<ProfileResetReport>, StoreError> {
@@ -1059,7 +1075,10 @@ impl SessionStore {
                 ));
             }
         };
-        let v1_info_hash = V1InfoHash::new(read_v1_info_hash(&self.connection, &torrent_id)?);
+        let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
+        let v1_info_hash = info_hashes.v1_hash().ok_or_else(|| {
+            StoreError::DurableState(format!("torrent {torrent_id} has no v1 identity"))
+        })?;
         let operational_magnet = row
             .0
             .unwrap_or_else(|| format!("magnet:?xt=urn:btih:{v1_info_hash}"));
@@ -1107,7 +1126,7 @@ impl SessionStore {
         };
         Ok(ResumeRecord {
             torrent_id,
-            info_hashes: InfoHashes::v1(v1_info_hash),
+            info_hashes,
             magnet: operational_magnet,
             storage_root: row.1,
             skip_files,
@@ -2373,6 +2392,49 @@ fn read_v1_info_hash(
     bytes
         .try_into()
         .map_err(|_| StoreError::DurableState("invalid v1 identity length".to_owned()))
+}
+
+fn read_info_hashes(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+) -> Result<InfoHashes, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT protocol, full_hash FROM torrent_identities
+         WHERE torrent_id = ?1 ORDER BY protocol",
+    )?;
+    let mut rows = statement.query([torrent_id.as_bytes().as_slice()])?;
+    let mut v1 = None;
+    let mut v2 = None;
+    while let Some(row) = rows.next()? {
+        let protocol = row.get::<_, String>(0)?;
+        let bytes = row.get::<_, Vec<u8>>(1)?;
+        match protocol.as_str() {
+            "v1" if v1.is_none() => {
+                let bytes = bytes.try_into().map_err(|_| {
+                    StoreError::DurableState("invalid v1 identity length".to_owned())
+                })?;
+                v1 = Some(V1InfoHash::new(bytes));
+            }
+            "v2" if v2.is_none() => {
+                let bytes = bytes.try_into().map_err(|_| {
+                    StoreError::DurableState("invalid v2 identity length".to_owned())
+                })?;
+                v2 = Some(V2InfoHash::new(bytes));
+            }
+            "v1" | "v2" => {
+                return Err(StoreError::DurableState(
+                    "duplicate torrent protocol identity".to_owned(),
+                ));
+            }
+            _ => {
+                return Err(StoreError::DurableState(
+                    "invalid torrent identity protocol".to_owned(),
+                ));
+            }
+        }
+    }
+    InfoHashes::new(v1, v2)
+        .map_err(|_| StoreError::DurableState("torrent has no protocol identity".to_owned()))
 }
 
 fn find_torrent_id_by_v1(
@@ -7305,10 +7367,17 @@ mod tests {
             })
             .expect("add reserved-name source");
         let reserved_id = added_torrent_id(&reserved);
-        assert!(matches!(
-            store.record_metadata(&reserved_id, &reserved_info),
-            Err(StoreError::DurableState(_))
-        ));
+        store
+            .record_metadata(&reserved_id, &reserved_info)
+            .expect("legacy hash-shaped publication names no longer collide with owned artifacts");
+        assert_eq!(
+            store
+                .load_resume(&reserved_id)
+                .expect("reserved-name resume")
+                .publication_name
+                .as_deref(),
+            Some(reserved_name.as_str())
+        );
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }
