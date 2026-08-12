@@ -418,6 +418,12 @@ pub struct TransportSnapshot {
     pub in_flight_bytes: usize,
     pub in_flight_packet_high_water: usize,
     pub in_flight_byte_high_water: usize,
+    pub congestion_control_acknowledgements: u64,
+    pub congestion_control_acknowledged_bytes: u64,
+    pub congestion_limited_acknowledgements: u64,
+    pub sender_underfilled_acknowledgements: u64,
+    pub remote_window_limited_acknowledgements: u64,
+    pub window_growth_acknowledgements: u64,
     pub timestamp_difference_micros: u32,
     pub pending_emission_bytes: usize,
     pub close_requested: bool,
@@ -543,6 +549,12 @@ pub struct TransportState {
     in_flight: BTreeMap<SequenceNumber, usize>,
     in_flight_packet_high_water: usize,
     in_flight_byte_high_water: usize,
+    congestion_control_acknowledgements: u64,
+    congestion_control_acknowledged_bytes: u64,
+    congestion_limited_acknowledgements: u64,
+    sender_underfilled_acknowledgements: u64,
+    remote_window_limited_acknowledgements: u64,
+    window_growth_acknowledgements: u64,
     timestamp_difference_micros: u32,
     initial_syn_pending: bool,
     pending_emission: Option<TransportEmission>,
@@ -614,6 +626,12 @@ impl TransportState {
             in_flight: BTreeMap::new(),
             in_flight_packet_high_water: 0,
             in_flight_byte_high_water: 0,
+            congestion_control_acknowledgements: 0,
+            congestion_control_acknowledged_bytes: 0,
+            congestion_limited_acknowledgements: 0,
+            sender_underfilled_acknowledgements: 0,
+            remote_window_limited_acknowledgements: 0,
+            window_growth_acknowledgements: 0,
             timestamp_difference_micros: 0,
             initial_syn_pending,
             pending_emission: None,
@@ -636,6 +654,12 @@ impl TransportState {
             in_flight_bytes: self.in_flight_bytes(),
             in_flight_packet_high_water: self.in_flight_packet_high_water,
             in_flight_byte_high_water: self.in_flight_byte_high_water,
+            congestion_control_acknowledgements: self.congestion_control_acknowledgements,
+            congestion_control_acknowledged_bytes: self.congestion_control_acknowledged_bytes,
+            congestion_limited_acknowledgements: self.congestion_limited_acknowledgements,
+            sender_underfilled_acknowledgements: self.sender_underfilled_acknowledgements,
+            remote_window_limited_acknowledgements: self.remote_window_limited_acknowledgements,
+            window_growth_acknowledgements: self.window_growth_acknowledgements,
             timestamp_difference_micros: self.timestamp_difference_micros,
             pending_emission_bytes: self
                 .pending_emission
@@ -744,10 +768,34 @@ impl TransportState {
             if acknowledgement.acknowledged_bytes > 0 && one_way_delay_micros != 0 {
                 let congestion_snapshot = self.congestion.snapshot();
                 let mss = congestion_snapshot.maximum_segment_bytes;
-                let congestion_limited = flight_size_before_ack.saturating_add(mss)
-                    > congestion_snapshot.congestion_window_bytes
-                    && flight_size_before_ack.saturating_add(mss) <= previous_remote_window;
-                self.congestion.on_ack(
+                let next_segment_flight = flight_size_before_ack.saturating_add(mss);
+                let sender_has_window_headroom =
+                    next_segment_flight <= congestion_snapshot.congestion_window_bytes;
+                let remote_window_limited = next_segment_flight > previous_remote_window;
+                let congestion_limited = !sender_has_window_headroom && !remote_window_limited;
+                self.congestion_control_acknowledgements =
+                    self.congestion_control_acknowledgements.saturating_add(1);
+                self.congestion_control_acknowledged_bytes =
+                    self.congestion_control_acknowledged_bytes.saturating_add(
+                        u64::try_from(acknowledgement.acknowledged_bytes).unwrap_or(u64::MAX),
+                    );
+                if congestion_limited {
+                    self.congestion_limited_acknowledgements =
+                        self.congestion_limited_acknowledgements.saturating_add(1);
+                }
+                if self.transmit.snapshot().unsent_bytes > 0
+                    && sender_has_window_headroom
+                    && !remote_window_limited
+                {
+                    self.sender_underfilled_acknowledgements =
+                        self.sender_underfilled_acknowledgements.saturating_add(1);
+                }
+                if remote_window_limited {
+                    self.remote_window_limited_acknowledgements = self
+                        .remote_window_limited_acknowledgements
+                        .saturating_add(1);
+                }
+                let congestion_outcome = self.congestion.on_ack(
                     now_micros,
                     acknowledgement.acknowledged_bytes,
                     flight_size_before_ack,
@@ -755,6 +803,10 @@ impl TransportState {
                     smoothed_rtt,
                     congestion_limited,
                 )?;
+                if congestion_outcome.window_delta_bytes > 0 {
+                    self.window_growth_acknowledgements =
+                        self.window_growth_acknowledgements.saturating_add(1);
+                }
             }
 
             let only_loss = acknowledgement.loss_signals.len() == 1;

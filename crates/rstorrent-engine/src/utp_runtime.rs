@@ -127,6 +127,12 @@ pub struct UtpServiceSnapshot {
     pub retransmission_queue_high_water: usize,
     pub in_flight_packet_high_water: usize,
     pub in_flight_byte_high_water: usize,
+    pub congestion_control_acknowledgements_high_water: u64,
+    pub congestion_control_acknowledged_bytes_high_water: u64,
+    pub congestion_limited_acknowledgements_high_water: u64,
+    pub sender_underfilled_acknowledgements_high_water: u64,
+    pub remote_window_limited_acknowledgements_high_water: u64,
+    pub window_growth_acknowledgements_high_water: u64,
     pub pending_ack_packet_high_water: usize,
     pub loss_reduction_high_water: u64,
     pub timeout_collapse_high_water: u64,
@@ -879,6 +885,12 @@ struct UtpStats {
     retransmission_queue_high_water: AtomicUsize,
     in_flight_packet_high_water: AtomicUsize,
     in_flight_byte_high_water: AtomicUsize,
+    congestion_control_acknowledgements_high_water: AtomicU64,
+    congestion_control_acknowledged_bytes_high_water: AtomicU64,
+    congestion_limited_acknowledgements_high_water: AtomicU64,
+    sender_underfilled_acknowledgements_high_water: AtomicU64,
+    remote_window_limited_acknowledgements_high_water: AtomicU64,
+    window_growth_acknowledgements_high_water: AtomicU64,
     pending_ack_packet_high_water: AtomicUsize,
     loss_reduction_high_water: AtomicU64,
     timeout_collapse_high_water: AtomicU64,
@@ -960,6 +972,24 @@ impl UtpStats {
                 .load(Ordering::Relaxed),
             in_flight_packet_high_water: self.in_flight_packet_high_water.load(Ordering::Relaxed),
             in_flight_byte_high_water: self.in_flight_byte_high_water.load(Ordering::Relaxed),
+            congestion_control_acknowledgements_high_water: self
+                .congestion_control_acknowledgements_high_water
+                .load(Ordering::Relaxed),
+            congestion_control_acknowledged_bytes_high_water: self
+                .congestion_control_acknowledged_bytes_high_water
+                .load(Ordering::Relaxed),
+            congestion_limited_acknowledgements_high_water: self
+                .congestion_limited_acknowledgements_high_water
+                .load(Ordering::Relaxed),
+            sender_underfilled_acknowledgements_high_water: self
+                .sender_underfilled_acknowledgements_high_water
+                .load(Ordering::Relaxed),
+            remote_window_limited_acknowledgements_high_water: self
+                .remote_window_limited_acknowledgements_high_water
+                .load(Ordering::Relaxed),
+            window_growth_acknowledgements_high_water: self
+                .window_growth_acknowledgements_high_water
+                .load(Ordering::Relaxed),
             pending_ack_packet_high_water: self
                 .pending_ack_packet_high_water
                 .load(Ordering::Relaxed),
@@ -1067,6 +1097,33 @@ impl UtpStats {
             .fetch_max(snapshot.in_flight_packet_high_water, Ordering::Relaxed);
         self.in_flight_byte_high_water
             .fetch_max(snapshot.in_flight_byte_high_water, Ordering::Relaxed);
+        self.congestion_control_acknowledgements_high_water
+            .fetch_max(
+                snapshot.congestion_control_acknowledgements,
+                Ordering::Relaxed,
+            );
+        self.congestion_control_acknowledged_bytes_high_water
+            .fetch_max(
+                snapshot.congestion_control_acknowledged_bytes,
+                Ordering::Relaxed,
+            );
+        self.congestion_limited_acknowledgements_high_water
+            .fetch_max(
+                snapshot.congestion_limited_acknowledgements,
+                Ordering::Relaxed,
+            );
+        self.sender_underfilled_acknowledgements_high_water
+            .fetch_max(
+                snapshot.sender_underfilled_acknowledgements,
+                Ordering::Relaxed,
+            );
+        self.remote_window_limited_acknowledgements_high_water
+            .fetch_max(
+                snapshot.remote_window_limited_acknowledgements,
+                Ordering::Relaxed,
+            );
+        self.window_growth_acknowledgements_high_water
+            .fetch_max(snapshot.window_growth_acknowledgements, Ordering::Relaxed);
         self.pending_ack_packet_high_water.fetch_max(
             usize::from(snapshot.acknowledgements.pending_packets),
             Ordering::Relaxed,

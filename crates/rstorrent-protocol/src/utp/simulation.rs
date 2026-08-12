@@ -1582,6 +1582,38 @@ mod tests {
     }
 
     #[test]
+    fn clean_long_rtt_high_capacity_exposes_sender_window_underfill() {
+        let mut scenario = default_utp_scenario();
+        scenario.transfer_bytes = TRANSFER_BYTES * 2;
+        scenario.link.base_delay_micros = 80_000;
+        scenario.link.bytes_per_second = 12_500_000;
+        scenario.link.queue_capacity_bytes = 2 * 1024 * 1024;
+        let report = run_utp_scenario(scenario);
+        let active_micros = report
+            .completed_at_micros
+            .saturating_sub(report.started_at_micros);
+
+        assert_eq!(report.received_bytes, TRANSFER_BYTES * 2);
+        assert_eq!(report.received_hash, report.source_hash);
+        assert_eq!(report.retransmissions, 0, "report={report:?}");
+        assert_eq!(report.link.queue_drops, 0, "report={report:?}");
+        assert!(
+            active_micros >= 28_000_000,
+            "pre-repair long-RTT transfer unexpectedly fast: report={report:?}"
+        );
+        assert!(
+            report.sender.congestion.congestion_window_bytes < 64 * 1024,
+            "pre-repair long-RTT window unexpectedly grew: report={report:?}"
+        );
+        assert!(
+            report.sender.sender_underfilled_acknowledgements > 0,
+            "pre-repair sender underfill was not observed: report={report:?}"
+        );
+        assert_eq!(report.sender.remote_window_limited_acknowledgements, 0);
+        assert!(report.sender.window_growth_acknowledgements > 0);
+    }
+
+    #[test]
     fn fixed_jitter_duplication_and_reordering_preserve_the_stream() {
         let mut scenario = default_utp_scenario();
         scenario.link.jitter_pattern_micros = vec![-3_000, 2_000, 0, 1_000, -1_000, 0];

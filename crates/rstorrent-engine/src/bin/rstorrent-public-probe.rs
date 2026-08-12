@@ -1214,6 +1214,12 @@ struct UtpEvidence {
     retransmission_queue_high_water: usize,
     in_flight_packet_high_water: usize,
     in_flight_byte_high_water: usize,
+    congestion_control_acknowledgements_high_water: u64,
+    congestion_control_acknowledged_bytes_high_water: u64,
+    congestion_limited_acknowledgements_high_water: u64,
+    sender_underfilled_acknowledgements_high_water: u64,
+    remote_window_limited_acknowledgements_high_water: u64,
+    window_growth_acknowledgements_high_water: u64,
     pending_ack_packet_high_water: usize,
     loss_reduction_high_water: u64,
     timeout_collapse_high_water: u64,
@@ -1273,6 +1279,18 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             retransmission_queue_high_water: snapshot.retransmission_queue_high_water,
             in_flight_packet_high_water: snapshot.in_flight_packet_high_water,
             in_flight_byte_high_water: snapshot.in_flight_byte_high_water,
+            congestion_control_acknowledgements_high_water: snapshot
+                .congestion_control_acknowledgements_high_water,
+            congestion_control_acknowledged_bytes_high_water: snapshot
+                .congestion_control_acknowledged_bytes_high_water,
+            congestion_limited_acknowledgements_high_water: snapshot
+                .congestion_limited_acknowledgements_high_water,
+            sender_underfilled_acknowledgements_high_water: snapshot
+                .sender_underfilled_acknowledgements_high_water,
+            remote_window_limited_acknowledgements_high_water: snapshot
+                .remote_window_limited_acknowledgements_high_water,
+            window_growth_acknowledgements_high_water: snapshot
+                .window_growth_acknowledgements_high_water,
             pending_ack_packet_high_water: snapshot.pending_ack_packet_high_water,
             loss_reduction_high_water: snapshot.loss_reduction_high_water,
             timeout_collapse_high_water: snapshot.timeout_collapse_high_water,
