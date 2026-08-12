@@ -193,7 +193,9 @@ class ProductWanTransportCompareTests(unittest.TestCase):
         )
 
     def test_report_rejects_control_or_network_identity(self) -> None:
-        assert_redacted_report({"status": "complete"}, "pimom")
+        assert_redacted_report(
+            {"status": "complete", "libtorrent_version": "2.0.13.0"}, "pimom"
+        )
         with self.assertRaises(WanFailure):
             assert_redacted_report({"host": "pimom"}, "pimom")
         with self.assertRaises(WanFailure):

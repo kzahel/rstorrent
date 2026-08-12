@@ -702,13 +702,29 @@ def summarize_complete_pairs(attempts: list[dict[str, Any]]) -> dict[str, Any] |
 
 
 def assert_redacted_report(report: dict[str, Any], host: str) -> None:
-    serialized = json.dumps(report, sort_keys=True)
-    if host in serialized:
-        raise WanFailure("comparison report retained the control host identity")
-    if re.search(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])", serialized):
-        raise WanFailure("comparison report retained a network address")
-    if "/tmp/" in serialized or "http://" in serialized or "https://" in serialized:
-        raise WanFailure("comparison report retained a path or gateway identity")
+    def inspect(value: object, field: str | None = None) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                inspect(item, str(key))
+            return
+        if isinstance(value, list):
+            for item in value:
+                inspect(item, field)
+            return
+        if not isinstance(value, str):
+            return
+        if host in value:
+            raise WanFailure("comparison report retained the control host identity")
+        if field == "libtorrent_version" and value == "2.0.13.0":
+            return
+        if re.search(
+            r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])", value
+        ):
+            raise WanFailure("comparison report retained a network address")
+        if "/tmp/" in value or "http://" in value or "https://" in value:
+            raise WanFailure("comparison report retained a path or gateway identity")
+
+    inspect(report)
 
 
 def run(host: str) -> dict[str, Any]:
@@ -728,16 +744,29 @@ def run(host: str) -> dict[str, Any]:
             raise WanFailure("comparison fixture piece count is not exact")
         metainfo = root / "forced-utp.torrent"
         for attempt in range(1, MAX_PAIR_ATTEMPTS + 1):
-            attempts.append(
-                run_pair(
-                    host=host,
-                    attempt=attempt,
-                    binary=binary,
-                    metainfo=metainfo,
-                    storage_root=storage_root,
-                    expected_sha1=expected_sha1,
-                )
+            pair = run_pair(
+                host=host,
+                attempt=attempt,
+                binary=binary,
+                metainfo=metainfo,
+                storage_root=storage_root,
+                expected_sha1=expected_sha1,
             )
+            assert_redacted_report(pair, host)
+            attempts.append(pair)
+            progress = {
+                "event": "pair-complete",
+                "attempt": attempt,
+                "status": pair["status"],
+                "order": pair["order"],
+                "ratios": pair.get("ratios"),
+                "rates_mib_per_second": {
+                    case["transport"]: case["rates_mib_per_second"]
+                    for case in pair.get("cases", pair.get("complete_cases", []))
+                },
+                "cleanup": pair["cleanup"],
+            }
+            print(json.dumps(progress, sort_keys=True), file=sys.stderr, flush=True)
             if sum(item.get("status") == "complete" for item in attempts) == REQUIRED_PAIRS:
                 break
     summary = summarize_complete_pairs(attempts)

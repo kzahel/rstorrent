@@ -180,8 +180,11 @@ platform boundary is introduced.
 - time: 30 seconds for product/mapping readiness, 600 seconds per transfer,
   20 seconds for peer drain, 15 seconds for process shutdown, and 25 minutes
   per pair including cleanup;
-- data: no more than 67,114,712 payload bytes across four pair attempts;
-  temporary local data remains below 32 MiB and remote data below 80 MiB;
+- data: each cohort invocation moves no more than 67,114,712 payload bytes
+  across four pair attempts; one invalidated reporter invocation plus one
+  reporter-fixed invocation may move no more than 134,229,424 bytes total;
+  temporary local data remains below 32 MiB and remote data below 80 MiB per
+  invocation;
 - observations: five monotonic milestones, bounded libtorrent statistics,
   bounded diagnostics, and aggregate product snapshots; no packet capture or
   per-packet production log; and
@@ -236,6 +239,21 @@ status on both Android ABIs and API 34. This slice changes no Rust, generated
 contract, packaging, lifecycle, or Android behavior. Any engine change exposed
 by the measurement would require proportional Android evidence in its own
 implementation tactical.
+
+## Invalidated Execution And Replacement Bound
+
+The first physical invocation on 2026-08-12 reached terminal pair cleanup but
+the final privacy assertion rejected the redacted report because it parsed the
+pinned libtorrent version string `2.0.13.0` as an IPv4 address. No result was
+emitted or retained, so that invocation supplies no rate evidence. An
+independent local gateway inventory found zero owned `RSTorrent` mappings and
+the control peer retained no validated run directory afterward.
+
+The privacy assertion now examines string fields, explicitly recognizes only
+the exact pinned version field, and validates each pair before emitting a
+bounded redacted checkpoint. One complete replacement invocation is permitted.
+The worst-case cumulative payload bound above accounts for both invocations;
+no further physical retry is authorized by this tactical.
 
 ## Commit And Execution Sequence
 
