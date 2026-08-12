@@ -56,6 +56,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--timeout-seconds", type=float, default=TRANSFER_TIMEOUT_SECONDS
     )
+    parser.add_argument("--hold-complete-seconds", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -183,6 +184,7 @@ def run(arguments: argparse.Namespace) -> None:
         and arguments.expected_piece_bytes > 0
         and arguments.expected_pieces > 0
         and 0 < arguments.timeout_seconds <= MAX_TRANSFER_TIMEOUT_SECONDS
+        and 0 <= arguments.hold_complete_seconds <= 2.0
     ):
         raise RemoteLeecherFailure("remote fixture or timeout bound is invalid")
     verify_direct_route(arguments.peer_address)
@@ -314,6 +316,8 @@ def run(arguments: argparse.Namespace) -> None:
             or not transport_valid
         ):
             raise RemoteLeecherFailure("remote leecher transport evidence failed")
+        if arguments.hold_complete_seconds:
+            time.sleep(arguments.hold_complete_seconds)
         session.remove_torrent(handle)
         handle = None
         session.pause()

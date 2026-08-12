@@ -24,6 +24,7 @@ from utp_reference_oracle import (
     MAX_DIAGNOSTICS,
     PAYLOAD_NAME,
     PAYLOAD_SIZE,
+    PIECE_SIZE,
     create_fixture,
     hash_file,
 )
@@ -145,15 +146,33 @@ class RemoteProcess:
         expected_sha1: str,
         external_address: str,
         external_port: int,
+        *,
+        transport: str = "utp",
+        expected_bytes: int = PAYLOAD_SIZE,
+        expected_piece_bytes: int = PIECE_SIZE,
+        expected_pieces: int = 33,
+        timeout_seconds: float = 180.0,
+        hold_complete_seconds: float = 0.0,
+        output_name: str = "leech",
     ) -> RemoteProcess:
+        if transport not in {"tcp", "utp"}:
+            raise WanFailure("remote leecher transport is invalid")
+        if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", output_name):
+            raise WanFailure("remote leecher output name is invalid")
         command = (
             f'cd "{remote_run}" && exec "{ORACLE_PYTHON}" '
             f'"{remote_run}/utp_remote_leecher.py" '
             f'--metainfo "{remote_run}/forced-utp.torrent" '
-            f'--output-root "{remote_run}/leech" '
+            f'--output-root "{remote_run}/{output_name}" '
             f'--peer-address "{external_address}" '
             f'--peer-port "{external_port}" '
-            f'--expected-sha1 "{expected_sha1}"'
+            f'--expected-sha1 "{expected_sha1}" '
+            f'--transport "{transport}" '
+            f'--expected-bytes "{expected_bytes}" '
+            f'--expected-piece-bytes "{expected_piece_bytes}" '
+            f'--expected-pieces "{expected_pieces}" '
+            f'--timeout-seconds "{timeout_seconds}" '
+            f'--hold-complete-seconds "{hold_complete_seconds}"'
         )
         process = subprocess.Popen(
             ["ssh", *SSH_OPTIONS, host, command],
@@ -173,7 +192,7 @@ class RemoteProcess:
             stdout,
             stderr,
             (stdout.start(), stderr.start()),
-            "remote leecher",
+            f"remote {transport} leecher",
             False,
         )
 
