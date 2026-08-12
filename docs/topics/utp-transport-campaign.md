@@ -954,8 +954,11 @@ not a conclusion. The unrun local-seed 1 GiB cells are deliberately deferred
 at this review checkpoint.
 Its first active stage now preserves bounded endpoint-free worker failure,
 sequence-cycle, ACK/receive anomaly, FIN/RESET, and exact content-peer task
-evidence in every WAN role. No transport behavior changed; a deterministic
-repeated-cycle transfer is the next causal gate.
+evidence in every WAN role. A deterministic clean transport regression then
+delivers 131,075 DATA packets exactly, crosses the 16-bit sequence space three
+times, handles delayed and duplicate ACKs, and closes with zero ownership.
+Sequence reuse itself is therefore rejected as the causal defect; sustained
+loss/retransmission and composed-runtime evidence are the next gates.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

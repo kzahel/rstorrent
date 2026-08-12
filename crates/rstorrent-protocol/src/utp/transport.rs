@@ -1349,7 +1349,8 @@ fn minimum_deadline(left: Option<u64>, right: Option<u64>) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::utp::{
-        IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MAX_RECEIVE_BYTES, decode_packet,
+        AckDisposition, IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MAX_RECEIVE_BYTES,
+        decode_packet,
     };
 
     fn sequence(value: u16) -> SequenceNumber {
@@ -1357,12 +1358,26 @@ mod tests {
     }
 
     fn connected_pair() -> (TransportState, TransportState) {
-        let mut initiator = TransportState::initiate(
-            40,
+        connected_pair_with(
             sequence(10),
-            0,
+            sequence(77),
             IPV4_UDP_PAYLOAD_FLOOR,
             IPV4_UDP_PAYLOAD_CEILING,
+        )
+    }
+
+    fn connected_pair_with(
+        initiator_sequence: SequenceNumber,
+        acceptor_sequence: SequenceNumber,
+        floor_datagram_bytes: usize,
+        ceiling_datagram_bytes: usize,
+    ) -> (TransportState, TransportState) {
+        let mut initiator = TransportState::initiate(
+            40,
+            initiator_sequence,
+            0,
+            floor_datagram_bytes,
+            ceiling_datagram_bytes,
         )
         .expect("initiate");
         let syn = initiator
@@ -1376,9 +1391,9 @@ mod tests {
 
         let mut acceptor = TransportState::accept_syn(
             decode_packet(&syn_bytes).expect("decode SYN"),
-            sequence(77),
-            IPV4_UDP_PAYLOAD_FLOOR,
-            IPV4_UDP_PAYLOAD_CEILING,
+            acceptor_sequence,
+            floor_datagram_bytes,
+            ceiling_datagram_bytes,
         )
         .expect("accept SYN");
         let state = acceptor
@@ -1606,6 +1621,207 @@ mod tests {
             acceptor.consume_received(528, 46_000),
             Ok(MAX_RECEIVE_BYTES)
         );
+    }
+
+    #[test]
+    fn sustained_stream_reuses_sequence_space_for_two_complete_cycles() {
+        const DATA_PACKETS: usize = 2 * (u16::MAX as usize + 1) + 3;
+        let (mut initiator, mut acceptor) = connected_pair_with(
+            sequence(u16::MAX - 2),
+            sequence(31_000),
+            IPV4_UDP_PAYLOAD_FLOOR,
+            IPV4_UDP_PAYLOAD_FLOOR,
+        );
+        let mut now_micros = 1_000_u64;
+        let mut delivered = 0_usize;
+        let mut wraps = 0_u64;
+        let mut previous_sequence = None;
+
+        for ordinal in 0..DATA_PACKETS {
+            initiator.queue_data(&[ordinal as u8]).expect("queue byte");
+            let data = initiator
+                .poll_transmit(now_micros, TimestampMicros::new(now_micros as u32))
+                .expect("poll DATA")
+                .expect("DATA emission");
+            assert_eq!(data.intent.packet_type, PacketType::Data);
+            assert_eq!(data.payload, [ordinal as u8]);
+            if previous_sequence == Some(u16::MAX) && data.intent.sequence_number.get() == 0 {
+                wraps = wraps.saturating_add(1);
+            }
+            previous_sequence = Some(data.intent.sequence_number.get());
+            initiator
+                .on_send_result(
+                    data.intent.sequence_number,
+                    DatagramSendResult::Sent,
+                    now_micros,
+                )
+                .expect("record DATA send");
+            let incoming = acceptor
+                .incoming(
+                    decode_packet(&data.encode().expect("encode DATA")).expect("decode DATA"),
+                    now_micros + 1,
+                    TimestampMicros::new(now_micros.wrapping_add(1) as u32),
+                )
+                .expect("receive DATA");
+            let receive = incoming.connection.receive.expect("DATA receive outcome");
+            assert_eq!(receive.disposition, ReceiveDisposition::Delivered);
+            assert_eq!(receive.delivered.len(), 1);
+            assert_eq!(receive.delivered[0].bytes, [ordinal as u8]);
+            delivered += 1;
+            acceptor
+                .consume_received(1, now_micros + 1)
+                .expect("release received byte");
+
+            if let Some(acknowledgement) = acceptor
+                .poll_transmit(
+                    now_micros + 2,
+                    TimestampMicros::new((now_micros + 2) as u32),
+                )
+                .expect("poll acknowledgement")
+            {
+                assert_eq!(acknowledgement.intent.packet_type, PacketType::State);
+                let acknowledgement_bytes = acknowledgement.encode().expect("encode STATE");
+                acceptor
+                    .on_send_result(
+                        acknowledgement.intent.sequence_number,
+                        DatagramSendResult::Sent,
+                        now_micros + 2,
+                    )
+                    .expect("record STATE send");
+                initiator
+                    .incoming(
+                        decode_packet(&acknowledgement_bytes).expect("decode STATE"),
+                        now_micros + 3,
+                        TimestampMicros::new((now_micros + 3) as u32),
+                    )
+                    .expect("apply STATE");
+                if ordinal % 4_096 == 0 {
+                    let duplicate = initiator
+                        .incoming(
+                            decode_packet(&acknowledgement_bytes).expect("decode duplicate STATE"),
+                            now_micros + 4,
+                            TimestampMicros::new((now_micros + 4) as u32),
+                        )
+                        .expect("apply duplicate STATE");
+                    assert!(matches!(
+                        duplicate
+                            .connection
+                            .acknowledgement
+                            .expect("duplicate ACK outcome")
+                            .disposition,
+                        AckDisposition::Duplicate | AckDisposition::Stale { .. }
+                    ));
+                }
+            }
+            now_micros = now_micros.saturating_add(10);
+        }
+
+        if acceptor.snapshot().acknowledgements.pending_packets != 0 {
+            now_micros = now_micros.saturating_add(MAX_DELAYED_ACK_MICROS);
+            let acknowledgement = acceptor
+                .poll_transmit(now_micros, TimestampMicros::new(now_micros as u32))
+                .expect("poll final delayed acknowledgement")
+                .expect("final delayed acknowledgement");
+            let acknowledgement_bytes = acknowledgement.encode().expect("encode final STATE");
+            acceptor
+                .on_send_result(
+                    acknowledgement.intent.sequence_number,
+                    DatagramSendResult::Sent,
+                    now_micros,
+                )
+                .expect("record final STATE send");
+            initiator
+                .incoming(
+                    decode_packet(&acknowledgement_bytes).expect("decode final STATE"),
+                    now_micros + 1,
+                    TimestampMicros::new(now_micros.wrapping_add(1) as u32),
+                )
+                .expect("apply final STATE");
+        }
+
+        assert_eq!(delivered, DATA_PACKETS);
+        assert_eq!(wraps, 3);
+        let sender = initiator.snapshot();
+        assert_eq!(sender.connection.send.outstanding_packets, 0);
+        assert_eq!(sender.in_flight_packets, 0);
+        assert_eq!(sender.retransmissions.pending_packets, 0);
+        assert_eq!(sender.transmit.unsent_bytes, 0);
+        let receiver = acceptor.snapshot().connection.receive.unwrap();
+        assert_eq!(receiver.delivered_unconsumed_bytes, 0);
+        assert_eq!(receiver.queued_packets, 0);
+        assert_eq!(receiver.acknowledgement_number, sequence(0));
+
+        initiator.request_close();
+        let fin = initiator
+            .poll_transmit(
+                now_micros + 2,
+                TimestampMicros::new((now_micros + 2) as u32),
+            )
+            .expect("poll FIN")
+            .expect("FIN emission");
+        initiator
+            .on_send_result(
+                fin.intent.sequence_number,
+                DatagramSendResult::Sent,
+                now_micros + 2,
+            )
+            .expect("record FIN send");
+        acceptor
+            .incoming(
+                decode_packet(&fin.encode().expect("encode FIN")).expect("decode FIN"),
+                now_micros + 3,
+                TimestampMicros::new((now_micros + 3) as u32),
+            )
+            .expect("receive FIN");
+        acceptor.request_close();
+        let response_fin = acceptor
+            .poll_transmit(
+                now_micros + 4,
+                TimestampMicros::new((now_micros + 4) as u32),
+            )
+            .expect("poll response FIN")
+            .expect("response FIN emission");
+        acceptor
+            .on_send_result(
+                response_fin.intent.sequence_number,
+                DatagramSendResult::Sent,
+                now_micros + 4,
+            )
+            .expect("record response FIN send");
+        initiator
+            .incoming(
+                decode_packet(&response_fin.encode().expect("encode response FIN"))
+                    .expect("decode response FIN"),
+                now_micros + 5,
+                TimestampMicros::new((now_micros + 5) as u32),
+            )
+            .expect("receive response FIN");
+        let final_ack = initiator
+            .poll_transmit(
+                now_micros + 6,
+                TimestampMicros::new((now_micros + 6) as u32),
+            )
+            .expect("poll final ACK")
+            .expect("final ACK emission");
+        initiator
+            .on_send_result(
+                final_ack.intent.sequence_number,
+                DatagramSendResult::Sent,
+                now_micros + 6,
+            )
+            .expect("record final ACK send");
+        acceptor
+            .incoming(
+                decode_packet(&final_ack.encode().expect("encode final ACK"))
+                    .expect("decode final ACK"),
+                now_micros + 7,
+                TimestampMicros::new((now_micros + 7) as u32),
+            )
+            .expect("receive final ACK");
+        assert!(initiator.snapshot().connection.ready_to_close);
+        assert!(acceptor.snapshot().connection.ready_to_close);
+        initiator.finish().expect("finish initiator");
+        acceptor.finish().expect("finish acceptor");
     }
 
     #[test]

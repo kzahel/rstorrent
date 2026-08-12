@@ -1,7 +1,7 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Active under parent Tactical 142; Stage 1 terminal provenance is
-implemented.** Maintainer direction on
+Status: **Active under parent Tactical 142; Stage 1 terminal provenance and
+the first Stage 2 clean repeated-cycle gate are implemented.** Maintainer direction on
 2026-08-13 selects this tactical after Tactical `143` completed and activates
 continued uTP performance work with the goal of approaching pinned-libtorrent
 uTP throughput. This
@@ -186,6 +186,23 @@ Focused validation on 2026-08-13 passes 22 uTP runtime tests, the driver-control
 tests, both affected binary build surfaces, and 24 WAN/matrix Python contract
 tests. The next executable action is the pure repeated-cycle transfer; no
 transport or congestion behavior changed in this stage.
+
+### Stage 2: clean repeated-cycle gate
+
+An independently authored deterministic transport regression carries 131,075
+one-byte DATA packets through one fixed-548 connection initialized at sequence
+`65533`. It crosses `65535 -> 0` three times, applies ordinary delayed ACKs and
+periodic duplicate ACKs, verifies every byte exactly once, drains send,
+in-flight, retransmission, receive, reorder, and unsent ownership to zero, then
+completes bidirectional FIN and final-ACK teardown. The receiver ends at exact
+acknowledgement number zero after reuse.
+
+The focused optimized test completes in 0.06 seconds. The clean common path
+therefore does not fail across repeated 16-bit sequence reuse, so no sequence
+arithmetic or ledger repair is accepted from the original hypothesis. The
+remaining Stage 2 impairment cases and the composed runtime reproduction will
+instead test whether loss/retransmission or an async ownership boundary fails
+during a sustained stream.
 
 ## Owner, Task, Cancellation, And Dependency Map
 
