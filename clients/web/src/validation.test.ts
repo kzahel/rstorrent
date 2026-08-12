@@ -14,6 +14,9 @@ import {
 } from "./validation";
 import { clientSettingsRuntimeFixture } from "./test-support/client-settings";
 
+const TEST_TORRENT_ID = "t1-00000000000000000000000000000000";
+const OTHER_TORRENT_ID = "t1-11111111111111111111111111111111";
+
 describe("download folder response validation", () => {
   it("accepts selection or cancellation and rejects an oversized label", () => {
     const selected = {
@@ -40,7 +43,7 @@ describe("download folder response validation", () => {
 describe("media URL response validation", () => {
   it("accepts bounded HTTP capabilities and rejects active or ambiguous URLs", () => {
     const response = {
-      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      torrent_id: "t1-000102030405060708090a0b0c0d0e0f",
       file_index: 2,
       outcome: {
         type: "created",
@@ -74,7 +77,7 @@ describe("application connection validation", () => {
           type: "view_batch",
           stream_id: "view-1",
           batch: {
-            ...peerBatch("0".repeat(40)),
+            ...peerBatch(TEST_TORRENT_ID),
             epoch: "not-decimal",
           },
         }),
@@ -344,16 +347,16 @@ describe("torrent ETA validation", () => {
 
 describe("peer view validation", () => {
   it("accepts bounded active peers and rejects cross-torrent rows", () => {
-    const batch = peerBatch("0".repeat(40));
+    const batch = peerBatch(TEST_TORRENT_ID);
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
-    batch.updates[0]!.snapshot.peers[0]!.torrent_id = "1".repeat(40);
+    batch.updates[0]!.snapshot.peers[0]!.torrent_id = OTHER_TORRENT_ID;
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /another torrent/,
     );
   });
 
   it("accepts typed flags and rejects duplicate flag state", () => {
-    const batch = peerBatch("0".repeat(40));
+    const batch = peerBatch(TEST_TORRENT_ID);
     batch.updates[0]!.snapshot.peers[0]!.peer_flags = [
       "incoming",
       "extension_protocol",
@@ -377,7 +380,7 @@ describe("peer view validation", () => {
   });
 
   it("accepts known MSE methods and rejects invented methods", () => {
-    const batch = peerBatch("0".repeat(40));
+    const batch = peerBatch(TEST_TORRENT_ID);
     batch.updates[0]!.snapshot.peers[0]!.mse_method = "rc4";
     expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
     batch.updates[0]!.snapshot.peers[0]!.mse_method = "invented";
@@ -410,6 +413,32 @@ describe("torrent display-name validation", () => {
     batch.updates[0]!.snapshot.torrents[0]!.display_name = "x".repeat(256);
     expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
       /display name exceeds 255 bytes/,
+    );
+  });
+});
+
+describe("torrent identity validation", () => {
+  it("keeps opaque owners separate from explicit full protocol hashes", () => {
+    const batch = torrentBatch("Verified torrent");
+    const torrent = batch.updates[0]!.snapshot.torrents[0]! as TorrentView;
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+
+    torrent.protocol_identities = { v2: "2".repeat(64) };
+    expect(decodeUpdateBatch(JSON.stringify(batch)).updates).toHaveLength(1);
+
+    torrent.torrent_id = "0".repeat(40);
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /must match pattern|torrent ID is invalid/,
+    );
+    torrent.torrent_id = TEST_TORRENT_ID;
+
+    torrent.protocol_identities = {};
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /must NOT have fewer than 1 properties|must not be empty/,
+    );
+    torrent.protocol_identities = { v1: "A".repeat(40) };
+    expect(() => decodeUpdateBatch(JSON.stringify(batch))).toThrow(
+      /must match pattern|v1 info hash is invalid/,
     );
   });
 });
@@ -541,7 +570,7 @@ function diagnosticBatch() {
               severity: "debug",
               category: "peer.connection",
               code: "handshake_completed",
-              torrent_id: "0".repeat(40),
+              torrent_id: TEST_TORRENT_ID,
               message: "Peer extension handshake completed",
               subjects: [
                 { type: "peer_connection", connection_id: "connection-1" },
@@ -672,7 +701,7 @@ function pieceBatch() {
         view_id: "pieces",
         snapshot: {
           type: "piece_activity" as const,
-          torrent_id: "0".repeat(40),
+          torrent_id: TEST_TORRENT_ID,
           piece_count: 4,
           verified: [{ start: 2, end_exclusive: 3 }],
           active: [
@@ -761,8 +790,8 @@ function diskBatch() {
           },
           pieces: [
             {
-              row_id: `${"0".repeat(40)}:0:1`,
-              torrent_id: "0".repeat(40),
+              row_id: `${TEST_TORRENT_ID}:0:1`,
+              torrent_id: TEST_TORRENT_ID,
               torrent_name: "Test torrent",
               piece_index: 0,
               piece_length: 262144,
@@ -795,7 +824,7 @@ function trackerBatch() {
         view_id: "torrent-trackers",
         snapshot: {
           type: "trackers" as const,
-          torrent_id: "0".repeat(40),
+          torrent_id: TEST_TORRENT_ID,
           state: "available",
           page: { offset: 0, limit: 1024, total: 1, next_offset: null },
           trackers: [
@@ -846,7 +875,8 @@ function torrentBatch(displayName: string) {
           client_settings: clientSettingsRuntimeFixture(),
           torrents: [
             {
-              torrent_id: "0".repeat(40),
+              torrent_id: TEST_TORRENT_ID,
+              protocol_identities: { v1: "0".repeat(40) },
               display_name: displayName,
               state: "downloading",
               operational_state: "downloading",
@@ -974,7 +1004,7 @@ function swarmBatch() {
         view_id: "torrent-swarm",
         snapshot: {
           type: "swarm" as const,
-          torrent_id: "0".repeat(40),
+          torrent_id: TEST_TORRENT_ID,
           state: "active",
           captured_millis: "1000",
           maximum_records: 1000,

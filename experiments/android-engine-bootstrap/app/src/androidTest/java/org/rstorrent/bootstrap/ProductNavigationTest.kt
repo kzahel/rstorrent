@@ -17,6 +17,7 @@ import org.rstorrent.session.uniffi.ProgressReason
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentView
 
@@ -90,7 +91,12 @@ class ProductNavigationTest {
 
     private fun torrent(): TorrentView =
         TorrentView(
-            torrentId = "0123456789abcdef0123456789abcdef01234567",
+            torrentId = "t1-0123456789abcdef0123456789abcdef",
+            protocolIdentities =
+                TorrentProtocolIdentities(
+                    v1 = "0123456789abcdef0123456789abcdef01234567",
+                    v2 = null,
+                ),
             displayName = "Fixture torrent",
             state = TorrentState.DOWNLOADING,
             operationalState = TorrentOperationalState.DOWNLOADING,

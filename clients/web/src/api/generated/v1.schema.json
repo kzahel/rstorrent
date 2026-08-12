@@ -184,6 +184,7 @@
           "type": "string"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         }
       },
@@ -664,6 +665,7 @@
               "type": "integer"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1766,6 +1768,7 @@
               "$ref": "#/$defs/FilePriority"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1793,6 +1796,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1819,6 +1823,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1836,6 +1841,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1852,6 +1858,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1919,6 +1926,7 @@
               "$ref": "#/$defs/TorrentTransferLimits"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1952,6 +1960,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1980,6 +1989,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -1996,6 +2006,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -2012,6 +2023,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -2028,6 +2040,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -2044,6 +2057,7 @@
         {
           "properties": {
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -2063,6 +2077,7 @@
               "$ref": "#/$defs/RemovalDataPolicy"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -2135,6 +2150,7 @@
           "type": "integer"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         }
       },
@@ -2555,6 +2571,7 @@
           "type": "string"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": [
             "string",
             "null"
@@ -2927,6 +2944,7 @@
           "type": "string"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
         "torrent_name": {
@@ -3948,6 +3966,7 @@
           "$ref": "#/$defs/MediaUrlOutcome"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         }
       },
@@ -4376,6 +4395,7 @@
           ]
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
         "transport": {
@@ -5311,6 +5331,7 @@
           "$ref": "#/$defs/SwarmPeerState"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
         "total_failures": {
@@ -5418,6 +5439,20 @@
       ],
       "type": "string"
     },
+    "TorrentProtocolIdentities": {
+      "minProperties": 1,
+      "properties": {
+        "v1": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "v2": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "TorrentSnapshot": {
       "properties": {
         "archived": {
@@ -5457,6 +5492,9 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "protocol_identities": {
+          "$ref": "#/$defs/TorrentProtocolIdentities"
         },
         "removal_state": {
           "anyOf": [
@@ -5499,6 +5537,7 @@
           "$ref": "#/$defs/StorageState"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
         "transfer_limits": {
@@ -5520,6 +5559,7 @@
       },
       "required": [
         "torrent_id",
+        "protocol_identities",
         "storage_root",
         "state",
         "storage_state",
@@ -5637,6 +5677,9 @@
         "progress": {
           "$ref": "#/$defs/ProgressAssessment"
         },
+        "protocol_identities": {
+          "$ref": "#/$defs/TorrentProtocolIdentities"
+        },
         "received_bytes": {
           "type": "string"
         },
@@ -5675,6 +5718,7 @@
           "type": "string"
         },
         "torrent_id": {
+          "pattern": "^t1-[0-9a-f]{32}$",
           "type": "string"
         },
         "transfer_limits": {
@@ -5696,6 +5740,7 @@
       },
       "required": [
         "torrent_id",
+        "protocol_identities",
         "state",
         "operational_state",
         "storage_state",
@@ -6158,6 +6203,7 @@
               "type": "integer"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6253,6 +6299,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6297,6 +6344,7 @@
               "$ref": "#/$defs/SwarmCatalogState"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6331,6 +6379,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6361,6 +6410,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6662,6 +6712,7 @@
               "type": "integer"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6748,6 +6799,7 @@
               "type": "array"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6785,6 +6837,7 @@
               "$ref": "#/$defs/SwarmCatalogState"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6824,6 +6877,7 @@
               "$ref": "#/$defs/FileCatalogState"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6849,6 +6903,7 @@
               "$ref": "#/$defs/TrackerCatalogState"
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "trackers": {
@@ -6929,6 +6984,7 @@
               }
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -6955,6 +7011,7 @@
               }
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -7058,6 +7115,7 @@
               }
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -7084,6 +7142,7 @@
               }
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -7120,6 +7179,7 @@
               ]
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -7156,6 +7216,7 @@
               ]
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": "string"
             },
             "type": {
@@ -7190,6 +7251,7 @@
               }
             },
             "torrent_id": {
+              "pattern": "^t1-[0-9a-f]{32}$",
               "type": [
                 "string",
                 "null"

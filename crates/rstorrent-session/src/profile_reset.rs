@@ -382,7 +382,7 @@ mod tests {
     use crate::store::StoreError;
     use rusqlite::Connection;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
@@ -397,7 +397,7 @@ mod tests {
         path
     }
 
-    fn legacy(root: &PathBuf, version: i64) {
+    fn legacy(root: &Path, version: i64) {
         let connection = Connection::open(root.join(DATABASE_FILENAME)).expect("legacy database");
         connection
             .execute_batch("CREATE TABLE legacy(value INTEGER);")

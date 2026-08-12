@@ -35,13 +35,13 @@ use rstorrent_session::{
     SpeedMetric, SpeedMetricAvailability, SpeedPersistenceState, SpeedRange, SpeedSeriesView,
     StorageRootAvailability, StorageRootSnapshot, StorageSettingsSnapshot, StorageState,
     SubscriptionSpec, SwarmCatalogState, SwarmCountsView, SwarmPeerState, SwarmPeerView,
-    TorrentEtaView, TorrentOperationalState, TorrentSnapshot, TorrentState, TorrentTransferLimits,
-    TorrentView, TrackerAnnounceEventView, TrackerCatalogState, TrackerConnectionFamilyView,
-    TrackerNextActionView, TrackerSecurityView, TrackerSourceView, TrackerStatusView,
-    TrackerTransportView, TrackerView, TransferRateLimit, TransportAddressFamily,
-    TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewPatch,
-    ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdate,
-    ViewUpdatePayload,
+    TorrentEtaView, TorrentOperationalState, TorrentProtocolIdentities, TorrentSnapshot,
+    TorrentState, TorrentTransferLimits, TorrentView, TrackerAnnounceEventView,
+    TrackerCatalogState, TrackerConnectionFamilyView, TrackerNextActionView, TrackerSecurityView,
+    TrackerSourceView, TrackerStatusView, TrackerTransportView, TrackerView, TransferRateLimit,
+    TransportAddressFamily, TransportFamilyRuntimeView, UpdateBatch, UpdateViewSetRequest,
+    ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetUpdate, ViewSnapshot,
+    ViewSpec, ViewUpdate, ViewUpdatePayload,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -138,6 +138,7 @@ fn write_declarations(output: &Path) -> Result<(), Box<dyn Error>> {
     append::<ResponseEnvelope>(&mut declarations)?;
     append::<TorrentState>(&mut declarations)?;
     append::<StorageState>(&mut declarations)?;
+    append::<TorrentProtocolIdentities>(&mut declarations)?;
     append::<TorrentSnapshot>(&mut declarations)?;
     append::<StorageRootAvailability>(&mut declarations)?;
     append::<StorageRootSnapshot>(&mut declarations)?;
@@ -343,7 +344,7 @@ fn write_file(output: &Path, contents: impl AsRef<[u8]>) -> Result<(), Box<dyn E
 }
 
 fn write_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213".to_owned();
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f".to_owned();
     let updates = vec![
         ViewUpdate {
             contract_version: rstorrent_session::VIEW_CONTRACT_VERSION,
@@ -416,7 +417,7 @@ struct ViewSetFixture {
 
 fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
     let view_set_id = "vs_000102030405060708090a0b0c0d0e0f".to_owned();
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213".to_owned();
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f".to_owned();
     let view = ViewSpec::TorrentList {
         view_id: "library".to_owned(),
         delivery: ViewDeliveryPolicy::default(),
@@ -494,6 +495,10 @@ fn write_view_set_fixture(output: PathBuf) -> Result<(), Box<dyn Error>> {
 fn fixture_torrent(torrent_id: &str, verified: u32) -> TorrentView {
     TorrentView {
         torrent_id: torrent_id.to_owned(),
+        protocol_identities: rstorrent_session::TorrentProtocolIdentities {
+            v1: Some("000102030405060708090a0b0c0d0e0f10111213".to_owned()),
+            v2: None,
+        },
         display_name: Some("Fixture torrent".to_owned()),
         state: if verified == 3 {
             TorrentState::Complete

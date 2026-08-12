@@ -25,9 +25,14 @@ import {
 import { emptyDiskSet } from "../state";
 
 const BASE_TIME_MS = Date.UTC(2026, 7, 1, 8, 0, 0);
-const BUNNY_ID = "a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4";
-const SINTEL_ID = "08ada5a7a6183aae1e09d831df6748d566095a10";
-const ARCH_ID = "e2d1f50a5d72bfc9c4d6c3f9913b1dfb2cf4f210";
+const BUNNY_ID = "t1-00000000000000000000000000000001";
+const SINTEL_ID = "t1-00000000000000000000000000000002";
+const ARCH_ID = "t1-00000000000000000000000000000003";
+const DEMO_INFO_HASHES: Readonly<Record<string, string>> = {
+  [BUNNY_ID]: "a962f460b83861cfb5faa1d7ad7da9c3f3cc2fc4",
+  [SINTEL_ID]: "08ada5a7a6183aae1e09d831df6748d566095a10",
+  [ARCH_ID]: "e2d1f50a5d72bfc9c4d6c3f9913b1dfb2cf4f210",
+};
 
 export const DEMO_SCENARIOS: readonly DemoScenarioSummary[] = [
   {
@@ -1203,6 +1208,7 @@ function largeSwarm(): ScenarioContent {
     torrents.push(
       torrent({
         id,
+        infoHash: fixedInfoHash(index + 10_000),
         name: `Scale fixture ${String(index + 1).padStart(4, "0")} — ${index % 3 === 0 ? "long multi-file archive and sample media" : "open dataset"}`,
         status: index % 19 === 0 ? "paused" : index % 23 === 0 ? "complete" : "downloading",
         sizeBytes: 250_000_000 + index * 1_048_576,
@@ -1667,7 +1673,12 @@ function torrent(input: Partial<TorrentRow> & Pick<TorrentRow, "id" | "name" | "
     removalState: input.removalState ?? null,
     deleteManagedDataSupported: input.deleteManagedDataSupported ?? true,
     forceRecheckAvailable: input.forceRecheckAvailable ?? false,
-    infoHash: input.infoHash ?? input.id,
+    infoHash:
+      input.infoHash ??
+      DEMO_INFO_HASHES[input.id] ??
+      (() => {
+        throw new Error(`demo torrent ${input.id} has no explicit info hash`);
+      })(),
     error: input.error ?? null,
     progressReason: input.progressReason ?? "Waiting for activity",
   };
@@ -1793,6 +1804,10 @@ function timelineLogs(
 }
 
 function fixedId(index: number): string {
+  return `t1-${index.toString(16).padStart(32, "0").slice(-32)}`;
+}
+
+function fixedInfoHash(index: number): string {
   return index.toString(16).padStart(40, "0").slice(-40);
 }
 

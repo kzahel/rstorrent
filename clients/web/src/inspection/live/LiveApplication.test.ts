@@ -27,7 +27,8 @@ import {
   clientSettingsRuntimeFixture,
 } from "../../test-support/client-settings";
 
-const TORRENT_ID = "000102030405060708090a0b0c0d0e0f10111213";
+const TORRENT_ID = "t1-000102030405060708090a0b0c0d0e0f";
+const V1_INFO_HASH = "000102030405060708090a0b0c0d0e0f10111213";
 
 class FakeLiveClient implements ApplicationViewClient {
   readonly updates: UpdateViewSetRequest[] = [];
@@ -1193,6 +1194,7 @@ function swarmPeer(generation: number) {
 function torrent(): TorrentView {
   return {
     torrent_id: TORRENT_ID,
+    protocol_identities: { v1: V1_INFO_HASH },
     display_name: "movie.mkv",
     state: "downloading",
     operational_state: "downloading",

@@ -8,11 +8,13 @@ import {
 } from "./view-set-reducer";
 import { clientSettingsRuntimeFixture } from "./test-support/client-settings";
 
-const torrentId = "000102030405060708090a0b0c0d0e0f10111213";
+const torrentId = "t1-000102030405060708090a0b0c0d0e0f";
+const v1InfoHash = "000102030405060708090a0b0c0d0e0f10111213";
 
 function torrent(verified: number): TorrentView {
   return {
     torrent_id: torrentId,
+    protocol_identities: { v1: v1InfoHash },
     state: verified === 3 ? "complete" : "downloading",
     operational_state: verified === 3 ? "seeding" : "downloading",
     transfer_limits: {

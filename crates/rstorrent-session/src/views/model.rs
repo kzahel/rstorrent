@@ -688,6 +688,7 @@ impl TorrentModel {
         Self {
             view: TorrentView {
                 torrent_id: snapshot.torrent_id.clone(),
+                protocol_identities: snapshot.protocol_identities.clone(),
                 display_name: None,
                 state: snapshot.state,
                 operational_state: operational_state(snapshot, progress_inputs),

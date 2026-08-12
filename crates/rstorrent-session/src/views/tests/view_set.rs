@@ -15,11 +15,20 @@ use rstorrent_engine::{
     PeerUploadActivity, PeerUploadGrant,
 };
 
-const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
+const TORRENT_ID: &str = "t1-000102030405060708090a0b0c0d0e0f";
+const V1_INFO_HASH: &str = "000102030405060708090a0b0c0d0e0f10111213";
+
+fn protocol_identities() -> crate::TorrentProtocolIdentities {
+    crate::TorrentProtocolIdentities {
+        v1: Some(V1_INFO_HASH.to_owned()),
+        v2: None,
+    }
+}
 
 fn torrent_view(id: &str, verified: u32) -> TorrentView {
     TorrentView {
         torrent_id: id.to_owned(),
+        protocol_identities: protocol_identities(),
         display_name: Some("Fixture torrent".to_owned()),
         state: TorrentState::Downloading,
         operational_state: TorrentOperationalState::Downloading,
@@ -69,6 +78,7 @@ fn service_snapshot(revision: u64, verified: u32) -> ServiceSnapshot {
         client_settings: Default::default(),
         torrents: vec![TorrentSnapshot {
             torrent_id: TORRENT_ID.to_owned(),
+            protocol_identities: protocol_identities(),
             storage_root: "downloads".to_owned(),
             state: TorrentState::Downloading,
             storage_state: StorageState::Staging,

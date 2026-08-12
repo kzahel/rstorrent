@@ -115,6 +115,7 @@ pub enum MediaUrlOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct MediaUrlResponse {
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub file_index: u32,
     pub outcome: MediaUrlOutcome,

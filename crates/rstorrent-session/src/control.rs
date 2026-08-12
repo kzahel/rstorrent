@@ -1,3 +1,4 @@
+use rstorrent_protocol::identity::InfoHashes;
 use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, Magnet};
 
 pub(crate) const MAX_FILE_SELECTION_ENTRIES: usize = 4096;
@@ -14,6 +15,27 @@ pub const MAX_PROFILE_ID_LENGTH: usize = 128;
 pub const MAX_ROOT_ID_LENGTH: usize = 128;
 pub const MAX_ROOT_LABEL_LENGTH: usize = 256;
 pub const MAX_ERROR_MESSAGE_LENGTH: usize = 1024;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[schemars(extend("minProperties" = 1))]
+pub struct TorrentProtocolIdentities {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", regex(pattern = "^[0-9a-f]{40}$"))]
+    pub v1: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", regex(pattern = "^[0-9a-f]{64}$"))]
+    pub v2: Option<String>,
+}
+
+impl TorrentProtocolIdentities {
+    pub fn from_info_hashes(info_hashes: InfoHashes) -> Self {
+        Self {
+            v1: info_hashes.v1_hash().map(|hash| hash.to_string()),
+            v2: info_hashes.v2_hash().map(|hash| hash.to_string()),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -72,23 +94,28 @@ pub enum Command {
         skip_files: Vec<u32>,
     },
     SetFilePriority {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         file_indices: Vec<u32>,
         priority: FilePriority,
     },
     SetFilePriorityRanges {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         ranges: Vec<FileIndexRange>,
         priority: FilePriority,
     },
     DownloadFiles {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         file_indices: Vec<u32>,
     },
     MoveDownloadToTop {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     MoveDownloadToBottom {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     SetDefaultStorageRoot {
@@ -101,6 +128,7 @@ pub enum Command {
         settings: ClientSettings,
     },
     SetTorrentTransferLimits {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         limits: TorrentTransferLimits,
     },
@@ -108,25 +136,32 @@ pub enum Command {
         storage_root: String,
     },
     ExportMagnet {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     Snapshot,
     Pause {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     Resume {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     ForceRecheck {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     Archive {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     RestoreArchive {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     RemoveTorrent {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         data: RemovalDataPolicy,
     },
@@ -306,6 +341,7 @@ pub struct MagnetExportResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AddTorrentResult {
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub disposition: AddTorrentDisposition,
     pub resulting_revision: String,
@@ -372,7 +408,9 @@ pub struct ServiceSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentSnapshot {
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
+    pub protocol_identities: TorrentProtocolIdentities,
     pub storage_root: String,
     pub state: TorrentState,
     pub storage_state: StorageState,

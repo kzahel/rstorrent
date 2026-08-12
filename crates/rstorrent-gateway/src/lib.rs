@@ -294,6 +294,7 @@ pub struct ChooseDownloadRootResponse {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct CreateMediaUrlRequest {
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub file_index: u32,
 }
@@ -1248,11 +1249,11 @@ mod tests {
     use rstorrent_platform::DownloadDirectoryPicker;
     use rstorrent_session::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, ApplicationConfig,
-        ApplicationService, Command, ConfiguredStorageRoot, FileSelectionIntent, MediaUrlOutcome,
-        MediaUrlResponse, NetworkConfig, NetworkPolicy, OpenViewSetOptions, OpenViewSetRequest,
-        OpenViewSetResponse, RequestEnvelope, ResponseOutcome, SessionStore, StorageState,
-        UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate, ViewSnapshot,
-        ViewSpec,
+        ApplicationService, Command, CommandResult, ConfiguredStorageRoot, FileSelectionIntent,
+        MediaUrlOutcome, MediaUrlResponse, NetworkConfig, NetworkPolicy, OpenViewSetOptions,
+        OpenViewSetRequest, OpenViewSetResponse, RequestEnvelope, ResponseOutcome, SessionStore,
+        StorageState, UpdateBatch, UpdateViewSetRequest, ViewDeliveryPolicy, ViewSetUpdate,
+        ViewSnapshot, ViewSpec,
     };
     use sha1::{Digest, Sha1};
     use tokio::sync::Mutex;
@@ -1351,7 +1352,7 @@ mod tests {
         )];
         let profile = root.join("profile");
         let mut store = SessionStore::open(&profile, "test", &roots).expect("open media store");
-        store
+        let response = store
             .handle_durable(&RequestEnvelope {
                 version: rstorrent_session::CONTROL_VERSION,
                 request_id: "add-gateway-media".to_owned(),
@@ -1364,6 +1365,10 @@ mod tests {
                 },
             })
             .expect("add media torrent");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("missing media add result"),
+        };
         store
             .record_metadata(&torrent_id, &raw_info)
             .expect("record media metadata");
@@ -2459,9 +2464,9 @@ mod tests {
         let payload = root.join("payload");
         let configured = ConfiguredStorageRoot::path("downloads", payload.clone());
         let raw_info = large_file_raw_info();
-        let torrent_id = hex_digest(Sha1::digest(&raw_info).as_slice());
-        let magnet = format!("magnet:?xt=urn:btih:{torrent_id}&x.pe=127.0.0.1:1");
-        {
+        let info_hash = hex_digest(Sha1::digest(&raw_info).as_slice());
+        let magnet = format!("magnet:?xt=urn:btih:{info_hash}&x.pe=127.0.0.1:1");
+        let torrent_id = {
             let mut store = SessionStore::open(&profile, "test", std::slice::from_ref(&configured))
                 .expect("open seeded store");
             let response = store
@@ -2477,14 +2482,15 @@ mod tests {
                     },
                 })
                 .expect("seed torrent");
-            assert!(matches!(
-                response.outcome,
-                rstorrent_session::ResponseOutcome::Success { .. }
-            ));
+            let torrent_id = match response.result {
+                Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+                _ => panic!("missing large-file add result"),
+            };
             store
                 .record_metadata(&torrent_id, &raw_info)
                 .expect("record large metadata");
-        }
+            torrent_id
+        };
         let service = Arc::new(Mutex::new(
             ApplicationService::open(ApplicationConfig::new(
                 profile,

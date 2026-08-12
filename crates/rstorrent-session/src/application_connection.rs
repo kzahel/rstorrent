@@ -28,6 +28,7 @@ pub enum ApplicationCall {
         view_set_id: String,
     },
     CreateMediaUrl {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         file_index: u32,
     },

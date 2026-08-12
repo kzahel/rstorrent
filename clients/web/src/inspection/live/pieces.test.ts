@@ -51,7 +51,7 @@ describe("piece activity projection", () => {
 function pieceActivity(verified: PieceActivity["verified"]): PieceActivity {
   return {
     type: "piece_activity",
-    torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+    torrent_id: "t1-000102030405060708090a0b0c0d0e0f",
     piece_count: 6,
     verified,
     active: [

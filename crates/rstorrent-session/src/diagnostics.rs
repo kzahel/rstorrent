@@ -219,6 +219,7 @@ pub struct DiagnosticEvent {
     pub category: DiagnosticCategory,
     pub code: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: Option<String>,
     pub message: String,
     pub subjects: Vec<DiagnosticSubject>,
@@ -574,7 +575,7 @@ mod tests {
             severity: DiagnosticSeverity::Warning,
             category: DiagnosticCategory::from_static(category::TRACKER_ANNOUNCE),
             code: "tracker_timeout".to_owned(),
-            torrent_id: Some("a".repeat(40)),
+            torrent_id: Some(format!("t1-{}", "a".repeat(32))),
             message: format!("event {index}"),
             subjects: vec![DiagnosticSubject::Tracker {
                 tracker_id: "udp://127.0.0.1:6881/announce".to_owned(),

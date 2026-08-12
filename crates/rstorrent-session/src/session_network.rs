@@ -2482,58 +2482,6 @@ fn ipv4_udp_endpoint(
     (*port != 0).then_some(std::net::SocketAddrV4::new(address, *port))
 }
 
-#[cfg(test)]
-mod udp_endpoint_tests {
-    use super::*;
-
-    #[test]
-    fn wildcard_udp_uses_the_concrete_listener_address_and_actual_udp_port() {
-        let status = SessionUdpStatus::Bound {
-            address: std::net::Ipv4Addr::UNSPECIFIED.to_string(),
-            port: 42_001,
-            coordinated_with_tcp: false,
-        };
-        let listener = ListenerStatus::Listening {
-            address: "192.168.1.20".to_owned(),
-            port: 42_000,
-        };
-
-        assert_eq!(
-            ipv4_udp_endpoint(&status, &listener),
-            Some("192.168.1.20:42001".parse().expect("socket address"))
-        );
-    }
-
-    #[test]
-    fn concrete_udp_address_does_not_borrow_the_listener_address() {
-        let status = SessionUdpStatus::Bound {
-            address: "192.168.1.21".to_owned(),
-            port: 42_001,
-            coordinated_with_tcp: false,
-        };
-        let listener = ListenerStatus::Listening {
-            address: "192.168.1.20".to_owned(),
-            port: 42_000,
-        };
-
-        assert_eq!(
-            ipv4_udp_endpoint(&status, &listener),
-            Some("192.168.1.21:42001".parse().expect("socket address"))
-        );
-    }
-
-    #[test]
-    fn wildcard_udp_without_a_concrete_listener_is_not_publishable() {
-        let status = SessionUdpStatus::Bound {
-            address: std::net::Ipv4Addr::UNSPECIFIED.to_string(),
-            port: 42_001,
-            coordinated_with_tcp: false,
-        };
-
-        assert_eq!(ipv4_udp_endpoint(&status, &ListenerStatus::Disabled), None);
-    }
-}
-
 fn transport_family_runtime_views(
     policy: AddressFamilyPolicy,
     ipv4_listener: &ListenerStatus,
@@ -2697,5 +2645,57 @@ fn publish_tracker_https_authentication(
 fn remember_error(slot: &mut Option<String>, error: String) {
     if slot.is_none() {
         *slot = Some(error);
+    }
+}
+
+#[cfg(test)]
+mod udp_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn wildcard_udp_uses_the_concrete_listener_address_and_actual_udp_port() {
+        let status = SessionUdpStatus::Bound {
+            address: std::net::Ipv4Addr::UNSPECIFIED.to_string(),
+            port: 42_001,
+            coordinated_with_tcp: false,
+        };
+        let listener = ListenerStatus::Listening {
+            address: "192.168.1.20".to_owned(),
+            port: 42_000,
+        };
+
+        assert_eq!(
+            ipv4_udp_endpoint(&status, &listener),
+            Some("192.168.1.20:42001".parse().expect("socket address"))
+        );
+    }
+
+    #[test]
+    fn concrete_udp_address_does_not_borrow_the_listener_address() {
+        let status = SessionUdpStatus::Bound {
+            address: "192.168.1.21".to_owned(),
+            port: 42_001,
+            coordinated_with_tcp: false,
+        };
+        let listener = ListenerStatus::Listening {
+            address: "192.168.1.20".to_owned(),
+            port: 42_000,
+        };
+
+        assert_eq!(
+            ipv4_udp_endpoint(&status, &listener),
+            Some("192.168.1.21:42001".parse().expect("socket address"))
+        );
+    }
+
+    #[test]
+    fn wildcard_udp_without_a_concrete_listener_is_not_publishable() {
+        let status = SessionUdpStatus::Bound {
+            address: std::net::Ipv4Addr::UNSPECIFIED.to_string(),
+            port: 42_001,
+            coordinated_with_tcp: false,
+        };
+
+        assert_eq!(ipv4_udp_endpoint(&status, &ListenerStatus::Disabled), None);
     }
 }

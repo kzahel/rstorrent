@@ -1069,6 +1069,11 @@ function transitionStatus(
 
 function mapTorrent(torrent: TorrentView): TorrentRow {
   const pieceCount = torrent.piece_count;
+  const infoHash =
+    torrent.protocol_identities.v1 ?? torrent.protocol_identities.v2;
+  if (infoHash == null) {
+    throw new Error("torrent has no protocol identity");
+  }
   return {
     id: torrent.torrent_id,
     name: torrent.display_name ?? `Torrent ${torrent.torrent_id.slice(0, 12)}`,
@@ -1099,7 +1104,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     removalState: torrent.removal_state ?? null,
     deleteManagedDataSupported: torrent.delete_managed_data_supported,
     forceRecheckAvailable: torrent.force_recheck_available,
-    infoHash: torrent.torrent_id,
+    infoHash,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
   };

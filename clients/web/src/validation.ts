@@ -63,7 +63,10 @@ const MAX_DIAGNOSTIC_PATCH_EVENTS = 128;
 const MAX_U32 = 4_294_967_295;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 const IDENTIFIER = /^[A-Za-z0-9._-]{1,128}$/;
-const TORRENT_ID = /^[A-Fa-f0-9]{40}$/;
+const TORRENT_ID = /^t1-[0-9a-f]{32}$/;
+const V1_INFO_HASH = /^[0-9a-f]{40}$/;
+const V2_INFO_HASH = /^[0-9a-f]{64}$/;
+const SHA1_HEX = /^[A-Fa-f0-9]{40}$/;
 const DIAGNOSTIC_CATEGORY = /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){0,3}$/;
 const DIAGNOSTIC_IDENTIFIER = /^[a-z0-9_.-]{1,48}$/;
 
@@ -455,6 +458,7 @@ function validateServiceSnapshot(value: unknown): void {
   for (const item of torrents) {
     const torrent = asRecord(item, "torrent snapshot");
     torrentId(torrent.torrent_id);
+    validateProtocolIdentities(torrent.protocol_identities);
     identifier(torrent.storage_root, "storage root");
     boundedString(torrent.state, "torrent state", 32);
     boundedString(torrent.storage_state, "storage state", 32);
@@ -563,7 +567,7 @@ function validateDhtInspection(value: unknown): void {
       "participating",
       "inactive",
     ]);
-    torrentId(string(family.local_node_id, "DHT local node ID"));
+    sha1Hex(family.local_node_id, "DHT local node ID");
     boundedString(family.local_address, "DHT local address", 64);
     if (family.observed_external_address !== null) {
       boundedString(
@@ -704,7 +708,7 @@ function validateDhtInspection(value: unknown): void {
     }
     lookupIds.add(familyLookupId);
     countedLookupsByFamily.set(family, (countedLookupsByFamily.get(family) ?? 0) + 1);
-    torrentId(string(lookup.target_id, "DHT lookup target ID"));
+    sha1Hex(lookup.target_id, "DHT lookup target ID");
     decimal(lookup.age_millis, "DHT lookup age");
     decimal(lookup.deadline_in_millis, "DHT lookup deadline");
     let candidateCount = 0;
@@ -1614,6 +1618,7 @@ function validateStorageRoot(value: unknown): string {
 function validateTorrentView(value: unknown): asserts value is TorrentView {
   const torrent = asRecord(value, "torrent view");
   torrentId(torrent.torrent_id);
+  validateProtocolIdentities(torrent.protocol_identities);
   optionalString(torrent.display_name, "torrent display name", 255);
   oneOf(torrent.operational_state, "torrent operational state", [
     "queued",
@@ -2577,6 +2582,27 @@ function identifier(value: unknown, label: string): string {
 function torrentId(value: unknown): asserts value is string {
   if (typeof value !== "string" || !TORRENT_ID.test(value)) {
     throw new ContractError("torrent ID is invalid");
+  }
+}
+
+function validateProtocolIdentities(value: unknown): void {
+  const identities = asRecord(value, "torrent protocol identities");
+  const v1 = identities.v1;
+  const v2 = identities.v2;
+  if (v1 === undefined && v2 === undefined) {
+    throw new ContractError("torrent protocol identities must not be empty");
+  }
+  if (v1 !== undefined && (typeof v1 !== "string" || !V1_INFO_HASH.test(v1))) {
+    throw new ContractError("v1 info hash is invalid");
+  }
+  if (v2 !== undefined && (typeof v2 !== "string" || !V2_INFO_HASH.test(v2))) {
+    throw new ContractError("v2 info hash is invalid");
+  }
+}
+
+function sha1Hex(value: unknown, label: string): void {
+  if (typeof value !== "string" || !SHA1_HEX.test(value)) {
+    throw new ContractError(`${label} must be a 20-byte hexadecimal value`);
   }
 }
 

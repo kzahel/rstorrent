@@ -11,7 +11,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::control::{RemovalState, StorageState, TorrentState};
+use crate::control::{RemovalState, StorageState, TorrentProtocolIdentities, TorrentState};
 use crate::diagnostics::{DiagnosticEvent, DiagnosticFilter, DiagnosticRetention};
 use crate::file_views::{FileCatalogState, FileView};
 use crate::settings::{ClientSettingsRuntimeView, StorageSettingsSnapshot, TorrentTransferLimits};
@@ -183,12 +183,14 @@ pub enum ViewSpec {
     },
     TorrentSummary {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
     PieceActivity {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
@@ -212,18 +214,21 @@ pub enum ViewSpec {
     },
     TorrentPeers {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
     TorrentSwarm {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default)]
         delivery: ViewDeliveryPolicy,
     },
     TorrentFiles {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<CatalogPageRequest>,
@@ -232,6 +237,7 @@ pub enum ViewSpec {
     },
     TorrentTrackers {
         view_id: String,
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<CatalogPageRequest>,
@@ -241,6 +247,7 @@ pub enum ViewSpec {
     Diagnostics {
         view_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: Option<String>,
         #[serde(default)]
         filter: DiagnosticFilter,
@@ -531,6 +538,7 @@ pub enum ViewSelector {
     TorrentList,
     SessionDht,
     Torrent {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
     },
     SessionSpeed {
@@ -1008,6 +1016,7 @@ impl Default for DiskPipelineView {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DiskPieceView {
     pub row_id: String,
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub torrent_name: String,
     pub piece_index: u32,
@@ -1026,7 +1035,9 @@ pub struct DiskPieceView {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TorrentView {
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
+    pub protocol_identities: TorrentProtocolIdentities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     pub state: TorrentState,
@@ -1228,6 +1239,7 @@ pub struct SwarmCountsView {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SwarmPeerView {
     pub peer_record_id: String,
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub endpoint: String,
     pub sources: Vec<PeerSourceView>,
@@ -1267,6 +1279,7 @@ pub struct PeerFieldCapabilities {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerView {
     pub connection_id: String,
+    #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
     pub torrent_id: String,
     pub peer_record_id: Option<String>,
     pub direction: PeerDirection,
@@ -1327,6 +1340,7 @@ pub enum ViewSnapshot {
         torrent: Option<TorrentView>,
     },
     PieceActivity {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         piece_count: u32,
         verified: Vec<IndexRange>,
@@ -1343,10 +1357,12 @@ pub enum ViewSnapshot {
         history: SpeedHistoryView,
     },
     Peers {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         peers: Vec<PeerView>,
     },
     Swarm {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         state: SwarmCatalogState,
         captured_millis: String,
@@ -1355,6 +1371,7 @@ pub enum ViewSnapshot {
         peers: Vec<SwarmPeerView>,
     },
     Files {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         state: FileCatalogState,
         filesystem_content_base: Option<String>,
@@ -1362,6 +1379,7 @@ pub enum ViewSnapshot {
         files: Vec<FileView>,
     },
     Trackers {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         state: TrackerCatalogState,
         page: CatalogPageView,
@@ -1392,6 +1410,7 @@ pub enum ViewPatch {
         torrent: Option<TorrentView>,
     },
     PieceActivity {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         piece_count: u32,
         verified: Vec<IndexRange>,
@@ -1411,11 +1430,13 @@ pub enum ViewPatch {
         history: SpeedHistoryView,
     },
     Peers {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         upsert: Vec<PeerView>,
         removed: Vec<String>,
     },
     Swarm {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         state: SwarmCatalogState,
         captured_millis: String,
@@ -1425,11 +1446,13 @@ pub enum ViewPatch {
         removed: Vec<String>,
     },
     Files {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         upsert: Vec<FileView>,
         removed: Vec<String>,
     },
     Trackers {
+        #[schemars(regex(pattern = "^t1-[0-9a-f]{32}$"))]
         torrent_id: String,
         upsert: Vec<TrackerView>,
         removed: Vec<String>,

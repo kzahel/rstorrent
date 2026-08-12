@@ -533,7 +533,8 @@ private fun DetailTabContent(
             TorrentDetails(
                 torrent,
                 onTransferLimits,
-                "Info hash" to torrent.torrentId,
+                "Info hash" to
+                    (torrent.protocolIdentities.v1 ?: torrent.protocolIdentities.v2 ?: "—"),
                 "State" to operationalLabel(torrent.operationalState),
                 "Required" to formatBytes(torrent.requiredPayloadBytes),
                 "Remaining" to formatBytes(torrent.remainingPayloadBytes),

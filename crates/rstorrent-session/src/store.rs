@@ -4431,6 +4431,9 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
     for row in rows {
         let row = row?;
         let torrent_id = decode_stored_torrent_id(row.0)?;
+        let protocol_identities = crate::TorrentProtocolIdentities::from_info_hashes(
+            read_info_hashes(connection, &torrent_id)?,
+        );
         let payload = PayloadState::parse(&row.11)
             .ok_or_else(|| StoreError::DurableState("invalid payload state".to_owned()))?;
         let requested = u64::try_from(row.12).map_err(|_| {
@@ -4509,6 +4512,7 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         };
         torrents.push(TorrentSnapshot {
             torrent_id: torrent_id.to_string(),
+            protocol_identities,
             storage_root: row.1,
             state,
             storage_state,

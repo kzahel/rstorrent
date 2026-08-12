@@ -42,8 +42,8 @@ pub use control::{
     AddTorrentBytesRequest, AddTorrentDisposition, AddTorrentResult, CONTROL_VERSION, Command,
     CommandResult, ErrorCode, ErrorResponse, FileIndexRange, FilePriority, FileSelectionIntent,
     MagnetExportResult, MagnetExportSource, RemovalDataPolicy, RemovalState, RequestEnvelope,
-    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentSnapshot,
-    TorrentState, validate_add_torrent_bytes_request,
+    ResponseEnvelope, ResponseOutcome, ServiceSnapshot, StorageState, TorrentProtocolIdentities,
+    TorrentSnapshot, TorrentState, validate_add_torrent_bytes_request,
 };
 pub use diagnostics::{
     DiagnosticCategory, DiagnosticEvent, DiagnosticField, DiagnosticFilter, DiagnosticProfile,

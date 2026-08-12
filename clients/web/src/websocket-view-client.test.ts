@@ -124,7 +124,7 @@ describe("multiplexed application WebSocket adapter", () => {
       clientInstanceId,
     );
     const response = client.createMediaUrl({
-      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      torrent_id: "t1-000102030405060708090a0b0c0d0e0f",
       file_index: 2,
     });
     socket?.open();

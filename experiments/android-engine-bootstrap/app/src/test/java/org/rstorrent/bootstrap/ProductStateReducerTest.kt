@@ -44,6 +44,7 @@ import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.SubscriptionSpec
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
+import org.rstorrent.session.uniffi.TorrentProtocolIdentities
 import org.rstorrent.session.uniffi.TorrentState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TorrentView
@@ -554,6 +555,11 @@ class ProductStateReducerTest {
     ): TorrentView =
         TorrentView(
             torrentId = id,
+            protocolIdentities =
+                TorrentProtocolIdentities(
+                    v1 = "0123456789abcdef0123456789abcdef01234567",
+                    v2 = null,
+                ),
             displayName = "Verified torrent",
             state = state,
             operationalState = TorrentOperationalState.DOWNLOADING,
@@ -592,6 +598,6 @@ class ProductStateReducerTest {
         )
 
     companion object {
-        private const val TORRENT_ID = "0123456789abcdef0123456789abcdef01234567"
+        private const val TORRENT_ID = "t1-0123456789abcdef0123456789abcdef"
     }
 }

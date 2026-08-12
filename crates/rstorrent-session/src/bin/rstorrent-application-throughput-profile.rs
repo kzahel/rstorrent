@@ -623,7 +623,7 @@ fn invalid_data(error: serde_json::Error) -> io::Error {
 mod tests {
     use super::*;
 
-    const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
+    const TORRENT_ID: &str = "t1-000102030405060708090a0b0c0d0e0f";
 
     #[test]
     fn production_modes_keep_real_common_and_delivery_intervals() {

@@ -13,7 +13,7 @@ use crate::settings::{
     SettingsConvergenceModel, SettingsDomain,
 };
 
-const TORRENT_ID: &str = "000102030405060708090a0b0c0d0e0f10111213";
+const TORRENT_ID: &str = "t1-000102030405060708090a0b0c0d0e0f";
 
 fn current_torrent(hub: &ViewHub) -> crate::TorrentView {
     hub.inner
@@ -514,7 +514,7 @@ fn speed_clock_uses_the_fastest_interested_live_range() {
 
 #[tokio::test]
 async fn session_disk_view_publishes_pipeline_rates_and_keyed_piece_changes() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let subscription = hub
         .subscribe(SubscriptionSpec {
@@ -600,7 +600,7 @@ async fn session_disk_view_publishes_pipeline_rates_and_keyed_piece_changes() {
 
 #[tokio::test]
 async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let subscription = hub
         .subscribe(SubscriptionSpec {
@@ -683,7 +683,7 @@ async fn tracker_state_publishes_complete_keyed_rows_and_terminal_inactive_state
 
 #[tokio::test]
 async fn swarm_projection_keeps_registry_rows_after_connections_and_clears_terminally() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let subscription = hub
         .subscribe(SubscriptionSpec {
@@ -827,7 +827,7 @@ async fn swarm_projection_keeps_registry_rows_after_connections_and_clears_termi
 
 #[tokio::test]
 async fn piece_hash_failure_clears_unverified_active_ranges() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 1)).expect("hub");
     let subscription = hub.subscribe(piece_spec(4096)).expect("subscribe");
     subscription.next_update().await.expect("snapshot");
@@ -877,7 +877,7 @@ async fn piece_hash_failure_clears_unverified_active_ranges() {
 
 #[tokio::test]
 async fn piece_runtime_tracks_simultaneous_attempts_and_keyed_retry_cleanup() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let subscription = hub.subscribe(piece_spec(16 * 1024)).expect("subscribe");
     subscription.next_update().await.expect("snapshot");
@@ -941,7 +941,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
     hub.replace_durable(
         &snapshot(1, 4),
         &BTreeMap::from([(
-            "000102030405060708090a0b0c0d0e0f10111213".to_owned(),
+            "t1-000102030405060708090a0b0c0d0e0f".to_owned(),
             DurableTorrentViewState {
                 display_name: Some("Verified fixture".to_owned()),
                 checking_generation: None,
@@ -960,7 +960,7 @@ fn durable_replacement_preserves_exact_have_ranges() {
 
 #[tokio::test]
 async fn verified_metadata_name_patches_list_and_selected_summary() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let list = hub
         .subscribe(SubscriptionSpec {

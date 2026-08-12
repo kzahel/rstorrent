@@ -24,7 +24,7 @@ async fn starts_with_snapshot_and_keeps_large_indices() {
     assert!(verified.is_empty());
 
     hub.record_activity(
-        "000102030405060708090a0b0c0d0e0f10111213",
+        "t1-000102030405060708090a0b0c0d0e0f",
         TorrentActivity::PieceStarted {
             piece_index: 900_000,
             piece_length: 32 * 1024 * 1024,
@@ -43,7 +43,7 @@ async fn starts_with_snapshot_and_keeps_large_indices() {
 
 #[tokio::test]
 async fn durable_piece_batch_publishes_one_coherent_patch() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let hub = ViewHub::new(&snapshot(0, 4)).expect("hub");
     let subscription = hub.subscribe(piece_spec(4096)).expect("subscribe");
     subscription.next_update().await.expect("snapshot");
@@ -104,7 +104,7 @@ async fn subscribers_have_independent_queues() {
 
     for piece_index in 0..20 {
         hub.record_activity(
-            "000102030405060708090a0b0c0d0e0f10111213",
+            "t1-000102030405060708090a0b0c0d0e0f",
             TorrentActivity::PieceVerified { piece_index },
         )
         .expect("activity");
@@ -118,7 +118,7 @@ async fn subscribers_have_independent_queues() {
 
 #[tokio::test]
 async fn overflow_requires_explicit_resync() {
-    let torrent_id = "000102030405060708090a0b0c0d0e0f10111213";
+    let torrent_id = "t1-000102030405060708090a0b0c0d0e0f";
     let reference = ViewHub::new(&snapshot(0, 2_000)).expect("reference hub");
     for piece_index in (0..2_000).step_by(2) {
         reference

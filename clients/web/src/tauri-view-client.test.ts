@@ -74,7 +74,7 @@ describe("Tauri leased view-set adapter", () => {
     bridge.handler = (command) => {
       if (command === "application_create_media_url") {
         return {
-          torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+          torrent_id: "t1-000102030405060708090a0b0c0d0e0f",
           file_index: 2,
           outcome: {
             type: "created",
@@ -90,7 +90,7 @@ describe("Tauri leased view-set adapter", () => {
     const client = new TauriApplicationViewClient(bridge);
     const target = client.prepareMediaOpen();
     const response = await client.createMediaUrl({
-      torrent_id: "000102030405060708090a0b0c0d0e0f10111213",
+      torrent_id: "t1-000102030405060708090a0b0c0d0e0f",
       file_index: 2,
     });
     expect(response.outcome.type).toBe("created");
@@ -99,7 +99,7 @@ describe("Tauri leased view-set adapter", () => {
       {
         command: "application_create_media_url",
         arguments_: {
-          torrentId: "000102030405060708090a0b0c0d0e0f10111213",
+          torrentId: "t1-000102030405060708090a0b0c0d0e0f",
           fileIndex: 2,
         },
       },

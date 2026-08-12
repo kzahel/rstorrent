@@ -27,7 +27,10 @@
             "type": "torrent_list",
             "torrents": [
               {
-                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "torrent_id": "t1-000102030405060708090a0b0c0d0e0f",
+                "protocol_identities": {
+                  "v1": "000102030405060708090a0b0c0d0e0f10111213"
+                },
                 "display_name": "Fixture torrent",
                 "state": "downloading",
                 "operational_state": "downloading",
@@ -202,7 +205,10 @@
             "type": "torrent_list",
             "upsert": [
               {
-                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "torrent_id": "t1-000102030405060708090a0b0c0d0e0f",
+                "protocol_identities": {
+                  "v1": "000102030405060708090a0b0c0d0e0f10111213"
+                },
                 "display_name": "Fixture torrent",
                 "state": "downloading",
                 "operational_state": "downloading",
@@ -267,7 +273,10 @@
             "type": "torrent_list",
             "torrents": [
               {
-                "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+                "torrent_id": "t1-000102030405060708090a0b0c0d0e0f",
+                "protocol_identities": {
+                  "v1": "000102030405060708090a0b0c0d0e0f10111213"
+                },
                 "display_name": "Fixture torrent",
                 "state": "complete",
                 "operational_state": "seeding",

@@ -9,7 +9,7 @@
     "type": "snapshot",
     "snapshot": {
       "type": "piece_activity",
-      "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+      "torrent_id": "t1-000102030405060708090a0b0c0d0e0f",
       "piece_count": 1000000,
       "verified": [
         {
@@ -30,7 +30,7 @@
     "type": "patch",
     "patch": {
       "type": "piece_activity",
-      "torrent_id": "000102030405060708090a0b0c0d0e0f10111213",
+      "torrent_id": "t1-000102030405060708090a0b0c0d0e0f",
       "piece_count": 1000000,
       "verified": [
         {
