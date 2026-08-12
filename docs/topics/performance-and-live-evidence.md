@@ -42,8 +42,16 @@ All TCP pairings reach 150.116--287.068 MiB/s, and the mixed/libtorrent uTP
 controls reach 70.190--98.635 MiB/s. Only RSTorrent/RSTorrent uTP is anomalous,
 varying between 0.527 and 0.031 MiB/s across two successful observations with
 no sender retransmission or connection-datagram loss in the slower run. That
-selects a feedback-interaction hypothesis for WAN confirmation; it is not yet
-a production-fix conclusion.
+initially selected a feedback-interaction hypothesis for WAN confirmation.
+The exact same-revision WAN gate now completes all 16 8 MiB cells. On the
+local-seed path RSTorrent uTP reaches 0.106--0.121 MiB/s against either
+receiver, versus RSTorrent TCP at 2.144--2.777 MiB/s and libtorrent uTP at
+3.270--3.528 MiB/s. Four RSTorrent-seed uTP cells show 154--180 ms RTT,
+0--6.8 ms queue delay, no loss/timeout/retry exhaustion, queued application
+data, and only 22--36 KiB congestion/flight. This selects focused Tactical
+`144`'s long-RTT sender window-utilization repair. Remote RSTorrent-seed TCP
+also disconnects after an initial burst and completes only after retry; that
+separate placement-sensitive gap remains retained outside the uTP repair.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

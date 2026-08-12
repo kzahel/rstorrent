@@ -665,6 +665,10 @@ that scope and its cleanup or compatibility rules explicitly.
   matrix over 8 MiB through 1 GiB fixtures, classifies host/path/storage versus
   RSTorrent behavior, and selects a focused repair only from controlled causal
   evidence.
+- [`144-long-rtt-utp-sender-window-utilization.md`](144-long-rtt-utp-sender-window-utilization.md):
+  active child of Tactical `142`; reproduces and repairs the isolated clean
+  long-RTT RSTorrent uTP sender window-underutilization defect without changing
+  the accepted no-slow-start RFC 6817 controller.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

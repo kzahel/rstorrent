@@ -528,14 +528,16 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: deploy Tactical `142`'s committed role adapters
-to `pimom`, prove every 8 MiB engine/role/placement/transport WAN cell, and
-proceed through its larger baseline. The local eight-cell gate passes and
-isolates severe, variable slowness to RSTorrent seed/RSTorrent leech over uTP;
-both mixed-engine uTP directions and every TCP control are fast. The
-maintainer explicitly authorizes repeated multi-gigabyte direct-public-path
-traffic. The WAN placement controls must now confirm the interaction before a
-focused repair tactical changes production transport code.
+Next engine-campaign action: execute Tactical `144` under active parent
+Tactical `142`. All 16 exact same-revision 8 MiB WAN cells pass. On the local-
+seed path, RSTorrent uTP is 0.106--0.121 MiB/s against either receiver while
+RSTorrent TCP is 2.144--2.777 MiB/s and libtorrent uTP is 3.270--3.528 MiB/s.
+RSTorrent uTP has queued data, 154--180 ms RTT, near-zero queue delay, no loss
+or timeout, and only 22--36 KiB flight/window. Tactical `144` must reproduce
+and repair the pacing/flight-growth composition without adding slow start or
+changing RFC 6817 policy, then rerun affected WAN cohorts before Tactical
+`142` resumes larger sizes. A separate remote-placement RSTorrent TCP seed
+disconnect remains retained and outside that repair.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

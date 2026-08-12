@@ -302,6 +302,68 @@ repair. Stage 3 must now deploy the same committed roles on `pimom`; Stage 4
 must establish whether the interaction survives both ordinary-Internet
 directions before the focused repair tactical opens.
 
+### Remote setup and exact 8 MiB WAN gate
+
+The remote per-user environment now has exact Rust 1.97.0, pinned libtorrent
+2.0.13.0, same-revision native RSTorrent release binaries, deterministic
+fixtures, and bounded resource sampling. The constrained device has roughly
+905 MiB RAM plus bounded compressed swap, about 50 GiB free on its ext4
+storage, and a 100-Mbit/s full-duplex wired link. A cold release build passed
+with `CARGO_BUILD_JOBS=1`; the device stayed controllable, and later builds
+reuse the isolated artifacts.
+
+The remote gateway answers SSDP and implements the standard
+`WANIPConnection:1` service rather than the v2 service used by the first
+gateway. The matrix mapping helper now prefers v2 and falls back to v1 for the
+same finite Add/Get/Delete SOAP contract. It never changes product mapping
+policy. Exact remote TCP and UDP leases now pass query, transfer, deletion,
+and absence checks with no process or run-directory residue.
+
+Two useful initial local-seed observations were not admitted to the formal
+baseline because unrelated documentation commits moved `HEAD` during the
+long cold remote build. The runner now pins one clean revision before staging,
+verifies the remote staged revision even when resuming, checks the local
+revision before and after build, fixture, and every case, and retains a typed
+fatal case if the checkout moves. It also cleans only a mapping successfully
+acquired by the case, so a mapping-setup failure cannot be masked by a second
+cleanup discovery failure.
+
+At exact revision `bd9d0e4`, all 16 same-revision 8 MiB WAN cells completed
+with exact hash, one forced transport, ordinary payload route, bounded
+resources, exact finite mapping cleanup, and zero residue. Active MiB/s:
+
+| Direction | Seed | Leech | TCP | uTP |
+| --- | --- | --- | ---: | ---: |
+| local seed | RSTorrent | RSTorrent | 2.144 | 0.121 |
+| local seed | RSTorrent | libtorrent | 2.777 | 0.106 |
+| local seed | libtorrent | RSTorrent | 2.410 | 3.528 |
+| local seed | libtorrent | libtorrent | 2.124 | 3.270 |
+| remote seed | RSTorrent | RSTorrent | 0.100 | 0.172 |
+| remote seed | RSTorrent | libtorrent | 0.077 | 0.147 |
+| remote seed | libtorrent | RSTorrent | 2.414 | 2.433 |
+| remote seed | libtorrent | libtorrent | 2.287 | 2.491 |
+
+The clean local-seed comparison isolates uTP send behavior: RSTorrent TCP and
+both libtorrent-seed transports are fast, while an RSTorrent uTP seed is slow
+against either receiver. Across all four RSTorrent-seed uTP cells, RTT is
+154--180 ms, queue delay 0--6.8 ms, retransmissions/timeouts/retry exhaustion
+zero, MTU discovery reaches 1,457-byte datagrams, unsent data remains queued,
+and congestion/flight reaches only 22--36 KiB. CPU, iowait, storage service,
+receive credit, loss, and the remote 100-Mbit/s link do not explain the rate.
+
+The remote RSTorrent-seed TCP cells expose a separate placement-sensitive
+disconnect: 4--5.5 MiB arrives quickly, the connection closes, and the
+leecher finishes after its ordinary retry interval. Both libtorrent-seed TCP
+controls complete around 2.3--2.4 MiB/s on that path. Tactical `142` retains
+this gap but does not broaden the uTP repair to it.
+
+The uTP evidence selects focused Tactical
+[`144`](144-long-rtt-utp-sender-window-utilization.md). It will prove whether
+per-packet pacing prevents RFC 6817's pre-ACK flight from filling the permitted
+window at long RTT, repair only that composition, and rerun affected controlled
+and WAN cohorts before the larger baseline resumes. Slow start and a different
+controller remain review-gated.
+
 ## Non-Goals And Escalation
 
 This tactical does not promise TCP-equivalent uTP, add a product performance

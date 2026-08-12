@@ -423,14 +423,15 @@ and starts no HTTP listener.
 
 ### Next
 
-- Deploy the committed role adapters to `pimom` and complete all 8 MiB WAN
-  cells before the larger baseline. The controlled gate isolates severe,
-  variable slowness to RSTorrent/RSTorrent uTP while both mixed-engine uTP
-  directions and all TCP controls are fast; require WAN placement confirmation
-  before creating the focused repair tactical or changing transport code.
-- If the matrix instead identifies a path, ISP, host, or storage ceiling,
-  record that limit without inventing an engine repair and return **Now** to
-  durable seeding goals.
+- Execute focused Tactical
+  [`144`](../tactical/144-long-rtt-utp-sender-window-utilization.md) under
+  Tactical `142`. All 16 exact 8 MiB WAN cells pass and isolate a clean
+  long-RTT RSTorrent uTP send-window defect against either receiver. Prove and
+  repair the pacing/flight-growth composition without adding slow start or
+  changing the selected RFC 6817 controller, then rerun affected cohorts.
+- Retain the separate remote-placement RSTorrent TCP seed disconnect as typed
+  evidence without broadening Tactical `144`; after the uTP repair, resume the
+  64/256/1,024 MiB baseline and use scaling to select its owner.
 
 ### Later
 
