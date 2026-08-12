@@ -661,14 +661,17 @@ that scope and its cleanup or compatibility rules explicitly.
   pairs. Every attempt cleaned exactly; the repaired single-connection oracle
   has no further WAN authorization in this tactical.
 - [`142-wan-transport-performance-matrix.md`](142-wan-transport-performance-matrix.md):
-  active; builds a resumable cross-engine, cross-role, cross-host TCP/uTP WAN
-  matrix over 8 MiB through 1 GiB fixtures, classifies host/path/storage versus
-  RSTorrent behavior, and selects a focused repair only from controlled causal
-  evidence.
+  active at an analysis checkpoint; its reusable cross-engine, cross-role,
+  cross-host TCP/uTP WAN lab retains 56 exact post-repair cells through 1 GiB
+  and selects sustained RSTorrent uTP reliability as the next causal boundary.
 - [`144-long-rtt-utp-sender-window-utilization.md`](144-long-rtt-utp-sender-window-utilization.md):
-  active child of Tactical `142`; reproduces and repairs the isolated clean
-  long-RTT RSTorrent uTP sender window-underutilization defect without changing
+  complete; repairs long-RTT sender underfill plus the upload-writer and
+  per-connection ingress bounds exposed by a full window, without changing
   the accepted no-slow-start RFC 6817 controller.
+- [`145-sustained-utp-reliability-and-throughput-near-parity.md`](145-sustained-utp-reliability-and-throughput-near-parity.md):
+  ready child of Tactical `142`; first makes repeated 16-bit sequence-cycle
+  transfers reliable on one connection, then targets at least `0.85x` matched
+  pinned-libtorrent uTP throughput without regressing delay/fairness behavior.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

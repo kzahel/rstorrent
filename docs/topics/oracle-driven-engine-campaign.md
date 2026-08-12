@@ -533,13 +533,16 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: review Tactical `142`'s post-repair analysis, then
-draft a focused successor for a bounded composed transfer across repeated
-16-bit uTP sequence-number cycles and exact terminal-reason capture. Tactical
-`144` is complete; repeated affected WAN cells improve 2.72x--4.48x and its
-formerly churning 64 MiB remote RSTorrent/RSTorrent cell improves 10.1x with
-one connection and zero ingress drops. The parent matrix completes 56 cells
-and 13.125 GiB through the full 256 MiB grid and remote-seed 1 GiB half.
+Next engine-campaign action: execute focused Tactical
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+under Tactical `142`. It first owns a bounded composed transfer across
+repeated 16-bit uTP sequence-number cycles and exact terminal-reason capture,
+then a causal reliability repair and `0.85x` matched-libtorrent uTP median
+target. Tactical `144` is complete; repeated affected WAN cells improve
+2.72x--4.48x, and its formerly churning 64 MiB remote
+RSTorrent/RSTorrent cell improves 10.1x with one connection and zero ingress
+drops. The parent matrix completes 56 cells and 13.125 GiB through the full
+256 MiB grid and remote-seed 1 GiB half.
 Libtorrent/libtorrent uTP reaches the same 1 GiB path ceiling as TCP, but large
 RSTorrent uTP cells repeatedly reconnect with a peer-wire `protocol` failure
 despite zero connection-datagram drops. Existing tests cover local arithmetic

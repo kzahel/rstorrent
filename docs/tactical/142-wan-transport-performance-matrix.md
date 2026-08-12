@@ -427,7 +427,10 @@ not exactly equal predicted wraps, and the interrupted libtorrent-only control
 also demonstrates environmental variability. The next focused tactical should
 first preserve the exact worker/peer-wire terminal reason and construct a
 bounded end-to-end wrap-crossing transfer before changing sequence logic or
-congestion policy.
+congestion policy. Tactical
+[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md) records
+that reliability-first plan and the subsequent matched-libtorrent performance
+gate.
 
 ## Non-Goals And Escalation
 

@@ -425,12 +425,12 @@ and starts no HTTP listener.
 
 ### Next
 
-- Draft the focused Tactical `142` successor around an exact composed transfer
-  across repeated 16-bit uTP sequence-number cycles and richer terminal-reason
-  capture. Sequence wrap is the leading hypothesis because long RSTorrent
-  cells fail at the peer-wire protocol boundary while ingress drops stay zero;
-  no production sequence change is authorized until the reproduction is
-  causal.
+- Execute focused Tactical
+  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+  under Tactical `142`. First carry an exact composed stream across repeated
+  16-bit uTP sequence-number cycles with richer terminal-reason capture, then
+  repair the causal reliability boundary and target at least `0.85x` matched
+  pinned-libtorrent uTP throughput without weakening delay/fairness behavior.
 - Retain the separate remote-placement RSTorrent TCP seed disconnect and the
   interrupted local-seed 1 GiB libtorrent uTP control as typed evidence. Do
   not mix either into the next uTP reliability repair without new causal

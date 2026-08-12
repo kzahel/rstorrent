@@ -63,6 +63,13 @@ reproduction because only local arithmetic wrap tests exist; it is a
 hypothesis, not yet a diagnosis. One local-seed 1 GiB libtorrent-only uTP
 control was interrupted after 8,828 seconds with successful cleanup and is
 excluded from ratios; the remaining seven local-seed 1 GiB cells are deferred.
+Ready Tactical
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+records the collection provenance, makes single-connection sustained
+reliability the first gate, and then targets at least `0.85x` the alternating
+matched libtorrent/libtorrent uTP median for every RSTorrent-containing
+pairing. Controller-policy changes remain review-gated behind causal A/B
+fairness evidence.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

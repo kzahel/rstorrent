@@ -944,10 +944,13 @@ The parent post-repair matrix now has 56 exact successful cells and
 remote-seed 1 GiB pairing. Libtorrent/libtorrent uTP reaches the same remote
 path ceiling as TCP, while RSTorrent uTP remains slower and repeatedly
 reconnects on large cells with a peer-wire `protocol` failure despite zero
-connection-datagram drops. The next high-value step is a bounded composed
-transfer across repeated 16-bit sequence-number wrap, with exact terminal
-reason capture; sequence wrap is a hypothesis, not a conclusion. The unrun
-local-seed 1 GiB cells are deliberately deferred at this review checkpoint.
+connection-datagram drops. Ready Tactical
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+owns a bounded composed transfer across repeated 16-bit sequence-number wrap,
+exact terminal-reason capture, causal reliability repair, and a subsequent
+`0.85x` matched-libtorrent uTP median target. Sequence wrap is a hypothesis,
+not a conclusion. The unrun local-seed 1 GiB cells are deliberately deferred
+at this review checkpoint.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.
