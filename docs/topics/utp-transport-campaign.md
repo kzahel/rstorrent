@@ -954,7 +954,10 @@ not a conclusion. The unrun local-seed 1 GiB cells are deliberately deferred
 at this review checkpoint.
 Its first active stage now preserves bounded endpoint-free worker failure,
 sequence-cycle, ACK/receive anomaly, FIN/RESET, and exact content-peer task
-evidence in every WAN role. A deterministic clean transport regression then
+evidence in every WAN role. Retry evidence additionally identifies the exact
+exhausted packet/attempt count and the failed worker's retransmission, loss,
+timeout, flight, window, and RTT state before abort. A deterministic clean
+transport regression then
 delivers 131,075 DATA packets exactly, crosses the 16-bit sequence space three
 times, handles delayed and duplicate ACKs, and closes with zero ownership.
 Sequence reuse itself is therefore rejected as the causal defect; sustained

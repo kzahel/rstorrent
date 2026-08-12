@@ -1,13 +1,12 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
 Status: **Active under parent Tactical 142; Stage 1 terminal provenance and
-the first Stage 2 clean repeated-cycle gate are implemented.** Maintainer direction on
-2026-08-13 selects this tactical after Tactical `143` completed and activates
-continued uTP performance work with the goal of approaching pinned-libtorrent
-uTP throughput. This
-tactical may autonomously diagnose and repair causal defects in existing uTP,
-ordered-stream, and peer-I/O owners. A production congestion-policy change
-remains a human-review gate.
+the first Stage 2 clean repeated-cycle gate are implemented.** Maintainer
+direction on 2026-08-13 selects this tactical after Tactical `143` completed
+and activates continued uTP performance work with the goal of approaching
+pinned-libtorrent uTP throughput. This tactical may autonomously diagnose and
+repair causal defects in existing uTP, ordered-stream, and peer-I/O owners. A
+production congestion-policy change remains a human-review gate.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -181,6 +180,15 @@ also retains the bounded exact content-peer task error separately from its
 coarse reconnect policy classification. Thus a future WAN reconnect can be
 placed at peer framing/I/O or inside uTP and, for uTP, relative to sequence
 reuse without retaining a packet timeline.
+
+Before the first post-instrumentation WAN reproduction, retry evidence was
+sharpened to retain the exact exhausted sequence number and actual/maximum
+attempt count. The failed worker also retains retransmission DATA count and
+last sequence, received loss-signal count, final outstanding/in-flight/
+pending-retransmission ownership, congestion and remote windows, smoothed RTT,
+effective RTO, consecutive timeouts, loss reductions, and timeout collapses.
+These remain bounded endpoint-free scalars and are captured before terminal
+abort clears protocol ownership.
 
 Focused validation on 2026-08-13 passes 22 uTP runtime tests, the driver-control
 tests, both affected binary build surfaces, and 24 WAN/matrix Python contract

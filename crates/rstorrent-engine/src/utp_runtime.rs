@@ -17,8 +17,8 @@ use futures_util::FutureExt;
 use rstorrent_protocol::utp::{
     AckDisposition, ConnectionError, ConnectionPhase, DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING,
     IPV4_UDP_PAYLOAD_FLOOR, IncomingDisposition, MAX_UNSENT_BYTES, PacketType, PathMtuState,
-    ReceiveDisposition, SendError, SequenceNumber, TimestampMicros, TransportError, TransportState,
-    UTP_HEADER_SIZE, UtpCodecError, decode_packet,
+    ReceiveDisposition, SendError, SequenceNumber, TimestampMicros, TransportError,
+    TransportSnapshot, TransportState, UTP_HEADER_SIZE, UtpCodecError, decode_packet,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc::error::TrySendError;
@@ -132,11 +132,14 @@ pub struct UtpTerminalEvidence {
     pub kind: UtpTerminalKind,
     pub detail: String,
     pub new_data_datagrams_sent: u64,
+    pub retransmission_data_datagrams_sent: u64,
     pub data_datagrams_received: u64,
     pub sent_sequence_cycles: u64,
     pub received_sequence_cycles: u64,
     pub last_data_sequence_sent: Option<u16>,
+    pub last_retransmission_sequence_sent: Option<u16>,
     pub last_data_sequence_received: Option<u16>,
+    pub loss_signals_received: u64,
     pub duplicate_acknowledgements: u64,
     pub stale_acknowledgements: u64,
     pub future_acknowledgements: u64,
@@ -146,6 +149,18 @@ pub struct UtpTerminalEvidence {
     pub ambiguous_data_datagrams: u64,
     pub fin_datagrams_received: u64,
     pub reset_datagrams_received: u64,
+    pub outstanding_packets: usize,
+    pub outstanding_bytes: usize,
+    pub in_flight_packets: usize,
+    pub in_flight_bytes: usize,
+    pub pending_retransmissions: usize,
+    pub congestion_window_bytes: usize,
+    pub remote_window_bytes: usize,
+    pub smoothed_rtt_micros: Option<u64>,
+    pub effective_rto_micros: u64,
+    pub consecutive_timeouts: u8,
+    pub loss_reductions: u64,
+    pub timeout_collapses: u64,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1349,7 +1364,7 @@ fn handle_worker_join(
                 stats.record_failure(evidence);
             }
             match terminal {
-                WorkerTerminal::RetryExhausted => {
+                WorkerTerminal::RetryExhausted { .. } => {
                     saturating_increment(&stats.retry_exhausted_connections, 1);
                 }
                 WorkerTerminal::Graceful => {
@@ -1377,11 +1392,14 @@ fn handle_worker_join(
                 kind: UtpTerminalKind::WorkerPanic,
                 detail: "uTP worker panicked; payload and panic detail withheld".to_owned(),
                 new_data_datagrams_sent: 0,
+                retransmission_data_datagrams_sent: 0,
                 data_datagrams_received: 0,
                 sent_sequence_cycles: 0,
                 received_sequence_cycles: 0,
                 last_data_sequence_sent: None,
+                last_retransmission_sequence_sent: None,
                 last_data_sequence_received: None,
+                loss_signals_received: 0,
                 duplicate_acknowledgements: 0,
                 stale_acknowledgements: 0,
                 future_acknowledgements: 0,
@@ -1391,6 +1409,18 @@ fn handle_worker_join(
                 ambiguous_data_datagrams: 0,
                 fin_datagrams_received: 0,
                 reset_datagrams_received: 0,
+                outstanding_packets: 0,
+                outstanding_bytes: 0,
+                in_flight_packets: 0,
+                in_flight_bytes: 0,
+                pending_retransmissions: 0,
+                congestion_window_bytes: 0,
+                remote_window_bytes: 0,
+                smoothed_rtt_micros: None,
+                effective_rto_micros: 0,
+                consecutive_timeouts: 0,
+                loss_reductions: 0,
+                timeout_collapses: 0,
             });
         }
     }
@@ -1742,7 +1772,11 @@ enum WorkerPublication {
 enum WorkerTerminal {
     Graceful,
     Reset,
-    RetryExhausted,
+    RetryExhausted {
+        sequence_number: u16,
+        transmissions: u8,
+        maximum: u8,
+    },
     ConsumerDropped,
     GenerationChanged,
     ServiceCancelled,
@@ -1753,11 +1787,14 @@ enum WorkerTerminal {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct WorkerTelemetry {
     new_data_datagrams_sent: u64,
+    retransmission_data_datagrams_sent: u64,
     data_datagrams_received: u64,
     sent_sequence_cycles: u64,
     received_sequence_cycles: u64,
     last_data_sequence_sent: Option<u16>,
+    last_retransmission_sequence_sent: Option<u16>,
     last_data_sequence_received: Option<u16>,
+    loss_signals_received: u64,
     duplicate_acknowledgements: u64,
     stale_acknowledgements: u64,
     future_acknowledgements: u64,
@@ -1767,11 +1804,26 @@ struct WorkerTelemetry {
     ambiguous_data_datagrams: u64,
     fin_datagrams_received: u64,
     reset_datagrams_received: u64,
+    outstanding_packets: usize,
+    outstanding_bytes: usize,
+    in_flight_packets: usize,
+    in_flight_bytes: usize,
+    pending_retransmissions: usize,
+    congestion_window_bytes: usize,
+    remote_window_bytes: usize,
+    smoothed_rtt_micros: Option<u64>,
+    effective_rto_micros: u64,
+    consecutive_timeouts: u8,
+    loss_reductions: u64,
+    timeout_collapses: u64,
 }
 
 impl WorkerTelemetry {
     fn record_sent(&mut self, sequence_number: SequenceNumber, retransmission: bool) {
         if retransmission {
+            self.retransmission_data_datagrams_sent =
+                self.retransmission_data_datagrams_sent.saturating_add(1);
+            self.last_retransmission_sequence_sent = Some(sequence_number.get());
             return;
         }
         let sequence_number = sequence_number.get();
@@ -1788,7 +1840,11 @@ impl WorkerTelemetry {
         sequence_number: SequenceNumber,
         acknowledgement: Option<AckDisposition>,
         receive: Option<ReceiveDisposition>,
+        loss_signals: usize,
     ) {
+        self.loss_signals_received = self
+            .loss_signals_received
+            .saturating_add(u64::try_from(loss_signals).unwrap_or(u64::MAX));
         match acknowledgement {
             Some(AckDisposition::Duplicate) => {
                 self.duplicate_acknowledgements = self.duplicate_acknowledgements.saturating_add(1);
@@ -1851,12 +1907,33 @@ impl WorkerTelemetry {
         }
     }
 
+    fn record_terminal_snapshot(&mut self, snapshot: &TransportSnapshot) {
+        self.outstanding_packets = snapshot.connection.send.outstanding_packets;
+        self.outstanding_bytes = snapshot.connection.send.outstanding_bytes;
+        self.in_flight_packets = snapshot.in_flight_packets;
+        self.in_flight_bytes = snapshot.in_flight_bytes;
+        self.pending_retransmissions = snapshot.retransmissions.pending_packets;
+        self.congestion_window_bytes = snapshot.congestion.congestion_window_bytes;
+        self.remote_window_bytes = snapshot.remote_window_bytes;
+        self.smoothed_rtt_micros = snapshot.connection.send.rtt.smoothed_rtt_micros;
+        self.effective_rto_micros = snapshot.connection.send.rtt.effective_rto_micros;
+        self.consecutive_timeouts = snapshot.connection.send.consecutive_timeouts;
+        self.loss_reductions = snapshot.congestion.loss_reductions;
+        self.timeout_collapses = snapshot.congestion.timeout_collapses;
+    }
+
     fn terminal_evidence(&self, terminal: &WorkerTerminal) -> Option<UtpTerminalEvidence> {
         let (kind, detail) = match terminal {
             WorkerTerminal::Reset => (UtpTerminalKind::Reset, "peer reset".to_owned()),
-            WorkerTerminal::RetryExhausted => (
+            WorkerTerminal::RetryExhausted {
+                sequence_number,
+                transmissions,
+                maximum,
+            } => (
                 UtpTerminalKind::RetryExhausted,
-                "retransmission limit exhausted".to_owned(),
+                format!(
+                    "sequence {sequence_number} exhausted {transmissions} of {maximum} transmissions"
+                ),
             ),
             WorkerTerminal::Protocol(detail) => {
                 (UtpTerminalKind::Protocol, bounded_terminal_detail(detail))
@@ -1874,11 +1951,14 @@ impl WorkerTelemetry {
             kind,
             detail,
             new_data_datagrams_sent: self.new_data_datagrams_sent,
+            retransmission_data_datagrams_sent: self.retransmission_data_datagrams_sent,
             data_datagrams_received: self.data_datagrams_received,
             sent_sequence_cycles: self.sent_sequence_cycles,
             received_sequence_cycles: self.received_sequence_cycles,
             last_data_sequence_sent: self.last_data_sequence_sent,
+            last_retransmission_sequence_sent: self.last_retransmission_sequence_sent,
             last_data_sequence_received: self.last_data_sequence_received,
+            loss_signals_received: self.loss_signals_received,
             duplicate_acknowledgements: self.duplicate_acknowledgements,
             stale_acknowledgements: self.stale_acknowledgements,
             future_acknowledgements: self.future_acknowledgements,
@@ -1888,6 +1968,18 @@ impl WorkerTelemetry {
             ambiguous_data_datagrams: self.ambiguous_data_datagrams,
             fin_datagrams_received: self.fin_datagrams_received,
             reset_datagrams_received: self.reset_datagrams_received,
+            outstanding_packets: self.outstanding_packets,
+            outstanding_bytes: self.outstanding_bytes,
+            in_flight_packets: self.in_flight_packets,
+            in_flight_bytes: self.in_flight_bytes,
+            pending_retransmissions: self.pending_retransmissions,
+            congestion_window_bytes: self.congestion_window_bytes,
+            remote_window_bytes: self.remote_window_bytes,
+            smoothed_rtt_micros: self.smoothed_rtt_micros,
+            effective_rto_micros: self.effective_rto_micros,
+            consecutive_timeouts: self.consecutive_timeouts,
+            loss_reductions: self.loss_reductions,
+            timeout_collapses: self.timeout_collapses,
         })
     }
 }
@@ -1915,7 +2007,7 @@ impl WorkerTerminal {
                 io::ErrorKind::ConnectionReset,
                 "uTP peer reset the connection".into(),
             ),
-            Self::RetryExhausted => (
+            Self::RetryExhausted { .. } => (
                 io::ErrorKind::TimedOut,
                 "uTP retransmission limit was exhausted".into(),
             ),
@@ -2042,6 +2134,8 @@ impl UtpWorker {
             Ok(terminal) => terminal,
             Err(error) => classify_worker_error(error),
         };
+        self.telemetry
+            .record_terminal_snapshot(&self.state.snapshot());
         self.state.abort();
         self.stats.record_worker_snapshot(&self.state);
         if self.incoming_half_open {
@@ -2192,6 +2286,11 @@ impl UtpWorker {
                 .receive
                 .as_ref()
                 .map(|receive| receive.disposition),
+            outcome
+                .connection
+                .acknowledgement
+                .as_ref()
+                .map_or(0, |acknowledgement| acknowledgement.loss_signals.len()),
         );
         if let Some(receive) = outcome.connection.receive {
             for delivered in receive.delivered {
@@ -2429,8 +2528,16 @@ impl UtpWorker {
 fn classify_worker_error(error: UtpRuntimeError) -> WorkerTerminal {
     match error {
         UtpRuntimeError::Protocol(TransportError::Connection(ConnectionError::Send(
-            SendError::TransmissionLimit { .. },
-        ))) => WorkerTerminal::RetryExhausted,
+            SendError::TransmissionLimit {
+                sequence_number,
+                transmissions,
+                maximum,
+            },
+        ))) => WorkerTerminal::RetryExhausted {
+            sequence_number: sequence_number.get(),
+            transmissions,
+            maximum,
+        },
         UtpRuntimeError::Udp(SessionUdpError::StaleGeneration { .. }) => {
             WorkerTerminal::GenerationChanged
         }
@@ -3289,7 +3396,14 @@ mod tests {
                 maximum: 8,
             })),
         ));
-        assert!(matches!(terminal, WorkerTerminal::RetryExhausted));
+        assert!(matches!(
+            terminal,
+            WorkerTerminal::RetryExhausted {
+                sequence_number: 9,
+                transmissions: 8,
+                maximum: 8
+            }
+        ));
         assert_eq!(terminal.stream_terminal().kind, io::ErrorKind::TimedOut);
 
         let key = UtpConnectionKey {
@@ -3311,11 +3425,27 @@ mod tests {
             Some(Ok((
                 key,
                 Ok(WorkerReport {
-                    terminal: WorkerTerminal::RetryExhausted,
+                    terminal: WorkerTerminal::RetryExhausted {
+                        sequence_number: 9,
+                        transmissions: 8,
+                        maximum: 8,
+                    },
                     telemetry: WorkerTelemetry {
                         new_data_datagrams_sent: 65_537,
+                        retransmission_data_datagrams_sent: 7,
                         sent_sequence_cycles: 1,
                         last_data_sequence_sent: Some(0),
+                        last_retransmission_sequence_sent: Some(9),
+                        loss_signals_received: 7,
+                        outstanding_packets: 4,
+                        outstanding_bytes: 2_112,
+                        in_flight_packets: 3,
+                        in_flight_bytes: 1_584,
+                        congestion_window_bytes: 4_224,
+                        remote_window_bytes: 1_048_576,
+                        smoothed_rtt_micros: Some(160_000),
+                        effective_rto_micros: 500_000,
+                        loss_reductions: 2,
                         ..WorkerTelemetry::default()
                     },
                 }),
@@ -3332,6 +3462,13 @@ mod tests {
         assert_eq!(failure.new_data_datagrams_sent, 65_537);
         assert_eq!(failure.sent_sequence_cycles, 1);
         assert_eq!(failure.last_data_sequence_sent, Some(0));
+        assert_eq!(failure.last_retransmission_sequence_sent, Some(9));
+        assert_eq!(failure.retransmission_data_datagrams_sent, 7);
+        assert_eq!(failure.loss_signals_received, 7);
+        assert_eq!(failure.outstanding_packets, 4);
+        assert_eq!(failure.in_flight_packets, 3);
+        assert_eq!(failure.smoothed_rtt_micros, Some(160_000));
+        assert_eq!(failure.detail, "sequence 9 exhausted 8 of 8 transmissions");
 
         let (ingress, _) = mpsc::channel(1);
         routes.insert(
@@ -3362,12 +3499,14 @@ mod tests {
             SequenceNumber::new(u16::MAX),
             Some(AckDisposition::Stale { distance: 1 }),
             Some(ReceiveDisposition::Delivered),
+            2,
         );
         telemetry.record_received(
             PacketType::Data,
             SequenceNumber::new(0),
             Some(AckDisposition::Ambiguous),
             Some(ReceiveDisposition::TooFarAhead { distance: 65 }),
+            3,
         );
         let evidence = telemetry
             .terminal_evidence(&WorkerTerminal::Protocol("x".repeat(300)))
@@ -3381,5 +3520,8 @@ mod tests {
         assert_eq!(evidence.stale_acknowledgements, 1);
         assert_eq!(evidence.ambiguous_acknowledgements, 1);
         assert_eq!(evidence.too_far_ahead_data_datagrams, 1);
+        assert_eq!(evidence.retransmission_data_datagrams_sent, 1);
+        assert_eq!(evidence.last_retransmission_sequence_sent, Some(0));
+        assert_eq!(evidence.loss_signals_received, 5);
     }
 }
