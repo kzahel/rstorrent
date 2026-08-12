@@ -933,7 +933,8 @@ change.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
-completed; Tactical `142` owns the current checkpoint. Completed Tactical
+completed; explicit maintainer direction on 2026-08-13 resumes Tactical `142`
+through active child Tactical `145`. Completed Tactical
 `144` causally repaired sender-window underfill plus the writer-headroom and
 ingress-queue composition defects exposed by the larger window. Its repeated
 WAN medians improve 2.72x--4.48x, and affected 64 MiB cells complete at
@@ -944,7 +945,7 @@ The parent post-repair matrix now has 56 exact successful cells and
 remote-seed 1 GiB pairing. Libtorrent/libtorrent uTP reaches the same remote
 path ceiling as TCP, while RSTorrent uTP remains slower and repeatedly
 reconnects on large cells with a peer-wire `protocol` failure despite zero
-connection-datagram drops. Ready Tactical
+connection-datagram drops. Active Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
 owns a bounded composed transfer across repeated 16-bit sequence-number wrap,
 exact terminal-reason capture, causal reliability repair, and a subsequent

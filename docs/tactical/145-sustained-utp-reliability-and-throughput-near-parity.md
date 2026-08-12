@@ -1,9 +1,9 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Ready under paused parent Tactical 142; implementation has not
-started.** Maintainer direction on 2026-08-12 activates Tactical `143` first.
-The retained direction selects continued uTP performance work with the goal of
-approaching pinned-libtorrent uTP throughput. This
+Status: **Active under parent Tactical 142.** Maintainer direction on
+2026-08-13 selects this tactical after Tactical `143` completed and activates
+continued uTP performance work with the goal of approaching pinned-libtorrent
+uTP throughput. This
 tactical may autonomously diagnose and repair causal defects in existing uTP,
 ordered-stream, and peer-I/O owners. A production congestion-policy change
 remains a human-review gate.
@@ -11,7 +11,7 @@ remains a human-review gate.
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
 
-Dependencies: paused parent Tactical
+Dependencies: active parent Tactical
 [`142`](142-wan-transport-performance-matrix.md) and completed Tacticals
 [`121`](121-deterministic-utp-loss-congestion-and-mtu.md),
 [`125`](125-shared-udp-utp-runtime-and-loopback-interop.md),

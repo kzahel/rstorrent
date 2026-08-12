@@ -1,16 +1,17 @@
 # Tactical 142: WAN Transport Performance Matrix
 
-Status: **Paused at an analysis checkpoint.** Explicit maintainer direction on
-2026-08-12 activates Tactical
-[`143`](143-dual-identity-and-persistence-foundation.md) before this campaign
-continues. The reusable lab and focused sender repair are implemented. A
+Status: **Active at an analysis checkpoint through child Tactical 145.**
+Tactical [`143`](143-dual-identity-and-persistence-foundation.md) completed,
+and explicit maintainer direction on 2026-08-13 resumes this campaign through
+[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md). The
+reusable lab and focused sender repair are implemented. A
 post-repair epoch has 56 exact successful
 cells and 13,440 MiB of verified payload: complete 8/64/256 MiB grids and all
 eight remote-seed 1 GiB cells. Bulk execution stopped at maintainer review
 because the remaining local-seed 1 GiB controls had declining diagnostic
 value; one interrupted libtorrent/libtorrent control is excluded from ratios.
-When resumed, the next work should target the newly isolated RSTorrent long-
-transfer reliability boundary rather than resume undirected volume.
+The active child targets the newly isolated RSTorrent long-transfer
+reliability boundary rather than resuming undirected volume.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`

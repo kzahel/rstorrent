@@ -422,26 +422,26 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
 
 ### Now
 
-- **Perform the post-Tactical-143 maintainer readiness review.** Tactical
-  [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) is
-  complete, and no implementation tactical is implicitly active. Select
-  whether to draft the runtime-free BEP 52 core or resume the paused transport
-  campaign before code work continues.
+- **Execute Tactical
+  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md).**
+  Tactical `143` is complete, and explicit maintainer direction resumes the
+  uTP campaign through parent Tactical `142`. First make sustained transfers
+  reliable on one connection, then close the measured throughput gap against
+  matched pinned-libtorrent uTP without weakening delay/fairness behavior.
 
 ### Next
 
-- If selected, draft one bounded tactical for runtime-free BEP 52 metainfo,
+- After Tactical `145` reaches its stopping condition or explicit policy
+  review gate, draft one bounded tactical for runtime-free BEP 52 metainfo,
   geometry, and Merkle behavior from the accepted v2/hybrid topic.
-- If selected instead, resume paused Tactical `142` through ready repair
-  Tactical `145` from their retained evidence and causal checkpoint.
 
 ### Later
 
-Paused Tactical
+Active parent Tactical
 [`142`](../tactical/142-wan-transport-performance-matrix.md) retains its 56
-post-repair cells and exact analysis checkpoint. Ready child Tactical
+post-repair cells and exact analysis checkpoint while active child Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-resumes only after this explicitly reprioritized identity foundation. The
+owns the selected reliability and near-parity repair. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
 seed 1 GiB libtorrent uTP control remain typed evidence outside that future
 repair.

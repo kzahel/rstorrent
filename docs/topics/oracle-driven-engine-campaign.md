@@ -469,13 +469,13 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Active tactical: **none.** The sole authoritative **Now** is the post-143
+Active tactical: **Tactical `145` under parent Tactical `142`.** The sole
+authoritative **Now** resumes the uTP campaign after the completed post-143
 maintainer readiness review. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
-and generated first-party identity contract. Tactical `142` and its ready
-child Tactical `145` remain paused without changing their retained evidence
-or next causal hypothesis.
+and generated first-party identity contract. Tactical `142` and its active
+child Tactical `145` retain their evidence and next causal hypothesis.
 
 Latest completed cross-cutting engine tactical:
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md). Full
@@ -556,16 +556,12 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: complete the maintainer readiness review. The
-bounded candidates are drafting the runtime-free BEP 52 metainfo, geometry,
-and Merkle tactical from the accepted v2/hybrid topic, or resuming Tactical
-`142` through ready child Tactical `145`. Do not implement either until it is
-explicitly selected and the readiness queue names its tactical as **Now**.
-
-When resumed, focused Tactical
+Next engine-campaign action: execute focused Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-retains its repeated 16-bit sequence-cycle reproduction and exact terminal-
-reason capture as the leading causal uTP action under Tactical `142`. The
+under Tactical `142`. It starts with repeated 16-bit sequence-cycle
+reproduction and exact terminal-reason capture as the leading causal uTP
+action, then requires reliable single-connection transfers before bounded
+throughput repairs and matched-oracle WAN reruns. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while
