@@ -219,7 +219,17 @@ class ProductEngineService : Service() {
             mutableState.update { it.copy(error = "Select a download folder first") }
             return
         }
-        dispatch(Command.AddMagnet(magnet.trim(), "downloads", startContent, skipFiles))
+        scope.launch {
+            try {
+                clientReady.await()
+                dispatchAddAwait(
+                    Command.AddMagnet(magnet.trim(), "downloads", startContent, skipFiles),
+                    magnetV1(magnet),
+                )
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
     }
 
     fun addTorrentFile(
@@ -247,6 +257,7 @@ class ProductEngineService : Service() {
                 val response = client.addTorrentBytes(request, source)
                 val outcome = response.outcome
                 if (outcome is ResponseOutcome.Error) error(outcome.error.message)
+                logAddResult(response, null)
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -291,13 +302,7 @@ class ProductEngineService : Service() {
                 "disabled" -> HttpsServerAuthenticationPolicy.DISABLED
                 else -> error("unknown tracker HTTPS authentication policy")
             }
-        val torrentId =
-            Regex("(?i)urn:btih:([0-9a-f]{40})")
-                .find(magnet)
-                ?.groupValues
-                ?.get(1)
-                ?.lowercase()
-                ?: error("test magnet has no hexadecimal v1 identity")
+        val v1InfoHash = magnetV1(magnet)
         scope.launch {
             try {
                 clientReady.await()
@@ -319,8 +324,9 @@ class ProductEngineService : Service() {
                     ),
                 )
                 awaitTrackerPolicy(policy)
-                dispatchAwait(
+                val torrentId = dispatchAddAwait(
                     Command.AddMagnet(magnet.trim(), "downloads", startContent, emptyList()),
+                    v1InfoHash,
                 )
                 subscribeTrackerEvidenceForTest(torrentId)
             } catch (error: Throwable) {
@@ -371,8 +377,9 @@ class ProductEngineService : Service() {
                     ),
                 )
                 awaitEncryptionPolicy(policy)
-                dispatchAwait(
+                dispatchAddAwait(
                     Command.AddMagnet(magnet.trim(), "downloads", true, skipFiles),
+                    magnetV1(magnet),
                 )
             } catch (error: Throwable) {
                 reportError(error)
@@ -1051,6 +1058,34 @@ class ProductEngineService : Service() {
         dispatchForResponse(command)
     }
 
+    private fun magnetV1(magnet: String): String =
+        Regex("(?i)urn:btih:([0-9a-f]{40})")
+            .find(magnet)
+            ?.groupValues
+            ?.get(1)
+            ?.lowercase()
+            ?: error("test magnet has no hexadecimal v1 identity")
+
+    private suspend fun dispatchAddAwait(
+        command: Command,
+        v1InfoHash: String?,
+    ): String = logAddResult(dispatchForResponse(command), v1InfoHash)
+
+    private fun logAddResult(
+        response: org.rstorrent.session.uniffi.ResponseEnvelope,
+        v1InfoHash: String?,
+    ): String {
+        val add = (response.result as? CommandResult.AddTorrent)?.result
+            ?: error("add response omitted its result")
+        Log.i(
+            TAG,
+            "torrent_added torrent=${add.torrentId} " +
+                "protocol_v1=${v1InfoHash ?: "unknown"} " +
+                "disposition=${add.disposition::class.simpleName}",
+        )
+        return add.torrentId
+    }
+
     private suspend fun dispatchForResponse(command: Command): org.rstorrent.session.uniffi.ResponseEnvelope {
         val response =
             client.dispatch(
@@ -1236,7 +1271,12 @@ class ProductEngineService : Service() {
                                 "native prepared publication manifest is empty"
                             }
                             val name = client.prepareDynamicSafPublication(torrent.torrentId)
-                            ProductSafDocuments.publish(this@ProductEngineService, treeUri, name)
+                            ProductSafDocuments.publish(
+                                this@ProductEngineService,
+                                treeUri,
+                                torrent.torrentId,
+                                name,
+                            )
                             if (crashAfterSafRename.compareAndSet(true, false)) {
                                 Log.i(
                                     TAG,

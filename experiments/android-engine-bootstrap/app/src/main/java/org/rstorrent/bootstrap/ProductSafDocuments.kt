@@ -156,12 +156,14 @@ object ProductSafDocuments {
     fun publish(
         context: Context,
         treeUri: Uri,
+        torrentId: String,
         name: String,
     ) {
         require(hasGrant(context, treeUri)) { "persisted SAF grant is unavailable" }
+        requireValidComponent(torrentId)
         requireValidComponent(name)
         val root = documentUri(treeUri)
-        val staging = findUniqueChild(context, root, ".$name.rstorrent-staging")
+        val staging = findUniqueChild(context, root, ".$torrentId.rstorrent-staging")
         val existingFinal = findUniqueChild(context, root, name)
         check(staging == null || existingFinal == null) {
             "both staging and published SAF outputs exist"
@@ -187,6 +189,7 @@ object ProductSafDocuments {
         val root = documentUri(treeUri)
         deleteManagedArtifacts(
             plan.name,
+            plan.torrentId,
             find = { name -> findUniqueChild(context, root, name) },
             delete = { document ->
                 DocumentsContract.deleteDocument(context.contentResolver, document)
@@ -352,15 +355,19 @@ object ProductSafDocuments {
             .getString(TREE_URI, null)
 }
 
-internal fun managedRemovalNames(name: String): List<String> =
-    listOf(name, ".$name.rstorrent-staging", ".$name.rstorrent-parts")
+internal fun managedRemovalNames(
+    name: String,
+    torrentId: String,
+): List<String> =
+    listOf(name, ".$torrentId.rstorrent-staging", ".$torrentId.rstorrent-parts")
 
 internal fun <T> deleteManagedArtifacts(
     name: String,
+    torrentId: String,
     find: (String) -> T?,
     delete: (T) -> Boolean,
 ) {
-    for (artifact in managedRemovalNames(name)) {
+    for (artifact in managedRemovalNames(name, torrentId)) {
         val document = find(artifact) ?: continue
         check(delete(document)) { "provider refused to delete SAF document $artifact" }
     }

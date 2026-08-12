@@ -136,18 +136,19 @@ class ProductStateReducerTest {
     @Test
     fun safRemovalUsesOnlyTheThreeNativeManagedArtifactRoles() {
         assertEquals(
-            listOf("test", ".test.rstorrent-staging", ".test.rstorrent-parts"),
-            managedRemovalNames("test"),
+            listOf("test", ".t1-owner.rstorrent-staging", ".t1-owner.rstorrent-parts"),
+            managedRemovalNames("test", "t1-owner"),
         )
     }
 
     @Test
     fun safRemovalIsRepeatableAndTreatsMissingArtifactsAsSuccess() {
-        val documents = managedRemovalNames("test").toMutableSet()
+        val documents = managedRemovalNames("test", "t1-owner").toMutableSet()
         val deleted = mutableListOf<String>()
         repeat(2) {
             deleteManagedArtifacts(
                 "test",
+                "t1-owner",
                 find = { name -> name.takeIf(documents::contains) },
                 delete = { name ->
                     deleted += name
@@ -155,7 +156,7 @@ class ProductStateReducerTest {
                 },
             )
         }
-        assertEquals(managedRemovalNames("test"), deleted)
+        assertEquals(managedRemovalNames("test", "t1-owner"), deleted)
         assertEquals(emptySet<String>(), documents)
     }
 
@@ -165,6 +166,7 @@ class ProductStateReducerTest {
         assertThrows(IllegalStateException::class.java) {
             deleteManagedArtifacts(
                 "test",
+                "t1-owner",
                 find = { it },
                 delete = { name ->
                     attempted += name

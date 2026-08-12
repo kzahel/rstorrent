@@ -14,6 +14,7 @@ import re
 import shlex
 import shutil
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -41,6 +42,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-identity-reset",
     "product-incomplete-duplex",
     "product-saf-grant-repair",
     "product-https-tracker",
@@ -1629,6 +1631,40 @@ def wait_product_log(target: Any, marker: str, description: str, timeout: float 
     raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
 
 
+def product_add_count(target: Any, v1_info_hash: str) -> int:
+    pattern = re.compile(
+        rf"torrent_added torrent=t1-[0-9a-f]{{32}} "
+        rf"protocol_v1={re.escape(v1_info_hash)}\b"
+    )
+    return len(pattern.findall(product_logs(target)))
+
+
+def wait_product_torrent_id(
+    target: Any,
+    v1_info_hash: str,
+    previous_count: int,
+    timeout: float = 20,
+) -> str:
+    pattern = re.compile(
+        rf"torrent_added torrent=(t1-[0-9a-f]{{32}}) "
+        rf"protocol_v1={re.escape(v1_info_hash)}\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        matches = pattern.findall(logs)
+        if len(matches) > previous_count:
+            return matches[previous_count]
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        "timed out waiting for allocated Android torrent owner "
+        f"for v1={v1_info_hash}\n{logs}"
+    )
+
+
 def request_product_torrent_action(target: Any, torrent_id: str, action: str) -> None:
     result = target.shell(
         [
@@ -1738,10 +1774,13 @@ def run_product_dynamic_saf_profile(
     ordinal: int,
     storage: str,
     tracker_support: ModuleType | None = None,
+    identity_reset: bool = False,
 ) -> dict[str, Any]:
     profile = (
         "product-https-tracker"
         if tracker_support is not None
+        else "product-identity-reset"
+        if identity_reset
         else "product-dynamic-saf"
     )
     if not storage.startswith("saf-"):
@@ -1754,9 +1793,47 @@ def run_product_dynamic_saf_profile(
     output_root = f"{probe.grant_path(grant_storage)}/{fixture.name}"
     staging_root = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-staging"
     part_path = f"{probe.grant_path(grant_storage)}/.{fixture.name}.rstorrent-parts"
+    reset_sentinels: dict[str, str] = {}
     try:
         clear_application(target)
         probe.prepare_grant_folder(target, grant_storage)
+        if identity_reset:
+            legacy_database = fixture.run_path / "schema-18-session.db"
+            with sqlite3.connect(legacy_database) as connection:
+                connection.execute(
+                    "CREATE TABLE request_receipts(request_id TEXT PRIMARY KEY)"
+                )
+                connection.execute(
+                    "INSERT INTO request_receipts VALUES ('legacy-request')"
+                )
+                connection.execute("PRAGMA user_version = 18")
+            remote_database = f"/data/local/tmp/rstorrent-schema18-{ordinal}.db"
+            target.run(["push", str(legacy_database), remote_database])
+            target.shell(
+                ["run-as", PACKAGE, "mkdir", "-p", "files/product-profile"]
+            )
+            target.shell(
+                [
+                    "run-as",
+                    PACKAGE,
+                    "cp",
+                    remote_database,
+                    "files/product-profile/session.db",
+                ]
+            )
+            target.shell(["rm", remote_database], check=False)
+            for name, content in (
+                ("legacy-published-sentinel.bin", b"published-before-schema-reset"),
+                (
+                    ".t1-11111111111111111111111111111111.rstorrent-parts",
+                    b"partial-before-schema-reset",
+                ),
+            ):
+                source = fixture.run_path / name
+                source.write_bytes(content)
+                destination = f"{probe.grant_path(grant_storage)}/{name}"
+                target.run(["push", str(source), destination])
+                reset_sentinels[destination] = hashlib.sha256(content).hexdigest()
         target.shell(
             ["pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS"],
             check=False,
@@ -1802,6 +1879,18 @@ def run_product_dynamic_saf_profile(
             time.sleep(0.2)
         else:
             raise BootstrapFailure("product service did not activate the persisted SAF tree")
+        if identity_reset:
+            wait_product_log(
+                target,
+                "diagnostic=profile_catalog_reset",
+                "schema 18 identity-epoch catalog reset",
+            )
+            for path, expected_hash in reset_sentinels.items():
+                actual_hash = target.shell(["sha256sum", path]).stdout.split()[0]
+                if actual_hash != expected_hash:
+                    raise BootstrapFailure(
+                        f"schema reset modified external sentinel {path}"
+                    )
 
         baseline_fds = product_fd_count(target)
         peer_transport = ReverseTransport.create(
@@ -1850,6 +1939,7 @@ def run_product_dynamic_saf_profile(
             start_command.extend(
                 ["--es", "product_tracker_https_policy", "disabled"]
             )
+        add_count = product_add_count(target, fixture.info_hash)
         started = target.shell(
             start_command,
             timeout=30,
@@ -1862,9 +1952,12 @@ def run_product_dynamic_saf_profile(
                 "could not add product magnet: "
                 f"code={started.returncode} stdout={started.stdout} stderr={started.stderr}"
             )
+        torrent_id = wait_product_torrent_id(target, fixture.info_hash, add_count)
+        staging_root = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{probe.grant_path(grant_storage)}/.{torrent_id}.rstorrent-parts"
         metrics, fd_high_water = wait_product_publication(
             target,
-            fixture.info_hash,
+            torrent_id,
             baseline_fds,
         )
         if controlled_tracker is not None:
@@ -1877,7 +1970,7 @@ def run_product_dynamic_saf_profile(
                     ACTIVITY,
                     "--es",
                     "product_tracker_evidence_torrent",
-                    fixture.info_hash,
+                    torrent_id,
                 ],
                 timeout=30,
                 check=False,
@@ -1937,7 +2030,12 @@ def run_product_dynamic_saf_profile(
             digest = target.shell(["sha1sum", path]).stdout.split()[0]
             if digest != fixture.expected_file_hashes[relative_path]:
                 raise BootstrapFailure(f"product output hash differs: {relative_path}")
-        for unexpected in (staging_root, part_path, f"{probe.grant_path(grant_storage)}/{fixture.info_hash}"):
+        for unexpected in (
+            staging_root,
+            part_path,
+            f"{probe.grant_path(grant_storage)}/{torrent_id}",
+            f"{probe.grant_path(grant_storage)}/{fixture.info_hash}",
+        ):
             if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
                 raise BootstrapFailure(f"unexpected managed artifact survived: {unexpected}")
 
@@ -1953,12 +2051,12 @@ def run_product_dynamic_saf_profile(
         )
         restart_logs = wait_product_log(
             target,
-            f"torrent={fixture.info_hash} kind=patch state=COMPLETE",
+            f"torrent={torrent_id} kind=patch state=COMPLETE",
             "complete torrent after restart recheck",
             timeout=30,
         )
         if (
-            f"torrent={fixture.info_hash}" not in restart_logs
+            f"torrent={torrent_id}" not in restart_logs
             or "state=AWAITING_STORAGE" not in restart_logs
             or "verified=0" not in restart_logs
             or f"verified={len(fixture.piece_hashes)}" not in restart_logs
@@ -1966,15 +2064,17 @@ def run_product_dynamic_saf_profile(
             raise BootstrapFailure(
                 "restart did not expose conservative verification reconstruction"
             )
+        if identity_reset and "diagnostic=profile_catalog_reset" in restart_logs:
+            raise BootstrapFailure("acknowledged schema reset report replayed on restart")
 
-        request_product_torrent_action(target, fixture.info_hash, "force_recheck")
-        request_product_torrent_action(target, fixture.info_hash, "enable_upload")
+        request_product_torrent_action(target, torrent_id, "force_recheck")
+        request_product_torrent_action(target, torrent_id, "enable_upload")
         uploaded_bytes = verify_product_upload(target, fixture)
 
-        request_product_torrent_action(target, fixture.info_hash, "remove")
+        request_product_torrent_action(target, torrent_id, "remove")
         wait_product_log(
             target,
-            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            f"saf_removal_confirmed torrent={torrent_id}",
             "application-owned SAF removal",
         )
         for exact_path in (output_root, staging_root, part_path):
@@ -1982,6 +2082,7 @@ def run_product_dynamic_saf_profile(
                 raise BootstrapFailure(f"managed artifact survived removal: {exact_path}")
 
         target.run(["logcat", "-c"], check=False)
+        add_count = 0
         selected = target.shell(
             [
                 "am",
@@ -2000,7 +2101,12 @@ def run_product_dynamic_saf_profile(
         )
         if "Error:" in selected.stdout:
             raise BootstrapFailure("could not start selective product download")
-        wait_product_publication(target, fixture.info_hash, product_fd_count(target))
+        selective_torrent_id = wait_product_torrent_id(
+            target, fixture.info_hash, add_count
+        )
+        wait_product_publication(
+            target, selective_torrent_id, product_fd_count(target)
+        )
         for file_index, (relative_path, _, padding) in enumerate(fixture_files()):
             path = f"{output_root}/{relative_path}"
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
@@ -2013,14 +2119,15 @@ def run_product_dynamic_saf_profile(
             digest = target.shell(["sha1sum", path]).stdout.split()[0]
             if digest != fixture.expected_file_hashes[relative_path]:
                 raise BootstrapFailure(f"selective product hash differs: {relative_path}")
-        request_product_torrent_action(target, fixture.info_hash, "remove")
+        request_product_torrent_action(target, selective_torrent_id, "remove")
         wait_product_log(
             target,
-            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            f"saf_removal_confirmed torrent={selective_torrent_id}",
             "selective SAF removal",
         )
 
         target.run(["logcat", "-c"], check=False)
+        add_count = 0
         fixture.handle.set_upload_limit(4 * 1024)
         cancelling = target.shell(
             [
@@ -2037,16 +2144,19 @@ def run_product_dynamic_saf_profile(
         )
         if "Error:" in cancelling.stdout:
             raise BootstrapFailure("could not start cancellable product download")
+        cancelling_torrent_id = wait_product_torrent_id(
+            target, fixture.info_hash, add_count
+        )
         wait_product_log(
             target,
-            f"torrent={fixture.info_hash} kind=patch state=DOWNLOADING",
+            f"torrent={cancelling_torrent_id} kind=patch state=DOWNLOADING",
             "active product download before cancellation",
         )
-        request_product_torrent_action(target, fixture.info_hash, "pause")
-        request_product_torrent_action(target, fixture.info_hash, "remove")
+        request_product_torrent_action(target, cancelling_torrent_id, "pause")
+        request_product_torrent_action(target, cancelling_torrent_id, "remove")
         wait_product_log(
             target,
-            f"saf_removal_confirmed torrent={fixture.info_hash}",
+            f"saf_removal_confirmed torrent={cancelling_torrent_id}",
             "cancelled SAF cleanup",
         )
         fixture.handle.set_upload_limit(0)
@@ -2061,7 +2171,8 @@ def run_product_dynamic_saf_profile(
             "profile": profile,
             "run": ordinal,
             "identity": identity,
-            "torrent_id": fixture.info_hash,
+            "torrent_id": torrent_id,
+            "v1_info_hash": fixture.info_hash,
             "publication_name": fixture.name,
             "storage_metrics": metrics,
             "process_fds": {
@@ -2076,6 +2187,10 @@ def run_product_dynamic_saf_profile(
             "removal": "exact",
             "selection": "skip_exact",
             "cancellation": "joined_and_removed",
+            "schema_reset": "18_to_19" if identity_reset else None,
+            "external_reset_sentinels": (
+                "byte_exact" if identity_reset else None
+            ),
             "tracker_security": (
                 "encrypted_unauthenticated"
                 if controlled_tracker is not None
@@ -2089,6 +2204,8 @@ def run_product_dynamic_saf_profile(
         }
     finally:
         target.shell(["am", "force-stop", PACKAGE], check=False)
+        for sentinel in reset_sentinels:
+            target.shell(["rm", sentinel], check=False)
         for exact_path in (output_root, staging_root, part_path):
             target.shell(["rm", "-rf", exact_path], check=False)
         probe.remove_grant_folder(target, grant_storage)
@@ -3229,6 +3346,7 @@ def main() -> int:
                 in (
                     "success",
                     "product-dynamic-saf",
+                    "product-identity-reset",
                     "product-incomplete-duplex",
                     "product-https-tracker",
                     "product-mse",
@@ -3264,6 +3382,17 @@ def main() -> int:
                         interop,
                         ordinal,
                         arguments.storage,
+                    )
+                elif profile == "product-identity-reset":
+                    result = run_product_dynamic_saf_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        ordinal,
+                        arguments.storage,
+                        identity_reset=True,
                     )
                 elif profile == "product-saf-grant-repair":
                     result = run_product_saf_grant_repair_profile(
