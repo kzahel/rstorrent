@@ -33,25 +33,36 @@ but no TCP case and no complete pair. The result supplies neither a ratio nor
 a tuning direction; every attempt removed both mappings and all artifacts.
 Active Tactical `142` replaces that narrow attempt with a case-addressable
 64-cell baseline across both engines, roles, physical directions, transports,
-and 8 MiB through 1 GiB sizes. It retains host storage and route calibration,
-per-case process/transport telemetry, atomic resume, and exact cleanup so a
-slow RSTorrent uTP cell can be separated from the Pi SD card, either ISP, or
-ordinary TCP/storage behavior before a repair is selected.
-Its first controlled eight-cell role gate passes exact integrity and cleanup.
-All TCP pairings reach 150.116--287.068 MiB/s, and the mixed/libtorrent uTP
-controls reach 70.190--98.635 MiB/s. Only RSTorrent/RSTorrent uTP is anomalous,
-varying between 0.527 and 0.031 MiB/s across two successful observations with
-no sender retransmission or connection-datagram loss in the slower run. That
-initially selected a feedback-interaction hypothesis for WAN confirmation.
-The exact same-revision WAN gate now completes all 16 8 MiB cells. On the
-local-seed path RSTorrent uTP reaches 0.106--0.121 MiB/s against either
-receiver, versus RSTorrent TCP at 2.144--2.777 MiB/s and libtorrent uTP at
-3.270--3.528 MiB/s. Four RSTorrent-seed uTP cells show 154--180 ms RTT,
-0--6.8 ms queue delay, no loss/timeout/retry exhaustion, queued application
-data, and only 22--36 KiB congestion/flight. This selects focused Tactical
-`144`'s long-RTT sender window-utilization repair. Remote RSTorrent-seed TCP
-also disconnects after an initial burst and completes only after retry; that
-separate placement-sensitive gap remains retained outside the uTP repair.
+and 8 MiB through 1 GiB sizes. Its reusable lab retains host storage and route
+calibration, per-case process/transport telemetry, atomic resume, and exact
+cleanup. The initial complete 8 MiB grid selected focused Tactical `144`'s
+long-RTT sender-window repair. That child is now complete: continuously queued
+new DATA fills the admitted window, the unchanged upload-writer bound reserves
+both possible Piece frames, and each uTP connection has measured ingress
+headroom within the shared-UDP bound. Three rotating affected repetitions
+improve 2.72x--4.48x; all four 64 MiB affected cells complete at
+1.015--1.310 MiB/s, and the formerly churning remote RSTorrent/RSTorrent cell
+improves 10.1x with one connection and zero drops/retry exhaustion.
+
+The post-repair matrix then completed 56 exact cells and 13.125 GiB: full
+8/64/256 MiB grids and all eight remote-seed 1 GiB cases. At remote-seed
+1 GiB, all TCP pairings reach 2.609--2.641 MiB/s and libtorrent/libtorrent uTP
+reaches 2.739 MiB/s. RSTorrent seed to libtorrent uTP reaches 1.200 MiB/s,
+libtorrent seed to RSTorrent reaches 0.750 MiB/s, and RSTorrent/RSTorrent
+reaches 1.107 MiB/s. Thus the remaining gap is neither the Pi disk nor the WAN
+path ceiling.
+
+Long cells instead expose RSTorrent connection turnover. Remote
+libtorrent-seed/RSTorrent-leech uTP starts 2, 4, and 17 connections at
+64/256/1,024 MiB and records 1, 3, and 16 retry-exhausted connections, with
+the peer-wire terminal reason classified as `protocol`. RSTorrent/RSTorrent
+shows the same size-dependent shape at lower counts. Connection-datagram drops
+remain zero and queue high water stays at most 128 of 256. A composed transfer
+through repeated 16-bit uTP sequence cycles is now the leading targeted
+reproduction because only local arithmetic wrap tests exist; it is a
+hypothesis, not yet a diagnosis. One local-seed 1 GiB libtorrent-only uTP
+control was interrupted after 8,828 seconds with successful cleanup and is
+excluded from ratios; the remaining seven local-seed 1 GiB cells are deferred.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

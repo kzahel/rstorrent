@@ -1,11 +1,13 @@
 # Tactical 142: WAN Transport Performance Matrix
 
-Status: **Active.** Explicit maintainer direction authorizes this tactical,
-autonomous implementation and diagnosis, setup of the existing `pimom`
-control peer, repeatable multi-gigabyte direct-public-path TCP/uTP traffic,
-and logical commits. Tailscale remains available for SSH control but must not
-carry payload traffic. There is no metered-traffic ceiling; exact per-case
-time, disk, process, mapping, integrity, and cleanup bounds still apply.
+Status: **Active at an analysis checkpoint.** The reusable lab and focused
+sender repair are implemented. A post-repair epoch has 56 exact successful
+cells and 13,440 MiB of verified payload: complete 8/64/256 MiB grids and all
+eight remote-seed 1 GiB cells. Bulk execution stopped at maintainer review
+because the remaining local-seed 1 GiB controls had declining diagnostic
+value; one interrupted libtorrent/libtorrent control is excluded from ratios.
+The next work should target the newly isolated RSTorrent long-transfer
+reliability boundary rather than resume undirected volume.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -357,12 +359,75 @@ leecher finishes after its ordinary retry interval. Both libtorrent-seed TCP
 controls complete around 2.3--2.4 MiB/s on that path. Tactical `142` retains
 this gap but does not broaden the uTP repair to it.
 
-The uTP evidence selects focused Tactical
-[`144`](144-long-rtt-utp-sender-window-utilization.md). It will prove whether
-per-packet pacing prevents RFC 6817's pre-ACK flight from filling the permitted
-window at long RTT, repair only that composition, and rerun affected controlled
-and WAN cohorts before the larger baseline resumes. Slow start and a different
-controller remain review-gated.
+The uTP evidence selected focused Tactical
+[`144`](144-long-rtt-utp-sender-window-utilization.md). It proved that
+per-packet pacing prevented RFC 6817's pre-ACK flight from filling the
+permitted window at long RTT, repaired that composition and the bounded
+runtime mismatches it exposed, and reran the affected controlled and WAN
+cohorts. Slow start and a different controller remain review-gated.
+
+### Post-repair matrix analysis
+
+Focused Tactical `144` is complete. Its repeated WAN cohort and 64 MiB scaling
+gate prove that filling the admitted sender window, reserving the writer's
+second in-progress Piece frame, and aligning the per-connection ingress queue
+with the 256-datagram shared ingress stage repair real defects. The repeated
+8 MiB RSTorrent-seed medians improve 2.72x--4.48x, and the formerly churning
+64 MiB remote RSTorrent/RSTorrent cell improves 10.1x while retaining one
+connection and zero ingress drops or retry exhaustion.
+
+The broader exact-revision `df68c2f` epoch completed all 16 cells at 8, 64,
+and 256 MiB plus all eight remote-seed 1 GiB cells. All 56 successful cases
+hash-verify, observe one forced transport with no TCP/uTP masking, delete the
+finite mapping, remove case artifacts, and pass endpoint cleanup. They account
+for 13,440 MiB (13.125 GiB) of exact payload. One local-seed 1 GiB
+libtorrent/libtorrent uTP control was maintainer-interrupted after
+8,828 seconds and records a typed `ResourceError` with successful cleanup; it
+is not an RSTorrent failure and is excluded. The other seven local-seed 1 GiB
+cells were not run.
+
+The steady-size uTP/TCP ratios are now diagnostic:
+
+| Placement and size | libtorrent/libtorrent | libtorrent/RSTorrent | RSTorrent/libtorrent | RSTorrent/RSTorrent |
+| --- | ---: | ---: | ---: | ---: |
+| local seed, 256 MiB | 67.6% | 81.4% | 37.9% | 15.1% |
+| remote seed, 256 MiB | 106.0% | 34.5% | 46.1% | 34.4% |
+| remote seed, 1 GiB | 105.0% | 28.4% | 45.9% | 41.9% |
+
+On the remote-seed 1 GiB cohort, all four TCP pairings cluster at
+2.609--2.641 MiB/s and libtorrent/libtorrent uTP reaches 2.739 MiB/s. Replacing
+either uTP endpoint with RSTorrent lowers active rate: RSTorrent seed to
+libtorrent reaches 1.200 MiB/s, libtorrent seed to RSTorrent reaches
+0.750 MiB/s, and RSTorrent/RSTorrent reaches 1.107 MiB/s. The Pi disk, ISP,
+and TCP path therefore do not explain the RSTorrent-specific remainder.
+
+The most important new evidence is connection longevity, not another scalar
+speed sample. Remote libtorrent-seed to RSTorrent-leech uTP starts 2, 4, and
+17 connections at 64, 256, and 1,024 MiB and exhausts 1, 3, and 16 retries;
+the last peer failure is consistently classified as `protocol`. Remote
+RSTorrent/RSTorrent starts 1, 4, and 7 connections and exhausts 0, 3, and 6
+retries at the same sizes. RSTorrent-seed to libtorrent at remote 1 GiB also
+starts six connections and exhausts five retries. Every one of these cases
+still hash-verifies, but reconnect time suppresses throughput.
+
+The repaired ingress queue is not overflowing: RSTorrent queue high water is
+at most 128 of 256 and drops remain zero throughout these long cells. Process
+resources also reject saturation as the first owner. At 1 GiB, RSTorrent RSS
+high waters remain at most 20.2 MiB for seeding and 27.7 MiB for leeching,
+while the corresponding libtorrent maxima are 684.3 MiB and 1,061.6 MiB;
+sampled mean CPU remains comparable.
+
+The leading next hypothesis is ordered-stream corruption at or near repeated
+16-bit uTP sequence-number cycles. The protocol unit tests cover local send
+and receive arithmetic across one wrap, but no deterministic transport or
+runtime test carries more than 65,536 DATA packets through the composed
+ordered stream. The scaling protocol-failure evidence makes that seam the
+highest-value first reproduction. It is not yet causal: reconnect counts do
+not exactly equal predicted wraps, and the interrupted libtorrent-only control
+also demonstrates environmental variability. The next focused tactical should
+first preserve the exact worker/peer-wire terminal reason and construct a
+bounded end-to-end wrap-crossing transfer before changing sequence logic or
+congestion policy.
 
 ## Non-Goals And Escalation
 

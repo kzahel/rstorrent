@@ -92,8 +92,13 @@ direction then selected measurement-only Tactical
 evidence-limited with one retained exact uTP case, zero complete TCP/uTP pairs,
 and exact cleanup. Explicit maintainer direction now activates Tactical
 [`142`](../tactical/142-wan-transport-performance-matrix.md) as the sole
-authoritative **Now**: a resumable, multi-size, cross-engine, cross-role, both-
-direction WAN matrix plus causal diagnosis before any RSTorrent repair.
+authoritative **Now**: its resumable multi-size, cross-engine, cross-role,
+both-direction WAN lab selected completed focused Tactical
+[`144`](../tactical/144-long-rtt-utp-sender-window-utilization.md), which
+repairs sender-window underfill and two exposed runtime bound mismatches
+without changing RFC 6817 policy. The post-repair checkpoint has 56 exact WAN
+cells and now owns targeted diagnosis of a distinct size-dependent RSTorrent
+uTP peer-wire protocol failure before any further repair.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -528,16 +533,20 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical `144` under active parent
-Tactical `142`. All 16 exact same-revision 8 MiB WAN cells pass. On the local-
-seed path, RSTorrent uTP is 0.106--0.121 MiB/s against either receiver while
-RSTorrent TCP is 2.144--2.777 MiB/s and libtorrent uTP is 3.270--3.528 MiB/s.
-RSTorrent uTP has queued data, 154--180 ms RTT, near-zero queue delay, no loss
-or timeout, and only 22--36 KiB flight/window. Tactical `144` must reproduce
-and repair the pacing/flight-growth composition without adding slow start or
-changing RFC 6817 policy, then rerun affected WAN cohorts before Tactical
-`142` resumes larger sizes. A separate remote-placement RSTorrent TCP seed
-disconnect remains retained and outside that repair.
+Next engine-campaign action: review Tactical `142`'s post-repair analysis, then
+draft a focused successor for a bounded composed transfer across repeated
+16-bit uTP sequence-number cycles and exact terminal-reason capture. Tactical
+`144` is complete; repeated affected WAN cells improve 2.72x--4.48x and its
+formerly churning 64 MiB remote RSTorrent/RSTorrent cell improves 10.1x with
+one connection and zero ingress drops. The parent matrix completes 56 cells
+and 13.125 GiB through the full 256 MiB grid and remote-seed 1 GiB half.
+Libtorrent/libtorrent uTP reaches the same 1 GiB path ceiling as TCP, but large
+RSTorrent uTP cells repeatedly reconnect with a peer-wire `protocol` failure
+despite zero connection-datagram drops. Existing tests cover local arithmetic
+at sequence wrap, not a full composed stream cycle, so wrap is the leading
+causal hypothesis but remains unproven. The separate remote-placement
+RSTorrent TCP seed disconnect and interrupted libtorrent-only 1 GiB control
+remain outside that repair.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

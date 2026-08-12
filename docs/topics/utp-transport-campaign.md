@@ -67,6 +67,14 @@ both mixed-engine uTP directions and all TCP controls are fast. Its exact WAN
 long-RTT RSTorrent uTP sender window defect. Focused Tactical
 [`144`](../tactical/144-long-rtt-utp-sender-window-utilization.md) owns the
 causal pacing/flight-growth repair without slow start or a controller change.
+Tactical `144` is now complete: repeated affected cells improve 2.72x--4.48x,
+the 64 MiB production regression completes without queue drops or reconnects,
+both Android ABIs and repository gates pass, and the accepted controller is
+unchanged. Tactical `142` has completed 56 post-repair WAN cells through a
+full 256 MiB grid and the remote-seed 1 GiB half. That analysis isolates a
+separate size-dependent peer-wire protocol failure and reconnect pattern at
+RSTorrent uTP endpoints; bulk volume is paused in favor of a targeted
+long-transfer reproduction.
 
 ## Scope And Ownership
 
@@ -925,13 +933,21 @@ change.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
-completed; Tactical `142` owns the current checkpoint. Its controlled role
-gate passes and selects a RSTorrent/RSTorrent uTP feedback interaction for
-both-direction WAN confirmation before a repair tactical. The same-revision
-WAN gate now passes all 16 8 MiB cells and refines that diagnosis to the
-RSTorrent uTP sender against either receiver: queued bytes and near-zero queue
-delay coexist with only 22--36 KiB flight at 154--180 ms RTT and no loss.
-Tactical `144` is the active focused child; it preserves the no-slow-start RFC
-6817 controller and tests the separate per-packet pacer as the underfill owner.
-Another WAN cohort, another NAT mechanism, IPv6 uTP, permanent network change,
-another host, and a broader uTP support claim remain separate decisions.
+completed; Tactical `142` owns the current checkpoint. Completed Tactical
+`144` causally repaired sender-window underfill plus the writer-headroom and
+ingress-queue composition defects exposed by the larger window. Its repeated
+WAN medians improve 2.72x--4.48x, and affected 64 MiB cells complete at
+1.015--1.310 MiB/s without transport masking or retry exhaustion.
+
+The parent post-repair matrix now has 56 exact successful cells and
+13.125 GiB of verified payload: complete 8/64/256 MiB grids and every
+remote-seed 1 GiB pairing. Libtorrent/libtorrent uTP reaches the same remote
+path ceiling as TCP, while RSTorrent uTP remains slower and repeatedly
+reconnects on large cells with a peer-wire `protocol` failure despite zero
+connection-datagram drops. The next high-value step is a bounded composed
+transfer across repeated 16-bit sequence-number wrap, with exact terminal
+reason capture; sequence wrap is a hypothesis, not a conclusion. The unrun
+local-seed 1 GiB cells are deliberately deferred at this review checkpoint.
+Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
+change, another host, and a broader uTP support claim remain separate
+decisions.

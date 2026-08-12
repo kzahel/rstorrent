@@ -1,10 +1,11 @@
 # Tactical 144: Long-RTT uTP Sender Window Utilization
 
-Status: **Active under Tactical 142's approved repair stage.** The complete
-same-revision 8 MiB WAN matrix isolates an RSTorrent uTP sender window-growth
-defect on an idle approximately 155--180 ms RTT path. This tactical may repair
-that existing owner autonomously and commit in logical stages. It does not
-authorize slow start or another congestion controller.
+Status: **Complete.** The scoped repair removes the separate new-DATA pacer,
+preserves the accepted no-slow-start RFC 6817 controller, fixes two bounded
+runtime composition defects exposed by the larger sender window, and passes
+controlled, repeated WAN, Android-build, and repository gates. The parent
+matrix still shows a distinct long-transfer reliability and throughput gap;
+that is not silently folded into this completed sender-utilization slice.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -186,6 +187,28 @@ the repair to the separate TCP disconnect.
 
 ## Implementation Evidence
 
+The new ACK classifications confirmed the original sender hypothesis. In the
+checked-in clean 160 ms scenario, continuously queued application data was
+classified as locally underfilled rather than congestion- or remote-window
+limited. Pinned libtorrent's send loop drains already-admissible DATA until a
+window gate closes. RSTorrent now does the same while retaining pacing for
+retransmissions, one-emission deterministic polls, and the 64-emission runtime
+turn. The exact deterministic transfer improves from 29.00 to 18.10 seconds,
+sender-underfilled ACKs fall to zero, final congestion window grows from
+57 KiB to 150 KiB, and loss remains zero. This is a 1.60x deterministic
+improvement rather than the provisional 3x acceptance threshold; the WAN
+effect below exceeds 3x in three of four affected 8 MiB cells and materially
+improves the fourth. The provisional deterministic threshold overestimated
+the fraction of that synthetic duration owned by the pacer and is recorded as
+a threshold miss rather than represented as a pass.
+
+A full sender window then exposed an existing incoming-upload byte-bound
+mismatch. One maximum Piece frame of target headroom was insufficient because
+one read completion may already have started the next read. Reserving two
+frames within the unchanged hard writer bound prevents the normal stream from
+being dropped after roughly 11 MiB. Typed worker-terminal evidence and a real
+16 MiB, 160 ms mixed-engine regression retain this boundary.
+
 The first WAN scaling cohort found a second composition defect after sender
 window utilization was repaired. At 64 MiB, RSTorrent-seed to
 RSTorrent-leecher reached the leecher's exact 64-datagram per-connection queue,
@@ -210,3 +233,37 @@ water, 4.01% mean CPU, 14,160 KiB RSS high water, and exact terminal cleanup.
 The relay observes 105,428 decisions, 343 queued datagrams high water, 298,475
 queued bytes high water, and zero loss within its 1,024-datagram/4 MiB
 long-RTT-only bounds.
+
+## WAN And Closure Evidence
+
+At exact revision `df68c2f`, three rotating 8 MiB repetitions for every
+RSTorrent-seed uTP direction/leecher cell complete with exact integrity and
+cleanup. Active-rate medians are 0.474815 MiB/s for local RSTorrent leech,
+0.474947 MiB/s for local libtorrent leech, 0.469506 MiB/s for remote
+RSTorrent leech, and 0.476132 MiB/s for remote libtorrent leech. Relative to
+the same physical cells before repair, these are 3.91x, 4.48x, 2.72x, and
+3.25x. The remote RSTorrent/RSTorrent cell misses the provisional 3x threshold
+but is repeatable within 0.468082--0.469729 MiB/s and no longer exhibits the
+original fixed low-window ceiling.
+
+The four affected 64 MiB cells reach 1.014975--1.310440 MiB/s. Each uses one
+RSTorrent endpoint connection with zero connection-datagram drops and zero
+retry exhaustion. The formerly affected remote RSTorrent/RSTorrent placement
+improves from 0.125745 MiB/s over 509 seconds with roughly seven connections
+to 1.269823 MiB/s over 50.401 seconds with one connection, a 10.1x result.
+
+Post-repair controlled gates pass the six ordinary impairment profiles,
+product-MTU matrix, long-RTT mixed-engine oracle, 64 MiB production-owner
+regression, and all eight local RSTorrent/libtorrent TCP/uTP role pairings.
+Repository closure passes `cargo fmt --all -- --check`, warning-denying
+workspace Clippy, the complete workspace tests, 35 WAN/impairment Python
+contract tests, and the full Android bootstrap build for both native ABIs,
+generated bindings, JVM unit tests, and debug APK assembly. The complete
+workspace includes 533 passing engine tests with nine opt-in tests ignored and
+244 passing session tests with two resource profiles ignored. No application
+boundary changed, so web regeneration and tests are inapplicable.
+
+The larger parent matrix is deliberately analyzed separately. It confirms
+that this tactical repaired a causal defect, but it does not establish uTP/TCP
+near-parity or long-transfer connection longevity and therefore does not
+authorize slow start, controller tuning, or a broader support claim.
