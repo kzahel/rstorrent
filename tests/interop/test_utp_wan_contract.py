@@ -7,6 +7,7 @@ import argparse
 import ipaddress
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,12 @@ from product_utp_reachability import (
     validate_udp_mapping,
 )
 from utp_remote_seed import eligible_public_ipv4, parse_mapping_entries
+from utp_remote_leecher import (
+    create_transport_session,
+    milestone_thresholds,
+    transport_settings,
+)
+from utp_reference_oracle import create_fixture
 from utp_rstorrent_wan import (
     WanFailure,
     aborted_remote_summary,
@@ -36,6 +43,60 @@ from utp_rstorrent_wan import (
 
 
 class UtpWanContractTests(unittest.TestCase):
+    def test_remote_transport_settings_are_mutually_exclusive(self) -> None:
+        tcp = transport_settings("127.0.0.1", 42000, "tcp")
+        utp = transport_settings("127.0.0.1", 42001, "utp")
+        self.assertTrue(tcp["enable_incoming_tcp"])
+        self.assertTrue(tcp["enable_outgoing_tcp"])
+        self.assertFalse(tcp["enable_incoming_utp"])
+        self.assertFalse(tcp["enable_outgoing_utp"])
+        self.assertFalse(utp["enable_incoming_tcp"])
+        self.assertFalse(utp["enable_outgoing_tcp"])
+        self.assertTrue(utp["enable_incoming_utp"])
+        self.assertTrue(utp["enable_outgoing_utp"])
+        self.assertEqual(tcp["proxy_type"], 0)
+        self.assertEqual(utp["proxy_type"], 0)
+
+        tcp_session, tcp_applied = create_transport_session(
+            "127.0.0.1", 42000, "tcp"
+        )
+        utp_session, utp_applied = create_transport_session(
+            "127.0.0.1", 42001, "utp"
+        )
+        try:
+            self.assertTrue(tcp_applied["enable_outgoing_tcp"])
+            self.assertFalse(tcp_applied["enable_outgoing_utp"])
+            self.assertFalse(utp_applied["enable_outgoing_tcp"])
+            self.assertTrue(utp_applied["enable_outgoing_utp"])
+        finally:
+            tcp_session.pause()
+            utp_session.pause()
+
+    def test_comparator_fixture_geometry_and_milestones_are_exact(self) -> None:
+        payload_bytes = 8 * 1024 * 1024 + 731
+        piece_bytes = 256 * 1024
+        with tempfile.TemporaryDirectory() as temporary:
+            torrent_info, seed_root, expected_sha1 = create_fixture(
+                Path(temporary),
+                payload_size=payload_bytes,
+                piece_size=piece_bytes,
+            )
+            self.assertEqual(torrent_info.total_size(), payload_bytes)
+            self.assertEqual(torrent_info.piece_length(), piece_bytes)
+            self.assertEqual(torrent_info.num_pieces(), 33)
+            self.assertEqual((seed_root / "payload.bin").stat().st_size, payload_bytes)
+            self.assertEqual(len(expected_sha1), 40)
+        self.assertEqual(
+            milestone_thresholds(payload_bytes),
+            {
+                "1": 83_894,
+                "25": 2_097_335,
+                "50": 4_194_670,
+                "75": 6_292_005,
+                "100": payload_bytes,
+            },
+        )
+
     def test_product_udp_mapping_targets_the_actual_utp_listener(self) -> None:
         ready = {
             "utp_listen": "192.168.1.20:42001",

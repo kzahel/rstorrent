@@ -66,9 +66,11 @@ class OracleFailure(RuntimeError):
     pass
 
 
-def write_payload(path: Path) -> str:
+def write_payload(path: Path, payload_size: int = PAYLOAD_SIZE) -> str:
+    if payload_size <= 0:
+        raise OracleFailure("controlled payload size must be positive")
     digest = hashlib.sha1()
-    remaining = PAYLOAD_SIZE
+    remaining = payload_size
     chunk_index = 0
     with path.open("xb") as output:
         while remaining:
@@ -98,22 +100,32 @@ def hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def create_fixture(root: Path) -> tuple[lt.torrent_info, Path, str]:
+def create_fixture(
+    root: Path,
+    *,
+    payload_size: int = PAYLOAD_SIZE,
+    piece_size: int = PIECE_SIZE,
+) -> tuple[lt.torrent_info, Path, str]:
+    if payload_size <= 0 or piece_size <= 0:
+        raise OracleFailure("controlled fixture geometry must be positive")
     seed_root = root / "seed"
     seed_root.mkdir()
-    expected_sha1 = write_payload(seed_root / PAYLOAD_NAME)
+    expected_sha1 = write_payload(seed_root / PAYLOAD_NAME, payload_size)
     files = lt.file_storage()
-    files.add_file(PAYLOAD_NAME, PAYLOAD_SIZE)
+    files.add_file(PAYLOAD_NAME, payload_size)
     creator = lt.create_torrent(
         files,
-        piece_size=PIECE_SIZE,
+        piece_size=piece_size,
         flags=lt.create_torrent.v1_only,
     )
     lt.set_piece_hashes(creator, str(seed_root))
     torrent_path = root / "forced-utp.torrent"
     torrent_path.write_bytes(bytes(lt.bencode(creator.generate())))
     torrent_info = lt.torrent_info(str(torrent_path))
-    if torrent_info.total_size() != PAYLOAD_SIZE:
+    if (
+        torrent_info.total_size() != payload_size
+        or torrent_info.piece_length() != piece_size
+    ):
         raise OracleFailure("controlled torrent has the wrong payload size")
     if any(True for _ in torrent_info.trackers()):
         raise OracleFailure("controlled torrent unexpectedly contains a tracker")
