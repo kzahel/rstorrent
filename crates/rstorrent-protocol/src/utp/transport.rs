@@ -919,10 +919,10 @@ impl TransportState {
             })));
         }
 
-        if self.pacer.is_ready(now_micros) {
-            if let Some(emission) = self.poll_retransmission(now_micros, local_timestamp)? {
-                return Ok(Some(self.install_pending_emission(emission)));
-            }
+        if self.pacer.is_ready(now_micros)
+            && let Some(emission) = self.poll_retransmission(now_micros, local_timestamp)?
+        {
+            return Ok(Some(self.install_pending_emission(emission)));
         }
         if self.retransmissions.front().is_none()
             && let Some(emission) = self.poll_new_data(now_micros, local_timestamp)?
