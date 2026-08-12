@@ -7,6 +7,7 @@ import unittest
 
 from utp_runtime_impairment import (
     DIAGNOSTIC_MTU_PROFILE,
+    LONG_RTT_PROFILE,
     PRODUCT_MTU_1280_PROFILE,
     ImpairmentFailure,
     RelayPolicy,
@@ -101,6 +102,17 @@ class UtpRuntimeImpairmentTests(unittest.TestCase):
             [(0.005,), (0.025,), (0.005,), (0.025,)],
         )
         self.assertEqual(policy.packet_ordinal, 8)
+
+    def test_long_rtt_applies_eighty_milliseconds_each_way(self) -> None:
+        policy = RelayPolicy(LONG_RTT_PROFILE)
+        self.assertEqual(
+            policy.decide("client-to-target", packet(2)).delays_seconds,
+            (0.080,),
+        )
+        self.assertEqual(
+            policy.decide("target-to-client", packet(0)).delays_seconds,
+            (0.080,),
+        )
 
     def test_unknown_relay_direction_is_rejected(self) -> None:
         with self.assertRaisesRegex(ImpairmentFailure, "unknown relay direction"):

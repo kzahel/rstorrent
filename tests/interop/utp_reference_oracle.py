@@ -139,11 +139,12 @@ def create_session() -> lt.session:
 def collect_alerts(session: lt.session, diagnostics: list[str]) -> list[Any]:
     alerts = session.pop_alerts()
     for alert in alerts:
+        alert_type = type(alert).__name__
         if isinstance(
             alert, (lt.session_stats_alert, lt.session_stats_header_alert)
-        ):
+        ) or alert_type == "stats_alert":
             continue
-        diagnostics.append(alert.message())
+        diagnostics.append(f"{alert_type}: {alert.message()}")
     del diagnostics[:-MAX_DIAGNOSTICS]
     return alerts
 

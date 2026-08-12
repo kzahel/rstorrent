@@ -32,6 +32,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 const PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 + 731;
+const MAX_INTEROP_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024 + 731;
 const PIECE_BYTES: u32 = 64 * 1024;
 const LOOPBACK_ROLE_TIMEOUT: Duration = Duration::from_secs(30);
 const PLATFORM_ROLE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -621,7 +622,7 @@ async fn run_seed(
         wait_for_stop(scope, &incoming, peer_sink.as_ref(), &utp, &udp).await?;
         let live_incoming = incoming.snapshot();
         let peers = peer_sink.snapshot();
-        validate_seed_evidence(scope, &live_incoming, &peers)?;
+        validate_seed_evidence(scope, metainfo.total_length, &live_incoming, &peers)?;
         Ok(SeedEvidence {
             live_incoming,
             peers,
@@ -916,13 +917,16 @@ fn diagnostic_upnp_error(error: UpnpError) -> Box<dyn Error> {
 async fn read_fixture(path: &Path) -> Result<(Metainfo, Vec<u8>), Box<dyn Error>> {
     let outer = tokio::fs::read(path).await?;
     let metainfo = Metainfo::from_bytes_with_limits(&outer, BEP9_METAINFO_LIMITS)?;
-    if metainfo.total_length != PAYLOAD_BYTES
+    let expected_pieces = metainfo.total_length.div_ceil(u64::from(PIECE_BYTES));
+    if metainfo.total_length < PAYLOAD_BYTES
+        || metainfo.total_length > MAX_INTEROP_PAYLOAD_BYTES
         || metainfo.piece_length != PIECE_BYTES
         || metainfo.mode != MetainfoMode::SingleFile
-        || metainfo.piece_count() != 33
+        || u64::try_from(metainfo.piece_count())? != expected_pieces
     {
         return Err(format!(
-            "fixture must be one {PAYLOAD_BYTES}-byte file with {PIECE_BYTES}-byte pieces"
+            "fixture must be one {PAYLOAD_BYTES}..={MAX_INTEROP_PAYLOAD_BYTES}-byte file with \
+             {PIECE_BYTES}-byte pieces"
         )
         .into());
     }
@@ -1002,12 +1006,13 @@ async fn wait_for_stop(
 
 fn validate_seed_evidence(
     scope: SeedScope,
+    payload_bytes: u64,
     incoming: &IncomingPeerServiceSnapshot,
     peers: &PeerEvidence,
 ) -> Result<(), Box<dyn Error>> {
-    if incoming.payload_bytes_sent < PAYLOAD_BYTES {
+    if incoming.payload_bytes_sent < payload_bytes {
         return Err(format!(
-            "seed uploaded {} of {PAYLOAD_BYTES} required bytes",
+            "seed uploaded {} of {payload_bytes} required bytes",
             incoming.payload_bytes_sent
         )
         .into());
@@ -1066,6 +1071,11 @@ fn peer_evidence_json(evidence: &PeerEvidence) -> Value {
 }
 
 fn incoming_json(snapshot: &IncomingPeerServiceSnapshot) -> Value {
+    let rejection_counts = snapshot
+        .rejection_counts
+        .iter()
+        .map(|(reason, count)| (format!("{reason:?}"), *count))
+        .collect::<std::collections::BTreeMap<_, _>>();
     json!({
         "registrations": snapshot.registrations,
         "pending": snapshot.pending,
@@ -1083,6 +1093,7 @@ fn incoming_json(snapshot: &IncomingPeerServiceSnapshot) -> Value {
         "writer_send_buffer_high_water": snapshot.writer_send_buffer_high_water,
         "upload_slots_high_water": snapshot.upload_slots_high_water,
         "payload_bytes_sent": snapshot.payload_bytes_sent,
+        "rejection_counts": rejection_counts,
     })
 }
 
@@ -1178,6 +1189,14 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
         "mtu_probe_datagrams_sent": snapshot.mtu_probe_datagrams_sent,
         "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
+        "retry_exhausted_connections": snapshot.retry_exhausted_connections,
+        "graceful_connections": snapshot.graceful_connections,
+        "reset_connections": snapshot.reset_connections,
+        "consumer_dropped_connections": snapshot.consumer_dropped_connections,
+        "generation_changed_connections": snapshot.generation_changed_connections,
+        "service_cancelled_connections": snapshot.service_cancelled_connections,
+        "protocol_error_connections": snapshot.protocol_error_connections,
+        "io_error_connections": snapshot.io_error_connections,
         "worker_panics": snapshot.worker_panics,
     })
 }

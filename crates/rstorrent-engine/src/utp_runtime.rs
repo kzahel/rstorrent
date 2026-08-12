@@ -167,6 +167,13 @@ pub struct UtpServiceSnapshot {
     pub mtu_probe_datagrams_sent: u64,
     pub mtu_fragmentable_retry_datagrams_sent: u64,
     pub retry_exhausted_connections: u64,
+    pub graceful_connections: u64,
+    pub reset_connections: u64,
+    pub consumer_dropped_connections: u64,
+    pub generation_changed_connections: u64,
+    pub service_cancelled_connections: u64,
+    pub protocol_error_connections: u64,
+    pub io_error_connections: u64,
     pub worker_panics: u64,
 }
 
@@ -918,6 +925,13 @@ struct UtpStats {
     mtu_probe_datagrams_sent: AtomicU64,
     mtu_fragmentable_retry_datagrams_sent: AtomicU64,
     retry_exhausted_connections: AtomicU64,
+    graceful_connections: AtomicU64,
+    reset_connections: AtomicU64,
+    consumer_dropped_connections: AtomicU64,
+    generation_changed_connections: AtomicU64,
+    service_cancelled_connections: AtomicU64,
+    protocol_error_connections: AtomicU64,
+    io_error_connections: AtomicU64,
     worker_panics: AtomicU64,
 }
 
@@ -1044,6 +1058,17 @@ impl UtpStats {
                 .mtu_fragmentable_retry_datagrams_sent
                 .load(Ordering::Relaxed),
             retry_exhausted_connections: self.retry_exhausted_connections.load(Ordering::Relaxed),
+            graceful_connections: self.graceful_connections.load(Ordering::Relaxed),
+            reset_connections: self.reset_connections.load(Ordering::Relaxed),
+            consumer_dropped_connections: self.consumer_dropped_connections.load(Ordering::Relaxed),
+            generation_changed_connections: self
+                .generation_changed_connections
+                .load(Ordering::Relaxed),
+            service_cancelled_connections: self
+                .service_cancelled_connections
+                .load(Ordering::Relaxed),
+            protocol_error_connections: self.protocol_error_connections.load(Ordering::Relaxed),
+            io_error_connections: self.io_error_connections.load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
         }
     }
@@ -1262,7 +1287,27 @@ fn handle_worker_join(
         Ok(WorkerReport {
             terminal: WorkerTerminal::RetryExhausted,
         }) => saturating_increment(&stats.retry_exhausted_connections, 1),
-        Ok(_) => {}
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::Graceful,
+        }) => saturating_increment(&stats.graceful_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::Reset,
+        }) => saturating_increment(&stats.reset_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::ConsumerDropped,
+        }) => saturating_increment(&stats.consumer_dropped_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::GenerationChanged,
+        }) => saturating_increment(&stats.generation_changed_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::ServiceCancelled,
+        }) => saturating_increment(&stats.service_cancelled_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::Protocol(_),
+        }) => saturating_increment(&stats.protocol_error_connections, 1),
+        Ok(WorkerReport {
+            terminal: WorkerTerminal::Io(_),
+        }) => saturating_increment(&stats.io_error_connections, 1),
         Err(_) => saturating_increment(&stats.worker_panics, 1),
     }
     Ok(())
@@ -2428,6 +2473,8 @@ mod tests {
         assert_eq!(right_terminal.active_connections, 0);
         for terminal in [left_terminal, right_terminal] {
             assert_eq!(terminal.connections_started, 1);
+            assert_eq!(terminal.graceful_connections, 1);
+            assert_eq!(terminal.consumer_dropped_connections, 0);
             assert_eq!(terminal.selected_mtu_min_bytes, Some(548));
             assert_eq!(terminal.selected_mtu_max_bytes, Some(548));
             assert_eq!(terminal.mtu_candidate_min_bytes, Some(548));
@@ -2556,9 +2603,11 @@ mod tests {
         assert_eq!(right_utp.snapshot().active_connections, 1);
         let left_terminal = left_utp.shutdown().await.unwrap();
         assert_eq!(left_terminal.active_connections, 0);
+        assert_eq!(left_terminal.consumer_dropped_connections, 1);
 
         let right_terminal = right_utp.shutdown().await.unwrap();
         assert_eq!(right_terminal.active_connections, 0);
+        assert_eq!(right_terminal.service_cancelled_connections, 1);
         let error = timeout(Duration::from_secs(1), right.read(&mut [0; 1]))
             .await
             .unwrap()
@@ -2673,7 +2722,8 @@ mod tests {
             .expect_err("RESET must fail stream read");
         assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
         drop(stream);
-        utp.shutdown().await.unwrap();
+        let terminal = utp.shutdown().await.unwrap();
+        assert_eq!(terminal.reset_connections, 1);
         drop(dht);
         udp.shutdown().await.unwrap();
     }
@@ -2867,6 +2917,7 @@ mod tests {
         assert!(terminal.retransmission_datagrams_sent >= 1);
         assert_eq!(terminal.active_connections, 0);
         assert_eq!(terminal.incoming_half_open, 0);
+        assert_eq!(terminal.consumer_dropped_connections, 1);
         assert_eq!(terminal.worker_panics, 0);
         drop(dht);
         udp.shutdown().await.unwrap();

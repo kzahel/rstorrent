@@ -27,8 +27,8 @@ use rstorrent_protocol::mse::{
     MseHandshake, MseMethod, MsePadding, MseResume, MseRole, MseStep, req2_hash,
 };
 use rstorrent_protocol::peer_wire::{
-    BlockRequest, HANDSHAKE_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
-    encode_handshake_with_reserved,
+    BlockRequest, HANDSHAKE_LENGTH, MAX_REQUEST_BLOCK_LENGTH, NegotiatedPeerCapabilities,
+    PeerMessage, decode_handshake, encode_handshake_with_reserved,
 };
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -2621,7 +2621,11 @@ impl QueuedPieceFrames {
 }
 
 const MIN_UPLOAD_SEND_TARGET: usize = 10 * 1_024;
-const MAX_UPLOAD_SEND_TARGET: usize = 500 * 1_024;
+const MAX_PIECE_FRAME_BYTES: usize = MAX_REQUEST_BLOCK_LENGTH as usize + 13;
+// A read completion may cross the target after the upload state has already
+// started the following read. Reserve both Piece frames beneath the writer's
+// hard byte fence so ordinary backpressure cannot become a peer disconnect.
+const MAX_UPLOAD_SEND_TARGET: usize = MAX_INCOMING_WRITER_BYTES - 2 * MAX_PIECE_FRAME_BYTES;
 const UPLOAD_SEND_TARGET_FACTOR_PERCENT: u64 = 50;
 
 struct UploadSendTarget {
@@ -3625,6 +3629,7 @@ mod tests {
     use super::{
         IncomingPeerError, IncomingPeerRuntime, IncomingPeerService, IncomingPeerServiceConfig,
         IncomingRejectionReason, IncomingTcpBootstrap, MAX_DEFERRED_METADATA_REQUESTS,
+        MAX_INCOMING_WRITER_BYTES, MAX_PIECE_FRAME_BYTES, MAX_UPLOAD_SEND_TARGET,
         METADATA_SEND_BUFFER_WATERMARK, QueuedChokeFrame, QueuedPieceFrames, SeedRegistration,
         UploadRateWindow, drain_metadata_requests, handle_metadata_message,
         unique_mse_registration, validate_incoming_fast_message,
@@ -3720,6 +3725,14 @@ mod tests {
         let latest = frame.replace();
         assert!(first.is_cancelled());
         assert!(!latest.is_cancelled());
+    }
+
+    #[test]
+    fn adaptive_upload_target_reserves_two_piece_frames() {
+        assert_eq!(
+            MAX_UPLOAD_SEND_TARGET + 2 * MAX_PIECE_FRAME_BYTES,
+            MAX_INCOMING_WRITER_BYTES
+        );
     }
 
     #[test]

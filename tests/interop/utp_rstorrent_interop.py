@@ -202,11 +202,16 @@ def validate_complete(
     expected_sha1: str,
     *,
     require_fixed_mtu: bool = True,
+    expected_payload_bytes: int = PAYLOAD_SIZE,
+    expected_piece_count: int = 33,
 ) -> None:
     if event.get("event") != "complete" or event.get("role") != role:
         raise InteropFailure(f"unexpected {role} completion event: {event}")
     payload = event.get("payload", {})
-    if payload.get("bytes") != PAYLOAD_SIZE or payload.get("pieces") != 33:
+    if (
+        payload.get("bytes") != expected_payload_bytes
+        or payload.get("pieces") != expected_piece_count
+    ):
         raise InteropFailure(f"{role} reported unexpected payload geometry: {payload}")
     if role in ("leecher", "wan-leecher") and payload.get("sha1") != expected_sha1:
         raise InteropFailure(f"{role} reported the wrong payload hash")
@@ -351,7 +356,12 @@ def run_rstorrent_leecher(binary: Path, root: Path) -> dict[str, Any]:
             raise InteropFailure("RSTorrent leecher exceeded 30 seconds")
         complete = role.read_event(deadline)
         role.wait_success(deadline)
-        validate_complete(complete, "leecher", expected_sha1)
+        validate_complete(
+            complete,
+            "leecher",
+            expected_sha1,
+            require_fixed_mtu=False,
+        )
         if not output.is_file() or output.stat().st_size != PAYLOAD_SIZE:
             raise InteropFailure("RSTorrent leecher output is missing or has the wrong size")
         if hash_file(output) != expected_sha1:
@@ -450,7 +460,12 @@ def run_rstorrent_seed(binary: Path, root: Path) -> dict[str, Any]:
         role.send_stop()
         complete = role.read_event(deadline)
         role.wait_success(deadline)
-        validate_complete(complete, "seed", expected_sha1)
+        validate_complete(
+            complete,
+            "seed",
+            expected_sha1,
+            require_fixed_mtu=False,
+        )
         peer_evidence = complete.get("peer_evidence", {})
         if (
             peer_evidence.get("connection_high_water") != 1
