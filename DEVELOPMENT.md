@@ -546,6 +546,10 @@ The real-socket uTP impairment fixture retains its six-profile explicit
 fixed-548 regression by default. `--product-mtu` runs clean 1,500-byte and
 controlled 1,280-byte product-MTU paths; `--efficiency` runs five alternating
 fixed/dynamic clean-path pairs and checks packet-count, time, CPU, RSS, queues,
+integrity, and cleanup. `--long-rtt` runs the 16 MiB pinned-libtorrent leech
+oracle through a clean 160 ms RTT. The production-role companion runs an exact
+64 MiB RSTorrent seed/leech transfer through the same bounded delay and checks
+one connection, zero queue drops/retry exhaustion, resource high waters,
 integrity, and cleanup:
 
 ```bash
@@ -553,6 +557,10 @@ uv run --project tests/interop --locked \
   python tests/interop/utp_runtime_impairment.py --product-mtu
 uv run --project tests/interop --locked \
   python tests/interop/utp_runtime_impairment.py --efficiency
+uv run --project tests/interop --locked \
+  python tests/interop/utp_runtime_impairment.py --long-rtt
+uv run --project tests/interop --locked \
+  python tests/interop/utp_runtime_long_rtt_product.py
 ```
 
 The concurrent-torrent profile downloads independent deterministic fixtures

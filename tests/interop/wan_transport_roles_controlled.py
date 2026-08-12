@@ -395,7 +395,8 @@ def run_leecher(
                 "RSTorrent leecher failed: "
                 f"outcome={result.get('outcome')}, "
                 f"detail={result.get('terminal_detail')}, "
-                f"methods={result.get('diagnostics', {}).get('peer_methods')}"
+                f"methods={result.get('diagnostics', {}).get('peer_methods')}, "
+                f"utp={result.get('utp_evidence')}"
             ) from error
     finally:
         process.cleanup()

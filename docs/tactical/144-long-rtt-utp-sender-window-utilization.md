@@ -89,6 +89,10 @@ Tactical 121.
 - One deterministic transport poll still emits at most one datagram. The
   runtime drains at most 64 emissions per turn and yields; UDP backpressure
   retains the exact pending datagram.
+- The per-connection receive queue is 256 datagrams, matching the shared uTP
+  ingress stage and remaining below the 1,024-packet sent-state bound. Across
+  64 connections it retains at most 16,384 bounded datagram allocations, or
+  23 MiB of encoded payload at the 1,472-byte IPv4 ceiling.
 - Keep at most 1,024 sent packets, 1 MiB sent bytes, 1 MiB unsent bytes, one
   pending emission, one MTU probe, and the existing eight-attempt retry bound.
 - ACK-only traffic remains unpaced. Retransmissions remain ahead of new data
@@ -179,3 +183,30 @@ new-DATA pacing repair proceed autonomously. Stop for human review before
 adding slow start, changing `GAIN`, `TARGET`, or `ALLOWED_INCREASE`, weakening
 an existing fairness/resource threshold, adding a dependency, or broadening
 the repair to the separate TCP disconnect.
+
+## Implementation Evidence
+
+The first WAN scaling cohort found a second composition defect after sender
+window utilization was repaired. At 64 MiB, RSTorrent-seed to
+RSTorrent-leecher reached the leecher's exact 64-datagram per-connection queue,
+dropped 24 datagrams, exhausted one connection, and reconnected. The three
+other RSTorrent-seed cells completed with one connection at 1.298--1.307
+MiB/s, while the affected cell fell to 0.480 MiB/s.
+
+A production-owner loopback regression now runs the real incoming seed and
+public-probe leecher through a bounded, clean 160 ms RTT relay with an exact
+64 MiB fixture. With the old queue and a reduced 16-emission turn it timed out
+after 264 seconds, retained only 14.5 MiB of useful payload, started four
+connections, filled the queue, dropped 34 datagrams, and exhausted three
+connections. The reduced turn did not prevent saturation, disproving
+sender-turn equality as the cause.
+
+The repair aligns the per-connection ingress queue with the already bounded
+256-datagram shared uTP ingress stage; the 64-emission runtime turn and sender
+controller remain unchanged. The same production regression completes exact
+in 52.859 seconds at 1.211 MiB/s with one connection, zero datagram drops,
+zero retry exhaustion, 124 queued datagrams high water, 13.5% process CPU high
+water, 4.01% mean CPU, 14,160 KiB RSS high water, and exact terminal cleanup.
+The relay observes 105,428 decisions, 343 queued datagrams high water, 298,475
+queued bytes high water, and zero loss within its 1,024-datagram/4 MiB
+long-RTT-only bounds.

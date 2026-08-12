@@ -66,10 +66,12 @@ SCENARIO_TIMEOUT_SECONDS = 180.0
 LONG_RTT_SCENARIO_TIMEOUT_SECONDS = 60.0
 MAX_PACKET_DECISIONS = 20_000
 MAX_PROFILE_BYTES = 16 * 1024 * 1024
-LONG_RTT_MAX_PACKET_DECISIONS = 64_000
-LONG_RTT_MAX_PROFILE_BYTES = 64 * 1024 * 1024
+LONG_RTT_MAX_PACKET_DECISIONS = 200_000
+LONG_RTT_MAX_PROFILE_BYTES = 160 * 1024 * 1024
 MAX_QUEUED_DATAGRAMS = 256
 MAX_QUEUED_BYTES = 1024 * 1024
+LONG_RTT_MAX_QUEUED_DATAGRAMS = 1024
+LONG_RTT_MAX_QUEUED_BYTES = 4 * 1024 * 1024
 MAX_DATAGRAM_BYTES = 65_535
 
 
@@ -212,9 +214,19 @@ class DeterministicUdpRelay:
         destination: tuple[str, int],
     ) -> None:
         snapshot = self.snapshot_value
-        if len(self.events) >= MAX_QUEUED_DATAGRAMS:
+        datagram_limit = (
+            LONG_RTT_MAX_QUEUED_DATAGRAMS
+            if self.policy.profile == LONG_RTT_PROFILE
+            else MAX_QUEUED_DATAGRAMS
+        )
+        byte_limit = (
+            LONG_RTT_MAX_QUEUED_BYTES
+            if self.policy.profile == LONG_RTT_PROFILE
+            else MAX_QUEUED_BYTES
+        )
+        if len(self.events) >= datagram_limit:
             raise ImpairmentFailure("relay datagram queue exceeded its bound")
-        if snapshot.queued_bytes + len(payload) > MAX_QUEUED_BYTES:
+        if snapshot.queued_bytes + len(payload) > byte_limit:
             raise ImpairmentFailure("relay byte queue exceeded its bound")
         self.serial += 1
         heapq.heappush(

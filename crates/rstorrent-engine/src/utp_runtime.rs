@@ -29,15 +29,15 @@ use tokio_util::sync::{CancellationToken, PollSender};
 
 use crate::network::AddressFamily;
 use crate::session_udp::{
-    SessionUdpError, SessionUdpGenerations, SessionUdpService, SessionUtpSendHandle,
-    SessionUtpTransport,
+    SESSION_UDP_UTP_QUEUE, SessionUdpError, SessionUdpGenerations, SessionUdpService,
+    SessionUtpSendHandle, SessionUtpTransport,
 };
 use crate::udp_fragmentation::Ipv4FragmentationProtectionStatus;
 
 pub const MAX_UTP_CONNECTIONS: usize = 64;
 pub const MAX_INCOMING_UTP_HALF_OPEN: usize = 16;
 pub const UTP_INCOMING_STREAM_QUEUE: usize = 16;
-pub const UTP_CONNECTION_DATAGRAM_QUEUE: usize = 64;
+pub const UTP_CONNECTION_DATAGRAM_QUEUE: usize = SESSION_UDP_UTP_QUEUE;
 pub const MAX_UTP_APPLICATION_WRITE_BYTES: usize = 16 * 1024;
 pub const UTP_RUNTIME_DATAGRAM_BYTES: usize = 548;
 const UTP_SERVICE_COMMAND_QUEUE: usize = 16;
@@ -3005,6 +3005,13 @@ mod tests {
             receiver.try_recv(),
             Err(mpsc::error::TryRecvError::Empty)
         ));
+    }
+
+    #[test]
+    fn emission_turn_is_bounded_below_per_connection_ingress() {
+        assert!(MAX_EMISSIONS_PER_TURN > 0);
+        assert!(MAX_EMISSIONS_PER_TURN < UTP_CONNECTION_DATAGRAM_QUEUE);
+        assert_eq!(MAX_EMISSIONS_PER_TURN, UTP_CONNECTION_DATAGRAM_QUEUE / 4);
     }
 
     #[test]
