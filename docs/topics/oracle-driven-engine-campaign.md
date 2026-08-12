@@ -99,10 +99,11 @@ repairs sender-window underfill and two exposed runtime bound mismatches
 without changing RFC 6817 policy. The post-repair checkpoint has 56 exact WAN
 cells and retains targeted diagnosis of a distinct size-dependent RSTorrent
 uTP peer-wire protocol failure before any further repair. Explicit maintainer
-direction on 2026-08-12 pauses that campaign at this checkpoint and activates
+direction on 2026-08-12 paused that campaign at this checkpoint and activated
 Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) as the
-sole authoritative **Now**.
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md), which
+completed on 2026-08-13. The sole authoritative **Now** is the maintainer
+readiness review; no implementation tactical is implicitly active.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -468,12 +469,23 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Active tactical: **Tactical `143` is the sole authoritative `Now`.** It owns
-the v1-preserving opaque torrent owner, typed protocol aliases, schema-19
-fresh persistence epoch, fail-closed pre-task reset, storage artifact
-versioning, and generated first-party identity contract. Tactical `142` and
-its ready child Tactical `145` remain paused without changing their retained
-evidence or next causal hypothesis.
+Active tactical: **none.** The sole authoritative **Now** is the post-143
+maintainer readiness review. Completed Tactical `143` installs the
+v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
+persistence epoch, fail-closed pre-task reset, storage artifact versioning,
+and generated first-party identity contract. Tactical `142` and its ready
+child Tactical `145` remain paused without changing their retained evidence
+or next causal hypothesis.
+
+Latest completed cross-cutting engine tactical:
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md). Full
+identity authority is separate from opaque runtime/application ownership and
+version-tagged 20-byte wire selection. Schema 19 deliberately resets
+recognized pre-release catalogs without touching external payload; version-2
+have and part artifacts bind owner plus metadata fingerprint. Controlled
+pinned-libtorrent v1 roles, crash/restart/publication, generated web clients,
+both Android ABIs, and API-34 SAF schema-reset evidence pass. V2/hybrid input,
+Merkle integrity, and BEP 52 wire behavior remain absent.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -544,12 +556,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) beginning
-with its pure typed identity values and bounded full/wire registry gate before
-the schema reset or runtime threading. Re-open BEP 52, BEP 9 magnet identity,
-and the exact pinned libtorrent identity/torrent-list/resume source and tests;
-record any refined findings in the tactical before state-shape changes.
+Next engine-campaign action: complete the maintainer readiness review. The
+bounded candidates are drafting the runtime-free BEP 52 metainfo, geometry,
+and Merkle tactical from the accepted v2/hybrid topic, or resuming Tactical
+`142` through ready child Tactical `145`. Do not implement either until it is
+explicitly selected and the readiness queue names its tactical as **Now**.
 
 When resumed, focused Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)

@@ -1,10 +1,11 @@
 # Tactical 143: Dual Identity And Persistence Foundation
 
-Status: **Active through the pure identity-value gate.** Maintainer direction
-on 2026-08-12 authorizes end-to-end implementation with logical commits.
-Tactical
-[`142`](142-wan-transport-performance-matrix.md) is paused at its recorded
-analysis checkpoint, and this tactical is the sole authoritative **Now**.
+Status: **Completed on 2026-08-13.** The v1-preserving opaque-owner,
+dual-identity, schema-19 reset, artifact-format, runtime, generated-client,
+controlled-oracle, and Android gates pass. Tactical
+[`142`](142-wan-transport-performance-matrix.md) remains paused at its
+recorded analysis checkpoint. No BEP 52 input or wire behavior is accepted,
+and completion does not activate another tactical.
 
 Topics: `bittorrent-v2-and-hybrid`, `client-persistence`,
 `application-control`, `application-view-api`, `client-surfaces`,
@@ -565,50 +566,81 @@ single replacement epoch and the final baseline proves the integrated shape.
 
 ## Execution Checkpoint
 
-Stages 1 and 2 are complete. The exact pinned BEP and libtorrent sources and
-tests named above were re-opened, the current Rust identity occurrences were
-classified by semantic role, and no source or fixture was copied. The new
-runtime-free protocol values preserve all-zero hashes as present, reject an
-empty identity set, retain full 32-byte v2 equality, and require an explicit
-version-tagged wire projection. The engine now owns canonical nonzero
-`TorrentId`, exact raw-info `ContentFingerprint`, and a task-free registry
-bounded at 1,024 owners and 2,048 aliases. Registry insertion and expansion
-are atomic on conflict; equal v1/truncated-v2 bytes remain separate; and a v2
-truncation collision is ambiguous until membership changes.
+All eight stages are complete. The exact pinned BEP and libtorrent sources and
+tests named above were re-opened, the Rust identity occurrences were
+classified by semantic role, and no source or fixture was copied. Runtime-free
+identity values retain full 32-byte v2 authority, preserve all-zero hashes as
+present, reject an empty set, and require explicit versioned wire projection.
+The engine owns canonical nonzero `TorrentId`, exact raw-info
+`ContentFingerprint`, and a task-free registry bounded at 1,024 owners and
+2,048 aliases. Conflict preflight is atomic, equal v1/truncated-v2 bytes remain
+separate, and a truncated-v2 collision is ambiguous.
 
-Validation completed at this checkpoint:
+Durable and ephemeral stores now use schema 19. Owner-keyed foreign keys and
+the one-or-two-row alias authority replace the old hash-owned catalog.
+Recognized schema versions 1 through 18 are replaced, not migrated. The
+exclusive, crash-convergent reset removes only the three fixed private
+database basenames and records one reset report; hostile or ambiguous file
+shapes fail closed. `HaveState` version 2 and part-file version 2 bind their
+state to `TorrentId` plus `ContentFingerprint`. Path and SAF staging, part,
+publication, removal, and storage-pool keys use the opaque owner while final
+publication names remain unchanged.
 
-- `cargo test -p rstorrent-protocol -p rstorrent-engine
-  -p rstorrent-session`;
-- `cargo clippy -p rstorrent-protocol -p rstorrent-engine --lib --
-  -D warnings` and `cargo fmt --all -- --check`;
-- `npm run generate --prefix clients/web`, `npm run typecheck --prefix
-  clients/web`, and `npm run test --prefix clients/web` with 247 passing and
-  two skipped tests; and
-- `experiments/android-engine-bootstrap/build.sh`, including both supported
-  native ABIs, regenerated UniFFI bindings, Kotlin unit tests, and the debug
-  APK.
+V1 metainfo and magnet intake allocate or recover one stable owner and carry
+explicit `V1InfoHash`, `InfoHashes`, and `SwarmKey` through metadata, tracker,
+DHT, peer handshake, MSE, incoming, seeding, upload, storage, application, and
+cancellation boundaries. Generated JSON Schema, TypeScript, Tauri, UniFFI,
+Kotlin, React, and Compose routes use canonical opaque IDs and project the v1
+hash separately. Noncanonical and legacy 40-hex application IDs fail before
+lookup. V2/hybrid metainfo, `btmh`, and all BEP 52 wire behavior retain their
+deterministic rejection.
 
-Stage 3 and the have-state portion of Stage 4 are now complete. Durable and
-ephemeral stores use schema 19 with nonzero 16-byte owner keys, a one-or-two
-row tagged alias authority, opaque IDs at serialized control boundaries, and
-owner-keyed foreign keys throughout the catalog. Recognized schema versions
-1 through 18 are replaced rather than migrated. Replacement acquires an
-exclusive SQLite lock, removes only the three fixed database basenames, and
-uses a checksummed recovery marker in the authorized `session.db-shm` slot so
-interruption before or after database removal converges without inspecting or
-mutating payload roots. The replacement transaction records a one-shot reset
-report before the marker is cleared. Malformed, unversioned, future, busy,
-symlinked, and non-regular inputs fail closed.
+### Completion evidence
 
-`HaveState` version 2 now binds its bitmap to both `TorrentId` and
-`ContentFingerprint`; the version-1 reader is gone. Focused store, reset,
-control, queue, and have-state tests pass, as does warning-denying session-lib
-Clippy. Runtime application fixtures have deliberately not been rewritten to
-hide their old hash-as-owner assumptions: the integrated session suite stays
-open until Stages 4 through 6 thread the new ownership model end to end. BEP
-52 remains unsupported. The next executable work is the part-file and storage
-namespace remainder of Stage 4, followed by typed v1 runtime threading.
+- Pure, store, reset, have, part, path-storage, runtime, control, view,
+  generated-boundary, and stale-ID deterministic suites pass. The final
+  workspace run has 544 engine tests passing with nine ignored and 237
+  session tests passing with two ignored; every other workspace crate suite
+  also passes.
+- Crash profiles over a 64-MiB, 256-piece payload pass before synchronization,
+  after synchronization but before checkpoint commit, and after commit.
+  Conservative false negatives never become false positives: the first two
+  profiles redownload all 256 pieces exactly, while the committed profile
+  uploads zero payload after restart. Single-file, one-entry multi-file, and
+  cross-file repair plus every publication crash phase retain exact hashes.
+- Controlled pinned-libtorrent `2.0.13.0` transfer passes with RSTorrent in
+  both seed and leecher roles over default uTP and with TCP fallback. Focused
+  ordinary/Fast, session and torrent rate, MSE, paired reset, tracker-only,
+  DHT-only, incoming, magnet-metadata, `.torrent` byte-intake, restart,
+  duplicate-add, removal, and incomplete progressive full/range streaming
+  profiles pass with exact payload or source hashes and opaque owner routing.
+- The concurrent-torrent smoke passes at 1, 2, 3, 4, and 8 torrents. At eight
+  torrents it retains eight registered owners and eight peers, 16 active
+  pieces, 4 MiB active-piece bytes, four write and four hash jobs, six owned
+  storage handles, exact payload hashes, and terminal cleanup within the
+  existing limits.
+- The Android build passes for x86_64 and arm64 with regenerated UniFFI,
+  Kotlin unit tests, and the debug APK. The API-34 dynamic SAF profile passes
+  fresh add, restart, recheck, upload, and removal using an opaque owner with
+  139 descriptors at high water, six storage handles, and four pending
+  requests. The dedicated schema-18 reset profile proves schema 19, one reset
+  report, unchanged published and partial sentinel hashes, fresh add,
+  restart, recheck, upload, selective removal/cancellation, and no report
+  replay; it reaches 138 descriptors, six handles, and three requests. The
+  handles and requests remain below the 40-handle and 16-request product
+  bounds.
+- `cargo fmt --all -- --check`, warning-denying workspace Clippy, and
+  `cargo test --workspace` pass. Generated web artifacts remain clean;
+  TypeScript passes; Vitest reports 248 passing and two skipped tests.
+  Managed BEP, libtorrent, libutp, librqbit-uTP, and rqbit references remain
+  at their exact pins. The recorded unrelated JSTorrent worktree changes
+  remain untouched.
+
+The implementation landed as the logical commit sequence `f2683f3`,
+`413c7dd`, `80bcff5`, `770e8ab`, `33f326f`, `75f3eb9`, `97b1459`,
+`f41900d`, `bec7581`, `b8da9af`, and `b56e2df`, after activation commit
+`39f2dfd`. No compatibility reader, catalog migration, v2 parser, Merkle
+behavior, or BEP 52 support claim was added.
 
 ## Validation Matrix
 

@@ -2,15 +2,14 @@
 
 Topic: `bittorrent-v2-and-hybrid`
 
-Status: Research and campaign direction accepted on 2026-08-12. RSTorrent
-still rejects v2 and hybrid metainfo and magnets deterministically. Maintainer
-direction now activates Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) as the
-decision-complete identity and persistence foundation and pauses Tactical
-[`142`](../tactical/142-wan-transport-performance-matrix.md) at its recorded
-analysis checkpoint. This topic records the source dossier, accepted
-architecture direction, resettable pre-release persistence policy, and
-proposed tactical sequence.
+Status: Research and campaign direction accepted on 2026-08-12. Completed
+Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) installs
+the v1-preserving opaque-owner, dual-identity, schema-19, artifact, runtime,
+and first-party client foundation. RSTorrent still rejects v2 and hybrid
+metainfo and magnets deterministically. Tactical
+[`142`](../tactical/142-wan-transport-performance-matrix.md) remains paused at
+its recorded analysis checkpoint, and no later BEP 52 tactical is active.
 
 ## Scope And Owning Role
 
@@ -39,12 +38,12 @@ This topic does not authorize:
 
 ## Current Truth
 
-RSTorrent's current model is intentionally v1-specific:
+RSTorrent's accepted product and wire model remains intentionally v1-specific:
 
-- [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs) has one
-  20-byte SHA-1 `info_hash` and one flat vector of 20-byte SHA-1 piece hashes.
-  The direct parser checks for `meta version` and explicitly rejects v2 and
-  hybrid info dictionaries.
+- [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs) projects an
+  explicit `V1InfoHash` and one flat vector of 20-byte SHA-1 piece hashes. The
+  direct parser checks for `meta version` and explicitly rejects v2 and hybrid
+  info dictionaries.
 - [`magnet.rs`](../../crates/rstorrent-protocol/src/magnet.rs) accepts bounded
   `btih` identity and explicitly rejects `btmh` or mixed v1/v2 identity.
 - [`TorrentLayout`](../../crates/rstorrent-protocol/src/storage_layout.rs)
@@ -54,12 +53,13 @@ RSTorrent's current model is intentionally v1-specific:
 - [`piece.rs`](../../crates/rstorrent-protocol/src/piece.rs) and the engine
   download driver verify a complete piece against one 20-byte expected hash.
   A failed generation resets the whole v1 piece.
-- Peer handshakes, trackers, DHT, MSE routing, incoming registration, peer
-  picking, part-file identity, and storage instance naming widely use
-  `[u8; 20]` as both wire key and authoritative torrent identity.
-- [`HaveState`](../../crates/rstorrent-session/src/have.rs), the SQLite schema,
-  application torrent IDs, retained source rows, and managed part-file headers
-  are keyed to the v1 identity shape.
+- Peer handshakes, trackers, DHT, MSE routing, incoming registration, and peer
+  picking explicitly select a version-tagged `SwarmKey`; their 20-byte codec
+  shape is no longer the authoritative torrent owner.
+- The engine and application use a canonical opaque `TorrentId`; schema 19
+  stores full protocol aliases separately. `HaveState` version 2, part-file
+  version 2, retained sources, path/SAF artifacts, routes, and generated
+  clients bind to that opaque owner plus integrity context where required.
 - The [protocol ledger](protocol-support.md) therefore reports BEP 52 as
   **Unsupported**. Safe rejection is useful evidence but is not partial v2
   support.
@@ -74,8 +74,8 @@ model at the same time.
 ### Stable ownership and multiple protocol identities
 
 One torrent owner may have a v1 SHA-1 identity, a full v2 SHA-256 identity, or
-both. The first implementation tactical must introduce explicit types for
-those facts instead of overloading `[u8; 20]`:
+both. Tactical `143` introduced explicit types for those facts instead of
+overloading `[u8; 20]`:
 
 - the full 32-byte v2 hash remains the authoritative v2 identity;
 - the first 20 bytes of the v2 hash are a version-tagged tracker, DHT, peer-
@@ -88,7 +88,7 @@ those facts instead of overloading `[u8; 20]`:
 The accepted persistence shape is one stable internal torrent key plus a
 unique protocol-identity alias set. This avoids re-keying a live torrent when
 metadata obtained from a v1-only or v2-only magnet reveals that it is hybrid.
-Planned Tactical
+Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) selects a
 nonzero opaque 16-byte owner rendered as `t1-` plus 32 lowercase hexadecimal
 digits, independent from truncated wire identity. No two live torrent owners
@@ -399,18 +399,18 @@ connection and disconnects because its v1 piece model cannot safely continue;
 it does not supply the required Merkle, storage, hash-exchange, or hybrid
 runtime design.
 
-## Planned Tactical Campaign
+## Tactical Campaign
 
-The first stage now has a decision-complete but inactive tactical. Later
-numbers remain unassigned until readiness selects them. Adjacent stages may be
-combined only when the resulting scope remains bounded and its stopping
-condition becomes clearer.
+The first stage is complete. Later numbers remain unassigned until readiness
+selects them. Adjacent stages may be combined only when the resulting scope
+remains bounded and its stopping condition becomes clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
-Introduce typed v1/v2 identity, one stable torrent owner with protocol aliases,
-versioned wire-key lookup, and the replacement session/have/part-file/source
-format. Rebuild cleanly instead of migrating current development torrents.
+Completed on 2026-08-13: typed v1/v2 identity, one stable torrent owner with
+protocol aliases, versioned wire-key lookup, and the replacement
+session/have/part-file/source format rebuild cleanly instead of migrating
+current development torrents.
 
 Preserve all existing v1 behavior and evidence while removing untagged
 identity assumptions from shared boundaries. This stage stops when v1
@@ -534,11 +534,12 @@ human review gate.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) selects Tactical `143` as
-the sole **Now** and pauses Tactical `142` at its exact analysis checkpoint.
+[`capability-readiness.md`](capability-readiness.md) records Tactical `143` as
+complete and leaves Tactical `142` paused at its exact analysis checkpoint.
+The sole **Now** is a maintainer readiness review; no implementation tactical
+is implicitly active.
 
-Execute Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) rather
-than implementing from this umbrella topic alone. It records the exact owner
-encoding, reset boundary, owner/task/cancellation map, resource limits, source
-findings, v1 regression gate, and stopping condition required for this slice.
+The next campaign candidate is the runtime-free BEP 52 metainfo, geometry,
+and Merkle core described above. Drafting or activating it requires an
+explicit readiness decision. Until then, product input and wire support remain
+v1-only and the protocol ledger remains **Unsupported** for BEP 52.

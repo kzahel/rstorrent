@@ -14,6 +14,14 @@ authorized physical run was attempted, but ChromeOS ARCVM ADB was unavailable.
 Tactical `073` now makes dynamic publication confirmation a durable
 `published`/`checking` handoff; fresh published handles run through the common
 piece checker before `complete` can commit.
+Completed Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) keys SAF
+staging, part, publication, descriptor, and removal ownership by opaque
+`TorrentId` while preserving the metainfo publication name. Its API-34
+schema-18 reset proves the private catalog resets to schema 19 while exact
+published and partial SAF sentinel bytes remain untouched and unadopted;
+fresh add, restart, recheck, upload, removal, report-once, and resource bounds
+pass.
 Tactical `081` extends the shared catalog/storage boundary to
 libtorrent-scale v1 metainfo: Android consumes compact selection and paged
 file catalogs, derives the same deterministic safe operational paths, and

@@ -410,23 +410,30 @@ path pass controlled pinned-libtorrent, repository, web, desktop, both Android
 ABIs, and API 34 AVD gates. Android retains completed-file-only native open
 and starts no HTTP listener.
 
+Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) is
+complete. One opaque stable owner and explicit full protocol aliases replace
+the old hash-as-owner assumption across schema 19, artifacts, runtime,
+generated clients, React, Tauri, and Android. Controlled v1 transfer,
+persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
+52 input and wire behavior remain absent.
+
 ## Current Queue
 
 ### Now
 
-- **Execute Tactical
-  [`143`](../tactical/143-dual-identity-and-persistence-foundation.md).**
-  Explicit maintainer direction on 2026-08-12 activates the decision-complete
-  v1-preserving identity and schema-19 persistence foundation. Begin with the
-  pure typed identity values and bounded full/wire registries, then proceed
-  through the documented reset, storage-artifact, application-contract, and
-  cross-platform gates without accepting v2 product input or wire behavior.
+- **Perform the post-Tactical-143 maintainer readiness review.** Tactical
+  [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) is
+  complete, and no implementation tactical is implicitly active. Select
+  whether to draft the runtime-free BEP 52 core or resume the paused transport
+  campaign before code work continues.
 
 ### Next
 
-- Complete Tactical `143`'s pure identity and registry gate before the
-  persistence reset changes, preserving the staged stopping conditions in the
-  tactical.
+- If selected, draft one bounded tactical for runtime-free BEP 52 metainfo,
+  geometry, and Merkle behavior from the accepted v2/hybrid topic.
+- If selected instead, resume paused Tactical `142` through ready repair
+  Tactical `145` from their retained evidence and causal checkpoint.
 
 ### Later
 
@@ -502,7 +509,8 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
-| v2 and hybrid identity, metadata, and hashing | Absent | deterministic rejection | Active Tactical `143` owns the v1-preserving identity/persistence foundation; BEP 52 still requires later metainfo, integrity, storage, wire, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`protocol-support`](protocol-support.md) |
+| Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19, full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, generated clients, and both Android ABIs pass. Production rows remain v1-only; alias expansion is exercised only in pure/store tests. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) |
+| v2 and hybrid metadata, hashing, and transfer | Absent | deterministic rejection | The owner/identity foundation is complete, but BEP 52 still requires later metainfo, Merkle integrity, storage geometry, wire, discovery, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
 

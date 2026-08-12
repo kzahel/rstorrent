@@ -19,6 +19,12 @@ and the unchanged headless product adapter consume those facts; the
 authenticated gateway proof follows pinned libtorrent and RSTorrent peers
 through exact transfer, removal, pause, and terminal zero ownership. Completed
 Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) separates
+that lifetime owner from the version-tagged v1 `SwarmKey` used by incoming,
+tracker, DHT, handshake, and MSE routing. Controlled incoming TCP/uTP,
+tracker-only, DHT-only, MSE, seeding, removal, and terminal cleanup evidence
+passes with opaque owner routing; no v2 incoming behavior is implied.
+Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds live
 session/torrent upload and download limits at the common established-peer
 boundary for initiated and accepted TCP/uTP streams. Ratio/time seeding goals

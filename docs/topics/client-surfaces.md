@@ -3,7 +3,12 @@
 Topic: `client-surfaces`
 
 Status: Accepted and implemented through Tactical `117` across a browser-
-hosted web view, a Tauri desktop webview, and Android Compose. The Android
+hosted web view, a Tauri desktop webview, and Android Compose. Completed
+Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes
+React, Tauri, media, Compose, and Android service routing use canonical opaque
+torrent IDs while explicit v1 hashes remain available for display and export.
+The Android
 foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as

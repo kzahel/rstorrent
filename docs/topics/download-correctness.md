@@ -4,7 +4,12 @@ Topic: `download-correctness`
 
 Status: Controlled v1 downloads now verify, persist, resume, and publish through
 a bounded multi-peer request owner across ordinary single-file and selective
-multi-file profiles. Tactical `017` closes the recorded one-peer liveness
+multi-file profiles. Completed Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) binds
+durable have and part state to opaque owner plus raw-info fingerprint and
+re-proves crash-conservative restart, topology repair, publication, checking,
+streaming, transfer, and exact v1 hashes; v2 integrity remains absent.
+Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
 inactivity. Tactical `021` installed tracker fan-out and a bounded 30-peer

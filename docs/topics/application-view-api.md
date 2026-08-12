@@ -2,9 +2,13 @@
 
 Topic: `application-view-api`
 
-Status: The bounded leased view-set, authenticated JSON polling adapter,
-generated TypeScript/schema contract, pure reducer, and lifecycle controller
-are implemented by
+Status: Completed Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) changes
+every torrent route and view key to canonical opaque `TorrentId` and adds a
+separate optional full v1/v2 identity projection. Regenerated schemas,
+TypeScript, reducers, validators, and stale-ID rejection pass without changing
+the view protocol version. The bounded leased view-set, authenticated JSON
+polling adapter, pure reducer, and lifecycle controller are implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
 Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable

@@ -2,8 +2,13 @@
 
 Topic: `application-control`
 
-Status: Tactical `007` implemented the first transport-neutral semantic
-control contract and in-process application service. Tactical `008` added
+Status: Completed Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes the
+canonical opaque `TorrentId` the command, receipt, queue, runtime, and
+cancellation owner while projecting protocol identities separately; legacy
+40-hex application IDs fail validation. Tactical `007` implemented the first
+transport-neutral semantic control contract and in-process application
+service. Tactical `008` added
 recoverable reactive views and browser, Tauri, and Android adapters. Tactical
 `012` added bounded typed diagnostics, derived progress assessment, and prompt
 task-terminal supervision with isolated headless presentation evidence.

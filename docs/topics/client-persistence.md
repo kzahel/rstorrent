@@ -170,14 +170,14 @@ Payload and part-file layout remain storage concerns. This topic owns the
 durable records that identify those artifacts and determine whether previously
 verified content may be restored or must be checked again.
 
-The accepted future
+The accepted
 [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) campaign may replace
 the current v1-keyed database, have-state, part-file, and retained-source
-formats together. Active Tactical
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) now owns
-that first replacement: a schema-19 fresh catalog, opaque owner IDs, full
-protocol aliases, version-2 have and part-file identity, and a reset of
-recognized schema `1..=18` profile databases. RSTorrent is unreleased, so it
+formats together. Completed Tactical
+[`143`](../tactical/143-dual-identity-and-persistence-foundation.md) made that
+first replacement: a schema-19 fresh catalog, opaque owner IDs, full protocol
+aliases, version-2 have and part-file identity, and a reset of recognized
+schema `1..=18` profile databases. RSTorrent is unreleased, so it
 does not preserve existing development catalog rows or carry compatibility
 readers solely for the old v1 shape. The new format remains versioned and
 fail-closed. The reset targets only `session.db` and its SQLite sidecars;
