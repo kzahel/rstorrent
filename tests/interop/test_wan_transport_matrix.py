@@ -13,12 +13,37 @@ from wan_transport_matrix import (
     _rstorrent_timing,
     _rstorrent_transport_evidence,
     require_repository_revision,
+    required_remote_rstorrent_binaries,
     run_matrix,
     seed_transport_evidence,
 )
 
 
 class WanTransportMatrixTests(unittest.TestCase):
+    def test_remote_staging_builds_only_selected_rstorrent_roles(self) -> None:
+        case = lambda direction, seed, leech: argparse.Namespace(
+            direction=direction, seed=seed, leech=leech
+        )
+
+        self.assertEqual(
+            required_remote_rstorrent_binaries(
+                [case("local-seed", "rstorrent", "libtorrent")]
+            ),
+            (),
+        )
+        self.assertEqual(
+            required_remote_rstorrent_binaries(
+                [case("local-seed", "libtorrent", "rstorrent")]
+            ),
+            ("rstorrent-public-probe",),
+        )
+        self.assertEqual(
+            required_remote_rstorrent_binaries(
+                [case("remote-seed", "rstorrent", "libtorrent")]
+            ),
+            ("rstorrent-incoming-seed",),
+        )
+
     def test_seed_utp_evidence_retains_only_aggregate_lifecycle_diagnostics(self) -> None:
         evidence = seed_transport_evidence(
             {

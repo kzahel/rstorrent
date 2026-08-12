@@ -69,6 +69,10 @@ REMOTE_PYTHON = (
 REMOTE_RUN_PATTERN = re.compile(r"^/tmp/rstorrent-wan-matrix\.[A-Za-z0-9]{6}$")
 PROCESS_GRACE_SECONDS = 30.0
 MAX_REMOTE_OUTPUT_BYTES = 1024 * 1024
+REMOTE_RSTORRENT_BINARIES = (
+    "rstorrent-incoming-seed",
+    "rstorrent-public-probe",
+)
 
 
 class WanMatrixError(RuntimeError):
@@ -164,8 +168,21 @@ def remote_environment(host: str, revision: str) -> dict[str, Any]:
     }
 
 
+def required_remote_rstorrent_binaries(cases: list[CaseKey]) -> tuple[str, ...]:
+    required: set[str] = set()
+    for case in cases:
+        if case.direction == "remote-seed" and case.seed == "rstorrent":
+            required.add("rstorrent-incoming-seed")
+        if case.direction == "local-seed" and case.leech == "rstorrent":
+            required.add("rstorrent-public-probe")
+    return tuple(binary for binary in REMOTE_RSTORRENT_BINARIES if binary in required)
+
+
 def prepare_remote(
-    host: str, sizes_mib: tuple[int, ...], revision: str
+    host: str,
+    sizes_mib: tuple[int, ...],
+    revision: str,
+    remote_binaries: tuple[str, ...],
 ) -> dict[str, Any]:
     require_repository_revision(revision)
     run_ssh(
@@ -211,13 +228,25 @@ def prepare_remote(
     run_ssh(
         host,
         "set -eu; "
-        f'printf "%s\\n" {shlex.quote(revision)} > "{REMOTE_BASE}/staged-revision"; '
-        f'cd "{REMOTE_SOURCE}"; '
-        'CARGO_BUILD_JOBS=1 "$HOME/.cargo/bin/cargo" build --release '
-        "-p rstorrent-engine --bin rstorrent-public-probe "
-        "-p rstorrent-session --bin rstorrent-incoming-seed",
-        timeout_seconds=2 * 60 * 60,
+        f'printf "%s\\n" {shlex.quote(revision)} > "{REMOTE_BASE}/staged-revision"',
     )
+    if remote_binaries:
+        build_arguments = " ".join(
+            (
+                "-p rstorrent-session --bin rstorrent-incoming-seed"
+                if binary == "rstorrent-incoming-seed"
+                else "-p rstorrent-engine --bin rstorrent-public-probe"
+            )
+            for binary in remote_binaries
+        )
+        run_ssh(
+            host,
+            "set -eu; "
+            f'cd "{REMOTE_SOURCE}"; '
+            'CARGO_BUILD_JOBS=1 "$HOME/.cargo/bin/cargo" build --release '
+            f"{build_arguments}",
+            timeout_seconds=2 * 60 * 60,
+        )
     fixture_hashes: dict[int, str] = {}
     for size_mib in sizes_mib:
         completed = run_ssh(
@@ -237,6 +266,7 @@ def prepare_remote(
         fixture_hashes[size_mib] = sha1
     result = remote_environment(host, revision)
     result["fixture_sha1"] = fixture_hashes
+    result["rstorrent_binaries_built"] = list(remote_binaries)
     return result
 
 
@@ -757,7 +787,12 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
     revision = repository_revision()
     sizes = tuple(sorted({case.size_mib for case in cases}))
     if arguments.prepare_remote:
-        prepared = prepare_remote(host, sizes, revision)
+        prepared = prepare_remote(
+            host,
+            sizes,
+            revision,
+            required_remote_rstorrent_binaries(cases),
+        )
     else:
         prepared = remote_environment(host, revision)
         prepared["status"] = "verified-existing"
