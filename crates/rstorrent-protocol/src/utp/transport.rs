@@ -697,18 +697,33 @@ impl TransportState {
         }
         let mut deadline = snapshot.acknowledgements.deadline_micros;
         deadline = minimum_deadline(deadline, snapshot.connection.send.timeout_deadline_micros);
-        if snapshot.transmit.unsent_bytes > 0 || snapshot.retransmissions.pending_packets > 0 {
+        if snapshot.retransmissions.pending_packets > 0 {
             deadline = minimum_deadline(deadline, Some(snapshot.pacer.next_send_micros));
+        }
+        if snapshot.transmit.unsent_bytes > 0
+            && snapshot.connection.send.outstanding_packets < MAX_SENT_PACKETS
+            && snapshot.connection.send.outstanding_bytes < MAX_SENT_BYTES
+            && snapshot.in_flight_bytes < snapshot.congestion.congestion_window_bytes
+            && snapshot.in_flight_bytes < snapshot.remote_window_bytes
+            && matches!(
+                snapshot.connection.phase,
+                ConnectionPhase::Connected | ConnectionPhase::RemoteFinReceived
+            )
+            && snapshot.retransmissions.pending_packets == 0
+        {
+            deadline = minimum_deadline(deadline, Some(0));
         }
         if snapshot.close_requested
             && snapshot.transmit.unsent_bytes == 0
             && !snapshot.connection.send.fin_sent
+            && snapshot.connection.send.outstanding_packets < MAX_SENT_PACKETS
+            && snapshot.retransmissions.pending_packets == 0
             && matches!(
                 snapshot.connection.phase,
                 ConnectionPhase::Connected | ConnectionPhase::RemoteFinReceived
             )
         {
-            deadline = minimum_deadline(deadline, Some(snapshot.pacer.next_send_micros));
+            deadline = minimum_deadline(deadline, Some(0));
         }
         deadline
     }
@@ -908,16 +923,16 @@ impl TransportState {
             if let Some(emission) = self.poll_retransmission(now_micros, local_timestamp)? {
                 return Ok(Some(self.install_pending_emission(emission)));
             }
-            if self.retransmissions.front().is_none()
-                && let Some(emission) = self.poll_new_data(now_micros, local_timestamp)?
-            {
-                return Ok(Some(self.install_pending_emission(emission)));
-            }
-            if self.retransmissions.front().is_none()
-                && let Some(emission) = self.poll_fin(now_micros, local_timestamp)?
-            {
-                return Ok(Some(self.install_pending_emission(emission)));
-            }
+        }
+        if self.retransmissions.front().is_none()
+            && let Some(emission) = self.poll_new_data(now_micros, local_timestamp)?
+        {
+            return Ok(Some(self.install_pending_emission(emission)));
+        }
+        if self.retransmissions.front().is_none()
+            && let Some(emission) = self.poll_fin(now_micros, local_timestamp)?
+        {
+            return Ok(Some(self.install_pending_emission(emission)));
         }
 
         if self.acknowledgements.is_due(now_micros) {
@@ -1213,12 +1228,6 @@ impl TransportState {
             .expect("recorded payload remains at queue prefix");
         self.record_in_flight(intent.sequence_number, payload_bytes);
         self.acknowledgements.acknowledge();
-        self.pacer.on_payload_emitted(
-            now_micros,
-            payload_bytes,
-            congestion_window,
-            self.connection.snapshot().send.rtt.smoothed_rtt_micros,
-        );
         Ok(Some(TransportEmission {
             intent,
             timestamp: local_timestamp,
@@ -1597,6 +1606,41 @@ mod tests {
             acceptor.consume_received(528, 46_000),
             Ok(MAX_RECEIVE_BYTES)
         );
+    }
+
+    #[test]
+    fn normal_data_drains_immediately_until_the_congestion_window_is_full() {
+        let (mut initiator, _) = connected_pair();
+        initiator
+            .queue_data(&vec![7; 3 * 528])
+            .expect("queue three packets");
+
+        for expected_sequence in [11, 12] {
+            let emission = initiator
+                .poll_transmit(1_000, TimestampMicros::new(1_000))
+                .expect("poll DATA")
+                .expect("congestion-window DATA");
+            assert_eq!(emission.intent.sequence_number, sequence(expected_sequence));
+            assert_eq!(emission.payload.len(), 528);
+            initiator
+                .on_send_result(
+                    emission.intent.sequence_number,
+                    DatagramSendResult::Sent,
+                    1_000,
+                )
+                .expect("record DATA send");
+        }
+
+        assert!(
+            initiator
+                .poll_transmit(1_000, TimestampMicros::new(1_000))
+                .expect("poll full congestion window")
+                .is_none()
+        );
+        let snapshot = initiator.snapshot();
+        assert_eq!(snapshot.in_flight_bytes, 2 * 528);
+        assert_eq!(snapshot.transmit.unsent_bytes, 528);
+        assert_ne!(initiator.next_wakeup_micros(), Some(0));
     }
 
     #[test]

@@ -1582,7 +1582,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_long_rtt_high_capacity_exposes_sender_window_underfill() {
+    fn clean_long_rtt_high_capacity_fills_the_sender_window() {
         let mut scenario = default_utp_scenario();
         scenario.transfer_bytes = TRANSFER_BYTES * 2;
         scenario.link.base_delay_micros = 80_000;
@@ -1598,19 +1598,21 @@ mod tests {
         assert_eq!(report.retransmissions, 0, "report={report:?}");
         assert_eq!(report.link.queue_drops, 0, "report={report:?}");
         assert!(
-            active_micros >= 28_000_000,
-            "pre-repair long-RTT transfer unexpectedly fast: report={report:?}"
+            active_micros <= 19_000_000,
+            "long-RTT transfer did not retain the pacing repair: report={report:?}"
         );
         assert!(
-            report.sender.congestion.congestion_window_bytes < 64 * 1024,
-            "pre-repair long-RTT window unexpectedly grew: report={report:?}"
+            report.sender.congestion.congestion_window_bytes > 128 * 1024,
+            "long-RTT sender window did not grow: report={report:?}"
         );
-        assert!(
-            report.sender.sender_underfilled_acknowledgements > 0,
-            "pre-repair sender underfill was not observed: report={report:?}"
-        );
+        assert_eq!(report.sender.sender_underfilled_acknowledgements, 0);
         assert_eq!(report.sender.remote_window_limited_acknowledgements, 0);
         assert!(report.sender.window_growth_acknowledgements > 0);
+        assert!(
+            report.sender.congestion_limited_acknowledgements
+                > report.sender.congestion_control_acknowledgements * 9 / 10,
+            "sender was not congestion-limited for most feedback: report={report:?}"
+        );
     }
 
     #[test]
