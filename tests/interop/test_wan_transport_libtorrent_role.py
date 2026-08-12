@@ -72,11 +72,11 @@ class LibtorrentRoleContractTests(unittest.TestCase):
             "utp.utp_packets_in": 0,
             "utp.utp_packets_out": 0,
         }
-        self.assertTrue(transport_valid("tcp", {"tcp": 1, "utp": 0}, zero_stats))
+        self.assertTrue(transport_valid("tcp", 1, zero_stats))
         utp_stats = dict(zero_stats)
         utp_stats.update({"utp.utp_packets_in": 2, "utp.utp_packets_out": 3})
-        self.assertTrue(transport_valid("utp", {"tcp": 0, "utp": 1}, utp_stats))
-        self.assertFalse(transport_valid("utp", {"tcp": 1, "utp": 1}, utp_stats))
+        self.assertTrue(transport_valid("utp", 1, utp_stats))
+        self.assertFalse(transport_valid("utp", 2, utp_stats))
 
     def test_milestones_round_up(self) -> None:
         self.assertEqual(milestone_thresholds(3), {"25": 1, "50": 2, "75": 3})

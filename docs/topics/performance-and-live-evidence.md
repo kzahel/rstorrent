@@ -37,6 +37,13 @@ and 8 MiB through 1 GiB sizes. It retains host storage and route calibration,
 per-case process/transport telemetry, atomic resume, and exact cleanup so a
 slow RSTorrent uTP cell can be separated from the Pi SD card, either ISP, or
 ordinary TCP/storage behavior before a repair is selected.
+Its first controlled eight-cell role gate passes exact integrity and cleanup.
+All TCP pairings reach 150.116--287.068 MiB/s, and the mixed/libtorrent uTP
+controls reach 70.190--98.635 MiB/s. Only RSTorrent/RSTorrent uTP is anomalous,
+varying between 0.527 and 0.031 MiB/s across two successful observations with
+no sender retransmission or connection-datagram loss in the slower run. That
+selects a feedback-interaction hypothesis for WAN confirmation; it is not yet
+a production-fix conclusion.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

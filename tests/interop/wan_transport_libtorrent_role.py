@@ -262,15 +262,8 @@ def stats_snapshot(session: lt.session, diagnostics: list[str]) -> dict[str, int
     raise LibtorrentRoleError("libtorrent statistics timed out")
 
 
-def peer_transport_counts(handle: lt.torrent_handle) -> dict[str, int]:
-    counts = {"tcp": 0, "utp": 0}
-    for peer in handle.get_peer_info():
-        try:
-            encoded = int(getattr(peer, "connection_type", 0))
-        except (TypeError, ValueError):
-            encoded = 0
-        counts["utp" if encoded in (3, 8) else "tcp"] += 1
-    return counts
+def peer_count(handle: lt.torrent_handle) -> int:
+    return len(handle.get_peer_info())
 
 
 def validate_arguments(arguments: argparse.Namespace) -> lt.torrent_info:
@@ -322,10 +315,10 @@ def add_torrent(
 
 def transport_valid(
     transport: str,
-    high_water: dict[str, int],
+    peer_high_water: int,
     stats: dict[str, int],
 ) -> bool:
-    if high_water.get(transport) != 1 or high_water.get("utp" if transport == "tcp" else "tcp"):
+    if peer_high_water != 1:
         return False
     if transport == "tcp":
         return (
@@ -355,7 +348,7 @@ def run_seed(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> No
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
-    high_water = {"tcp": 0, "utp": 0}
+    peer_high_water = 0
     try:
         session, applied = create_session(local_address, local_port, arguments.transport)
         handle = add_torrent(session, torrent_info, arguments.storage_root, seed=True)
@@ -389,10 +382,9 @@ def run_seed(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> No
             status = handle.status()
             if status.errc.value() != 0:
                 raise LibtorrentRoleError("seed failed during transfer")
-            counts = peer_transport_counts(handle)
-            for transport, count in counts.items():
-                high_water[transport] = max(high_water[transport], count)
-            if sum(counts.values()) > 1:
+            peers = peer_count(handle)
+            peer_high_water = max(peer_high_water, peers)
+            if peers > 1:
                 raise LibtorrentRoleError("seed exceeded one connected peer")
             readable, _, _ = select.select([sys.stdin], [], [], POLL_SECONDS)
             if not readable:
@@ -403,7 +395,7 @@ def run_seed(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> No
                     {
                         "event": "snapshot",
                         "role": "seed",
-                        "peer_high_water": high_water,
+                        "peer_high_water": peer_high_water,
                         "sent_payload_bytes": int(status.total_payload_upload),
                     }
                 )
@@ -414,7 +406,7 @@ def run_seed(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> No
         stats = stats_snapshot(session, diagnostics)
         if command == "stop" and (
             stats["net.sent_payload_bytes"] < arguments.expected_bytes
-            or not transport_valid(arguments.transport, high_water, stats)
+            or not transport_valid(arguments.transport, peer_high_water, stats)
         ):
             raise LibtorrentRoleError("seed terminal transport evidence failed")
         write_event(
@@ -422,7 +414,7 @@ def run_seed(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> No
                 "event": "stopped" if command == "stop" else "aborted",
                 "role": "seed",
                 "transport": arguments.transport,
-                "peer_high_water": high_water,
+                "peer_high_water": peer_high_water,
                 "libtorrent_stats": stats,
                 "diagnostics": diagnostics,
                 "session_cleanup": True,
@@ -456,7 +448,7 @@ def run_leech(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> N
     session: lt.session | None = None
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
-    high_water = {"tcp": 0, "utp": 0}
+    peer_high_water = 0
     try:
         session, applied = create_session(local_address, local_port, arguments.transport)
         handle = add_torrent(session, torrent_info, arguments.storage_root, seed=False)
@@ -494,10 +486,9 @@ def run_leech(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> N
             status = handle.status()
             if status.errc.value() != 0:
                 raise LibtorrentRoleError("leecher entered an error state")
-            counts = peer_transport_counts(handle)
-            for transport, count in counts.items():
-                high_water[transport] = max(high_water[transport], count)
-            if sum(counts.values()) > 1:
+            peers = peer_count(handle)
+            peer_high_water = max(peer_high_water, peers)
+            if peers > 1:
                 raise LibtorrentRoleError("leecher exceeded one connected peer")
             observed_at = time.monotonic()
             wanted_done = int(status.total_wanted_done)
@@ -529,9 +520,16 @@ def run_leech(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> N
         stats = stats_snapshot(session, diagnostics)
         if (
             stats["net.recv_payload_bytes"] < arguments.expected_bytes
-            or not transport_valid(arguments.transport, high_water, stats)
+            or not transport_valid(arguments.transport, peer_high_water, stats)
         ):
-            raise LibtorrentRoleError("leecher terminal transport evidence failed")
+            raise LibtorrentRoleError(
+                "leecher terminal transport evidence failed: "
+                f"peer_high_water={peer_high_water}, "
+                f"tcp={stats['peer.num_tcp_peers']}, "
+                f"utp={stats['peer.num_utp_peers']}, "
+                f"packets={stats['utp.utp_packets_in']}/{stats['utp.utp_packets_out']}, "
+                f"payload={stats['net.recv_payload_bytes']}"
+            )
         write_event(
             {
                 "event": "complete",
@@ -541,7 +539,7 @@ def run_leech(arguments: argparse.Namespace, torrent_info: lt.torrent_info) -> N
                     "ordinary-internet" if arguments.network_scope == "wan" else "controlled-loopback"
                 ),
                 "applied_transport_settings": applied,
-                "peer_high_water": high_water,
+                "peer_high_water": peer_high_water,
                 "payload": {
                     "bytes": arguments.expected_bytes,
                     "pieces": arguments.expected_pieces,

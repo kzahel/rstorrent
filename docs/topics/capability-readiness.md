@@ -423,9 +423,11 @@ and starts no HTTP listener.
 
 ### Next
 
-- Complete the case-addressable lab and all 8 MiB WAN cells before the larger
-  baseline. If the controls isolate an existing RSTorrent owner, create the
-  focused repair tactical before changing production transport code.
+- Deploy the committed role adapters to `pimom` and complete all 8 MiB WAN
+  cells before the larger baseline. The controlled gate isolates severe,
+  variable slowness to RSTorrent/RSTorrent uTP while both mixed-engine uTP
+  directions and all TCP controls are fast; require WAN placement confirmation
+  before creating the focused repair tactical or changing transport code.
 - If the matrix instead identifies a path, ISP, host, or storage ceiling,
   record that limit without inventing an engine repair and return **Now** to
   durable seeding goals.

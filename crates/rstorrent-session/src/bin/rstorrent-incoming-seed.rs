@@ -1,5 +1,7 @@
 //! Controlled interoperability owner for an application-backed completed seed.
 
+#![recursion_limit = "256"]
+
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -924,19 +926,50 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "connection_high_water": snapshot.connection_high_water,
         "incoming_half_open": snapshot.incoming_half_open,
         "incoming_half_open_high_water": snapshot.incoming_half_open_high_water,
+        "incoming_stream_queue_high_water": snapshot.incoming_stream_queue_high_water,
+        "connection_datagram_queue_high_water": snapshot.connection_datagram_queue_high_water,
+        "malformed_datagrams": snapshot.malformed_datagrams,
+        "unknown_connection_datagrams": snapshot.unknown_connection_datagrams,
+        "stale_generation_datagrams": snapshot.stale_generation_datagrams,
+        "connection_datagrams_dropped": snapshot.connection_datagrams_dropped,
         "datagrams_sent": snapshot.datagrams_sent,
         "datagram_bytes_sent": snapshot.datagram_bytes_sent,
         "data_datagrams_sent": snapshot.data_datagrams_sent,
         "state_datagrams_sent": snapshot.state_datagrams_sent,
         "retransmission_datagrams_sent": snapshot.retransmission_datagrams_sent,
+        "retransmission_bytes_sent": snapshot.retransmission_bytes_sent,
+        "retransmission_queue_high_water": snapshot.retransmission_queue_high_water,
+        "loss_reduction_high_water": snapshot.loss_reduction_high_water,
+        "timeout_collapse_high_water": snapshot.timeout_collapse_high_water,
+        "delivered_byte_high_water": snapshot.delivered_byte_high_water,
+        "unsent_byte_high_water": snapshot.unsent_byte_high_water,
+        "sent_byte_high_water": snapshot.sent_byte_high_water,
         "application_coalesce_byte_high_water": snapshot.application_coalesce_byte_high_water,
+        "smoothed_rtt_min_micros": snapshot.smoothed_rtt_min_micros,
+        "smoothed_rtt_max_micros": snapshot.smoothed_rtt_max_micros,
+        "effective_rto_min_micros": snapshot.effective_rto_min_micros,
+        "effective_rto_max_micros": snapshot.effective_rto_max_micros,
+        "base_delay_min_micros": snapshot.base_delay_min_micros,
+        "base_delay_max_micros": snapshot.base_delay_max_micros,
+        "queue_delay_min_micros": snapshot.queue_delay_min_micros,
+        "queue_delay_max_micros": snapshot.queue_delay_max_micros,
+        "congestion_window_min_bytes": snapshot.congestion_window_min_bytes,
+        "congestion_window_max_bytes": snapshot.congestion_window_max_bytes,
+        "advertised_receive_window_min_bytes": snapshot.advertised_receive_window_min_bytes,
+        "advertised_receive_window_max_bytes": snapshot.advertised_receive_window_max_bytes,
         "selected_mtu_min_bytes": snapshot.selected_mtu_min_bytes,
         "selected_mtu_max_bytes": snapshot.selected_mtu_max_bytes,
+        "mtu_candidate_min_bytes": snapshot.mtu_candidate_min_bytes,
+        "mtu_candidate_max_bytes": snapshot.mtu_candidate_max_bytes,
         "mtu_probes_started_high_water": snapshot.mtu_probes_started_high_water,
         "mtu_probes_acknowledged_high_water": snapshot.mtu_probes_acknowledged_high_water,
         "mtu_probes_failed_high_water": snapshot.mtu_probes_failed_high_water,
         "mtu_revalidations_started_high_water": snapshot.mtu_revalidations_started_high_water,
+        "mtu_revalidations_acknowledged_high_water": snapshot.mtu_revalidations_acknowledged_high_water,
+        "mtu_revalidations_failed_high_water": snapshot.mtu_revalidations_failed_high_water,
         "mtu_downward_recoveries_high_water": snapshot.mtu_downward_recoveries_high_water,
+        "mtu_probe_datagrams_sent": snapshot.mtu_probe_datagrams_sent,
+        "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
         "worker_panics": snapshot.worker_panics,
     })
 }

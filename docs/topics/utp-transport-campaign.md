@@ -60,7 +60,10 @@ repaired without an engine change. Explicit maintainer direction now activates
 Tactical [`142`](../tactical/142-wan-transport-performance-matrix.md): one
 resumable cross-engine, cross-role, both-direction TCP/uTP WAN matrix over
 8 MiB through 1 GiB, followed by controlled causal isolation before any
-RSTorrent transport repair.
+RSTorrent transport repair. Its controlled eight-cell gate now passes and
+isolates severe, variable slowness to the RSTorrent/RSTorrent uTP pairing;
+both mixed-engine uTP directions and all TCP controls are fast. WAN placement
+confirmation remains next.
 
 ## Scope And Ownership
 
@@ -919,7 +922,8 @@ change.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
-completed; human review of Tactical `141`'s evidence-limited stopping condition
-is the current checkpoint.
+completed; Tactical `142` owns the current checkpoint. Its controlled role
+gate passes and selects a RSTorrent/RSTorrent uTP feedback interaction for
+both-direction WAN confirmation before a repair tactical.
 Another WAN cohort, another NAT mechanism, IPv6 uTP, permanent network change,
 another host, and a broader uTP support claim remain separate decisions.

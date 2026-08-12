@@ -276,6 +276,32 @@ ratio stable.
 | Repair if selected | focused deterministic/scripted reproduction, mixed interop, affected WAN rerun, TCP/unaffected-role regression, Android cross-build or stronger platform evidence as applicable |
 | Repository | Python compilation/unit tests, focused Rust tests, formatting, warning-denying workspace Clippy, workspace tests, clean diff |
 
+## Execution Evidence
+
+### Controlled role gate
+
+The committed role adapters first passed all eight 8 MiB loopback pairings
+with exact SHA-1, one forced transport, one peer, independent payload
+verification, joined processes, and removed output. The TCP controls completed
+at 150.116--287.068 MiB/s. Three uTP controls also completed normally:
+RSTorrent seed/libtorrent leech at 70.190 MiB/s, libtorrent seed/RSTorrent
+leech at 98.635 MiB/s, and libtorrent/libtorrent at 91.895 MiB/s.
+
+Only RSTorrent seed/RSTorrent leech was anomalous. Two successful observations
+varied from 15.190 seconds (0.527 MiB/s) to 258.031 seconds (0.031 MiB/s) for
+the same exact payload. The slower run had zero dropped connection datagrams,
+zero sender retransmissions or congestion collapses, no worker panic, a
+1 MiB receive window, sub-3 ms sampled RTT, and a sender congestion-window
+high water of 23,446 bytes. The RSTorrent seed sent 7,529 DATA datagrams while
+the RSTorrent leecher emitted 6,271 STATE datagrams and suffered one local
+timeout collapse; neither mixed-engine direction reproduced the collapse.
+
+This is controlled evidence of a RSTorrent/RSTorrent feedback interaction and
+severe variability, not yet a WAN conclusion or authority to guess at a
+repair. Stage 3 must now deploy the same committed roles on `pimom`; Stage 4
+must establish whether the interaction survives both ordinary-Internet
+directions before the focused repair tactical opens.
+
 ## Non-Goals And Escalation
 
 This tactical does not promise TCP-equivalent uTP, add a product performance

@@ -527,12 +527,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: implement Tactical `142`'s case-addressable lab,
-prove every 8 MiB engine/role/placement/transport cell, and proceed through its
-larger baseline. The maintainer explicitly authorizes repeated multi-gigabyte
-direct-public-path traffic. The single Tactical `141` uTP rate remains
-insufficient for an implementation response; Tactical `142` must isolate a
-causal RSTorrent owner and a controlled reproduction before a repair tactical.
+Next engine-campaign action: deploy Tactical `142`'s committed role adapters
+to `pimom`, prove every 8 MiB engine/role/placement/transport WAN cell, and
+proceed through its larger baseline. The local eight-cell gate passes and
+isolates severe, variable slowness to RSTorrent seed/RSTorrent leech over uTP;
+both mixed-engine uTP directions and every TCP control are fast. The
+maintainer explicitly authorizes repeated multi-gigabyte direct-public-path
+traffic. The WAN placement controls must now confirm the interaction before a
+focused repair tactical changes production transport code.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall
