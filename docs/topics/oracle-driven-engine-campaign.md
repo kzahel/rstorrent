@@ -379,8 +379,9 @@ milestones. Once core parity is complete:
    ladder before changing `protocol-support.md` claims.
 
 Likely breadth candidates include PEX, uTP, IPv6 discovery, WebSeeds, incoming
-participation, and v2/hybrid torrents. The measured full-reference delta, not
-list order or novelty, chooses the actual sequence.
+participation, and
+[`v2/hybrid torrents`](bittorrent-v2-and-hybrid.md). The measured
+full-reference delta, not list order or novelty, chooses the actual sequence.
 
 ## Escalation Contract
 

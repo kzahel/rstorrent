@@ -53,6 +53,9 @@ Topics own the current truth for a continuing concern. Tactical docs under
   scenario ledger.
 - [`protocol-support.md`](protocol-support.md): precise BEP support claims,
   deliberate limits, interoperability evidence, and protocol sequencing.
+- [`bittorrent-v2-and-hybrid.md`](bittorrent-v2-and-hybrid.md): accepted BEP
+  52 source dossier, identity/integrity/storage direction, resettable
+  pre-release persistence policy, and proposed multi-tactical campaign.
 - [`dht-discovery.md`](dht-discovery.md): integrated session-owned IPv4 DHT
   routing, lookup, private-torrent policy, bounded warm restart, evidence, and
   named address-family and participation gaps.

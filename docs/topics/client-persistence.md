@@ -170,6 +170,17 @@ Payload and part-file layout remain storage concerns. This topic owns the
 durable records that identify those artifacts and determine whether previously
 verified content may be restored or must be checked again.
 
+The accepted future
+[`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) campaign may replace
+the current v1-keyed database, have-state, part-file, and retained-source
+formats together. RSTorrent is unreleased, so preserving existing development
+torrents through that format change is not a requirement: the implementing
+tactical may use an explicit clean-state reset instead of adding compatibility
+readers or transactional migrations solely for the old v1 shape. The new
+format must remain versioned and fail closed. Exact application-owned reset
+targets must be resolved and reported; user-selected roots and published
+payload are not implicitly deleted.
+
 ## Terms And Ownership
 
 RSTorrent uses these terms to keep "client" from collapsing several different
@@ -647,9 +658,12 @@ successful mutation unreadable after upgrade.
   bookmarks while the selected-root policy remains disabled.
 - File sizes, timestamps, sparse allocation, case sensitivity, and identity
   tokens are platform-specific restart evidence, not universal content proof.
-- Newer applications migrate older schemas transactionally. An older
-  application refuses a newer unsupported schema rather than guessing or
-  attempting an automatic downgrade.
+- Within the currently supported v1 schema lineage, newer applications migrate
+  older schemas transactionally and an older application refuses a newer
+  unsupported schema rather than guessing or attempting an automatic
+  downgrade. The accepted v2/hybrid campaign may deliberately end that
+  pre-release lineage and reset application-owned development torrent state
+  instead of migrating it.
 - Backup and restore remap unresolved storage roots explicitly and never
   silently reinterpret a locator from another operating system.
 - Corrupt or unsupported durable state cannot establish verified metadata,
@@ -657,8 +671,9 @@ successful mutation unreadable after upgrade.
 
 ## Known Gaps And Open Decisions
 
-- Backup, export, restore, and later schema-migration policy beyond the
-  implemented transactional versions `0` through `4`.
+- Backup, export, restore, and later schema policy after the accepted
+  v2/hybrid clean-state reset; compatibility migration of current unreleased
+  development torrents is explicitly not required.
 - The installation-level profile registry format, whether it shares
   `product.db`, and whether the first product exposes more than its
   automatically created profile.
