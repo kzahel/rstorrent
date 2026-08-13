@@ -63,6 +63,9 @@ oracle:
 - `experienced_loss` exits startup after reducing the window and records the
   reduced threshold;
 - `tick` collapses the timeout window and re-enters slow start; and
+- `consume_incoming_data` drops DATA that overshoots the advertised receive
+  capacity without terminating the connection while the already parsed ACK
+  path remains valid; and
 - `reference/libtorrent/simulation/test_utp.cpp::{utp_plain,
   utp_buffer_bloat,utp_straw,utp_small_kernel_send_buf}` plus
   `reference/libtorrent/test/test_utp.cpp::utp` supply clean, queue, competing
@@ -172,6 +175,29 @@ Raw controlled reports are retained during execution at
 `/tmp/rstorrent-t150-mixed.json` and
 `/tmp/rstorrent-t150-controlled.json`. They are temporary evidence inputs,
 not repository artifacts.
+
+### First WAN attempt and receive-window repair
+
+The first exact-revision WAN attempt at `30ee1d0` was stopped after its first
+uTP cell exposed invalid evidence. Remote libtorrent-to-local RSTorrent
+completed 256 MiB at 1.195967 MiB/s only by dialing three times. RSTorrent
+terminated twice when one DATA datagram raised buffered receive payload from
+within the advertised 1 MiB window to 1,049,073 bytes, 497 bytes above the
+bound. The adjacent TCP control completed at 2.712944 MiB/s. The partial run
+is retained only as causal defect evidence; it is not a parity sample.
+
+Pinned libtorrent's `consume_incoming_data` handles this exact peer-window
+overshoot by dropping the DATA without storing it or advancing the receive
+acknowledgement; packet ACK processing occurs earlier and remains valid.
+RSTorrent instead returned a fatal `ReceiveWindowLimit`. The independently
+authored repair adds a typed nonfatal disposition and saturating drop count,
+retains the exact 1 MiB byte bound, repeats an immediate ACK/window update,
+and carries a per-connection drop high water through runtime evidence.
+Deterministic receive, connection, and composed-transport tests fill the
+window exactly, overshoot by the observed 497 bytes, prove no payload or
+receive-ACK mutation, and prove valid piggyback ACK application. The full 246
+protocol tests, focused product runtime, warning-denying protocol/engine/
+session Clippy, and 19 focused Python contracts pass before the WAN restart.
 
 An evidence-backed defect in the startup, congestion, transport, runtime
 telemetry, or existing WAN harness owners may be repaired autonomously. Stop

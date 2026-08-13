@@ -564,8 +564,8 @@ impl ConnectionState {
 mod tests {
     use super::*;
     use crate::utp::{
-        AckDisposition, ExtensionToEncode, PacketToEncode, SACK_EXTENSION, TimestampMicros,
-        UtpHeader, decode_packet, encode_packet,
+        AckDisposition, ExtensionToEncode, PacketToEncode, ReceiveDisposition, SACK_EXTENSION,
+        TimestampMicros, UtpHeader, decode_packet, encode_packet,
     };
 
     fn packet(
@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn receive_limit_failure_does_not_apply_the_packets_ack() {
+    fn receive_window_drop_still_applies_the_packets_valid_ack() {
         let syn = packet(PacketType::Syn, 50, 0, 0, &[]);
         let mut connection = ConnectionState::accept_syn(decoded(&syn), SequenceNumber::new(100))
             .expect("accept SYN");
@@ -803,13 +803,33 @@ mod tests {
         }
         let before = connection.snapshot();
         let rejected = packet(PacketType::Data, 51, 18, 100, &payload);
-        assert!(matches!(
-            connection.incoming(decoded(&rejected), 1),
-            Err(ConnectionError::Receive(
-                ReceiveError::ReceiveWindowLimit { .. }
-            ))
-        ));
-        assert_eq!(connection.snapshot(), before);
+        let outcome = connection
+            .incoming(decoded(&rejected), 1)
+            .expect("drop receive-window overshoot");
+        assert_eq!(
+            outcome.receive.expect("receive outcome").disposition,
+            ReceiveDisposition::ReceiveWindowExceeded
+        );
+        assert_eq!(
+            outcome
+                .acknowledgement
+                .expect("acknowledgement outcome")
+                .acknowledged_sequences,
+            vec![SequenceNumber::new(100)]
+        );
+        let after = connection.snapshot();
+        assert_eq!(after.send.outstanding_packets, 0);
+        let before_receive = before.receive.expect("receive before overshoot");
+        let after_receive = after.receive.expect("receive after overshoot");
+        assert_eq!(
+            after_receive.acknowledgement_number,
+            before_receive.acknowledgement_number
+        );
+        assert_eq!(
+            after_receive.total_buffered_bytes,
+            before_receive.total_buffered_bytes
+        );
+        assert_eq!(after_receive.receive_window_drops, 1);
     }
 
     #[test]

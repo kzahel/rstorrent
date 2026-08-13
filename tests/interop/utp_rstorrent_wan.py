@@ -1144,6 +1144,7 @@ def sample_metrics(sample: dict[str, Any]) -> dict[str, int | float]:
         "retransmission_bytes_sent",
         "loss_reduction_high_water",
         "timeout_collapse_high_water",
+        "receive_window_drop_high_water",
         "slow_start_threshold_byte_high_water",
         "slow_start_acknowledgements_high_water",
         "slow_start_exits_high_water",

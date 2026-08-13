@@ -1792,6 +1792,96 @@ mod tests {
     }
 
     #[test]
+    fn peer_receive_window_overshoot_drops_and_immediately_repeats_ack() {
+        let (_, mut acceptor) = connected_pair_with(
+            sequence(10),
+            sequence(77),
+            IPV4_UDP_PAYLOAD_CEILING,
+            IPV4_UDP_PAYLOAD_CEILING,
+        );
+        let initial = acceptor.snapshot();
+        let receive = initial.connection.receive.expect("acceptor receive state");
+        let connection_id = initial.connection.ids.receive;
+        let acknowledgement_number = initial.connection.send.cumulative_acknowledgement;
+        let mut sequence_number = receive.acknowledgement_number.wrapping_add(1);
+        let full_segments = MAX_RECEIVE_BYTES / 1_452;
+        let tail_bytes = MAX_RECEIVE_BYTES % 1_452;
+
+        for payload_bytes in
+            std::iter::repeat_n(1_452, full_segments).chain(std::iter::once(tail_bytes))
+        {
+            let datagram = encode_packet(PacketToEncode {
+                header: UtpHeader {
+                    packet_type: PacketType::Data,
+                    connection_id,
+                    timestamp: TimestampMicros::new(1),
+                    timestamp_difference_micros: 1,
+                    window_size: MAX_RECEIVE_BYTES as u32,
+                    sequence_number,
+                    acknowledgement_number,
+                },
+                extensions: &[],
+                payload: &vec![7; payload_bytes],
+            })
+            .expect("encode peer DATA");
+            acceptor
+                .incoming(
+                    decode_packet(&datagram).expect("decode peer DATA"),
+                    1,
+                    TimestampMicros::new(1),
+                )
+                .expect("fill receive window");
+            sequence_number = sequence_number.wrapping_add(1);
+        }
+        let full = acceptor.snapshot();
+        let full_receive = full.connection.receive.expect("full receive state");
+        assert_eq!(full_receive.total_buffered_bytes, MAX_RECEIVE_BYTES);
+        assert_eq!(full_receive.advertised_window_bytes, 0);
+
+        let overshoot = encode_packet(PacketToEncode {
+            header: UtpHeader {
+                packet_type: PacketType::Data,
+                connection_id,
+                timestamp: TimestampMicros::new(2),
+                timestamp_difference_micros: 1,
+                window_size: MAX_RECEIVE_BYTES as u32,
+                sequence_number,
+                acknowledgement_number,
+            },
+            extensions: &[],
+            payload: &[9; 497],
+        })
+        .expect("encode peer overshoot");
+        let outcome = acceptor
+            .incoming(
+                decode_packet(&overshoot).expect("decode peer overshoot"),
+                2,
+                TimestampMicros::new(2),
+            )
+            .expect("drop peer receive-window overshoot");
+        assert_eq!(
+            outcome
+                .connection
+                .receive
+                .expect("drop outcome")
+                .disposition,
+            ReceiveDisposition::ReceiveWindowExceeded
+        );
+        let dropped = acceptor.snapshot();
+        let dropped_receive = dropped
+            .connection
+            .receive
+            .expect("receive state after drop");
+        assert_eq!(
+            dropped_receive.acknowledgement_number,
+            full_receive.acknowledgement_number
+        );
+        assert_eq!(dropped_receive.total_buffered_bytes, MAX_RECEIVE_BYTES);
+        assert_eq!(dropped_receive.receive_window_drops, 1);
+        assert!(acceptor.acknowledgements.is_due(2));
+    }
+
+    #[test]
     fn sustained_stream_reuses_sequence_space_for_two_complete_cycles() {
         const DATA_PACKETS: usize = 2 * (u16::MAX as usize + 1) + 3;
         let (mut initiator, mut acceptor) = connected_pair_with(

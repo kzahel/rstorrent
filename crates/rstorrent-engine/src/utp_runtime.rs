@@ -210,6 +210,7 @@ pub struct UtpServiceSnapshot {
     pub delivered_byte_high_water: usize,
     pub receive_reorder_packet_high_water: usize,
     pub receive_buffered_byte_high_water: usize,
+    pub receive_window_drop_high_water: u64,
     pub unsent_byte_high_water: usize,
     pub sent_byte_high_water: usize,
     pub application_coalesce_byte_high_water: usize,
@@ -984,6 +985,7 @@ struct UtpStats {
     delivered_byte_high_water: AtomicUsize,
     receive_reorder_packet_high_water: AtomicUsize,
     receive_buffered_byte_high_water: AtomicUsize,
+    receive_window_drop_high_water: AtomicU64,
     unsent_byte_high_water: AtomicUsize,
     sent_byte_high_water: AtomicUsize,
     application_coalesce_byte_high_water: AtomicUsize,
@@ -1108,6 +1110,9 @@ impl UtpStats {
                 .load(Ordering::Relaxed),
             receive_buffered_byte_high_water: self
                 .receive_buffered_byte_high_water
+                .load(Ordering::Relaxed),
+            receive_window_drop_high_water: self
+                .receive_window_drop_high_water
                 .load(Ordering::Relaxed),
             unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
             sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
@@ -1337,6 +1342,8 @@ impl UtpStats {
                 .fetch_max(receive.packet_high_water, Ordering::Relaxed);
             self.receive_buffered_byte_high_water
                 .fetch_max(receive.byte_high_water, Ordering::Relaxed);
+            self.receive_window_drop_high_water
+                .fetch_max(receive.receive_window_drops, Ordering::Relaxed);
             self.advertised_receive_window_bytes
                 .record(receive.advertised_window_bytes);
         }
@@ -1970,6 +1977,7 @@ impl WorkerTelemetry {
                     Some(
                         ReceiveDisposition::Delivered
                         | ReceiveDisposition::Buffered
+                        | ReceiveDisposition::ReceiveWindowExceeded
                         | ReceiveDisposition::AfterFin
                         | ReceiveDisposition::ConflictingFin,
                     )
@@ -3610,7 +3618,9 @@ mod tests {
 
         assert_eq!(MAX_REORDER_PACKETS, 953);
         assert_eq!(MAX_REORDER_PAYLOAD_BYTES, 64 * 1024 * 1024);
-        assert!(MAX_REORDER_METADATA_BYTES <= 16 * 1024 * 1024);
+        const {
+            assert!(MAX_REORDER_METADATA_BYTES <= 16 * 1024 * 1024);
+        }
     }
 
     #[test]

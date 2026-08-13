@@ -223,6 +223,7 @@ def validate_result(result: dict[str, Any], entry: dict[str, Any], exit_code: in
     require_bounded_integer(utp, "delivered_byte_high_water", 1024 * 1024)
     require_bounded_integer(utp, "receive_reorder_packet_high_water", 953)
     require_bounded_integer(utp, "receive_buffered_byte_high_water", 1024 * 1024)
+    require_bounded_integer(utp, "receive_window_drop_high_water", 2**64 - 1)
     require_bounded_integer(utp, "unsent_byte_high_water", 1024 * 1024)
     require_bounded_integer(utp, "sent_byte_high_water", 1024 * 1024)
     if not isinstance(utp.get("slow_start_active_observed"), bool):

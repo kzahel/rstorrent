@@ -1209,6 +1209,7 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "delivered_byte_high_water": snapshot.delivered_byte_high_water,
         "receive_reorder_packet_high_water": snapshot.receive_reorder_packet_high_water,
         "receive_buffered_byte_high_water": snapshot.receive_buffered_byte_high_water,
+        "receive_window_drop_high_water": snapshot.receive_window_drop_high_water,
         "unsent_byte_high_water": snapshot.unsent_byte_high_water,
         "sent_byte_high_water": snapshot.sent_byte_high_water,
         "application_coalesce_byte_high_water": snapshot.application_coalesce_byte_high_water,

@@ -26,6 +26,7 @@ pub enum ReceiveDisposition {
     Buffered,
     Duplicate,
     ConflictingDuplicate,
+    ReceiveWindowExceeded,
     TooFarAhead { distance: u16 },
     AmbiguousSequence,
     AfterFin,
@@ -76,6 +77,7 @@ pub struct ReceiveSnapshot {
     pub advertised_window_bytes: usize,
     pub packet_high_water: usize,
     pub byte_high_water: usize,
+    pub receive_window_drops: u64,
     pub fin_sequence: Option<SequenceNumber>,
     pub eof_reached: bool,
     pub fin_payload_packets: u64,
@@ -184,6 +186,7 @@ pub struct ReceiveState {
     delivered_unconsumed_bytes: usize,
     packet_high_water: usize,
     byte_high_water: usize,
+    receive_window_drops: u64,
     fin_sequence: Option<SequenceNumber>,
     eof_reached: bool,
     fin_payload_packets: u64,
@@ -200,6 +203,7 @@ impl ReceiveState {
             delivered_unconsumed_bytes: 0,
             packet_high_water: 0,
             byte_high_water: 0,
+            receive_window_drops: 0,
             fin_sequence: None,
             eof_reached: false,
             fin_payload_packets: 0,
@@ -219,6 +223,7 @@ impl ReceiveState {
             advertised_window_bytes: MAX_RECEIVE_BYTES - total_buffered_bytes,
             packet_high_water: self.packet_high_water,
             byte_high_water: self.byte_high_water,
+            receive_window_drops: self.receive_window_drops,
             fin_sequence: self.fin_sequence,
             eof_reached: self.eof_reached,
             fin_payload_packets: self.fin_payload_packets,
@@ -325,10 +330,8 @@ impl ReceiveState {
                 maximum: MAX_RECEIVE_BYTES,
             })?;
         if next_total_bytes > MAX_RECEIVE_BYTES {
-            return Err(ReceiveError::ReceiveWindowLimit {
-                bytes: next_total_bytes,
-                maximum: MAX_RECEIVE_BYTES,
-            });
+            self.receive_window_drops = self.receive_window_drops.saturating_add(1);
+            return Ok(self.empty_outcome(ReceiveDisposition::ReceiveWindowExceeded));
         }
 
         if distance == 1 {
@@ -674,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn byte_and_payload_limits_reject_without_partial_mutation() {
+    fn byte_limit_drops_without_ack_or_payload_mutation() {
         let mut receive = ReceiveState::new(sequence(0));
         let payload = vec![7; 65_000];
         for offset in 2..=17 {
@@ -684,21 +687,29 @@ mod tests {
         }
         let snapshot = receive.snapshot();
         assert_eq!(snapshot.queued_bytes, payload.len() * 16);
-        assert!(matches!(
-            receive.receive(PacketType::Data, sequence(18), &payload),
-            Err(ReceiveError::ReceiveWindowLimit {
-                bytes,
-                maximum: MAX_RECEIVE_BYTES
-            }) if bytes == payload.len() * 17
-        ));
-        assert_eq!(receive.snapshot(), snapshot);
+        let overflow = receive
+            .receive(PacketType::Data, sequence(18), &payload)
+            .expect("peer window overshoot is a bounded drop");
+        assert_eq!(
+            overflow.disposition,
+            ReceiveDisposition::ReceiveWindowExceeded
+        );
+        let dropped = receive.snapshot();
+        assert_eq!(
+            dropped.acknowledgement_number,
+            snapshot.acknowledgement_number
+        );
+        assert_eq!(dropped.queued_packets, snapshot.queued_packets);
+        assert_eq!(dropped.queued_bytes, snapshot.queued_bytes);
+        assert_eq!(dropped.total_buffered_bytes, snapshot.total_buffered_bytes);
+        assert_eq!(dropped.receive_window_drops, 1);
 
         let oversized = vec![0; MAX_UTP_PAYLOAD_SIZE + 1];
         assert!(matches!(
             receive.receive(PacketType::Data, sequence(1), &oversized),
             Err(ReceiveError::PayloadTooLarge { .. })
         ));
-        assert_eq!(receive.snapshot(), snapshot);
+        assert_eq!(receive.snapshot(), dropped);
     }
 
     #[test]
@@ -722,14 +733,18 @@ mod tests {
         assert_eq!(full.total_buffered_bytes, MAX_RECEIVE_BYTES);
         assert_eq!(full.advertised_window_bytes, 0);
         assert_eq!(full.byte_high_water, MAX_RECEIVE_BYTES);
-        assert!(matches!(
-            receive.receive(PacketType::Data, sequence(19), b"x"),
-            Err(ReceiveError::ReceiveWindowLimit {
-                bytes,
-                maximum: MAX_RECEIVE_BYTES
-            }) if bytes == MAX_RECEIVE_BYTES + 1
-        ));
-        assert_eq!(receive.snapshot(), full);
+        let overflow = receive
+            .receive(PacketType::Data, sequence(19), b"x")
+            .expect("peer window overshoot is a bounded drop");
+        assert_eq!(
+            overflow.disposition,
+            ReceiveDisposition::ReceiveWindowExceeded
+        );
+        let dropped = receive.snapshot();
+        assert_eq!(dropped.total_buffered_bytes, MAX_RECEIVE_BYTES);
+        assert_eq!(dropped.advertised_window_bytes, 0);
+        assert_eq!(dropped.acknowledgement_number, full.acknowledgement_number);
+        assert_eq!(dropped.receive_window_drops, 1);
 
         assert!(matches!(
             receive.consume_delivered(1_040_001),
@@ -738,7 +753,7 @@ mod tests {
                 available: 1_040_000
             })
         ));
-        assert_eq!(receive.snapshot(), full);
+        assert_eq!(receive.snapshot(), dropped);
         assert_eq!(receive.consume_delivered(576), Ok(576));
         assert_eq!(
             receive.snapshot().total_buffered_bytes,

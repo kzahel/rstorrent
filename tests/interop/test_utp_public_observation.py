@@ -57,6 +57,7 @@ def successful_result() -> dict:
             "delivered_byte_high_water": 0,
             "receive_reorder_packet_high_water": 0,
             "receive_buffered_byte_high_water": 0,
+            "receive_window_drop_high_water": 0,
             "unsent_byte_high_water": 0,
             "sent_byte_high_water": 0,
             "slow_start_active_observed": False,

@@ -247,6 +247,7 @@ def validate_complete(
         "retransmission_queue_high_water",
         "loss_reduction_high_water",
         "timeout_collapse_high_water",
+        "receive_window_drop_high_water",
         "slow_start_threshold_byte_high_water",
         "slow_start_acknowledgements_high_water",
         "slow_start_exits_high_water",
