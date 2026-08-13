@@ -354,6 +354,15 @@ left no VM revision stage, Pi upload stage, Cargo process, or rustc process.
 The retained VM caches occupy 486 MiB of target data and 271 MiB of registry
 data. The Pi is now an execution and fixture endpoint only.
 
+An execution smoke at exact revision
+`7da0902e6dc938ffa849224d4ae93265a7140ac1` then uses that path to build and
+stage only `rstorrent-incoming-seed` in 67.834 seconds. The VM-built artifact
+serves an exact 8 MiB forced-uTP RSTorrent/RSTorrent WAN transfer on one
+connection at 0.468380 MiB/s with zero retry, peer error, or content error.
+All 32 pieces verify, the UDP mapping is removed, role processes join, and the
+remote run plus VM revision stage are absent afterward. This is an execution
+and cleanup proof for artifact staging, not a throughput baseline.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text
