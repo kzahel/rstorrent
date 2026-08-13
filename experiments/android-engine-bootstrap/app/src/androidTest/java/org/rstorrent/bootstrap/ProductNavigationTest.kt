@@ -15,6 +15,8 @@ import org.rstorrent.session.uniffi.ProgressDisposition
 import org.rstorrent.session.uniffi.ProgressPhase
 import org.rstorrent.session.uniffi.ProgressReason
 import org.rstorrent.session.uniffi.StorageState
+import org.rstorrent.session.uniffi.TorrentTransferLimits
+import org.rstorrent.session.uniffi.TransferRateLimit
 import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentProtocolIdentities
@@ -101,6 +103,11 @@ class ProductNavigationTest {
             state = TorrentState.DOWNLOADING,
             operationalState = TorrentOperationalState.DOWNLOADING,
             downloadQueuePosition = 1U,
+            transferLimits =
+                TorrentTransferLimits(
+                    TransferRateLimit.Unlimited,
+                    TransferRateLimit.Unlimited,
+                ),
             storageState = StorageState.STAGING,
             metadataAvailable = true,
             pieceCount = 4U,
