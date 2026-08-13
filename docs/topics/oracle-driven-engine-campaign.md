@@ -563,8 +563,11 @@ reproduction and exact terminal-reason capture as the leading causal uTP
 action, then requires reliable single-connection transfers before bounded
 throughput repairs and matched-oracle WAN reruns. Its terminal-provenance
 stage and clean 131,075-DATA/three-wrap transport proof are implemented. The
-clean proof rejects sequence reuse itself; the next executable action is
-sustained loss/retransmission plus composed-runtime reproduction. The
+clean proof rejects sequence reuse itself. Exact 256 MiB WAN terminal evidence
+then selects and a release-profile regression reproduces retransmission queue
+removal compiled away inside `debug_assert!`; the mutation is now
+unconditional. The next executable action is post-repair single-connection
+WAN and composed-runtime reliability proof. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

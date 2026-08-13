@@ -960,8 +960,15 @@ timeout, flight, window, and RTT state before abort. A deterministic clean
 transport regression then
 delivers 131,075 DATA packets exactly, crosses the 16-bit sequence space three
 times, handles delayed and duplicate ACKs, and closes with zero ownership.
-Sequence reuse itself is therefore rejected as the causal defect; sustained
-loss/retransmission and composed-runtime evidence are the next gates.
+Sequence reuse itself is therefore rejected as the causal defect.
+
+The first instrumented 256 MiB affected WAN cell then isolates a release-only
+retransmission lifecycle defect: after one loss signal and no timeout, one
+packet is retransmitted seven times and exhausts attempt eight because queue
+removal lived inside `debug_assert!` and vanished from release builds. The
+existing transport test reproduces the pending work under `--release`; making
+the removal unconditional repairs that exact test without changing congestion
+policy. Post-repair single-connection WAN evidence is the next gate.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

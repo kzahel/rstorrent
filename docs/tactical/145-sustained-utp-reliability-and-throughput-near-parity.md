@@ -212,6 +212,36 @@ remaining Stage 2 impairment cases and the composed runtime reproduction will
 instead test whether loss/retransmission or an async ownership boundary fails
 during a sustained stream.
 
+### Stage 3: release-only recovery defect and causal repair
+
+The first post-instrumentation WAN reproduction ran the historically affected
+256 MiB remote libtorrent-seed/RSTorrent-leecher forced-uTP cell at exact clean
+revision `bcbf7a898cec40cd2c89661f8bf79ca99792038d`. The ordinary-public-route
+transfer verified all 268,435,456 bytes and 1,024 pieces at 1.639029 MiB/s, but
+required two connections and retained one exact retry exhaustion. The failed
+worker received 94,277 DATA datagrams across two sequence cycles and sent
+5,227 new DATA datagrams before sequence `16567` exhausted eight of eight
+attempts. It emitted exactly seven retransmissions of that sequence after only
+one received loss signal and zero timeout collapses. Its terminal state still
+owned the packet plus 24 others; ingress had zero drops. This fingerprint
+rejects ordinary repeated loss and selects retransmission-work lifecycle.
+
+Inspection found the queue-removal mutation inside
+`debug_assert!(complete_front(...))`. Debug profiles executed the mutation;
+release profiles compiled away the complete call and retained the same work
+item. The existing isolated-timeout transport regression demonstrably failed
+under `cargo test --release` with one pending retransmission before the repair.
+Queue completion is now unconditional and only its Boolean invariant remains
+debug-asserted. That exact release test and the three-wrap release test pass
+afterward; the complete protocol suite and warning-denying protocol Clippy also
+pass. The only other uTP `debug_assert!` has its map insertion outside the
+assertion, so this release-semantics audit found no sibling defect.
+
+The WAN harness recorded successful finite UDP mapping deletion, joined
+processes, exact payload cleanup, and no remote run directory or matching role
+process after the case. A post-repair single-connection rerun is the next
+reliability gate before throughput attribution.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text

@@ -1124,7 +1124,8 @@ impl TransportState {
         }
         self.connection
             .mark_retransmitted(sequence_number, now_micros)?;
-        debug_assert!(self.retransmissions.complete_front(sequence_number));
+        let _completed = self.retransmissions.complete_front(sequence_number);
+        debug_assert!(_completed);
         self.record_in_flight(sequence_number, payload.len());
         self.acknowledgements.acknowledge();
         self.pacer.on_payload_emitted(
