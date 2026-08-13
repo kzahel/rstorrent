@@ -17,9 +17,21 @@ from wan_transport_matrix import (
     run_matrix,
     seed_transport_evidence,
 )
+from wan_transport_linux_builder import (
+    LinuxBuilderError,
+    parse_glibc_version,
+    require_compatible_glibc,
+)
 
 
 class WanTransportMatrixTests(unittest.TestCase):
+    def test_linux_builder_requires_older_or_equal_glibc(self) -> None:
+        self.assertEqual(parse_glibc_version("glibc 2.39"), (2, 39))
+        require_compatible_glibc("glibc 2.39", "glibc 2.41")
+        require_compatible_glibc("glibc 2.41", "glibc 2.41")
+        with self.assertRaises(LinuxBuilderError):
+            require_compatible_glibc("glibc 2.42", "glibc 2.41")
+
     def test_remote_staging_builds_only_selected_rstorrent_roles(self) -> None:
         case = lambda direction, seed, leech: argparse.Namespace(
             direction=direction, seed=seed, leech=leech

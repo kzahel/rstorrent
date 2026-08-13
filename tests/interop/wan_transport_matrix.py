@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -18,6 +19,13 @@ from typing import Any
 from public_compare_contract import comparison_profile, parse_metainfo, verify_payload
 from wan_transport_fixture import Fixture, create_fixture
 from wan_transport_mapping import MappingError, add_mapping, remove_mapping
+from wan_transport_linux_builder import (
+    DEFAULT_MACHINE_CONTROL,
+    LinuxArm64Build,
+    LinuxBuilderError,
+    build_linux_arm64_binaries,
+    parse_glibc_version,
+)
 from wan_transport_matrix_contract import (
     DIRECTIONS,
     IMPLEMENTATIONS,
@@ -73,6 +81,7 @@ REMOTE_RSTORRENT_BINARIES = (
     "rstorrent-incoming-seed",
     "rstorrent-public-probe",
 )
+REMOTE_BUILD_MANIFEST = f"{REMOTE_BASE}/rstorrent-build-manifest.json"
 
 
 class WanMatrixError(RuntimeError):
@@ -148,23 +157,100 @@ def repository_revision() -> str:
 
 def require_repository_revision(expected: str) -> None:
     if repository_revision() != expected:
-        raise WanMatrixRevisionError("repository revision changed during matrix execution")
+        raise WanMatrixRevisionError(
+            "repository revision changed during matrix execution"
+        )
 
 
-def remote_environment(host: str, revision: str) -> dict[str, Any]:
+def remote_runtime(host: str) -> dict[str, str]:
+    facts = run_ssh(
+        host,
+        "set -eu; uname -m; getconf GNU_LIBC_VERSION",
+    ).stdout.splitlines()
+    if len(facts) != 2 or facts[0] != "aarch64":
+        raise WanMatrixError("remote runtime is not Linux ARM64")
+    parse_glibc_version(facts[1])
+    return {"architecture": facts[0], "glibc": facts[1]}
+
+
+def _read_remote_build_manifest(host: str) -> dict[str, Any]:
+    completed = run_ssh(host, f'set -eu; cat "{REMOTE_BUILD_MANIFEST}"')
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise WanMatrixRevisionError("remote build manifest is invalid") from error
+    if not isinstance(value, dict):
+        raise WanMatrixRevisionError("remote build manifest is not an object")
+    return value
+
+
+def remote_environment(
+    host: str,
+    revision: str,
+    required_binaries: tuple[str, ...],
+) -> dict[str, Any]:
     versions = run_ssh(
         host,
         "set -eu; "
-        '"$HOME/.cargo/bin/rustc" --version; '
         f'"{REMOTE_PYTHON}" -c \'import libtorrent as lt; print(lt.version)\'; '
         f'cat "{REMOTE_BASE}/staged-revision"',
     ).stdout.splitlines()
-    if len(versions) != 3 or versions[1] != "2.0.13.0" or versions[2] != revision:
-        raise WanMatrixRevisionError("remote environment is not staged at the matrix revision")
+    if (
+        len(versions) != 2
+        or versions[0] != "2.0.13.0"
+        or versions[1] != revision
+    ):
+        raise WanMatrixRevisionError(
+            "remote environment is not staged at the matrix revision"
+        )
+    build_manifest = _read_remote_build_manifest(host)
+    if (
+        build_manifest.get("schema_version") != 1
+        or build_manifest.get("revision") != revision
+    ):
+        raise WanMatrixRevisionError("remote build manifest revision is stale")
+    runtime = build_manifest.get("runtime")
+    builder = build_manifest.get("builder")
+    binaries = build_manifest.get("binaries")
+    if (
+        not isinstance(runtime, dict)
+        or not isinstance(builder, dict)
+        or not isinstance(binaries, dict)
+    ):
+        raise WanMatrixRevisionError("remote build manifest is incomplete")
+    observed_runtime = remote_runtime(host)
+    if runtime != observed_runtime:
+        raise WanMatrixRevisionError("remote runtime changed after artifact staging")
+    for binary in required_binaries:
+        artifact = binaries.get(binary)
+        if not isinstance(artifact, dict):
+            raise WanMatrixRevisionError("required remote binary is not staged")
+        digest = artifact.get("sha256")
+        size_bytes = artifact.get("size_bytes")
+        if (
+            not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            raise WanMatrixRevisionError("remote binary digest is invalid")
+        if not isinstance(size_bytes, int) or size_bytes <= 0:
+            raise WanMatrixRevisionError("remote binary size is invalid")
+        remote_binary = f"{REMOTE_SOURCE}/target/release/{binary}"
+        observed = run_ssh(
+            host,
+            f'set -eu; test "$(stat -c %s "{remote_binary}")" = {size_bytes}; '
+            f'sha256sum "{remote_binary}"',
+        ).stdout.split()[0]
+        if observed != digest:
+            raise WanMatrixRevisionError(
+                "remote binary digest does not match its manifest"
+            )
     return {
         "revision": revision,
-        "rust_version": versions[0],
-        "libtorrent_version": versions[1],
+        "rust_version": builder.get("rustc"),
+        "libtorrent_version": versions[0],
+        "builder": builder,
+        "runtime": runtime,
+        "binaries": binaries,
     }
 
 
@@ -183,11 +269,13 @@ def prepare_remote(
     sizes_mib: tuple[int, ...],
     revision: str,
     remote_binaries: tuple[str, ...],
+    builder_command: Path,
 ) -> dict[str, Any]:
     require_repository_revision(revision)
     run_ssh(
         host,
-        f'set -eu; mkdir -p "{REMOTE_SOURCE}" "{REMOTE_FIXTURES}"',
+        f'set -eu; mkdir -p "{REMOTE_SOURCE}" "{REMOTE_FIXTURES}"; '
+        f'rm -f "{REMOTE_BASE}/staged-revision" "{REMOTE_BUILD_MANIFEST}"',
     )
     command = [
         "rsync",
@@ -225,28 +313,113 @@ def prepare_remote(
     if staged.returncode != 0:
         raise WanMatrixError("remote source staging failed")
     require_repository_revision(revision)
-    run_ssh(
-        host,
-        "set -eu; "
-        f'printf "%s\\n" {shlex.quote(revision)} > "{REMOTE_BASE}/staged-revision"',
-    )
-    if remote_binaries:
-        build_arguments = " ".join(
-            (
-                "-p rstorrent-session --bin rstorrent-incoming-seed"
-                if binary == "rstorrent-incoming-seed"
-                else "-p rstorrent-engine --bin rstorrent-public-probe"
+    runtime = remote_runtime(host)
+    build: LinuxArm64Build | None = None
+    with tempfile.TemporaryDirectory(prefix="rstorrent-wan-builder-") as temporary:
+        staging = Path(temporary)
+        if remote_binaries:
+            build = build_linux_arm64_binaries(
+                builder_command,
+                revision,
+                remote_binaries,
+                staging,
+                runtime["glibc"],
             )
-            for binary in remote_binaries
+            run_ssh(
+                host,
+                f'set -eu; mkdir -p "{REMOTE_SOURCE}/target/release" '
+                f'"{REMOTE_BASE}/staged-binaries/{revision}"',
+            )
+            try:
+                for binary, artifact in build.artifacts.items():
+                    remote_staged = (
+                        f"{REMOTE_BASE}/staged-binaries/{revision}/{binary}"
+                    )
+                    uploaded = subprocess.run(
+                        [
+                            "rsync",
+                            "-az",
+                            "--chmod=F755",
+                            "-e",
+                            "ssh " + " ".join(SSH_OPTIONS),
+                            str(artifact.path),
+                            f"{host}:.local/share/rstorrent-oracles/"
+                            f"tactical-142/staged-binaries/{revision}/{binary}",
+                        ],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        timeout=10 * 60,
+                        check=False,
+                    )
+                    _bounded_text(uploaded.stdout)
+                    _bounded_text(uploaded.stderr)
+                    if uploaded.returncode != 0:
+                        raise WanMatrixError("remote binary upload failed")
+                    destination = f"{REMOTE_SOURCE}/target/release/{binary}"
+                    run_ssh(
+                        host,
+                        "set -eu; "
+                        f'test "$(stat -c %s "{remote_staged}")" = '
+                        f"{artifact.size_bytes}; "
+                        f'test "$(sha256sum "{remote_staged}" | cut -d " " -f 1)" = '
+                        f"{artifact.sha256}; "
+                        f'file "{remote_staged}" | '
+                        'grep -q "ELF 64-bit.*ARM aarch64"; '
+                        f'! ldd "{remote_staged}" | grep -q "not found"; '
+                        f'install -m 0755 "{remote_staged}" "{destination}.tmp"; '
+                        f'mv "{destination}.tmp" "{destination}"',
+                    )
+            finally:
+                run_ssh(
+                    host,
+                    f'rm -rf -- "{REMOTE_BASE}/staged-binaries/{revision}"',
+                )
+        manifest_value = {
+            "schema_version": 1,
+            "revision": revision,
+            "builder": (
+                build.public_provenance()
+                if build is not None
+                else {"kind": "not-required", "target": "linux"}
+            ),
+            "runtime": runtime,
+            "binaries": (
+                {
+                    binary: {
+                        "sha256": artifact.sha256,
+                        "size_bytes": artifact.size_bytes,
+                    }
+                    for binary, artifact in build.artifacts.items()
+                }
+                if build is not None
+                else {}
+            ),
+        }
+        local_manifest = staging / "rstorrent-build-manifest.json"
+        local_manifest.write_text(
+            json.dumps(manifest_value, sort_keys=True) + "\n", encoding="utf-8"
         )
-        run_ssh(
-            host,
-            "set -eu; "
-            f'cd "{REMOTE_SOURCE}"; '
-            'CARGO_BUILD_JOBS=1 "$HOME/.cargo/bin/cargo" build --release '
-            f"{build_arguments}",
-            timeout_seconds=2 * 60 * 60,
+        uploaded_manifest = subprocess.run(
+            [
+                "rsync",
+                "-az",
+                "-e",
+                "ssh " + " ".join(SSH_OPTIONS),
+                str(local_manifest),
+                f"{host}:.local/share/rstorrent-oracles/"
+                "tactical-142/rstorrent-build-manifest.json.tmp",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=2 * 60,
+            check=False,
         )
+        _bounded_text(uploaded_manifest.stdout)
+        _bounded_text(uploaded_manifest.stderr)
+        if uploaded_manifest.returncode != 0:
+            raise WanMatrixError("remote build manifest upload failed")
     fixture_hashes: dict[int, str] = {}
     for size_mib in sizes_mib:
         completed = run_ssh(
@@ -264,7 +437,15 @@ def prepare_remote(
         if not isinstance(sha1, str) or not re.fullmatch(r"[0-9a-f]{40}", sha1):
             raise WanMatrixError("remote fixture omitted its exact SHA-1")
         fixture_hashes[size_mib] = sha1
-    result = remote_environment(host, revision)
+    run_ssh(
+        host,
+        "set -eu; "
+        f'mv "{REMOTE_BUILD_MANIFEST}.tmp" "{REMOTE_BUILD_MANIFEST}"; '
+        f'printf "%s\\n" {shlex.quote(revision)} > '
+        f'"{REMOTE_BASE}/staged-revision.tmp"; '
+        f'mv "{REMOTE_BASE}/staged-revision.tmp" "{REMOTE_BASE}/staged-revision"',
+    )
+    result = remote_environment(host, revision, remote_binaries)
     result["fixture_sha1"] = fixture_hashes
     result["rstorrent_binaries_built"] = list(remote_binaries)
     return result
@@ -793,9 +974,14 @@ def run_matrix(arguments: argparse.Namespace) -> dict[str, Any]:
             sizes,
             revision,
             required_remote_rstorrent_binaries(cases),
+            arguments.builder_command,
         )
     else:
-        prepared = remote_environment(host, revision)
+        prepared = remote_environment(
+            host,
+            revision,
+            required_remote_rstorrent_binaries(cases),
+        )
         prepared["status"] = "verified-existing"
     require_repository_revision(revision)
     binaries = build_binaries()
@@ -889,6 +1075,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--case-id", action="append")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--prepare-remote", action="store_true")
+    parser.add_argument(
+        "--builder-command",
+        type=Path,
+        default=DEFAULT_MACHINE_CONTROL,
+        help="machine-control executable owning the Linux ARM64 build VM",
+    )
     parser.add_argument("--allow-public-network", action="store_true")
     return parser.parse_args()
 
@@ -902,6 +1094,7 @@ def main() -> int:
         return 0
     except (
         ControlledRoleError,
+        LinuxBuilderError,
         MatrixContractError,
         ResourceError,
         WanMatrixError,
