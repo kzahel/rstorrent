@@ -972,7 +972,10 @@ policy. The repaired 256 MiB mixed WAN cell then completes on one connection
 with zero retry exhaustion, failure, TCP, or ingress drop while the libtorrent
 seed emits 185,178 payload packets. Active rate improves 27.7% to 2.093 MiB/s;
 this is one causal verification sample, not yet the alternating cohort or
-near-parity claim.
+near-parity claim. Named high-cost real-socket regressions also pass in debug
+and release with 69,210,112 fixed-548 bytes and 190,320,640 dynamic-MTU bytes;
+each exceeds two complete DATA sequence cycles on one exact ordered stream and
+terminates with zero uTP/UDP ownership.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

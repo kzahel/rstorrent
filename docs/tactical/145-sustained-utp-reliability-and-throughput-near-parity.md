@@ -259,6 +259,18 @@ reliability cohort or throughput target. Fixed-profile and RSTorrent-sender
 composition plus repeated 64/256 MiB cells remain required before throughput
 attribution.
 
+Two explicit high-cost real-socket runtime regressions now stream deterministic
+bytes rather than retaining the payload. The fixed-548 case transfers
+69,210,112 bytes and the dynamic-IPv4 case transfers 190,320,640 bytes; each
+forces the sending service beyond 131,072 DATA datagrams on one connection,
+verifies every byte in order, performs bidirectional shutdown, and asserts zero
+terminal uTP/UDP tasks, queues, waiters, retry exhaustion, panic, or failure.
+The dynamic case additionally proves an acknowledged protected MTU probe and a
+selected datagram size of at least 1,456 bytes. Both pass optimized debug and
+`--release` profiles in 1.16--1.41 seconds of transfer time on the development
+host. They are ignored from routine runs because together they move roughly
+248 MiB over loopback, but remain named release acceptance gates.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text

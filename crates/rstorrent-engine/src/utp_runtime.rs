@@ -2643,6 +2643,108 @@ mod tests {
         (udp, dht, utp)
     }
 
+    async fn sustained_runtime_cycles(config: UtpRuntimeConfig, payload_bytes: usize) {
+        let left_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let right_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (mut left_udp, left_dht) = SessionUdpService::start(left_socket).unwrap();
+        let (mut right_udp, right_dht) = SessionUdpService::start(right_socket).unwrap();
+        let left_utp = UtpService::start_diagnostic(&mut left_udp, config).unwrap();
+        let mut right_utp = UtpService::start_diagnostic(&mut right_udp, config).unwrap();
+        let right_address = right_udp.local_address();
+        let left_handle = left_utp.handle();
+        let (left, right) = timeout(Duration::from_secs(2), async {
+            tokio::join!(left_handle.connect(right_address), right_utp.accept())
+        })
+        .await
+        .expect("sustained uTP connection timeout");
+        let mut left = left.unwrap();
+        let mut right = right.expect("incoming sustained uTP stream");
+
+        timeout(Duration::from_secs(180), async {
+            let sending = async {
+                let mut offset = 0_usize;
+                let mut chunk = vec![0_u8; MAX_UTP_APPLICATION_WRITE_BYTES];
+                while offset < payload_bytes {
+                    let length = chunk.len().min(payload_bytes - offset);
+                    for (index, byte) in chunk[..length].iter_mut().enumerate() {
+                        *byte = u8::try_from((offset + index) % 251).unwrap();
+                    }
+                    left.write_all(&chunk[..length]).await.unwrap();
+                    offset += length;
+                }
+                left.shutdown().await.unwrap();
+            };
+            let receiving = async {
+                let mut offset = 0_usize;
+                let mut chunk = vec![0_u8; 32 * 1024];
+                loop {
+                    let length = right.read(&mut chunk).await.unwrap();
+                    if length == 0 {
+                        break;
+                    }
+                    for (index, byte) in chunk[..length].iter().copied().enumerate() {
+                        assert_eq!(byte, u8::try_from((offset + index) % 251).unwrap());
+                    }
+                    offset += length;
+                }
+                assert_eq!(offset, payload_bytes);
+                right.shutdown().await.unwrap();
+            };
+            tokio::join!(sending, receiving);
+        })
+        .await
+        .expect("sustained uTP transfer timeout");
+        drop(left);
+        drop(right);
+
+        let left_terminal = left_utp.shutdown().await.unwrap();
+        let right_terminal = right_utp.shutdown().await.unwrap();
+        assert!(left_terminal.data_datagrams_sent > 2 * (u16::MAX as u64 + 1));
+        for terminal in [&left_terminal, &right_terminal] {
+            assert_eq!(terminal.path_mtu_profile, config.profile());
+            assert_eq!(terminal.connections_started, 1);
+            assert_eq!(terminal.active_connections, 0);
+            assert_eq!(terminal.retry_exhausted_connections, 0);
+            assert_eq!(terminal.worker_panics, 0);
+            assert_eq!(terminal.last_failure, None);
+        }
+        if config.profile() == UtpPathMtuProfile::DynamicIpv4 {
+            assert!(left_terminal.selected_mtu_max_bytes.unwrap() >= 1_456);
+            assert!(left_terminal.mtu_probes_acknowledged_high_water > 0);
+        } else {
+            assert_eq!(left_terminal.selected_mtu_min_bytes, Some(548));
+            assert_eq!(left_terminal.selected_mtu_max_bytes, Some(548));
+        }
+
+        drop(left_dht);
+        drop(right_dht);
+        for terminal in [
+            left_udp.shutdown().await.unwrap(),
+            right_udp.shutdown().await.unwrap(),
+        ] {
+            assert_eq!(terminal.tasks, 0);
+            assert_eq!(terminal.utp_queued, 0);
+            assert_eq!(terminal.queued, 0);
+            assert_eq!(terminal.egress_waiters, 0);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "streams more than two fixed-548 sequence cycles over real UDP"]
+    async fn sustained_fixed_runtime_reuses_sequence_space_twice() {
+        const PAYLOAD_BYTES: usize = 2 * (u16::MAX as usize + 1) * (548 - UTP_HEADER_SIZE) + 4_096;
+        sustained_runtime_cycles(UtpRuntimeConfig::fixed_ipv4(), PAYLOAD_BYTES).await;
+    }
+
+    #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    #[ignore = "streams more than two dynamic-MTU sequence cycles over real UDP"]
+    async fn sustained_dynamic_runtime_reuses_sequence_space_twice() {
+        const PAYLOAD_BYTES: usize =
+            2 * (u16::MAX as usize + 1) * (IPV4_UDP_PAYLOAD_CEILING - UTP_HEADER_SIZE) + 4_096;
+        sustained_runtime_cycles(UtpRuntimeConfig::diagnostic_ipv4_path_mtu(), PAYLOAD_BYTES).await;
+    }
+
     #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn product_start_selects_dynamic_mtu_only_for_verified_capability() {
