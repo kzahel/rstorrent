@@ -308,8 +308,9 @@ single-file and aligned multi-file fixtures, then transfers each one in both
 RSTorrent/libtorrent roles over loopback TCP. It repeats application-owned
 seeding after restart, covers selective file download, forces RC4 MSE in both
 initiated roles, and proves tracker- and DHT-discovered default-uTP download.
-It verifies exact payload and versioned identities, enforces resource
-high-water bounds, and removes all temporary state:
+It also accepts a uTP-only libtorrent leecher through the shared session UDP
+owner. The harness verifies exact payload and versioned identities, enforces
+resource high-water bounds, and removes all temporary state:
 
 ```bash
 uv run --project tests/interop --locked \

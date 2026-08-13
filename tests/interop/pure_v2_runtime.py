@@ -166,7 +166,11 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
 
 
 def start_rstorrent_seed(
-    binary: Path, fixture: RuntimeFixture, *, require_mse: bool = False
+    binary: Path,
+    fixture: RuntimeFixture,
+    *,
+    require_mse: bool = False,
+    utp: bool = False,
 ) -> tuple[subprocess.Popen[str], dict[str, object]]:
     command = [
         str(binary),
@@ -179,6 +183,8 @@ def start_rstorrent_seed(
     ]
     if require_mse:
         command.extend(["--encryption", "required"])
+    if utp:
+        command.extend(["--utp", "--encryption", "disabled"])
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -344,9 +350,12 @@ def leech_with_libtorrent(
     output_root: Path,
     *,
     require_mse: bool = False,
+    utp_only: bool = False,
 ) -> tuple[list[str], str | None]:
     output_root.mkdir()
-    session = libtorrent_session(incoming=False, require_mse=require_mse)
+    session = libtorrent_session(
+        incoming=False, require_mse=require_mse, utp_only=utp_only
+    )
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
     negotiated = None
@@ -358,7 +367,12 @@ def leech_with_libtorrent(
         parameters.flags &= ~lt.torrent_flags.paused
         parameters.flags &= ~lt.torrent_flags.auto_managed
         handle = session.add_torrent(parameters)
-        handle.connect_peer(proxy.endpoint if proxy is not None else parse_address(ready))
+        peer_address = (
+            parse_address({"listen": ready.get("utp_listen")})
+            if utp_only
+            else parse_address(ready)
+        )
+        handle.connect_peer(proxy.endpoint if proxy is not None else peer_address)
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
@@ -380,6 +394,8 @@ def leech_with_libtorrent(
         if require_mse:
             assert_successful_wire_shape(proxy.traces(), "rc4")
             negotiated = "rc4"
+        if utp_only:
+            validate_libtorrent_utp(session, diagnostics)
         return diagnostics[-20:], negotiated
     finally:
         if handle is not None and handle.is_valid():
@@ -686,6 +702,32 @@ def validate_libtorrent_utp(
     }
 
 
+def accepted_utp_evidence(stopped: dict[str, object]) -> dict[str, int]:
+    utp = stopped.get("utp_before_shutdown")
+    if (
+        not isinstance(utp, dict)
+        or not isinstance(utp.get("connections_started"), int)
+        or utp["connections_started"] < 1
+        or not isinstance(utp.get("datagrams_sent"), int)
+        or utp["datagrams_sent"] < 1
+        or utp.get("worker_panics") != 0
+    ):
+        raise ScenarioFailure(f"invalid accepted pure-v2 uTP evidence: {utp}")
+    udp = stopped.get("udp_before_shutdown")
+    if (
+        not isinstance(udp, dict)
+        or not isinstance(udp.get("utp_datagrams_classified"), int)
+        or udp["utp_datagrams_classified"] < 1
+    ):
+        raise ScenarioFailure(f"accepted pure-v2 uTP bypassed session UDP: {udp}")
+    return {
+        "connections_started": utp["connections_started"],
+        "datagrams_sent": utp["datagrams_sent"],
+        "connection_high_water": utp["connection_high_water"],
+        "classified_datagrams": udp["utp_datagrams_classified"],
+    }
+
+
 def tracker_utp_download(
     binary: Path, fixture: RuntimeFixture
 ) -> dict[str, object]:
@@ -865,6 +907,26 @@ def run(repository: Path, *, no_build: bool) -> None:
                     "tracker_utp": tracker_utp_download(seed_binary, fixture),
                     "dht_utp": dht_utp_download(seed_binary, fixture),
                 }
+                utp_process, utp_ready = start_rstorrent_seed(
+                    seed_binary, fixture, utp=True
+                )
+                try:
+                    utp_alerts, _ = leech_with_libtorrent(
+                        fixture,
+                        utp_ready,
+                        fixture.torrent_path.parent / "libtorrent-utp-from-rstorrent",
+                        utp_only=True,
+                    )
+                    utp_stop = stop_rstorrent_seed(utp_process, fixture.total_size)
+                except BaseException:
+                    terminate_process(utp_process)
+                    raise
+                discovery_evidence["accepted_utp"] = {
+                    "application": accepted_utp_evidence(utp_stop),
+                    "libtorrent_alerts": utp_alerts,
+                    "ready_udp": utp_ready.get("utp_listen"),
+                    "cleanup": utp_stop.get("event") == "stopped",
+                }
             print(
                 json.dumps(
                     {
@@ -897,7 +959,7 @@ def run(repository: Path, *, no_build: bool) -> None:
             "interop=pure-v2-runtime "
             f"libtorrent_binding={lt.__version__} libtorrent_native={lt.version} "
             f"fixtures=2 roles=both restart=true tracker=true dht=true "
-            f"utp=outgoing mse=rc4-both-roles cleanup=true "
+            f"utp=both-roles mse=rc4-both-roles cleanup=true "
             f"oracle_rss_bytes={rss} child_peak_rss_bytes={child_rss}"
         )
     except BaseException as error:
