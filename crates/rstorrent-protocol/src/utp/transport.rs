@@ -10,7 +10,7 @@ use super::{
     IncomingOutcome, MAX_SENT_BYTES, MAX_SENT_PACKETS, MtuError, MtuProbeFailure, MtuProbeOutcome,
     OutboundPacketIntent, Pacer, PacerSnapshot, PacketToEncode, PacketType, PathMtuSnapshot,
     PathMtuState, ReceiveDisposition, SACK_EXTENSION, SequenceNumber, TimestampMicros,
-    UTP_HEADER_SIZE, UtpCodecError, UtpHeader, encode_packet,
+    UTP_HEADER_SIZE, UtpCodecError, UtpHeader, congestion::CongestionStartup, encode_packet,
 };
 
 pub const MAX_UNSENT_BYTES: usize = 1024 * 1024;
@@ -602,6 +602,24 @@ impl TransportState {
         floor_datagram_bytes: usize,
         ceiling_datagram_bytes: usize,
     ) -> Result<Self, TransportError> {
+        Self::initiate_with_startup(
+            receive_connection_id,
+            initial_sequence_number,
+            now_micros,
+            floor_datagram_bytes,
+            ceiling_datagram_bytes,
+            CongestionStartup::LinearLedbat,
+        )
+    }
+
+    fn initiate_with_startup(
+        receive_connection_id: u16,
+        initial_sequence_number: SequenceNumber,
+        now_micros: u64,
+        floor_datagram_bytes: usize,
+        ceiling_datagram_bytes: usize,
+        congestion_startup: CongestionStartup,
+    ) -> Result<Self, TransportError> {
         let connection =
             ConnectionState::initiate(receive_connection_id, initial_sequence_number, now_micros)?;
         Self::from_connection(
@@ -611,6 +629,26 @@ impl TransportState {
             ceiling_datagram_bytes,
             true,
             false,
+            congestion_startup,
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn initiate_for_diagnostics(
+        receive_connection_id: u16,
+        initial_sequence_number: SequenceNumber,
+        now_micros: u64,
+        floor_datagram_bytes: usize,
+        ceiling_datagram_bytes: usize,
+        congestion_startup: CongestionStartup,
+    ) -> Result<Self, TransportError> {
+        Self::initiate_with_startup(
+            receive_connection_id,
+            initial_sequence_number,
+            now_micros,
+            floor_datagram_bytes,
+            ceiling_datagram_bytes,
+            congestion_startup,
         )
     }
 
@@ -629,6 +667,7 @@ impl TransportState {
             ceiling_datagram_bytes,
             false,
             true,
+            CongestionStartup::LinearLedbat,
         )
     }
 
@@ -639,10 +678,12 @@ impl TransportState {
         ceiling_datagram_bytes: usize,
         initial_syn_pending: bool,
         initial_ack_pending: bool,
+        congestion_startup: CongestionStartup,
     ) -> Result<Self, TransportError> {
         let mtu = PathMtuState::new(floor_datagram_bytes, ceiling_datagram_bytes)?;
         let maximum_segment_bytes = floor_datagram_bytes.saturating_sub(UTP_HEADER_SIZE);
-        let congestion = CongestionController::new(maximum_segment_bytes)?;
+        let congestion =
+            CongestionController::with_startup(maximum_segment_bytes, congestion_startup)?;
         let mut acknowledgements = AckScheduler::default();
         if initial_ack_pending {
             acknowledgements.on_window_reopened(0);

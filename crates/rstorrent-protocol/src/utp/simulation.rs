@@ -649,10 +649,11 @@ impl TcpLikeSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utp::congestion::CongestionStartup;
     use crate::utp::{
         DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MAX_RECEIVE_BYTES,
         MAX_REORDER_PACKETS, MAX_SENT_BYTES, MAX_SENT_PACKETS, MAX_UNSENT_BYTES, SequenceNumber,
-        TimestampMicros, TransportState, decode_packet,
+        TARGET_DELAY_MICROS, TimestampMicros, TransportState, decode_packet,
     };
     use sha1::{Digest, Sha1};
 
@@ -842,6 +843,7 @@ mod tests {
         transfer_bytes: usize,
         receive_release: ReceiveReleasePolicy,
         competitor: Option<CompetitorConfig>,
+        sender_startup: CongestionStartup,
     }
 
     #[derive(Clone, Debug)]
@@ -866,6 +868,7 @@ mod tests {
         link: LinkSnapshot,
         receive_packet_high_water: usize,
         receive_byte_high_water: usize,
+        congestion_window_high_water_bytes: usize,
     }
 
     impl UtpScenarioReport {
@@ -922,6 +925,7 @@ mod tests {
             transfer_bytes: TRANSFER_BYTES,
             receive_release: ReceiveReleasePolicy::Immediate,
             competitor: None,
+            sender_startup: CongestionStartup::LinearLedbat,
         }
     }
 
@@ -937,13 +941,15 @@ mod tests {
     fn connected_transports(
         sender_clock: EndpointClock,
         receiver_clock: EndpointClock,
+        sender_startup: CongestionStartup,
     ) -> (TransportState, TransportState, u64) {
-        let mut sender = TransportState::initiate(
+        let mut sender = TransportState::initiate_for_diagnostics(
             40,
             SequenceNumber::new(10),
             0,
             IPV4_UDP_PAYLOAD_FLOOR,
             IPV4_UDP_PAYLOAD_CEILING,
+            sender_startup,
         )
         .expect("initiate deterministic uTP connection");
         let syn = sender
@@ -993,8 +999,11 @@ mod tests {
     fn run_utp_scenario(scenario: UtpScenario) -> UtpScenarioReport {
         let source = scenario_source(scenario.transfer_bytes);
         let source_hash = Sha1::digest(&source).into();
-        let (mut sender, mut receiver, started_at_micros) =
-            connected_transports(scenario.sender_clock, scenario.receiver_clock);
+        let (mut sender, mut receiver, started_at_micros) = connected_transports(
+            scenario.sender_clock,
+            scenario.receiver_clock,
+            scenario.sender_startup,
+        );
         let mut link = DeterministicLink::new(scenario.link.clone(), scenario.script)
             .expect("construct deterministic link");
         let mut competitor = scenario.competitor.map(TcpScenarioState::new);
@@ -1014,6 +1023,8 @@ mod tests {
         let mut new_payload_emissions_while_remote_window_zero = 0_u64;
         let mut receive_packet_high_water = 0;
         let mut receive_byte_high_water = 0;
+        let mut congestion_window_high_water_bytes =
+            sender.snapshot().congestion.congestion_window_bytes;
         let deadline = started_at_micros.saturating_add(MAX_SCENARIO_MICROS);
         let mut now_micros = started_at_micros;
 
@@ -1322,6 +1333,8 @@ mod tests {
             }
 
             let sender_snapshot = sender.snapshot();
+            congestion_window_high_water_bytes = congestion_window_high_water_bytes
+                .max(sender_snapshot.congestion.congestion_window_bytes);
             let mut receiver_snapshot = receiver.snapshot();
             if received.len() == source.len()
                 && let ReceiveReleasePolicy::HoldUntilFull { .. } = scenario.receive_release
@@ -1381,6 +1394,7 @@ mod tests {
                     link: link_snapshot,
                     receive_packet_high_water,
                     receive_byte_high_water,
+                    congestion_window_high_water_bytes,
                 };
             }
 
@@ -1819,5 +1833,226 @@ mod tests {
             report.link.queue_byte_high_water <= 75_000 + IPV4_UDP_PAYLOAD_CEILING,
             "report={report:?}"
         );
+    }
+
+    #[test]
+    #[ignore = "Tactical 145 diagnostic-only congestion-policy A/B"]
+    fn diagnostic_exact_slow_start_is_rejected_by_queue_delay_gate() {
+        let mut current = default_utp_scenario();
+        current.transfer_bytes = TRANSFER_BYTES * 2;
+        current.link.base_delay_micros = 80_000;
+        current.link.bytes_per_second = 3_000_000;
+        current.link.queue_capacity_bytes = 2 * 1024 * 1024;
+        let current = run_utp_scenario(current);
+
+        let mut exact = default_utp_scenario();
+        exact.sender_startup = CongestionStartup::DiagnosticSlowStart {
+            exit_delay_micros: TARGET_DELAY_MICROS,
+            exit_window_percent: None,
+        };
+        exact.transfer_bytes = TRANSFER_BYTES * 2;
+        exact.link.base_delay_micros = 80_000;
+        exact.link.bytes_per_second = 3_000_000;
+        exact.link.queue_capacity_bytes = 2 * 1024 * 1024;
+        let exact = run_utp_scenario(exact);
+
+        let current_duration = current
+            .completed_at_micros
+            .saturating_sub(current.started_at_micros);
+        let exact_duration = exact
+            .completed_at_micros
+            .saturating_sub(exact.started_at_micros);
+        eprintln!(
+            "T145_EXACT_REJECTION current_duration_us={current_duration} exact_duration_us={exact_duration} exact_queue_p95_us={} exact_queue_max_us={} exact_cwnd_high={} exact_flight_high={}",
+            exact.queue_delay_percentile(95),
+            exact.maximum_queue_delay(),
+            exact.congestion_window_high_water_bytes,
+            exact.sender.in_flight_byte_high_water,
+        );
+        assert_eq!(exact.received_hash, exact.source_hash);
+        assert!(exact_duration < current_duration);
+        assert!(exact.queue_delay_percentile(95) > 150_000);
+    }
+
+    #[test]
+    #[ignore = "Tactical 145 diagnostic-only congestion-policy A/B"]
+    fn diagnostic_slow_start_ab_covers_long_rtt_fairness_and_resources() {
+        let base_delay_profiles_micros = [70_000, 80_000, 90_000];
+        let mut paired_durations = Vec::new();
+
+        for (sample, base_delay_micros) in base_delay_profiles_micros.into_iter().enumerate() {
+            let mut durations = Vec::new();
+            for startup in [
+                CongestionStartup::LinearLedbat,
+                CongestionStartup::DiagnosticSlowStart {
+                    exit_delay_micros: 10_000,
+                    exit_window_percent: Some(30),
+                },
+            ] {
+                let mut scenario = default_utp_scenario();
+                scenario.sender_startup = startup;
+                scenario.transfer_bytes = TRANSFER_BYTES * 2;
+                scenario.link.base_delay_micros = base_delay_micros;
+                scenario.link.bytes_per_second = 3_000_000;
+                scenario.link.queue_capacity_bytes = 2 * 1024 * 1024;
+                let report = run_utp_scenario(scenario);
+                let duration_micros = report
+                    .completed_at_micros
+                    .saturating_sub(report.started_at_micros);
+                let rate_mib_per_second = report.received_bytes as f64 * 1_000_000.0
+                    / duration_micros.max(1) as f64
+                    / (1024.0 * 1024.0);
+                let startup_name = match startup {
+                    CongestionStartup::LinearLedbat => "linear",
+                    CongestionStartup::DiagnosticSlowStart { .. } => "slow-start-10ms-30pct",
+                };
+                eprintln!(
+                    "T145_STARTUP sample={sample} mode={startup_name} duration_us={duration_micros} rate_mib_s={rate_mib_per_second:.6} cwnd_high={} flight_high={} queue_p95_us={} queue_max_us={} retransmissions={} loss_reductions={} timeout_collapses={} slow_start_acks={} slow_start_exits={} send_packet_high={} send_byte_high={} event_high={} event_byte_high={} queue_byte_high={}",
+                    report.congestion_window_high_water_bytes,
+                    report.sender.in_flight_byte_high_water,
+                    report.queue_delay_percentile(95),
+                    report.maximum_queue_delay(),
+                    report.retransmissions,
+                    report.sender.congestion.loss_reductions,
+                    report.sender.congestion.timeout_collapses,
+                    report.sender.congestion.slow_start_acknowledgements,
+                    report.sender.congestion.slow_start_exits,
+                    report.sender.connection.send.packet_high_water,
+                    report.sender.connection.send.byte_high_water,
+                    report.link.event_high_water,
+                    report.link.event_byte_high_water,
+                    report.link.queue_byte_high_water,
+                );
+
+                assert_eq!(report.received_hash, report.source_hash);
+                assert_eq!(report.received_bytes, TRANSFER_BYTES * 2);
+                assert_eq!(report.link.scripted_drops, 0);
+                assert_eq!(report.link.queue_drops, 0);
+                assert_eq!(report.link.mtu_black_hole_drops, 0);
+                assert!(report.queue_delay_percentile(95) <= 150_000);
+                assert!(report.sender.connection.send.packet_high_water <= MAX_SENT_PACKETS);
+                assert!(report.sender.connection.send.byte_high_water <= MAX_SENT_BYTES);
+                assert!(report.sender.in_flight_byte_high_water <= MAX_SENT_BYTES);
+                assert!(report.link.event_high_water <= MAX_SIM_EVENTS);
+                assert!(report.link.event_byte_high_water <= MAX_SIM_EVENT_BYTES);
+                if matches!(startup, CongestionStartup::DiagnosticSlowStart { .. }) {
+                    assert!(report.sender.congestion.slow_start_acknowledgements > 0);
+                    assert!(report.sender.congestion.slow_start_exits > 0);
+                }
+                durations.push(duration_micros);
+            }
+            assert!(
+                durations[1] < durations[0],
+                "slow-start candidate did not improve sample {sample}: {durations:?}"
+            );
+            paired_durations.push((durations[0], durations[1]));
+        }
+
+        for startup in [
+            CongestionStartup::LinearLedbat,
+            CongestionStartup::DiagnosticSlowStart {
+                exit_delay_micros: 10_000,
+                exit_window_percent: Some(30),
+            },
+        ] {
+            let mut scenario = default_utp_scenario();
+            scenario.sender_startup = startup;
+            scenario.transfer_bytes = TRANSFER_BYTES * 2;
+            scenario.competitor = Some(CompetitorConfig {
+                starts_after_micros: 1_000_000,
+                stops_after_micros: 6_000_000,
+                segment_bytes: 1_000,
+                initial_window_segments: 64,
+                retransmit_after_micros: 200_000,
+            });
+            let bytes_per_second = scenario.link.bytes_per_second;
+            let report = run_utp_scenario(scenario);
+            let competitor = report.competitor.as_ref().expect("competitor report");
+            let overlap_share = competitor.overlap_share(&report.deliveries);
+            let queue_p95 = competitor.queue_delay_percentile(95);
+            let recovery_delay = competitor
+                .recovery_delay_micros(&report.deliveries, bytes_per_second)
+                .expect("uTP recovery within ten RTTs");
+            let startup_name = match startup {
+                CongestionStartup::LinearLedbat => "linear",
+                CongestionStartup::DiagnosticSlowStart { .. } => "slow-start-10ms-30pct",
+            };
+            eprintln!(
+                "T145_FAIRNESS mode={startup_name} competitor_share={overlap_share:.6} competitor_queue_p95_us={queue_p95} utp_recovery_us={recovery_delay} utp_rtt_stop_us={} utp_loss_reductions={} queue_drops={} queue_byte_high={} cwnd_high={} flight_high={}",
+                competitor.utp_rtt_at_stop_micros,
+                report.sender.congestion.loss_reductions,
+                report.link.queue_drops,
+                report.link.queue_byte_high_water,
+                report.congestion_window_high_water_bytes,
+                report.sender.in_flight_byte_high_water,
+            );
+            assert_eq!(report.received_hash, report.source_hash);
+            assert!(overlap_share >= 0.70);
+            assert!(queue_p95 <= 150_000);
+            assert!(recovery_delay <= competitor.utp_rtt_at_stop_micros * 10);
+            assert!(report.link.queue_byte_high_water <= 75_000 + IPV4_UDP_PAYLOAD_CEILING);
+        }
+
+        let mut loss = default_utp_scenario();
+        loss.sender_startup = CongestionStartup::DiagnosticSlowStart {
+            exit_delay_micros: 10_000,
+            exit_window_percent: Some(30),
+        };
+        loss.link.queue_capacity_bytes = 1024 * 1024;
+        for ordinal in (99..20_000).step_by(100) {
+            loss.script.drop_ordinals.insert(ordinal);
+        }
+        let loss = run_utp_scenario(loss);
+        eprintln!(
+            "T145_LOSS duration_us={} scripted_drops={} queue_drops={} retransmissions={} loss_reductions={} timeout_collapses={} max_transmissions={} cwnd_high={} flight_high={} send_packet_high={} send_byte_high={}",
+            loss.completed_at_micros
+                .saturating_sub(loss.started_at_micros),
+            loss.link.scripted_drops,
+            loss.link.queue_drops,
+            loss.retransmissions,
+            loss.sender.congestion.loss_reductions,
+            loss.sender.congestion.timeout_collapses,
+            loss.maximum_transmissions_per_sequence,
+            loss.congestion_window_high_water_bytes,
+            loss.sender.in_flight_byte_high_water,
+            loss.sender.connection.send.packet_high_water,
+            loss.sender.connection.send.byte_high_water,
+        );
+        assert_eq!(loss.received_hash, loss.source_hash);
+        assert!(loss.link.scripted_drops > 0);
+        assert_eq!(loss.link.queue_drops, 0);
+        assert!(loss.retransmissions > 0);
+        assert!(loss.sender.congestion.loss_reductions > 0);
+        assert!(loss.maximum_transmissions_per_sequence <= crate::utp::MAX_TRANSMISSIONS);
+
+        let mut mtu = default_utp_scenario();
+        mtu.sender_startup = CongestionStartup::DiagnosticSlowStart {
+            exit_delay_micros: 10_000,
+            exit_window_percent: Some(30),
+        };
+        mtu.link.queue_capacity_bytes = 1024 * 1024;
+        mtu.link.path_udp_payload_mtu = 1_280;
+        let mtu = run_utp_scenario(mtu);
+        eprintln!(
+            "T145_MTU duration_us={} mtu_black_hole_drops={} retransmissions={} loss_reductions={} ignored_loss_events={} probes_started={} probes_failed={} floor_datagram_bytes={} cwnd_high={} flight_high={}",
+            mtu.completed_at_micros
+                .saturating_sub(mtu.started_at_micros),
+            mtu.link.mtu_black_hole_drops,
+            mtu.retransmissions,
+            mtu.sender.congestion.loss_reductions,
+            mtu.sender.congestion.ignored_loss_events,
+            mtu.sender.mtu.probes_started,
+            mtu.sender.mtu.probes_failed,
+            mtu.sender.mtu.floor_datagram_bytes,
+            mtu.congestion_window_high_water_bytes,
+            mtu.sender.in_flight_byte_high_water,
+        );
+        assert_eq!(mtu.received_hash, mtu.source_hash);
+        assert!(mtu.link.mtu_black_hole_drops > 0);
+        assert!(mtu.sender.mtu.search_complete);
+        assert_eq!(mtu.sender.congestion.loss_reductions, 0);
+        assert!(mtu.sender.congestion.ignored_loss_events >= mtu.sender.mtu.probes_failed);
+
+        eprintln!("T145_PAIRED_DURATIONS {paired_durations:?}");
     }
 }
