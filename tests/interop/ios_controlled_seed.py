@@ -32,11 +32,14 @@ def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--payload-mib", type=int, default=2)
     parser.add_argument("--timeout-seconds", type=int, default=600)
+    parser.add_argument("--upload-kib-per-second", type=int)
     parsed = parser.parse_args()
     if not 1 <= parsed.payload_mib <= 64:
         parser.error("--payload-mib must be between 1 and 64")
     if not 30 <= parsed.timeout_seconds <= MAX_TIMEOUT_SECONDS:
         parser.error(f"--timeout-seconds must be between 30 and {MAX_TIMEOUT_SECONDS}")
+    if parsed.upload_kib_per_second is not None and not 32 <= parsed.upload_kib_per_second <= 1024:
+        parser.error("--upload-kib-per-second must be between 32 and 1024")
     return parsed
 
 
@@ -77,7 +80,12 @@ def create_fixture(root: Path, length: int) -> tuple[lt.torrent_info, Path, str]
     return lt.torrent_info(str(metainfo)), metainfo, digest
 
 
-def open_seed(torrent: lt.torrent_info, storage: Path, address: str) -> tuple[lt.session, lt.torrent_handle]:
+def open_seed(
+    torrent: lt.torrent_info,
+    storage: Path,
+    address: str,
+    upload_kib_per_second: int | None,
+) -> tuple[lt.session, lt.torrent_handle]:
     settings = {
         "listen_interfaces": f"{address}:0",
         "enable_dht": False,
@@ -96,6 +104,8 @@ def open_seed(torrent: lt.torrent_info, storage: Path, address: str) -> tuple[lt
         "in_enc_policy": int(lt.enc_policy.pe_disabled),
         "out_enc_policy": int(lt.enc_policy.pe_disabled),
     }
+    if upload_kib_per_second is not None:
+        settings["upload_rate_limit"] = upload_kib_per_second * 1024
     session = lt.session(settings)
     params = lt.add_torrent_params()
     params.ti = torrent
@@ -103,6 +113,8 @@ def open_seed(torrent: lt.torrent_info, storage: Path, address: str) -> tuple[lt
     params.flags &= ~lt.torrent_flags.auto_managed
     params.flags &= ~lt.torrent_flags.paused
     handle = session.add_torrent(params)
+    if upload_kib_per_second is not None:
+        handle.set_upload_limit(upload_kib_per_second * 1024)
     return session, handle
 
 
@@ -114,7 +126,12 @@ def run(parsed: argparse.Namespace) -> None:
     try:
         torrent, metainfo, digest = create_fixture(owned, expected_bytes)
         address = route_address()
-        session, handle = open_seed(torrent, owned / "seed", address)
+        session, handle = open_seed(
+            torrent,
+            owned / "seed",
+            address,
+            parsed.upload_kib_per_second,
+        )
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             status = handle.status()

@@ -17,6 +17,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published var isFolderPickerPresented = false
     let presentation = IOSPresentationRepository()
+    var userWorkDidStart: (() -> Void)?
+
+    var isReady: Bool { client != nil }
 
     private let documentsURL: URL
     private let profileURL: URL
@@ -142,7 +145,7 @@ final class AppModel: ObservableObject {
         } catch {
             if client != nil {
                 for torrentID in restartTorrentIDs {
-                    try? await dispatch(.resume(torrentId: torrentID))
+                    _ = try? await dispatch(.resume(torrentId: torrentID))
                 }
             }
             selectionStatus = error.localizedDescription
@@ -173,6 +176,12 @@ final class AppModel: ObservableObject {
         if case .error(let error) = response.outcome {
             throw AppModelError.command(error.message)
         }
+        switch command {
+        case .addMagnet, .downloadFiles, .resume, .forceRecheck:
+            userWorkDidStart?()
+        default:
+            break
+        }
         return response
     }
 
@@ -189,6 +198,7 @@ final class AppModel: ObservableObject {
         guard case .addTorrent(let result) = response.result else {
             throw AppModelError.missingAddResult
         }
+        userWorkDidStart?()
         return result.torrentId
     }
 
@@ -386,6 +396,10 @@ final class AppModel: ObservableObject {
 
     private func presentationError(_ error: Error) {
         selectionStatus = error.localizedDescription
+    }
+
+    func reportStatus(_ status: String) {
+        selectionStatus = status
     }
 
     private func restore(_ records: [SelectedRootRecord]) async -> [RootDisplayItem] {

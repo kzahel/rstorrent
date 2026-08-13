@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct SettingsScreen: View {
+    @ObservedObject var lifecycle: IOSApplicationLifecycleOwner
     @ObservedObject var appModel: AppModel
     @ObservedObject var presentation: IOSPresentationRepository
     @State private var isPresentingFolderPicker = false
@@ -71,6 +72,25 @@ struct SettingsScreen: View {
                         }
                     }
                 }
+            }
+
+            Section(
+                header: Text(L10n.string("ios_background_section_title")),
+                footer: Text(L10n.string("ios_background_footer"))
+            ) {
+                Toggle(
+                    L10n.string("ios_background_notifications_label"),
+                    isOn: Binding(
+                        get: { lifecycle.notificationsEnabled },
+                        set: { enabled in
+                            Task { await lifecycle.setNotificationsEnabled(enabled) }
+                        }
+                    )
+                )
+                .accessibilityIdentifier("background-notifications")
+                Text(lifecycle.backgroundStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if !appModel.selectionStatus.isEmpty {

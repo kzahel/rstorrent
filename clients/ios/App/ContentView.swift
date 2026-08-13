@@ -6,6 +6,7 @@ private enum AppRoute: Hashable {
 }
 
 struct ContentView: View {
+    @ObservedObject var lifecycle: IOSApplicationLifecycleOwner
     @ObservedObject var appModel: AppModel
     @ObservedObject var presentation: IOSPresentationRepository
     @State private var path: [AppRoute] = []
@@ -27,7 +28,11 @@ struct ContentView: View {
                         torrentID: torrentID
                     )
                 case .settings:
-                    SettingsScreen(appModel: appModel, presentation: presentation)
+                    SettingsScreen(
+                        lifecycle: lifecycle,
+                        appModel: appModel,
+                        presentation: presentation
+                    )
                 }
             }
         }

@@ -20,6 +20,10 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>org.rstorrent.ios.dev.continued-processing.*</string>
+  </array>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -73,11 +77,16 @@
   </dict>
   <key>UIFileSharingEnabled</key>
   <true/>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>processing</string>
+  </array>
   <key>UILaunchScreen</key>
   <dict/>
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
     <string>UIInterfaceOrientationLandscapeLeft</string>
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
