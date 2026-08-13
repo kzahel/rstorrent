@@ -459,16 +459,19 @@ three files, and plays the MP4 through Apple Files' system video presentation.
 
 ### Now
 
-- **Prepare decision-complete Tactical `154` for Stage 4 v2 magnet and
-  authenticated hash exchange.** Complete the required BEP and pinned-
-  libtorrent source and test review, then bound missing-hash ownership,
-  persistence, hostile message handling, resource limits, and cross-platform
-  evidence before any implementation begins.
+- **Complete Tactical
+  [`154`](../tactical/154-ios-truthful-progress-and-system-preview.md).** Make
+  iOS progress publication-aware and open complete files directly in Apple's
+  system Quick Look/video presentation, then prove the exact Big Buck Bunny
+  path on the attached physical iPhone and clean it exactly.
 
 ### Next
 
-- There is no queued second authoritative item. Planned Tactical `153` remains
-  Later rather than competing with the v2 correctness campaign.
+- **Prepare decision-complete Tactical `155` for Stage 4 v2 magnet and
+  authenticated hash exchange.** This is the displaced engine-campaign action;
+  complete its source-first design after the bounded iOS product correction.
+- Planned Tactical `153` remains Later rather than competing with either
+  correctness slice.
 
 ### Later
 

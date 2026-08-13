@@ -121,8 +121,10 @@ selected. Later physical iOS evidence temporarily activated correctness
 Tactical [`152`](../tactical/152-ios-multifile-selected-root-coordination.md),
 which is now complete. Tactical `151` subsequently completed the strict
 complete-source pure-v2 runtime/product vertical and promoted only that exact
-BEP 52 subset to Partial. The authoritative **Now** is source-first planning
-for Stage 4 v2 magnet and authenticated hash-exchange Tactical `154`.
+BEP 52 subset to Partial. Bounded iOS correctness Tactical `154` temporarily
+owns the authoritative **Now**; source-first Stage 4 v2 magnet and
+authenticated hash-exchange planning resumes as Tactical `155` immediately
+afterward.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -488,9 +490,9 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **Tactical `151` is complete; prepare
-decision-complete Stage 4 v2 magnet and authenticated hash-exchange Tactical `154`
-before implementation.** Tacticals `142`,
+Engine campaign status: **Tactical `151` is complete; bounded iOS Tactical
+`154` is the repository Now, followed by decision-complete Stage 4 v2 magnet
+and authenticated hash-exchange Tactical `155` before engine implementation.** Tacticals `142`,
 `145`, and `150` complete the uTP performance campaign at the maintainer-
 selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -590,8 +592,9 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: prepare decision-complete Stage 4 Tactical
-`154` for v2 magnets and authenticated hash exchange. Reinspect pinned BEP 52,
+Current engine-campaign action after active iOS Tactical `154`: prepare
+decision-complete Stage 4 Tactical `155` for v2 magnets and authenticated hash
+exchange. Reinspect pinned BEP 52,
 BEP 9, and libtorrent hash-picker/peer-wire implementation and tests, then
 resolve missing-hash ownership, persistence/refetch policy, messages 21--23,
 request/proof/rejection scheduling, hostile-input/resource bounds, restart,

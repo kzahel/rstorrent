@@ -696,8 +696,7 @@ that scope and its cleanup or compatibility rules explicitly.
   VM-built WAN, platform, and near-parity evidence without changing steady-
   state LEDBAT.
 - [`151-complete-source-pure-v2-runtime-vertical.md`](151-complete-source-pure-v2-runtime-vertical.md):
-  active authoritative Now after Tactical `152` closed; implements the
-  decision-complete complete-source pure-v2 runtime and product vertical.
+  complete strict complete-source pure-v2 runtime and product vertical.
 - [`152-ios-multifile-selected-root-coordination.md`](152-ios-multifile-selected-root-coordination.md):
   complete selected-root correctness repair; exact-file coordination,
   controlled multifile hardware evidence, Big Buck Bunny public-swarm
@@ -707,6 +706,10 @@ that scope and its cleanup or compatibility rules explicitly.
   libtorrent throughput over a wired gigabit-effective Mac-to-Linux/Windows
   LAN, attributes packet-rate ceilings, and records native Windows separately
   without claiming 2.5 GbE through the Mac's 1 GbE adapter.
+- [`154-ios-truthful-progress-and-system-preview.md`](154-ios-truthful-progress-and-system-preview.md):
+  active authoritative Now; reserves iOS 100%/Finished for canonical
+  complete-and-published state and opens available files directly in Apple's
+  Quick Look/video presentation under the existing scoped lease.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
