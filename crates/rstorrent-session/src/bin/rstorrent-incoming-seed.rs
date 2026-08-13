@@ -429,6 +429,7 @@ fn initialize_catalog(
         }
     }
     let partial = arguments.fixture_payload.is_some();
+    let downloading = arguments.download_fixture;
     let snapshot = store.snapshot()?;
     let mut existing = None;
     for torrent in &snapshot.torrents {
@@ -440,9 +441,11 @@ fn initialize_catalog(
     }
     if let Some(resume) = existing {
         let torrent_id = resume.torrent_id.to_string();
-        if (!partial
-            && resume.state == rstorrent_session::TorrentState::Complete
-            && resume.storage_state == StorageState::Published)
+        if (downloading && resume.state != rstorrent_session::TorrentState::Complete)
+            || (!partial
+                && !downloading
+                && resume.state == rstorrent_session::TorrentState::Complete
+                && resume.storage_state == StorageState::Published)
             || (partial
                 && resume.state != rstorrent_session::TorrentState::Complete
                 && resume.storage_state == StorageState::Staging)
@@ -525,7 +528,11 @@ fn initialize_catalog(
     if content.v1().is_some() {
         store.record_metadata(&torrent_id, raw_info)?;
     }
-    if partial {
+    if downloading {
+        // Exact byte intake already owns metadata, selection, desired-running
+        // state, and the empty have set. The application runtime performs the
+        // ordinary discovery, storage, checkpoint, and publication path.
+    } else if partial {
         store.record_pieces(&torrent_id, &arguments.initial_pieces)?;
         store.mark_storage_prepared(&torrent_id, StorageState::Staging)?;
     } else {
@@ -739,6 +746,7 @@ struct Arguments {
     tracker: Option<String>,
     dht_bootstrap: Option<std::net::SocketAddr>,
     fixture_payload: Option<PathBuf>,
+    download_fixture: bool,
     initial_pieces: Vec<usize>,
     skip_files: Vec<usize>,
     peer: Option<std::net::SocketAddr>,
@@ -766,6 +774,7 @@ impl Arguments {
         let mut tracker = None;
         let mut dht_bootstrap = None;
         let mut fixture_payload = None;
+        let mut download_fixture = false;
         let mut initial_pieces = Vec::new();
         let mut skip_files = Vec::new();
         let mut peer = None;
@@ -827,6 +836,15 @@ impl Arguments {
                 if std::mem::replace(&mut tcp_only, true) {
                     return Err(SeedHarnessError::Arguments(
                         "--tcp-only may appear only once".to_owned(),
+                    ));
+                }
+                index += 1;
+                continue;
+            }
+            if flag == "--download-fixture" {
+                if std::mem::replace(&mut download_fixture, true) {
+                    return Err(SeedHarnessError::Arguments(
+                        "--download-fixture may appear only once".to_owned(),
                     ));
                 }
                 index += 1;
@@ -989,6 +1007,11 @@ impl Arguments {
                 "--utp and --tcp-only are mutually exclusive".to_owned(),
             ));
         }
+        if download_fixture && (fixture_payload.is_some() || !initial_pieces.is_empty()) {
+            return Err(SeedHarnessError::Arguments(
+                "--download-fixture cannot be combined with partial-fixture arguments".to_owned(),
+            ));
+        }
         Ok(Self {
             profile_root: profile_root.ok_or_else(|| {
                 SeedHarnessError::Arguments("--profile-root is required".to_owned())
@@ -1008,6 +1031,7 @@ impl Arguments {
             tracker,
             dht_bootstrap,
             fixture_payload,
+            download_fixture,
             initial_pieces,
             skip_files,
             peer,
