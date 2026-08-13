@@ -1249,4 +1249,139 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    fn hidden_and_executable_attributes_are_metadata_but_links_are_rejected() {
+        let mut tree = b"d1:ad0:d4:attr2:hx6:lengthi1e11:pieces root32:".to_vec();
+        tree.extend_from_slice(&[8; 32]);
+        tree.extend_from_slice(b"eee");
+        let info = v2_info(&tree, 16 * 1024);
+        let parsed = ParsedInfo::from_bytes_with_limits(&info, BEP9_METAINFO_LIMITS)
+            .expect("hidden and executable metadata");
+        let ParsedInfoKind::V2(v2) = parsed.kind() else {
+            panic!("v2 variant");
+        };
+        assert!(v2.files[0].hidden);
+        assert!(v2.files[0].executable);
+
+        for attr in [b"l".as_slice(), b"p".as_slice()] {
+            let mut tree = b"d1:ad0:d4:attr1:".to_vec();
+            tree.extend_from_slice(attr);
+            tree.extend_from_slice(b"6:lengthi1e11:pieces root32:");
+            tree.extend_from_slice(&[8; 32]);
+            tree.extend_from_slice(b"eee");
+            assert!(matches!(
+                ParsedInfo::from_bytes_with_limits(
+                    &v2_info(&tree, 16 * 1024),
+                    BEP9_METAINFO_LIMITS,
+                ),
+                Err(MetainfoError::Unsupported("v2 symlink or padding file"))
+            ));
+        }
+    }
+
+    #[test]
+    fn piece_layers_reject_malformed_keys_values_and_missing_roots() {
+        let piece_hashes = [[3_u8; 32], [4_u8; 32]];
+        let root = file_root_from_piece_hashes(piece_hashes.iter().copied(), 16 * 1024)
+            .expect("file root");
+        let info = v2_info(&file_tree(&[(b"a", 16 * 1024 + 1, Some(root))]), 16 * 1024);
+
+        for malformed in [
+            b"de".to_vec(),
+            {
+                let mut value = vec![b'd'];
+                bytes(&mut value, &[1; 31]);
+                bytes(&mut value, &[2; 32]);
+                value.push(b'e');
+                value
+            },
+            {
+                let mut value = vec![b'd'];
+                bytes(&mut value, &root);
+                bytes(&mut value, &[2; 33]);
+                value.push(b'e');
+                value
+            },
+        ] {
+            assert!(
+                ParsedOuterMetainfo::from_bytes_with_limits(
+                    &outer(&info, Some(&malformed)),
+                    EXPLICIT_IMPORT_METAINFO_LIMITS,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn equal_multi_piece_roots_share_one_retained_layer() {
+        let piece_hashes = vec![[3_u8; 32], [4_u8; 32]];
+        let root = file_root_from_piece_hashes(piece_hashes.iter().copied(), 16 * 1024)
+            .expect("file root");
+        let tree = file_tree(&[
+            (b"a", 16 * 1024 + 1, Some(root)),
+            (b"b", 16 * 1024 + 1, Some(root)),
+        ]);
+        let info = v2_info(&tree, 16 * 1024);
+        let layers = layer_dictionary(&[(root, piece_hashes)]);
+        let source = outer(&info, Some(&layers));
+        let parsed =
+            ParsedOuterMetainfo::from_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+                .expect("shared piece layer");
+        assert_eq!(parsed.piece_layers().unwrap().entries().len(), 1);
+        assert_eq!(parsed.piece_layers().unwrap().hashes().len(), 2);
+    }
+
+    #[test]
+    fn validates_single_file_hybrid_and_empty_file_order() {
+        let tree = file_tree(&[(b"root", 1, Some([1; 32]))]);
+        let mut single = b"d9:file tree".to_vec();
+        single.extend_from_slice(&tree);
+        single.extend_from_slice(
+            b"6:lengthi1e12:meta versioni2e4:name4:root12:piece lengthi16384e6:pieces20:",
+        );
+        single.extend_from_slice(&[5; 20]);
+        single.push(b'e');
+        let parsed = ParsedInfo::from_bytes_with_limits(&single, BEP9_METAINFO_LIMITS)
+            .expect("single-file hybrid");
+        let ParsedInfoKind::Hybrid(hybrid) = parsed.kind() else {
+            panic!("hybrid variant");
+        };
+        assert_eq!(hybrid.v1.mode, MetainfoMode::SingleFile);
+        assert_eq!(hybrid.v2.files[0].raw_path, [b"root".to_vec()]);
+
+        let tree = file_tree(&[
+            (b"a", 0, None),
+            (b"b", 1, Some([1; 32])),
+            (b"c", 0, None),
+            (b"d", 1, Some([2; 32])),
+            (b"e", 0, None),
+        ]);
+        let files = concat!(
+            "d6:lengthi0e4:pathl1:aee",
+            "d6:lengthi1e4:pathl1:bee",
+            "d6:lengthi0e4:pathl1:cee",
+            "d4:attr1:p6:lengthi16383ee",
+            "d6:lengthi1e4:pathl1:dee",
+            "d6:lengthi0e4:pathl1:eee"
+        );
+        let info = hybrid_info(&tree, files.as_bytes(), 16 * 1024, 2);
+        let parsed = ParsedInfo::from_bytes_with_limits(&info, BEP9_METAINFO_LIMITS)
+            .expect("hybrid empty-file order");
+        let ParsedInfoKind::Hybrid(hybrid) = parsed.kind() else {
+            panic!("hybrid variant");
+        };
+        assert_eq!(
+            hybrid
+                .v2
+                .files
+                .iter()
+                .map(|file| file.length)
+                .collect::<Vec<_>>(),
+            [0, 1, 0, 1, 0]
+        );
+        assert_eq!(hybrid.v2.layout.file_piece_range(2), Ok(1..1));
+        assert_eq!(hybrid.v2.layout.file_piece_range(4), Ok(2..2));
+    }
 }
