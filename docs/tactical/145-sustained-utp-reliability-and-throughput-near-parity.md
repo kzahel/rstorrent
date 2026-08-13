@@ -239,8 +239,25 @@ assertion, so this release-semantics audit found no sibling defect.
 
 The WAN harness recorded successful finite UDP mapping deletion, joined
 processes, exact payload cleanup, and no remote run directory or matching role
-process after the case. A post-repair single-connection rerun is the next
-reliability gate before throughput attribution.
+process after the case.
+
+The same 256 MiB mixed-direction cell at repaired revision
+`03c2f5b6e5541fcb1e0224454da67d6c06c989fd` completes on one connection with
+zero retry exhaustion, last failure, peer failure, TCP peers, ingress drops,
+or unknown-connection datagrams. All 268,435,456 bytes and 1,024 pieces verify;
+the libtorrent seed emits 185,178 payload packets, proving more than two real
+sequence cycles, while RSTorrent handles nine ordinary retransmissions without
+churn. Active rate rises from the pre-repair 1.639029 to 2.093211 MiB/s, a
+27.7% improvement. RSTorrent RSS reaches 13.8 MiB, sender/receive ownership
+high waters remain within their existing bounds, and terminal UDP/uTP task and
+queue ownership is zero. A fresh cleanup audit again finds no mapping-owned
+run directory or role process; the local ignored journal and fixture are
+removed after these aggregates are recorded.
+
+This one sample passes the first causal repair gate, not the alternating
+reliability cohort or throughput target. Fixed-profile and RSTorrent-sender
+composition plus repeated 64/256 MiB cells remain required before throughput
+attribution.
 
 ## Owner, Task, Cancellation, And Dependency Map
 

@@ -566,8 +566,11 @@ stage and clean 131,075-DATA/three-wrap transport proof are implemented. The
 clean proof rejects sequence reuse itself. Exact 256 MiB WAN terminal evidence
 then selects and a release-profile regression reproduces retransmission queue
 removal compiled away inside `debug_assert!`; the mutation is now
-unconditional. The next executable action is post-repair single-connection
-WAN and composed-runtime reliability proof. The
+unconditional. The repaired 256 MiB mixed WAN cell completes over one uTP
+connection with zero retry exhaustion, peer failure, TCP, or ingress drop and
+improves 27.7% to 2.093 MiB/s across 185,178 seed payload packets. The next
+executable action is fixed-profile/RSTorrent-sender composition and the
+alternating reliability cohort. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

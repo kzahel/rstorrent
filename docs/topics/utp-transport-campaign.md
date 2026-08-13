@@ -968,7 +968,11 @@ packet is retransmitted seven times and exhausts attempt eight because queue
 removal lived inside `debug_assert!` and vanished from release builds. The
 existing transport test reproduces the pending work under `--release`; making
 the removal unconditional repairs that exact test without changing congestion
-policy. Post-repair single-connection WAN evidence is the next gate.
+policy. The repaired 256 MiB mixed WAN cell then completes on one connection
+with zero retry exhaustion, failure, TCP, or ingress drop while the libtorrent
+seed emits 185,178 payload packets. Active rate improves 27.7% to 2.093 MiB/s;
+this is one causal verification sample, not yet the alternating cohort or
+near-parity claim.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.
