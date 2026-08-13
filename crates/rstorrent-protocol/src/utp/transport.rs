@@ -275,9 +275,15 @@ impl Error for RetransmissionLimit {}
 
 #[derive(Clone, Debug, Default)]
 pub struct RetransmissionQueue {
-    ordered: VecDeque<SequenceNumber>,
+    ordered: VecDeque<RetransmissionWork>,
     membership: BTreeSet<SequenceNumber>,
     packet_high_water: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RetransmissionWork {
+    sequence_number: SequenceNumber,
+    fast: bool,
 }
 
 impl RetransmissionQueue {
@@ -292,15 +298,23 @@ impl RetransmissionQueue {
     pub fn schedule(
         &mut self,
         sequence_numbers: impl IntoIterator<Item = SequenceNumber>,
+        fast: bool,
     ) -> Result<(), RetransmissionLimit> {
+        let mut unique = BTreeSet::new();
+        let sequence_numbers = sequence_numbers
+            .into_iter()
+            .filter(|sequence_number| unique.insert(*sequence_number))
+            .collect::<Vec<_>>();
+        if fast {
+            for work in &mut self.ordered {
+                if sequence_numbers.contains(&work.sequence_number) {
+                    work.fast = true;
+                }
+            }
+        }
         let additions: Vec<_> = sequence_numbers
             .into_iter()
             .filter(|sequence_number| !self.membership.contains(sequence_number))
-            .collect();
-        let mut unique = BTreeSet::new();
-        let additions: Vec<_> = additions
-            .into_iter()
-            .filter(|sequence_number| unique.insert(*sequence_number))
             .collect();
         let next = self.ordered.len().saturating_add(additions.len());
         if next > MAX_RETRANSMISSION_WORK {
@@ -310,7 +324,10 @@ impl RetransmissionQueue {
             });
         }
         for sequence_number in additions {
-            self.ordered.push_back(sequence_number);
+            self.ordered.push_back(RetransmissionWork {
+                sequence_number,
+                fast,
+            });
             self.membership.insert(sequence_number);
         }
         self.packet_high_water = self.packet_high_water.max(next);
@@ -319,6 +336,10 @@ impl RetransmissionQueue {
 
     #[must_use]
     pub fn front(&self) -> Option<SequenceNumber> {
+        self.ordered.front().map(|work| work.sequence_number)
+    }
+
+    fn front_work(&self) -> Option<RetransmissionWork> {
         self.ordered.front().copied()
     }
 
@@ -335,7 +356,8 @@ impl RetransmissionQueue {
         if !self.membership.remove(&sequence_number) {
             return false;
         }
-        self.ordered.retain(|queued| *queued != sequence_number);
+        self.ordered
+            .retain(|queued| queued.sequence_number != sequence_number);
         true
     }
 
@@ -864,7 +886,7 @@ impl TransportState {
                         self.update_congestion_mss()?;
                     }
                 }
-                self.retransmissions.schedule([*sequence_number])?;
+                self.retransmissions.schedule([*sequence_number], true)?;
                 self.congestion
                     .on_loss(now_micros, smoothed_rtt, isolated_probe)?;
             }
@@ -1024,7 +1046,7 @@ impl TransportState {
                         self.update_congestion_mss()?;
                     }
                     self.in_flight.remove(&sequence_number);
-                    self.retransmissions.schedule([sequence_number])?;
+                    self.retransmissions.schedule([sequence_number], true)?;
                     self.congestion.on_loss(
                         now_micros,
                         self.connection.snapshot().send.rtt.smoothed_rtt_micros,
@@ -1079,21 +1101,27 @@ impl TransportState {
         now_micros: u64,
         local_timestamp: TimestampMicros,
     ) -> Result<Option<TransportEmission>, TransportError> {
-        let Some(sequence_number) = self.retransmissions.front() else {
+        let Some(work) = self.retransmissions.front_work() else {
             return Ok(None);
         };
+        let sequence_number = work.sequence_number;
         let payload = self
             .connection
             .payload_for_retransmission(sequence_number)
             .ok_or(TransportError::MissingOutstandingPacket(sequence_number))?
             .to_vec();
         let congestion_window = self.congestion.snapshot().congestion_window_bytes;
-        if !retransmission_is_admissible(
-            payload.len(),
-            congestion_window,
-            self.remote_window_bytes,
-            self.in_flight_bytes(),
-        ) {
+        // ACK/SACK loss is fast recovery: the missing packet must repair the
+        // stream hole even when later flight exceeds the newly reduced window.
+        // Timeout work remains window-admitted after its flight is released.
+        if !work.fast
+            && !retransmission_is_admissible(
+                payload.len(),
+                congestion_window,
+                self.remote_window_bytes,
+                self.in_flight_bytes(),
+            )
+        {
             return Ok(None);
         }
         let mut intent = self.connection.retransmission_intent(sequence_number)?;
@@ -1290,7 +1318,7 @@ impl TransportState {
                 self.update_congestion_mss()?;
             }
         }
-        self.retransmissions.schedule(timeout.loss_signals)?;
+        self.retransmissions.schedule(timeout.loss_signals, false)?;
         if isolated_probe {
             self.congestion
                 .on_loss(now_micros, smoothed_rtt_micros, true)?;
@@ -1521,13 +1549,17 @@ mod tests {
     fn retransmission_work_coalesces_and_preserves_signal_order() {
         let mut queue = RetransmissionQueue::default();
         queue
-            .schedule([sequence(u16::MAX), sequence(0), sequence(u16::MAX)])
+            .schedule([sequence(u16::MAX), sequence(0), sequence(u16::MAX)], false)
             .expect("schedule across wrap");
         assert_eq!(queue.snapshot().pending_packets, 2);
         assert_eq!(queue.front(), Some(sequence(u16::MAX)));
         assert!(!queue.complete_front(sequence(0)));
         assert!(queue.complete_front(sequence(u16::MAX)));
         assert_eq!(queue.front(), Some(sequence(0)));
+        queue
+            .schedule([sequence(0)], true)
+            .expect("upgrade retained work to fast retransmission");
+        assert!(queue.front_work().expect("fast work").fast);
         assert!(queue.remove(sequence(0)));
         assert!(!queue.remove(sequence(0)));
         assert_eq!(queue.snapshot().pending_packets, 0);
@@ -1858,6 +1890,62 @@ mod tests {
         assert_eq!(snapshot.in_flight_bytes, 2 * 528);
         assert_eq!(snapshot.transmit.unsent_bytes, 528);
         assert_ne!(initiator.next_wakeup_micros(), Some(0));
+    }
+
+    #[test]
+    fn fast_retransmission_bypasses_a_reduced_window_with_later_flight() {
+        let (mut initiator, _) = connected_pair_with(
+            sequence(10),
+            sequence(77),
+            IPV4_UDP_PAYLOAD_FLOOR,
+            IPV4_UDP_PAYLOAD_FLOOR,
+        );
+        initiator
+            .congestion
+            .on_ack(500, 10_000, 9 * 528, 0, None, true)
+            .expect("grow controlled pre-loss window");
+        initiator
+            .queue_data(&vec![7; 9 * 528])
+            .expect("queue nine packets");
+        let mut sent = Vec::new();
+        for _ in 0..9 {
+            let emission = initiator
+                .poll_transmit(1_000, TimestampMicros::new(1_000))
+                .expect("poll DATA")
+                .expect("initial-window DATA");
+            initiator
+                .on_send_result(
+                    emission.intent.sequence_number,
+                    DatagramSendResult::Sent,
+                    1_000,
+                )
+                .expect("record DATA send");
+            sent.push(emission);
+        }
+
+        let missing = sent[0].intent.sequence_number;
+        assert_eq!(initiator.in_flight.remove(&missing), Some(528));
+        initiator
+            .retransmissions
+            .schedule([missing], true)
+            .expect("schedule fast retransmission");
+        assert!(
+            initiator
+                .congestion
+                .on_loss(2_000, None, false)
+                .expect("reduce congestion window")
+        );
+        let reduced = initiator.snapshot();
+        assert!(reduced.in_flight_bytes > reduced.congestion.congestion_window_bytes);
+
+        let retransmission = initiator
+            .poll_transmit(2_000, TimestampMicros::new(2_000))
+            .expect("poll fast recovery")
+            .expect("fast retransmission bypasses reduced window");
+        assert!(retransmission.retransmission);
+        assert_eq!(retransmission.intent.sequence_number, missing);
+        assert_eq!(retransmission.payload, sent[0].payload);
+        assert_eq!(initiator.snapshot().retransmissions.pending_packets, 0);
     }
 
     #[test]
