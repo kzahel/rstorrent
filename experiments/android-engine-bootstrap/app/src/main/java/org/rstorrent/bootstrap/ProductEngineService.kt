@@ -255,6 +255,7 @@ class ProductEngineService : Service() {
     fun addTorrentBytes(
         source: ByteArray,
         startContent: Boolean = true,
+        selection: FileSelectionIntent = FileSelectionIntent.All,
     ) {
         if (safTreeUri == null) {
             mutableState.update { it.copy(error = "Select a download folder first") }
@@ -267,7 +268,7 @@ class ProductEngineService : Service() {
                 require(source.size <= MAX_TORRENT_SOURCE_BYTES) {
                     "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
                 }
-                dispatchTorrentSource(source, startContent)
+                dispatchTorrentSource(source, startContent, selection)
             } catch (error: Throwable) {
                 reportError(error)
             }
@@ -277,6 +278,7 @@ class ProductEngineService : Service() {
     private suspend fun dispatchTorrentSource(
         source: ByteArray,
         startContent: Boolean,
+        selection: FileSelectionIntent = FileSelectionIntent.All,
     ) {
         val request =
             AddTorrentBytesRequest(
@@ -285,7 +287,7 @@ class ProductEngineService : Service() {
                 expectedRevision = null,
                 storageRoot = "downloads",
                 startContent = startContent,
-                selection = FileSelectionIntent.All,
+                selection = selection,
                 sourceLength = source.size.toUInt(),
             )
         val response = client.addTorrentBytes(request, source)

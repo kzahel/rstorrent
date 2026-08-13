@@ -18,6 +18,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import org.rstorrent.bootstrap.ui.ProductApp
 import org.rstorrent.bootstrap.ui.ProductThemeMode
+import org.rstorrent.session.uniffi.FileIndexRange
+import org.rstorrent.session.uniffi.FileSelectionIntent
 
 class MainActivity : ComponentActivity() {
     private var pendingCommand: Intent? = null
@@ -30,6 +32,7 @@ class MainActivity : ComponentActivity() {
     private var pendingProductMagnet: String? = null
     private var pendingProductTorrentUri: String? = null
     private var pendingProductTorrentBase64: String? = null
+    private var pendingProductTorrentSelection: FileSelectionIntent = FileSelectionIntent.All
     private var pendingProductTorrentStartContent = true
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
@@ -122,8 +125,10 @@ class MainActivity : ComponentActivity() {
                     service.addTorrentBytes(
                         android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
                         pendingProductTorrentStartContent,
+                        pendingProductTorrentSelection,
                     )
                     pendingProductTorrentStartContent = true
+                    pendingProductTorrentSelection = FileSelectionIntent.All
                 }
                 pendingProductTrackerEvidenceTorrent?.let {
                     pendingProductTrackerEvidenceTorrent = null
@@ -371,10 +376,23 @@ class MainActivity : ComponentActivity() {
                     val startContent =
                         command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
                     command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
+                    val selection =
+                        command
+                            .getStringExtra(EXTRA_PRODUCT_WANTED_FILE_RANGES)
+                            ?.split(',')
+                            ?.filter(String::isNotBlank)
+                            ?.map { encodedRange ->
+                                val (start, endExclusive) = encodedRange.split(':', limit = 2)
+                                FileIndexRange(start.toUInt(), endExclusive.toUInt())
+                            }
+                            ?.let(FileSelectionIntent::WantedRanges)
+                            ?: FileSelectionIntent.All
+                    command.removeExtra(EXTRA_PRODUCT_WANTED_FILE_RANGES)
                     val service = productService.value
                     if (service == null) {
                         pendingProductTorrentBase64 = encoded
                         pendingProductTorrentStartContent = startContent
+                        pendingProductTorrentSelection = selection
                     } else {
                         service.addTorrentBytes(
                             android.util.Base64.decode(
@@ -382,6 +400,7 @@ class MainActivity : ComponentActivity() {
                                 android.util.Base64.DEFAULT,
                             ),
                             startContent,
+                            selection,
                         )
                     }
                 }
@@ -618,6 +637,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
         const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"
+        const val EXTRA_PRODUCT_WANTED_FILE_RANGES = "product_wanted_file_ranges"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
         const val EXTRA_PRODUCT_SKIP_FILES = "product_skip_files"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"

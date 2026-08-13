@@ -2478,6 +2478,69 @@ def run_product_pure_v2_saf_profile(
                 raise BootstrapFailure(
                     f"pure-v2 managed artifact survived removal: {exact_path}"
                 )
+
+        add_count = product_unknown_add_count(target)
+        selective = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_torrent_base64",
+                base64.b64encode(metainfo).decode("ascii"),
+                "--es",
+                "product_wanted_file_ranges",
+                "1:3",
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in selective.stdout or (
+            selective.returncode != 0 and "Starting:" not in selective.stdout
+        ):
+            raise BootstrapFailure("could not add selective Android pure-v2 source")
+        selective_torrent_id = wait_product_unknown_torrent_id(target, add_count)
+        staging_root = f"{grant_root}/.{selective_torrent_id}.rstorrent-staging"
+        part_path = f"{grant_root}/.{selective_torrent_id}.rstorrent-parts"
+        selective_metrics, _ = wait_product_publication(
+            target,
+            selective_torrent_id,
+            product_fd_count(target),
+        )
+        for file_index, (relative_path, expected_hash) in enumerate(
+            fixture.expected_file_hashes.items()
+        ):
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if file_index == 0:
+                if exists:
+                    raise BootstrapFailure(
+                        "selective pure-v2 SAF publication retained skipped file 0"
+                    )
+                continue
+            if not exists:
+                raise BootstrapFailure(
+                    f"selective pure-v2 SAF output is absent: {relative_path}"
+                )
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != expected_hash:
+                raise BootstrapFailure(
+                    f"selective pure-v2 SAF output differs: {relative_path}"
+                )
+        if target.shell(["test", "-e", part_path], check=False).returncode == 0:
+            raise BootstrapFailure("selective pure-v2 SAF created a part artifact")
+        request_product_torrent_action(target, selective_torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={selective_torrent_id}",
+            "selective pure-v2 SAF removal",
+        )
+        for exact_path in (output_root, staging_root, part_path):
+            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"selective pure-v2 artifact survived removal: {exact_path}"
+                )
         return {
             "target": target_kind,
             "profile": "product-pure-v2-saf",
@@ -2501,6 +2564,8 @@ def run_product_pure_v2_saf_profile(
             "force_recheck": "complete",
             "uploaded_bytes": uploaded_bytes,
             "removal": "exact",
+            "selection": "file_0_skipped_without_part",
+            "selective_storage_metrics": selective_metrics,
         }
     finally:
         target.shell(["am", "force-stop", PACKAGE], check=False)
