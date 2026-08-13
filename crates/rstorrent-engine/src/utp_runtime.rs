@@ -2915,7 +2915,9 @@ mod tests {
         .expect("product dynamic uTP connection timeout");
         let mut left = left.unwrap();
         let mut right = right.expect("incoming product dynamic uTP stream");
-        let payload = (0..256 * 1024)
+        // Leave enough acknowledged flight for dynamic MTU search to reach
+        // its ceiling even when bounded sender startup shortens the transfer.
+        let payload = (0..512 * 1024)
             .map(|index| u8::try_from(index % 251).unwrap())
             .collect::<Vec<_>>();
 
@@ -2948,7 +2950,10 @@ mod tests {
             right_terminal.path_mtu_profile,
             UtpPathMtuProfile::DynamicIpv4
         );
-        assert!(left_terminal.selected_mtu_max_bytes.unwrap() >= 1_456);
+        assert!(
+            left_terminal.selected_mtu_max_bytes.unwrap() >= 1_456,
+            "terminal snapshot: {left_terminal:?}"
+        );
         assert!(left_terminal.mtu_probes_acknowledged_high_water > 0);
         assert!(left_terminal.slow_start_active_observed);
         assert!(left_terminal.slow_start_acknowledgements_high_water > 0);
