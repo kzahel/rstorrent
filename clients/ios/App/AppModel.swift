@@ -30,10 +30,13 @@ final class AppModel: ObservableObject {
 
     init(fileManager: FileManager = .default) {
         documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let support = fileManager.urls(
+        var support = fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0].appendingPathComponent("RSTorrent", isDirectory: true)
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            support.appendPathComponent("UITests", isDirectory: true)
+        }
         profileURL = support.appendingPathComponent("profile", isDirectory: true)
         rootStore = RootRegistryStore(
             fileURL: support.appendingPathComponent("roots-v1.json", isDirectory: false)
