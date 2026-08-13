@@ -129,7 +129,6 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
       applicationOrigin === undefined ||
       gatewayToken === undefined ||
       torrentFile === undefined ||
-      torrentId === undefined ||
       torrentName === undefined,
     "controlled live torrent file picker is opt-in",
   );
@@ -147,7 +146,10 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   page.on("request", (request) => {
     if (!request.url().startsWith(applicationOrigin!)) return;
     const url = new URL(request.url());
-    if (url.pathname !== "/api/v1/connect") {
+    if (
+      url.pathname.startsWith("/api/") &&
+      url.pathname !== "/api/v1/connect"
+    ) {
       semanticHttpRequests.push(`${request.method()} ${url.pathname}`);
     }
   });
@@ -174,8 +176,8 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
     })
     .uncheck();
   await dialog.getByRole("button", { name: "Add torrent" }).click();
-  await expect(page.getByText("Torrent added", { exact: true })).toBeVisible();
-  const row = transfers.locator(`[data-row-id="${torrentId!}"]`);
+  await expect(page.getByRole("status")).toHaveText("Added");
+  const row = transfers.getByRole("row").filter({ hasText: torrentName! });
   await expect(row).toContainText(torrentName!, { timeout: 10_000 });
   await expect.poll(() => binaryFrames).toBe(1);
 

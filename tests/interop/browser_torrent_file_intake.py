@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from application_surface_harness import (
@@ -22,15 +23,22 @@ from application_surface_harness import (
 from browser_peer_inspection_surface import build_and_start_production_web
 from browser_surface_harness import reserve_loopback_port, stop_process
 from first_verified_piece import ScenarioFailure
+from bep52_metainfo_oracle import SourceFile, pure_v2_fixture
 
 
-TORRENT_NAME = "picker-fixture.bin"
+@dataclass(frozen=True)
+class TorrentCase:
+    format: str
+    path: Path
+    name: str
+    info_hash: str
 
 
-def create_torrent_file(root: Path) -> tuple[Path, str]:
+def create_torrent_files(root: Path) -> tuple[TorrentCase, TorrentCase]:
     payload = b"bounded browser picker fixture"
     piece_hash = hashlib.sha1(payload).digest()
-    name = TORRENT_NAME.encode()
+    v1_name = "picker-fixture.bin"
+    name = v1_name.encode()
     info = (
         f"d6:lengthi{len(payload)}e4:name{len(name)}:".encode()
         + name
@@ -48,15 +56,33 @@ def create_torrent_file(root: Path) -> tuple[Path, str]:
     )
     torrent = root / "picker-fixture.torrent"
     torrent.write_bytes(source)
-    return torrent, hashlib.sha1(info).hexdigest()
+    v1 = TorrentCase(
+        format="v1",
+        path=torrent,
+        name=v1_name,
+        info_hash=hashlib.sha1(info).hexdigest(),
+    )
+    fixture = pure_v2_fixture(
+        "browser-pure-v2",
+        [SourceFile((b"payload.bin",), b"bounded pure-v2 browser picker fixture")],
+        16 * 1024,
+    )
+    v2_path = root / "pure-v2-picker-fixture.torrent"
+    v2_path.write_bytes(fixture.torrent)
+    v2 = TorrentCase(
+        format="v2",
+        path=v2_path,
+        name="root",
+        info_hash=fixture.expected["v2_info_hash"],
+    )
+    return v1, v2
 
 
 def run_playwright(
     repository: Path,
     origin: str,
     gateway_address: str,
-    torrent: Path,
-    torrent_id: str,
+    case: TorrentCase,
 ) -> str:
     environment = os.environ.copy()
     environment.pop("FORCE_COLOR", None)
@@ -67,9 +93,8 @@ def run_playwright(
             "RSTORRENT_LIVE_GATEWAY_URL": f"http://{gateway_address}",
             "RSTORRENT_LIVE_GATEWAY_TOKEN": TOKEN,
             "RSTORRENT_LIVE_TORRENT_FILE_PICKER": "1",
-            "RSTORRENT_LIVE_TORRENT_FILE": str(torrent),
-            "RSTORRENT_LIVE_TORRENT_ID": torrent_id,
-            "RSTORRENT_LIVE_TORRENT_NAME": TORRENT_NAME,
+            "RSTORRENT_LIVE_TORRENT_FILE": str(case.path),
+            "RSTORRENT_LIVE_TORRENT_NAME": case.name,
         }
     )
     completed = subprocess.run(
@@ -109,9 +134,11 @@ def run_playwright(
     return milestone
 
 
-def verify_metrics(metrics: dict[str, object]) -> None:
-    if metrics.get("accepted_connections") != 1:
-        raise ScenarioFailure("gateway did not record one browser connection")
+def verify_metrics(metrics: dict[str, object], expected_connections: int) -> None:
+    if metrics.get("accepted_connections") != expected_connections:
+        raise ScenarioFailure(
+            f"gateway did not record {expected_connections} browser connections"
+        )
     if metrics.get("active_connections") != 0:
         raise ScenarioFailure("gateway retained a browser connection after shutdown")
     client_frames = metrics.get("client_frames")
@@ -120,10 +147,16 @@ def verify_metrics(metrics: dict[str, object]) -> None:
         raise ScenarioFailure("gateway omitted connection frame metrics")
     upload_begin = client_frames.get("begin_torrent_upload")
     upload_ready = server_frames.get("torrent_upload_ready")
-    if not isinstance(upload_begin, dict) or upload_begin.get("messages") != 1:
-        raise ScenarioFailure("gateway did not record exactly one upload declaration")
-    if not isinstance(upload_ready, dict) or upload_ready.get("messages") != 1:
-        raise ScenarioFailure("gateway did not record exactly one upload admission")
+    if (
+        not isinstance(upload_begin, dict)
+        or upload_begin.get("messages") != expected_connections
+    ):
+        raise ScenarioFailure("gateway recorded the wrong upload declaration count")
+    if (
+        not isinstance(upload_ready, dict)
+        or upload_ready.get("messages") != expected_connections
+    ):
+        raise ScenarioFailure("gateway recorded the wrong upload admission count")
 
 
 def run() -> None:
@@ -133,7 +166,7 @@ def run() -> None:
     vite: subprocess.Popen[str] | None = None
     failure: BaseException | None = None
     try:
-        torrent, torrent_id = create_torrent_file(run_path)
+        cases = create_torrent_files(run_path)
         vite_port = reserve_loopback_port()
         origin = f"http://127.0.0.1:{vite_port}"
         gateway, address = start_gateway(
@@ -146,26 +179,26 @@ def run() -> None:
         vite = build_and_start_production_web(
             repository, origin, vite_port, address
         )
-        milestone = run_playwright(
-            repository,
-            origin,
-            address,
-            torrent,
-            torrent_id,
-        )
+        milestones = [
+            run_playwright(repository, origin, address, case)
+            for case in cases
+        ]
         stop_process(vite, "Vite")
         vite = None
         diagnostics = stop_gateway(gateway)
         gateway = None
         metrics = connection_metrics(diagnostics)
-        verify_metrics(metrics)
+        verify_metrics(metrics, len(cases))
         storage_entries = list((run_path / "downloads").iterdir())
         if storage_entries:
             raise ScenarioFailure(
                 f"metadata-only picker created payload artifacts: {storage_entries}"
             )
         print(
-            f"{milestone} info_hash={torrent_id} source_bytes={torrent.stat().st_size} "
+            f"{' '.join(milestones)} "
+            f"formats={','.join(case.format for case in cases)} "
+            f"info_hashes={','.join(case.info_hash for case in cases)} "
+            f"source_bytes={sum(case.path.stat().st_size for case in cases)} "
             "start_content=false payload_artifacts=0 gateway_shutdown=joined "
             f"connection_metrics={json.dumps(metrics, sort_keys=True, separators=(',', ':'))}"
         )
