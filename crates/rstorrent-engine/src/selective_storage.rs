@@ -5142,7 +5142,27 @@ mod tests {
             .expect("path-backed part name")
             .to_path_buf();
         assert!(!part.exists());
-        storage.publish().await.expect("publish selected v2 files");
+        storage
+            .prepare_path_publication()
+            .await
+            .expect("prepare selected v2 publication");
+        assert!(!output.exists());
+        drop(storage);
+        let (mut storage, interrupted_state) = SelectiveStorage::resume_content(
+            output.clone(),
+            test_artifact_identity(),
+            content.clone(),
+            &[0],
+            vec![false, true, true, true],
+            Some(ResumeArtifactState::Publishing),
+        )
+        .await
+        .expect("resume interrupted v2 publication");
+        assert_eq!(interrupted_state, ResumedStorage::Staging);
+        storage
+            .publish()
+            .await
+            .expect("finish interrupted v2 publication");
         assert_eq!(
             std::fs::read(output.join("b")).expect("published b"),
             selected
@@ -5153,10 +5173,18 @@ mod tests {
         );
         assert!(!output.join("a").exists());
         drop(storage);
-        let (resumed, state) = SelectiveStorage::resume_content(
-            output,
+
+        for path in [output.join("b"), output.join("c")] {
+            let mut permissions = std::fs::metadata(&path)
+                .expect("read v2 publication permissions")
+                .permissions();
+            permissions.set_readonly(true);
+            std::fs::set_permissions(&path, permissions).expect("make v2 publication read-only");
+        }
+        let (mut resumed, state) = SelectiveStorage::resume_content(
+            output.clone(),
             test_artifact_identity(),
-            content,
+            content.clone(),
             &[0],
             vec![false, true, true, true],
             Some(ResumeArtifactState::Published),
@@ -5166,11 +5194,112 @@ mod tests {
         assert_eq!(state, ResumedStorage::Published);
         assert_eq!(resumed.part_slots(), 0);
         assert!(!resumed.has_part_file());
-        assert!(matches!(
-            resumed.hash_piece_content(2).await,
-            Ok(ComputedPieceHash::Sha256 { .. })
-        ));
+        for piece_index in 1..=3 {
+            let actual = resumed
+                .hash_piece_content(piece_index)
+                .await
+                .expect("hash exact read-only v2 publication");
+            let expected = content
+                .expected_piece(piece_index)
+                .expect("expected read-only v2 root");
+            assert!(matches!(
+                (actual, expected),
+                (
+                    ComputedPieceHash::Sha256 { root, .. },
+                    ExpectedPieceIntegrity::V2Merkle { expected_root, .. }
+                ) if root == expected_root
+            ));
+            resumed
+                .record_verified(piece_index as usize)
+                .expect("record read-only v2 check");
+        }
+        resumed
+            .finish_published()
+            .await
+            .expect("finish exact read-only v2 check");
         drop(resumed);
+
+        let b = output.join("b");
+        let mut permissions = std::fs::metadata(&b)
+            .expect("read v2 file permissions")
+            .permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&b, permissions).expect("make v2 file writable");
+        let mut corrupted = selected.clone();
+        corrupted[17] ^= 0x80;
+        std::fs::write(&b, corrupted).expect("corrupt v2 publication in place");
+        let (corrupt, state) = SelectiveStorage::resume_content(
+            output.clone(),
+            test_artifact_identity(),
+            content.clone(),
+            &[0],
+            vec![false, true, true, true],
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("resume same-length corrupt v2 publication");
+        assert_eq!(state, ResumedStorage::Published);
+        let actual = corrupt
+            .hash_piece_content(1)
+            .await
+            .expect("hash same-length corrupt v2 piece");
+        let expected = content.expected_piece(1).expect("expected v2 root");
+        assert!(matches!(
+            (actual, expected),
+            (
+                ComputedPieceHash::Sha256 { root, .. },
+                ExpectedPieceIntegrity::V2Merkle { expected_root, .. }
+            ) if root != expected_root
+        ));
+        drop(corrupt);
+
+        std::fs::write(&b, &selected[..1]).expect("truncate v2 publication");
+        let (mut truncated, state) = SelectiveStorage::resume_content(
+            output.clone(),
+            test_artifact_identity(),
+            content.clone(),
+            &[0],
+            vec![false, true, true, true],
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("inventory truncated v2 publication");
+        assert_eq!(state, ResumedStorage::Published);
+        assert!(
+            !truncated
+                .has_piece_sources(1)
+                .await
+                .expect("classify truncated v2 piece")
+        );
+        assert!(truncated.hash_piece_content(1).await.is_err());
+        drop(truncated);
+
+        let c = output.join("c");
+        let mut permissions = std::fs::metadata(&c)
+            .expect("read final v2 file permissions")
+            .permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&c, permissions).expect("make final v2 file writable");
+        std::fs::remove_file(&c).expect("remove v2 publication file");
+        let (mut missing, state) = SelectiveStorage::resume_content(
+            output,
+            test_artifact_identity(),
+            content,
+            &[0],
+            vec![false, true, true, true],
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("inventory missing v2 publication file");
+        assert_eq!(state, ResumedStorage::Published);
+        assert!(
+            !missing
+                .has_piece_sources(3)
+                .await
+                .expect("classify missing v2 piece")
+        );
+        assert!(missing.hash_piece_content(3).await.is_err());
+        drop(missing);
         std::fs::remove_dir_all(parent).expect("remove v2 storage fixture");
     }
 
