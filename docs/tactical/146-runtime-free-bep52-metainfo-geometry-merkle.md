@@ -517,6 +517,27 @@ empty-file placement, short final pieces, explicit gap exclusion, invalid
 ranges, the logical-piece cap, and checked `u64` overflow pass. No v2 geometry
 enters the current v1 runtime layout API.
 
+The fourth checkpoint adds the explicitly selected `ParsedInfo` and
+`ParsedOuterMetainfo` APIs. They borrow the exact raw info bytes, expose a
+validated `InfoHashes`, and use distinct v1, v2, and hybrid variants. The v2
+semantic pass traverses the canonical file tree with an explicit stack,
+retains raw path bytes for protocol comparison, reuses the existing hostile
+path projection and collision policy, rejects branch/leaf conflicts and v2
+padding or symlink attributes, and derives bounded geometry without entering
+the product parser. Hybrid validation compares raw path order, lengths,
+logical offsets, exact internal BEP 47 pads, and the two admitted final-tail
+shapes before either identity escapes.
+
+The same checkpoint makes complete outer v2/hybrid parsing strict: `piece
+layers` must be present even when empty, every multi-piece file root has one
+exact layer, unexpected or incomplete entries fail, aggregate hashes remain
+bounded by the logical-piece ceiling, and the retained flat hash vector is
+not duplicated per file. Tests cover exact non-UTF-8 SHA-256 and hybrid
+SHA-1/SHA-256 bytes, all-zero present roots, empty files, iterative depth,
+projected collisions, file/component bounds, historical missing-tail-pad and
+canonical-tail-pad hybrids, root reconstruction, corrupt and short layers,
+and unchanged v1-only product rejection.
+
 ### Stage 1: Reconfirm sources, inventory, and baseline
 
 - verify the exact BEP and libtorrent pins and record any dirty-reference

@@ -16,10 +16,29 @@ pub(super) struct ParsedOuter {
     pub trackers: Vec<MetainfoTracker>,
 }
 
+pub(super) struct ScannedOuter {
+    pub info_span: Range<usize>,
+    pub piece_layers_span: Option<Range<usize>>,
+    pub trackers: Vec<MetainfoTracker>,
+}
+
 pub(super) fn parse_outer(
     bytes: &[u8],
     limits: MetainfoLimits,
 ) -> Result<ParsedOuter, MetainfoError> {
+    let scanned = scan_outer(bytes, limits)?;
+    let metainfo = parse_info(&bytes[scanned.info_span.clone()], limits)?;
+    Ok(ParsedOuter {
+        metainfo,
+        info_span: scanned.info_span,
+        trackers: scanned.trackers,
+    })
+}
+
+pub(super) fn scan_outer(
+    bytes: &[u8],
+    limits: MetainfoLimits,
+) -> Result<ScannedOuter, MetainfoError> {
     let mut parser = Parser::new(bytes, limits.max_outer_bytes, limits)?;
     if parser.peek()? != b'd' {
         return Err(MetainfoError::RootIsNotDictionary);
@@ -27,6 +46,7 @@ pub(super) fn parse_outer(
     parser.enter_container(b'd', 0)?;
     let mut previous_key = None;
     let mut info_span = None;
+    let mut piece_layers_span = None;
     let mut announce = None;
     let mut trackers = Vec::new();
     let mut tracker_identities = HashSet::new();
@@ -50,6 +70,11 @@ pub(super) fn parse_outer(
                 parser.skip_value(1)?;
                 info_span = Some(start..parser.position);
             }
+            b"piece layers" => {
+                let start = parser.position;
+                parser.skip_value(1)?;
+                piece_layers_span = Some(start..parser.position);
+            }
             _ => parser.skip_value(1)?,
         }
     }
@@ -58,7 +83,6 @@ pub(super) fn parse_outer(
 
     let info_span = info_span.ok_or(MetainfoError::MissingField("info"))?;
     enforce_info_length(info_span.len(), limits)?;
-    let metainfo = parse_info(&bytes[info_span.clone()], limits)?;
     if trackers.is_empty()
         && let Some(announce) = announce
         && let Some((url, transport)) = normalize_tracker_url(announce)
@@ -70,9 +94,9 @@ pub(super) fn parse_outer(
             transport,
         });
     }
-    Ok(ParsedOuter {
-        metainfo,
+    Ok(ScannedOuter {
         info_span,
+        piece_layers_span,
         trackers,
     })
 }
@@ -217,13 +241,16 @@ pub(super) fn parse_info(bytes: &[u8], limits: MetainfoLimits) -> Result<Metainf
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct InfoScan {
-    meta_version: Option<i64>,
-    invalid_meta_version: bool,
-    has_file_tree: bool,
+pub(super) struct InfoScan {
+    pub meta_version: Option<i64>,
+    pub invalid_meta_version: bool,
+    pub has_file_tree: bool,
 }
 
-fn scan_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<InfoScan, MetainfoError> {
+pub(super) fn scan_info_dictionary(
+    parser: &mut Parser<'_>,
+    depth: usize,
+) -> Result<InfoScan, MetainfoError> {
     if parser.peek()? != b'd' {
         return Err(MetainfoError::InvalidField("info dictionary"));
     }
@@ -411,6 +438,17 @@ fn parse_v1_info_dictionary(
     })
 }
 
+pub(super) fn parse_v1_semantics(
+    bytes: &[u8],
+    limits: MetainfoLimits,
+) -> Result<Metainfo, MetainfoError> {
+    enforce_info_length(bytes.len(), limits)?;
+    let mut parser = Parser::new(bytes, limits.max_info_bytes, limits)?;
+    let metainfo = parse_v1_info_dictionary(&mut parser, 0)?;
+    parser.finish()?;
+    Ok(metainfo)
+}
+
 fn parse_files(
     parser: &mut Parser<'_>,
     depth: usize,
@@ -515,11 +553,7 @@ fn parse_path(
         return Err(MetainfoError::InvalidField("info.files.path"));
     }
     parser.enter_container(b'l', depth)?;
-    let mut source_hash = Sha1::new();
-    let mut components = Vec::new();
-    let mut last_component = None;
-    let mut encoded_length = 0_usize;
-    let mut collapsed = false;
+    let mut projector = PathProjector::new();
     let mut count = 0_usize;
     while parser.peek()? != b'e' {
         if count == parser.limits.max_path_components {
@@ -536,26 +570,7 @@ fn parse_path(
                 reason: "component is too long",
             });
         }
-        source_hash.update((raw.len() as u64).to_be_bytes());
-        source_hash.update(raw);
-        let component = project_component(raw);
-        let next_length = encoded_length.saturating_add(component.len() + usize::from(count != 0));
-        if next_length > parser.limits.max_path_bytes {
-            return Err(MetainfoError::UnsafePath {
-                file: Some(file),
-                reason: "path is too long",
-            });
-        }
-        if !collapsed && next_length <= MAX_METAINFO_PATH_LENGTH {
-            encoded_length = next_length;
-            components.push(component.clone());
-        } else {
-            collapsed = true;
-            if components.len() > 8 {
-                components.truncate(8);
-            }
-        }
-        last_component = Some(component);
+        projector.push(raw, file, parser.limits)?;
         count += 1;
     }
     parser.leave_container()?;
@@ -565,20 +580,110 @@ fn parse_path(
             reason: "path has no components",
         });
     }
-    if collapsed {
-        components.truncate(8);
-        components.push(format!(
-            "path~{}",
-            hex_digest(source_hash.finalize().as_slice())
-        ));
-        if let Some(last) = last_component
-            && components.last() != Some(&last)
-        {
-            components.push(last);
+    Ok(projector.finish())
+}
+
+pub(super) fn project_raw_path<'a>(
+    raw_components: impl IntoIterator<Item = &'a [u8]>,
+    file: usize,
+    limits: MetainfoLimits,
+) -> Result<Vec<String>, MetainfoError> {
+    let mut projector = PathProjector::new();
+    let mut count = 0_usize;
+    for raw in raw_components {
+        if count == limits.max_path_components {
+            return Err(MetainfoError::UnsafePath {
+                file: Some(file),
+                reason: "path has too many components",
+            });
+        }
+        if raw.len() > limits.max_path_component_bytes {
+            return Err(MetainfoError::UnsafePath {
+                file: Some(file),
+                reason: "component is too long",
+            });
+        }
+        projector.push(raw, file, limits)?;
+        count += 1;
+    }
+    if count == 0 {
+        return Err(MetainfoError::UnsafePath {
+            file: Some(file),
+            reason: "path has no components",
+        });
+    }
+    Ok(projector.finish())
+}
+
+struct PathProjector {
+    source_hash: Sha1,
+    components: Vec<String>,
+    last_component: Option<String>,
+    encoded_length: usize,
+    collapsed: bool,
+    count: usize,
+}
+
+impl PathProjector {
+    fn new() -> Self {
+        Self {
+            source_hash: Sha1::new(),
+            components: Vec::new(),
+            last_component: None,
+            encoded_length: 0,
+            collapsed: false,
+            count: 0,
         }
     }
-    debug_assert!(joined_path_length(&components) <= MAX_METAINFO_PATH_LENGTH);
-    Ok(components)
+
+    fn push(
+        &mut self,
+        raw: &[u8],
+        file: usize,
+        limits: MetainfoLimits,
+    ) -> Result<(), MetainfoError> {
+        self.source_hash.update((raw.len() as u64).to_be_bytes());
+        self.source_hash.update(raw);
+        let component = project_component(raw);
+        let next_length = self
+            .encoded_length
+            .saturating_add(component.len() + usize::from(self.count != 0));
+        if next_length > limits.max_path_bytes {
+            return Err(MetainfoError::UnsafePath {
+                file: Some(file),
+                reason: "path is too long",
+            });
+        }
+        self.encoded_length = next_length;
+        if !self.collapsed && next_length <= MAX_METAINFO_PATH_LENGTH {
+            self.components.push(component.clone());
+        } else {
+            self.collapsed = true;
+            if self.components.len() > 8 {
+                self.components.truncate(8);
+            }
+        }
+        self.last_component = Some(component);
+        self.count += 1;
+        Ok(())
+    }
+
+    fn finish(mut self) -> Vec<String> {
+        if self.collapsed {
+            self.components.truncate(8);
+            self.components.push(format!(
+                "path~{}",
+                hex_digest(self.source_hash.finalize().as_slice())
+            ));
+            if let Some(last) = self.last_component
+                && self.components.last() != Some(&last)
+            {
+                self.components.push(last);
+            }
+        }
+        debug_assert!(joined_path_length(&self.components) <= MAX_METAINFO_PATH_LENGTH);
+        self.components
+    }
 }
 
 fn parse_required_bytes<'a>(
@@ -615,7 +720,10 @@ fn parse_positive_integer(
     Ok(value)
 }
 
-fn enforce_info_length(length: usize, limits: MetainfoLimits) -> Result<(), MetainfoError> {
+pub(super) fn enforce_info_length(
+    length: usize,
+    limits: MetainfoLimits,
+) -> Result<(), MetainfoError> {
     if length > limits.max_info_bytes {
         return Err(MetainfoError::InfoTooLarge {
             length,
@@ -625,7 +733,7 @@ fn enforce_info_length(length: usize, limits: MetainfoLimits) -> Result<(), Meta
     Ok(())
 }
 
-fn check_dictionary_key(
+pub(super) fn check_dictionary_key(
     previous: Option<&[u8]>,
     current: &[u8],
     position: usize,
@@ -636,15 +744,19 @@ fn check_dictionary_key(
     Ok(())
 }
 
-struct Parser<'a> {
-    input: &'a [u8],
-    position: usize,
+pub(super) struct Parser<'a> {
+    pub(super) input: &'a [u8],
+    pub(super) position: usize,
     tokens: usize,
-    limits: MetainfoLimits,
+    pub(super) limits: MetainfoLimits,
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a [u8], maximum: usize, limits: MetainfoLimits) -> Result<Self, ParseError> {
+    pub(super) fn new(
+        input: &'a [u8],
+        maximum: usize,
+        limits: MetainfoLimits,
+    ) -> Result<Self, ParseError> {
         if input.len() > maximum {
             return Err(ParseError::InputTooLarge {
                 length: input.len(),
@@ -659,7 +771,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn finish(&self) -> Result<(), ParseError> {
+    pub(super) fn finish(&self) -> Result<(), ParseError> {
         if self.position != self.input.len() {
             return Err(ParseError::TrailingData {
                 position: self.position,
@@ -668,7 +780,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn skip_value(&mut self, depth: usize) -> Result<(), ParseError> {
+    pub(super) fn skip_value(&mut self, depth: usize) -> Result<(), ParseError> {
         self.check_depth(depth)?;
         match self.peek()? {
             b'i' => {
@@ -707,7 +819,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_integer(&mut self, depth: usize) -> Result<i64, ParseError> {
+    pub(super) fn parse_integer(&mut self, depth: usize) -> Result<i64, ParseError> {
         self.check_depth(depth)?;
         let start = self.position;
         if self.peek()? != b'i' {
@@ -736,7 +848,7 @@ impl<'a> Parser<'a> {
             .map_err(|_| ParseError::IntegerOverflow { position: start })
     }
 
-    fn parse_bytes(&mut self, depth: usize) -> Result<&'a [u8], ParseError> {
+    pub(super) fn parse_bytes(&mut self, depth: usize) -> Result<&'a [u8], ParseError> {
         self.check_depth(depth)?;
         let start = self.position;
         if !self.peek()?.is_ascii_digit() {
@@ -780,7 +892,7 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
-    fn enter_container(&mut self, token: u8, depth: usize) -> Result<(), ParseError> {
+    pub(super) fn enter_container(&mut self, token: u8, depth: usize) -> Result<(), ParseError> {
         self.check_depth(depth)?;
         if self.peek()? != token {
             return Err(ParseError::InvalidToken {
@@ -792,7 +904,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn leave_container(&mut self) -> Result<(), ParseError> {
+    pub(super) fn leave_container(&mut self) -> Result<(), ParseError> {
         if self.peek()? != b'e' {
             return Err(ParseError::InvalidToken {
                 position: self.position,
@@ -803,7 +915,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn check_depth(&self, depth: usize) -> Result<(), ParseError> {
+    pub(super) fn check_depth(&self, depth: usize) -> Result<(), ParseError> {
         if depth >= self.limits.max_depth {
             return Err(ParseError::NestingTooDeep {
                 position: self.position,
@@ -813,7 +925,11 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn check_collection(&self, entries: usize, position: usize) -> Result<(), ParseError> {
+    pub(super) fn check_collection(
+        &self,
+        entries: usize,
+        position: usize,
+    ) -> Result<(), ParseError> {
         if entries == self.limits.max_collection_entries {
             return Err(ParseError::CollectionTooLarge {
                 position,
@@ -834,7 +950,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn peek(&self) -> Result<u8, ParseError> {
+    pub(super) fn peek(&self) -> Result<u8, ParseError> {
         self.input
             .get(self.position)
             .copied()
@@ -844,7 +960,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn project_component(bytes: &[u8]) -> String {
+pub(super) fn project_component(bytes: &[u8]) -> String {
     let digest = Sha1::digest(bytes);
     let mut needs_suffix = false;
     let mut projected = match std::str::from_utf8(bytes) {
@@ -900,23 +1016,34 @@ fn project_component(bytes: &[u8]) -> String {
 }
 
 fn resolve_path_collisions(files: &mut [MetainfoFile]) {
-    let mut occupied_files = HashSet::with_capacity(files.len());
+    let mut paths: Vec<Vec<String>> = files
+        .iter_mut()
+        .map(|file| std::mem::take(&mut file.path))
+        .collect();
+    resolve_projected_path_collisions(&mut paths);
+    for (file, path) in files.iter_mut().zip(paths) {
+        file.path = path;
+    }
+}
+
+pub(super) fn resolve_projected_path_collisions(paths: &mut [Vec<String>]) {
+    let mut occupied_files = HashSet::with_capacity(paths.len());
     let mut occupied_directories = HashSet::new();
-    for (index, file) in files.iter_mut().enumerate() {
-        if file.path.is_empty() {
+    for (index, path) in paths.iter_mut().enumerate() {
+        if path.is_empty() {
             continue;
         }
-        while path_conflicts(&file.path, &occupied_files, &occupied_directories) {
+        while path_conflicts(path, &occupied_files, &occupied_directories) {
             let mut hash = Sha1::new();
-            for component in &file.path {
+            for component in path.iter() {
                 hash.update((component.len() as u64).to_be_bytes());
                 hash.update(component.as_bytes());
             }
             hash.update((index as u64).to_be_bytes());
             let suffix = format!("~{}", hex_digest(hash.finalize().as_slice()));
-            append_suffix(&mut file.path[0], &suffix);
+            append_suffix(&mut path[0], &suffix);
         }
-        let normalized: Vec<String> = file.path.iter().map(|value| value.to_lowercase()).collect();
+        let normalized: Vec<String> = path.iter().map(|value| value.to_lowercase()).collect();
         occupied_files.insert(normalized.join("/"));
         for end in 1..normalized.len() {
             occupied_directories.insert(normalized[..end].join("/"));

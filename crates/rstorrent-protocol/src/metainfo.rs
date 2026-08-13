@@ -2,8 +2,16 @@ use std::error::Error;
 use std::fmt;
 
 use crate::bencode::ParseError;
+use crate::merkle::MerkleError;
+use crate::v2_layout::V2LayoutError;
 
+mod bep52;
 mod direct;
+
+pub use bep52::{
+    CompletePieceLayers, HybridMetainfo, HybridTailPadding, MetainfoFormat, ParsedInfo,
+    ParsedInfoKind, ParsedOuterMetainfo, PieceLayerEntry, V2File, V2Metainfo,
+};
 
 pub const MAX_PIECE_LENGTH: u32 = 536_854_528;
 pub const MAX_METAINFO_FILES: usize = 374_998;
@@ -149,6 +157,10 @@ pub enum MetainfoError {
         actual: usize,
         maximum: usize,
     },
+    TooManyPieceLayerHashes {
+        actual: usize,
+        maximum: usize,
+    },
     UnsafePath {
         file: Option<usize>,
         reason: &'static str,
@@ -162,6 +174,17 @@ pub enum MetainfoError {
         expected: usize,
         actual: usize,
     },
+    MissingPieceLayers,
+    PieceLayer {
+        file: Option<usize>,
+        reason: &'static str,
+    },
+    HybridMismatch {
+        file: Option<usize>,
+        category: &'static str,
+    },
+    Merkle(MerkleError),
+    V2Layout(V2LayoutError),
 }
 
 impl fmt::Display for MetainfoError {
@@ -187,6 +210,10 @@ impl fmt::Display for MetainfoError {
             Self::TooManyPieces { actual, maximum } => {
                 write!(formatter, "metainfo has {actual} pieces, limit {maximum}")
             }
+            Self::TooManyPieceLayerHashes { actual, maximum } => write!(
+                formatter,
+                "metainfo has {actual} piece-layer hashes, limit {maximum}"
+            ),
             Self::UnsafePath { file, reason } => match file {
                 Some(index) => write!(formatter, "metainfo file {index} has unsafe path: {reason}"),
                 None => write!(formatter, "metainfo name is unsafe: {reason}"),
@@ -202,6 +229,25 @@ impl fmt::Display for MetainfoError {
                 formatter,
                 "metainfo has {actual} piece hashes, expected {expected}"
             ),
+            Self::MissingPieceLayers => {
+                formatter.write_str("complete v2 metainfo is missing piece layers")
+            }
+            Self::PieceLayer { file, reason } => match file {
+                Some(index) => write!(
+                    formatter,
+                    "metainfo file {index} has invalid piece layer: {reason}"
+                ),
+                None => write!(formatter, "metainfo has invalid piece layers: {reason}"),
+            },
+            Self::HybridMismatch { file, category } => match file {
+                Some(index) => write!(
+                    formatter,
+                    "hybrid metainfo file {index} has incompatible {category}"
+                ),
+                None => write!(formatter, "hybrid metainfo has incompatible {category}"),
+            },
+            Self::Merkle(error) => write!(formatter, "invalid BEP 52 Merkle data: {error}"),
+            Self::V2Layout(error) => write!(formatter, "invalid BEP 52 layout: {error}"),
         }
     }
 }
@@ -210,8 +256,22 @@ impl Error for MetainfoError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Bencode(error) => Some(error),
+            Self::Merkle(error) => Some(error),
+            Self::V2Layout(error) => Some(error),
             _ => None,
         }
+    }
+}
+
+impl From<MerkleError> for MetainfoError {
+    fn from(error: MerkleError) -> Self {
+        Self::Merkle(error)
+    }
+}
+
+impl From<V2LayoutError> for MetainfoError {
+    fn from(error: V2LayoutError) -> Self {
+        Self::V2Layout(error)
     }
 }
 
