@@ -438,10 +438,14 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
   improves the focused median another 36.85% to 2.139 MiB/s and eliminates
   recovery cascades and too-far drops at a measured 464-packet/668 KiB high
   water. This is 78.0% of the retained oracle and matches the earlier
-  RSTorrent-to-libtorrent sender result, selecting residual sender utilization
-  and review-gated startup attribution next; the full near-parity cohort
-  remains. Remote revisions are built in the guarded ARM64 Linux VM, not on
-  the constrained WAN peer.
+  RSTorrent-to-libtorrent sender result. WAN telemetry selects startup, and a
+  test-only A/B now rejects direct libtorrent-style slow start on queue delay
+  while a bounded 10 ms/30% startup candidate improves three long-RTT pairs
+  1.88x--1.90x and passes the existing fairness, recovery, loss, MTU, and
+  resource gates. Ordinary product behavior is unchanged. Tactical `145` is
+  at its human review gate with recommendation A to promote that startup-only
+  candidate; the full near-parity cohort remains. Remote revisions are built
+  in the guarded ARM64 Linux VM, not on the constrained WAN peer.
 
 ### Next
 

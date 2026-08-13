@@ -132,6 +132,24 @@ too-far drops fall to zero. The resulting 2.139183 MiB/s median is 78.0% of
 the retained oracle and matches the earlier RSTorrent-to-libtorrent result;
 residual work returns to sender utilization and review-gated startup policy.
 
+WAN milestone telemetry then makes startup causal: with a full 1 MiB
+application queue and no sender-underfill or remote-window limitation, 95,678
+of 95,857 feedback events are congestion limited and the 256 MiB sender needs
+roughly 90 seconds to reach path-rate flight. A test-only comparator leaves
+ordinary product construction unchanged. The direct libtorrent-style startup
+finishes the clean 80 ms one-way 8 MiB profile in 4.454 seconds instead of
+18.382, but its 193.750 ms p95 queue delay fails the 150 ms gate.
+
+The selected diagnostic candidate exits exponential growth on a 10 ms queue
+signal and retains 30% of the pre-exit window, then uses the unchanged linear
+controller. Three paired 70/80/90 ms one-way samples improve completion
+1.88x--1.90x, retain zero loss/drop and exact integrity, and keep maximum
+queue delay at 45 ms. The existing TCP-like foreground share improves from
+70.37% to 82.65%; recovery remains within ten RTTs. Scripted 1% loss and
+dynamic-MTU black-hole profiles preserve retry, loss, and isolated-probe
+bounds. This is controlled policy-selection evidence, not a WAN throughput
+claim. Tactical `145` is at human review before any production startup change.
+
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

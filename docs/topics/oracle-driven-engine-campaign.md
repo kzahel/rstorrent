@@ -611,11 +611,16 @@ timeout collapse plus every too-far drop. Each remains one-connection and
 clean.
 
 RSTorrent/RSTorrent now matches the earlier RSTorrent-to-libtorrent sender
-rate but remains at 78.0% of the retained libtorrent oracle. The next
-executable action is residual sender utilization and startup attribution,
-including bounded diagnostic-only controller variants if ordinary evidence
-does not select another existing owner. Any production congestion-policy
-change remains at the tactical's human review gate. The
+rate but remains at 78.0% of the retained libtorrent oracle. WAN milestones
+and saturation counters then select slow linear sender startup. A test-only
+comparator rejects direct libtorrent-style startup because its 193.750 ms p95
+queue delay exceeds the retained 150 ms gate. The recommended bounded
+candidate exits exponential startup on 10 ms queue delay, retains 30% of that
+window, and then returns to unchanged linear LEDBAT. Three paired long-RTT
+profiles improve 1.88x--1.90x; existing fairness/recovery plus explicit loss,
+MTU, integrity, and resource gates pass. Tactical `145` has therefore reached
+its production congestion-policy human review gate. Ordinary product behavior
+remains unchanged until that decision. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

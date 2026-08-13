@@ -1,13 +1,13 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Active under parent Tactical 142; terminal provenance, repeated-cycle
-gates, release recovery, packetization repairs, and off-device WAN builds are
-implemented.** Maintainer direction on 2026-08-13 selects this tactical after
-Tactical `143` completed and activates continued uTP performance work with the
-goal of approaching pinned-libtorrent uTP throughput. This tactical may
-autonomously diagnose and repair causal defects in existing uTP,
-ordered-stream, and peer-I/O owners. A production congestion-policy change
-remains a human-review gate.
+Status: **At the production congestion-policy human-review gate under parent
+Tactical 142.** Terminal provenance, repeated-cycle gates, release recovery,
+packetization and receive-position repairs, off-device WAN builds, and the
+diagnostic startup A/B are implemented. Maintainer direction on 2026-08-13
+selected this tactical after Tactical `143` completed and activated continued
+uTP performance work with the goal of approaching pinned-libtorrent uTP
+throughput. Ordinary product construction still uses the existing linear
+LEDBAT controller; no slow-start policy has been enabled.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -525,8 +525,95 @@ MiB/s libtorrent/libtorrent control and effectively matches the pre-repair
 2.129650 MiB/s RSTorrent/libtorrent median. Receiver composition is therefore
 closed as the primary owner. Residual sender utilization and startup
 attribution, including a bounded diagnostic-only controller A/B if ordinary
-telemetry cannot explain the gap, is the next executable action under the
-existing human review gate.
+telemetry cannot explain the gap, is therefore the remaining review-gated
+owner.
+
+### Stage 8: sender-startup attribution and policy A/B
+
+The first post-position-repair WAN sample supplies a clean sender diagnosis.
+Its 256 MiB transfer is active for 119.849 seconds. Payload rate grows from
+about 64 KiB/s at second 3 to 432 KiB/s at second 10, 979 KiB/s at second 20,
+roughly 1.48 MiB/s at second 30, and about 3 MiB/s only near second 90. The
+sender retains a 1 MiB unsent high water, records zero sender-underfilled and
+zero remote-window-limited congestion acknowledgements, and is congestion
+limited on 95,678 of 95,857 feedback events. It reaches about 663 KiB of
+flight with 156--266 ms RTT and 0--80.889 ms queue delay. One loss near second
+99 temporarily lowers rate, but late instantaneous rate returns to the path
+ceiling. Storage, application feed, remote credit, packetization, receive
+distance, and steady-state path capacity are therefore rejected as the first
+owner; linear startup is the remaining causal owner.
+
+Pinned libtorrent starts every connection with `m_slow_start = true` in
+`src/utp_stream.cpp::utp_socket_impl`. In `do_ledbat`, a congestion-limited
+ACK grows the window by at least the acknowledged bytes until delay reaches
+the configured target or a remembered slow-start threshold would be crossed.
+`experienced_loss` exits slow start and records the reduced window as the
+threshold; `tick` re-enters it after a retransmission timeout. RSTorrent
+instead starts at two MSS and applies only linear RFC 6817 gain, capped by its
+existing allowed-increase rule.
+
+Commit `aec9235` adds a narrow test-only startup injection. Product
+`TransportState::initiate` and accepted inbound connections still select
+`LinearLedbat`; the alternative cannot be constructed in a non-test build.
+The comparator reports completion, congestion/flight, delay, loss, retry,
+MTU, fairness/recovery, and bounded send/link high waters without sockets,
+tasks, payload retention, or a new runtime owner.
+
+The direct libtorrent-style rule under RSTorrent's existing bounds is not the
+recommendation. On the clean 80 ms one-way, 3,000,000-byte/s, 8 MiB profile it
+reduces completion from 18.3815 to 4.4540 seconds, but reaches the complete
+1 MiB window/flight and produces 193.750 ms p95 and 194.000 ms maximum queue
+delay, above the retained 150 ms gate. Exploratory early-exit variants also
+fail the TCP-like foreground-share gate: 50 ms without a window clamp gives
+the competitor 43.60%, 10 ms without a clamp 53.78%, a 50% exit window
+68.67%, and a 40% exit window 69.57%, each below the required 70%.
+
+The selected diagnostic candidate uses exponential acknowledged-byte growth
+only during startup, exits on the first 10 ms queue-delay signal, and retains
+30% of the pre-exit window. Its post-exit `TARGET = 100 ms`, linear `GAIN = 1`,
+allowed-increase rule, loss reduction, pacing, and every packet/byte bound are
+unchanged. Three alternating current/candidate 8 MiB comparisons vary
+one-way base delay across 70, 80, and 90 ms on the same 3,000,000-byte/s link:
+
+| One-way delay | Current completion / MiB/s | Candidate completion / MiB/s | Current / candidate maximum cwnd | Current / candidate maximum flight |
+| ---: | ---: | ---: | ---: | ---: |
+| 70 ms | 16.178750 s / 0.494476 | 8.549500 s / 0.935727 | 153,651 / 400,089 B | 153,034 / 399,014 B |
+| 80 ms | 18.381500 s / 0.435220 | 9.753750 s / 0.820197 | 153,585 / 400,089 B | 153,049 / 399,014 B |
+| 90 ms | 20.728500 s / 0.385942 | 10.908750 s / 0.733356 | 153,656 / 400,089 B | 153,471 / 399,014 B |
+
+The candidate is 1.88x--1.90x faster across the paired profiles. Every sample
+has exact integrity, zero retransmission, loss, timeout, queue drop, or MTU
+drop. Current p95/maximum queue delay is 0.500/0.500 ms; candidate p95 is
+1.000--1.500 ms and maximum is 45.000 ms. Current send-ledger high water is
+107--108 packets and 153,034--153,471 bytes; candidate is 284 packets and
+399,014 bytes. Link event high water grows from 92--98 events and
+113,205--130,565 bytes to 275 events and 379,422 bytes, within the unchanged
+131,072-event/8 MiB fixture bounds and the transport's 1,024-packet/1 MiB
+send limits.
+
+The existing TCP-like competitor profile also passes. Foreground overlap
+share improves from 70.367% current to 82.647% candidate; p95 queue delay is
+126.942 versus 131.944 ms. uTP recovery takes 230.000 versus 293.000 ms and
+remains far below ten measured RTTs. Both modes make two loss reductions;
+queue drops are 12 versus 13 and aggregate directional queue high water stays
+below 75 KiB plus one acknowledgement datagram.
+
+Candidate-specific impairment evidence transfers the exact stream through 47
+scripted noncongestive drops in 8.699750 seconds with zero queue drop, 21
+retransmissions/loss reductions, zero timeout collapse, and at most two sends
+of a sequence. Its MTU black-hole profile completes in 8.619000 seconds,
+isolates three failed probes from congestion reduction, converges to a
+1,269-byte datagram floor, and records six probes, three retransmissions, zero
+loss reduction, and four ignored loss events. Controller unit tests prove
+loss exit and threshold-bounded timeout restart.
+
+This evidence selects a startup-only policy change, not a larger steady-state
+gain. Recommendation A is to promote the bounded 10 ms/30% startup behavior,
+then run the controlled product and WAN cohort before making any parity claim.
+The exact libtorrent rule is rejected, and changing steady-state gain,
+`TARGET`, ordinary allowed increase, or loss multiplication is not
+recommended. Production implementation now stops at the required human
+review gate.
 
 ## Owner, Task, Cancellation, And Dependency Map
 

@@ -1044,8 +1044,22 @@ case stays on one connection and cleans up.
 
 RSTorrent/RSTorrent now matches the earlier RSTorrent-to-libtorrent rate,
 closing receiver composition as the primary owner, but remains at 78.0% of
-the retained libtorrent oracle. Tactical `145` next returns to sender startup
-and utilization attribution. Production slow start, gain, target, allowed
-increase, and loss response remain review-gated. Another NAT mechanism, IPv6
-uTP, permanent network change, another host, and a broader uTP support claim
-remain separate decisions.
+the retained libtorrent oracle. WAN milestone and controller telemetry reject
+application feed, storage, receive credit, and steady-state path capacity as
+the first remaining owner: the continuously congestion-limited sender takes
+roughly 90 seconds to grow from its two-MSS window to path-rate flight.
+
+Tactical `145` now reaches its production congestion-policy review gate with
+a test-only startup comparator. The direct libtorrent-style startup cuts its
+80 ms one-way 8 MiB profile from 18.382 to 4.454 seconds but fails with
+193.750 ms p95 queue delay. A bounded candidate exits exponential growth on a
+10 ms queue signal and retains 30% of its pre-exit window. Across alternating
+70/80/90 ms one-way profiles it is 1.88x--1.90x faster than current linear
+startup with exact integrity, zero loss/drop, at most 45 ms queue delay, and
+unchanged bounds. Its TCP-like foreground share is 82.65% versus 70.37%
+current, and loss plus MTU-isolation profiles pass. Ordinary product
+construction remains linear. Recommendation A is the bounded startup-only
+policy; steady-state gain, target, allowed increase, and loss multiplication
+remain unchanged and are not recommended. Another NAT mechanism, IPv6 uTP,
+permanent network change, another host, and a broader uTP support claim remain
+separate decisions.
