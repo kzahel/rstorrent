@@ -1,8 +1,8 @@
-# Tactical 151: iOS Multifile Selected-Root Coordination
+# Tactical 152: iOS Multifile Selected-Root Coordination
 
-Status: **Planned.** This tactical records the maintainer-selected per-file
-coordination repair. It does not displace Tactical `150` as the sole
-authoritative **Now** until the maintainer explicitly prioritizes it.
+Status: **Active authoritative Now on 2026-08-13.** Explicit maintainer
+direction selected end-to-end implementation of this correctness repair and
+paused Tactical `151` before its implementation began.
 
 Topics: `download-roots`, `client-surfaces`, `client-persistence`,
 `capability-readiness`, `performance-and-live-evidence`

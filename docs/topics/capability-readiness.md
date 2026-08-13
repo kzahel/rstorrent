@@ -432,21 +432,29 @@ tests, notification opt-in, force-close and finite-background recovery, and
 unsigned/development archives pass. No indefinite background, cloud-provider,
 App Store, TestFlight, or public-release claim is made.
 
+A subsequent physical public-swarm run exposed a selected-root multifile
+coordination defect: the three-file Big Buck Bunny torrent reached 1,052 of
+1,055 pieces, then a sibling-file platform request exceeded its deadline and
+publication never occurred. Tactical
+[`152`](../tactical/152-ios-multifile-selected-root-coordination.md) owns the
+stable regression and exact-target coordination repair. Until it closes, the
+selected-root multifile path is not an implemented iOS capability.
+
 ## Current Queue
 
 ### Now
 
 - **Execute Tactical
-  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md).**
-  Completed Tactical `146` provides the runtime-free foundation; `151` owns
-  complete-local-source pure-v2 download, checking, restart, publication,
-  verified reads, seeding, generated boundaries, and proportional Android
-  evidence while deferring magnets, hash exchange, and hybrids.
+  [`152`](../tactical/152-ios-multifile-selected-root-coordination.md).**
+  Reproduce and repair the selected-root sibling-file coordination exclusion,
+  then prove controlled multifile completion and the exact Big Buck Bunny
+  public torrent through system playback on the attached iPhone.
 
 ### Next
 
-- Choose the following bounded action at Tactical `151`'s review gate. There
-  is no second authoritative Now.
+- Resume decision-complete Tactical
+  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) after
+  Tactical `152` closes. There is no second authoritative Now.
 
 ### Later
 
@@ -592,7 +600,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings including session/per-torrent transfer limits, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |
-| iOS native client | Implemented | deterministic, runtime, interop, simulator, physical | The maintained iOS 16+ SwiftUI product runs the application service in-process through generated Swift UniFFI. App Documents and qualified selected on-device roots support exact controlled transfer, publication, restart, Force recheck, complete-file share, stable-ID repair, and managed cleanup; iCloud and positively identified providers are rejected. The directly adapted JSTorrent surface, cold/warm magnet and file handoff, notification opt-in, finite-background plateau/resume, force-close recovery, phone/iPad layouts, and unsigned/development archives pass. Search, identified providers/cloud roots, indefinite background work, migration, and public distribution remain absent. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
+| iOS native client | Partial | deterministic, runtime, interop, simulator, physical, live | The maintained iOS 16+ SwiftUI product runs the application service in-process through generated Swift UniFFI. App Documents and controlled single-file qualified-root transfer pass, but a physical three-file public torrent exposed root-wide coordinator exclusion and failed before publication; Tactical `152` owns the repair. The directly adapted JSTorrent surface, lifecycle, intake, phone/iPad layouts, and archives remain implemented. iCloud/identified providers, indefinite background work, migration, and public distribution remain absent. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |

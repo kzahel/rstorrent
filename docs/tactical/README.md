@@ -696,10 +696,13 @@ that scope and its cleanup or compatibility rules explicitly.
   VM-built WAN, platform, and near-parity evidence without changing steady-
   state LEDBAT.
 - [`151-complete-source-pure-v2-runtime-vertical.md`](151-complete-source-pure-v2-runtime-vertical.md):
-  active authoritative Now after Tactical `150`; admits complete local pure-
-  v2 `.torrent` sources through format-aware download, Merkle checking,
-  restart, publication, verified reads, and seeding while deferring magnets,
-  hash exchange, hybrids, creation, and compatibility migration.
+  planned and paused before implementation when explicit maintainer direction
+  selected the iOS selected-root correctness repair; the decision-complete
+  pure-v2 vertical remains ready after that repair.
+- [`152-ios-multifile-selected-root-coordination.md`](152-ios-multifile-selected-root-coordination.md):
+  active authoritative Now; narrows long-lived selected-root coordination to
+  exact files and requires controlled multifile plus physical Big Buck Bunny
+  completion, system playback, and exact cleanup evidence.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
