@@ -4231,7 +4231,10 @@ fn build_content_piece_plan(
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ContentMessageDisposition {
     Continue,
-    ClosePeer(PeerFailure),
+    ClosePeer {
+        failure: PeerFailure,
+        reason: &'static str,
+    },
     PieceVerified(Vec<ConnectionId>),
     PieceHashFailed(PieceHashFailure),
 }
@@ -4476,7 +4479,7 @@ impl<'a> ContentSwarmDownload<'a> {
         sockets: &PeerSocketSet,
         connection: ConnectionId,
         message: &PeerMessage,
-    ) -> Result<Option<PeerFailure>, DownloadError> {
+    ) -> Result<Option<(PeerFailure, &'static str)>, DownloadError> {
         let actions = {
             let Some(peer) = self.outgoing_uploads.get_mut(&connection) else {
                 return Ok(None);
@@ -4503,7 +4506,7 @@ impl<'a> ContentSwarmDownload<'a> {
         sockets: &PeerSocketSet,
         connection: ConnectionId,
         actions: Vec<UploadAction>,
-    ) -> Result<Option<PeerFailure>, DownloadError> {
+    ) -> Result<Option<(PeerFailure, &'static str)>, DownloadError> {
         for action in actions {
             match action {
                 UploadAction::Send(message) => {
@@ -4512,7 +4515,10 @@ impl<'a> ContentSwarmDownload<'a> {
                         _ => None,
                     };
                     if sockets.send(connection, message).await.is_err() {
-                        return Ok(Some(PeerFailure::RemoteClosed));
+                        return Ok(Some((
+                            PeerFailure::RemoteClosed,
+                            "outgoing upload message send failed",
+                        )));
                     }
                     if let Some(payload) = payload
                         && let Some(peer) = self.outgoing_uploads.get_mut(&connection)
@@ -4526,7 +4532,10 @@ impl<'a> ContentSwarmDownload<'a> {
                         DownloadError::Swarm(SwarmError::Invariant("upload read peer disappeared"))
                     })?;
                     if peer.read.is_some() {
-                        return Ok(Some(PeerFailure::Protocol));
+                        return Ok(Some((
+                            PeerFailure::Protocol,
+                            "outgoing upload read overlapped pending read",
+                        )));
                     }
                     let content = self.active_content.clone();
                     let handle = self.control.incoming_peer_handle();
@@ -4543,12 +4552,21 @@ impl<'a> ContentSwarmDownload<'a> {
                 }
                 UploadAction::Close(reason) => {
                     return Ok(Some(match reason {
-                        UploadCloseReason::InvalidRequest | UploadCloseReason::RequestLimit => {
-                            PeerFailure::Protocol
+                        UploadCloseReason::InvalidRequest => {
+                            (PeerFailure::Protocol, "outgoing upload request was invalid")
                         }
-                        UploadCloseReason::ReadFailed | UploadCloseReason::ShortRead => {
-                            PeerFailure::RemoteClosed
-                        }
+                        UploadCloseReason::RequestLimit => (
+                            PeerFailure::Protocol,
+                            "outgoing upload request limit was exceeded",
+                        ),
+                        UploadCloseReason::ReadFailed => (
+                            PeerFailure::RemoteClosed,
+                            "outgoing upload storage read failed",
+                        ),
+                        UploadCloseReason::ShortRead => (
+                            PeerFailure::RemoteClosed,
+                            "outgoing upload storage read was short",
+                        ),
                     }));
                 }
             }
@@ -4559,7 +4577,7 @@ impl<'a> ContentSwarmDownload<'a> {
     async fn service_outgoing_uploads(
         &mut self,
         sockets: &PeerSocketSet,
-    ) -> Result<Vec<(ConnectionId, PeerFailure)>, DownloadError> {
+    ) -> Result<Vec<(ConnectionId, PeerFailure, &'static str)>, DownloadError> {
         if let Some(handle) = self.control.incoming_peer_handle() {
             handle.evaluate_uploads();
         }
@@ -4591,7 +4609,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 .apply_outgoing_upload_actions(sockets, connection, actions)
                 .await?
             {
-                failures.push((connection, failure));
+                failures.push((connection, failure.0, failure.1));
                 continue;
             }
 
@@ -4605,7 +4623,11 @@ impl<'a> ContentSwarmDownload<'a> {
             let changes = match drain {
                 AvailabilityDrain::Changes { cursor, pieces, .. } => (cursor, pieces),
                 AvailabilityDrain::EpochChanged(_) | AvailabilityDrain::Lagged => {
-                    failures.push((connection, PeerFailure::RemoteClosed));
+                    failures.push((
+                        connection,
+                        PeerFailure::RemoteClosed,
+                        "outgoing upload availability history was lost",
+                    ));
                     continue;
                 }
             };
@@ -4653,7 +4675,11 @@ impl<'a> ContentSwarmDownload<'a> {
                     .await
                     .is_err()
                 {
-                    failures.push((connection, PeerFailure::RemoteClosed));
+                    failures.push((
+                        connection,
+                        PeerFailure::RemoteClosed,
+                        "outgoing upload HAVE send failed",
+                    ));
                     break;
                 }
             }
@@ -4689,7 +4715,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     .apply_outgoing_upload_actions(sockets, connection, actions)
                     .await?
                 {
-                    failures.push((connection, failure));
+                    failures.push((connection, failure.0, failure.1));
                 }
             }
         }
@@ -4843,13 +4869,16 @@ impl<'a> ContentSwarmDownload<'a> {
             .observe_fast_message(connection, &message)
             .is_err()
         {
-            return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+            return Ok(ContentMessageDisposition::ClosePeer {
+                failure: PeerFailure::Protocol,
+                reason: "fast-extension message transition was invalid",
+            });
         }
-        if let Some(failure) = self
+        if let Some((failure, reason)) = self
             .handle_outgoing_upload_message(sockets, connection, &message)
             .await?
         {
-            return Ok(ContentMessageDisposition::ClosePeer(failure));
+            return Ok(ContentMessageDisposition::ClosePeer { failure, reason });
         }
         match message {
             PeerMessage::Choke => {
@@ -4864,14 +4893,20 @@ impl<'a> ContentSwarmDownload<'a> {
             }
             PeerMessage::Have(piece) => {
                 if self.state.peer_has(connection, piece).is_err() {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "HAVE piece index was invalid",
+                    });
                 }
             }
             PeerMessage::Bitfield(bitfield) => {
                 let Some(availability) =
                     validated_compact_availability(bitfield, self.layout.piece_count())
                 else {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "BITFIELD shape was invalid",
+                    });
                 };
                 self.state
                     .set_compact_bitfield(connection, availability)
@@ -4889,7 +4924,10 @@ impl<'a> ContentSwarmDownload<'a> {
             }
             PeerMessage::RejectRequest(request) => {
                 let Ok(block) = BlockKey::new(request.index, request.begin, request.length) else {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "REJECT_REQUEST geometry was invalid",
+                    });
                 };
                 match self
                     .state
@@ -4898,7 +4936,10 @@ impl<'a> ContentSwarmDownload<'a> {
                 {
                     RejectDisposition::Accepted { .. } | RejectDisposition::Stale => {}
                     RejectDisposition::NeverRequested => {
-                        return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "REJECT_REQUEST did not match an outstanding request",
+                        });
                     }
                 }
             }
@@ -4910,12 +4951,18 @@ impl<'a> ContentSwarmDownload<'a> {
                 let Ok(length) = u32::try_from(block.len()) else {
                     self.control
                         .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "PIECE payload length exceeded protocol geometry",
+                    });
                 };
                 let Ok(key) = BlockKey::new(index, begin, length) else {
                     self.control
                         .record_bytes(ByteMetric::PeerUnclassifiedReceived, block.len());
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "PIECE block geometry was invalid",
+                    });
                 };
                 let disposition = match self.state.receive_block(connection, key, now) {
                     Ok(disposition) => disposition,
@@ -4996,7 +5043,10 @@ impl<'a> ContentSwarmDownload<'a> {
                             .map_err(DownloadError::Swarm)?
                             .negotiated
                         {
-                            return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                            return Ok(ContentMessageDisposition::ClosePeer {
+                                failure: PeerFailure::Protocol,
+                                reason: "fast-extension peer sent an unsolicited PIECE",
+                            });
                         }
                     }
                 }
@@ -5006,7 +5056,10 @@ impl<'a> ContentSwarmDownload<'a> {
                     .apply_extension_handshake(connection, &payload)
                     .is_err()
                 {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "extension handshake update was invalid",
+                    });
                 }
             }
             PeerMessage::Extended {
@@ -5014,7 +5067,10 @@ impl<'a> ContentSwarmDownload<'a> {
                 payload,
             } => match peers.receive_pex(connection, &payload, !self.metainfo.private) {
                 Ok(PexReceiveDisposition::RateLimited { close: true, .. }) | Err(_) => {
-                    return Ok(ContentMessageDisposition::ClosePeer(PeerFailure::Protocol));
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "PEX input required closing the peer",
+                    });
                 }
                 Ok(_) => {}
             },
@@ -6031,7 +6087,9 @@ async fn run_selective_swarm_loop(
             _ => {}
         }
         peers.publish_peer_registry(false);
-        for (connection, failure) in download.service_outgoing_uploads(sockets).await? {
+        for (connection, failure, reason) in download.service_outgoing_uploads(sockets).await? {
+            let diagnostic = DownloadError::PeerTask(format!("content peer rejected: {reason}"));
+            peers.control.observe_content_error(Some(&diagnostic));
             download.remove_outgoing_upload(connection).await;
             if sockets.contains(connection) {
                 close_content_connection(
@@ -6501,10 +6559,12 @@ async fn apply_content_disposition(
 ) -> Result<(), DownloadError> {
     match disposition {
         ContentMessageDisposition::Continue => {}
-        ContentMessageDisposition::ClosePeer(failure) => {
+        ContentMessageDisposition::ClosePeer { failure, reason } => {
             let connection = connection.ok_or(DownloadError::Swarm(SwarmError::Invariant(
                 "storage completion cannot close a peer",
             )))?;
+            let diagnostic = DownloadError::PeerTask(format!("content peer rejected: {reason}"));
+            peers.control.observe_content_error(Some(&diagnostic));
             download
                 .close_content_peer(
                     peers,
