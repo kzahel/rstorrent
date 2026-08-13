@@ -1081,4 +1081,15 @@ no reverse throughput claim follows.
 Tacticals `142`, `145`, and `150` are complete. BEP 29 remains **Partial**;
 another NAT mechanism, IPv6 uTP, MSE-over-uTP, broader reverse-direction
 evidence, and any support-claim graduation remain separate decisions. The
-authoritative engine queue moves to Tactical `151`.
+authoritative queue currently runs correctness Tactical `152`, then returns
+to ready Tactical `151`.
+
+Planned Tactical
+[`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) records the
+next performance frontier without reopening this WAN campaign. A wired Mac
+through its 1 GbE USB-C adapter and a desktop-class 2.5 GbE workstation form a
+gigabit-effective path, suitable for testing roughly 80,000 uTP DATA datagrams
+per second plus acknowledgements. The tactical measures native Linux/macOS and
+native Windows separately, compares RSTorrent uTP with its own TCP and pinned
+libtorrent, and stops before an evidence-selected production optimization. It
+is deferred behind the authoritative product and pure-v2 queue.

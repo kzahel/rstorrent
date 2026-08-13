@@ -165,6 +165,15 @@ longer selects a repair. A reverse local-seed smoke stops before payload on
 typed absence of an accepted UPnP IGD service on the current network, cleans
 exactly, and makes no reverse throughput claim.
 
+Planned Tactical
+[`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) owns a later
+wired-LAN packet-rate ceiling measurement. The initial physical topology is
+gigabit-effective because the development Mac has a 1 GbE USB-C adapter even
+when the workstation negotiates 2.5 GbE. It uses both physical directions,
+forced TCP/uTP, pinned libtorrent and own-TCP controls, 8 or 16 GiB stable
+fixtures, native Linux or Windows, and a separate native Windows epoch when
+available. It does not alter the completed WAN result or current queue.
+
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

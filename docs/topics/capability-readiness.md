@@ -467,6 +467,13 @@ corroboration. The separate remote-placement RSTorrent TCP seed disconnect and
 current-network local UPnP limitation remain typed evidence outside that
 completed campaign.
 
+Decision-complete Tactical
+[`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) is deferred
+behind the current queue. It will measure the higher packet-rate frontier over
+a wired gigabit-effective Mac-to-desktop LAN, with native Linux or Windows as
+the first workstation epoch and native Windows recorded separately when
+available. It does not claim 2.5 GbE while the Mac endpoint uses 1 GbE.
+
 Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
 local service discovery,

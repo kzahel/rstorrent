@@ -703,6 +703,11 @@ that scope and its cleanup or compatibility rules explicitly.
   active authoritative Now; narrows long-lived selected-root coordination to
   exact files and requires controlled multifile plus physical Big Buck Bunny
   completion, system playback, and exact cleanup evidence.
+- [`153-wired-lan-utp-data-plane-scalability.md`](153-wired-lan-utp-data-plane-scalability.md):
+  planned after the current queue; measures RSTorrent TCP/uTP and pinned-
+  libtorrent throughput over a wired gigabit-effective Mac-to-Linux/Windows
+  LAN, attributes packet-rate ceilings, and records native Windows separately
+  without claiming 2.5 GbE through the Mac's 1 GbE adapter.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
