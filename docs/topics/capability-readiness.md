@@ -446,11 +446,13 @@ App Store, TestFlight, or public-release claim is made.
 
 ### Next
 
-- Plan and execute the bounded Stage 3 pure-v2 `.torrent` vertical only after
-  Tactical `150` reaches its stopping condition. Completed Tactical `146`
-  provides the runtime-free foundation; the future tactical must still own
-  local download/check/restart/publication/seed behavior and proportional
-  Android evidence.
+- Execute planned Tactical
+  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) only
+  after Tactical `150` reaches its stopping condition. Completed Tactical
+  `146` provides the runtime-free foundation; `151` owns complete-local-source
+  pure-v2 download, checking, restart, publication, verified reads, seeding,
+  generated boundaries, and proportional Android evidence while deferring
+  magnets, hash exchange, and hybrids.
 
 ### Later
 

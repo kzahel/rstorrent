@@ -10,8 +10,9 @@ and first-party client foundation. Completed Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) adds
 the runtime-free exact parser, aligned geometry, Merkle core, strict complete
 piece layers, and hybrid structural validator. RSTorrent still rejects v2 and
-hybrid metainfo and magnets at every product boundary. Tactical `145` remains
-paused at its congestion-policy review gate.
+hybrid metainfo and magnets at every product boundary. Planned Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
+decision-complete Stage 3 successor, queued after active uTP Tactical `150`.
 
 ## Scope And Owning Role
 
@@ -410,10 +411,12 @@ runtime design.
 
 ## Tactical Campaign
 
-The first two stages are complete. Readiness now selects planning the bounded
-Stage 3 pure-v2 vertical tactical; later numbers remain unassigned until that
-document is ready. Adjacent stages may be combined only when the resulting
-scope remains bounded and its stopping condition becomes clearer.
+The first two stages are complete. Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) now owns
+the bounded Stage 3 pure-v2 vertical and is queued after active Tactical
+`150`; later stages remain unassigned. Adjacent stages may be combined only
+when the resulting scope remains bounded and its stopping condition becomes
+clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
@@ -443,7 +446,7 @@ piece layers, and proofs. Both Android ABIs compile with no generated contract
 change. The stage owns no socket or filesystem task and makes no product
 support claim.
 
-### 3. Pure-v2 `.torrent` download, checking, and seeding
+### 3. [Pure-v2 `.torrent` download, checking, and seeding](../tactical/151-complete-source-pure-v2-runtime-vertical.md)
 
 Thread v2 geometry and integrity through storage planning, block hashing,
 piece completion, selective files, part storage, durable have, recheck,
@@ -548,10 +551,10 @@ the final tail pad, not missing internal padding.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records planning the
-bounded Stage 3 pure-v2 `.torrent` vertical slice as the sole **Now** after
-completed Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
-Tactical `145` remains paused at its existing review gate. Product input and
-wire support remain v1-only and the protocol ledger remains **Unsupported**
-for BEP 52.
+[`capability-readiness.md`](capability-readiness.md) records active Tactical
+`150` as the sole **Now**. Decision-complete Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
+next bounded Stage 3 pure-v2 `.torrent` vertical after `150` reaches its
+stopping condition. Product input and wire support remain v1-only and the
+protocol ledger remains **Unsupported** for BEP 52 until `151` earns its exact
+complete-local-source subset.

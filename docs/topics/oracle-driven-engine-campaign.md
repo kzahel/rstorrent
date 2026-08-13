@@ -111,9 +111,11 @@ the engine campaign. Product Tacticals
 [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
 are complete. Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is also
-complete. Planning its bounded Stage 3 pure-v2 vertical successor is the sole
-authoritative **Now**; Tactical `145` remains paused at its existing human-
-review gate rather than resuming implicitly.
+complete. Maintainer approval resumed Tactical `145` through active child
+[`150`](../tactical/150-bounded-utp-sender-startup.md), now the sole
+authoritative **Now**. Decision-complete pure-v2 successor Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is queued
+after `150` rather than competing with it.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -479,17 +481,15 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **Tactical `146` is complete; planning the bounded
-Stage 3 pure-v2 vertical tactical is the sole Now, while Tactical `145`
-remains paused under parent Tactical `142`.** Tactical `145` has reached its
-production congestion-policy human-review gate. Explicit maintainer direction
-on 2026-08-13 moved the sole authoritative **Now** through product Tacticals
-`147` to `149`; that bounded iOS campaign and the previously queued Tactical
-`146` are now complete. Completed Tactical `143` installs the
+Engine campaign status: **Tactical `150` is the sole Now under active parent
+Tactical `145`; decision-complete pure-v2 Tactical `151` is Next.** Maintainer
+approval selected the bounded sender-startup recommendation and resumed the
+uTP campaign after product Tacticals `147` to `149` and previously queued
+Tactical `146` completed. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
-and generated first-party identity contract. Tactical `142` and its paused
-child Tactical `145` retain their evidence and exact restart checkpoint.
+and generated first-party identity contract. Tactical `142`, parent Tactical
+`145`, and active child `150` retain the exact uTP restart checkpoint.
 
 Latest completed engine tactical:
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
@@ -497,10 +497,10 @@ It establishes exact v2/hybrid metainfo, aligned geometry, strict complete
 piece layers, bounded Merkle primitives, structural hybrid validation, and a
 controlled pinned-libtorrent oracle while leaving product admission and every
 runtime/wire path v1-only. Both Android ABIs and the full workspace pass with
-no generated contract change. The next executable campaign action is to write
-the decision-complete Stage 3 pure-v2 local `.torrent` vertical tactical;
-resolving Tactical `145`'s reached policy gate remains a separate maintainer
-decision.
+no generated contract change. Planned Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
+decision-complete Stage 3 pure-v2 local `.torrent` vertical and becomes the
+next executable campaign action only after active Tactical `150` closes.
 
 Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
