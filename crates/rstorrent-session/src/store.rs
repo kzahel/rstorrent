@@ -4076,8 +4076,11 @@ where
             "file selection requires verified metadata".to_owned(),
         )
     })?;
-    let metainfo = Metainfo::from_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+    let metainfo_source = read_verbatim_metainfo_source(transaction, &torrent_id)
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
+    let content = parse_durable_content(&raw_info, metainfo_source.as_deref())
+        .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
+    let files = content.files().collect::<Vec<_>>();
     for file_index in file_indices.clone() {
         let file_index = usize::try_from(file_index).map_err(|_| {
             (
@@ -4085,13 +4088,13 @@ where
                 "file selection index exceeds the supported file bound".to_owned(),
             )
         })?;
-        let file = metainfo.files.get(file_index).ok_or_else(|| {
+        let file = files.get(file_index).ok_or_else(|| {
             (
                 ErrorCode::InvalidRequest,
                 format!("file index {file_index} is outside verified metadata"),
             )
         })?;
-        if file.padding {
+        if file.padding() {
             return Err((
                 ErrorCode::InvalidRequest,
                 format!("padding file {file_index} cannot be selected"),
@@ -6048,6 +6051,36 @@ mod tests {
         assert!(resume.magnet.is_empty());
         assert_eq!(resume.state, TorrentState::Paused);
 
+        for (request_id, priority) in [
+            ("skip-pure-v2-file", FilePriority::Skip),
+            ("restore-pure-v2-file", FilePriority::Normal),
+        ] {
+            store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::SetFilePriority {
+                        torrent_id: torrent_id.clone(),
+                        file_indices: vec![0],
+                        priority,
+                    },
+                })
+                .expect("change pure-v2 file priority");
+            assert_eq!(
+                store
+                    .load_resume(&torrent_id)
+                    .expect("load pure-v2 selection")
+                    .skip_files,
+                if priority == FilePriority::Skip {
+                    vec![0]
+                } else {
+                    Vec::new()
+                }
+            );
+        }
+
+        let selection_revision = store.revision().expect("selection revision");
         let duplicate = store
             .handle_torrent_bytes(
                 &torrent_bytes_request("duplicate-pure-v2", &source),
@@ -6056,7 +6089,7 @@ mod tests {
             .expect("deduplicate pure-v2 source");
         let duplicate_id = added_torrent_id(&duplicate);
         assert_eq!(duplicate_id, torrent_id);
-        assert_eq!(duplicate.revision, added.revision);
+        assert_eq!(duplicate.revision, selection_revision.to_string());
 
         store
             .record_piece(&torrent_id, 0)
