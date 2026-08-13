@@ -415,6 +415,7 @@ def _rstorrent_transport_evidence(result: dict[str, Any]) -> dict[str, Any]:
             "storage_write_batch_bytes_high_water",
             "storage_hash_queue_wait_max_micros",
             "storage_hash_service_max_micros",
+            "content_last_error",
             "peer_methods",
         )
     }

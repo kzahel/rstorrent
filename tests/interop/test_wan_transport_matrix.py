@@ -89,11 +89,16 @@ class WanTransportMatrixTests(unittest.TestCase):
                 "diagnostics": {
                     "peer_methods": {"utp_high_water": 1},
                     "content_peers": [{"remote": "forbidden"}],
+                    "content_last_error": "peer task set: bounded semantic reason",
                     "storage_jobs_high_water": 3,
                 },
             }
         )
         self.assertNotIn("content_peers", evidence["diagnostics"])
+        self.assertEqual(
+            evidence["diagnostics"]["content_last_error"],
+            "peer task set: bounded semantic reason",
+        )
         self.assertEqual(evidence["diagnostics"]["storage_jobs_high_water"], 3)
 
     def test_dry_run_selects_without_network_or_files(self) -> None:
