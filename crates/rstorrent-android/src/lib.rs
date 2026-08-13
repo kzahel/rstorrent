@@ -335,6 +335,7 @@ impl AndroidApplicationClient {
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .prepare_platform_storage_replacement("downloads")
             .await
+            .map(|torrent_ids| torrent_ids.into_iter().next())
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 

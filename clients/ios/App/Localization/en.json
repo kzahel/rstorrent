@@ -127,6 +127,7 @@
   "settings_storage_description": "Download folders",
   "settings_download_folder_label": "Download folder",
   "settings_download_folder_choose_button": "Choose folder",
+  "settings_download_folder_repair_button": "Repair Folder Access",
   "settings_download_folder_reset_button": "Use internal storage",
   "settings_download_folder_internal": "Internal storage",
   "settings_download_folder_footer": "Torrents download into the selected folder.",

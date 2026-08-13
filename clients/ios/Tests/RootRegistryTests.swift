@@ -49,4 +49,30 @@ final class RootRegistryTests: XCTestCase {
             )
         )
     }
+
+    func testRepairPreservesOpaqueIDAndAdvancesGeneration() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "rstorrent-ios-registry-repair-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RootRegistryStore(
+            fileURL: directory.appendingPathComponent("roots.json")
+        )
+        let installed = try await store.install(
+            bookmarkData: Data([1]),
+            displayLabel: "Original"
+        )
+        let repaired = try await store.replace(
+            id: installed.id,
+            bookmarkData: Data([2]),
+            displayLabel: "Replacement"
+        )
+
+        XCTAssertEqual(repaired.id, installed.id)
+        XCTAssertEqual(repaired.generation, installed.generation + 1)
+        XCTAssertEqual(repaired.displayLabel, "Replacement")
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.selectedRoots, [repaired])
+    }
 }

@@ -6,6 +6,7 @@ struct SettingsScreen: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject var presentation: IOSPresentationRepository
     @State private var isPresentingFolderPicker = false
+    @State private var repairingRootID: String?
 
     private var defaultRoot: RootDisplayItem? {
         let id = presentation.storage?.defaultRoot ?? "ios-documents"
@@ -60,6 +61,14 @@ struct SettingsScreen: View {
                                 ? "folder.fill" : "exclamationmark.triangle.fill"
                         )
                         Text(root.detail).font(.caption).foregroundStyle(.secondary)
+                        if !root.available, root.id != "ios-documents" {
+                            Button(L10n.string("settings_download_folder_repair_button")) {
+                                repairingRootID = root.id
+                                isPresentingFolderPicker = true
+                            }
+                            .accessibilityLabel("Repair \(root.label)")
+                            .disabled(appModel.isBusy)
+                        }
                     }
                 }
             }
@@ -78,8 +87,20 @@ struct SettingsScreen: View {
         .sheet(isPresented: $isPresentingFolderPicker) {
             DownloadFolderPicker(
                 isPresented: $isPresentingFolderPicker,
-                onPick: { url in Task { await appModel.selectFolder(url) } }
+                onPick: { url in
+                    let rootID = repairingRootID
+                    Task {
+                        if let rootID {
+                            await appModel.repairFolder(rootID: rootID, with: url)
+                        } else {
+                            await appModel.selectFolder(url)
+                        }
+                    }
+                }
             )
+        }
+        .onChange(of: isPresentingFolderPicker) { presented in
+            if !presented { repairingRootID = nil }
         }
     }
 }

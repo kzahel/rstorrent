@@ -53,7 +53,8 @@ final class AppModel: ObservableObject {
             let document = try await rootStore.load()
             let restored = await restore(document.selectedRoots)
             let currentDocument = try await rootStore.load()
-            try await open(records: currentDocument.selectedRoots)
+            let health = try await open(records: currentDocument.selectedRoots)
+            let reconciled = reconcile(restored, with: health)
             roots = [
                 RootDisplayItem(
                     id: "ios-documents",
@@ -61,11 +62,11 @@ final class AppModel: ObservableObject {
                     available: true,
                     detail: "On My iPhone"
                 )
-            ] + restored
+            ] + reconciled
             engineStatus = "Ready"
             if document.selectedRoots.isEmpty {
                 selectionStatus = "No external folder selected"
-            } else if restored.allSatisfy(\.available) {
+            } else if reconciled.allSatisfy(\.available) {
                 selectionStatus = "External folders ready"
             } else {
                 selectionStatus = "An external folder needs repair"
@@ -98,6 +99,52 @@ final class AppModel: ObservableObject {
             _ = try await dispatch(.setDefaultStorageRoot(storageRoot: record.id))
             selectionStatus = "\(record.displayLabel) is ready"
         } catch {
+            selectionStatus = error.localizedDescription
+        }
+    }
+
+    func repairFolder(rootID: String, with url: URL) async {
+        guard !isBusy else { return }
+        guard rootID != "ios-documents" else {
+            selectionStatus = "The app-owned folder does not require bookmark repair."
+            return
+        }
+        isBusy = true
+        selectionStatus = "Checking replacement folder…"
+        defer { isBusy = false }
+        var restartTorrentIDs: [String] = []
+        do {
+            let document = try await rootStore.load()
+            guard document.selectedRoots.contains(where: { $0.id == rootID }) else {
+                throw AppModelError.unknownStorageRoot
+            }
+            let otherRecords = document.selectedRoots.filter { $0.id != rootID }
+            let otherURLs = await resolvedURLs(otherRecords)
+            let documentsURL = documentsURL
+            let qualified = try await Task.detached {
+                try RootAccess.qualifySelection(
+                    url,
+                    registeredURLs: [documentsURL] + otherURLs
+                )
+            }.value
+            guard let client else { throw AppModelError.notReady }
+            restartTorrentIDs = try await client.preparePlatformRootReplacement(rootId: rootID)
+            let record = try await rootStore.replace(
+                id: rootID,
+                bookmarkData: qualified.bookmarkData,
+                displayLabel: qualified.displayLabel
+            )
+            try await restart()
+            for torrentID in restartTorrentIDs {
+                _ = try await dispatch(.resume(torrentId: torrentID))
+            }
+            selectionStatus = "\(record.displayLabel) repaired"
+        } catch {
+            if client != nil {
+                for torrentID in restartTorrentIDs {
+                    try? await dispatch(.resume(torrentId: torrentID))
+                }
+            }
             selectionStatus = error.localizedDescription
         }
     }
@@ -217,7 +264,7 @@ final class AppModel: ObservableObject {
         let document = try await rootStore.load()
         let restored = await restore(document.selectedRoots)
         let currentDocument = try await rootStore.load()
-        try await open(records: currentDocument.selectedRoots)
+        let health = try await open(records: currentDocument.selectedRoots)
         roots = [
             RootDisplayItem(
                 id: "ios-documents",
@@ -225,10 +272,10 @@ final class AppModel: ObservableObject {
                 available: true,
                 detail: "On My iPhone"
             )
-        ] + restored
+        ] + reconcile(restored, with: health)
     }
 
-    private func open(records: [SelectedRootRecord]) async throws {
+    private func open(records: [SelectedRootRecord]) async throws -> [String: Bool] {
         let roots = [
             IosStorageRootConfig(
                 id: "ios-documents",
@@ -258,6 +305,23 @@ final class AppModel: ObservableObject {
         }
         if !records.isEmpty {
             _ = try await opened.probePlatformStorageRoots()
+        }
+        let health = try await opened.storageRootHealth()
+        return Dictionary(uniqueKeysWithValues: health.map { ($0.rootId, $0.available) })
+    }
+
+    private func reconcile(
+        _ restored: [RootDisplayItem],
+        with health: [String: Bool]
+    ) -> [RootDisplayItem] {
+        restored.map { root in
+            guard root.available, health[root.id] == false else { return root }
+            return RootDisplayItem(
+                id: root.id,
+                label: root.label,
+                available: false,
+                detail: "Root access probe failed; repair folder access."
+            )
         }
     }
 
@@ -376,6 +440,7 @@ enum AppModelError: Error, LocalizedError {
     case missingAddResult
     case invalidTorrentLength(Int)
     case emptyPublicationManifest
+    case unknownStorageRoot
 
     var errorDescription: String? {
         switch self {
@@ -389,6 +454,8 @@ enum AppModelError: Error, LocalizedError {
             return "The selected torrent file has an unsupported size (\(count) bytes)."
         case .emptyPublicationManifest:
             return "The engine prepared no files for publication."
+        case .unknownStorageRoot:
+            return "The storage root is no longer registered."
         }
     }
 }

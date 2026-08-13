@@ -2394,7 +2394,7 @@ impl ApplicationService {
     pub async fn prepare_platform_storage_replacement(
         &mut self,
         root_id: &str,
-    ) -> Result<Option<String>, ApplicationError> {
+    ) -> Result<Vec<String>, ApplicationError> {
         self.reap_finished().await?;
         if !matches!(
             self.store_mut()?
@@ -2419,7 +2419,7 @@ impl ApplicationService {
             self.pause(torrent_id).await?;
         }
         self.storage_file_pool.invalidate_all();
-        Ok(restarts.into_iter().next())
+        Ok(restarts)
     }
 
     pub async fn platform_removal_plan(
@@ -13001,7 +13001,7 @@ mod tests {
         let info_hash_hex = crate::control::encode_info_hash(info_hash);
         let mut configuration = config(&root);
         configuration.storage_roots = vec![ConfiguredStorageRoot::platform("downloads")];
-        let (client, _broker) = platform_storage_channel();
+        let (client, broker) = platform_storage_channel();
         configuration.platform_storage_client = Some(client);
         let torrent_id = {
             let mut store = SessionStore::open(
@@ -13029,6 +13029,25 @@ mod tests {
         let mut service = ApplicationService::open(configuration)
             .await
             .expect("open application");
+        let provider = tokio::spawn(async move {
+            let healthy = broker.next_request().await.expect("health request");
+            assert_eq!(healthy.operation, PlatformStorageOperation::Observe);
+            assert!(healthy.path.is_empty());
+            assert!(
+                broker.complete_observation(
+                    healthy.request_id,
+                    StorageObservation::present(StorageObjectKind::Directory, None, None)
+                        .expect("root observation"),
+                )
+            );
+        });
+        assert!(
+            service
+                .probe_platform_storage_roots()
+                .await
+                .expect("healthy root")
+        );
+        provider.await.expect("provider task");
         let plan = service
             .platform_published_file_plan(&torrent_id, 0)
             .await

@@ -17,7 +17,7 @@ use rstorrent_engine::{
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
     PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan, RequestEnvelope,
-    ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
+    ResponseEnvelope, StorageRootAvailability, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use rustix::fs::{CWD, RenameFlags, renameat_with};
 use sha1::{Digest, Sha1};
@@ -211,6 +211,12 @@ pub struct IosRootQualification {
     pub cleanup_complete: bool,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct IosStorageRootHealth {
+    pub root_id: String,
+    pub available: bool,
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 impl IosApplicationClient {
     #[uniffi::constructor]
@@ -292,6 +298,26 @@ impl IosApplicationClient {
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
+    pub async fn storage_root_health(&self) -> Result<Vec<IosStorageRootHealth>, IosClientError> {
+        self.service
+            .lock()
+            .await
+            .as_ref()
+            .ok_or_else(|| IosClientError::message("application client is shut down"))?
+            .storage_snapshot()
+            .map(|storage| {
+                storage
+                    .roots
+                    .into_iter()
+                    .map(|root| IosStorageRootHealth {
+                        root_id: root.root_id,
+                        available: root.availability == StorageRootAvailability::Available,
+                    })
+                    .collect()
+            })
+            .map_err(|error| IosClientError::message(error.to_string()))
+    }
+
     pub async fn prepared_files(
         &self,
         torrent_id: String,
@@ -348,7 +374,7 @@ impl IosApplicationClient {
     pub async fn prepare_platform_root_replacement(
         &self,
         root_id: String,
-    ) -> Result<Option<String>, IosClientError> {
+    ) -> Result<Vec<String>, IosClientError> {
         self.service
             .lock()
             .await
