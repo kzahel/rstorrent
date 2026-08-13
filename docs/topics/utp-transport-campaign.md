@@ -980,6 +980,25 @@ matrix likewise passes one-connection integrity and cleanup for all four uTP
 pairings. RSTorrent/RSTorrent reaches 94.5% of the libtorrent/libtorrent rate;
 the mixed directions remain below that local control and select the next
 throughput-attribution work.
+
+The first WAN RSTorrent/RSTorrent reliability reproduction then identifies a
+second recovery composition defect. SACK loss reduction leaves hundreds of
+already admitted later packets above the reduced congestion window, so the
+missing fast retransmission cannot pass ordinary window admission and the
+receiver eventually rejects the later flight beyond its 64-packet reorder
+allowance. Fast retransmission work now bypasses that window check, matching
+the relevant pinned-libtorrent distinction, while timer retransmission, new
+DATA, controller constants, loss reduction, and resource bounds remain
+unchanged. The exact 256 MiB verification stays on one connection, recovers
+766 packets, records zero retry exhaustion or peer error, and improves active
+rate 30.4% from 1.154 to 1.504 MiB/s. Repeated alternating reliability and
+throughput cohorts remain outstanding.
+
+The WAN lab no longer compiles RSTorrent on `pimom`. Its guarded
+machine-control Ubuntu ARM64 VM builds an exact clean archive with Rust 1.97.0
+and a persistent cache; the host and Pi verify glibc direction, Linux ARM64
+ELF, size, SHA-256, dynamic dependencies, and revision before atomic install.
+The Pi now owns execution, fixture, resource, and mapping evidence only.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

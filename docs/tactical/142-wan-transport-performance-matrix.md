@@ -310,13 +310,17 @@ directions before the focused repair tactical opens.
 
 ### Remote setup and exact 8 MiB WAN gate
 
-The remote per-user environment now has exact Rust 1.97.0, pinned libtorrent
-2.0.13.0, same-revision native RSTorrent release binaries, deterministic
-fixtures, and bounded resource sampling. The constrained device has roughly
+The remote per-user environment has pinned libtorrent 2.0.13.0,
+same-revision native RSTorrent release binaries, deterministic fixtures, and
+bounded resource sampling. The constrained device has roughly
 905 MiB RAM plus bounded compressed swap, about 50 GiB free on its ext4
-storage, and a 100-Mbit/s full-duplex wired link. A cold release build passed
-with `CARGO_BUILD_JOBS=1`; the device stayed controllable, and later builds
-reuse the isolated artifacts.
+storage, and a 100-Mbit/s full-duplex wired link. Early revisions proved a
+cold release build there with `CARGO_BUILD_JOBS=1`, but active child Tactical
+`145` has replaced that expensive loop. The existing UTM Ubuntu ARM64 VM now
+builds exact clean archives with Rust 1.97.0 and a persistent cache; the Pi
+only accepts size/SHA-256/ELF/`ldd`-verified artifacts through an atomic
+install and revision-bound manifest. The builder's glibc 2.39 is compatible
+with the Pi runtime's glibc 2.41.
 
 The remote gateway answers SSDP and implements the standard
 `WANIPConnection:1` service rather than the v2 service used by the first
@@ -440,10 +444,11 @@ gate.
 
 This tactical does not promise TCP-equivalent uTP, add a product performance
 setting, change transport defaults, run concurrent competing-flow fairness,
-add IPv6 uTP or MSE-over-uTP, install system packages, change gateway/Tailscale
-policy, use a public swarm, or optimize the Pi SD card or ISP.
+add IPv6 uTP or MSE-over-uTP, install system packages on the WAN peer, change
+gateway/Tailscale policy, use a public swarm, or optimize the Pi SD card or
+ISP.
 
-Ordinary harness repair, isolated per-user remote toolchain setup, repeated
+Ordinary harness repair, guarded off-device builder setup, repeated
 authorized cases, conservative tighter limits, and a causally scoped fix at
 an already accepted uTP owner do not require routine review. Stop for human
 direction if evidence calls for a new dependency, protocol/product policy,

@@ -1,7 +1,7 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Active under parent Tactical 142; Stage 1 terminal provenance and
-the first Stage 2 clean repeated-cycle gate are implemented.** Maintainer
+Status: **Active under parent Tactical 142; terminal provenance, repeated-cycle
+gates, release recovery repairs, and off-device WAN builds are implemented.** Maintainer
 direction on 2026-08-13 selects this tactical after Tactical `143` completed
 and activates continued uTP performance work with the goal of approaching
 pinned-libtorrent uTP throughput. This tactical may autonomously diagnose and
@@ -293,6 +293,67 @@ storage path imposes the mixed-uTP ceilings. The uTP-specific local ratios are
 datagram, ACK, and runtime-turn utilization therefore remain the selected
 owners after reliability.
 
+### Stage 4: blocked fast recovery and WAN verification
+
+The first exact RSTorrent/RSTorrent 256 MiB WAN reproduction after terminal
+provenance completed only after a peer reconnect. The leecher rejected 751
+later DATA packets outside its unchanged 64-packet reorder allowance, while
+the seed retained 752 outstanding packets and one pending fast
+retransmission. One SACK loss signal had halved the congestion window below
+the already admitted later flight, and ordinary window admission prevented
+the missing packet from being emitted. The peer owner consequently timed out
+after 15 seconds and restarted the connection. Ingress remained within its
+existing bounds and neither endpoint reported retry exhaustion, protocol
+error, or runtime I/O error.
+
+Pinned libtorrent's `src/utp_stream.cpp::resend_packet` bypasses window
+admission for a SACK-selected fast retransmission while retaining the window
+check for timer retransmission. RSTorrent now carries the same distinction as
+bounded retransmission-work provenance: ACK/SACK loss and message-too-large
+recovery are fast, timeout recovery is ordinary, and an already queued item
+can only upgrade to fast. Fast recovery may emit the missing already-admitted
+packet despite the reduced window; new DATA and timeout retransmission remain
+unchanged. An independently authored nine-packet regression proves the
+missing packet can be emitted after loss reduction leaves the later flight
+above the new window. `TARGET`, `GAIN`, `ALLOWED_INCREASE`, loss reduction,
+resource bounds, and new-DATA admission do not change.
+
+At exact revision `8c7e985dcd5cf8124b0b8a8a93b0cb54995df3a7`, the same
+ordinary-Internet RSTorrent/RSTorrent 256 MiB case then verifies every byte
+and all 1,024 pieces on one connection. The seed emits 766 retransmission
+datagrams after one loss reduction with zero retry exhaustion; the leecher
+records zero peer failure or content error. Active rate improves from 1.154
+to 1.504 MiB/s, a 30.4% increase. The matrix summary's `stable: false` for
+this cell means only that fewer than three repetitions exist; it is not a
+transport-instability observation. Repeated alternating reliability samples
+remain required.
+
+### Off-device ARM64 WAN builder
+
+Remote preparation no longer runs Cargo or rustc on `pimom`. The harness uses
+the private-inventory-backed `machine-control --target linux` route to start
+and inspect the existing Ubuntu 24.04 UTM guest, then stages an exact
+`git archive` into `/opt/rstorrent-builder`. The guest is native `aarch64`,
+uses glibc 2.39, has exact Rust/Cargo 1.97.0, builds with four jobs, and keeps
+only Cargo registry and target caches between revisions. Per-revision source,
+compressed outputs, and host staging are removed after each build.
+
+The development host independently requires a Linux ARM64 ELF and computes
+its SHA-256 and size. The Pi accepts the binary only when its glibc is at least
+the builder's, the uploaded size and digest match, `file` reports ARM64 ELF,
+`ldd` finds every dependency, and an atomic mode-0755 install succeeds. A
+revision-bound manifest records those digests plus minimized builder/runtime
+facts. The staged-revision fence is published last, after artifacts and exact
+fixtures succeed; a partial preparation cannot be resumed.
+
+The cold proof built both WAN roles in about two minutes. A later full
+same-revision VM-to-Pi preparation at exact revision
+`e78486713fe7b6a87a5d374868c45fb0dc7aa785` completed the cached builder and
+artifact staging phase in 87.880 seconds, verified both installed hashes, and
+left no VM revision stage, Pi upload stage, Cargo process, or rustc process.
+The retained VM caches occupy 486 MiB of target data and 271 MiB of registry
+data. The Pi is now an execution and fixture endpoint only.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text
@@ -407,6 +468,11 @@ runtime infrastructure into protocol state.
   existing 12-hour per-1-GiB case deadline, two-times-payload wire stop,
   bounded capture, disk headroom, atomic journal, revision fence, redaction,
   exact cleanup, and authorized traffic scope remain in force.
+- Remote RSTorrent artifacts are built only by the guarded ARM64 Linux VM.
+  Builder glibc must not exceed the Pi runtime, exact Rust 1.97.0 and a clean
+  committed archive are required, a single flock-guarded four-job build owns
+  the persistent cache, and size/SHA-256/ELF/`ldd` checks precede atomic
+  installation. The WAN peer does not run Cargo or rustc.
 
 ## Validation And Acceptance Gates
 

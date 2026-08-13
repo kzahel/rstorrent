@@ -579,9 +579,17 @@ then selects and a release-profile regression reproduces retransmission queue
 removal compiled away inside `debug_assert!`; the mutation is now
 unconditional. The repaired 256 MiB mixed WAN cell completes over one uTP
 connection with zero retry exhaustion, peer failure, TCP, or ingress drop and
-improves 27.7% to 2.093 MiB/s across 185,178 seed payload packets. The next
-executable action is fixed-profile/RSTorrent-sender composition and the
-alternating reliability cohort. The
+improves 27.7% to 2.093 MiB/s across 185,178 seed payload packets. A subsequent
+RSTorrent/RSTorrent reproduction proves SACK fast recovery was blocked after
+loss reduction moved the window below the later admitted flight. Fast
+retransmission now bypasses that admission without changing controller policy;
+the exact 256 MiB WAN verification remains on one connection, emits 766
+recovery datagrams, and improves 30.4% to 1.504 MiB/s with zero retry or peer
+failure. Remote preparation now builds exact ARM64 artifacts in the guarded
+UTM Linux VM and stages only verified binaries to `pimom`; the peer no longer
+runs Cargo or rustc. The next executable action is repeated alternating
+256 MiB reliability samples, followed by residual utilization attribution on
+valid one-connection cohorts. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

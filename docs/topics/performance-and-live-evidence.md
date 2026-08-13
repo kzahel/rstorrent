@@ -70,6 +70,22 @@ reliability the first gate, and then targets at least `0.85x` the alternating
 matched libtorrent/libtorrent uTP median for every RSTorrent-containing
 pairing. Controller-policy changes remain review-gated behind causal A/B
 fairness evidence.
+
+Tactical `145` has since repaired two release recovery defects. The second
+allows an ACK/SACK-selected fast retransmission to bypass a congestion window
+that loss reduction moved below the already admitted later flight, while
+timer retransmission and new DATA retain ordinary admission. The exact
+256 MiB RSTorrent/RSTorrent WAN verification stays on one connection, sends
+766 recovery datagrams with zero retry exhaustion or peer error, and improves
+from 1.154 to 1.504 MiB/s. This is one reliability sample, not the required
+three-repetition throughput cohort.
+
+WAN preparation also no longer compiles on the constrained peer. A guarded
+Ubuntu 24.04 ARM64 UTM guest builds exact committed archives with Rust 1.97.0
+and a persistent cache. The host and Pi fence every artifact by architecture,
+glibc direction, size, SHA-256, dynamic dependencies, and revision before an
+atomic install. The first full cached VM-to-Pi preparation took 87.880 seconds
+and left no per-revision builder/upload stage or Pi compiler process.
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

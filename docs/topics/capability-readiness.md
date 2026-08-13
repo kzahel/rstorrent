@@ -428,6 +428,9 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
   uTP campaign through parent Tactical `142`. First make sustained transfers
   reliable on one connection, then close the measured throughput gap against
   matched pinned-libtorrent uTP without weakening delay/fairness behavior.
+  Two causal release recovery repairs now pass individual 256 MiB WAN gates;
+  repeated reliability and near-parity cohorts remain. Remote revisions are
+  built in the guarded ARM64 Linux VM, not on the constrained WAN peer.
 
 ### Next
 
