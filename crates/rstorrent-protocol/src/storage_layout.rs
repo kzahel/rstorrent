@@ -2,8 +2,10 @@ use std::error::Error;
 use std::fmt;
 use std::ops::RangeInclusive;
 
-use crate::metainfo::{Metainfo, MetainfoFile};
+use crate::content::TorrentContent;
+use crate::metainfo::{Metainfo, MetainfoFile, MetainfoFormat};
 use crate::peer_wire::MAX_REQUEST_BLOCK_LENGTH;
+use crate::v2_layout::V2TorrentLayout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PieceClass {
@@ -145,6 +147,24 @@ impl FileSelection {
         Ok(Self { wanted })
     }
 
+    pub fn new_content(layout: &ContentLayout, skipped: &[usize]) -> Result<Self, LayoutError> {
+        let mut wanted: Vec<bool> = layout.files().iter().map(|file| !file.padding).collect();
+        for &index in skipped {
+            let file = layout
+                .files()
+                .get(index)
+                .ok_or(LayoutError::InvalidFileIndex {
+                    index,
+                    file_count: layout.files().len(),
+                })?;
+            if file.padding {
+                return Err(LayoutError::PaddingSelection { index });
+            }
+            wanted[index] = false;
+        }
+        Ok(Self { wanted })
+    }
+
     pub fn is_wanted(&self, index: usize) -> bool {
         self.wanted.get(index).copied().unwrap_or(false)
     }
@@ -169,8 +189,251 @@ impl FileSelection {
         Ok(())
     }
 
+    pub fn set_wanted_content(
+        &mut self,
+        layout: &ContentLayout,
+        index: usize,
+        wanted: bool,
+    ) -> Result<(), LayoutError> {
+        let file = layout
+            .files()
+            .get(index)
+            .ok_or(LayoutError::InvalidFileIndex {
+                index,
+                file_count: layout.files().len(),
+            })?;
+        if file.padding && wanted {
+            return Err(LayoutError::PaddingSelection { index });
+        }
+        self.wanted[index] = wanted;
+        Ok(())
+    }
+
     pub fn file_count(&self) -> usize {
         self.wanted.len()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContentLayout {
+    V1(TorrentLayout),
+    V2 {
+        layout: V2TorrentLayout,
+        files: Vec<MetainfoFile>,
+    },
+}
+
+impl From<TorrentLayout> for ContentLayout {
+    fn from(layout: TorrentLayout) -> Self {
+        Self::V1(layout)
+    }
+}
+
+impl ContentLayout {
+    pub fn from_content(content: &TorrentContent) -> Self {
+        match content {
+            TorrentContent::V1(content) => Self::V1(content.layout.clone()),
+            TorrentContent::V2(content) => Self::V2 {
+                layout: content.metainfo.layout.clone(),
+                files: content
+                    .metainfo
+                    .files
+                    .iter()
+                    .zip(content.metainfo.layout.files())
+                    .map(|(file, geometry)| MetainfoFile {
+                        path: file.path.clone(),
+                        length: file.length,
+                        offset: geometry.logical_offset(),
+                        padding: false,
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    pub const fn format(&self) -> MetainfoFormat {
+        match self {
+            Self::V1(_) => MetainfoFormat::V1,
+            Self::V2 { .. } => MetainfoFormat::V2,
+        }
+    }
+
+    pub fn files(&self) -> &[MetainfoFile] {
+        match self {
+            Self::V1(layout) => layout.files(),
+            Self::V2 { files, .. } => files,
+        }
+    }
+
+    pub fn piece_count(&self) -> usize {
+        match self {
+            Self::V1(layout) => layout.piece_count(),
+            Self::V2 { layout, .. } => layout.piece_count(),
+        }
+    }
+
+    pub fn piece_length(&self) -> u32 {
+        match self {
+            Self::V1(layout) => layout.piece_length(),
+            Self::V2 { layout, .. } => layout.piece_length(),
+        }
+    }
+
+    pub fn total_length(&self) -> u64 {
+        match self {
+            Self::V1(layout) => layout.total_length(),
+            Self::V2 { layout, .. } => layout.payload_length(),
+        }
+    }
+
+    pub fn piece_length_at(&self, index: u32) -> Result<u32, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.piece_length_at(index),
+            Self::V2 { layout, .. } => layout
+                .piece(index)
+                .map(|piece| piece.payload_length)
+                .map_err(|_| LayoutError::InvalidPieceIndex {
+                    index,
+                    piece_count: layout.piece_count(),
+                }),
+        }
+    }
+
+    pub fn segments(
+        &self,
+        piece: u32,
+        begin: u32,
+        length: u32,
+        selection: &FileSelection,
+    ) -> Result<Vec<LayoutSegment>, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.segments(piece, begin, length, selection),
+            Self::V2 { layout, files } => {
+                if length == 0 {
+                    return Err(LayoutError::EmptyInterval);
+                }
+                if selection.file_count() != files.len() {
+                    return Err(LayoutError::InvalidFileIndex {
+                        index: selection.file_count(),
+                        file_count: files.len(),
+                    });
+                }
+                let geometry = layout
+                    .piece(piece)
+                    .map_err(|_| LayoutError::InvalidPieceIndex {
+                        index: piece,
+                        piece_count: layout.piece_count(),
+                    })?;
+                let end = begin
+                    .checked_add(length)
+                    .ok_or(LayoutError::IntervalOutOfRange {
+                        piece,
+                        begin,
+                        length,
+                        piece_length: geometry.payload_length,
+                    })?;
+                if end > geometry.payload_length {
+                    return Err(LayoutError::IntervalOutOfRange {
+                        piece,
+                        begin,
+                        length,
+                        piece_length: geometry.payload_length,
+                    });
+                }
+                let file_offset = geometry
+                    .file_offset
+                    .checked_add(u64::from(begin))
+                    .ok_or(LayoutError::ArithmeticOverflow)?;
+                let target = if selection.is_wanted(geometry.file_index) {
+                    SegmentTarget::WantedFile {
+                        file_index: geometry.file_index,
+                        file_offset,
+                    }
+                } else {
+                    SegmentTarget::SkippedFile {
+                        file_index: geometry.file_index,
+                        file_offset,
+                    }
+                };
+                Ok(vec![LayoutSegment {
+                    piece_offset: begin,
+                    block_offset: 0,
+                    length: usize::try_from(length).map_err(|_| LayoutError::ArithmeticOverflow)?,
+                    target,
+                }])
+            }
+        }
+    }
+
+    pub fn request_ranges(
+        &self,
+        index: u32,
+        selection: &FileSelection,
+    ) -> Result<Vec<RequestRange>, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.request_ranges(index, selection),
+            Self::V2 { layout, .. } => {
+                let piece = layout
+                    .piece(index)
+                    .map_err(|_| LayoutError::InvalidPieceIndex {
+                        index,
+                        piece_count: layout.piece_count(),
+                    })?;
+                if !selection.is_wanted(piece.file_index) {
+                    return Ok(Vec::new());
+                }
+                let mut ranges = Vec::new();
+                let mut begin = 0;
+                while begin < piece.payload_length {
+                    let length = MAX_REQUEST_BLOCK_LENGTH.min(piece.payload_length - begin);
+                    ranges.push(RequestRange { begin, length });
+                    begin += length;
+                }
+                Ok(ranges)
+            }
+        }
+    }
+
+    pub fn file_piece_range(
+        &self,
+        index: usize,
+    ) -> Result<Option<RangeInclusive<u32>>, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.file_piece_range(index),
+            Self::V2 { layout, files } => {
+                let file = files.get(index).ok_or(LayoutError::InvalidFileIndex {
+                    index,
+                    file_count: files.len(),
+                })?;
+                if file.length == 0 {
+                    return Ok(None);
+                }
+                let range =
+                    layout
+                        .file_piece_range(index)
+                        .map_err(|_| LayoutError::InvalidFileIndex {
+                            index,
+                            file_count: files.len(),
+                        })?;
+                let last = range
+                    .end
+                    .checked_sub(1)
+                    .ok_or(LayoutError::ArithmeticOverflow)?;
+                Ok(Some(range.start..=last))
+            }
+        }
+    }
+
+    pub fn piece_has_skipped_file(
+        &self,
+        piece: u32,
+        selection: &FileSelection,
+    ) -> Result<bool, LayoutError> {
+        let length = self.piece_length_at(piece)?;
+        Ok(self
+            .segments(piece, 0, length, selection)?
+            .iter()
+            .any(|segment| matches!(segment.target, SegmentTarget::SkippedFile { .. })))
     }
 }
 
@@ -576,10 +839,11 @@ impl TorrentLayout {
 #[cfg(test)]
 mod tests {
     use super::{
-        FileSelection, LayoutError, PieceClass, RequestRange, RequiredPayloadGeometry,
-        SegmentTarget, TorrentLayout,
+        ContentLayout, FileSelection, LayoutError, PieceClass, RequestRange,
+        RequiredPayloadGeometry, SegmentTarget, TorrentLayout,
     };
     use crate::metainfo::{MAX_METAINFO_PIECES, Metainfo, MetainfoFile, MetainfoMode};
+    use crate::v2_layout::V2TorrentLayout;
 
     fn fixture() -> (TorrentLayout, FileSelection) {
         let lengths = [20_000, 50_000, 7_000, 18_000, 0, 3_304, 35_000];
@@ -620,6 +884,58 @@ mod tests {
         let layout = TorrentLayout::from_metainfo(&metainfo);
         let selection = FileSelection::new(&layout, &[1, 2]).expect("selection");
         (layout, selection)
+    }
+
+    #[test]
+    fn v2_content_layout_never_represents_alignment_gaps_as_segments() {
+        let v2 = V2TorrentLayout::new(16 * 1024, &[1, 16_385]).expect("v2 layout");
+        let layout = ContentLayout::V2 {
+            files: vec![
+                MetainfoFile {
+                    path: vec!["a".to_owned()],
+                    length: 1,
+                    offset: 0,
+                    padding: false,
+                },
+                MetainfoFile {
+                    path: vec!["b".to_owned()],
+                    length: 16_385,
+                    offset: 16 * 1024,
+                    padding: false,
+                },
+            ],
+            layout: v2,
+        };
+        let selection = FileSelection::new_content(&layout, &[0]).expect("selection");
+
+        assert_eq!(layout.piece_count(), 3);
+        assert_eq!(layout.piece_length_at(0), Ok(1));
+        assert_eq!(layout.piece_length_at(1), Ok(16 * 1024));
+        assert_eq!(layout.piece_length_at(2), Ok(1));
+        assert_eq!(layout.request_ranges(0, &selection), Ok(Vec::new()));
+        assert_eq!(
+            layout.request_ranges(1, &selection),
+            Ok(vec![RequestRange {
+                begin: 0,
+                length: 16 * 1024,
+            }])
+        );
+        assert_eq!(
+            layout.segments(2, 0, 1, &selection),
+            Ok(vec![super::LayoutSegment {
+                piece_offset: 0,
+                block_offset: 0,
+                length: 1,
+                target: SegmentTarget::WantedFile {
+                    file_index: 1,
+                    file_offset: 16 * 1024,
+                },
+            }])
+        );
+        assert!(matches!(
+            layout.segments(0, 1, 1, &selection),
+            Err(LayoutError::IntervalOutOfRange { .. })
+        ));
     }
 
     #[test]

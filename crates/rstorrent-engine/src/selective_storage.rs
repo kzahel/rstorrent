@@ -6,10 +6,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use rstorrent_protocol::metainfo::Metainfo;
+use rstorrent_protocol::content::{ExpectedPieceIntegrity, TorrentContent};
+use rstorrent_protocol::merkle::{MerkleAccumulator, MerkleError, Sha256Hash, hash_block};
+use rstorrent_protocol::metainfo::{Metainfo, MetainfoFormat};
 use rstorrent_protocol::peer_wire::{BlockRequest, MAX_REQUEST_BLOCK_LENGTH};
 use rstorrent_protocol::storage_layout::{
-    FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
+    ContentLayout, FileSelection, LayoutError, LayoutSegment, SegmentTarget, TorrentLayout,
 };
 use sha1::{Digest, Sha1};
 use tokio::fs::{File, OpenOptions};
@@ -293,7 +295,7 @@ pub struct TorrentArtifactIdentity {
 }
 
 impl TorrentArtifactIdentity {
-    fn part_file(self, layout: &TorrentLayout) -> PartFileIdentity {
+    fn part_file(self, layout: &ContentLayout) -> PartFileIdentity {
         PartFileIdentity {
             torrent_id: self.torrent_id,
             content_fingerprint: self.content_fingerprint,
@@ -350,6 +352,7 @@ pub enum SelectiveStorageError {
         actual: u64,
     },
     Layout(LayoutError),
+    Merkle(MerkleError),
     PartFile(PartFileError),
     MissingWantedFile {
         file_index: usize,
@@ -438,6 +441,7 @@ impl fmt::Display for SelectiveStorageError {
                 "resumable file {file_index} has length {actual}, expected {expected}"
             ),
             Self::Layout(error) => write!(formatter, "storage layout: {error}"),
+            Self::Merkle(error) => write!(formatter, "storage Merkle verification: {error}"),
             Self::PartFile(error) => write!(formatter, "part file: {error}"),
             Self::MissingWantedFile { file_index } => {
                 write!(formatter, "wanted file {file_index} is not open")
@@ -502,6 +506,7 @@ impl Error for SelectiveStorageError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Layout(error) => Some(error),
+            Self::Merkle(error) => Some(error),
             Self::PartFile(error) => Some(error),
             Self::NamespaceTransition(error) => Some(error),
             Self::Io { source, .. } => Some(source),
@@ -562,6 +567,12 @@ impl From<LayoutError> for SelectiveStorageError {
     }
 }
 
+impl From<MerkleError> for SelectiveStorageError {
+    fn from(error: MerkleError) -> Self {
+        Self::Merkle(error)
+    }
+}
+
 impl From<PartFileError> for SelectiveStorageError {
     fn from(error: PartFileError) -> Self {
         Self::PartFile(error)
@@ -595,10 +606,11 @@ enum StorageBacking {
 
 #[derive(Debug)]
 pub struct SelectiveStorage {
+    content: Option<Arc<TorrentContent>>,
     backing: StorageBacking,
     identity: PartFileIdentity,
     publication_shape: PublicationShape,
-    layout: TorrentLayout,
+    layout: ContentLayout,
     selection: FileSelection,
     files: Vec<Option<RetainedFile>>,
     skipped_sources: Vec<Option<RetainedFileSource>>,
@@ -954,6 +966,22 @@ struct SelectiveHashIoStats {
 #[derive(Debug)]
 pub(crate) struct SelectiveHashPlan {
     spans: Vec<BlockingHashSpan>,
+    algorithm: PieceHashAlgorithm,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PieceHashAlgorithm {
+    Sha1,
+    V2Merkle { target_height: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComputedPieceHash {
+    Sha1([u8; 20]),
+    Sha256 {
+        root: Sha256Hash,
+        retained_hash_high_water: usize,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -976,6 +1004,11 @@ type BlockingHashResult = Result<([u8; 20], SelectiveHashIoStats), SelectiveStor
 
 impl SelectiveHashPlan {
     async fn hash(self) -> BlockingHashResult {
+        if self.algorithm != PieceHashAlgorithm::Sha1 {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "SHA-1 execution of a v2 hash plan",
+            ));
+        }
         let mut hasher = Sha1::new();
         let mut stats = SelectiveHashIoStats {
             blocking_jobs: 1,
@@ -1029,6 +1062,79 @@ impl SelectiveHashPlan {
         }
         Ok((hasher.finalize().into(), stats))
     }
+
+    async fn hash_content(self) -> Result<ComputedPieceHash, SelectiveStorageError> {
+        let PieceHashAlgorithm::V2Merkle { target_height } = self.algorithm else {
+            return self
+                .hash()
+                .await
+                .map(|(hash, _)| ComputedPieceHash::Sha1(hash));
+        };
+        let mut accumulator = MerkleAccumulator::new(0)?;
+        let mut high_water = 0;
+        for span in self.spans {
+            let (source, offset, length) = match span {
+                BlockingHashSpan::WantedFile {
+                    file,
+                    file_offset,
+                    length,
+                } => (
+                    file.acquire(StorageFileAccess::ReadExisting).await?,
+                    file_offset,
+                    length,
+                ),
+                BlockingHashSpan::PartFile { .. } | BlockingHashSpan::Padding { .. } => {
+                    return Err(SelectiveStorageError::InvalidStorageOperation(
+                        "v2 Merkle plan contains a part or padding span",
+                    ));
+                }
+            };
+            accumulator = tokio::task::spawn_blocking(move || {
+                hash_merkle_file_span(accumulator, source, offset, length)
+            })
+            .await
+            .map_err(|source| SelectiveStorageError::Io {
+                operation: "join v2 piece blocking verification job",
+                source: io::Error::other(source),
+            })??;
+            high_water = high_water.max(accumulator.retained_hash_high_water());
+        }
+        let root = accumulator.finish_padded_to(target_height)?;
+        Ok(ComputedPieceHash::Sha256 {
+            root,
+            retained_hash_high_water: high_water,
+        })
+    }
+}
+
+fn hash_merkle_file_span(
+    mut accumulator: MerkleAccumulator,
+    file: StorageFileLease,
+    file_offset: u64,
+    span_length: usize,
+) -> Result<MerkleAccumulator, SelectiveStorageError> {
+    let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
+    let mut consumed = 0_usize;
+    while consumed < span_length {
+        let length = (span_length - consumed).min(buffer.len());
+        let offset = file_offset
+            .checked_add(
+                u64::try_from(consumed)
+                    .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?,
+            )
+            .ok_or(SelectiveStorageError::Layout(
+                LayoutError::ArithmeticOverflow,
+            ))?;
+        read_exact_at(file.file(), &mut buffer[..length], offset).map_err(|source| {
+            SelectiveStorageError::Io {
+                operation: "read selected v2 range in blocking verification job",
+                source,
+            }
+        })?;
+        accumulator.push(hash_block(&buffer[..length])?)?;
+        consumed += length;
+    }
+    Ok(accumulator)
 }
 
 async fn spawn_blocking_hash_span(
@@ -1080,6 +1186,10 @@ fn hash_file_span(
 impl SelectiveHashPlan {
     pub(crate) async fn execute(self) -> Result<[u8; 20], SelectiveStorageError> {
         self.hash().await.map(|(hash, _stats)| hash)
+    }
+
+    pub(crate) async fn execute_content(self) -> Result<ComputedPieceHash, SelectiveStorageError> {
+        self.hash_content().await
     }
 }
 
@@ -1268,6 +1378,69 @@ fn rename_noreplace_blocking(source: &Path, destination: &Path) -> Result<(), io
 }
 
 impl SelectiveStorage {
+    pub async fn create_content(
+        output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+    ) -> Result<Self, SelectiveStorageError> {
+        let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
+            .expect("default storage file limit is nonzero");
+        Self::create_content_with_pool(output_root, artifact_identity, content, skipped, pool).await
+    }
+
+    pub(crate) async fn create_content_with_pool(
+        output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+        pool: StorageFilePool,
+    ) -> Result<Self, SelectiveStorageError> {
+        let layout = ContentLayout::from_content(&content);
+        let selection = FileSelection::new_content(&layout, skipped)?;
+        let paths = torrent_storage_paths_for_output_with_shape(
+            output_root,
+            artifact_identity.torrent_id,
+            PublicationShape::from_content(&content),
+        )?;
+        let mut storage =
+            Self::create_with_paths_and_pool(paths, artifact_identity, layout, selection, pool)
+                .await?;
+        storage.content = Some(content);
+        Ok(storage)
+    }
+
+    pub async fn resume_content(
+        output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+        verified: Vec<bool>,
+        expected_artifacts: Option<ResumeArtifactState>,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let pool = StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, None)
+            .expect("default storage file limit is nonzero");
+        let layout = ContentLayout::from_content(&content);
+        let selection = FileSelection::new_content(&layout, skipped)?;
+        let paths = torrent_storage_paths_for_output_with_shape(
+            output_root,
+            artifact_identity.torrent_id,
+            PublicationShape::from_content(&content),
+        )?;
+        let (mut storage, resumed) = Self::resume_with_paths_and_pool_expected(
+            paths,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            pool,
+            expected_artifacts,
+        )
+        .await?;
+        storage.content = Some(content);
+        Ok((storage, resumed))
+    }
+
     pub async fn create(
         output_root: PathBuf,
         artifact_identity: TorrentArtifactIdentity,
@@ -1313,10 +1486,11 @@ impl SelectiveStorage {
     pub(crate) async fn create_with_paths_and_pool(
         paths: TorrentStoragePaths,
         artifact_identity: TorrentArtifactIdentity,
-        layout: TorrentLayout,
+        layout: impl Into<ContentLayout>,
         selection: FileSelection,
         pool: StorageFilePool,
     ) -> Result<Self, SelectiveStorageError> {
+        let layout = layout.into();
         let TorrentStoragePaths {
             publication_shape,
             output: output_root,
@@ -1373,6 +1547,7 @@ impl SelectiveStorage {
         let skipped_sources = vec![None; layout.files().len()];
 
         Ok(Self {
+            content: None,
             backing: StorageBacking::Paths {
                 output_root,
                 staging_root,
@@ -1404,6 +1579,7 @@ impl SelectiveStorage {
         selection: FileSelection,
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let layout = ContentLayout::from(layout);
         validate_publication_name(&spec.publication_name)?;
         if spec.publication_shape != PublicationShape::from_metainfo(metainfo) {
             return Err(SelectiveStorageError::InvalidStorageOperation(
@@ -1469,6 +1645,7 @@ impl SelectiveStorage {
         };
         Ok((
             Self {
+                content: None,
                 backing: StorageBacking::Platform {
                     spec: spec.clone(),
                     part_reference,
@@ -1507,6 +1684,7 @@ impl SelectiveStorage {
         materialize_files: &[usize],
         descriptors: DescriptorStorage,
     ) -> Result<Self, SelectiveStorageError> {
+        let layout = ContentLayout::from(layout);
         let mut wanted_files =
             collect_descriptors(layout.files().len(), "wanted", descriptors.wanted_files)?;
         let mut materialization_files = collect_descriptors(
@@ -1619,6 +1797,7 @@ impl SelectiveStorage {
         let skipped_sources = vec![None; layout.files().len()];
 
         Ok(Self {
+            content: None,
             backing: StorageBacking::Descriptors {
                 reopened_part_file: Some(descriptors.reopened_part_file),
                 materialization_files,
@@ -1647,6 +1826,7 @@ impl SelectiveStorage {
         descriptors: DescriptorStorage,
         verified: Vec<bool>,
     ) -> Result<Self, SelectiveStorageError> {
+        let layout = ContentLayout::from(layout);
         if verified.len() != layout.piece_count() {
             return Err(SelectiveStorageError::InvalidVerifiedPiece {
                 piece_index: verified.len(),
@@ -1708,6 +1888,7 @@ impl SelectiveStorage {
 
         let skipped_sources = vec![None; layout.files().len()];
         Ok(Self {
+            content: None,
             backing: StorageBacking::Descriptors {
                 reopened_part_file: Some(descriptors.reopened_part_file),
                 materialization_files: (0..layout.files().len()).map(|_| None).collect(),
@@ -1809,12 +1990,13 @@ impl SelectiveStorage {
     pub(crate) async fn resume_with_paths_and_pool_expected(
         paths: TorrentStoragePaths,
         artifact_identity: TorrentArtifactIdentity,
-        layout: TorrentLayout,
+        layout: impl Into<ContentLayout>,
         selection: FileSelection,
         verified: Vec<bool>,
         pool: StorageFilePool,
         expected_artifacts: Option<ResumeArtifactState>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let layout = layout.into();
         if verified.len() != layout.piece_count() {
             return Err(SelectiveStorageError::InvalidVerifiedPiece {
                 piece_index: verified.len(),
@@ -1834,6 +2016,11 @@ impl SelectiveStorage {
         let staging_exists =
             path_exists(&staging_root, "inspect resumable selected staging").await?;
         let part_exists = path_exists(&part_path, "inspect resumable part file").await?;
+        if layout.format() == MetainfoFormat::V2 && part_exists {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "v2 content cannot resume a part artifact",
+            ));
+        }
 
         match expected_artifacts {
             Some(ResumeArtifactState::None) => {
@@ -2003,6 +2190,7 @@ impl SelectiveStorage {
             None
         };
         let storage = Self {
+            content: None,
             backing: StorageBacking::Paths {
                 output_root,
                 staging_root,
@@ -2530,6 +2718,11 @@ impl SelectiveStorage {
                         routing_generation: file.routing_generation,
                     }
                 }
+                SegmentTarget::SkippedFile { .. } if self.layout.format() == MetainfoFormat::V2 => {
+                    return Err(SelectiveStorageError::InvalidStorageOperation(
+                        "write skipped v2 piece",
+                    ));
+                }
                 SegmentTarget::SkippedFile {
                     file_index,
                     file_offset,
@@ -2696,6 +2889,7 @@ impl SelectiveStorage {
         &self,
         piece_index: usize,
         segments: &[LayoutSegment],
+        algorithm: PieceHashAlgorithm,
     ) -> Result<SelectiveHashPlan, SelectiveStorageError> {
         let mut spans = Vec::with_capacity(segments.len());
         for segment in segments {
@@ -2788,7 +2982,7 @@ impl SelectiveStorage {
                 }
             }
         }
-        Ok(SelectiveHashPlan { spans })
+        Ok(SelectiveHashPlan { spans, algorithm })
     }
 
     pub(crate) fn prepare_hash(
@@ -2799,9 +2993,22 @@ impl SelectiveStorage {
         let segments = self
             .layout
             .segments(piece_index, 0, piece_length, &self.selection)?;
-        let piece_index = usize::try_from(piece_index)
+        let piece_index_usize = usize::try_from(piece_index)
             .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-        self.prepare_blocking_hash_plan(piece_index, &segments)
+        let algorithm = match self
+            .content
+            .as_ref()
+            .map(|content| content.expected_piece(piece_index))
+            .transpose()
+            .map_err(|_| {
+                SelectiveStorageError::InvalidStorageOperation("invalid expected piece geometry")
+            })? {
+            Some(ExpectedPieceIntegrity::V2Merkle { target_height, .. }) => {
+                PieceHashAlgorithm::V2Merkle { target_height }
+            }
+            Some(ExpectedPieceIntegrity::V1Sha1(_)) | None => PieceHashAlgorithm::Sha1,
+        };
+        self.prepare_blocking_hash_plan(piece_index_usize, &segments, algorithm)
     }
 
     async fn hash_piece_with_stats(
@@ -2810,6 +3017,13 @@ impl SelectiveStorage {
     ) -> Result<([u8; 20], SelectiveHashIoStats), SelectiveStorageError> {
         let plan = self.prepare_hash(piece_index)?;
         plan.hash().await
+    }
+
+    pub async fn hash_piece_content(
+        &self,
+        piece_index: u32,
+    ) -> Result<ComputedPieceHash, SelectiveStorageError> {
+        self.prepare_hash(piece_index)?.execute_content().await
     }
 
     pub fn record_verified(&mut self, piece_index: usize) -> Result<(), SelectiveStorageError> {
@@ -3538,7 +3752,8 @@ impl SelectiveStorage {
             ));
             self.restore_promoted_file(file_index, false).await?;
             let slots_before = self.part_slots();
-            self.selection.set_wanted(&self.layout, file_index, true)?;
+            self.selection
+                .set_wanted_content(&self.layout, file_index, true)?;
             self.release_unused_part_slots().await?;
             return Ok(MaterializationReport {
                 file_index,
@@ -3672,7 +3887,8 @@ impl SelectiveStorage {
         }
 
         let slots_before = self.part_slots();
-        self.selection.set_wanted(&self.layout, file_index, true)?;
+        self.selection
+            .set_wanted_content(&self.layout, file_index, true)?;
         for piece_index in self
             .layout
             .file_piece_range(file_index)?
@@ -3766,6 +3982,11 @@ impl SelectiveStorage {
     }
 
     async fn ensure_part_file(&mut self) -> Result<&mut PartFile, SelectiveStorageError> {
+        if self.layout.format() == MetainfoFormat::V2 {
+            return Err(SelectiveStorageError::InvalidStorageOperation(
+                "create v2 part artifact",
+            ));
+        }
         if self.part_file.is_none() {
             let (part_path, part_reference) = match &self.backing {
                 StorageBacking::Paths {
@@ -3903,6 +4124,9 @@ impl SelectiveStorage {
     }
 
     fn piece_requires_part_file(&self, piece_index: u32) -> Result<bool, SelectiveStorageError> {
+        if self.layout.format() == MetainfoFormat::V2 {
+            return Ok(false);
+        }
         let piece_length = self.layout.piece_length_at(piece_index)?;
         Ok(self
             .layout
@@ -4559,7 +4783,13 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
+    use rstorrent_protocol::content::{
+        ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection,
+    };
+    use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
+    use rstorrent_protocol::metainfo::{
+        EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile, MetainfoMode,
+    };
     use rstorrent_protocol::peer_wire::BlockRequest;
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
     use sha1::{Digest, Sha1};
@@ -4570,11 +4800,11 @@ mod tests {
     use crate::storage_file_pool::{StorageFileAccess, StorageFilePool, platform_storage_channel};
 
     use super::{
-        BlockingHashResult, DescriptorFile, DescriptorStorage, PlatformStorageSpec,
-        PreparedFileHash, PublicationShape, ResumeArtifactState, ResumedStorage, SelectiveStorage,
-        SelectiveStorageError, SelectiveWriteDestination, SelectiveWritePlan, SelectiveWriteSpan,
-        SelectiveWriteStats, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
-        await_blocking_hash, collect_descriptors, materialization_path,
+        BlockingHashResult, ComputedPieceHash, DescriptorFile, DescriptorStorage,
+        PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumeArtifactState,
+        ResumedStorage, SelectiveStorage, SelectiveStorageError, SelectiveWriteDestination,
+        SelectiveWritePlan, SelectiveWriteSpan, SelectiveWriteStats, TorrentArtifactIdentity,
+        VERIFICATION_CHUNK_LENGTH, await_blocking_hash, collect_descriptors, materialization_path,
         remove_selective_part_if_present, remove_selective_staging_if_present,
         selective_staging_path, storage_instance_id, torrent_storage_paths,
         torrent_storage_paths_for_metainfo, torrent_storage_paths_for_output_with_shape,
@@ -4640,6 +4870,180 @@ mod tests {
             mode: MetainfoMode::MultiFile,
             files,
         }
+    }
+
+    fn bstr(output: &mut Vec<u8>, value: &[u8]) {
+        output.extend_from_slice(value.len().to_string().as_bytes());
+        output.push(b':');
+        output.extend_from_slice(value);
+    }
+
+    fn pure_v2_content(files: &[(&[u8], &[u8])], piece_length: u32) -> TorrentContent {
+        let roots = files
+            .iter()
+            .map(|(_, data)| file_root_from_data(data).expect("nonempty fixture file"))
+            .collect::<Vec<_>>();
+        let mut info = b"d9:file treed".to_vec();
+        for ((name, data), root) in files.iter().zip(&roots) {
+            bstr(&mut info, name);
+            info.extend_from_slice(b"d0:d6:lengthi");
+            info.extend_from_slice(data.len().to_string().as_bytes());
+            info.extend_from_slice(b"e11:pieces root32:");
+            info.extend_from_slice(root);
+            info.extend_from_slice(b"ee");
+        }
+        info.extend_from_slice(b"e12:meta versioni2e4:name4:root12:piece lengthi");
+        info.extend_from_slice(piece_length.to_string().as_bytes());
+        info.extend_from_slice(b"ee");
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersd");
+        for ((_, data), root) in files.iter().zip(&roots) {
+            if data.len() <= piece_length as usize {
+                continue;
+            }
+            bstr(&mut source, root);
+            let hashes = data
+                .chunks(piece_length as usize)
+                .map(|piece| piece_root_from_data(piece, piece_length).expect("piece root"))
+                .collect::<Vec<_>>();
+            bstr(&mut source, &hashes.concat());
+        }
+        source.extend_from_slice(b"ee");
+        TorrentContentProjection::from_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+            .expect("complete pure-v2 fixture")
+            .content
+    }
+
+    #[tokio::test]
+    async fn pure_v2_writes_and_hashes_file_local_pieces_without_part_or_gap() {
+        let skipped = vec![9_u8];
+        let selected = (0..40_000)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        let selected_small = vec![0x5a; 17];
+        let content = Arc::new(pure_v2_content(
+            &[(b"a", &skipped), (b"b", &selected), (b"c", &selected_small)],
+            32 * 1024,
+        ));
+        let output = test_path("root");
+        let parent = output.parent().expect("test parent").to_path_buf();
+        let mut storage = SelectiveStorage::create_content(
+            output.clone(),
+            test_artifact_identity(),
+            content.clone(),
+            &[0],
+        )
+        .await
+        .expect("create v2 storage");
+
+        assert_eq!(
+            storage.selected_bytes(),
+            (selected.len() + selected_small.len()) as u64
+        );
+        assert_eq!(storage.skipped_bytes(), skipped.len() as u64);
+        assert_eq!(storage.padding_bytes(), 0);
+        assert_eq!(storage.part_slots(), 0);
+        assert!(!storage.has_part_file());
+        assert!(matches!(
+            storage.write_block(0, 0, skipped.clone()).await,
+            Err(SelectiveStorageError::InvalidStorageOperation(
+                "write skipped v2 piece"
+            ))
+        ));
+
+        for (piece, payload) in selected.chunks(32 * 1024).enumerate() {
+            for (block, bytes) in payload.chunks(16 * 1024).enumerate() {
+                storage
+                    .write_block(
+                        u32::try_from(piece + 1).expect("piece"),
+                        u32::try_from(block * 16 * 1024).expect("begin"),
+                        bytes.to_vec(),
+                    )
+                    .await
+                    .expect("write v2 block");
+            }
+            let piece_index = u32::try_from(piece + 1).expect("piece index");
+            let actual = storage
+                .hash_piece_content(piece_index)
+                .await
+                .expect("hash v2 piece");
+            let expected = content.expected_piece(piece_index).expect("expected root");
+            let (
+                ComputedPieceHash::Sha256 {
+                    root,
+                    retained_hash_high_water,
+                },
+                ExpectedPieceIntegrity::V2Merkle { expected_root, .. },
+            ) = (actual, expected)
+            else {
+                panic!("v2 integrity variants")
+            };
+            assert_eq!(root, expected_root);
+            assert!(retained_hash_high_water <= 2);
+            storage.record_verified(piece + 1).expect("record v2 piece");
+        }
+        storage
+            .write_block(3, 0, selected_small)
+            .await
+            .expect("write one-piece v2 file");
+        let actual = storage
+            .hash_piece_content(3)
+            .await
+            .expect("hash one-piece v2 file");
+        let expected = content.expected_piece(3).expect("one-piece expected root");
+        assert!(matches!(
+            (actual, expected),
+            (
+                ComputedPieceHash::Sha256 {
+                    root,
+                    retained_hash_high_water: 1
+                },
+                ExpectedPieceIntegrity::V2Merkle {
+                    expected_root,
+                    target_height: 0,
+                    ..
+                }
+            ) if root == expected_root
+        ));
+        storage.record_verified(3).expect("record one-piece file");
+        assert_eq!(storage.part_slots(), 0);
+        assert!(!storage.has_part_file());
+        let part = storage
+            .part_path()
+            .expect("path-backed part name")
+            .to_path_buf();
+        assert!(!part.exists());
+        storage.publish().await.expect("publish selected v2 files");
+        assert_eq!(
+            std::fs::read(output.join("b")).expect("published b"),
+            selected
+        );
+        assert_eq!(
+            std::fs::read(output.join("c")).expect("published c"),
+            vec![0x5a; 17]
+        );
+        assert!(!output.join("a").exists());
+        drop(storage);
+        let (resumed, state) = SelectiveStorage::resume_content(
+            output,
+            test_artifact_identity(),
+            content,
+            &[0],
+            vec![false, true, true, true],
+            Some(ResumeArtifactState::Published),
+        )
+        .await
+        .expect("resume published v2 storage");
+        assert_eq!(state, ResumedStorage::Published);
+        assert_eq!(resumed.part_slots(), 0);
+        assert!(!resumed.has_part_file());
+        assert!(matches!(
+            resumed.hash_piece_content(2).await,
+            Ok(ComputedPieceHash::Sha256 { .. })
+        ));
+        drop(resumed);
+        std::fs::remove_dir_all(parent).expect("remove v2 storage fixture");
     }
 
     fn single_file_fixture() -> Metainfo {

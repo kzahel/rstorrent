@@ -983,3 +983,26 @@ retained.
   `cargo clippy -p rstorrent-protocol -p rstorrent-session --all-targets --
   -D warnings` pass. The focused pure-v2 store and application restart cases
   pass with full-identity duplicate behavior and exact-source equality.
+
+### 2026-08-13 Stage 2 geometry, storage, and integrity
+
+- `ContentLayout` is the format-aware deterministic storage projection. V1
+  retains its concatenated-file and padding semantics; v2 maps every logical
+  piece to one file-local span and never represents the alignment gaps between
+  files as payload, requests, or storage segments.
+- `SelectiveStorage` now accepts the owned content descriptor. Pure-v2 writes
+  go directly to their owning file, skipped-file pieces are rejected before
+  mutation, and both create and resume paths have a hard guard against an
+  ordinary part artifact or part slot for v2 content.
+- The storage hash plan selects SHA-1 or SHA-256 Merkle verification from the
+  descriptor. The v2 accumulator streams fixed 16 KiB leaves, retains only the
+  active Merkle frontier, pads to the descriptor's authenticated target
+  height, and reports its retained-hash high-water mark for regression tests.
+- A mixed pure-v2 fixture covers a skipped file, a multi-piece file backed by
+  a complete piece layer, and a one-piece file authenticated by its file root.
+  It proves file-local writes, both Merkle shapes, bounded scratch state, no
+  gap or part artifact, exact-path publication, and published restart without
+  weakening durable have evidence.
+- `cargo test -p rstorrent-engine` and `cargo clippy
+  -p rstorrent-protocol -p rstorrent-engine --all-targets -- -D warnings`
+  pass, including the unchanged v1 storage, publication, and resume suites.

@@ -3,6 +3,7 @@
 use std::error::Error;
 use std::fmt;
 
+use rstorrent_protocol::content::TorrentContent;
 use rstorrent_protocol::metainfo::{Metainfo, MetainfoMode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,6 +17,19 @@ impl PublicationShape {
         match metainfo.mode {
             MetainfoMode::SingleFile => Self::File,
             MetainfoMode::MultiFile => Self::Tree,
+        }
+    }
+
+    pub fn from_content(content: &TorrentContent) -> Self {
+        match content {
+            TorrentContent::V1(content) => Self::from_metainfo(&content.metainfo),
+            TorrentContent::V2(content)
+                if content.metainfo.files.len() == 1
+                    && content.metainfo.files[0].path == [content.metainfo.name.as_str()] =>
+            {
+                Self::File
+            }
+            TorrentContent::V2(_) => Self::Tree,
         }
     }
 }
@@ -39,6 +53,51 @@ pub struct PublishedArtifactLayout {
 impl PublishedArtifactLayout {
     pub fn from_metainfo(metainfo: &Metainfo) -> Result<Self, ArtifactLayoutError> {
         Self::with_namespace(metainfo, metainfo.name.clone())
+    }
+
+    pub fn from_content(content: &TorrentContent) -> Result<Self, ArtifactLayoutError> {
+        match content {
+            TorrentContent::V1(content) => Self::from_metainfo(&content.metainfo),
+            TorrentContent::V2(content) => {
+                validate_component(&content.metainfo.name)?;
+                let shape = if content.metainfo.files.len() == 1
+                    && content.metainfo.files[0].path == [content.metainfo.name.as_str()]
+                {
+                    PublicationShape::File
+                } else {
+                    PublicationShape::Tree
+                };
+                let mut files = Vec::with_capacity(content.metainfo.files.len());
+                for (file_index, file) in content.metainfo.files.iter().enumerate() {
+                    if file.path.is_empty()
+                        || file
+                            .path
+                            .iter()
+                            .any(|part| validate_component(part).is_err())
+                    {
+                        return Err(ArtifactLayoutError::InvalidComponent);
+                    }
+                    let qualified_components = match shape {
+                        PublicationShape::File => vec![content.metainfo.name.clone()],
+                        PublicationShape::Tree => std::iter::once(content.metainfo.name.clone())
+                            .chain(file.path.iter().cloned())
+                            .collect(),
+                    };
+                    files.push(LogicalPayloadArtifact {
+                        file_index,
+                        components: file.path.clone(),
+                        qualified_components,
+                        length: file.length,
+                        padding: false,
+                    });
+                }
+                Ok(Self {
+                    namespace: content.metainfo.name.clone(),
+                    shape,
+                    files,
+                })
+            }
+        }
     }
 
     pub fn with_namespace(
