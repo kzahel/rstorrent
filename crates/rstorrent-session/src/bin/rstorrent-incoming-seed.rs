@@ -966,9 +966,8 @@ async fn session_udp_endpoint(service: &ApplicationService) -> Result<String, Se
     }
 }
 
-fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_json::Value {
-    let last_failure = snapshot.last_failure.as_ref().map(|failure| {
-        serde_json::json!({
+fn utp_terminal_json(failure: &rstorrent_engine::UtpTerminalEvidence) -> serde_json::Value {
+    serde_json::json!({
             "kind": failure.kind.as_str(),
             "detail": failure.detail,
             "new_data_datagrams_sent": failure.new_data_datagrams_sent,
@@ -1001,8 +1000,12 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
             "consecutive_timeouts": failure.consecutive_timeouts,
             "loss_reductions": failure.loss_reductions,
             "timeout_collapses": failure.timeout_collapses,
-        })
-    });
+    })
+}
+
+fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_json::Value {
+    let first_terminal = snapshot.first_terminal.as_ref().map(utp_terminal_json);
+    let last_failure = snapshot.last_failure.as_ref().map(utp_terminal_json);
     serde_json::json!({
         "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
@@ -1064,7 +1067,15 @@ fn utp_snapshot_json(snapshot: rstorrent_engine::UtpServiceSnapshot) -> serde_js
         "mtu_probe_datagrams_sent": snapshot.mtu_probe_datagrams_sent,
         "mtu_fragmentable_retry_datagrams_sent": snapshot.mtu_fragmentable_retry_datagrams_sent,
         "retry_exhausted_connections": snapshot.retry_exhausted_connections,
+        "graceful_connections": snapshot.graceful_connections,
+        "reset_connections": snapshot.reset_connections,
+        "consumer_dropped_connections": snapshot.consumer_dropped_connections,
+        "generation_changed_connections": snapshot.generation_changed_connections,
+        "service_cancelled_connections": snapshot.service_cancelled_connections,
+        "protocol_error_connections": snapshot.protocol_error_connections,
+        "io_error_connections": snapshot.io_error_connections,
         "worker_panics": snapshot.worker_panics,
+        "first_terminal": first_terminal,
         "last_failure": last_failure,
     })
 }

@@ -16,7 +16,7 @@ use rstorrent_engine::{
     PeerEncryptionPolicyHandle, PeerTransport, ResumableMagnetDownloadConfig, ResumeArtifactState,
     ResumeValidationIntent, ResumedStorage, SessionUdpService, SessionUdpSnapshot, TorrentId,
     TorrentIdentityContext, TorrentPeerActivitySink, TorrentPeerHandle, TrackerConfig,
-    TrackerEndpoint, TrackerSource, UtpService, UtpServiceSnapshot,
+    TrackerEndpoint, TrackerSource, UtpService, UtpServiceSnapshot, UtpTerminalEvidence,
     download_verified_piece_with_peer_state, resume_magnet_with_control, select_global_ipv6,
 };
 use rstorrent_protocol::identity::V1InfoHash;
@@ -1264,6 +1264,7 @@ struct UtpEvidence {
     protocol_error_connections: u64,
     io_error_connections: u64,
     worker_panics: u64,
+    first_terminal: Option<UtpFailureEvidence>,
     last_failure: Option<UtpFailureEvidence>,
 }
 
@@ -1303,9 +1304,9 @@ struct UtpFailureEvidence {
     timeout_collapses: u64,
 }
 
-impl From<UtpServiceSnapshot> for UtpEvidence {
-    fn from(snapshot: UtpServiceSnapshot) -> Self {
-        let last_failure = snapshot.last_failure.map(|failure| UtpFailureEvidence {
+impl From<UtpTerminalEvidence> for UtpFailureEvidence {
+    fn from(failure: UtpTerminalEvidence) -> Self {
+        Self {
             kind: failure.kind.as_str().to_owned(),
             detail: failure.detail,
             new_data_datagrams_sent: failure.new_data_datagrams_sent,
@@ -1338,7 +1339,14 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             consecutive_timeouts: failure.consecutive_timeouts,
             loss_reductions: failure.loss_reductions,
             timeout_collapses: failure.timeout_collapses,
-        });
+        }
+    }
+}
+
+impl From<UtpServiceSnapshot> for UtpEvidence {
+    fn from(snapshot: UtpServiceSnapshot) -> Self {
+        let first_terminal = snapshot.first_terminal.map(Into::into);
+        let last_failure = snapshot.last_failure.map(Into::into);
         Self {
             path_mtu_profile: snapshot.path_mtu_profile.as_str().to_owned(),
             active_connections_after_shutdown: snapshot.active_connections,
@@ -1415,6 +1423,7 @@ impl From<UtpServiceSnapshot> for UtpEvidence {
             protocol_error_connections: snapshot.protocol_error_connections,
             io_error_connections: snapshot.io_error_connections,
             worker_panics: snapshot.worker_panics,
+            first_terminal,
             last_failure,
         }
     }

@@ -1132,9 +1132,8 @@ fn udp_json(snapshot: SessionUdpSnapshot) -> Value {
     })
 }
 
-fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
-    let last_failure = snapshot.last_failure.as_ref().map(|failure| {
-        json!({
+fn utp_terminal_json(failure: &rstorrent_engine::UtpTerminalEvidence) -> Value {
+    json!({
             "kind": failure.kind.as_str(),
             "detail": failure.detail,
             "new_data_datagrams_sent": failure.new_data_datagrams_sent,
@@ -1167,8 +1166,12 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
             "consecutive_timeouts": failure.consecutive_timeouts,
             "loss_reductions": failure.loss_reductions,
             "timeout_collapses": failure.timeout_collapses,
-        })
-    });
+    })
+}
+
+fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
+    let first_terminal = snapshot.first_terminal.as_ref().map(utp_terminal_json);
+    let last_failure = snapshot.last_failure.as_ref().map(utp_terminal_json);
     json!({
         "path_mtu_profile": snapshot.path_mtu_profile.as_str(),
         "active_connections": snapshot.active_connections,
@@ -1237,6 +1240,7 @@ fn utp_json(snapshot: UtpServiceSnapshot) -> Value {
         "protocol_error_connections": snapshot.protocol_error_connections,
         "io_error_connections": snapshot.io_error_connections,
         "worker_panics": snapshot.worker_panics,
+        "first_terminal": first_terminal,
         "last_failure": last_failure,
     })
 }

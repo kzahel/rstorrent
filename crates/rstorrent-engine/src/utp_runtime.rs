@@ -107,8 +107,12 @@ impl UtpPathMtuProfile {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UtpTerminalKind {
+    Graceful,
     Reset,
     RetryExhausted,
+    ConsumerDropped,
+    GenerationChanged,
+    ServiceCancelled,
     Protocol,
     Io,
     WorkerPanic,
@@ -118,8 +122,12 @@ impl UtpTerminalKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Graceful => "graceful",
             Self::Reset => "reset",
             Self::RetryExhausted => "retry_exhausted",
+            Self::ConsumerDropped => "consumer_dropped",
+            Self::GenerationChanged => "generation_changed",
+            Self::ServiceCancelled => "service_cancelled",
             Self::Protocol => "protocol",
             Self::Io => "io",
             Self::WorkerPanic => "worker_panic",
@@ -233,6 +241,7 @@ pub struct UtpServiceSnapshot {
     pub protocol_error_connections: u64,
     pub io_error_connections: u64,
     pub worker_panics: u64,
+    pub first_terminal: Option<UtpTerminalEvidence>,
     pub last_failure: Option<UtpTerminalEvidence>,
 }
 
@@ -992,6 +1001,7 @@ struct UtpStats {
     protocol_error_connections: AtomicU64,
     io_error_connections: AtomicU64,
     worker_panics: AtomicU64,
+    first_terminal: Mutex<Option<UtpTerminalEvidence>>,
     last_failure: Mutex<Option<UtpTerminalEvidence>>,
 }
 
@@ -1130,6 +1140,11 @@ impl UtpStats {
             protocol_error_connections: self.protocol_error_connections.load(Ordering::Relaxed),
             io_error_connections: self.io_error_connections.load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
+            first_terminal: self
+                .first_terminal
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone(),
             last_failure: self
                 .last_failure
                 .lock()
@@ -1143,6 +1158,16 @@ impl UtpStats {
             .last_failure
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(evidence);
+    }
+
+    fn record_terminal(&self, evidence: UtpTerminalEvidence) {
+        let mut first = self
+            .first_terminal
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if first.is_none() {
+            *first = Some(evidence);
+        }
     }
 
     fn connection_started(&self, incoming: bool) {
@@ -1360,7 +1385,15 @@ fn handle_worker_join(
             terminal,
             telemetry,
         }) => {
-            if let Some(evidence) = telemetry.terminal_evidence(&terminal) {
+            let evidence = telemetry.terminal_evidence(&terminal);
+            stats.record_terminal(evidence.clone());
+            if matches!(
+                terminal,
+                WorkerTerminal::Reset
+                    | WorkerTerminal::RetryExhausted { .. }
+                    | WorkerTerminal::Protocol(_)
+                    | WorkerTerminal::Io(_)
+            ) {
                 stats.record_failure(evidence);
             }
             match terminal {
@@ -1388,7 +1421,7 @@ fn handle_worker_join(
         }
         Err(_) => {
             saturating_increment(&stats.worker_panics, 1);
-            stats.record_failure(UtpTerminalEvidence {
+            let evidence = UtpTerminalEvidence {
                 kind: UtpTerminalKind::WorkerPanic,
                 detail: "uTP worker panicked; payload and panic detail withheld".to_owned(),
                 new_data_datagrams_sent: 0,
@@ -1421,7 +1454,9 @@ fn handle_worker_join(
                 consecutive_timeouts: 0,
                 loss_reductions: 0,
                 timeout_collapses: 0,
-            });
+            };
+            stats.record_terminal(evidence.clone());
+            stats.record_failure(evidence);
         }
     }
     Ok(())
@@ -1922,8 +1957,12 @@ impl WorkerTelemetry {
         self.timeout_collapses = snapshot.congestion.timeout_collapses;
     }
 
-    fn terminal_evidence(&self, terminal: &WorkerTerminal) -> Option<UtpTerminalEvidence> {
+    fn terminal_evidence(&self, terminal: &WorkerTerminal) -> UtpTerminalEvidence {
         let (kind, detail) = match terminal {
+            WorkerTerminal::Graceful => (
+                UtpTerminalKind::Graceful,
+                "uTP connection closed gracefully".to_owned(),
+            ),
             WorkerTerminal::Reset => (UtpTerminalKind::Reset, "peer reset".to_owned()),
             WorkerTerminal::RetryExhausted {
                 sequence_number,
@@ -1942,12 +1981,20 @@ impl WorkerTelemetry {
                 UtpTerminalKind::Io,
                 "uTP runtime I/O failure; detail withheld".to_owned(),
             ),
-            WorkerTerminal::Graceful
-            | WorkerTerminal::ConsumerDropped
-            | WorkerTerminal::GenerationChanged
-            | WorkerTerminal::ServiceCancelled => return None,
+            WorkerTerminal::ConsumerDropped => (
+                UtpTerminalKind::ConsumerDropped,
+                "uTP stream consumer was dropped".to_owned(),
+            ),
+            WorkerTerminal::GenerationChanged => (
+                UtpTerminalKind::GenerationChanged,
+                "uTP session socket generation changed".to_owned(),
+            ),
+            WorkerTerminal::ServiceCancelled => (
+                UtpTerminalKind::ServiceCancelled,
+                "uTP service was cancelled".to_owned(),
+            ),
         };
-        Some(UtpTerminalEvidence {
+        UtpTerminalEvidence {
             kind,
             detail,
             new_data_datagrams_sent: self.new_data_datagrams_sent,
@@ -1980,7 +2027,7 @@ impl WorkerTelemetry {
             consecutive_timeouts: self.consecutive_timeouts,
             loss_reductions: self.loss_reductions,
             timeout_collapses: self.timeout_collapses,
-        })
+        }
     }
 }
 
@@ -3077,10 +3124,24 @@ mod tests {
         let left_terminal = left_utp.shutdown().await.unwrap();
         assert_eq!(left_terminal.active_connections, 0);
         assert_eq!(left_terminal.consumer_dropped_connections, 1);
+        assert_eq!(
+            left_terminal
+                .first_terminal
+                .as_ref()
+                .map(|terminal| terminal.kind),
+            Some(UtpTerminalKind::ConsumerDropped)
+        );
 
         let right_terminal = right_utp.shutdown().await.unwrap();
         assert_eq!(right_terminal.active_connections, 0);
         assert_eq!(right_terminal.service_cancelled_connections, 1);
+        assert_eq!(
+            right_terminal
+                .first_terminal
+                .as_ref()
+                .map(|terminal| terminal.kind),
+            Some(UtpTerminalKind::ServiceCancelled)
+        );
         let error = timeout(Duration::from_secs(1), right.read(&mut [0; 1]))
             .await
             .unwrap()
@@ -3392,6 +3453,10 @@ mod tests {
         assert_eq!(terminal.incoming_half_open, 0);
         assert_eq!(terminal.consumer_dropped_connections, 1);
         assert_eq!(terminal.worker_panics, 0);
+        let first = terminal.first_terminal.expect("consumer terminal evidence");
+        assert_eq!(first.kind, UtpTerminalKind::ConsumerDropped);
+        assert!(first.retransmission_data_datagrams_sent >= 1);
+        assert_eq!(first.outstanding_packets, 1);
         drop(dht);
         udp.shutdown().await.unwrap();
     }
@@ -3559,6 +3624,13 @@ mod tests {
         assert!(routes.is_empty());
         let snapshot = stats.snapshot();
         assert_eq!(snapshot.retry_exhausted_connections, 1);
+        assert_eq!(
+            snapshot
+                .first_terminal
+                .as_ref()
+                .map(|terminal| terminal.kind),
+            Some(UtpTerminalKind::RetryExhausted)
+        );
         let failure = snapshot.last_failure.expect("retry evidence");
         assert_eq!(failure.kind, UtpTerminalKind::RetryExhausted);
         assert_eq!(failure.new_data_datagrams_sent, 65_537);
@@ -3610,9 +3682,7 @@ mod tests {
             Some(ReceiveDisposition::TooFarAhead { distance: 65 }),
             3,
         );
-        let evidence = telemetry
-            .terminal_evidence(&WorkerTerminal::Protocol("x".repeat(300)))
-            .expect("protocol failure evidence");
+        let evidence = telemetry.terminal_evidence(&WorkerTerminal::Protocol("x".repeat(300)));
         assert_eq!(evidence.kind, UtpTerminalKind::Protocol);
         assert_eq!(evidence.detail.len(), 256);
         assert_eq!(evidence.new_data_datagrams_sent, 2);
@@ -3625,5 +3695,9 @@ mod tests {
         assert_eq!(evidence.retransmission_data_datagrams_sent, 1);
         assert_eq!(evidence.last_retransmission_sequence_sent, Some(0));
         assert_eq!(evidence.loss_signals_received, 5);
+
+        let consumer = telemetry.terminal_evidence(&WorkerTerminal::ConsumerDropped);
+        assert_eq!(consumer.kind, UtpTerminalKind::ConsumerDropped);
+        assert_eq!(consumer.detail, "uTP stream consumer was dropped");
     }
 }
