@@ -27,6 +27,7 @@ from incoming_seeding import (
     read_json_line,
     terminate_process,
 )
+from mse_peer_encryption import TcpProxy, assert_successful_wire_shape
 
 
 TRANSFER_TIMEOUT_SECONDS = 30
@@ -161,18 +162,21 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
 
 
 def start_rstorrent_seed(
-    binary: Path, fixture: RuntimeFixture
+    binary: Path, fixture: RuntimeFixture, *, require_mse: bool = False
 ) -> tuple[subprocess.Popen[str], dict[str, object]]:
+    command = [
+        str(binary),
+        "--profile-root",
+        str(fixture.profile_root),
+        "--storage-root",
+        str(fixture.storage_root),
+        "--metainfo",
+        str(fixture.torrent_path),
+    ]
+    if require_mse:
+        command.extend(["--encryption", "required"])
     process = subprocess.Popen(
-        [
-            str(binary),
-            "--profile-root",
-            str(fixture.profile_root),
-            "--storage-root",
-            str(fixture.storage_root),
-            "--metainfo",
-            str(fixture.torrent_path),
-        ],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -243,8 +247,8 @@ def seed_summary(stopped: dict[str, object]) -> dict[str, object]:
     return {field: stopped[field] for field in fields}
 
 
-def libtorrent_session(*, incoming: bool) -> lt.session:
-    return lt.session(
+def libtorrent_session(*, incoming: bool, require_mse: bool = False) -> lt.session:
+    session = lt.session(
         {
             "listen_interfaces": "127.0.0.1:0",
             "enable_dht": False,
@@ -258,6 +262,25 @@ def libtorrent_session(*, incoming: bool) -> lt.session:
             "alert_queue_size": 1000,
         }
     )
+    if require_mse:
+        session.apply_settings(
+            {
+                "in_enc_policy": int(lt.enc_policy.pe_forced),
+                "out_enc_policy": int(lt.enc_policy.pe_forced),
+                "allowed_enc_level": int(lt.enc_level.pe_rc4),
+                "prefer_rc4": True,
+            }
+        )
+    return session
+
+
+def observed_encryption(handle: lt.torrent_handle) -> str | None:
+    for peer in handle.get_peer_info():
+        if peer.flags & lt.peer_info.rc4_encrypted:
+            return "rc4"
+        if peer.flags & lt.peer_info.plaintext_encrypted:
+            return "plaintext_payload"
+    return None
 
 
 def compare_files(
@@ -304,11 +327,15 @@ def leech_with_libtorrent(
     fixture: RuntimeFixture,
     ready: dict[str, object],
     output_root: Path,
-) -> list[str]:
+    *,
+    require_mse: bool = False,
+) -> tuple[list[str], str | None]:
     output_root.mkdir()
-    session = libtorrent_session(incoming=False)
+    session = libtorrent_session(incoming=False, require_mse=require_mse)
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
+    negotiated = None
+    proxy = TcpProxy(parse_address(ready)) if require_mse else None
     try:
         parameters = lt.add_torrent_params()
         parameters.ti = fixture.torrent_info
@@ -316,10 +343,11 @@ def leech_with_libtorrent(
         parameters.flags &= ~lt.torrent_flags.paused
         parameters.flags &= ~lt.torrent_flags.auto_managed
         handle = session.add_torrent(parameters)
-        handle.connect_peer(parse_address(ready))
+        handle.connect_peer(proxy.endpoint if proxy is not None else parse_address(ready))
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
+            negotiated = negotiated or observed_encryption(handle)
             status = handle.status()
             if status.errc.value() != 0:
                 raise ScenarioFailure(
@@ -334,11 +362,16 @@ def leech_with_libtorrent(
                 + "\n".join(diagnostics[-40:])
             )
         compare_libtorrent_files(fixture, output_root)
-        return diagnostics[-20:]
+        if require_mse:
+            assert_successful_wire_shape(proxy.traces(), "rc4")
+            negotiated = "rc4"
+        return diagnostics[-20:], negotiated
     finally:
         if handle is not None and handle.is_valid():
             session.remove_torrent(handle)
         session.pause()
+        if proxy is not None:
+            proxy.close()
         handle = None
         session = None
         gc.collect()
@@ -346,8 +379,10 @@ def leech_with_libtorrent(
 
 def start_libtorrent_seed(
     fixture: RuntimeFixture,
+    *,
+    require_mse: bool = False,
 ) -> tuple[lt.session, lt.torrent_handle, list[str]]:
-    session = libtorrent_session(incoming=True)
+    session = libtorrent_session(incoming=True, require_mse=require_mse)
     parameters = lt.add_torrent_params()
     parameters.ti = fixture.torrent_info
     parameters.save_path = str(fixture.libtorrent_storage_root)
@@ -378,16 +413,26 @@ def leech_with_rstorrent(
     output_root: Path,
     *,
     skipped: frozenset[int] = frozenset(),
-) -> tuple[dict[str, str], list[str]]:
+    require_mse: bool = False,
+) -> tuple[dict[str, str], list[str], str | None]:
     output_root.mkdir()
-    session, handle, diagnostics = start_libtorrent_seed(fixture)
+    session, handle, diagnostics = start_libtorrent_seed(
+        fixture, require_mse=require_mse
+    )
+    proxy = (
+        TcpProxy(("127.0.0.1", session.listen_port())) if require_mse else None
+    )
     try:
         command = [
             str(binary),
             "--metainfo",
             str(fixture.torrent_path),
             "--peer",
-            f"127.0.0.1:{session.listen_port()}",
+            (
+                f"{proxy.endpoint[0]}:{proxy.endpoint[1]}"
+                if proxy is not None
+                else f"127.0.0.1:{session.listen_port()}"
+            ),
             "--output",
             str(output_root),
             "--timeout-seconds",
@@ -397,23 +442,33 @@ def leech_with_rstorrent(
         ]
         for index in sorted(skipped):
             command.extend(["--skip-file", str(index)])
-        completed = subprocess.run(
+        if require_mse:
+            command.extend(["--encryption", "required"])
+        process = subprocess.Popen(
             command,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=PROCESS_TIMEOUT_SECONDS,
-            check=False,
         )
+        negotiated = None
+        deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
+        while process.poll() is None:
+            negotiated = negotiated or observed_encryption(handle)
+            if time.monotonic() >= deadline:
+                process.kill()
+                raise ScenarioFailure("RSTorrent v2 leech exceeded its process deadline")
+            time.sleep(0.002)
+        stdout, stderr = process.communicate()
         diagnostics.extend(alert.message() for alert in session.pop_alerts())
-        if completed.returncode != 0:
+        if process.returncode != 0:
             raise ScenarioFailure(
-                f"RSTorrent v2 leech exited with {completed.returncode}\n"
-                f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}\n"
+                f"RSTorrent v2 leech exited with {process.returncode}\n"
+                f"stdout:\n{stdout}\nstderr:\n{stderr}\n"
                 + "\n".join(diagnostics[-40:])
             )
         fields = {
             key: value
-            for token in completed.stdout.split()
+            for token in stdout.split()
             if "=" in token
             for key, value in [token.split("=", 1)]
         }
@@ -430,12 +485,17 @@ def leech_with_rstorrent(
             or (part_path != "-" and Path(part_path).exists())
         ):
             raise ScenarioFailure(f"pure-v2 leech used a part file: {fields}")
+        if require_mse:
+            assert_successful_wire_shape(proxy.traces(), "rc4")
+            negotiated = "rc4"
         compare_files(fixture, output_root, skipped=skipped)
-        return fields, diagnostics[-20:]
+        return fields, diagnostics[-20:], negotiated
     finally:
         if handle.is_valid():
             session.remove_torrent(handle)
         session.pause()
+        if proxy is not None:
+            proxy.close()
         handle = None
         session = None
         gc.collect()
@@ -454,7 +514,7 @@ def run(repository: Path, *, no_build: bool) -> None:
         for fixture in fixtures(run_root):
             seed_process, seed_ready = start_rstorrent_seed(seed_binary, fixture)
             try:
-                first_alerts = leech_with_libtorrent(
+                first_alerts, _ = leech_with_libtorrent(
                     fixture,
                     seed_ready,
                     fixture.torrent_path.parent / "libtorrent-from-rstorrent",
@@ -468,7 +528,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                 seed_binary, fixture
             )
             try:
-                restart_alerts = leech_with_libtorrent(
+                restart_alerts, _ = leech_with_libtorrent(
                     fixture,
                     restarted_ready,
                     fixture.torrent_path.parent / "libtorrent-from-restarted-rstorrent",
@@ -480,7 +540,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                 terminate_process(restarted_process)
                 raise
 
-            full_fields, reverse_alerts = leech_with_rstorrent(
+            full_fields, reverse_alerts, _ = leech_with_rstorrent(
                 download_binary,
                 fixture,
                 fixture.torrent_path.parent / "rstorrent-from-libtorrent",
@@ -492,13 +552,43 @@ def run(repository: Path, *, no_build: bool) -> None:
             )
             selective_fields = None
             if skipped:
-                selective_fields, _ = leech_with_rstorrent(
+                selective_fields, _, _ = leech_with_rstorrent(
                     download_binary,
                     fixture,
                     fixture.torrent_path.parent
                     / "rstorrent-selective-from-libtorrent",
                     skipped=skipped,
                 )
+            mse_evidence = None
+            if fixture.name == "pure-v2-single":
+                mse_process, mse_ready = start_rstorrent_seed(
+                    seed_binary, fixture, require_mse=True
+                )
+                try:
+                    mse_alerts, incoming_method = leech_with_libtorrent(
+                        fixture,
+                        mse_ready,
+                        fixture.torrent_path.parent / "libtorrent-mse-from-rstorrent",
+                        require_mse=True,
+                    )
+                    mse_stop = stop_rstorrent_seed(mse_process, fixture.total_size)
+                except BaseException:
+                    terminate_process(mse_process)
+                    raise
+                mse_fields, outgoing_alerts, outgoing_method = leech_with_rstorrent(
+                    download_binary,
+                    fixture,
+                    fixture.torrent_path.parent / "rstorrent-mse-from-libtorrent",
+                    require_mse=True,
+                )
+                mse_evidence = {
+                    "libtorrent_initiates": incoming_method,
+                    "rstorrent_initiates": outgoing_method,
+                    "rstorrent_seed": seed_summary(mse_stop),
+                    "rstorrent_leech": mse_fields,
+                    "libtorrent_leech_alerts": mse_alerts,
+                    "libtorrent_seed_alerts": outgoing_alerts,
+                }
             print(
                 json.dumps(
                     {
@@ -513,6 +603,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                         "restarted_rstorrent_seed": seed_summary(restarted_stop),
                         "rstorrent_leech": full_fields,
                         "rstorrent_selective_leech": selective_fields,
+                        "mse": mse_evidence,
                         "libtorrent_seed_alerts": reverse_alerts,
                         "libtorrent_leech_alerts": first_alerts,
                         "libtorrent_restart_alerts": restart_alerts,
@@ -528,7 +619,7 @@ def run(repository: Path, *, no_build: bool) -> None:
         print(
             "interop=pure-v2-runtime "
             f"libtorrent_binding={lt.__version__} libtorrent_native={lt.version} "
-            f"fixtures=2 roles=both restart=true cleanup=true "
+            f"fixtures=2 roles=both restart=true mse=rc4-both-roles cleanup=true "
             f"oracle_rss_bytes={rss} child_peak_rss_bytes={child_rss}"
         )
     except BaseException as error:

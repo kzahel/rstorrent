@@ -306,9 +306,9 @@ uv run --project tests/interop --locked \
 The complete-source pure-v2 runtime scenario generates independent BEP 52
 single-file and aligned multi-file fixtures, then transfers each one in both
 RSTorrent/libtorrent roles over loopback TCP. It repeats application-owned
-seeding after restart, covers selective file download, verifies exact payload
-and versioned identities, enforces resource high-water bounds, and removes all
-temporary state:
+seeding after restart, covers selective file download, forces RC4 MSE in both
+initiated roles, verifies exact payload and versioned identities, enforces
+resource high-water bounds, and removes all temporary state:
 
 ```bash
 uv run --project tests/interop --locked \
