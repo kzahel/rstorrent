@@ -6208,6 +6208,114 @@ mod tests {
 
         drop(resumed);
         drop(published);
+
+        let v2_skipped = vec![0x31; 9];
+        let v2_selected = (0..40_000)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        let v2_final = vec![0x5a; 17];
+        let v2_content = Arc::new(pure_v2_content(
+            &[(b"a", &v2_skipped), (b"b", &v2_selected), (b"c", &v2_final)],
+            32 * 1024,
+        ));
+        let v2_torrent_id = TorrentId::new([0x61; 16]).expect("v2 platform owner");
+        let v2_identity = TorrentArtifactIdentity {
+            torrent_id: v2_torrent_id,
+            content_fingerprint: ContentFingerprint::from_digest([0x62; 32]),
+        };
+        let v2_spec = PlatformStorageSpec {
+            pool: pool.clone(),
+            root_id: "downloads".to_owned(),
+            storage_id: storage_instance_id(v2_torrent_id),
+            publication_shape: PublicationShape::Tree,
+            publication_name: "root".to_owned(),
+            namespace_generation: 0,
+            managed: false,
+            published: false,
+        };
+        let (mut v2_storage, v2_created) = SelectiveStorage::create_content_with_platform(
+            v2_spec.clone(),
+            v2_identity,
+            v2_content.clone(),
+            &[0],
+            vec![false; 4],
+        )
+        .await
+        .expect("create pure-v2 platform storage");
+        assert_eq!(v2_created, ResumedStorage::Created);
+        assert_eq!(v2_storage.part_slots(), 0);
+        assert!(!v2_storage.has_part_file());
+        for (piece, payload) in v2_selected.chunks(32 * 1024).enumerate() {
+            let piece_index = u32::try_from(piece + 1).expect("v2 piece index");
+            for (block, bytes) in payload.chunks(16 * 1024).enumerate() {
+                v2_storage
+                    .write_block(
+                        piece_index,
+                        u32::try_from(block * 16 * 1024).expect("v2 block begin"),
+                        bytes.to_vec(),
+                    )
+                    .await
+                    .expect("write v2 platform block");
+            }
+            assert!(matches!(
+                v2_storage.hash_piece_content(piece_index).await,
+                Ok(ComputedPieceHash::Sha256 { .. })
+            ));
+            v2_storage
+                .record_verified(piece + 1)
+                .expect("record v2 platform piece");
+        }
+        v2_storage
+            .write_block(3, 0, v2_final.clone())
+            .await
+            .expect("write final v2 platform file");
+        assert!(matches!(
+            v2_storage.hash_piece_content(3).await,
+            Ok(ComputedPieceHash::Sha256 { .. })
+        ));
+        v2_storage
+            .record_verified(3)
+            .expect("record final v2 platform piece");
+        v2_storage
+            .prepare_platform()
+            .await
+            .expect("prepare v2 platform publication");
+        let v2_prepared = v2_storage
+            .finalize_descriptor_hashes()
+            .await
+            .expect("hash prepared v2 platform files");
+        pool.invalidate_storage(&v2_spec.storage_id);
+        std::fs::rename(
+            root.join(format!(".{}.rstorrent-staging", v2_spec.storage_id)),
+            root.join("root"),
+        )
+        .expect("publish fake v2 provider tree");
+        let v2_published = PlatformStorageSpec {
+            namespace_generation: 1,
+            managed: true,
+            published: true,
+            ..v2_spec
+        };
+        super::verify_prepared_platform_content_files(&v2_published, &v2_content, &v2_prepared)
+            .await
+            .expect("verify v2 platform publication");
+        let v2_validation = super::validate_published_fast_resume_content_with_platform(
+            v2_published,
+            v2_identity,
+            v2_content,
+            &[false, true, true, true],
+            &[0],
+        )
+        .await
+        .expect("validate v2 platform fast resume");
+        assert_eq!(v2_validation.evidence, ResumeStorageEvidence::Matches);
+        assert_eq!(v2_validation.payload_bytes_read, 0);
+        assert_eq!(std::fs::read(root.join("root/b")).unwrap(), v2_selected);
+        assert_eq!(std::fs::read(root.join("root/c")).unwrap(), v2_final);
+        assert!(!root.join("root/a").exists());
+        assert!(pool.snapshot().owned_high_water <= 4);
+        drop(v2_storage);
+
         pool.shutdown().await.expect("shutdown pool");
         drop(pool);
         provider.await.expect("join fake provider");
