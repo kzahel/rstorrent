@@ -6,8 +6,9 @@ use std::fmt;
 
 use super::{MAX_UTP_PAYLOAD_SIZE, PacketType, SequenceNumber, SequenceRelation};
 
-pub const MAX_REORDER_PACKETS: usize = 64;
 pub const MAX_RECEIVE_BYTES: usize = 1024 * 1024;
+pub const REORDER_POSITION_BYTES: usize = 1_100;
+pub const MAX_REORDER_PACKETS: usize = MAX_RECEIVE_BYTES / REORDER_POSITION_BYTES;
 pub const MAX_REORDER_BYTES: usize = MAX_RECEIVE_BYTES;
 pub const MAX_REORDER_DISTANCE: u16 = MAX_REORDER_PACKETS as u16 + 1;
 const GENERATED_SACK_BYTES: usize = MAX_REORDER_PACKETS.div_ceil(8);
@@ -634,6 +635,42 @@ mod tests {
             .receive(PacketType::Data, sequence(1), b"release")
             .expect("release full reorder window");
         assert_eq!(receive.snapshot().queued_packets, 0);
+    }
+
+    #[test]
+    fn reorder_distance_matches_receive_credit_and_sack_capacity() {
+        assert_eq!(MAX_REORDER_PACKETS, 953);
+        assert_eq!(MAX_REORDER_DISTANCE, 954);
+
+        let mut receive = ReceiveState::new(sequence(0));
+        let furthest = receive
+            .receive(
+                PacketType::Data,
+                sequence(MAX_REORDER_DISTANCE),
+                b"furthest",
+            )
+            .expect("buffer furthest admissible packet");
+        let sack = furthest.selective_ack.expect("SACK furthest packet");
+        assert_eq!(sack.as_bytes().len(), 120);
+        assert!(sack.acknowledges_offset(MAX_REORDER_DISTANCE));
+
+        let snapshot = receive.snapshot();
+        assert_eq!(snapshot.queued_packets, 1);
+        assert_eq!(snapshot.queued_bytes, b"furthest".len());
+        assert_eq!(
+            receive
+                .receive(
+                    PacketType::Data,
+                    sequence(MAX_REORDER_DISTANCE + 1),
+                    b"too far",
+                )
+                .expect("classify first packet beyond the bound")
+                .disposition,
+            ReceiveDisposition::TooFarAhead {
+                distance: MAX_REORDER_DISTANCE + 1,
+            }
+        );
+        assert_eq!(receive.snapshot(), snapshot);
     }
 
     #[test]

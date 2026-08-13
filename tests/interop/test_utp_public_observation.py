@@ -55,6 +55,8 @@ def successful_result() -> dict:
             "retransmission_bytes_sent": 0,
             "retransmission_queue_high_water": 0,
             "delivered_byte_high_water": 0,
+            "receive_reorder_packet_high_water": 0,
+            "receive_buffered_byte_high_water": 0,
             "unsent_byte_high_water": 0,
             "sent_byte_high_water": 0,
             "selected_mtu_min_bytes": None,

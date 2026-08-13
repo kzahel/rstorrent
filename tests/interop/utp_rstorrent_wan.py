@@ -1136,6 +1136,8 @@ def sample_metrics(sample: dict[str, Any]) -> dict[str, int | float]:
         "connection_datagram_queue_high_water",
         "retransmission_queue_high_water",
         "delivered_byte_high_water",
+        "receive_reorder_packet_high_water",
+        "receive_buffered_byte_high_water",
         "unsent_byte_high_water",
         "sent_byte_high_water",
         "retransmission_datagrams_sent",

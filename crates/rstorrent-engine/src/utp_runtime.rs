@@ -204,6 +204,8 @@ pub struct UtpServiceSnapshot {
     pub loss_reduction_high_water: u64,
     pub timeout_collapse_high_water: u64,
     pub delivered_byte_high_water: usize,
+    pub receive_reorder_packet_high_water: usize,
+    pub receive_buffered_byte_high_water: usize,
     pub unsent_byte_high_water: usize,
     pub sent_byte_high_water: usize,
     pub application_coalesce_byte_high_water: usize,
@@ -972,6 +974,8 @@ struct UtpStats {
     loss_reduction_high_water: AtomicU64,
     timeout_collapse_high_water: AtomicU64,
     delivered_byte_high_water: AtomicUsize,
+    receive_reorder_packet_high_water: AtomicUsize,
+    receive_buffered_byte_high_water: AtomicUsize,
     unsent_byte_high_water: AtomicUsize,
     sent_byte_high_water: AtomicUsize,
     application_coalesce_byte_high_water: AtomicUsize,
@@ -1083,6 +1087,12 @@ impl UtpStats {
             loss_reduction_high_water: self.loss_reduction_high_water.load(Ordering::Relaxed),
             timeout_collapse_high_water: self.timeout_collapse_high_water.load(Ordering::Relaxed),
             delivered_byte_high_water: self.delivered_byte_high_water.load(Ordering::Relaxed),
+            receive_reorder_packet_high_water: self
+                .receive_reorder_packet_high_water
+                .load(Ordering::Relaxed),
+            receive_buffered_byte_high_water: self
+                .receive_buffered_byte_high_water
+                .load(Ordering::Relaxed),
             unsent_byte_high_water: self.unsent_byte_high_water.load(Ordering::Relaxed),
             sent_byte_high_water: self.sent_byte_high_water.load(Ordering::Relaxed),
             application_coalesce_byte_high_water: self
@@ -1292,6 +1302,10 @@ impl UtpStats {
             .fetch_max(snapshot.mtu.downward_recoveries, Ordering::Relaxed);
         if let Some(receive) = snapshot.connection.receive {
             self.delivered_byte_high_water
+                .fetch_max(receive.byte_high_water, Ordering::Relaxed);
+            self.receive_reorder_packet_high_water
+                .fetch_max(receive.packet_high_water, Ordering::Relaxed);
+            self.receive_buffered_byte_high_water
                 .fetch_max(receive.byte_high_water, Ordering::Relaxed);
             self.advertised_receive_window_bytes
                 .record(receive.advertised_window_bytes);
@@ -2652,7 +2666,8 @@ impl UtpClock {
 mod tests {
     use super::*;
     use rstorrent_protocol::utp::{
-        ExtensionToEncode, MAX_RECEIVE_BYTES, PacketToEncode, UtpHeader, encode_packet,
+        ExtensionToEncode, MAX_RECEIVE_BYTES, MAX_REORDER_PACKETS, PacketToEncode, UtpHeader,
+        encode_packet,
     };
     use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
@@ -3552,6 +3567,18 @@ mod tests {
             assert!(MAX_EMISSIONS_PER_TURN < UTP_CONNECTION_DATAGRAM_QUEUE);
         }
         assert_eq!(MAX_EMISSIONS_PER_TURN, UTP_CONNECTION_DATAGRAM_QUEUE / 4);
+    }
+
+    #[test]
+    fn aggregate_reorder_owner_has_an_explicit_memory_budget() {
+        const METADATA_BUDGET_PER_POSITION: usize = 256;
+        const MAX_REORDER_METADATA_BYTES: usize =
+            MAX_UTP_CONNECTIONS * MAX_REORDER_PACKETS * METADATA_BUDGET_PER_POSITION;
+        const MAX_REORDER_PAYLOAD_BYTES: usize = MAX_UTP_CONNECTIONS * MAX_RECEIVE_BYTES;
+
+        assert_eq!(MAX_REORDER_PACKETS, 953);
+        assert_eq!(MAX_REORDER_PAYLOAD_BYTES, 64 * 1024 * 1024);
+        assert!(MAX_REORDER_METADATA_BYTES <= 16 * 1024 * 1024);
     }
 
     #[test]

@@ -565,8 +565,12 @@ runtime infrastructure into protocol state.
 ## Preserved Invariants And Resource Limits
 
 - One connection retains at most 1,024 sent packets, 1 MiB sent bytes, 1 MiB
-  unsent bytes, 1 MiB receive bytes, 64 reordered packets, one pending
-  emission, one MTU probe, and eight transmission attempts per packet.
+  unsent bytes, 1 MiB receive bytes, 953 reordered packets, one pending
+  emission, one MTU probe, and eight transmission attempts per packet. The
+  reorder position count is derived from the unchanged receive credit at one
+  position per 1,100 bytes. Across all 64 uTP connections, payload ownership
+  therefore remains 64 MiB; a conservative 256-byte metadata budget per
+  position adds at most 14.891 MiB, and fixed SACK storage adds 7,680 bytes.
 - Shared uTP ingress and each connection ingress remain 256 datagrams; one
   runtime turn emits at most 64 datagrams. Any proposed change to these bounds
   requires measured high-water evidence and the same or tighter aggregate
