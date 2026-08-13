@@ -1,12 +1,13 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
 Status: **Active under parent Tactical 142; terminal provenance, repeated-cycle
-gates, release recovery repairs, and off-device WAN builds are implemented.** Maintainer
-direction on 2026-08-13 selects this tactical after Tactical `143` completed
-and activates continued uTP performance work with the goal of approaching
-pinned-libtorrent uTP throughput. This tactical may autonomously diagnose and
-repair causal defects in existing uTP, ordered-stream, and peer-I/O owners. A
-production congestion-policy change remains a human-review gate.
+gates, release recovery, packetization repairs, and off-device WAN builds are
+implemented.** Maintainer direction on 2026-08-13 selects this tactical after
+Tactical `143` completed and activates continued uTP performance work with the
+goal of approaching pinned-libtorrent uTP throughput. This tactical may
+autonomously diagnose and repair causal defects in existing uTP,
+ordered-stream, and peer-I/O owners. A production congestion-policy change
+remains a human-review gate.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -414,9 +415,65 @@ more DATA datagrams and four times the ACK work before CPU, storage, path MTU,
 or admitted-byte window diverge. The exact pinned-libtorrent `send_pkt` owner
 waits when the desired DATA payload does not fit the remaining congestion and
 remote window; RSTorrent's `new_payload_bytes` instead shrinks ordinary DATA
-to every residual window sliver. A deterministic no-sliver packetization
-regression and existing-owner repair are the next executable action. No
-controller constant or congestion policy is selected by this evidence.
+to every residual window sliver. This selects a deterministic packetization
+A/B before any controller change; it does not establish that libtorrent's
+full-payload rule composes unchanged with RSTorrent's deliberate
+no-slow-start controller.
+
+### Stage 6: bounded residual-fragment repair
+
+An independently authored transport regression first proves that a queued
+full segment is no longer reduced to a seven-byte residual-window fragment,
+that the worker does not advertise immediate work while that fragment is
+withheld, and that a subsequent ACK releases one full segment. Legitimate
+short queue tails and a zero-flight progress escape for a genuinely tiny
+remote window remain admitted.
+
+The first full-payload-or-wait implementation matched pinned libtorrent but
+failed retained RSTorrent controller gates. Clean 160 ms simulation completion
+rose to 19.885 seconds beyond the 19-second ceiling, and a TCP-like competitor
+received only 58.26% of overlap traffic against the 70% minimum. Production
+therefore suppresses only a residual fragment smaller than half its intended
+payload. This deliberate difference preserves enough ACK feedback for the
+no-slow-start controller: the same simulations complete in 18.316 seconds and
+give the competitor 70.37% overlap share. All 214 routine protocol tests and
+warning-denying protocol Clippy pass without changing `TARGET`, `GAIN`,
+`ALLOWED_INCREASE`, loss response, or any byte/packet bound.
+
+The 64 MiB product RSTorrent/RSTorrent gate over the controlled 160 ms relay
+then completes all 256 pieces at 1.206339 MiB/s on one connection per role.
+The seed emits 47,076 DATA datagrams against a 46,701 full-1,437-byte-payload
+lower bound, selects a 1,457-byte MTU, has zero retransmission or datagram
+drop, and reaches 66 of 256 ingress datagrams plus 435,379 in-flight bytes.
+Both roles and the relay terminate with zero queue ownership and the output is
+removed.
+
+A three-repetition exact WAN RSTorrent/RSTorrent 256 MiB cohort at revision
+`b6c69cd0f9d207ce1eeb3305f00d360068f90b1f` is likewise exact and clean:
+
+| Metric | Pre-repair median | Post-repair median | Change |
+| --- | ---: | ---: | ---: |
+| Active MiB/s | 1.518572 | 1.563165 | +2.94% |
+| DATA datagrams | 318,008 | 188,149 | -40.84% |
+| Congestion ACK events | 159,731 | 96,269 | -39.73% |
+| Retransmissions | 754 | 399 | -47.08% |
+| Timeout collapses | 619 | 326 | -47.33% |
+| Too-far-ahead DATA | 751 | 398 | -47.00% |
+
+The three rates span only 1.562916--1.564864 MiB/s and every case stays on one
+connection with zero retry exhaustion, peer/content error, fallback, or
+cleanup failure. The seed still fills 461 packets and 663,094 bytes in flight
+at the median while the receiver retains only 97,716--124,888 bytes at high
+water and advertises at least 925,125 bytes of unused credit. One loss
+reduction nevertheless leaves 397--400 later DATA datagrams beyond the fixed
+64-packet receive-reorder distance.
+
+Pinned libtorrent independently bounds this same owner from its 1 MiB receive
+capacity, allowing `max(16, capacity / 1100) = 953` packet positions before a
+too-far drop. RSTorrent advertises the same 1 MiB byte window but only 64
+positions. A resource-accounted receive-reorder bound repair, with packet and
+byte high-water telemetry and unchanged 1 MiB payload credit, is now the next
+executable action.
 
 ## Owner, Task, Cancellation, And Dependency Map
 

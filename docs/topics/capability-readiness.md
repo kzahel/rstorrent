@@ -431,10 +431,13 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
   Two causal release recovery repairs now pass a rotating three-repetition
   remote-seed 256 MiB reliability cohort: all 12 cells complete exactly and
   every RSTorrent role stays on one connection. The remaining 98.5%, 77.7%,
-  and 55.4% mixed/RST median oracle ratios select ordinary DATA packetization
-  for the next bounded repair; the full near-parity cohort remains. Remote
-  revisions are built in the guarded ARM64 Linux VM, not on the constrained
-  WAN peer.
+  and 55.4% mixed/RST median oracle ratios selected ordinary DATA
+  packetization. Its fairness-preserving repair cuts packet/ACK work about 40%
+  and recovery/reorder work about 47%, but improves the focused WAN median only
+  2.94%. The residual 461-packet flight still exceeds a fixed 64-packet
+  receive-reorder distance despite ample byte credit, selecting that bounded
+  resource owner next; the full near-parity cohort remains. Remote revisions
+  are built in the guarded ARM64 Linux VM, not on the constrained WAN peer.
 
 ### Next
 

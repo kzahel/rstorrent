@@ -1014,9 +1014,22 @@ RSTorrent seed sends 220,461--224,277 DATA datagrams to libtorrent but
 and the same roughly 650 KiB flight/window. The RSTorrent receiver composition
 also creates roughly four times the congestion ACK events, 750--778 seed
 retransmissions, and 746--776 later DATA rejections beyond the receiver's
-64-packet reorder allowance. RSTorrent currently shrinks new DATA into every
+64-packet reorder allowance. RSTorrent previously shrank new DATA into every
 remaining window sliver, unlike pinned libtorrent's full-payload-or-wait
-admission. Tactical `145` next owns a deterministic packetization regression
-and bounded existing-owner repair; it does not yet authorize controller-policy
-changes. Another NAT mechanism, IPv6 uTP, permanent network change, another
-host, and a broader uTP support claim remain separate decisions.
+admission. A direct adoption failed RSTorrent's clean long-RTT and TCP-like
+fairness simulations, so the bounded repair suppresses only fragments smaller
+than half the intended payload while preserving legitimate tails and
+zero-flight progress. It passes all routine protocol tests, the controlled
+64 MiB product gate, and a three-sample WAN A/B. The WAN median improves 2.94%
+while DATA datagrams, ACK work, retransmissions, timeout collapses, and
+too-far receive drops fall 39.7%--47.3%.
+
+The remaining signature is narrower: a median 461-packet/663 KiB flight meets
+one loss, after which 397--400 later packets exceed RSTorrent's fixed
+64-packet reorder distance even though at least 925 KiB of its advertised
+1 MiB byte window remains. Pinned libtorrent derives 953 positions from the
+same 1 MiB receive capacity. Tactical `145` next owns a resource-accounted
+receive-reorder bound repair with packet/byte high-water telemetry and no
+increase to receive payload credit; it still does not authorize controller-
+policy changes. Another NAT mechanism, IPv6 uTP, permanent network change,
+another host, and a broader uTP support claim remain separate decisions.

@@ -101,10 +101,24 @@ The RSTorrent sender emits 220,461--224,277 DATA datagrams to libtorrent but
 650 KiB maximum flight. The latter composition also processes about four
 times the ACK events and turns one or two loss reductions into 750--778
 retransmissions, 614--638 timeout collapses, and 746--776 receive-reorder
-rejections. The next measurement is a deterministic and WAN A/B for ordinary
-DATA packetization: RSTorrent currently fills residual window slivers with
-short DATA packets where pinned libtorrent waits for the desired payload to
-fit. Controller constants remain unchanged and review-gated.
+rejections. The corresponding packetization A/B rejects copying libtorrent's
+complete full-payload wait: that rule misses the clean 160 ms completion
+ceiling and reduces TCP-like competitor overlap share to 58.26%. Suppressing
+only residual fragments smaller than half the intended payload passes at
+18.316 seconds and 70.37% competitor share without changing the controller. A
+controlled 64 MiB product transfer then completes at 1.206339 MiB/s with
+47,076 DATA datagrams, zero loss/drop, exact integrity, one connection per
+role, and cleanup.
+
+Three exact WAN RSTorrent/RSTorrent 256 MiB repetitions at `b6c69cd` span
+1.562916--1.564864 MiB/s. Relative to the pre-repair medians, rate improves
+2.94%, DATA datagrams fall 40.84%, congestion ACK events fall 39.73%, and
+retransmissions, timeout collapses, and too-far-ahead drops each fall about
+47%. All cases remain on one connection and clean up. The residual median
+461-packet/663 KiB flight still produces 398 too-far drops beyond a 64-packet
+reorder distance despite at least 925 KiB of advertised receive credit. The
+next existing owner is a resource-accounted reorder-position bound; controller
+constants remain unchanged and review-gated.
 
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and

@@ -593,10 +593,20 @@ Median oracle ratios are 98.5% for libtorrent-to-RSTorrent, 77.7% for
 RSTorrent-to-libtorrent, and 55.4% for RSTorrent-to-RSTorrent. Equal wire bytes
 and window/flight accompany 220--224 thousand RSTorrent DATA datagrams toward
 libtorrent but 318--322 thousand toward RSTorrent, roughly four times the ACK
-events, and 746--776 receive-reorder rejections. The next executable action is
-a deterministic no-window-sliver packetization regression, the corresponding
-existing-owner repair, and a focused WAN A/B before any congestion-policy
-decision. The
+events, and 746--776 receive-reorder rejections. A direct
+full-payload-or-wait rule then fails retained clean-path and TCP-like fairness
+gates; the accepted bounded repair suppresses only fragments smaller than half
+their intended payload. Its controlled product gate passes, and three exact
+WAN RSTorrent/RSTorrent repetitions improve median rate 2.94% while reducing
+DATA datagrams and ACK work about 40% and recovery/reorder work about 47%.
+
+The remaining WAN flight reaches a median 461 packets but one loss still puts
+398 later packets beyond RSTorrent's fixed 64-packet receive distance while
+more than 925 KiB of advertised byte credit remains. Pinned libtorrent derives
+953 reorder positions from the same 1 MiB receive capacity. The next
+executable action is a resource-accounted reorder-position repair with exact
+packet/byte high waters and no increase to payload credit, followed by the
+same focused WAN gate before any congestion-policy decision. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while
