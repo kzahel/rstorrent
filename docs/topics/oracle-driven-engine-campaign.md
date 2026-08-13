@@ -106,11 +106,13 @@ completed on 2026-08-13. The post-143 readiness review activated Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
 under parent Tactical `142`; it reached its production congestion-policy
 human-review gate before explicit maintainer direction on 2026-08-13 paused
-the engine campaign. Product Tactical
-[`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) is now
-the sole authoritative **Now**. Decision-complete Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) remains
-queued after the bounded iOS campaign and is not active.
+the engine campaign. Product Tacticals
+[`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) through
+[`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
+are complete. Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is now
+the sole authoritative **Now**; Tactical `145` remains paused at its existing
+human-review gate rather than resuming implicitly.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -476,11 +478,12 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **paused at Tactical `145` under parent Tactical
-`142`.** Tactical `145` has reached its production congestion-policy
-human-review gate. Explicit maintainer direction on 2026-08-13 moved the sole
-authoritative **Now** to product Tactical `147`, followed by bounded iOS
-Tacticals `148` and `149`. Completed Tactical `143` installs the
+Engine campaign status: **active at Tactical `146`; Tactical `145` remains
+paused under parent Tactical `142`.** Tactical `145` has reached its production
+congestion-policy human-review gate. Explicit maintainer direction on
+2026-08-13 moved the sole authoritative **Now** through product Tacticals `147`
+to `149`; that bounded iOS campaign is complete and the previously queued
+Tactical `146` is now active. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
 and generated first-party identity contract. Tactical `142` and its paused
@@ -496,15 +499,14 @@ pinned-libtorrent v1 roles, crash/restart/publication, generated web clients,
 both Android ABIs, and API-34 SAF schema-reset evidence pass. V2/hybrid input,
 Merkle integrity, and BEP 52 wire behavior remain absent.
 
-Next queued engine tactical:
+Current engine tactical:
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
-After the bounded iOS campaign completes, the maintainer may resolve Tactical
-`145`'s reached policy gate or activate this runtime-free slice, which
-establishes exact v2/hybrid metainfo, aligned geometry, strict complete piece
-layers, and bounded Merkle primitives. It leaves product admission and every
-runtime/wire path v1-only.
+It establishes exact v2/hybrid metainfo, aligned geometry, strict complete
+piece layers, and bounded Merkle primitives while leaving product admission
+and every runtime/wire path v1-only. Resolving Tactical `145`'s reached policy
+gate remains a separate maintainer decision.
 
-Latest graduated tactical:
+Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
 Commits `2ffe6d1` through `99a4cf2` establish one artifact layout, observation
 contract, root-health gate, published-content read owner, namespace-transition
@@ -513,7 +515,9 @@ AVD and physical Android matrices pass within the 40-handle and 16-request
 bounds. The final physical-iPhone rerun proves app-owned storage, restored
 bookmark coordination, direct Rust TCP/UDP, ordinary expiration, finite
 continued processing, and force-close recovery; external File Provider access
-remains explicitly unproven.
+was explicitly unproven in that tactical. Completed product Tacticals
+`147`--`149` subsequently add qualified selected on-device roots while still
+rejecting iCloud and positively identified providers.
 
 Latest completed engine tactical:
 [`139`](../tactical/139-incomplete-file-streaming-demand.md). Compact current

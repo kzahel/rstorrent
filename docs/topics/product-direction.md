@@ -16,12 +16,13 @@ Tactical [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.
 Completed Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
 records the physical evidence behind the former app-owned-only iOS policy.
-Explicit maintainer direction on 2026-08-13 supersedes that product decision
-and schedules Tacticals [`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md)
-through [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
-as the first maintained iOS product campaign. User-selected folders are now
-required, with iCloud and positively identified providers rejected and every
-accepted on-device root capability-qualified on physical hardware.
+Explicit maintainer direction on 2026-08-13 superseded that product decision
+and completed Tacticals
+[`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) through
+[`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
+as the first maintained iOS product campaign. User-selected folders are
+implemented, with iCloud and positively identified providers rejected and
+every accepted on-device root capability-qualified on physical hardware.
 
 ## Scope
 
@@ -120,14 +121,15 @@ Handwritten JNI is a narrow escape hatch for a concrete Android capability
 that UniFFI cannot express safely. It is not a parallel application API or a
 payload path.
 
-Tactical `147` selects UniFFI-generated Swift over a focused iOS static library
-and the existing typed application service. The SwiftUI presentation is
-directly reused from the first-party JSTorrent iOS product in Tactical `148`;
-no second application contract or payload bridge is introduced.
+Completed Tactical `147` selects UniFFI-generated Swift over a focused iOS
+static library and the existing typed application service. The SwiftUI
+presentation is directly reused from the first-party JSTorrent iOS product in
+completed Tactical `148`; no second application contract or payload bridge is
+introduced.
 
 ### In-process by default
 
-Desktop, Android, and the eventual iOS client should normally load the engine
+Desktop, Android, and the maintained iOS client normally load the engine
 into their own process and communicate through a typed application API. A test
 driver or later remote-control feature must not force the product itself into
 a daemon architecture. A future extension control channel carries commands,
@@ -150,13 +152,13 @@ Android/ChromeOS and desktop are the initial product surfaces. Desktop is the
 fastest bring-up and diagnostic environment. Android/ChromeOS supplies the
 primary product pressure and must receive physical-device validation.
 
-iOS is an explicitly scheduled first-party native surface around the same Rust
-engine and typed application service. Tacticals `116` and `123` remain the
-completed physical feasibility and negative-classification records. Explicit
-maintainer authorization on 2026-08-13 activates the maintained product in
-Tacticals `147`--`149`: foundation and qualified roots, direct JSTorrent
-SwiftUI reuse, then lifecycle/recovery and distribution-ready archives. This
-does not authorize TestFlight, App Store, or other publication.
+iOS is a maintained first-party native surface around the same Rust engine and
+typed application service. Tacticals `116` and `123` remain the completed
+physical feasibility and negative-classification records. Explicit maintainer
+authorization on 2026-08-13 completed the product in Tacticals `147`--`149`:
+foundation and qualified roots, direct JSTorrent SwiftUI reuse, then finite
+lifecycle/recovery and reproducible local archives. This does not authorize
+TestFlight, App Store, or other publication.
 
 ### Android engine parity gate
 
@@ -381,10 +383,9 @@ testing evidence justifies it.
 - Chrome extension or Chrome native-messaging integration.
 - Android companion HTTP/WebSocket service.
 - A generic socket or filesystem daemon.
-- App Store/TestFlight publication or an iOS release claim during the first
-  maintained-client campaign. Tacticals `147`--`149` may build, archive,
-  development-sign, install, and physically validate the product without
-  publishing it.
+- App Store/TestFlight publication or an iOS public-release claim. Completed
+  Tacticals `147`--`149` build, archive, development-sign, install, and
+  physically validate the product without publishing it.
 - Search plugins, streaming playback, or remote administration in the first
   useful client.
 - Exact JSTorrent API, engine, persistence, or feature parity. Completed

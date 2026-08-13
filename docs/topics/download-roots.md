@@ -24,9 +24,9 @@ remains required because Computer Use cannot attach to the transient system
 folder panel. Tactical `076` lets a headless private host install one explicit
 configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
-Windows remains unimplemented, and Android already proves one
-user-selected persisted SAF root but not general multi-root management.
-The first maintained iOS product root campaign is active but not yet supported.
+Windows remains unimplemented, and Android already proves one user-selected
+persisted SAF root but not general multi-root management. The maintained iOS
+product now supports app Documents plus distinct qualified selected roots.
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 physically proves app-owned Documents and coordinated, security-scoped
@@ -35,11 +35,13 @@ restoration of an app-owned bookmarked fixture. Completed Tactical
 proves stable app-owned persistence and interrupted recovery. Its later
 physical picker controls reject iCloud as ubiquitous but leave a distinct
 **On My iPhone** directory unclassifiable after the public File Provider
-lookup fails. Explicit maintainer direction on 2026-08-13 supersedes that
-product conclusion: Tactical `147` must implement the picker and may accept
+lookup fails. Explicit maintainer direction on 2026-08-13 superseded that
+product conclusion. Completed Tactical `147` implements the picker and accepts
 that exact lookup-failure shape only for a non-ubiquitous local/internal root
-that passes the full bounded Rust capability and recovery matrix. A positive
-provider identity and iCloud remain rejected.
+that passes the full bounded Rust capability and recovery matrix. Physical
+transfer, restart, Force recheck, unavailable-root repair with stable opaque
+identity, managed removal, and independent empty-folder evidence pass. A
+positive provider identity and iCloud remain rejected.
 
 Completed Tactical
 [`138`](../tactical/138-verified-http-file-serving.md) consumes stable root
@@ -421,6 +423,6 @@ Completed Tactical `116` adds backend-neutral observations and root-health
 semantics, closes SAF published reads, and records bounded physical iOS root
 feasibility without implementing fast resume or a complete iOS client.
 Completed Tactical `123` records the historical app-owned-only result.
-Tactical `147` is the explicitly authorized successor for qualified selected
-roots; completed-file cloud export remains a separate copy/verification
-tactical rather than an active torrent-root feature.
+Completed Tactical `147` is the qualified-selected-root successor;
+completed-file cloud export remains a separate copy/verification tactical
+rather than an active torrent-root feature.

@@ -116,6 +116,12 @@ adds only a versioned probe-local iOS root record and generation-fenced
 interrupted-workspace recovery. It proves stable app-owned identity without a
 raw path or bookmark and deliberately leaves schema 17 unchanged. Picker-root
 registration is disabled, so no File Provider locator enters product state.
+Completed Tactical
+[`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) keeps the
+portable schema on stable root IDs while the maintained iOS adapter owns a
+separate bounded registry of minimal security-scoped bookmark bytes, labels,
+and generations. App Documents is resolved afresh; qualified selected roots
+reopen, report per-root health, and repair without changing their opaque ID.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) records the now-
@@ -650,15 +656,15 @@ successful mutation unreadable after upgrade.
   and shared-memory behavior.
 - Android SAF URIs and persisted grants are platform locators, never SQLite
   file locations and never open descriptor numbers.
-- Eventual iOS app-container URLs, security-scoped bookmarks, File Provider
-  identities, and coordination leases are likewise platform locators/runtime
+- iOS app-container URLs, security-scoped bookmarks, File Provider identities,
+  and coordination leases are likewise platform locators/runtime
   capabilities, never portable SQLite paths or open descriptor numbers.
 - Tactical
   [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
-  proves a probe-local opaque app-owned root ID and generation-fenced recovery
-  without changing the product schema. The first product tactical must resolve
-  its app-owned Documents URL afresh and must not persist or restore picker
-  bookmarks while the selected-root policy remains disabled.
+  proves the historical probe-local opaque app-owned root ID and generation-
+  fenced recovery. Completed Tactical `147` resolves app Documents afresh and
+  keeps selected-root bookmarks in the platform registry rather than portable
+  SQLite; cloud and positively identified provider roots remain disabled.
 - File sizes, timestamps, sparse allocation, case sensitivity, and identity
   tokens are platform-specific restart evidence, not universal content proof.
 - Within the currently supported v1 schema lineage, newer applications migrate
@@ -693,10 +699,11 @@ successful mutation unreadable after upgrade.
 - Completed Tactical `120` owns the implemented per-torrent trust policy now
   that Tactical `116` makes storage generation, root health, logical artifact
   identity, and file observations coherent for path and supported Android SAF
-  storage. Tactical `123` proves only probe-local iOS app-owned recovery and
-  does not yet bring iOS into this product schema or trust policy. Tactical
-  `120` deliberately requires no clean-shutdown envelope, new schema field, or
-  persisted observation snapshot. Its deliberate remaining risk is same-
+  storage. Completed Tactical `147` applies the same conservative structure
+  and Force semantics to app-owned and qualified selected iOS roots without a
+  portable locator or new trust field. Tactical `120` deliberately requires no
+  clean-shutdown envelope, new schema field, or persisted observation
+  snapshot. Its deliberate remaining risk is same-
   length external mutation; Force is the explicit fresh-integrity path.
 - How completed payload moved outside the application is deliberately
   relocated or rediscovered.

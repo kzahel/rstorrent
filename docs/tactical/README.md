@@ -675,21 +675,21 @@ that scope and its cleanup or compatibility rules explicitly.
   pinned-libtorrent uTP throughput without regressing delay/fairness behavior;
   its exact human-review checkpoint is retained while the iOS campaign runs.
 - [`146-runtime-free-bep52-metainfo-geometry-merkle.md`](146-runtime-free-bep52-metainfo-geometry-merkle.md):
-  decision-complete and queued after the explicitly scheduled iOS campaign;
+  decision-complete and active after the completed iOS campaign;
   plans exact v2/hybrid
   metainfo, format-aware aligned geometry, strict complete piece layers, and
   bounded runtime-free Merkle primitives while product support remains v1-only.
 - [`147-ios-client-foundation-and-qualified-roots.md`](147-ios-client-foundation-and-qualified-roots.md):
-  active first iOS product slice; establishes the maintained iOS 16+ target,
+  complete first iOS product slice; establishes the maintained iOS 16+ target,
   generated Swift boundary, durable in-process application, coordinated
   descriptor-release seam, and physically qualified selected on-device roots
   while rejecting iCloud and positively identified providers.
 - [`148-jstorrent-swiftui-product-surface.md`](148-jstorrent-swiftui-product-surface.md):
-  decision-complete second iOS slice; directly reuses the first-party
+  complete second iOS slice; directly reuses the first-party
   JSTorrent SwiftUI views, assets, and localizations over typed RSTorrent
   models while deferring Search and unsupported High priority.
 - [`149-ios-lifecycle-recovery-and-distribution-readiness.md`](149-ios-lifecycle-recovery-and-distribution-readiness.md):
-  decision-complete third iOS slice; owns finite background work, process-death
+  complete third iOS slice; owns finite background work, process-death
   recovery, cold/warm input, privacy metadata, physical lifecycle evidence,
   and reproducible development/archive packaging without publication.
 

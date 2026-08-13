@@ -1,10 +1,10 @@
 # Tactical 147: iOS Client Foundation And Qualified Roots
 
-Status: Active and explicitly authorized on 2026-08-13. Maintainer direction
-supersedes Tactical `145` as the single current **Now** and supersedes Tactical
-`123`'s app-owned-only product decision. Tactical `123` remains the historical
-physical evidence for why iCloud must be rejected and why provider identity
-cannot be inferred from volume flags alone.
+Status: Complete on 2026-08-13. Maintainer direction superseded Tactical `145`
+as the single current **Now** during execution and superseded Tactical `123`'s
+app-owned-only product decision. Tactical `123` remains the historical physical
+evidence for why iCloud must be rejected and why provider identity cannot be
+inferred from volume flags alone.
 
 Topics: `product-direction`, `product-surfaces-and-migration`,
 `client-surfaces`, `download-roots`, `client-persistence`,
@@ -215,7 +215,7 @@ unrelated data handling, or external publication.
 
 ## Execution Record
 
-### 2026-08-13 foundation checkpoint
+### 2026-08-13 completion
 
 - The workspace now contains the focused `rstorrent-ios` static library and a
   generated iOS 16+ SwiftUI/XcodeGen project. The signed development build uses
@@ -239,7 +239,25 @@ unrelated data handling, or external publication.
   `iCloud folders are not supported. Choose a folder under On My iPhone.`; the
   previously qualified root remained registered and ready.
 
-This is an implementation checkpoint, not tactical completion. Controlled
-torrent publication, restart/recheck/read/removal, failure and resource-drain
-cases, full repository and Android compatibility gates, and exact cleanup are
-still required before activating Tactical `148`.
+- A controlled one-peer transfer published the exact 2 MiB fixture beneath the
+  qualified selected root. The independent seed recorded exactly 2,097,152
+  payload bytes and a peer high-water of one. The app reached Seeding, retained
+  the torrent and root over process restart, returned to 100% after Force
+  recheck, exposed the complete file, then removed the catalog and managed
+  payload. Files independently reported the selected folder empty.
+- Permanently removing the selected run-owned folder made the next process
+  report the exact unavailable reason and Repair action without fallback.
+  Repair selected a new run-owned On My iPhone folder, preserved the opaque
+  root ID, advanced its generation, resumed affected intent, and requalified
+  it. The final physical root remains empty and healthy.
+- Root eligibility, bounded registry/corruption, stable repair, namespace, and
+  release-guard tests pass. The Rust workspace, generated Swift and Kotlin
+  boundaries, both Android ABIs, Gradle unit/lint/package gates, simulator
+  suites, and signed physical build all pass at campaign closure. No signing
+  identity, bookmark, path, provider identity, or device identifier entered
+  repository evidence.
+
+The stopping condition is met. The supported wording is exactly **app-owned
+Documents and qualified on-device selected folders; iCloud and positively
+identified providers rejected**. This does not widen support to cloud or an
+arbitrary File Provider root.

@@ -1,7 +1,7 @@
 # Tactical 149: iOS Lifecycle, Recovery, And Distribution Readiness
 
-Status: Decision-complete and queued immediately after Tactical `148` by
-explicit maintainer direction on 2026-08-13.
+Status: Complete on 2026-08-13 after Tacticals `147` and `148`, by explicit
+maintainer direction.
 
 Topics: `client-surfaces`, `product-direction`,
 `product-surfaces-and-migration`, `client-persistence`, `download-roots`,
@@ -96,7 +96,7 @@ therefore recovered only from durable facts.
 | UIKit background assertions | 1 |
 | Continued-processing tasks | 1 |
 | Pending cold-launch inputs | 1, at most 64 MiB |
-| Local notification categories/requests owned by app | 2 / 8 |
+| Local notification categories/requests owned by app | 1 / 1 |
 | Lifecycle transition history retained for diagnostics | 64 records |
 | Graceful shutdown attempt | bounded by remaining OS time, maximum 25 s |
 
@@ -151,3 +151,51 @@ relaunch of the explicit development app, local notifications, controlled
 payload files, and cleanup. Stop for protected device authorization, account or
 certificate changes, new distribution entitlements, external publication, or
 destructive action outside run-owned app/root artifacts.
+
+## Execution Record
+
+### 2026-08-13 completion
+
+- One `@MainActor` lifecycle owner now owns the application generation, scene
+  phase, one UIKit assertion, one availability-gated iOS 26 continued-
+  processing request/task, a one-category/one-request notification coordinator,
+  and one pending external input. A 64-entry transition history and 64-entry
+  handled-input set are hard bounds. Three pure Swift tests cover generation
+  idempotence, exclusive finite owners, pending-input replay/deduplication, and
+  both retention bounds.
+- Magnet and `.torrent` declarations route through one delegate/SwiftUI bridge
+  into the same single pending owner. On physical hardware, terminated-process
+  and warm magnet handoffs each produced one catalog row and exact controlled
+  transfer. On the simulator, warm and terminated-process `.torrent` file URL
+  handoffs each produced one row; replay retained one row rather than creating
+  another.
+- Notification authorization was requested only after the Settings toggle was
+  selected on the iPhone; the system prompt was accepted and the semantic
+  switch changed from `0` to `1`. No notification permission is requested at
+  launch. iOS continued-processing submission is availability-gated and uses
+  the fail strategy; this device did not provide a separately observable task
+  grant, so the hardware claim is the measured UIKit fallback, not indefinite
+  execution.
+- In the physical force-close case, a throttled one-peer transfer advanced to
+  7,320,014 bytes, remained unchanged after process termination, relaunched at
+  84%, and completed from the same peer. In the natural finite-background case,
+  bytes advanced to 2,125,056, plateaued after the platform opportunity ended,
+  foregrounded at 25%, and then completed the exact 8 MiB payload. Each seed
+  retained a peer high-water of one. Managed removal returned the repaired
+  external folder to zero items.
+- `archive.sh` creates either a generic unsigned archive or an automatically
+  signed local development archive using only an environment-supplied team.
+  Both archives contain the app and privacy manifest. The unsigned app fails
+  signature verification as intended; the development app passes strict code
+  signature and entitlement validation. Repository scans found no private team,
+  profile, account, or device value. No upload or publication occurred.
+- Final gates pass: `cargo fmt --all -- --check`, Clippy across the workspace
+  with warnings denied, `cargo test --workspace`, web typecheck and 248 tests
+  (two skipped), the generated two-ABI Android build plus Gradle unit/lint and
+  instrumentation packaging, ten Swift unit tests and two phone UI tests, two
+  iPad UI tests, signed physical install/launch, and both archive modes.
+
+The stopping condition is met. iOS support means foreground operation plus a
+truthful finite platform opportunity and durable resume. It does not mean
+indefinite background downloading/seeding, App Store readiness, TestFlight,
+production signing, or public release.

@@ -13,8 +13,9 @@ iOS as an eventual first-party in-process backend; Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 front-loads the physical storage/network/lifecycle feasibility that shaped the
 common engine boundary. Explicit direction on 2026-08-13 schedules the first
-maintained SwiftUI product in Tacticals `147`--`149`, including qualified
-external folder selection and physical lifecycle evidence without publication.
+maintained SwiftUI product in Tacticals `147`--`149`; that campaign is complete
+with qualified external folder selection and physical lifecycle evidence,
+without migration or publication.
 
 ## Scope
 
@@ -109,12 +110,13 @@ Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
 records the former app-owned-only boundary and the evidence that iCloud is
 ubiquitous while a separate local folder may return no public provider
-identity. Tactical `147` supersedes that product decision: iOS 16+ uses
+identity. Completed Tactical `147` supersedes that product decision: iOS 16+
+uses
 app-owned Documents plus distinct stable qualified selected roots, rejects
 iCloud and positively identified providers, and requires a physical capability
-gate when lookup fails. Tactical `148` directly reuses the first-party
-JSTorrent SwiftUI presentation; Tactical `149` owns finite background and
-recovery behavior. None authorizes migration or publication.
+gate when lookup fails. Completed Tactical `148` directly reuses the first-
+party JSTorrent SwiftUI presentation; completed Tactical `149` owns finite
+background and recovery behavior. None authorizes migration or publication.
 
 ## Desktop Extension And Embedded UI
 

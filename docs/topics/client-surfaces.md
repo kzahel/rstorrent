@@ -2,8 +2,9 @@
 
 Topic: `client-surfaces`
 
-Status: Accepted and implemented through Tactical `117` across a browser-
-hosted web view, a Tauri desktop webview, and Android Compose. Completed
+Status: Accepted and implemented across a browser-hosted web view, a Tauri
+desktop webview, Android Compose, and the maintained iOS SwiftUI client.
+Completed
 Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes
 React, Tauri, media, Compose, and Android service routing use canonical opaque
@@ -75,15 +76,14 @@ settings and actions through the generated contract. Android consumes the
 same additive contract and a physical Pixel 7a proves configured three/
 effective two plus promotion. Tactical `117` now exposes the same queue and
 active-download controls in Compose.
-Maintainer direction on 2026-08-09 accepts iOS as an eventual first-party
-in-process product. Completed Tactical
+Maintainer direction on 2026-08-09 accepted iOS as a first-party in-process
+product. Completed Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-adds only a minimal physical-device feasibility harness around the real Rust
-storage and direct-networking seams; it does not add a fourth supported UI
-surface or select the eventual native presentation toolkit.
-Explicit direction on 2026-08-13 activates Tacticals `147`--`149` to add that
-fourth surface with generated Swift bindings, qualified external folders,
-direct first-party JSTorrent SwiftUI reuse, and physical lifecycle evidence.
+adds the historical physical-device feasibility harness around the real Rust
+storage and direct-networking seams. Explicit direction on 2026-08-13 then
+completed Tacticals `147`--`149`, adding the fourth supported surface with
+generated Swift bindings, qualified external folders, direct first-party
+JSTorrent SwiftUI reuse, and physical lifecycle evidence.
 Completed Tactical
 [`117`](../tactical/117-jstorrent-shaped-android-product-ui.md) supplies the
 first UI-complete Android product for the current application boundary. Its
@@ -198,15 +198,16 @@ RSTorrent has three initial user-interface surfaces:
 - an Android Compose application adapted from the existing JSTorrent Android
   product.
 
-The scheduled iOS client is a first-party SwiftUI product using the same
-in-process Rust engine and typed application semantics. Tactical `147` selects
-iOS 16+, generated Swift UniFFI, durable app-owned and qualified selected roots,
-and a coordinated descriptor-release seam. Tactical `148` directly reuses the
-first-party JSTorrent iOS views/assets/localizations while replacing its
-JavaScriptCore controller and omitting Search. Tactical `149` owns finite
-background, process-death recovery, and reproducible archives without
-publication. Until those tacticals close, iOS remains absent from support
-claims.
+The maintained iOS 16+ client is a first-party SwiftUI product using the same
+in-process Rust engine and typed application semantics. Completed Tactical
+`147` supplies generated Swift UniFFI, durable app-owned and qualified selected
+roots, and a coordinated descriptor-release seam. Completed Tactical `148`
+directly reuses the first-party JSTorrent iOS views/assets/localizations while
+replacing its JavaScriptCore controller and omitting Search. Completed Tactical
+`149` owns finite background, process-death recovery, cold/warm handoff, and
+reproducible archives without publication. Physical iPhone evidence supports
+the foreground and finite-background product claim; indefinite background,
+iCloud/File Provider roots, migration, and public distribution remain absent.
 
 Desktop product content is web UI. Native desktop code is limited to the
 application shell and operating-system integration such as process and window
@@ -567,12 +568,11 @@ remote exposure, and Android streaming remain independent product decisions.
   rows; custom roots, pins, and certificate-management UI are absent.
 - No embedded playback UI, stable media sharing, remote media listener, or
   Android HTTP playback server exists.
-- No supported RSTorrent iOS product exists yet. Tacticals `116` and `123` prove the
-  in-process Rust seam plus app-owned Documents persistence, bounded
-  interruption recovery, networking, and finite lifecycle behavior on an
-  iPhone. Active Tacticals `147`--`149` now own the maintained target,
-  qualified selected folders, copied first-party JSTorrent presentation,
-  lifecycle, packaging, and the evidence needed to change this claim.
+- The maintained RSTorrent iOS product now supports the bounded scope recorded
+  by completed Tacticals `147`--`149`: qualified selected folders, the adapted
+  first-party JSTorrent presentation, cold/warm intake, finite lifecycle and
+  force-close recovery, and local archive creation. Search, cloud/provider
+  roots, migration, indefinite background work, and publication remain absent.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed

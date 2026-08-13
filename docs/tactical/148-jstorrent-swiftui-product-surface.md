@@ -1,7 +1,7 @@
 # Tactical 148: JSTorrent SwiftUI Product Surface
 
-Status: Decision-complete and queued immediately after Tactical `147` by
-explicit maintainer direction on 2026-08-13.
+Status: Complete on 2026-08-13 after Tactical `147`, by explicit maintainer
+direction.
 
 Topics: `client-surfaces`, `product-direction`,
 `product-surfaces-and-migration`, `application-control`,
@@ -146,7 +146,7 @@ third-party dependency, unsupported storage widening, or external publication.
 
 ## Execution Record
 
-### 2026-08-13 presentation checkpoint
+### 2026-08-13 completion
 
 - Preparatory implementation landed while Tactical `147` remains the sole
   **Now**. The source basis was JSTorrent revision
@@ -173,6 +173,21 @@ third-party dependency, unsupported storage widening, or external publication.
   attached iPhone and physically showed Ready Library/Add/Settings states plus
   the previously qualified external folder after process restart.
 
-This is not tactical completion. Controlled torrent detail/action traversal,
-file handoff/open/share, accessibility/layout variants, and final repository
-gates remain outstanding.
+- Physical Add intake drove the controlled exact transfer through publication.
+  Library reached 100% and Seeding; details truthfully showed Published,
+  eight of eight pieces, the complete 2.1 MB file, empty Trackers and Peers,
+  and the Files, Trackers, Peers, Pieces, and Status sections. Pause/resume,
+  Force recheck, remove-with-files, and keyboard-toolbar Add all executed on
+  the attached iPhone.
+- The complete-file action opened the native share sheet from a coordinated
+  platform lease; incomplete content never received that action. The removal
+  sheet's accessible delete switch was exercised, and independent Files state
+  proved exact managed cleanup.
+- Ten focused Swift tests and two UI tests pass on an iPhone 17 Pro simulator.
+  The UI suite covers Library, Add including the `.torrent` chooser, Settings,
+  dark appearance, accessibility text sizing, and landscape rotation. The two
+  UI tests also pass on an iPad Pro simulator. Physical semantic traversal on
+  the iPhone covers the compact phone surface and system-owned sheets.
+
+The stopping condition is met. Search, its plugins and route, and unsupported
+High priority remain deliberately absent; no simulated capability was added.

@@ -1,10 +1,9 @@
 # Tactical 146: Runtime-Free BEP 52 Metainfo, Geometry, And Merkle Core
 
-Status: **Planned and decision-complete; queued Next after Tactical
-[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md).** This
-tactical is not active and does not displace Tactical `145` as the sole
-authoritative **Now**. BEP 52 remains **Unsupported** before and after this
-runtime-free slice.
+Status: **Active and decision-complete.** The completed iOS campaign activated
+this tactical as the sole authoritative **Now** on 2026-08-13. Tactical `145`
+remains paused at its existing human-review gate. BEP 52 remains
+**Unsupported** before and after this runtime-free slice.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `capability-readiness`, `oracle-driven-engine-campaign`,
@@ -14,9 +13,8 @@ Dependencies: completed Tacticals
 [`002`](002-selective-multi-file-storage.md),
 [`074`](074-context-specific-metainfo-limits.md),
 [`081`](081-v1-torrent-byte-intake.md), and
-[`143`](143-dual-identity-and-persistence-foundation.md). Queue execution is
-sequenced after active Tactical `145`, but there is no code dependency on the
-uTP repair.
+[`143`](143-dual-identity-and-persistence-foundation.md). There is no code
+dependency on paused Tactical `145`'s uTP repair.
 
 ## Decision And Desired Outcome
 
