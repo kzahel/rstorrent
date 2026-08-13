@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const ALLOWED_DIRECT_DEPENDENCIES: &[&str] = &["crypto-bigint", "sha1"];
+const ALLOWED_DIRECT_DEPENDENCIES: &[&str] = &["crypto-bigint", "sha1", "sha2"];
 const FORBIDDEN_SOURCE_FRAGMENTS: &[&str] = &[
     "rstorrent_engine",
     "std::fs",

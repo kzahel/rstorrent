@@ -497,6 +497,16 @@ version result, missing version plus `file tree` is invalid, and the existing
 product-facing parser still rejects v2/hybrid input. No v2 model or identity
 escapes yet.
 
+The second checkpoint adds a runtime-free SHA-256 Merkle owner using the
+already locked workspace `sha2`. Checked tree shapes stop at `2^35` leaves;
+streaming construction retains at most 36 hashes, proofs retain at most 35
+siblings, and no full node tree is allocated. Independently fixed one-, two-,
+and three-hash vectors, per-layer zero padding, short final data, piece-layer
+to file-root reconstruction at 64 KiB and 256 KiB pieces, exact proof length,
+padding, range, and root rejection, and maximum arithmetic/resource cases
+pass. The protocol architecture test explicitly admits only `sha2` in
+addition to its previous dependencies.
+
 ### Stage 1: Reconfirm sources, inventory, and baseline
 
 - verify the exact BEP and libtorrent pins and record any dirty-reference

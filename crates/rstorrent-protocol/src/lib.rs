@@ -7,6 +7,7 @@ pub mod dht;
 pub mod extension;
 pub mod identity;
 pub mod magnet;
+pub mod merkle;
 pub mod metadata;
 pub mod metainfo;
 pub mod mse;
