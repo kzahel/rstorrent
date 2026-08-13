@@ -156,7 +156,13 @@ def repository_revision() -> str:
 
 
 def require_repository_revision(expected: str) -> None:
-    if repository_revision() != expected:
+    try:
+        actual = repository_revision()
+    except WanMatrixError as error:
+        raise WanMatrixRevisionError(
+            "repository worktree changed during matrix execution"
+        ) from error
+    if actual != expected:
         raise WanMatrixRevisionError(
             "repository revision changed during matrix execution"
         )

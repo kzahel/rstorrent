@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wan_transport_matrix import (
+    WanMatrixError,
     WanMatrixRevisionError,
     _rstorrent_timing,
     _rstorrent_transport_evidence,
@@ -141,6 +142,14 @@ class WanTransportMatrixTests(unittest.TestCase):
     def test_revision_guard_rejects_a_moved_checkout(self) -> None:
         with patch(
             "wan_transport_matrix.repository_revision", return_value="new-revision"
+        ):
+            with self.assertRaises(WanMatrixRevisionError):
+                require_repository_revision("selected-revision")
+
+    def test_revision_guard_makes_mid_run_worktree_changes_fatal(self) -> None:
+        with patch(
+            "wan_transport_matrix.repository_revision",
+            side_effect=WanMatrixError("worktree is dirty"),
         ):
             with self.assertRaises(WanMatrixRevisionError):
                 require_repository_revision("selected-revision")
