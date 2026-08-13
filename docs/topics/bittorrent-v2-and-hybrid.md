@@ -10,9 +10,10 @@ and first-party client foundation. Completed Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) adds
 the runtime-free exact parser, aligned geometry, Merkle core, strict complete
 piece layers, and hybrid structural validator. RSTorrent still rejects v2 and
-hybrid metainfo and magnets at every product boundary. Planned Tactical
+hybrid metainfo and magnets at every product boundary. Active Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
-decision-complete Stage 3 successor, queued after active uTP Tactical `150`.
+decision-complete Stage 3 successor and the authoritative Now after completed
+uTP Tactical `150`.
 
 ## Scope And Owning Role
 
@@ -413,8 +414,8 @@ runtime design.
 
 The first two stages are complete. Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) now owns
-the bounded Stage 3 pure-v2 vertical and is queued after active Tactical
-`150`; later stages remain unassigned. Adjacent stages may be combined only
+the bounded Stage 3 pure-v2 vertical after completed Tactical `150`; later
+stages remain unassigned. Adjacent stages may be combined only
 when the resulting scope remains bounded and its stopping condition becomes
 clearer.
 

@@ -1,12 +1,8 @@
 # Tactical 151: Complete-Source Pure-v2 Runtime Vertical
 
-Status: **Planned on 2026-08-13 and queued after Tactical `150`.** This
-document is decision-complete, but implementation must not begin until
-Tactical
-[`150`](150-bounded-utp-sender-startup.md) reaches its stopping condition and
-[`capability-readiness.md`](../topics/capability-readiness.md) advances this
-slice to the sole **Now**. Ordinary implementation commits may then land by
-stage without another routine design checkpoint.
+Status: **Active authoritative Now on 2026-08-13 after completed Tactical
+`150`.** This document is decision-complete. Ordinary implementation commits
+may land by stage without another routine design checkpoint.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `application-view-api`,
@@ -17,8 +13,8 @@ Dependencies: completed Tacticals
 [`143`](143-dual-identity-and-persistence-foundation.md) and
 [`146`](146-runtime-free-bep52-metainfo-geometry-merkle.md), plus the existing
 v1 storage, checking, restart, publication, upload, discovery, generated-
-boundary, and Android owners. Tactical `150` is a queue dependency rather
-than a code dependency.
+boundary, and Android owners. Completed Tactical `150` was a queue dependency
+rather than a code dependency.
 
 ## Decision And Desired Outcome
 

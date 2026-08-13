@@ -661,18 +661,18 @@ that scope and its cleanup or compatibility rules explicitly.
   pairs. Every attempt cleaned exactly; the repaired single-connection oracle
   has no further WAN authorization in this tactical.
 - [`142-wan-transport-performance-matrix.md`](142-wan-transport-performance-matrix.md):
-  active through child Tactical `150`; its reusable
-  cross-engine, cross-role, cross-host TCP/uTP WAN lab retains 56 exact post-
-  repair cells through 1 GiB and selects sustained RSTorrent uTP reliability
-  as the next causal boundary.
+  complete through child Tacticals `145` and `150`; its reusable cross-engine,
+  cross-role, cross-host TCP/uTP WAN lab selected and verified causal
+  reliability, packetization, receive, and sender-startup repairs.
 - [`144-long-rtt-utp-sender-window-utilization.md`](144-long-rtt-utp-sender-window-utilization.md):
   complete; repairs long-RTT sender underfill plus the upload-writer and
   per-connection ingress bounds exposed by a full window, without changing
   the accepted no-slow-start RFC 6817 controller.
 - [`145-sustained-utp-reliability-and-throughput-near-parity.md`](145-sustained-utp-reliability-and-throughput-near-parity.md):
-  active parent of Tactical `150`; first makes repeated 16-bit sequence-cycle
-  transfers reliable on one connection, then targets at least `0.85x` matched
-  pinned-libtorrent uTP throughput without regressing delay/fairness behavior.
+  complete through Tactical `150`; sustained transfers remain on one
+  connection and the stable remote-seed 256 MiB cohort reaches
+  94.85%--100.74% of matched pinned-libtorrent uTP without regressing
+  delay/fairness behavior.
 - [`146-runtime-free-bep52-metainfo-geometry-merkle.md`](146-runtime-free-bep52-metainfo-geometry-merkle.md):
   complete after the iOS campaign; provides exact v2/hybrid
   metainfo, format-aware aligned geometry, strict complete piece layers, and
@@ -691,14 +691,15 @@ that scope and its cleanup or compatibility rules explicitly.
   recovery, cold/warm input, privacy metadata, physical lifecycle evidence,
   and reproducible development/archive packaging without publication.
 - [`150-bounded-utp-sender-startup.md`](150-bounded-utp-sender-startup.md):
-  active child of Tactical `145`; promotes the approved 10 ms queue-signal/30%
-  retained-window startup policy and owns deterministic, controlled, VM-built
-  WAN, platform, and near-parity evidence without changing steady-state LEDBAT.
+  complete child of Tactical `145`; promotes the approved 10 ms queue-signal/
+  30% retained-window startup policy and closes deterministic, controlled,
+  VM-built WAN, platform, and near-parity evidence without changing steady-
+  state LEDBAT.
 - [`151-complete-source-pure-v2-runtime-vertical.md`](151-complete-source-pure-v2-runtime-vertical.md):
-  planned after Tactical `150`; admits complete local pure-v2 `.torrent`
-  sources through format-aware download, Merkle checking, restart,
-  publication, verified reads, and seeding while deferring magnets, hash
-  exchange, hybrids, creation, and compatibility migration.
+  active authoritative Now after Tactical `150`; admits complete local pure-
+  v2 `.torrent` sources through format-aware download, Merkle checking,
+  restart, publication, verified reads, and seeding while deferring magnets,
+  hash exchange, hybrids, creation, and compatibility migration.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

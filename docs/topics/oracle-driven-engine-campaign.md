@@ -111,11 +111,13 @@ the engine campaign. Product Tacticals
 [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
 are complete. Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is also
-complete. Maintainer approval resumed Tactical `145` through active child
-[`150`](../tactical/150-bounded-utp-sender-startup.md), now the sole
-authoritative **Now**. Decision-complete pure-v2 successor Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is queued
-after `150` rather than competing with it.
+complete. Maintainer approval resumed Tactical `145` through child
+[`150`](../tactical/150-bounded-utp-sender-startup.md); both and their parent
+Tactical `142` are now complete with stable remote-seed 256 MiB uTP near
+parity, bounded 1 GiB corroboration, and all closure gates. Decision-complete
+pure-v2 Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is now the
+sole authoritative **Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -481,26 +483,26 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **Tactical `150` is the sole Now under active parent
-Tactical `145`; decision-complete pure-v2 Tactical `151` is Next.** Maintainer
-approval selected the bounded sender-startup recommendation and resumed the
-uTP campaign after product Tacticals `147` to `149` and previously queued
-Tactical `146` completed. Completed Tactical `143` installs the
+Engine campaign status: **Tactical `151` is the sole Now.** Tacticals `142`,
+`145`, and `150` complete the uTP performance campaign at the maintainer-
+selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
-and generated first-party identity contract. Tactical `142`, parent Tactical
-`145`, and active child `150` retain the exact uTP restart checkpoint.
+and generated first-party identity contract. Tacticals `142`, `145`, and `150`
+retain the completed exact uTP restart checkpoint.
 
 Latest completed engine tactical:
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
-It establishes exact v2/hybrid metainfo, aligned geometry, strict complete
-piece layers, bounded Merkle primitives, structural hybrid validation, and a
-controlled pinned-libtorrent oracle while leaving product admission and every
-runtime/wire path v1-only. Both Android ABIs and the full workspace pass with
-no generated contract change. Planned Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md). It promotes bounded
+10 ms queue-signal/30% retained-window sender startup without changing steady-
+state LEDBAT. Its stable 24-cell remote-seed 256 MiB cohort places every
+RSTorrent-containing uTP median at 94.85%--100.74% of the matched libtorrent
+oracle and at least 98.49% of its own TCP median on one connection. Fourteen
+exact 1 GiB cells corroborate scale but are not a stable second cohort; one
+reverse smoke closes pre-payload on typed current-network UPnP capability.
+Both Android ABIs and complete repository gates pass. Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
-decision-complete Stage 3 pure-v2 local `.torrent` vertical and becomes the
-next executable campaign action only after active Tactical `150` closes.
+decision-complete Stage 3 pure-v2 local `.torrent` vertical and the current
+executable campaign action.
 
 Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -574,60 +576,17 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Current engine-campaign action: execute Tactical
-[`150`](../tactical/150-bounded-utp-sender-startup.md) under focused Tactical
-[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-and Tactical `142`. Its terminal-provenance stage and clean
-131,075-DATA/three-wrap transport
-proof are implemented. The clean proof rejects sequence reuse itself. Exact
-256 MiB WAN terminal evidence selected and a release-profile regression
-reproduced retransmission queue removal compiled away inside `debug_assert!`;
-the mutation is now unconditional. The repaired 256 MiB mixed WAN cell
-completes over one uTP
-connection with zero retry exhaustion, peer failure, TCP, or ingress drop and
-improves 27.7% to 2.093 MiB/s across 185,178 seed payload packets. A subsequent
-RSTorrent/RSTorrent reproduction proves SACK fast recovery was blocked after
-loss reduction moved the window below the later admitted flight. Fast
-retransmission now bypasses that admission without changing controller policy;
-the exact 256 MiB WAN verification remains on one connection, emits 766
-recovery datagrams, and improves 30.4% to 1.504 MiB/s with zero retry or peer
-failure. Remote preparation now builds exact ARM64 artifacts in the guarded
-UTM Linux VM and stages only verified binaries to `pimom`; the peer no longer
-runs Cargo or rustc. Three rotating remote-seed 256 MiB repetitions now pass
-all 12 cells with exact cleanup and one connection for every RSTorrent role.
-Median oracle ratios are 98.5% for libtorrent-to-RSTorrent, 77.7% for
-RSTorrent-to-libtorrent, and 55.4% for RSTorrent-to-RSTorrent. Equal wire bytes
-and window/flight accompany 220--224 thousand RSTorrent DATA datagrams toward
-libtorrent but 318--322 thousand toward RSTorrent, roughly four times the ACK
-events, and 746--776 receive-reorder rejections. A direct
-full-payload-or-wait rule then fails retained clean-path and TCP-like fairness
-gates; the accepted bounded repair suppresses only fragments smaller than half
-their intended payload. Its controlled product gate passes, and three exact
-WAN RSTorrent/RSTorrent repetitions improve median rate 2.94% while reducing
-DATA datagrams and ACK work about 40% and recovery/reorder work about 47%.
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md). Completed
+Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
+stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at
+94.85%--100.74% of the matched libtorrent oracle and at least 98.49% of its
+own TCP median, with one connection and no retry exhaustion or terminal
+failure. Fourteen exact 1 GiB cells corroborate scale without forming a stable
+second cohort. The bounded reverse smoke records current-network absence of an
+accepted UPnP IGD service before payload and makes no reverse parity claim.
+Steady-state LEDBAT and every resource bound remain unchanged; BEP 29 remains
+**Partial**.
 
-The remaining WAN flight reached a median 461 packets but one loss still put
-398 later packets beyond RSTorrent's fixed 64-packet receive distance while
-more than 925 KiB of advertised byte credit remained. The repaired owner now
-derives 953 positions from the unchanged 1 MiB capacity and retains an
-explicit 64-connection payload/metadata budget. Three exact WAN repetitions
-use 462--464 positions and 665--668 KiB, improve median rate 36.85% to
-2.139 MiB/s, reduce retransmissions from 399 to one, and eliminate median
-timeout collapse plus every too-far drop. Each remains one-connection and
-clean.
-
-RSTorrent/RSTorrent now matches the earlier RSTorrent-to-libtorrent sender
-rate but remains at 78.0% of the retained libtorrent oracle. WAN milestones
-and saturation counters then select slow linear sender startup. A test-only
-comparator rejects direct libtorrent-style startup because its 193.750 ms p95
-queue delay exceeds the retained 150 ms gate. The recommended bounded
-candidate exits exponential startup on 10 ms queue delay, retains 30% of that
-window, and then returns to unchanged linear LEDBAT. Three paired long-RTT
-profiles improve 1.88x--1.90x; existing fairness/recovery plus explicit loss,
-MTU, integrity, and resource gates pass. Maintainer approval selects
-recommendation A. Tactical `150` now promotes the bounded policy and owns its
-deterministic, controlled, VM-built WAN, platform, and closure gates. The
-separate remote-placement RSTorrent TCP seed disconnect and interrupted
-libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while
 embedded playback, Android streaming presentation, and stable sharing have
 distinct ownership and security boundaries. The post-discovery Ubuntu stall

@@ -437,33 +437,27 @@ App Store, TestFlight, or public-release claim is made.
 ### Now
 
 - **Execute Tactical
-  [`150`](../tactical/150-bounded-utp-sender-startup.md) under Tactical
-  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md).**
-  Maintainer approval resumes the uTP checkpoint and selects recommendation A.
-  Promote the bounded 10 ms queue-signal/30% retained-window startup, preserve
-  the existing steady-state controller and limits, then run the deterministic,
-  controlled, VM-built WAN, platform, and near-parity gates end to end.
+  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md).**
+  Completed Tactical `146` provides the runtime-free foundation; `151` owns
+  complete-local-source pure-v2 download, checking, restart, publication,
+  verified reads, seeding, generated boundaries, and proportional Android
+  evidence while deferring magnets, hash exchange, and hybrids.
 
 ### Next
 
-- Execute planned Tactical
-  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) only
-  after Tactical `150` reaches its stopping condition. Completed Tactical
-  `146` provides the runtime-free foundation; `151` owns complete-local-source
-  pure-v2 download, checking, restart, publication, verified reads, seeding,
-  generated boundaries, and proportional Android evidence while deferring
-  magnets, hash exchange, and hybrids.
+- Choose the following bounded action at Tactical `151`'s review gate. There
+  is no second authoritative Now.
 
 ### Later
 
-Active parent Tactical
-[`142`](../tactical/142-wan-transport-performance-matrix.md) retains its 56
-post-repair cells and exact analysis checkpoint while resumed child Tactical
-[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-executes its approved startup policy through Tactical `150`. The
-separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
-seed 1 GiB libtorrent uTP control remain typed evidence outside that future
-repair.
+Completed Tacticals
+[`142`](../tactical/142-wan-transport-performance-matrix.md),
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md),
+and [`150`](../tactical/150-bounded-utp-sender-startup.md) retain the reusable
+WAN lab, stable remote-seed 256 MiB near-parity cohort, and bounded 1 GiB scale
+corroboration. The separate remote-placement RSTorrent TCP seed disconnect and
+current-network local UPnP limitation remain typed evidence outside that
+completed campaign.
 
 Seeding goals and automatic network policy,
 multi-interface and BEP 45 multi-address binding,
@@ -556,7 +550,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Transfer request ownership and failover | Implemented | deterministic, runtime, interop, live | Ordinary blocks have one generation; strict endgame adds bounded duplicate attempts, first-response cancellation, and harmless losing payload. | [`download-correctness`](download-correctness.md) |
 | BEP 6 Fast request lifecycle | Implemented | deterministic, scripted runtime, interop | Bilateral negotiation, exact initial availability, choke-retained requests, exact reject/refill, terminal upload responses, 32-entry advisory bounds, equal-rarity suggestion bias, and canonical ten-entry IPv4 allowed-fast generation pass. Controlled capture verifies both pinned-libtorrent directions and exact 40,000-byte payload hashes; predictive requests, super-seeding, and an invented IPv6 set remain absent. | [`protocol-support`](protocol-support.md), [`download-correctness`](download-correctness.md) |
 | Incoming peer connections | Implemented | deterministic, runtime, interop, web | One bounded incoming owner accepts independently bound IPv4 and eligible global-unicast IPv6 listeners, each with a five-entry backlog, under eight pending handshake slots, 1,024 generation-fenced registrations, and the shared effective-plus-ten-slack connection budget. Ordinary automatic/fixed settings still describe one preferred numeric port; each family independently resolves a coordinated TCP/UDP pair and a failed family leaves its sibling serving. The default-enabled persisted IPv6 policy applies live and closes plaintext and MSE IPv6 generations before `Applied`. Existing evidence proves mapped off-LAN IPv4 seeding, live candidate-first replacement, truthful family advertisement, and terminal cleanup. Tactical `113` implements one independent finite-lease IPv6 firewall-pinhole slot and typed product status under the same reachability coordinator; deterministic and scripted-gateway evidence pass. Its live negative control passes, but the observed gateway rejects `AddPinhole` with typed `606`, so no physical off-network incoming IPv6 or cleanup claim is made. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tacticals `127` and `130` prove both first-sample mapped-public-path directions, a six-profile real-socket matrix, hostile lifecycle bounds, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole. Tacticals `131` and `132` add ordinary application composition, endpoint capability memory, suppression/backoff, PEX refresh, exact expiry recovery, and one ordinary-swarm metadata observation with both transports. Completed Tactical `133` makes the fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction default; explicit `TcpOnly` retains TCP/Fast/MSE isolation. Completed Tactical `137` supplies safe Linux/Android/macOS fragmentation-protected sends, revalidation/downward recovery, dynamic product packetization, and fixed fallback. Controlled 1,500/1,280 paths select 1,457/1,269 bytes, five alternating pairs reduce median DATA packets 62.97%, and the exact capped pinned-libtorrent application gate passes in both roles. Tactical `140` independently maps the product TCP and UDP/uTP listeners, keeps trackers on TCP, selects the explicit IPv4 UDP/uTP endpoint for DHT, exposes both mapping states to first-party clients, proves controlled DHT-only incoming uTP plus Android lifecycle parity, and completes one exact product-owned public incoming-uTP transfer with zero TCP masking and zero-residue cleanup. Tacticals `142` and `144` add a repeatable cross-engine WAN lab, repair causal long-RTT sender/window composition defects without changing the controller, and retain 56 exact post-repair cells through 1 GiB. Large RSTorrent cells still reconnect after peer-wire protocol failures, so sustained-transfer reliability, persisted transport policy, public-DHT discovery over the mapped endpoint, IPv6 uTP, MSE-over-uTP, and racing remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
+| uTP peer transport | Partial | deterministic, runtime, interop, live | Tacticals `119` and `121` prove the bounded v1 wire, reliability, receive, RFC 6817 congestion/pacing, and path-MTU state. Tactical `125` adds bounded shared DHT/uTP routing, generation-fenced runtime/stream ownership, peer-I/O composition, and exact pinned-libtorrent loopback transfers in both roles. Tacticals `127` and `130` prove both first-sample mapped-public-path directions, a six-profile real-socket matrix, hostile lifecycle bounds, and diagnostic convergence to a 1,269-byte floor under a controlled 1,280-byte black hole. Tacticals `131` and `132` add ordinary application composition, endpoint capability memory, suppression/backoff, PEX refresh, exact expiry recovery, and one ordinary-swarm metadata observation with both transports. Completed Tactical `133` makes the fixed-548 IPv4/plaintext `PreferUtp` policy the common application construction default; explicit `TcpOnly` retains TCP/Fast/MSE isolation. Completed Tactical `137` supplies safe Linux/Android/macOS fragmentation-protected sends, revalidation/downward recovery, dynamic product packetization, and fixed fallback. Controlled 1,500/1,280 paths select 1,457/1,269 bytes, five alternating pairs reduce median DATA packets 62.97%, and the exact capped pinned-libtorrent application gate passes in both roles. Tactical `140` independently maps the product TCP and UDP/uTP listeners, keeps trackers on TCP, selects the explicit IPv4 UDP/uTP endpoint for DHT, exposes both mapping states to first-party clients, proves controlled DHT-only incoming uTP plus Android lifecycle parity, and completes one exact product-owned public incoming-uTP transfer with zero TCP masking and zero-residue cleanup. Tacticals `142`, `145`, and `150` add the repeatable cross-engine WAN lab, repair sustained reliability, packetization, receive, and bounded sender-startup defects, and complete a stable 24-cell remote-seed 256 MiB cohort. Every RSTorrent uTP median reaches 94.85%--100.74% of the matched oracle and at least 98.49% of its own TCP median on one connection; 14 exact 1 GiB cells corroborate scale. Persisted transport policy, public-DHT discovery over the mapped endpoint, repeated reverse-direction evidence, IPv6 uTP, MSE-over-uTP, and racing remain absent. | [`utp-transport-campaign`](utp-transport-campaign.md), [`protocol-support`](protocol-support.md) |
 | Peer reputation and integrity attribution | Partial | deterministic, runtime, live | Exact connection generations receive bounded asymmetric trust; a sole corrupt source is banned and ambiguous sources are only suspected, while full parole selection and persistence are absent. | [`download-correctness`](download-correctness.md) |
 
 ### Content Transfer And Completion

@@ -31,7 +31,7 @@ TCP/uTP comparison. Its replacement budget retained one exact 8,389,339-byte
 uTP case at 0.096759 MiB/s active and 0.094237 MiB/s connection-inclusive,
 but no TCP case and no complete pair. The result supplies neither a ratio nor
 a tuning direction; every attempt removed both mappings and all artifacts.
-Active Tactical `142` replaces that narrow attempt with a case-addressable
+Completed Tactical `142` replaces that narrow attempt with a case-addressable
 64-cell baseline across both engines, roles, physical directions, transports,
 and 8 MiB through 1 GiB sizes. Its reusable lab retains host storage and route
 calibration, per-case process/transport telemetry, atomic resume, and exact
@@ -63,7 +63,7 @@ reproduction because only local arithmetic wrap tests exist; it is a
 hypothesis, not yet a diagnosis. One local-seed 1 GiB libtorrent-only uTP
 control was interrupted after 8,828 seconds with successful cleanup and is
 excluded from ratios; the remaining seven local-seed 1 GiB cells are deferred.
-Ready Tactical
+Then-ready Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
 records the collection provenance, makes single-connection sustained
 reliability the first gate, and then targets at least `0.85x` the alternating
@@ -147,10 +147,23 @@ controller. Three paired 70/80/90 ms one-way samples improve completion
 queue delay at 45 ms. The existing TCP-like foreground share improves from
 70.37% to 82.65%; recovery remains within ten RTTs. Scripted 1% loss and
 dynamic-MTU black-hole profiles preserve retry, loss, and isolated-probe
-bounds. This is controlled policy-selection evidence, not a WAN throughput
-claim. Maintainer approval selects the bounded candidate; active Tactical
-[`150`](../tactical/150-bounded-utp-sender-startup.md) now owns production and
-WAN validation before any parity claim.
+bounds. This was controlled policy-selection evidence, not a WAN throughput
+claim. Maintainer approval selected the bounded candidate; completed Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md) promotes it to
+production and supplies the missing WAN result.
+
+The stable remote-seed 256 MiB cohort completes all 24 TCP/uTP cells across
+four pairings and three repetitions. RSTorrent-containing uTP medians reach
+100.74%, 97.34%, and 94.85% of matched libtorrent uTP and at least 98.49% of
+their own TCP medians. Every RSTorrent sender sample remains on one connection
+without retry exhaustion or terminal failure; queue-delay high water is at
+most 80.150 ms and RSS remains below 20 MiB. Fourteen exact 1 GiB cells then
+place bounded RSTorrent-containing observations at 98.87%--100.27% of the
+corresponding oracle and corroborate scale without forming a stable second
+cohort. The campaign stops after 20 GiB exact payload because more volume no
+longer selects a repair. A reverse local-seed smoke stops before payload on
+typed absence of an accepted UPnP IGD service on the current network, cleans
+exactly, and makes no reverse throughput claim.
 
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and

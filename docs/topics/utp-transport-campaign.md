@@ -70,11 +70,12 @@ causal pacing/flight-growth repair without slow start or a controller change.
 Tactical `144` is now complete: repeated affected cells improve 2.72x--4.48x,
 the 64 MiB production regression completes without queue drops or reconnects,
 both Android ABIs and repository gates pass, and the accepted controller is
-unchanged. Tactical `142` has completed 56 post-repair WAN cells through a
-full 256 MiB grid and the remote-seed 1 GiB half. That analysis isolates a
-separate size-dependent peer-wire protocol failure and reconnect pattern at
-RSTorrent uTP endpoints; bulk volume is paused in favor of a targeted
-long-transfer reproduction.
+unchanged. Tacticals `142`, `145`, and `150` subsequently used the 56-cell
+baseline to repair the separate sustained reliability, packetization,
+receive-ordering, and sender-startup defects. They are complete with a stable
+24-cell remote-seed 256 MiB cohort at 94.85%--100.74% of the matched
+libtorrent uTP oracle, 14 exact 1 GiB scale-corroboration cells, and all
+closure gates. BEP 29 remains **Partial**.
 
 ## Scope And Ownership
 
@@ -933,26 +934,27 @@ change.**
 
 Authoritative priority remains
 [`capability-readiness.md`](capability-readiness.md). Tactical `139` has since
-completed; explicit maintainer direction on 2026-08-13 resumes Tactical `142`
-through active child Tactical `145`. Completed Tactical
+completed; explicit maintainer direction on 2026-08-13 resumed Tactical `142`
+through child Tactical `145`. Completed Tactical
 `144` causally repaired sender-window underfill plus the writer-headroom and
 ingress-queue composition defects exposed by the larger window. Its repeated
 WAN medians improve 2.72x--4.48x, and affected 64 MiB cells complete at
 1.015--1.310 MiB/s without transport masking or retry exhaustion.
 
-The parent post-repair matrix now has 56 exact successful cells and
-13.125 GiB of verified payload: complete 8/64/256 MiB grids and every
+The parent post-repair matrix at that checkpoint had 56 exact successful
+cells and 13.125 GiB of verified payload: complete 8/64/256 MiB grids and every
 remote-seed 1 GiB pairing. Libtorrent/libtorrent uTP reaches the same remote
 path ceiling as TCP, while RSTorrent uTP remains slower and repeatedly
 reconnects on large cells with a peer-wire `protocol` failure despite zero
-connection-datagram drops. Active Tactical
+connection-datagram drops. Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-owns a bounded composed transfer across repeated 16-bit sequence-number wrap,
+then owned a bounded composed transfer across repeated 16-bit sequence-number
+wrap,
 exact terminal-reason capture, causal reliability repair, and a subsequent
 `0.85x` matched-libtorrent uTP median target. Sequence wrap is a hypothesis,
 not a conclusion. The unrun local-seed 1 GiB cells are deliberately deferred
 at this review checkpoint.
-Its first active stage now preserves bounded endpoint-free worker failure,
+Its first stage preserved bounded endpoint-free worker failure,
 sequence-cycle, ACK/receive anomaly, FIN/RESET, and exact content-peer task
 evidence in every WAN role. Retry evidence additionally identifies the exact
 exhausted packet/attempt count and the failed worker's retransmission, loss,
@@ -992,7 +994,7 @@ DATA, controller constants, loss reduction, and resource bounds remain
 unchanged. The exact 256 MiB verification stays on one connection, recovers
 766 packets, records zero retry exhaustion or peer error, and improves active
 rate 30.4% from 1.154 to 1.504 MiB/s. Repeated alternating reliability and
-throughput cohorts remain outstanding.
+throughput cohorts remained outstanding at that checkpoint.
 
 The WAN lab no longer compiles RSTorrent on `pimom`. Its guarded
 machine-control Ubuntu ARM64 VM builds an exact clean archive with Rust 1.97.0
@@ -1028,7 +1030,7 @@ The remaining signature is narrower: a median 461-packet/663 KiB flight meets
 one loss, after which 397--400 later packets exceed RSTorrent's fixed
 64-packet reorder distance even though at least 925 KiB of its advertised
 1 MiB byte window remains. Pinned libtorrent derives 953 positions from the
-same 1 MiB receive capacity. Tactical `145` next owns a resource-accounted
+same 1 MiB receive capacity. Tactical `145` next owned a resource-accounted
 receive-reorder bound repair with packet/byte high-water telemetry and no
 increase to receive payload credit; it still does not authorize controller-
 policy changes. Another NAT mechanism, IPv6 uTP, permanent network change,
@@ -1057,11 +1059,26 @@ test-only startup comparator. The direct libtorrent-style startup cuts its
 70/80/90 ms one-way profiles it is 1.88x--1.90x faster than current linear
 startup with exact integrity, zero loss/drop, at most 45 ms queue delay, and
 unchanged bounds. Its TCP-like foreground share is 82.65% versus 70.37%
-current, and loss plus MTU-isolation profiles pass. Maintainer approval selects
-recommendation A and activates child Tactical
-[`150`](../tactical/150-bounded-utp-sender-startup.md) to promote that bounded
+current, and loss plus MTU-isolation profiles pass. Maintainer approval
+selected recommendation A, and completed child Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md) promotes that bounded
 startup-only policy through controlled, VM-built WAN, platform, and closure
 gates. Steady-state gain, target, allowed increase, and loss multiplication
-remain unchanged and are not recommended. Another NAT mechanism, IPv6 uTP,
-permanent network change, another host, and a broader uTP support claim remain
-separate decisions.
+remain unchanged.
+
+The stable remote-seed 256 MiB cohort completes all 24 TCP/uTP cells across
+four pairings and three repetitions. RSTorrent-containing uTP medians reach
+100.74%, 97.34%, and 94.85% of matched libtorrent uTP and at least 98.49% of
+their own TCP medians. Every RSTorrent sender sample remains on one connection
+without retry exhaustion or terminal failure. Fourteen exact 1 GiB cells
+corroborate scale at 98.87%--100.27% of the corresponding oracle observation,
+but are deliberately not labeled a stable second cohort. The campaign stops
+after 20 GiB exact Tactical `150` payload when additional cases cease selecting
+a repair. One bounded local-seed smoke stops before payload because the
+current local network exposes no accepted UPnP IGD service; cleanup passes and
+no reverse throughput claim follows.
+
+Tacticals `142`, `145`, and `150` are complete. BEP 29 remains **Partial**;
+another NAT mechanism, IPv6 uTP, MSE-over-uTP, broader reverse-direction
+evidence, and any support-claim graduation remain separate decisions. The
+authoritative engine queue moves to Tactical `151`.
