@@ -249,7 +249,16 @@ after bounded retries.
 
 ## Execution Record
 
-Implementation has not started. The motivating public-swarm run is an observed
-failure, not completion evidence. The first implementation gate is the
-controlled concurrent-sibling regression that must distinguish coordinator
-exclusion from peer, filesystem, or generic request latency.
+### Controlled exclusion reproduction
+
+The iOS 26.5 simulator now holds one `NSFileCoordinator` writer accessor open
+while requesting a sibling operation. The legacy form, where both requests
+coordinate the selected root, blocks the second accessor until the first is
+released. Coordinating two exact nonexistent sibling targets lets the second
+accessor enter immediately while the first remains held. All three focused
+namespace tests pass in 0.229 seconds. This distinguishes coordinator item
+exclusion from peer, filesystem-service, or generic platform-request latency
+and validates exact-target creation as the implementation direction.
+
+The motivating public-swarm run remains an observed failure, not completion
+evidence. Production code is unchanged at this checkpoint.
