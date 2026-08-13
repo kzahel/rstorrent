@@ -31,6 +31,7 @@ class SeedFailure(RuntimeError):
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--payload-mib", type=int, default=2)
+    parser.add_argument("--fixture", choices=("single", "multifile"), default="single")
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--upload-kib-per-second", type=int)
     parsed = parser.parse_args()
@@ -53,9 +54,12 @@ def route_address() -> str:
         return str(probe.getsockname()[0])
 
 
-def write_payload(path: Path, length: int) -> str:
+def write_payload(path: Path, length: int, salt: int = 0) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    block = bytes((((index * 73) ^ (index >> 3) ^ 0x5A) & 0xFF) for index in range(MIB))
+    block = bytes(
+        (((index * 73) ^ (index >> 3) ^ 0x5A ^ salt) & 0xFF)
+        for index in range(MIB)
+    )
     digest = hashlib.sha1()
     with path.open("wb") as output:
         remaining = length
@@ -67,17 +71,48 @@ def write_payload(path: Path, length: int) -> str:
     return digest.hexdigest()
 
 
-def create_fixture(root: Path, length: int) -> tuple[lt.torrent_info, Path, str]:
+def create_fixture(
+    root: Path,
+    length: int,
+    fixture: str,
+) -> tuple[lt.torrent_info, Path, str, list[dict[str, Any]]]:
     storage = root / "seed"
-    payload = storage / "rstorrent-ios-controlled.bin"
-    digest = write_payload(payload, length)
     files = lt.file_storage()
-    files.add_file(payload.name, length)
+    if fixture == "single":
+        layout = [(Path("rstorrent-ios-controlled.bin"), length)]
+    else:
+        first = length // 4 + 17
+        second = length // 3 + 29
+        layout = [
+            (Path("rstorrent-ios-controlled") / "first.bin", first),
+            (Path("rstorrent-ios-controlled") / "nested" / "second.bin", second),
+            (
+                Path("rstorrent-ios-controlled") / "third.bin",
+                length - first - second,
+            ),
+        ]
+
+    manifest = []
+    combined = hashlib.sha1()
+    for index, (relative, file_length) in enumerate(layout):
+        payload = storage / relative
+        digest = write_payload(payload, file_length, salt=index * 37)
+        files.add_file(relative.as_posix(), file_length)
+        with payload.open("rb") as source:
+            while chunk := source.read(MIB):
+                combined.update(chunk)
+        manifest.append(
+            {
+                "path": relative.as_posix(),
+                "length": file_length,
+                "sha1": digest,
+            }
+        )
     creator = lt.create_torrent(files, piece_size=256 * 1024, flags=lt.create_torrent.v1_only)
     lt.set_piece_hashes(creator, str(storage))
     metainfo = root / "rstorrent-ios-controlled.torrent"
     metainfo.write_bytes(bytes(lt.bencode(creator.generate())))
-    return lt.torrent_info(str(metainfo)), metainfo, digest
+    return lt.torrent_info(str(metainfo)), metainfo, combined.hexdigest(), manifest
 
 
 def open_seed(
@@ -124,7 +159,11 @@ def run(parsed: argparse.Namespace) -> None:
     handle: lt.torrent_handle | None = None
     expected_bytes = parsed.payload_mib * MIB
     try:
-        torrent, metainfo, digest = create_fixture(owned, expected_bytes)
+        torrent, metainfo, digest, files = create_fixture(
+            owned,
+            expected_bytes,
+            parsed.fixture,
+        )
         address = route_address()
         session, handle = open_seed(
             torrent,
@@ -149,13 +188,15 @@ def run(parsed: argparse.Namespace) -> None:
             {
                 "event": "ready",
                 "info_hash": info_hash,
+                "fixture": parsed.fixture,
                 "magnet": (
                     f"magnet:?xt=urn:btih:{info_hash}"
-                    f"&dn=rstorrent-ios-controlled.bin&x.pe={address}:{port}"
+                    f"&dn={torrent.name()}&x.pe={address}:{port}"
                 ),
                 "metainfo": str(metainfo),
                 "expected_bytes": expected_bytes,
                 "expected_sha1": digest,
+                "files": files,
             }
         )
 
