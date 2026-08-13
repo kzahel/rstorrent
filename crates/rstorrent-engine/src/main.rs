@@ -6,15 +6,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstorrent_engine::dht::{BootstrapNode, DhtConfig, DhtService};
+use rstorrent_engine::peer::{PeerEndpoint, PeerObservation, PeerSource};
 use rstorrent_engine::{
-    DownloadActivityEvent, DownloadActivitySink, DownloadConfig, DownloadControl, DownloadError,
-    DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig, NetworkConfig, NetworkPolicy,
-    PeerEncryptionPolicy, TorrentId, TorrentIdentityContext, download_magnet_with_control,
-    download_verified_piece_with_control,
+    DownloadActivityEvent, DownloadActivitySink, DownloadCheckpointSink, DownloadConfig,
+    DownloadControl, DownloadError, DownloadProgress, DownloadResourceLimits, MagnetDownloadConfig,
+    MseDhWorkOwner, NetworkConfig, NetworkPolicy, PeerBudget, PeerEncryptionPolicy,
+    PeerEncryptionPolicyHandle, PreparedFileHash, ResumableMetainfoDownloadConfig,
+    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, TorrentId, TorrentIdentityContext,
+    TorrentPeerHandle, download_magnet_with_control, download_verified_piece_with_control,
+    resume_metainfo_with_control,
 };
+use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::V1InfoHash;
 use rstorrent_protocol::magnet::Magnet;
-use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
+use rstorrent_protocol::metainfo::BEP9_METAINFO_LIMITS;
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
@@ -60,6 +65,47 @@ struct PendingMetainfoDownload {
 #[derive(Debug, Default)]
 struct DiagnosticActivity {
     first_verified_piece: Mutex<Option<u32>>,
+}
+
+#[derive(Debug, Default)]
+struct DiagnosticCheckpointSink;
+
+impl DownloadCheckpointSink for DiagnosticCheckpointSink {
+    fn metadata_verified(&self, _raw_info: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn storage_prepared(&self, _storage: ResumedStorage) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn recheck_started(&self) -> Result<u64, String> {
+        Ok(1)
+    }
+
+    fn have_rechecked(&self, _verified_pieces: &[bool]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn pieces_invalidated(&self, _piece_indices: &[usize]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn pieces_durable(&self, _piece_indices: &[usize]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn descriptor_prepared(&self, _files: &[PreparedFileHash]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn publication_prepared(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn published(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl DiagnosticActivity {
@@ -122,8 +168,11 @@ async fn main() -> ExitCode {
                     );
                 }
             };
-            let metainfo = match Metainfo::from_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS) {
-                Ok(metainfo) => metainfo,
+            let projection = match TorrentContentProjection::from_bytes_with_limits(
+                &bytes,
+                BEP9_METAINFO_LIMITS,
+            ) {
+                Ok(projection) => projection,
                 Err(error) => {
                     return report_result(
                         Err(DownloadError::Metainfo(error)),
@@ -133,25 +182,101 @@ async fn main() -> ExitCode {
                 }
             };
             let identity = match TorrentId::generate() {
-                Ok(torrent_id) => {
-                    TorrentIdentityContext::v1(torrent_id, V1InfoHash::new(metainfo.info_hash))
-                }
+                Ok(torrent_id) => TorrentIdentityContext::new(
+                    torrent_id,
+                    projection.content.info_hashes(),
+                    projection.content.swarm_key(),
+                )
+                .expect("complete metainfo selects its own matching wire identity"),
                 Err(error) => {
                     eprintln!("identity allocation failed: {error}");
                     return ExitCode::from(1);
                 }
             };
-            let config = DownloadConfig {
-                identity,
-                metainfo_path: config.metainfo_path,
-                peer: config.peer,
-                output_path: config.output_path,
-                network: config.network,
-                resource_limits: config.resource_limits,
-                skip_files: config.skip_files,
-                materialize_files: config.materialize_files,
-            };
-            download_verified_piece_with_control(config, control.clone()).await
+            match projection.content {
+                TorrentContent::V1(v1) => {
+                    let config = DownloadConfig {
+                        identity: TorrentIdentityContext::v1(
+                            identity.torrent_id(),
+                            V1InfoHash::new(v1.metainfo.info_hash),
+                        ),
+                        metainfo_path: config.metainfo_path,
+                        peer: config.peer,
+                        output_path: config.output_path,
+                        network: config.network,
+                        resource_limits: config.resource_limits,
+                        skip_files: config.skip_files,
+                        materialize_files: config.materialize_files,
+                    };
+                    download_verified_piece_with_control(config, control.clone()).await
+                }
+                TorrentContent::V2(v2) => {
+                    if !config.materialize_files.is_empty() {
+                        return report_result(
+                            Err(DownloadError::InvalidTorrentIdentity(
+                                "v2 diagnostics do not use part-file materialization",
+                            )),
+                            control.snapshot(),
+                            activity.first_verified_piece(),
+                        );
+                    }
+                    let peers = match TorrentPeerHandle::new(Arc::new(control.clone())) {
+                        Ok(peers) => peers,
+                        Err(error) => {
+                            return report_result(
+                                Err(DownloadError::PeerTask(error.to_string())),
+                                control.snapshot(),
+                                activity.first_verified_piece(),
+                            );
+                        }
+                    };
+                    let endpoint = match PeerEndpoint::new(config.peer) {
+                        Ok(endpoint) => endpoint,
+                        Err(error) => {
+                            return report_result(
+                                Err(DownloadError::PeerRegistry(error)),
+                                control.snapshot(),
+                                activity.first_verified_piece(),
+                            );
+                        }
+                    };
+                    if let Err(error) = peers.observe_discovered_peer(PeerObservation::dialable(
+                        endpoint,
+                        PeerSource::Manual,
+                    )) {
+                        return report_result(
+                            Err(DownloadError::PeerTask(error.to_string())),
+                            control.snapshot(),
+                            activity.first_verified_piece(),
+                        );
+                    }
+                    let piece_count = v2.metainfo.layout.piece_count();
+                    let encryption = PeerEncryptionPolicyHandle::new(config.network.encryption);
+                    resume_metainfo_with_control(
+                        ResumableMetainfoDownloadConfig {
+                            identity,
+                            metainfo_source: bytes,
+                            storage_root: config.output_path,
+                            network: config.network,
+                            peer_budget: PeerBudget::system_default(),
+                            mse_dh: MseDhWorkOwner::new(),
+                            encryption,
+                            torrent_peers: Some(peers),
+                            resource_limits: config.resource_limits,
+                            skip_files: config.skip_files,
+                            verified_pieces: vec![false; piece_count],
+                            artifact_state: ResumeArtifactState::None,
+                            resume_validation: ResumeValidationIntent::Full,
+                            download_missing: true,
+                            dht: None,
+                            trackers: None,
+                        },
+                        Arc::new(DiagnosticCheckpointSink),
+                        control.clone(),
+                    )
+                    .await
+                }
+            }
         }
         DownloadCommand::Magnet {
             mut config,

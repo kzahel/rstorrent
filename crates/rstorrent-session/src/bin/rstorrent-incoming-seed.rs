@@ -13,16 +13,18 @@ use rstorrent_engine::{
     ContentFingerprint, IncomingPeerServiceSnapshot, SelectiveStorage, TorrentArtifactIdentity,
     TorrentId, torrent_storage_paths_for_metainfo,
 };
+use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::metainfo::{BEP9_METAINFO_LIMITS, Metainfo};
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rstorrent_session::{
-    ApplicationConfig, ApplicationService, BandwidthRuntimeView, CONTROL_VERSION, ClientSettings,
-    Command, CommandResult, ConfiguredStorageRoot, DeliveryPolicy, EncryptionPolicy,
-    Ipv6PinholeDiagnosticResult, Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy,
-    PeerTransportPolicy, PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome,
-    SessionStore, SessionUdpStatus, StorageState, StoreError, SubscriptionSpec,
-    TorrentTransferLimits, TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector,
-    ViewSnapshot, ViewUpdatePayload,
+    AddTorrentBytesRequest, ApplicationConfig, ApplicationService, BandwidthRuntimeView,
+    CONTROL_VERSION, ClientSettings, Command, CommandResult, ConfiguredStorageRoot, DeliveryPolicy,
+    EncryptionPolicy, FileIndexRange, FileSelectionIntent, Ipv6PinholeDiagnosticResult,
+    Ipv6PinholeStatus, ListenerPolicy, NetworkConfig, NetworkPolicy, PeerTransportPolicy,
+    PortMappingPolicy, PortMappingStatus, RequestEnvelope, ResponseOutcome, SessionStore,
+    SessionUdpStatus, StorageState, StoreError, SubscriptionSpec, TorrentTransferLimits,
+    TransferRateLimit, TransportAddressFamily, ViewProjection, ViewSelector, ViewSnapshot,
+    ViewUpdatePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -50,11 +52,10 @@ async fn run() -> Result<(), SeedHarnessError> {
             BEP9_METAINFO_LIMITS.max_outer_bytes
         )));
     }
-    let metainfo = Metainfo::from_bytes_with_limits(&outer, BEP9_METAINFO_LIMITS)
+    let projection = TorrentContentProjection::from_bytes_with_limits(&outer, BEP9_METAINFO_LIMITS)
         .map_err(|error| SeedHarnessError::Metainfo(error.to_string()))?;
-    let raw_info = Metainfo::info_bytes_with_limits(&outer, BEP9_METAINFO_LIMITS)
-        .map_err(|error| SeedHarnessError::Metainfo(error.to_string()))?
-        .to_vec();
+    let content = &projection.content;
+    let raw_info = outer[projection.info_span.clone()].to_vec();
     std::fs::create_dir_all(&arguments.storage_root).map_err(|source| SeedHarnessError::Io {
         operation: "create storage root",
         source,
@@ -66,16 +67,22 @@ async fn run() -> Result<(), SeedHarnessError> {
     let torrent_id = initialize_catalog(
         &arguments.profile_root,
         &storage_roots,
-        &metainfo,
+        content,
+        &outer,
         &raw_info,
         &arguments,
     )?;
     if let Some(payload) = &arguments.fixture_payload {
+        let metainfo = content.v1().ok_or_else(|| {
+            SeedHarnessError::Arguments(
+                "--fixture-payload is not implemented for pure-v2 fixtures".to_owned(),
+            )
+        })?;
         stage_partial_fixture(
             payload,
             &arguments.storage_root,
             torrent_id,
-            &metainfo,
+            &metainfo.metainfo,
             &raw_info,
             &arguments,
         )
@@ -163,7 +170,9 @@ async fn run() -> Result<(), SeedHarnessError> {
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "torrent_id": torrent_id.to_string(),
-        "info_hash": hex(metainfo.info_hash),
+        "protocol": match content { TorrentContent::V1(_) => "v1", TorrentContent::V2(_) => "v2" },
+        "info_hash": hex(content.swarm_key().into_bytes()),
+        "full_info_hash": full_info_hash(content),
         "listen": ready.listen_address.to_string(),
         "registrations": ready.registrations,
         "pending_high_water": ready.pending_high_water,
@@ -382,11 +391,11 @@ async fn run() -> Result<(), SeedHarnessError> {
 fn initialize_catalog(
     profile_root: &std::path::Path,
     storage_roots: &[ConfiguredStorageRoot],
-    metainfo: &Metainfo,
+    content: &TorrentContent,
+    metainfo_source: &[u8],
     raw_info: &[u8],
     arguments: &Arguments,
 ) -> Result<TorrentId, SeedHarnessError> {
-    let info_hash = hex(metainfo.info_hash);
     let mut store = SessionStore::open(profile_root, PROFILE_ID, storage_roots)?;
     let desired_settings = ClientSettings {
         listener: if arguments.local_network_listener() {
@@ -424,11 +433,7 @@ fn initialize_catalog(
     let mut existing = None;
     for torrent in &snapshot.torrents {
         let resume = store.load_resume(&torrent.torrent_id)?;
-        if resume
-            .info_hashes
-            .v1_hash()
-            .is_some_and(|hash| hash.into_bytes() == metainfo.info_hash)
-        {
+        if resume.info_hashes == content.info_hashes() {
             existing = Some(resume);
             break;
         }
@@ -454,7 +459,8 @@ fn initialize_catalog(
             "fixture profile belongs to a different torrent".to_owned(),
         ));
     }
-    let magnet = {
+    let response = if let Some(v1) = content.v1() {
+        let info_hash = hex(v1.metainfo.info_hash);
         let mut magnet = arguments.tracker.as_deref().map_or_else(
             || format!("magnet:?xt=urn:btih:{info_hash}"),
             |tracker| format!("magnet:?xt=urn:btih:{info_hash}&tr={tracker}"),
@@ -463,24 +469,46 @@ fn initialize_catalog(
             magnet.push_str("&x.pe=");
             magnet.push_str(&peer.to_string());
         }
-        magnet
+        store.handle_durable(&RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: "initialize-incoming-seed".to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet,
+                storage_root: "downloads".to_owned(),
+                start_content: true,
+                skip_files: arguments
+                    .skip_files
+                    .iter()
+                    .map(|index| u32::try_from(*index))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| {
+                        SeedHarnessError::Arguments("--skip-file exceeds u32".to_owned())
+                    })?,
+            },
+        })?
+    } else {
+        if arguments.tracker.is_some() || arguments.peer.is_some() {
+            return Err(SeedHarnessError::Arguments(
+                "pure-v2 seed fixtures carry discovery in their metainfo source".to_owned(),
+            ));
+        }
+        let source_length = u32::try_from(metainfo_source.len()).map_err(|_| {
+            SeedHarnessError::Arguments("metainfo source length exceeds u32".to_owned())
+        })?;
+        store.handle_torrent_bytes(
+            &AddTorrentBytesRequest {
+                version: CONTROL_VERSION,
+                request_id: "initialize-incoming-seed".to_owned(),
+                expected_revision: None,
+                storage_root: "downloads".to_owned(),
+                start_content: true,
+                selection: selection_intent(content.files().len(), &arguments.skip_files)?,
+                source_length,
+            },
+            metainfo_source.to_vec(),
+        )?
     };
-    let response = store.handle_durable(&RequestEnvelope {
-        version: CONTROL_VERSION,
-        request_id: "initialize-incoming-seed".to_owned(),
-        expected_revision: None,
-        command: Command::AddMagnet {
-            magnet,
-            storage_root: "downloads".to_owned(),
-            start_content: true,
-            skip_files: arguments
-                .skip_files
-                .iter()
-                .map(|index| u32::try_from(*index))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| SeedHarnessError::Arguments("--skip-file exceeds u32".to_owned()))?,
-        },
-    })?;
     if !matches!(response.outcome, ResponseOutcome::Success { .. }) {
         return Err(SeedHarnessError::Catalog(
             "fixture add request was rejected".to_owned(),
@@ -494,15 +522,14 @@ fn initialize_catalog(
             ));
         }
     };
-    store.record_metadata(&torrent_id, raw_info)?;
+    if content.v1().is_some() {
+        store.record_metadata(&torrent_id, raw_info)?;
+    }
     if partial {
         store.record_pieces(&torrent_id, &arguments.initial_pieces)?;
         store.mark_storage_prepared(&torrent_id, StorageState::Staging)?;
     } else {
-        store.record_pieces(
-            &torrent_id,
-            &(0..metainfo.piece_count()).collect::<Vec<_>>(),
-        )?;
+        store.record_pieces(&torrent_id, &(0..content.piece_count()).collect::<Vec<_>>())?;
         store.mark_storage_prepared(&torrent_id, StorageState::Published)?;
         store.mark_complete(&torrent_id)?;
     }
@@ -510,6 +537,55 @@ fn initialize_catalog(
     torrent_id.parse().map_err(|_| {
         SeedHarnessError::Catalog("fixture add returned an invalid torrent owner".to_owned())
     })
+}
+
+fn full_info_hash(content: &TorrentContent) -> String {
+    let info_hashes = content.info_hashes();
+    match content {
+        TorrentContent::V1(_) => info_hashes
+            .v1_hash()
+            .expect("v1 content has a v1 identity")
+            .to_string(),
+        TorrentContent::V2(_) => info_hashes
+            .v2_hash()
+            .expect("pure-v2 content has a v2 identity")
+            .to_string(),
+    }
+}
+
+fn selection_intent(
+    file_count: usize,
+    skipped: &[usize],
+) -> Result<FileSelectionIntent, SeedHarnessError> {
+    if skipped.is_empty() {
+        return Ok(FileSelectionIntent::All);
+    }
+    if skipped.iter().any(|index| *index >= file_count) {
+        return Err(SeedHarnessError::Arguments(
+            "--skip-file exceeds the metainfo file count".to_owned(),
+        ));
+    }
+    let mut ranges = Vec::new();
+    let mut start = None;
+    for index in 0..=file_count {
+        let wanted = index < file_count && !skipped.contains(&index);
+        match (start, wanted) {
+            (None, true) => start = Some(index),
+            (Some(range_start), false) => {
+                ranges.push(FileIndexRange {
+                    start: u32::try_from(range_start).map_err(|_| {
+                        SeedHarnessError::Arguments("file index exceeds u32".to_owned())
+                    })?,
+                    end_exclusive: u32::try_from(index).map_err(|_| {
+                        SeedHarnessError::Arguments("file index exceeds u32".to_owned())
+                    })?,
+                });
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    Ok(FileSelectionIntent::WantedRanges { ranges })
 }
 
 fn rate_limit(bytes_per_second: Option<u32>) -> TransferRateLimit {
