@@ -164,10 +164,21 @@ pub fn new_payload_bytes(
 ) -> usize {
     let header_bytes = utp_header_bytes(selective_ack_bytes);
     let datagram_payload = datagram_limit.saturating_sub(header_bytes);
+    let desired_payload = queued_bytes.min(datagram_payload);
     let payload_window = congestion_window_bytes
         .min(remote_window_bytes)
         .saturating_sub(in_flight_bytes);
-    queued_bytes.min(datagram_payload).min(payload_window)
+    if desired_payload <= payload_window {
+        desired_payload
+    } else if in_flight_bytes == 0 {
+        desired_payload.min(payload_window)
+    } else if payload_window >= desired_payload.div_ceil(2) {
+        // Keep enough ACK feedback for the no-slow-start controller while
+        // avoiding the tiny residual fragments seen on the WAN path.
+        payload_window
+    } else {
+        0
+    }
 }
 
 #[must_use]
@@ -722,11 +733,22 @@ impl TransportState {
         if snapshot.retransmissions.pending_packets > 0 {
             deadline = minimum_deadline(deadline, Some(snapshot.pacer.next_send_micros));
         }
-        if snapshot.transmit.unsent_bytes > 0
+        let ready_payload_bytes = new_payload_bytes(
+            snapshot.transmit.unsent_bytes,
+            snapshot.mtu.floor_datagram_bytes,
+            self.selective_ack_bytes(),
+            snapshot.congestion.congestion_window_bytes,
+            snapshot.remote_window_bytes,
+            snapshot.in_flight_bytes,
+        );
+        if ready_payload_bytes > 0
             && snapshot.connection.send.outstanding_packets < MAX_SENT_PACKETS
-            && snapshot.connection.send.outstanding_bytes < MAX_SENT_BYTES
-            && snapshot.in_flight_bytes < snapshot.congestion.congestion_window_bytes
-            && snapshot.in_flight_bytes < snapshot.remote_window_bytes
+            && snapshot
+                .connection
+                .send
+                .outstanding_bytes
+                .saturating_add(ready_payload_bytes)
+                <= MAX_SENT_BYTES
             && matches!(
                 snapshot.connection.phase,
                 ConnectionPhase::Connected | ConnectionPhase::RemoteFinReceived
@@ -1174,6 +1196,15 @@ impl TransportState {
         }))
     }
 
+    fn selective_ack_bytes(&self) -> usize {
+        self.connection
+            .snapshot()
+            .receive
+            .and_then(|_| self.connection.state_intent().ok())
+            .and_then(|intent| intent.selective_ack)
+            .map_or(0, |selective_ack| selective_ack.as_bytes().len())
+    }
+
     fn poll_new_data(
         &mut self,
         now_micros: u64,
@@ -1191,11 +1222,7 @@ impl TransportState {
         {
             return Ok(None);
         }
-        let selective_ack_bytes = connection_snapshot
-            .receive
-            .and_then(|_| self.connection.state_intent().ok())
-            .and_then(|intent| intent.selective_ack)
-            .map_or(0, |selective_ack| selective_ack.as_bytes().len());
+        let selective_ack_bytes = self.selective_ack_bytes();
         let congestion_window = self.congestion.snapshot().congestion_window_bytes;
         let in_flight_bytes = self.in_flight_bytes();
         let ordinary_limit = self.mtu.ordinary_datagram_bytes();
@@ -1478,14 +1505,81 @@ mod tests {
     }
 
     #[test]
-    fn packetization_obeys_header_mtu_and_both_windows_without_stranding() {
+    fn packetization_suppresses_small_slivers_but_allows_progress() {
         assert_eq!(utp_header_bytes(0), 20);
         assert_eq!(utp_header_bytes(4), 26);
         assert_eq!(new_payload_bytes(1_000, 548, 0, 2_000, 2_000, 0), 528);
         assert_eq!(new_payload_bytes(1_000, 548, 4, 2_000, 2_000, 0), 522);
-        assert_eq!(new_payload_bytes(1_000, 548, 0, 1_000, 507, 500), 7);
+        assert_eq!(new_payload_bytes(1_000, 548, 0, 1_000, 507, 500), 0);
+        assert_eq!(new_payload_bytes(1_000, 548, 0, 1_000, 800, 500), 300);
+        assert_eq!(new_payload_bytes(7, 548, 0, 1_000, 507, 500), 7);
+        assert_eq!(new_payload_bytes(1_000, 548, 0, 1_000, 7, 0), 7);
         assert_eq!(new_payload_bytes(1_000, 548, 0, 1_000, 500, 500), 0);
         assert_eq!(new_payload_bytes(1_000, 19, 0, 1_000, 1_000, 0), 0);
+    }
+
+    #[test]
+    fn ordinary_data_does_not_fragment_into_a_small_window_sliver() {
+        let (mut initiator, mut acceptor) = connected_pair();
+        initiator.remote_window_bytes = 535;
+        initiator
+            .queue_data(&vec![7; 2 * 528])
+            .expect("queue two packets");
+
+        let first = initiator
+            .poll_transmit(1_000, TimestampMicros::new(1_000))
+            .expect("poll first DATA")
+            .expect("first DATA");
+        assert_eq!(first.payload.len(), 528);
+        initiator
+            .on_send_result(
+                first.intent.sequence_number,
+                DatagramSendResult::Sent,
+                1_000,
+            )
+            .expect("send first DATA");
+        assert!(
+            initiator
+                .poll_transmit(1_000, TimestampMicros::new(1_000))
+                .expect("poll residual window")
+                .is_none()
+        );
+        assert_ne!(initiator.next_wakeup_micros(), Some(0));
+
+        acceptor
+            .incoming(
+                decode_packet(&first.encode().expect("encode first DATA"))
+                    .expect("decode first DATA"),
+                2_000,
+                TimestampMicros::new(2_000),
+            )
+            .expect("receive first DATA");
+        let acknowledgement = acceptor
+            .poll_pending_acknowledgement(TimestampMicros::new(2_001))
+            .expect("poll acknowledgement")
+            .expect("acknowledgement");
+        acceptor
+            .on_send_result(
+                acknowledgement.intent.sequence_number,
+                DatagramSendResult::Sent,
+                2_001,
+            )
+            .expect("send acknowledgement");
+        initiator
+            .incoming(
+                decode_packet(&acknowledgement.encode().expect("encode acknowledgement"))
+                    .expect("decode acknowledgement"),
+                3_000,
+                TimestampMicros::new(3_000),
+            )
+            .expect("apply acknowledgement");
+        assert_eq!(initiator.next_wakeup_micros(), Some(0));
+
+        let second = initiator
+            .poll_transmit(3_000, TimestampMicros::new(3_000))
+            .expect("poll second DATA")
+            .expect("second DATA");
+        assert_eq!(second.payload.len(), 528);
     }
 
     #[test]
