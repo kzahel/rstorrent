@@ -247,10 +247,15 @@ def validate_complete(
         "retransmission_queue_high_water",
         "loss_reduction_high_water",
         "timeout_collapse_high_water",
+        "slow_start_threshold_byte_high_water",
+        "slow_start_acknowledgements_high_water",
+        "slow_start_exits_high_water",
     ):
         value = live_utp.get(key)
         if not isinstance(value, int) or value < 0:
             raise InteropFailure(f"{role} did not report bounded {key}: {live_utp}")
+    if not isinstance(live_utp.get("slow_start_active_observed"), bool):
+        raise InteropFailure(f"{role} omitted slow-start activity evidence")
     if live_udp.get("utp_datagrams_classified", 0) <= 0:
         raise InteropFailure(f"{role} received no uTP datagrams")
     for minimum_key, maximum_key in (

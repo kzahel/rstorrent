@@ -200,6 +200,10 @@ pub struct UtpServiceSnapshot {
     pub sender_underfilled_acknowledgements_high_water: u64,
     pub remote_window_limited_acknowledgements_high_water: u64,
     pub window_growth_acknowledgements_high_water: u64,
+    pub slow_start_active_observed: bool,
+    pub slow_start_threshold_byte_high_water: usize,
+    pub slow_start_acknowledgements_high_water: u64,
+    pub slow_start_exits_high_water: u64,
     pub pending_ack_packet_high_water: usize,
     pub loss_reduction_high_water: u64,
     pub timeout_collapse_high_water: u64,
@@ -970,6 +974,10 @@ struct UtpStats {
     sender_underfilled_acknowledgements_high_water: AtomicU64,
     remote_window_limited_acknowledgements_high_water: AtomicU64,
     window_growth_acknowledgements_high_water: AtomicU64,
+    slow_start_active_observed: AtomicBool,
+    slow_start_threshold_byte_high_water: AtomicUsize,
+    slow_start_acknowledgements_high_water: AtomicU64,
+    slow_start_exits_high_water: AtomicU64,
     pending_ack_packet_high_water: AtomicUsize,
     loss_reduction_high_water: AtomicU64,
     timeout_collapse_high_water: AtomicU64,
@@ -1081,6 +1089,14 @@ impl UtpStats {
             window_growth_acknowledgements_high_water: self
                 .window_growth_acknowledgements_high_water
                 .load(Ordering::Relaxed),
+            slow_start_active_observed: self.slow_start_active_observed.load(Ordering::Relaxed),
+            slow_start_threshold_byte_high_water: self
+                .slow_start_threshold_byte_high_water
+                .load(Ordering::Relaxed),
+            slow_start_acknowledgements_high_water: self
+                .slow_start_acknowledgements_high_water
+                .load(Ordering::Relaxed),
+            slow_start_exits_high_water: self.slow_start_exits_high_water.load(Ordering::Relaxed),
             pending_ack_packet_high_water: self
                 .pending_ack_packet_high_water
                 .load(Ordering::Relaxed),
@@ -1260,6 +1276,20 @@ impl UtpStats {
             );
         self.window_growth_acknowledgements_high_water
             .fetch_max(snapshot.window_growth_acknowledgements, Ordering::Relaxed);
+        if snapshot.congestion.slow_start_active {
+            self.slow_start_active_observed
+                .store(true, Ordering::Relaxed);
+        }
+        if let Some(threshold_bytes) = snapshot.congestion.slow_start_threshold_bytes {
+            self.slow_start_threshold_byte_high_water
+                .fetch_max(threshold_bytes, Ordering::Relaxed);
+        }
+        self.slow_start_acknowledgements_high_water.fetch_max(
+            snapshot.congestion.slow_start_acknowledgements,
+            Ordering::Relaxed,
+        );
+        self.slow_start_exits_high_water
+            .fetch_max(snapshot.congestion.slow_start_exits, Ordering::Relaxed);
         self.pending_ack_packet_high_water.fetch_max(
             usize::from(snapshot.acknowledgements.pending_packets),
             Ordering::Relaxed,
@@ -2912,6 +2942,8 @@ mod tests {
         );
         assert!(left_terminal.selected_mtu_max_bytes.unwrap() >= 1_456);
         assert!(left_terminal.mtu_probes_acknowledged_high_water > 0);
+        assert!(left_terminal.slow_start_active_observed);
+        assert!(left_terminal.slow_start_acknowledgements_high_water > 0);
         let left_udp_snapshot = left_udp.snapshot();
         assert!(left_udp_snapshot.protected_sends_sent > 0);
         assert!(left_udp_snapshot.maximum_datagram_bytes_sent >= 1_456);

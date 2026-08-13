@@ -608,7 +608,7 @@ impl TransportState {
             now_micros,
             floor_datagram_bytes,
             ceiling_datagram_bytes,
-            CongestionStartup::LinearLedbat,
+            CongestionStartup::BoundedSlowStart,
         )
     }
 
@@ -667,7 +667,7 @@ impl TransportState {
             ceiling_datagram_bytes,
             false,
             true,
-            CongestionStartup::LinearLedbat,
+            CongestionStartup::BoundedSlowStart,
         )
     }
 
@@ -2037,13 +2037,13 @@ mod tests {
         );
         initiator
             .congestion
-            .on_ack(500, 10_000, 9 * 528, 0, None, true)
+            .on_ack(500, 10_000, 19 * 528, 0, None, true)
             .expect("grow controlled pre-loss window");
         initiator
-            .queue_data(&vec![7; 9 * 528])
-            .expect("queue nine packets");
+            .queue_data(&vec![7; 20 * 528])
+            .expect("queue twenty packets");
         let mut sent = Vec::new();
-        for _ in 0..9 {
+        for _ in 0..20 {
             let emission = initiator
                 .poll_transmit(1_000, TimestampMicros::new(1_000))
                 .expect("poll DATA")

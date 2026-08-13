@@ -653,7 +653,7 @@ mod tests {
     use crate::utp::{
         DatagramSendResult, IPV4_UDP_PAYLOAD_CEILING, IPV4_UDP_PAYLOAD_FLOOR, MAX_RECEIVE_BYTES,
         MAX_REORDER_PACKETS, MAX_SENT_BYTES, MAX_SENT_PACKETS, MAX_UNSENT_BYTES, SequenceNumber,
-        TARGET_DELAY_MICROS, TimestampMicros, TransportState, decode_packet,
+        TimestampMicros, TransportState, decode_packet,
     };
     use sha1::{Digest, Sha1};
 
@@ -925,7 +925,7 @@ mod tests {
             transfer_bytes: TRANSFER_BYTES,
             receive_release: ReceiveReleasePolicy::Immediate,
             competitor: None,
-            sender_startup: CongestionStartup::LinearLedbat,
+            sender_startup: CongestionStartup::BoundedSlowStart,
         }
     }
 
@@ -1619,13 +1619,22 @@ mod tests {
             report.sender.congestion.congestion_window_bytes > 128 * 1024,
             "long-RTT sender window did not grow: report={report:?}"
         );
-        assert_eq!(report.sender.sender_underfilled_acknowledgements, 0);
         assert_eq!(report.sender.remote_window_limited_acknowledgements, 0);
         assert!(report.sender.window_growth_acknowledgements > 0);
         assert!(
-            report.sender.congestion_limited_acknowledgements
-                > report.sender.congestion_control_acknowledgements * 9 / 10,
-            "sender was not congestion-limited for most feedback: report={report:?}"
+            report.sender.congestion.slow_start_acknowledgements > 0,
+            "sender never exercised bounded startup: report={report:?}"
+        );
+        assert!(
+            report.sender.congestion.slow_start_active,
+            "zero queue delay should not invent a startup exit: report={report:?}"
+        );
+        assert_eq!(report.sender.congestion.slow_start_exits, 0);
+        assert_eq!(report.queue_delay_percentile(100), 0);
+        assert!(
+            report.sender.sender_underfilled_acknowledgements
+                < report.sender.congestion_control_acknowledgements,
+            "sender remained underfilled for every feedback event: report={report:?}"
         );
     }
 
@@ -1836,8 +1845,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Tactical 145 diagnostic-only congestion-policy A/B"]
-    fn diagnostic_exact_slow_start_is_rejected_by_queue_delay_gate() {
+    #[ignore = "Tactical 150 source-policy comparison"]
+    fn exact_slow_start_is_rejected_by_queue_delay_gate() {
         let mut current = default_utp_scenario();
         current.transfer_bytes = TRANSFER_BYTES * 2;
         current.link.base_delay_micros = 80_000;
@@ -1846,10 +1855,7 @@ mod tests {
         let current = run_utp_scenario(current);
 
         let mut exact = default_utp_scenario();
-        exact.sender_startup = CongestionStartup::DiagnosticSlowStart {
-            exit_delay_micros: TARGET_DELAY_MICROS,
-            exit_window_percent: None,
-        };
+        exact.sender_startup = CongestionStartup::ExactSlowStart;
         exact.transfer_bytes = TRANSFER_BYTES * 2;
         exact.link.base_delay_micros = 80_000;
         exact.link.bytes_per_second = 3_000_000;
@@ -1863,7 +1869,7 @@ mod tests {
             .completed_at_micros
             .saturating_sub(exact.started_at_micros);
         eprintln!(
-            "T145_EXACT_REJECTION current_duration_us={current_duration} exact_duration_us={exact_duration} exact_queue_p95_us={} exact_queue_max_us={} exact_cwnd_high={} exact_flight_high={}",
+            "T150_EXACT_REJECTION current_duration_us={current_duration} exact_duration_us={exact_duration} exact_queue_p95_us={} exact_queue_max_us={} exact_cwnd_high={} exact_flight_high={}",
             exact.queue_delay_percentile(95),
             exact.maximum_queue_delay(),
             exact.congestion_window_high_water_bytes,
@@ -1875,8 +1881,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Tactical 145 diagnostic-only congestion-policy A/B"]
-    fn diagnostic_slow_start_ab_covers_long_rtt_fairness_and_resources() {
+    #[ignore = "Tactical 150 production-policy A/B"]
+    fn bounded_slow_start_ab_covers_long_rtt_fairness_and_resources() {
         let base_delay_profiles_micros = [70_000, 80_000, 90_000];
         let mut paired_durations = Vec::new();
 
@@ -1884,10 +1890,7 @@ mod tests {
             let mut durations = Vec::new();
             for startup in [
                 CongestionStartup::LinearLedbat,
-                CongestionStartup::DiagnosticSlowStart {
-                    exit_delay_micros: 10_000,
-                    exit_window_percent: Some(30),
-                },
+                CongestionStartup::BoundedSlowStart,
             ] {
                 let mut scenario = default_utp_scenario();
                 scenario.sender_startup = startup;
@@ -1904,10 +1907,11 @@ mod tests {
                     / (1024.0 * 1024.0);
                 let startup_name = match startup {
                     CongestionStartup::LinearLedbat => "linear",
-                    CongestionStartup::DiagnosticSlowStart { .. } => "slow-start-10ms-30pct",
+                    CongestionStartup::BoundedSlowStart => "slow-start-10ms-30pct",
+                    CongestionStartup::ExactSlowStart => "exact-slow-start",
                 };
                 eprintln!(
-                    "T145_STARTUP sample={sample} mode={startup_name} duration_us={duration_micros} rate_mib_s={rate_mib_per_second:.6} cwnd_high={} flight_high={} queue_p95_us={} queue_max_us={} retransmissions={} loss_reductions={} timeout_collapses={} slow_start_acks={} slow_start_exits={} send_packet_high={} send_byte_high={} event_high={} event_byte_high={} queue_byte_high={}",
+                    "T150_STARTUP sample={sample} mode={startup_name} duration_us={duration_micros} rate_mib_s={rate_mib_per_second:.6} cwnd_high={} flight_high={} queue_p95_us={} queue_max_us={} retransmissions={} loss_reductions={} timeout_collapses={} slow_start_acks={} slow_start_exits={} send_packet_high={} send_byte_high={} event_high={} event_byte_high={} queue_byte_high={}",
                     report.congestion_window_high_water_bytes,
                     report.sender.in_flight_byte_high_water,
                     report.queue_delay_percentile(95),
@@ -1935,7 +1939,7 @@ mod tests {
                 assert!(report.sender.in_flight_byte_high_water <= MAX_SENT_BYTES);
                 assert!(report.link.event_high_water <= MAX_SIM_EVENTS);
                 assert!(report.link.event_byte_high_water <= MAX_SIM_EVENT_BYTES);
-                if matches!(startup, CongestionStartup::DiagnosticSlowStart { .. }) {
+                if startup == CongestionStartup::BoundedSlowStart {
                     assert!(report.sender.congestion.slow_start_acknowledgements > 0);
                     assert!(report.sender.congestion.slow_start_exits > 0);
                 }
@@ -1950,10 +1954,7 @@ mod tests {
 
         for startup in [
             CongestionStartup::LinearLedbat,
-            CongestionStartup::DiagnosticSlowStart {
-                exit_delay_micros: 10_000,
-                exit_window_percent: Some(30),
-            },
+            CongestionStartup::BoundedSlowStart,
         ] {
             let mut scenario = default_utp_scenario();
             scenario.sender_startup = startup;
@@ -1975,10 +1976,11 @@ mod tests {
                 .expect("uTP recovery within ten RTTs");
             let startup_name = match startup {
                 CongestionStartup::LinearLedbat => "linear",
-                CongestionStartup::DiagnosticSlowStart { .. } => "slow-start-10ms-30pct",
+                CongestionStartup::BoundedSlowStart => "slow-start-10ms-30pct",
+                CongestionStartup::ExactSlowStart => "exact-slow-start",
             };
             eprintln!(
-                "T145_FAIRNESS mode={startup_name} competitor_share={overlap_share:.6} competitor_queue_p95_us={queue_p95} utp_recovery_us={recovery_delay} utp_rtt_stop_us={} utp_loss_reductions={} queue_drops={} queue_byte_high={} cwnd_high={} flight_high={}",
+                "T150_FAIRNESS mode={startup_name} competitor_share={overlap_share:.6} competitor_queue_p95_us={queue_p95} utp_recovery_us={recovery_delay} utp_rtt_stop_us={} utp_loss_reductions={} queue_drops={} queue_byte_high={} cwnd_high={} flight_high={}",
                 competitor.utp_rtt_at_stop_micros,
                 report.sender.congestion.loss_reductions,
                 report.link.queue_drops,
@@ -1994,17 +1996,14 @@ mod tests {
         }
 
         let mut loss = default_utp_scenario();
-        loss.sender_startup = CongestionStartup::DiagnosticSlowStart {
-            exit_delay_micros: 10_000,
-            exit_window_percent: Some(30),
-        };
+        loss.sender_startup = CongestionStartup::BoundedSlowStart;
         loss.link.queue_capacity_bytes = 1024 * 1024;
         for ordinal in (99..20_000).step_by(100) {
             loss.script.drop_ordinals.insert(ordinal);
         }
         let loss = run_utp_scenario(loss);
         eprintln!(
-            "T145_LOSS duration_us={} scripted_drops={} queue_drops={} retransmissions={} loss_reductions={} timeout_collapses={} max_transmissions={} cwnd_high={} flight_high={} send_packet_high={} send_byte_high={}",
+            "T150_LOSS duration_us={} scripted_drops={} queue_drops={} retransmissions={} loss_reductions={} timeout_collapses={} max_transmissions={} cwnd_high={} flight_high={} send_packet_high={} send_byte_high={}",
             loss.completed_at_micros
                 .saturating_sub(loss.started_at_micros),
             loss.link.scripted_drops,
@@ -2026,15 +2025,12 @@ mod tests {
         assert!(loss.maximum_transmissions_per_sequence <= crate::utp::MAX_TRANSMISSIONS);
 
         let mut mtu = default_utp_scenario();
-        mtu.sender_startup = CongestionStartup::DiagnosticSlowStart {
-            exit_delay_micros: 10_000,
-            exit_window_percent: Some(30),
-        };
+        mtu.sender_startup = CongestionStartup::BoundedSlowStart;
         mtu.link.queue_capacity_bytes = 1024 * 1024;
         mtu.link.path_udp_payload_mtu = 1_280;
         let mtu = run_utp_scenario(mtu);
         eprintln!(
-            "T145_MTU duration_us={} mtu_black_hole_drops={} retransmissions={} loss_reductions={} ignored_loss_events={} probes_started={} probes_failed={} floor_datagram_bytes={} cwnd_high={} flight_high={}",
+            "T150_MTU duration_us={} mtu_black_hole_drops={} retransmissions={} loss_reductions={} ignored_loss_events={} probes_started={} probes_failed={} floor_datagram_bytes={} cwnd_high={} flight_high={}",
             mtu.completed_at_micros
                 .saturating_sub(mtu.started_at_micros),
             mtu.link.mtu_black_hole_drops,
@@ -2053,6 +2049,6 @@ mod tests {
         assert_eq!(mtu.sender.congestion.loss_reductions, 0);
         assert!(mtu.sender.congestion.ignored_loss_events >= mtu.sender.mtu.probes_failed);
 
-        eprintln!("T145_PAIRED_DURATIONS {paired_durations:?}");
+        eprintln!("T150_PAIRED_DURATIONS {paired_durations:?}");
     }
 }

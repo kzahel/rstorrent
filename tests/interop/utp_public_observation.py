@@ -225,6 +225,11 @@ def validate_result(result: dict[str, Any], entry: dict[str, Any], exit_code: in
     require_bounded_integer(utp, "receive_buffered_byte_high_water", 1024 * 1024)
     require_bounded_integer(utp, "unsent_byte_high_water", 1024 * 1024)
     require_bounded_integer(utp, "sent_byte_high_water", 1024 * 1024)
+    if not isinstance(utp.get("slow_start_active_observed"), bool):
+        raise ObservationError("probe omitted bounded slow-start activity evidence")
+    require_bounded_integer(utp, "slow_start_threshold_byte_high_water", 1024 * 1024)
+    require_bounded_integer(utp, "slow_start_acknowledgements_high_water", 2**64 - 1)
+    require_bounded_integer(utp, "slow_start_exits_high_water", 2**64 - 1)
     require_bounded_integer(utp, "worker_panics", 0, terminal_zero=True)
     for field in (
         "malformed_datagrams",

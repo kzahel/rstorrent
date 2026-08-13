@@ -12,6 +12,8 @@ pub const CURRENT_DELAY_SAMPLE_LIMIT: usize = 32;
 pub const INITIAL_CONGESTION_PACKETS: usize = 2;
 pub const MIN_CONGESTION_PACKETS: usize = 2;
 pub const MAX_CONGESTION_WINDOW_BYTES: usize = 1024 * 1024;
+pub const STARTUP_EXIT_DELAY_MICROS: u32 = 10_000;
+pub const STARTUP_EXIT_WINDOW_PERCENT: u8 = 30;
 const MICROS_PER_MINUTE: u64 = 60_000_000;
 const FIXED_POINT_SHIFT: u32 = 16;
 const FIXED_POINT_ONE: i128 = 1_i128 << FIXED_POINT_SHIFT;
@@ -138,6 +140,7 @@ pub struct CongestionSnapshot {
     pub maximum_segment_bytes: usize,
     pub congestion_window_bytes: usize,
     pub slow_start_active: bool,
+    pub slow_start_threshold_bytes: Option<usize>,
     pub slow_start_acknowledgements: u64,
     pub slow_start_exits: u64,
     pub loss_reductions: u64,
@@ -150,12 +153,11 @@ pub struct CongestionSnapshot {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CongestionStartup {
+    BoundedSlowStart,
+    #[cfg(test)]
     LinearLedbat,
     #[cfg(test)]
-    DiagnosticSlowStart {
-        exit_delay_micros: u32,
-        exit_window_percent: Option<u8>,
-    },
+    ExactSlowStart,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,8 +204,8 @@ impl Error for CongestionError {}
 pub struct CongestionController {
     maximum_segment_bytes: usize,
     congestion_window_fixed: i128,
-    diagnostic_slow_start_exit_delay_micros: Option<u32>,
-    diagnostic_slow_start_exit_window_percent: Option<u8>,
+    slow_start_exit_delay_micros: Option<u32>,
+    slow_start_exit_window_percent: Option<u8>,
     slow_start_active: bool,
     slow_start_threshold_bytes: Option<usize>,
     slow_start_acknowledgements: u64,
@@ -218,7 +220,7 @@ pub struct CongestionController {
 
 impl CongestionController {
     pub fn new(maximum_segment_bytes: usize) -> Result<Self, CongestionError> {
-        Self::with_startup(maximum_segment_bytes, CongestionStartup::LinearLedbat)
+        Self::with_startup(maximum_segment_bytes, CongestionStartup::BoundedSlowStart)
     }
 
     pub(super) fn with_startup(
@@ -226,28 +228,24 @@ impl CongestionController {
         startup: CongestionStartup,
     ) -> Result<Self, CongestionError> {
         validate_mss(maximum_segment_bytes)?;
-        let (diagnostic_slow_start_exit_delay_micros, exit_window_percent) = match startup {
+        let (slow_start_exit_delay_micros, exit_window_percent) = match startup {
+            CongestionStartup::BoundedSlowStart => (
+                Some(STARTUP_EXIT_DELAY_MICROS),
+                Some(STARTUP_EXIT_WINDOW_PERCENT),
+            ),
+            #[cfg(test)]
             CongestionStartup::LinearLedbat => (None, None),
             #[cfg(test)]
-            CongestionStartup::DiagnosticSlowStart {
-                exit_delay_micros,
-                exit_window_percent,
-            } => {
-                assert!(
-                    exit_window_percent.is_none_or(|percent| (1..=100).contains(&percent)),
-                    "diagnostic slow-start exit window percentage must be within 1..=100"
-                );
-                (Some(exit_delay_micros), exit_window_percent)
-            }
+            CongestionStartup::ExactSlowStart => (Some(TARGET_DELAY_MICROS), None),
         };
         Ok(Self {
             maximum_segment_bytes,
             congestion_window_fixed: bytes_to_fixed(
                 maximum_segment_bytes.saturating_mul(INITIAL_CONGESTION_PACKETS),
             ),
-            diagnostic_slow_start_exit_delay_micros,
-            diagnostic_slow_start_exit_window_percent: exit_window_percent,
-            slow_start_active: diagnostic_slow_start_exit_delay_micros.is_some(),
+            slow_start_exit_delay_micros,
+            slow_start_exit_window_percent: exit_window_percent,
+            slow_start_active: slow_start_exit_delay_micros.is_some(),
             slow_start_threshold_bytes: None,
             slow_start_acknowledgements: 0,
             slow_start_exits: 0,
@@ -266,6 +264,7 @@ impl CongestionController {
             maximum_segment_bytes: self.maximum_segment_bytes,
             congestion_window_bytes: self.congestion_window_bytes(),
             slow_start_active: self.slow_start_active,
+            slow_start_threshold_bytes: self.slow_start_threshold_bytes,
             slow_start_acknowledgements: self.slow_start_acknowledgements,
             slow_start_exits: self.slow_start_exits,
             loss_reductions: self.loss_reductions,
@@ -324,12 +323,12 @@ impl CongestionController {
         let previous_window_bytes = self.congestion_window_bytes();
         if self.slow_start_active
             && self
-                .diagnostic_slow_start_exit_delay_micros
+                .slow_start_exit_delay_micros
                 .is_some_and(|exit_delay| queue_delay_micros >= exit_delay)
         {
             let threshold_bytes = previous_window_bytes / 2;
             self.exit_slow_start(Some(threshold_bytes));
-            if let Some(percent) = self.diagnostic_slow_start_exit_window_percent {
+            if let Some(percent) = self.slow_start_exit_window_percent {
                 let exit_window_bytes =
                     previous_window_bytes.saturating_mul(usize::from(percent)) / 100;
                 self.congestion_window_fixed = bytes_to_fixed(
@@ -424,7 +423,7 @@ impl CongestionController {
             now_micros.saturating_add(smoothed_rtt_micros.unwrap_or(INITIAL_RTO_MICROS).max(1));
         self.timeout_collapses = self.timeout_collapses.saturating_add(1);
         self.timeout_collapsed = true;
-        if self.diagnostic_slow_start_exit_delay_micros.is_some() {
+        if self.slow_start_exit_delay_micros.is_some() {
             self.slow_start_active = true;
         }
         Ok(())
@@ -534,6 +533,11 @@ fn wrapping_min(values: impl IntoIterator<Item = u32>) -> Option<u32> {
 mod tests {
     use super::*;
 
+    fn linear_controller(maximum_segment_bytes: usize) -> CongestionController {
+        CongestionController::with_startup(maximum_segment_bytes, CongestionStartup::LinearLedbat)
+            .expect("linear controller")
+    }
+
     #[test]
     fn delay_history_rolls_ten_minute_buckets_and_expires_idle_state() {
         let mut history = DelayHistory::new();
@@ -581,7 +585,7 @@ mod tests {
 
     #[test]
     fn ledbat_growth_target_and_decrease_follow_fixed_point_formula() {
-        let mut controller = CongestionController::new(1_000).expect("controller");
+        let mut controller = linear_controller(1_000);
         let growth = controller
             .on_ack(0, 1_000, 2_000, 10_000, Some(500_000), true)
             .expect("growth ACK");
@@ -605,7 +609,7 @@ mod tests {
 
     #[test]
     fn persistent_queue_delay_decreases_but_never_below_two_mss() {
-        let mut controller = CongestionController::new(1_000).expect("controller");
+        let mut controller = linear_controller(1_000);
         controller
             .on_ack(0, 1_000, 2_000, 10_000, Some(500_000), true)
             .expect("establish base");
@@ -633,44 +637,37 @@ mod tests {
             .expect("application-limited ACK");
         assert_eq!(result.congestion_window_bytes, 2_000);
         assert_eq!(result.window_delta_bytes, 0);
+        assert!(controller.snapshot().slow_start_active);
+        assert_eq!(controller.snapshot().slow_start_acknowledgements, 0);
     }
 
     #[test]
-    fn diagnostic_slow_start_grows_by_acked_bytes_and_exits_at_target() {
-        let mut controller = CongestionController::with_startup(
-            1_000,
-            CongestionStartup::DiagnosticSlowStart {
-                exit_delay_micros: TARGET_DELAY_MICROS,
-                exit_window_percent: None,
-            },
-        )
-        .expect("diagnostic controller");
+    fn bounded_slow_start_grows_by_acked_bytes_and_exits_at_ten_milliseconds() {
+        let mut controller = CongestionController::new(1_000).expect("controller");
         let growth = controller
-            .on_ack(0, 1_000, 2_000, 10_000, Some(500_000), true)
+            .on_ack(0, 2_000, 2_000, 10_000, Some(500_000), true)
             .expect("slow-start ACK");
-        assert_eq!(growth.congestion_window_bytes, 3_000);
+        assert_eq!(growth.congestion_window_bytes, 4_000);
         assert!(controller.snapshot().slow_start_active);
         assert_eq!(controller.snapshot().slow_start_acknowledgements, 1);
 
-        let target = controller
-            .on_ack(500_001, 1_000, 3_000, 110_000, Some(500_000), true)
-            .expect("target-delay ACK");
-        assert_eq!(target.queue_delay_micros, TARGET_DELAY_MICROS);
-        assert_eq!(target.congestion_window_bytes, 3_000);
+        let exit = controller
+            .on_ack(500_001, 1_000, 4_000, 20_000, Some(500_000), true)
+            .expect("startup exit ACK");
+        assert_eq!(exit.queue_delay_micros, STARTUP_EXIT_DELAY_MICROS);
+        assert_eq!(exit.previous_window_bytes, 4_000);
+        assert_eq!(exit.congestion_window_bytes, 2_225);
         assert!(!controller.snapshot().slow_start_active);
+        assert_eq!(
+            controller.snapshot().slow_start_threshold_bytes,
+            Some(2_000)
+        );
         assert_eq!(controller.snapshot().slow_start_exits, 1);
     }
 
     #[test]
-    fn diagnostic_slow_start_loss_threshold_bounds_timeout_restart() {
-        let mut controller = CongestionController::with_startup(
-            1_000,
-            CongestionStartup::DiagnosticSlowStart {
-                exit_delay_micros: TARGET_DELAY_MICROS,
-                exit_window_percent: None,
-            },
-        )
-        .expect("diagnostic controller");
+    fn bounded_slow_start_loss_threshold_bounds_timeout_restart() {
+        let mut controller = CongestionController::new(1_000).expect("controller");
         controller
             .on_ack(0, 1_000, 2_000, 10_000, Some(20_000), true)
             .expect("initial slow-start ACK");
@@ -680,6 +677,10 @@ mod tests {
                 .expect("loss reduction")
         );
         assert!(!controller.snapshot().slow_start_active);
+        assert_eq!(
+            controller.snapshot().slow_start_threshold_bytes,
+            Some(2_000)
+        );
 
         controller
             .on_timeout(30_001, Some(20_000))
@@ -695,6 +696,24 @@ mod tests {
             .expect("threshold exit");
         assert!(!controller.snapshot().slow_start_active);
         assert_eq!(controller.snapshot().slow_start_exits, 2);
+    }
+
+    #[test]
+    fn isolated_mtu_probe_loss_keeps_bounded_startup_active() {
+        let mut controller = CongestionController::new(1_000).expect("controller");
+        controller
+            .on_ack(0, 1_000, 2_000, 10_000, Some(20_000), true)
+            .expect("slow-start ACK");
+        assert!(
+            !controller
+                .on_loss(10_000, Some(20_000), true)
+                .expect("isolated probe")
+        );
+        let snapshot = controller.snapshot();
+        assert!(snapshot.slow_start_active);
+        assert_eq!(snapshot.slow_start_exits, 0);
+        assert_eq!(snapshot.ignored_loss_events, 1);
+        assert_eq!(snapshot.congestion_window_bytes, 3_000);
     }
 
     #[test]

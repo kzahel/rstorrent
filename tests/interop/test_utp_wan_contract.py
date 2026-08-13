@@ -370,6 +370,9 @@ class UtpWanContractTests(unittest.TestCase):
             "retransmission_bytes_sent",
             "loss_reduction_high_water",
             "timeout_collapse_high_water",
+            "slow_start_threshold_byte_high_water",
+            "slow_start_acknowledgements_high_water",
+            "slow_start_exits_high_water",
         )
         oracle_names = (
             "net.sent_payload_bytes",
@@ -386,7 +389,13 @@ class UtpWanContractTests(unittest.TestCase):
 
         def sample(seconds: int) -> dict[str, object]:
             utp = {name: seconds for name in utp_names}
-            utp.update({"datagrams_sent": seconds, "datagram_bytes_sent": seconds})
+            utp.update(
+                {
+                    "datagrams_sent": seconds,
+                    "datagram_bytes_sent": seconds,
+                    "slow_start_active_observed": True,
+                }
+            )
             return {
                 "seconds": seconds,
                 "active_transfer_seconds": seconds - 1,
