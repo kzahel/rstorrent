@@ -1,5 +1,6 @@
 import Foundation
 import RSTorrentIOS
+import RSTorrentSession
 
 struct RootDisplayItem: Identifiable, Equatable {
     var id: String
@@ -15,12 +16,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var selectionStatus = "No external folder selected"
     @Published private(set) var isBusy = false
     @Published var isFolderPickerPresented = false
+    let presentation = IOSPresentationRepository()
 
     private let documentsURL: URL
     private let profileURL: URL
     private let rootStore: RootRegistryStore
     private var client: IosApplicationClient?
     private var storageBridge: PlatformStorageBridge?
+    private var namespaceWork: Set<String> = []
 
     init(fileManager: FileManager = .default) {
         documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -49,7 +52,8 @@ final class AppModel: ObservableObject {
             )
             let document = try await rootStore.load()
             let restored = await restore(document.selectedRoots)
-            try await open(records: document.selectedRoots)
+            let currentDocument = try await rootStore.load()
+            try await open(records: currentDocument.selectedRoots)
             roots = [
                 RootDisplayItem(
                     id: "ios-documents",
@@ -91,6 +95,7 @@ final class AppModel: ObservableObject {
                 displayLabel: qualified.displayLabel
             )
             try await restart()
+            _ = try await dispatch(.setDefaultStorageRoot(storageRoot: record.id))
             selectionStatus = "\(record.displayLabel) is ready"
         } catch {
             selectionStatus = error.localizedDescription
@@ -99,6 +104,7 @@ final class AppModel: ObservableObject {
 
     func shutdown() async throws {
         guard let client else { return }
+        presentation.stop()
         try await client.shutdown()
         await storageBridge?.stopAfterClientShutdown()
         self.client = nil
@@ -106,8 +112,92 @@ final class AppModel: ObservableObject {
         engineStatus = "Stopped"
     }
 
+    @discardableResult
+    func dispatch(_ command: Command) async throws -> ResponseEnvelope {
+        guard let client else { throw AppModelError.notReady }
+        let response = try await client.dispatch(
+            request: RequestEnvelope(
+                version: 1,
+                requestId: "ios-\(UUID().uuidString.lowercased())",
+                expectedRevision: nil,
+                command: command
+            )
+        )
+        if case .error(let error) = response.outcome {
+            throw AppModelError.command(error.message)
+        }
+        return response
+    }
+
+    func addMagnet(_ magnet: String) async throws -> String {
+        let root = presentation.storage?.defaultRoot ?? "ios-documents"
+        let response = try await dispatch(
+            .addMagnet(
+                magnet: magnet,
+                storageRoot: root,
+                startContent: true,
+                skipFiles: []
+            )
+        )
+        guard case .addTorrent(let result) = response.result else {
+            throw AppModelError.missingAddResult
+        }
+        return result.torrentId
+    }
+
+    func addTorrentFile(_ url: URL) async throws -> String {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        guard !data.isEmpty, data.count <= 64 * 1024 * 1024 else {
+            throw AppModelError.invalidTorrentLength(data.count)
+        }
+        guard let sourceLength = UInt32(exactly: data.count) else {
+            throw AppModelError.invalidTorrentLength(data.count)
+        }
+        guard let client else { throw AppModelError.notReady }
+        let response = try await client.addTorrentBytes(
+            request: AddTorrentBytesRequest(
+                version: 1,
+                requestId: "ios-file-\(UUID().uuidString.lowercased())",
+                expectedRevision: nil,
+                storageRoot: presentation.storage?.defaultRoot ?? "ios-documents",
+                startContent: true,
+                selection: .all,
+                sourceLength: sourceLength
+            ),
+            source: data
+        )
+        if case .error(let error) = response.outcome {
+            throw AppModelError.command(error.message)
+        }
+        guard case .addTorrent(let result) = response.result else {
+            throw AppModelError.missingAddResult
+        }
+        return result.torrentId
+    }
+
+    func resetExternalFolders() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let document = try await rootStore.load()
+            _ = try await dispatch(.setDefaultStorageRoot(storageRoot: "ios-documents"))
+            for root in document.selectedRoots {
+                _ = try await dispatch(.removeStorageRoot(storageRoot: root.id))
+                try await rootStore.remove(id: root.id)
+            }
+            try await restart()
+            selectionStatus = "RSTorrent Documents is the default folder"
+        } catch {
+            selectionStatus = error.localizedDescription
+        }
+    }
+
     private func restart() async throws {
         if let client {
+            presentation.stop()
             try await client.shutdown()
             await storageBridge?.stopAfterClientShutdown()
             self.client = nil
@@ -115,7 +205,8 @@ final class AppModel: ObservableObject {
         }
         let document = try await rootStore.load()
         let restored = await restore(document.selectedRoots)
-        try await open(records: document.selectedRoots)
+        let currentDocument = try await rootStore.load()
+        try await open(records: currentDocument.selectedRoots)
         roots = [
             RootDisplayItem(
                 id: "ios-documents",
@@ -150,9 +241,73 @@ final class AppModel: ObservableObject {
         bridge.start()
         client = opened
         storageBridge = bridge
+        try await presentation.start(client: opened) { [weak self] torrents in
+            guard let self else { return }
+            Task { @MainActor in await self.advanceNamespaceTransitions(torrents) }
+        }
         if !records.isEmpty {
             _ = try await opened.probePlatformStorageRoots()
         }
+    }
+
+    private func advanceNamespaceTransitions(_ torrents: [TorrentView]) async {
+        guard let client, let storageBridge else { return }
+        for torrent in torrents {
+            let action: String?
+            if torrent.removalState == .awaitingPlatform {
+                action = "remove"
+            } else if torrent.state == .awaitingPublication {
+                action = "publish"
+            } else {
+                action = nil
+            }
+            guard let action else { continue }
+            let key = "\(torrent.torrentId):\(action)"
+            guard namespaceWork.insert(key).inserted else { continue }
+            Task { @MainActor [weak self] in
+                defer { self?.namespaceWork.remove(key) }
+                guard let self else { return }
+                do {
+                    if action == "publish" {
+                        guard !(try await client.preparedFiles(torrentId: torrent.torrentId)).isEmpty else {
+                            throw AppModelError.emptyPublicationManifest
+                        }
+                        let name = try await client.preparePlatformPublication(
+                            torrentId: torrent.torrentId
+                        )
+                        let plan = try await client.removalPlan(torrentId: torrent.torrentId)
+                        try await Task.detached {
+                            try storageBridge.publish(plan, name: name)
+                        }.value
+                        try await client.confirmPlatformPublication(torrentId: torrent.torrentId)
+                    } else {
+                        let plan = try await client.removalPlan(torrentId: torrent.torrentId)
+                        do {
+                            try await Task.detached {
+                                try storageBridge.removeManaged(plan)
+                            }.value
+                            try await client.confirmRemoval(
+                                torrentId: torrent.torrentId,
+                                operationId: plan.operationId
+                            )
+                        } catch {
+                            try? await client.failRemoval(
+                                torrentId: torrent.torrentId,
+                                operationId: plan.operationId,
+                                message: String(error.localizedDescription.prefix(1_024))
+                            )
+                            throw error
+                        }
+                    }
+                } catch {
+                    self.presentationError(error)
+                }
+            }
+        }
+    }
+
+    private func presentationError(_ error: Error) {
+        selectionStatus = error.localizedDescription
     }
 
     private func restore(_ records: [SelectedRootRecord]) async -> [RootDisplayItem] {
@@ -198,5 +353,28 @@ final class AppModel: ObservableObject {
         await Task.detached {
             records.compactMap { try? RootAccess.resolveBookmark($0.bookmarkData) }
         }.value
+    }
+}
+
+enum AppModelError: Error, LocalizedError {
+    case notReady
+    case command(String)
+    case missingAddResult
+    case invalidTorrentLength(Int)
+    case emptyPublicationManifest
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady:
+            return "RSTorrent is still starting."
+        case .command(let message):
+            return message
+        case .missingAddResult:
+            return "The engine did not return an add result."
+        case .invalidTorrentLength(let count):
+            return "The selected torrent file has an unsupported size (\(count) bytes)."
+        case .emptyPublicationManifest:
+            return "The engine prepared no files for publication."
+        }
     }
 }

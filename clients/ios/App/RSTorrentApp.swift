@@ -6,8 +6,7 @@ struct RSTorrentApp: App {
 
     var body: some Scene {
         WindowGroup {
-            FoundationScreen()
-                .environmentObject(model)
+            ContentView(appModel: model, presentation: model.presentation)
                 .task { await model.start() }
         }
     }

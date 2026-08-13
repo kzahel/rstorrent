@@ -46,10 +46,95 @@ final class PlatformStorageBridge: @unchecked Sendable {
         )
     }
 
+    func publish(_ plan: IosRemovalPlan, name: String) throws {
+        guard plan.name == name else {
+            throw NamespaceTransitionError.publicationNameMismatch
+        }
+        guard let record = roots[plan.storageRoot] else {
+            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+        }
+        try withCoordinatedRoot(record: record) { root in
+            let staging = root.appendingPathComponent(
+                ".\(plan.torrentId).rstorrent-staging",
+                isDirectory: true
+            )
+            let published = root.appendingPathComponent(name, isDirectory: true)
+            let stagingExists = FileManager.default.fileExists(atPath: staging.path)
+            let publishedExists = FileManager.default.fileExists(atPath: published.path)
+            guard !(stagingExists && publishedExists) else {
+                throw NamespaceTransitionError.bothPublicationSidesExist
+            }
+            guard !publishedExists else { return }
+            guard stagingExists else { throw NamespaceTransitionError.stagingMissing }
+            let status = staging.path.withCString { source in
+                published.path.withCString { destination in
+                    renameatx_np(AT_FDCWD, source, AT_FDCWD, destination, UInt32(RENAME_EXCL))
+                }
+            }
+            guard status == 0 else {
+                throw POSIXFailure(operation: "publish torrent", code: errno)
+            }
+        }
+    }
+
+    func removeManaged(_ plan: IosRemovalPlan) throws {
+        guard let record = roots[plan.storageRoot] else {
+            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+        }
+        try withCoordinatedRoot(record: record) { root in
+            for name in Self.managedArtifactNames(
+                torrentID: plan.torrentId,
+                publishedName: plan.name
+            ) {
+                let target = root.appendingPathComponent(name, isDirectory: false)
+                do {
+                    try FileManager.default.removeItem(at: target)
+                } catch let error as CocoaError where
+                    error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
+                {
+                    continue
+                }
+            }
+        }
+    }
+
+    static func managedArtifactNames(torrentID: String, publishedName: String) -> [String] {
+        [
+            publishedName,
+            ".\(torrentID).rstorrent-staging",
+            ".\(torrentID).rstorrent-parts",
+        ]
+    }
+
     private var workersActiveCount: Int {
         workerCounterLock.lock()
         defer { workerCounterLock.unlock() }
         return workerCounter
+    }
+
+    private func withCoordinatedRoot<T>(
+        record: SelectedRootRecord,
+        body: (URL) throws -> T
+    ) throws -> T {
+        let url = try RootAccess.resolveBookmark(record.bookmarkData)
+        return try RootAccess.withSecurityScope(url) {
+            var coordinationError: NSError?
+            var result: Result<T, Error>?
+            NSFileCoordinator(filePresenter: nil).coordinate(
+                writingItemAt: url,
+                options: .forMerging,
+                error: &coordinationError
+            ) { coordinatedRoot in
+                result = Result { try body(coordinatedRoot) }
+            }
+            if let coordinationError {
+                throw RootAccessError.coordinationFailed(coordinationError.localizedDescription)
+            }
+            guard let result else {
+                throw RootAccessError.coordinationAccessorDidNotRun
+            }
+            return try result.get()
+        }
     }
 
     private let workerCounterLock = NSLock()
@@ -310,6 +395,26 @@ private struct POSIXFailure: Error, LocalizedError {
 
     var errorDescription: String? {
         "\(operation): \(String(cString: strerror(code)))"
+    }
+}
+
+private enum NamespaceTransitionError: Error, LocalizedError {
+    case bothPublicationSidesExist
+    case stagingMissing
+    case publicationNameMismatch
+    case unregisteredRoot(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .bothPublicationSidesExist:
+            return "both staging and published torrent outputs exist"
+        case .stagingMissing:
+            return "torrent staging output is absent"
+        case .publicationNameMismatch:
+            return "prepared publication name changed before rename"
+        case .unregisteredRoot(let rootID):
+            return "storage root \(rootID) is not registered with the platform bridge"
+        }
     }
 }
 

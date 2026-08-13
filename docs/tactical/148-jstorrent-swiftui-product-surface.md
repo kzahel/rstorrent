@@ -143,3 +143,36 @@ support, and public release remain out of scope. Ordinary adaptations needed
 to map the imported views to existing typed semantics are authorized. Stop for
 a new engine/persistence owner, a materially different visual product, a new
 third-party dependency, unsupported storage widening, or external publication.
+
+## Execution Record
+
+### 2026-08-13 presentation checkpoint
+
+- Preparatory implementation landed while Tactical `147` remains the sole
+  **Now**. The source basis was JSTorrent revision
+  `9895410beeed6aff554053769bd006a3fbd373ef`, specifically
+  `ios/JSTorrent/App/{AddTorrentSheet,AppLocalization,ContentView,RemoveTorrentSheet,SettingsScreen,TorrentListScreen,TorrentRowView,TorrentDetailScreen,TorrentPresentation}.swift`
+  and `ios/JSTorrent/App/Localization/en.json`.
+- `AppLocalization.swift` and the English localization catalog are imported
+  directly. The remaining views retain JSTorrent's navigation, Library,
+  sheet, row, Settings, detail-section, typography, spacing, and gesture
+  composition while replacing JavaScriptCore/JSTorrentKit model ownership
+  with generated RSTorrent values. The deliberate visible changes are
+  RSTorrent branding, omitted Search, omitted unsupported High priority, and
+  an honest unavailable upload-rate placeholder where the list projection has
+  no such fact.
+- One `@MainActor` presentation repository now owns the Library subscription,
+  contract-v2 sequence/epoch/revision continuity, resets, and the one visible
+  detail projection. Add, pause/resume, file priority/download-now, Force
+  recheck, removal, selected-root defaulting, platform publication, and exact
+  managed cleanup are typed application commands or explicit platform
+  transitions rather than view-owned engine behavior.
+- The unsigned generic simulator build passes. Six focused Swift tests and one
+  UI test pass, including real application-service startup and Library, Add,
+  and Settings traversal. The signed development build installed on the
+  attached iPhone and physically showed Ready Library/Add/Settings states plus
+  the previously qualified external folder after process restart.
+
+This is not tactical completion. Controlled torrent detail/action traversal,
+file handoff/open/share, accessibility/layout variants, and final repository
+gates remain outstanding.

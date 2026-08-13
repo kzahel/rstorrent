@@ -18,6 +18,7 @@ targets:
         MACH_O_TYPE: staticlib
         DEFINES_MODULE: YES
         SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Generated"
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/Generated/RSTorrentSessionFFI.modulemap"
   RSTorrentIOSBindings:
@@ -38,6 +39,7 @@ targets:
         MACH_O_TYPE: staticlib
         DEFINES_MODULE: YES
         SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Generated"
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/Generated/RSTorrentIOSFFI.modulemap -Xcc -fmodule-map-file=$(SRCROOT)/Generated/RSTorrentSessionFFI.modulemap"
   RSTorrent:
@@ -51,6 +53,7 @@ targets:
       - target: RSTorrentSessionBindings
     resources:
       - path: App/Assets.xcassets
+      - path: App/Localization
       - path: App/PrivacyInfo.xcprivacy
     preBuildScripts:
       - name: Build Rust application library
@@ -98,6 +101,8 @@ targets:
         SWIFT_VERSION: "5.10"
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Generated"
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/Generated/RSTorrentIOSFFI.modulemap -Xcc -fmodule-map-file=$(SRCROOT)/Generated/RSTorrentSessionFFI.modulemap"
   RSTorrentUITests:
     type: bundle.ui-testing
     platform: iOS
