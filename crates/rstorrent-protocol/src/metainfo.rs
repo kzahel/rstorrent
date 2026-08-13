@@ -134,6 +134,9 @@ pub enum MetainfoError {
     MissingField(&'static str),
     InvalidField(&'static str),
     Unsupported(&'static str),
+    UnsupportedVersion {
+        version: i64,
+    },
     InfoTooLarge {
         length: usize,
         maximum: usize,
@@ -170,6 +173,9 @@ impl fmt::Display for MetainfoError {
             Self::InvalidField(field) => write!(formatter, "metainfo has invalid {field}"),
             Self::Unsupported(reason) => {
                 write!(formatter, "metainfo uses unsupported {reason}")
+            }
+            Self::UnsupportedVersion { version } => {
+                write!(formatter, "metainfo version {version} is not supported")
             }
             Self::InfoTooLarge { length, maximum } => write!(
                 formatter,
@@ -535,6 +541,18 @@ mod tests {
         assert_eq!(
             parse(v2),
             Err(MetainfoError::Unsupported("v2 or hybrid info dictionary"))
+        );
+
+        let future = b"d4:infod9:file treede12:meta versioni3eee";
+        assert_eq!(
+            parse(future),
+            Err(MetainfoError::UnsupportedVersion { version: 3 })
+        );
+
+        let missing_version = b"d4:infod9:file treedeee";
+        assert_eq!(
+            parse(missing_version),
+            Err(MetainfoError::InvalidField("info.meta version"))
         );
 
         let empty = b"d4:infod5:filesle4:name4:root12:piece lengthi4e6:pieces0:ee";

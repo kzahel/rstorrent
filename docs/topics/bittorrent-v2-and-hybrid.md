@@ -9,8 +9,8 @@ the v1-preserving opaque-owner, dual-identity, schema-19, artifact, runtime,
 and first-party client foundation. RSTorrent still rejects v2 and hybrid
 metainfo and magnets deterministically. Decision-complete Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is
-queued after active Tactical `145`; no BEP 52 implementation tactical is
-active.
+active as the sole **Now** after the completed iOS campaign; Tactical `145`
+remains paused at its congestion-policy review gate.
 
 ## Scope And Owning Role
 
@@ -402,10 +402,10 @@ runtime design.
 
 ## Tactical Campaign
 
-The first stage is complete, and Stage 2 is assigned to queued Tactical
-`146`. Later numbers remain unassigned until readiness selects them. Adjacent
-stages may be combined only when the resulting scope remains bounded and its
-stopping condition becomes clearer.
+The first stage is complete, and Stage 2 is active as Tactical `146`. Later
+numbers remain unassigned until readiness selects them. Adjacent stages may be
+combined only when the resulting scope remains bounded and its stopping
+condition becomes clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
@@ -537,10 +537,9 @@ the final tail pad, not missing internal padding.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records Tactical `145`
-under parent Tactical `142` as the sole **Now**. Decision-complete Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is the
-queued **Next** and may be activated only after Tactical `145` reaches its
-stopping condition or explicit policy review gate and the readiness queue is
-advanced. Until then, product input and wire support remain v1-only and the
-protocol ledger remains **Unsupported** for BEP 52.
+[`capability-readiness.md`](capability-readiness.md) records Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) as the
+sole **Now** after the completed iOS campaign. Tactical `145` remains paused
+at its existing review gate. Product input and wire support remain v1-only and
+the protocol ledger remains **Unsupported** for BEP 52 throughout this
+runtime-free implementation.

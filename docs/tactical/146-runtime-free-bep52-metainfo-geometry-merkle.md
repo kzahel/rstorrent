@@ -3,7 +3,10 @@
 Status: **Active and decision-complete.** The completed iOS campaign activated
 this tactical as the sole authoritative **Now** on 2026-08-13. Tactical `145`
 remains paused at its existing human-review gate. BEP 52 remains
-**Unsupported** before and after this runtime-free slice.
+**Unsupported** before and after this runtime-free slice. The clean protocol
+baseline and exact reference pins are recorded; the first implementation
+checkpoint now performs bounded outer/info lexical scanning and version-first
+classification while preserving every v1-only product admission boundary.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `capability-readiness`, `oracle-driven-engine-campaign`,
@@ -478,6 +481,21 @@ piece-layer hashes and Merkle scratch/proof sizes. Product snapshot, command,
 event, and metrics contracts do not change.
 
 ## Implementation Stages
+
+### Current execution checkpoint
+
+On 2026-08-13 the clean pre-change protocol gate passed 217 tests with four
+deliberate ignores plus the crate architecture test. The reference audit
+confirmed exact BEP commit `7b7b41f` and libtorrent commit `7d7fc38`; its only
+failure is the already recorded unrelated dirty JSTorrent checkout.
+
+The first implementation checkpoint refactors outer parsing to capture and
+lexically validate the exact info span before semantic projection. A second
+bounded direct scan selects missing, v1, v2, or future `meta version` before
+v1 fields are interpreted. Future versions now return a typed unsupported-
+version result, missing version plus `file tree` is invalid, and the existing
+product-facing parser still rejects v2/hybrid input. No v2 model or identity
+escapes yet.
 
 ### Stage 1: Reconfirm sources, inventory, and baseline
 

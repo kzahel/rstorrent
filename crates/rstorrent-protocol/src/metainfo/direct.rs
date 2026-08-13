@@ -26,7 +26,6 @@ pub(super) fn parse_outer(
     }
     parser.enter_container(b'd', 0)?;
     let mut previous_key = None;
-    let mut parsed_info = None;
     let mut info_span = None;
     let mut announce = None;
     let mut trackers = Vec::new();
@@ -48,9 +47,8 @@ pub(super) fn parse_outer(
             }
             b"info" => {
                 let start = parser.position;
-                let metainfo = parse_info_dictionary(&mut parser, 1)?;
+                parser.skip_value(1)?;
                 info_span = Some(start..parser.position);
-                parsed_info = Some(metainfo);
             }
             _ => parser.skip_value(1)?,
         }
@@ -58,9 +56,9 @@ pub(super) fn parse_outer(
     parser.leave_container()?;
     parser.finish()?;
 
-    let metainfo = parsed_info.ok_or(MetainfoError::MissingField("info"))?;
-    let info_span = info_span.expect("parsed info has a span");
+    let info_span = info_span.ok_or(MetainfoError::MissingField("info"))?;
     enforce_info_length(info_span.len(), limits)?;
+    let metainfo = parse_info(&bytes[info_span.clone()], limits)?;
     if trackers.is_empty()
         && let Some(announce) = announce
         && let Some((url, transport)) = normalize_tracker_url(announce)
@@ -191,13 +189,79 @@ fn normalize_tracker_url(bytes: &[u8]) -> Option<(String, MetainfoTrackerTranspo
 
 pub(super) fn parse_info(bytes: &[u8], limits: MetainfoLimits) -> Result<Metainfo, MetainfoError> {
     enforce_info_length(bytes.len(), limits)?;
+    let mut scanner = Parser::new(bytes, limits.max_info_bytes, limits)?;
+    let scan = scan_info_dictionary(&mut scanner, 0)?;
+    scanner.finish()?;
+
+    if scan.invalid_meta_version {
+        return Err(MetainfoError::InvalidField("info.meta version"));
+    }
+    match scan.meta_version {
+        Some(2) => {
+            return Err(MetainfoError::Unsupported("v2 or hybrid info dictionary"));
+        }
+        Some(version) if version > 2 => {
+            return Err(MetainfoError::UnsupportedVersion { version });
+        }
+        Some(_) => return Err(MetainfoError::InvalidField("info.meta version")),
+        None if scan.has_file_tree => {
+            return Err(MetainfoError::InvalidField("info.meta version"));
+        }
+        None => {}
+    }
+
     let mut parser = Parser::new(bytes, limits.max_info_bytes, limits)?;
-    let metainfo = parse_info_dictionary(&mut parser, 0)?;
+    let metainfo = parse_v1_info_dictionary(&mut parser, 0)?;
     parser.finish()?;
     Ok(metainfo)
 }
 
-fn parse_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<Metainfo, MetainfoError> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct InfoScan {
+    meta_version: Option<i64>,
+    invalid_meta_version: bool,
+    has_file_tree: bool,
+}
+
+fn scan_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<InfoScan, MetainfoError> {
+    if parser.peek()? != b'd' {
+        return Err(MetainfoError::InvalidField("info dictionary"));
+    }
+    parser.enter_container(b'd', depth)?;
+    let mut previous_key = None;
+    let mut entries = 0_usize;
+    let mut scan = InfoScan::default();
+    while parser.peek()? != b'e' {
+        parser.check_collection(entries, parser.position)?;
+        let key_position = parser.position;
+        let key = parser.parse_bytes(depth + 1)?;
+        check_dictionary_key(previous_key, key, key_position)?;
+        previous_key = Some(key);
+        entries += 1;
+        match key {
+            b"file tree" => {
+                scan.has_file_tree = true;
+                parser.skip_value(depth + 1)?;
+            }
+            b"meta version" => {
+                if parser.peek()? == b'i' {
+                    scan.meta_version = Some(parser.parse_integer(depth + 1)?);
+                } else {
+                    scan.invalid_meta_version = true;
+                    parser.skip_value(depth + 1)?;
+                }
+            }
+            _ => parser.skip_value(depth + 1)?,
+        }
+    }
+    parser.leave_container()?;
+    Ok(scan)
+}
+
+fn parse_v1_info_dictionary(
+    parser: &mut Parser<'_>,
+    depth: usize,
+) -> Result<Metainfo, MetainfoError> {
     if parser.peek()? != b'd' {
         return Err(MetainfoError::InvalidField("info dictionary"));
     }
@@ -212,7 +276,6 @@ fn parse_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<Metain
     let mut piece_length = None;
     let mut pieces = None;
     let mut private = false;
-    let mut meta_version = false;
 
     while parser.peek()? != b'e' {
         parser.check_collection(entries, parser.position)?;
@@ -226,10 +289,7 @@ fn parse_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<Metain
             b"length" => {
                 length = Some(parse_nonnegative_integer(parser, depth + 1, "info.length")?)
             }
-            b"meta version" => {
-                parser.skip_value(depth + 1)?;
-                meta_version = true;
-            }
+            b"meta version" => parser.skip_value(depth + 1)?,
             b"name" => name = Some(parse_required_bytes(parser, depth + 1, "info.name")?),
             b"piece length" => {
                 piece_length = Some(parse_positive_integer(
@@ -257,10 +317,6 @@ fn parse_info_dictionary(parser: &mut Parser<'_>, depth: usize) -> Result<Metain
     }
     parser.leave_container()?;
     let info_end = parser.position;
-
-    if meta_version {
-        return Err(MetainfoError::Unsupported("v2 or hybrid info dictionary"));
-    }
 
     let piece_length = piece_length.ok_or(MetainfoError::MissingField("info.piece length"))?;
     let piece_length = u32::try_from(piece_length)
