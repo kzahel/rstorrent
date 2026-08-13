@@ -9,15 +9,16 @@ use rstorrent_engine::{
     ContentFingerprint, PreparedFileHash, TorrentId, validate_publication_name,
 };
 use rstorrent_protocol::bencode::ParseError;
+use rstorrent_protocol::content::{ContentFileRef, TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
-use rstorrent_protocol::identity::{InfoHashes, V1InfoHash, V2InfoHash};
+use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{
     FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet, TrackerUrl,
     TrackerUrlTransport,
 };
 use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
-    MetainfoProjection, MetainfoTrackerTransport,
+    MetainfoTrackerTransport,
 };
 use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -155,6 +156,9 @@ pub struct ResumeRecord {
     pub desired_running: bool,
     pub download_queue_position: Option<i64>,
     pub raw_info: Option<Vec<u8>>,
+    /// Verbatim complete outer metainfo. Pure-v2 restart requires this source
+    /// because `raw_info` cannot carry piece layers.
+    pub metainfo_source: Option<Vec<u8>>,
     pub publication_name: Option<String>,
     pub managed_artifacts: ManagedArtifactState,
     pub have: Option<HaveState>,
@@ -186,14 +190,24 @@ pub struct SessionStore {
 pub(crate) struct PreparedTorrentBytes {
     source: Vec<u8>,
     source_digest: [u8; 32],
-    projection: MetainfoProjection,
+    projection: TorrentContentProjection,
     selection_default: FilePriority,
     selection_exceptions: Vec<u32>,
 }
 
 impl PreparedTorrentBytes {
-    pub(crate) fn v1_info_hash(&self) -> V1InfoHash {
-        V1InfoHash::new(self.projection.metainfo.info_hash)
+    pub(crate) fn full_identity(&self) -> FullInfoHash {
+        match &self.projection.content {
+            TorrentContent::V1(content) => {
+                FullInfoHash::V1(V1InfoHash::new(content.metainfo.info_hash))
+            }
+            TorrentContent::V2(content) => FullInfoHash::V2(
+                content
+                    .info_hashes
+                    .v2_hash()
+                    .expect("pure-v2 projection has a v2 identity"),
+            ),
+        }
     }
 }
 
@@ -213,10 +227,11 @@ pub(crate) fn prepare_torrent_bytes(
         ));
     }
     let source_digest: [u8; 32] = Sha256::digest(&source).into();
-    let projection = Metainfo::project_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
-        .map_err(metainfo_intake_error)?;
+    let projection =
+        TorrentContentProjection::from_bytes_with_limits(&source, EXPLICIT_IMPORT_METAINFO_LIMITS)
+            .map_err(metainfo_intake_error)?;
     let (selection_default, selection_exceptions) =
-        project_file_selection(&request.selection, &projection.metainfo.files)?;
+        project_content_file_selection(&request.selection, &projection.content)?;
     Ok(PreparedTorrentBytes {
         source,
         source_digest,
@@ -226,9 +241,26 @@ pub(crate) fn prepare_torrent_bytes(
     })
 }
 
+fn project_content_file_selection(
+    selection: &FileSelectionIntent,
+    content: &TorrentContent,
+) -> Result<(FilePriority, Vec<u32>), (ErrorCode, String)> {
+    let files = content.files().collect::<Vec<_>>();
+    project_file_selection_refs(selection, &files)
+}
+
+#[cfg(test)]
 fn project_file_selection(
     selection: &FileSelectionIntent,
     files: &[rstorrent_protocol::metainfo::MetainfoFile],
+) -> Result<(FilePriority, Vec<u32>), (ErrorCode, String)> {
+    let files = files.iter().map(ContentFileRef::V1).collect::<Vec<_>>();
+    project_file_selection_refs(selection, &files)
+}
+
+fn project_file_selection_refs(
+    selection: &FileSelectionIntent,
+    files: &[ContentFileRef<'_>],
 ) -> Result<(FilePriority, Vec<u32>), (ErrorCode, String)> {
     if let FileSelectionIntent::WantedRanges { ranges } = selection
         && ranges
@@ -248,7 +280,7 @@ fn project_file_selection(
     };
     let mut range_index = 0;
     for (index, file) in files.iter().enumerate() {
-        if file.padding {
+        if file.padding() {
             continue;
         }
         let index_u32 = u32::try_from(index).map_err(|_| {
@@ -464,6 +496,13 @@ impl SessionStore {
         info_hash: V1InfoHash,
     ) -> Result<Option<TorrentId>, StoreError> {
         find_torrent_id_by_v1(&self.connection, info_hash.as_bytes())
+    }
+
+    pub(crate) fn find_owner(
+        &self,
+        identity: FullInfoHash,
+    ) -> Result<Option<TorrentId>, StoreError> {
+        find_torrent_id_by_full_hash(&self.connection, identity)
     }
 
     pub(crate) fn load_identities(
@@ -1076,12 +1115,12 @@ impl SessionStore {
             }
         };
         let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
-        let v1_info_hash = info_hashes.v1_hash().ok_or_else(|| {
-            StoreError::DurableState(format!("torrent {torrent_id} has no v1 identity"))
-        })?;
-        let operational_magnet = row
-            .0
-            .unwrap_or_else(|| format!("magnet:?xt=urn:btih:{v1_info_hash}"));
+        let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
+        let operational_magnet = match (row.0, info_hashes.v1_hash()) {
+            (Some(magnet), _) => magnet,
+            (None, Some(v1)) => format!("magnet:?xt=urn:btih:{v1}"),
+            (None, None) => String::new(),
+        };
         let desired_running = match row.7.as_str() {
             "running" => true,
             "paused" => false,
@@ -1093,7 +1132,8 @@ impl SessionStore {
         };
         let (has_wanted_pieces, all_wanted_verified, evidence_error) = match (&row.2, &have) {
             (Some(raw_info), Some(have)) => {
-                match wanted_piece_evidence(raw_info, &skip_files, have) {
+                match wanted_piece_evidence(raw_info, metainfo_source.as_deref(), &skip_files, have)
+                {
                     Ok((has_wanted, all_verified)) => (has_wanted, all_verified, None),
                     Err(error) => (true, false, Some(bounded_error(&error.to_string()))),
                 }
@@ -1136,6 +1176,7 @@ impl SessionStore {
             desired_running,
             download_queue_position: row.12,
             raw_info: row.2,
+            metainfo_source,
             publication_name: row.3,
             managed_artifacts,
             have,
@@ -2437,6 +2478,50 @@ fn read_info_hashes(
         .map_err(|_| StoreError::DurableState("torrent has no protocol identity".to_owned()))
 }
 
+fn read_verbatim_metainfo_source(
+    connection: &Connection,
+    torrent_id: &TorrentId,
+) -> Result<Option<Vec<u8>>, StoreError> {
+    let source = connection
+        .query_row(
+            "SELECT kind, fidelity, metainfo, byte_length, sha256
+             FROM torrent_source WHERE torrent_id = ?1",
+            [torrent_id.as_bytes().as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<Vec<u8>>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((kind, fidelity, source, length, digest)) = source else {
+        return Ok(None);
+    };
+    if kind != "metainfo" {
+        return Ok(None);
+    }
+    if fidelity != "verbatim" {
+        return Err(StoreError::DurableState(
+            "retained metainfo source is not verbatim".to_owned(),
+        ));
+    }
+    let source = source.ok_or_else(|| {
+        StoreError::DurableState("retained metainfo source bytes are missing".to_owned())
+    })?;
+    if usize::try_from(length).ok() != Some(source.len())
+        || digest != Sha256::digest(&source).as_slice()
+    {
+        return Err(StoreError::DurableState(
+            "retained metainfo source integrity mismatch".to_owned(),
+        ));
+    }
+    Ok(Some(source))
+}
+
 fn find_torrent_id_by_v1(
     connection: &Connection,
     info_hash: &[u8; 20],
@@ -2446,6 +2531,26 @@ fn find_torrent_id_by_v1(
             "SELECT torrent_id FROM torrent_identities
              WHERE protocol = 'v1' AND full_hash = ?1",
             [info_hash.as_slice()],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()?
+        .map(decode_stored_torrent_id)
+        .transpose()
+}
+
+fn find_torrent_id_by_full_hash(
+    connection: &Connection,
+    identity: FullInfoHash,
+) -> Result<Option<TorrentId>, StoreError> {
+    let (protocol, bytes): (&str, &[u8]) = match &identity {
+        FullInfoHash::V1(hash) => ("v1", hash.as_bytes()),
+        FullInfoHash::V2(hash) => ("v2", hash.as_bytes()),
+    };
+    connection
+        .query_row(
+            "SELECT torrent_id FROM torrent_identities
+             WHERE protocol = ?1 AND full_hash = ?2",
+            params![protocol, bytes],
             |row| row.get::<_, Vec<u8>>(0),
         )
         .optional()?
@@ -3064,9 +3169,10 @@ fn add_torrent_bytes(
     let projection = &prepared.projection;
     let selection_default = prepared.selection_default;
     let selection_exceptions = &prepared.selection_exceptions;
-    let metainfo = &projection.metainfo;
-    if let Some(existing) = find_torrent_id_by_v1(transaction, &metainfo.info_hash)
-        .map_err(AddTorrentBytesError::Store)?
+    let content = &projection.content;
+    let identity = prepared.full_identity();
+    if let Some(existing) =
+        find_torrent_id_by_full_hash(transaction, identity).map_err(AddTorrentBytesError::Store)?
     {
         return Ok((
             current_revision,
@@ -3095,7 +3201,7 @@ fn add_torrent_bytes(
     let torrent_id = allocate_torrent_id(transaction).map_err(AddTorrentBytesError::Store)?;
     let raw_info = &source[projection.info_span.clone()];
     let fingerprint = ContentFingerprint::for_info_bytes(raw_info);
-    let have = HaveState::empty(torrent_id, fingerprint, metainfo.piece_count())
+    let have = HaveState::empty(torrent_id, fingerprint, content.piece_count())
         .map_err(|error| {
             AddTorrentBytesError::Response(ErrorCode::ResourceLimit, error.to_string())
         })?
@@ -3131,8 +3237,8 @@ fn add_torrent_bytes(
                 },
                 raw_info,
                 fingerprint.as_bytes().as_slice(),
-                metainfo.name,
-                i64::try_from(metainfo.piece_count()).map_err(|_| {
+                content.name(),
+                i64::try_from(content.piece_count()).map_err(|_| {
                     AddTorrentBytesError::Response(
                         ErrorCode::Internal,
                         "piece count overflows i64".to_owned(),
@@ -3148,14 +3254,15 @@ fn add_torrent_bytes(
             ],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
+    let (protocol, full_hash): (&str, &[u8]) = match &identity {
+        FullInfoHash::V1(hash) => ("v1", hash.as_bytes()),
+        FullInfoHash::V2(hash) => ("v2", hash.as_bytes()),
+    };
     transaction
         .execute(
             "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
-             VALUES (?1, 'v1', ?2)",
-            params![
-                torrent_id.as_bytes().as_slice(),
-                metainfo.info_hash.as_slice()
-            ],
+             VALUES (?1, ?2, ?3)",
+            params![torrent_id.as_bytes().as_slice(), protocol, full_hash],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
     if request.start_content {
@@ -3179,7 +3286,7 @@ fn add_torrent_bytes(
             ],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
-    for tracker in &projection.trackers {
+    for tracker in content.trackers() {
         let transport = match tracker.transport {
             MetainfoTrackerTransport::Udp => "udp",
             MetainfoTrackerTransport::Http => "http",
@@ -4476,9 +4583,11 @@ fn read_snapshot(connection: &Connection, profile_id: &str) -> Result<ServiceSna
         } else {
             read_selection(connection, &torrent_id)?
         };
+        let metainfo_source = read_verbatim_metainfo_source(connection, &torrent_id)?;
         let (has_wanted_pieces, all_wanted_verified, evidence_error) = match (&row.2, &have) {
             (Some(raw_info), Some(have)) => {
-                match wanted_piece_evidence(raw_info, &skip_files, have) {
+                match wanted_piece_evidence(raw_info, metainfo_source.as_deref(), &skip_files, have)
+                {
                     Ok((has_wanted, all_verified)) => (has_wanted, all_verified, None),
                     Err(error) => (true, false, Some(bounded_error(&error.to_string()))),
                 }
@@ -4963,11 +5072,10 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, StoreError> {
 
 fn wanted_piece_evidence(
     raw_info: &[u8],
+    metainfo_source: Option<&[u8]>,
     skip_files: &[u32],
     have: &HaveState,
 ) -> Result<(bool, bool), StoreError> {
-    let metainfo = parse_durable_metainfo(raw_info)?;
-    let layout = TorrentLayout::from_metainfo(&metainfo);
     let skipped = skip_files
         .iter()
         .map(|index| {
@@ -4975,17 +5083,48 @@ fn wanted_piece_evidence(
                 .map_err(|_| StoreError::DurableState("file index overflow".to_owned()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let selection = FileSelection::new(&layout, &skipped)
-        .map_err(|error| StoreError::DurableState(error.to_string()))?;
+    let content = match metainfo_source {
+        Some(source) => {
+            let projection =
+                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
+            if &source[projection.info_span.clone()] != raw_info {
+                return Err(StoreError::DurableState(
+                    "retained metainfo source does not match raw_info".to_owned(),
+                ));
+            }
+            projection.content
+        }
+        None => TorrentContent::from_v1_metainfo(parse_durable_metainfo(raw_info)?),
+    };
+    if content.piece_count() != have.pieces().len() {
+        return Err(StoreError::DurableState(
+            "runtime content piece count does not match have state".to_owned(),
+        ));
+    }
     let mut has_wanted = false;
     for (piece_index, verified) in have.pieces().iter().copied().enumerate() {
         let piece_index = u32::try_from(piece_index)
             .map_err(|_| StoreError::DurableState("piece index overflow".to_owned()))?;
-        if !layout
-            .request_ranges(piece_index, &selection)
-            .map_err(|error| StoreError::DurableState(error.to_string()))?
-            .is_empty()
-        {
+        let wanted = match &content {
+            TorrentContent::V1(v1) => {
+                let selection = FileSelection::new(&v1.layout, &skipped)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
+                !v1.layout
+                    .request_ranges(piece_index, &selection)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?
+                    .is_empty()
+            }
+            TorrentContent::V2(v2) => {
+                let piece = v2
+                    .metainfo
+                    .layout
+                    .piece(piece_index)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
+                skipped.binary_search(&piece.file_index).is_err()
+            }
+        };
+        if wanted {
             has_wanted = true;
             if !verified {
                 return Ok((true, false));
@@ -5846,6 +5985,76 @@ mod tests {
         source.extend_from_slice(info);
         source.push(b'e');
         source
+    }
+
+    fn pure_v2_torrent_source() -> Vec<u8> {
+        let root: [u8; 32] = Sha256::digest(b"x").into();
+        let mut info = b"d9:file treed1:ad0:d6:lengthi1e11:pieces root32:".to_vec();
+        info.extend_from_slice(&root);
+        info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi16384ee");
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersdee");
+        source
+    }
+
+    #[test]
+    fn pure_v2_bytes_are_full_identity_deduplicated_and_restartable() {
+        let root = test_root("pure-v2-torrent-bytes");
+        let configured = configured_root(&root);
+        let source = pure_v2_torrent_source();
+        let projection =
+            rstorrent_protocol::content::TorrentContentProjection::from_bytes_with_limits(
+                &source,
+                EXPLICIT_IMPORT_METAINFO_LIMITS,
+            )
+            .expect("fixture pure-v2 metainfo");
+        let raw_info = source[projection.info_span.clone()].to_vec();
+        let expected_v2 = projection
+            .content
+            .info_hashes()
+            .v2_hash()
+            .expect("v2 identity");
+        let request = torrent_bytes_request("add-pure-v2", &source);
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+
+        let added = store
+            .handle_torrent_bytes(&request, source.clone())
+            .expect("accept pure-v2 source");
+        assert!(matches!(added.outcome, ResponseOutcome::Success { .. }));
+        let torrent_id = added_torrent_id(&added);
+        let resume = store.load_resume(&torrent_id).expect("load v2 resume");
+        assert_eq!(resume.info_hashes.v1_hash(), None);
+        assert_eq!(resume.info_hashes.v2_hash(), Some(expected_v2));
+        assert_eq!(resume.raw_info, Some(raw_info));
+        assert_eq!(resume.metainfo_source.as_deref(), Some(source.as_slice()));
+        assert_eq!(
+            resume.have.as_ref().map(|have| have.pieces()),
+            Some([false].as_slice())
+        );
+        assert!(resume.magnet.is_empty());
+        assert_eq!(resume.state, TorrentState::Paused);
+
+        let duplicate = store
+            .handle_torrent_bytes(
+                &torrent_bytes_request("duplicate-pure-v2", &source),
+                source.clone(),
+            )
+            .expect("deduplicate pure-v2 source");
+        let duplicate_id = added_torrent_id(&duplicate);
+        assert_eq!(duplicate_id, torrent_id);
+        assert_eq!(duplicate.revision, added.revision);
+
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        let resumed = reopened
+            .load_resume(&torrent_id)
+            .expect("resume after reopen");
+        assert_eq!(resumed.metainfo_source, Some(source));
+        assert_eq!(resumed.info_hashes.v2_hash(), Some(expected_v2));
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test profile");
     }
 
     fn rich_torrent_source() -> Vec<u8> {

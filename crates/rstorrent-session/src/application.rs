@@ -75,17 +75,25 @@ fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
 }
 
-fn v1_runtime_identity(
+fn runtime_identity(
     torrent_id: TorrentId,
     info_hashes: InfoHashes,
 ) -> Result<TorrentIdentityContext, ApplicationError> {
-    let v1 = info_hashes.v1_hash().ok_or_else(|| {
-        ApplicationError::Configuration(format!(
-            "torrent {} has no v1 identity for the v1 runtime",
-            torrent_id
-        ))
-    })?;
-    TorrentIdentityContext::new(torrent_id, info_hashes, SwarmKey::V1(v1))
+    let swarm_key = match (info_hashes.v1_hash(), info_hashes.v2_hash()) {
+        (Some(v1), None) => SwarmKey::V1(v1),
+        (None, Some(v2)) => v2.swarm_key(),
+        (Some(_), Some(_)) => {
+            return Err(ApplicationError::Configuration(format!(
+                "torrent {torrent_id} is hybrid and has no selected runtime protocol"
+            )));
+        }
+        (None, None) => {
+            return Err(ApplicationError::Configuration(format!(
+                "torrent {torrent_id} has no runtime identity"
+            )));
+        }
+    };
+    TorrentIdentityContext::new(torrent_id, info_hashes, swarm_key)
         .map_err(|error| ApplicationError::Configuration(error.to_string()))
 }
 
@@ -555,7 +563,7 @@ impl ApplicationService {
             })?;
             let (torrent_id, info_hashes) = store.load_identities(&torrent.torrent_id)?;
             let runtime = TorrentRuntime::new(
-                v1_runtime_identity(torrent_id, info_hashes)?,
+                runtime_identity(torrent_id, info_hashes)?,
                 generation,
                 views.clone(),
                 advertised_endpoint.clone(),
@@ -996,7 +1004,7 @@ impl ApplicationService {
                 })?;
             let (owner, info_hashes) = self.store_mut()?.load_identities(torrent_id)?;
             let runtime = TorrentRuntime::new(
-                v1_runtime_identity(owner, info_hashes)?,
+                runtime_identity(owner, info_hashes)?,
                 generation,
                 self.views.clone(),
                 self.session_network().advertised_endpoint(),
@@ -1492,7 +1500,7 @@ impl ApplicationService {
                 ));
             }
         };
-        let existing_owner = self.store_mut()?.find_v1_owner(prepared.v1_info_hash())?;
+        let existing_owner = self.store_mut()?.find_owner(prepared.full_identity())?;
         let snapshot = self.store_mut()?.snapshot()?;
         let duplicate = existing_owner.is_some();
         if !duplicate && !self.storage_roots.contains_key(&request.storage_root) {
@@ -5911,6 +5919,7 @@ mod tests {
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
+    use sha2::Sha256;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
@@ -6079,6 +6088,17 @@ mod tests {
         info.extend_from_slice(&hashes);
         info.push(b'e');
         info
+    }
+
+    fn pure_v2_source() -> Vec<u8> {
+        let root: [u8; 32] = Sha256::digest(b"x").into();
+        let mut info = b"d9:file treed1:ad0:d6:lengthi1e11:pieces root32:".to_vec();
+        info.extend_from_slice(&root);
+        info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi16384ee");
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersdee");
+        source
     }
 
     fn torrent_bytes_request(
@@ -8215,6 +8235,53 @@ mod tests {
         assert!(!paths.output.exists());
         assert!(!paths.staging.exists());
         assert!(!paths.part.exists());
+        reopened.shutdown().await.expect("shutdown reopened");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn pure_v2_paused_add_uses_full_identity_and_verbatim_restart_source() {
+        let root = test_root("pure-v2-paused-add");
+        let source = pure_v2_source();
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+
+        let response = service
+            .add_torrent_bytes(
+                torrent_bytes_request("pure-v2-paused", &source, false),
+                source.clone(),
+            )
+            .await
+            .expect("add pure-v2 source");
+        assert!(matches!(response.outcome, ResponseOutcome::Success { .. }));
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pure-v2 bytes add result"),
+        };
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("load pure-v2 row");
+        assert!(resume.info_hashes.v1_hash().is_none());
+        assert!(resume.info_hashes.v2_hash().is_some());
+        assert_eq!(resume.metainfo_source.as_deref(), Some(source.as_slice()));
+        assert_eq!(resume.state, TorrentState::Paused);
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(config(&root))
+            .await
+            .expect("reopen application");
+        let resumed = reopened
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("restart pure-v2 row");
+        assert_eq!(resumed.metainfo_source, Some(source));
+        assert_eq!(resumed.state, TorrentState::Paused);
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test root");

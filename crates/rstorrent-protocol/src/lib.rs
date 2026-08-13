@@ -3,6 +3,7 @@
 //! Runtime-independent BitTorrent protocol values and state transitions.
 
 pub mod bencode;
+pub mod content;
 pub mod dht;
 pub mod extension;
 pub mod identity;

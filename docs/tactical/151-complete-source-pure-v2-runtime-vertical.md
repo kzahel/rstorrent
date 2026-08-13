@@ -961,3 +961,25 @@ retained.
 - `cargo test --workspace` passed the pre-change baseline. Opt-in public,
   remote, platform-trust, and large-allocation tests remained ignored by their
   existing contracts.
+
+### 2026-08-13 Stage 1 descriptor and admission
+
+- `TorrentContent` is the owned runtime-free v1/v2 sum. Its pure-v2 variant
+  can be constructed only from strict complete outer metainfo and owns the one
+  validated piece-layer set; hybrid and info-only input cannot enter it.
+- The descriptor projects the full identity, tagged wire key, canonical files,
+  file-aligned piece geometry, actual piece lengths, and indexed SHA-1 or
+  SHA-256 expected-integrity plans. Multi-piece files index the retained layer;
+  one-piece files retain their file-root tree height.
+- Schema 19 required no change. Byte intake now deduplicates by the one full
+  protocol identity, inserts pure v2 as a 32-byte `v2` alias, stores exact
+  `raw_info` and verbatim outer source, projects selection over real v2 files,
+  and reconstructs conservative wanted/have evidence from that source.
+- Application runtime identity selection now chooses the tagged v2 truncation
+  for v2-only owners while refusing an unselected hybrid owner. A paused
+  application add and reopen proves that no payload artifact is created before
+  the storage vertical lands.
+- `cargo test -p rstorrent-protocol`, `cargo test -p rstorrent-session`, and
+  `cargo clippy -p rstorrent-protocol -p rstorrent-session --all-targets --
+  -D warnings` pass. The focused pure-v2 store and application restart cases
+  pass with full-identity duplicate behavior and exact-source equality.

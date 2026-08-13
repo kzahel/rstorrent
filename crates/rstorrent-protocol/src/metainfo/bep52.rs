@@ -126,6 +126,7 @@ impl CompletePieceLayers {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedOuterMetainfo<'a> {
     info: ParsedInfo<'a>,
+    info_span: Range<usize>,
     hash_material: OuterHashMaterial,
     trackers: Vec<MetainfoTracker>,
 }
@@ -142,10 +143,11 @@ impl<'a> ParsedOuterMetainfo<'a> {
         limits: MetainfoLimits,
     ) -> Result<Self, MetainfoError> {
         let outer = direct::scan_outer(bytes, limits)?;
-        let info = parse_info(&bytes[outer.info_span], limits)?;
+        let info = parse_info(&bytes[outer.info_span.clone()], limits)?;
         match info.format() {
             MetainfoFormat::V1 => Ok(Self {
                 info,
+                info_span: outer.info_span,
                 hash_material: OuterHashMaterial::V1PieceHashes,
                 trackers: outer.trackers,
             }),
@@ -156,6 +158,7 @@ impl<'a> ParsedOuterMetainfo<'a> {
                 let layers = parse_piece_layers(&bytes[layer_span], &info, limits)?;
                 Ok(Self {
                     info,
+                    info_span: outer.info_span,
                     hash_material: OuterHashMaterial::CompletePieceLayers(layers),
                     trackers: outer.trackers,
                 })
@@ -165,6 +168,10 @@ impl<'a> ParsedOuterMetainfo<'a> {
 
     pub const fn info(&self) -> &ParsedInfo<'a> {
         &self.info
+    }
+
+    pub fn info_span(&self) -> Range<usize> {
+        self.info_span.clone()
     }
 
     pub fn trackers(&self) -> &[MetainfoTracker] {
