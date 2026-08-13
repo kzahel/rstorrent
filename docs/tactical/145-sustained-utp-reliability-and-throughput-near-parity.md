@@ -378,6 +378,46 @@ All 32 pieces verify, the UDP mapping is removed, role processes join, and the
 remote run plus VM revision stage are absent afterward. This is an execution
 and cleanup proof for artifact staging, not a throughput baseline.
 
+### Stage 5: repeated reliability and packetization attribution
+
+A rotating three-repetition remote-seed 256 MiB forced-uTP cohort at exact
+revision `c66583540bc413293fa2073bd05b4dd9bd0fd0f5` completes all 12 cases with
+exact bytes and pieces, successful mapping/process/artifact cleanup, and no
+invalid or failed records:
+
+| Seed -> leecher | Min MiB/s | Median MiB/s | Max MiB/s | Oracle median ratio |
+| --- | ---: | ---: | ---: | ---: |
+| libtorrent -> libtorrent | 2.728 | 2.741 | 2.742 | 100.0% |
+| libtorrent -> RSTorrent | 2.665 | 2.701 | 2.703 | 98.5% |
+| RSTorrent -> libtorrent | 1.793 | 2.130 | 2.144 | 77.7% |
+| RSTorrent -> RSTorrent | 1.505 | 1.519 | 1.539 | 55.4% |
+
+Every RSTorrent role uses one connection with zero retry exhaustion, peer
+failure, or content error. RSTorrent/RSTorrent's 2.27% max/min spread closes
+the affected remote-seed 256 MiB reliability gate and turns the remaining gap
+into utilization attribution rather than connection-lifecycle diagnosis.
+
+RSTorrent seeding to libtorrent sends 220,461--224,277 DATA datagrams and
+273.06--273.32 million datagram bytes, handles 39,155--43,619 congestion ACK
+events, and reaches 647--659 KiB of flight/window. Its first two samples need
+only one or two retransmissions; the slower third needs 147 retransmissions
+and three timeout collapses but still remains on one connection. The same
+seed to RSTorrent sends 318,008--322,143 DATA datagrams for nearly the same
+275.61--275.71 million wire bytes, handles 159,514--160,223 congestion ACK
+events, and reaches the same 647--649 KiB flight/window. Each sample has
+750--778 retransmissions, 614--638 timeout collapses, and a leecher high
+water of 746--776 DATA datagrams rejected beyond the unchanged 64-packet
+reorder allowance.
+
+The composition therefore turns the same 256 MiB stream into roughly 45%
+more DATA datagrams and four times the ACK work before CPU, storage, path MTU,
+or admitted-byte window diverge. The exact pinned-libtorrent `send_pkt` owner
+waits when the desired DATA payload does not fit the remaining congestion and
+remote window; RSTorrent's `new_payload_bytes` instead shrinks ordinary DATA
+to every residual window sliver. A deterministic no-sliver packetization
+regression and existing-owner repair are the next executable action. No
+controller constant or congestion policy is selected by this evidence.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text

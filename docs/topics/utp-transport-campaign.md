@@ -999,6 +999,24 @@ machine-control Ubuntu ARM64 VM builds an exact clean archive with Rust 1.97.0
 and a persistent cache; the host and Pi verify glibc direction, Linux ARM64
 ELF, size, SHA-256, dynamic dependencies, and revision before atomic install.
 The Pi now owns execution, fixture, resource, and mapping evidence only.
-Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
-change, another host, and a broader uTP support claim remain separate
-decisions.
+
+The subsequent rotating three-repetition remote-seed 256 MiB cohort completes
+all 12 forced-uTP cells exactly. Every RSTorrent role stays on one connection
+with zero retry exhaustion, peer failure, or content error;
+RSTorrent/RSTorrent's 1.505--1.539 MiB/s range closes the affected placement's
+reliability gate. Median rates relative to the 2.741 MiB/s libtorrent oracle
+are 98.5% for libtorrent-to-RSTorrent, 77.7% for RSTorrent-to-libtorrent, and
+55.4% for RSTorrent-to-RSTorrent.
+
+The retained transport counters make packetization the next owner. An
+RSTorrent seed sends 220,461--224,277 DATA datagrams to libtorrent but
+318,008--322,143 to RSTorrent for nearly the same 273--276 million wire bytes
+and the same roughly 650 KiB flight/window. The RSTorrent receiver composition
+also creates roughly four times the congestion ACK events, 750--778 seed
+retransmissions, and 746--776 later DATA rejections beyond the receiver's
+64-packet reorder allowance. RSTorrent currently shrinks new DATA into every
+remaining window sliver, unlike pinned libtorrent's full-payload-or-wait
+admission. Tactical `145` next owns a deterministic packetization regression
+and bounded existing-owner repair; it does not yet authorize controller-policy
+changes. Another NAT mechanism, IPv6 uTP, permanent network change, another
+host, and a broader uTP support claim remain separate decisions.

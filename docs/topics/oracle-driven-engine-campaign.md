@@ -587,9 +587,16 @@ the exact 256 MiB WAN verification remains on one connection, emits 766
 recovery datagrams, and improves 30.4% to 1.504 MiB/s with zero retry or peer
 failure. Remote preparation now builds exact ARM64 artifacts in the guarded
 UTM Linux VM and stages only verified binaries to `pimom`; the peer no longer
-runs Cargo or rustc. The next executable action is repeated alternating
-256 MiB reliability samples, followed by residual utilization attribution on
-valid one-connection cohorts. The
+runs Cargo or rustc. Three rotating remote-seed 256 MiB repetitions now pass
+all 12 cells with exact cleanup and one connection for every RSTorrent role.
+Median oracle ratios are 98.5% for libtorrent-to-RSTorrent, 77.7% for
+RSTorrent-to-libtorrent, and 55.4% for RSTorrent-to-RSTorrent. Equal wire bytes
+and window/flight accompany 220--224 thousand RSTorrent DATA datagrams toward
+libtorrent but 318--322 thousand toward RSTorrent, roughly four times the ACK
+events, and 746--776 receive-reorder rejections. The next executable action is
+a deterministic no-window-sliver packetization regression, the corresponding
+existing-owner repair, and a focused WAN A/B before any congestion-policy
+decision. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

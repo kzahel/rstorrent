@@ -86,6 +86,26 @@ and a persistent cache. The host and Pi fence every artifact by architecture,
 glibc direction, size, SHA-256, dynamic dependencies, and revision before an
 atomic install. The first full cached VM-to-Pi preparation took 87.880 seconds
 and left no per-revision builder/upload stage or Pi compiler process.
+
+The first repeated post-fast-recovery cohort then rotates three remote-seed
+256 MiB forced-uTP repetitions at exact revision `c665835`. All 12 cells pass
+integrity and cleanup, every RSTorrent role remains on one connection, and no
+RSTorrent role reports retry exhaustion, peer failure, or content error.
+Median active rates are 2.741 MiB/s libtorrent/libtorrent, 2.701 MiB/s
+libtorrent/RSTorrent, 2.130 MiB/s RSTorrent/libtorrent, and 1.519 MiB/s
+RSTorrent/RSTorrent. Those are 100.0%, 98.5%, 77.7%, and 55.4% of the matched
+oracle; RSTorrent/RSTorrent's three samples span only 1.505--1.539 MiB/s.
+
+The RSTorrent sender emits 220,461--224,277 DATA datagrams to libtorrent but
+318,008--322,143 to RSTorrent for nearly equal wire bytes and equal roughly
+650 KiB maximum flight. The latter composition also processes about four
+times the ACK events and turns one or two loss reductions into 750--778
+retransmissions, 614--638 timeout collapses, and 746--776 receive-reorder
+rejections. The next measurement is a deterministic and WAN A/B for ordinary
+DATA packetization: RSTorrent currently fills residual window slivers with
+short DATA packets where pinned libtorrent waits for the desired payload to
+fit. Controller constants remain unchanged and review-gated.
+
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

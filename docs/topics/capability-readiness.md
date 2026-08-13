@@ -428,9 +428,13 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
   uTP campaign through parent Tactical `142`. First make sustained transfers
   reliable on one connection, then close the measured throughput gap against
   matched pinned-libtorrent uTP without weakening delay/fairness behavior.
-  Two causal release recovery repairs now pass individual 256 MiB WAN gates;
-  repeated reliability and near-parity cohorts remain. Remote revisions are
-  built in the guarded ARM64 Linux VM, not on the constrained WAN peer.
+  Two causal release recovery repairs now pass a rotating three-repetition
+  remote-seed 256 MiB reliability cohort: all 12 cells complete exactly and
+  every RSTorrent role stays on one connection. The remaining 98.5%, 77.7%,
+  and 55.4% mixed/RST median oracle ratios select ordinary DATA packetization
+  for the next bounded repair; the full near-parity cohort remains. Remote
+  revisions are built in the guarded ARM64 Linux VM, not on the constrained
+  WAN peer.
 
 ### Next
 
