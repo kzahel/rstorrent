@@ -5957,6 +5957,7 @@ mod tests {
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
     };
+    use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
     };
@@ -5968,7 +5969,6 @@ mod tests {
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
-    use sha2::Sha256;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
@@ -6139,15 +6139,40 @@ mod tests {
         info
     }
 
-    fn pure_v2_source() -> Vec<u8> {
-        let root: [u8; 32] = Sha256::digest(b"x").into();
-        let mut info = b"d9:file treed1:ad0:d6:lengthi1e11:pieces root32:".to_vec();
+    fn bencode_bytes(output: &mut Vec<u8>, value: &[u8]) {
+        output.extend_from_slice(value.len().to_string().as_bytes());
+        output.push(b':');
+        output.extend_from_slice(value);
+    }
+
+    fn pure_v2_source_for_payload(payload: &[u8], piece_length: u32) -> Vec<u8> {
+        let root = file_root_from_data(payload).expect("nonempty pure-v2 fixture");
+        let mut info = format!(
+            "d9:file treed1:ad0:d6:lengthi{}e11:pieces root32:",
+            payload.len()
+        )
+        .into_bytes();
         info.extend_from_slice(&root);
-        info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi16384ee");
+        info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi");
+        info.extend_from_slice(piece_length.to_string().as_bytes());
+        info.extend_from_slice(b"ee");
         let mut source = b"d4:info".to_vec();
         source.extend_from_slice(&info);
-        source.extend_from_slice(b"12:piece layersdee");
+        source.extend_from_slice(b"12:piece layersd");
+        if payload.len() > piece_length as usize {
+            bencode_bytes(&mut source, &root);
+            let piece_roots = payload
+                .chunks(piece_length as usize)
+                .map(|piece| piece_root_from_data(piece, piece_length).expect("pure-v2 piece root"))
+                .collect::<Vec<_>>();
+            bencode_bytes(&mut source, &piece_roots.concat());
+        }
+        source.extend_from_slice(b"ee");
         source
+    }
+
+    fn pure_v2_source() -> Vec<u8> {
+        pure_v2_source_for_payload(b"x", 16_384)
     }
 
     fn torrent_bytes_request(
@@ -8514,6 +8539,281 @@ mod tests {
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove pure-v2 application root");
+    }
+
+    #[tokio::test]
+    async fn pure_v2_active_generation_uploads_only_verified_piece_before_completion() {
+        let root = test_root("pure-v2-active-upload");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                ..ClientSettings::default()
+            },
+        );
+        let piece_length = 16_384_u32;
+        let payload = (0..usize::try_from(piece_length).unwrap() + 17)
+            .map(|index| ((index * 37 + 11) % 251) as u8)
+            .collect::<Vec<_>>();
+        let source = pure_v2_source_for_payload(&payload, piece_length);
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("active pure-v2 fixture");
+        assert_eq!(projection.content.piece_count(), 2);
+        let wire_hash = projection.content.swarm_key().into_bytes();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind active pure-v2 source");
+        let address = listener.local_addr().expect("active source address");
+        let (first_verified, first_verified_rx) = tokio::sync::oneshot::channel();
+        let (release_final, release_final_rx) = tokio::sync::oneshot::channel();
+        let source_payload = payload.clone();
+        let source_task = tokio::spawn(async move {
+            let mut first_verified = Some(first_verified);
+            let mut release_final_rx = Box::pin(release_final_rx);
+            let mut final_requested = false;
+            let mut final_released = false;
+            let (mut stream, _) = listener.accept().await.expect("accept v2 downloader");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read active v2 handshake");
+            decode_handshake(&handshake, wire_hash).expect("active v2 wire identity");
+            stream
+                .write_all(&encode_handshake(wire_hash, *b"-RS-V2-SOURCE-000000"))
+                .await
+                .expect("send active v2 handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).unwrap())
+                .await
+                .expect("advertise active v2 pieces");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).unwrap())
+                .await
+                .expect("unchoke active v2 downloader");
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            loop {
+                tokio::select! {
+                    released = &mut release_final_rx, if !final_released => {
+                        released.expect("release final v2 piece");
+                        final_released = true;
+                        if final_requested {
+                            stream
+                                .write_all(
+                                    &encode_message(&PeerMessage::Piece {
+                                        index: 1,
+                                        begin: 0,
+                                        block: source_payload[piece_length as usize..].to_vec(),
+                                    })
+                                    .unwrap(),
+                                )
+                                .await
+                                .expect("send released final v2 piece");
+                            break;
+                        }
+                    }
+                    message = read_peer_message(&mut stream, &mut decoder, &mut pending) => match message {
+                        PeerMessage::Interested
+                        | PeerMessage::KeepAlive
+                        | PeerMessage::Have(0)
+                        | PeerMessage::Extended { id: 0, .. } => {}
+                        PeerMessage::Request(request) if request.index == 0 => {
+                            assert_eq!(request.begin, 0);
+                            assert_eq!(request.length, piece_length);
+                            stream
+                                .write_all(
+                                    &encode_message(&PeerMessage::Piece {
+                                        index: 0,
+                                        begin: 0,
+                                        block: source_payload[..piece_length as usize].to_vec(),
+                                    })
+                                    .unwrap(),
+                                )
+                                .await
+                                .expect("send first v2 piece");
+                            if let Some(first_verified) = first_verified.take() {
+                                first_verified
+                                    .send(())
+                                    .expect("report first delivered piece");
+                            }
+                        }
+                        PeerMessage::Request(request) if request.index == 1 => {
+                            assert_eq!(request.begin, 0);
+                            assert_eq!(request.length, 17);
+                            final_requested = true;
+                            if final_released {
+                                stream
+                                    .write_all(
+                                        &encode_message(&PeerMessage::Piece {
+                                            index: 1,
+                                            begin: 0,
+                                            block: source_payload[piece_length as usize..].to_vec(),
+                                        })
+                                        .unwrap(),
+                                    )
+                                    .await
+                                    .expect("send final v2 piece");
+                                break;
+                            }
+                        }
+                        message => panic!("unexpected active v2 source message {message:?}"),
+                    }
+                }
+            }
+        });
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open active v2 application");
+        let response = service
+            .add_torrent_bytes(
+                torrent_bytes_request("pure-v2-active-upload", &source, true),
+                source,
+            )
+            .await
+            .expect("add active pure-v2 source");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("active pure-v2 add result"),
+        };
+        service
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("active pure-v2 runtime")
+            .handle()
+            .peers()
+            .observe_discovered_peer(PeerObservation::dialable(
+                PeerEndpoint::new(address).expect("active source endpoint"),
+                PeerSource::Manual,
+            ))
+            .expect("observe active pure-v2 source");
+        if tokio::time::timeout(Duration::from_secs(5), first_verified_rx)
+            .await
+            .is_err()
+        {
+            let response = service
+                .dispatch(RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: "pure-v2-active-delivery-timeout".to_owned(),
+                    expected_revision: None,
+                    command: Command::Snapshot,
+                })
+                .await
+                .expect("snapshot timed-out pure-v2 delivery");
+            let peers = torrent_peer_views(&service, &torrent_id).await;
+            panic!(
+                "first pure-v2 piece delivery deadline; source_finished={}; response={response:?}; peers={peers:?}",
+                source_task.is_finished()
+            );
+        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for sequence in 0_u64.. {
+                let response = service
+                    .dispatch(RequestEnvelope {
+                        version: CONTROL_VERSION,
+                        request_id: format!("pure-v2-active-verified-{sequence}"),
+                        expected_revision: None,
+                        command: Command::Snapshot,
+                    })
+                    .await
+                    .expect("snapshot active pure-v2 verification");
+                let ResponseOutcome::Success { snapshot } = response.outcome else {
+                    panic!("active pure-v2 snapshot must succeed");
+                };
+                let torrent = snapshot
+                    .torrents
+                    .iter()
+                    .find(|torrent| torrent.torrent_id == torrent_id)
+                    .expect("active pure-v2 torrent");
+                if torrent.verified_piece_count == 1 && torrent.state == TorrentState::Downloading {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("first pure-v2 piece verification deadline");
+        wait_for_seed_registrations(&service, 1).await;
+
+        let (mut active_peer, mut decoder, mut pending) =
+            connect_application_seed_with_expected_availability(
+                &service,
+                wire_hash,
+                *b"-RS-V2-ACTIVE-000000",
+                false,
+                vec![0x80],
+            )
+            .await;
+        active_peer
+            .write_all(&encode_message(&PeerMessage::Interested).unwrap())
+            .await
+            .expect("interest active pure-v2 upload");
+        assert_eq!(
+            read_peer_message(&mut active_peer, &mut decoder, &mut pending).await,
+            PeerMessage::Interested
+        );
+        assert_eq!(
+            read_peer_message(&mut active_peer, &mut decoder, &mut pending).await,
+            PeerMessage::Unchoke
+        );
+        active_peer
+            .write_all(
+                &encode_message(&PeerMessage::Request(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: piece_length,
+                }))
+                .unwrap(),
+            )
+            .await
+            .expect("request active pure-v2 piece");
+        assert_eq!(
+            read_peer_message(&mut active_peer, &mut decoder, &mut pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: payload[..piece_length as usize].to_vec(),
+            }
+        );
+        let active_snapshot = service
+            .incoming_peer_snapshot()
+            .expect("active pure-v2 incoming snapshot");
+        assert_eq!(active_snapshot.registrations, 1);
+        assert_eq!(active_snapshot.established, 1);
+        assert_eq!(active_snapshot.payload_bytes_sent, u64::from(piece_length));
+
+        release_final.send(()).expect("release final pure-v2 piece");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "pure-v2-active-complete",
+        )
+        .await;
+        source_task.await.expect("active pure-v2 source task");
+        wait_for_incoming_close(&mut active_peer, "pure-v2 publication").await;
+        wait_for_seed_registrations(&service, 1).await;
+        let owner = torrent_id
+            .parse::<TorrentId>()
+            .expect("active pure-v2 owner");
+        let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
+            .expect("active pure-v2 storage paths");
+        assert_eq!(fs::read(paths.output.join("a")).unwrap(), payload);
+        assert!(!paths.part.exists());
+        let terminal = service
+            .incoming_peer_snapshot()
+            .expect("published pure-v2 incoming snapshot");
+        assert_eq!(terminal.established, 0);
+        assert_eq!(terminal.payload_bytes_sent, u64::from(piece_length));
+        service
+            .shutdown()
+            .await
+            .expect("shutdown active v2 application");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove active pure-v2 application root");
     }
 
     #[tokio::test]
