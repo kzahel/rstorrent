@@ -199,6 +199,50 @@ receive-ACK mutation, and prove valid piggyback ACK application. The full 246
 protocol tests, focused product runtime, warning-denying protocol/engine/
 session Clippy, and 19 focused Python contracts pass before the WAN restart.
 
+The next restart proved why the matrix revision fence is a correctness
+boundary rather than bookkeeping. Another authorized workstream advanced the
+shared checkout after the first exact TCP cell, so the paired uTP cell could
+not be attributed to one revision and the remaining cells rejected the dirty
+tree. The harness now promotes any mid-run worktree contamination to a fatal
+`WanMatrixRevisionError` instead of emitting one invalid record per remaining
+case. No result from that attempt enters a throughput ratio.
+
+### Exact 256 MiB WAN cohort
+
+The final cohort runs from a detached worktree pinned to clean revision
+`f34f3d0eaaf3b55412162c9364c6e818bcd7771b`. The guarded UTM guest builds the
+Linux ARM64 incoming-seed binary in 84.246 seconds with Rust/Cargo 1.97.0,
+four jobs, native `aarch64`, and glibc 2.39; the Pi runtime is `aarch64` with
+glibc 2.41. Host and remote checks agree on the 23,359,368-byte artifact and
+SHA-256
+`d7edf7f6c381a06c2ef4951eafc24becef36546b4b8bd5a196497711d2d3d468`.
+The Pi runs no Cargo or rustc process.
+
+All 24 rotating remote-seed cases complete: four implementation pairings,
+forced TCP and forced uTP, three repetitions each. Every payload verifies all
+268,435,456 bytes and 1,024 pieces; all mappings, role processes, and case
+artifacts clean exactly. The ordinary-Internet path is stable in every cell.
+
+| Pairing, seed -> leech | TCP median MiB/s | uTP median (range) MiB/s | uTP / oracle | uTP / own TCP |
+| --- | ---: | ---: | ---: | ---: |
+| libtorrent -> libtorrent | 2.653976 | 2.740845 (2.739835--2.742531) | 100.00% | 103.27% |
+| libtorrent -> RSTorrent | 2.684100 | 2.761146 (2.747405--2.764798) | 100.74% | 102.87% |
+| RSTorrent -> libtorrent | 2.672904 | 2.668005 (2.444530--2.673802) | 97.34% | 99.82% |
+| RSTorrent -> RSTorrent | 2.639728 | 2.599811 (2.427713--2.664425) | 94.85% | 98.49% |
+
+Every RSTorrent-containing uTP median clears the primary `0.85x` oracle gate
+and also reaches at least 98.49% of its own matched TCP median. Each RSTorrent
+sender sample uses one connection with no retry exhaustion, terminal failure,
+or timeout collapse. The RSTorrent/RSTorrent sender records one or two
+retransmission datagrams and one loss reduction, 209--408 startup
+acknowledgements, one startup exit, 263,036--524,280 threshold bytes,
+664,613--1,048,560 bytes of maximum flight, and 77.594--80.150 ms maximum
+queue delay. The corresponding RSTorrent receivers use 462--463 reorder
+positions and 664,614--666,768 buffered bytes, with no receive-window drop.
+RSTorrent RSS remains at most 19.7 MiB while seeding and 17.0 MiB while
+leeching. These are bounded exact measurements, not a broader BEP 29 support
+claim.
+
 An evidence-backed defect in the startup, congestion, transport, runtime
 telemetry, or existing WAN harness owners may be repaired autonomously. Stop
 for human direction only if evidence selects a different production policy,
