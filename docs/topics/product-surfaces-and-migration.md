@@ -116,7 +116,10 @@ app-owned Documents plus distinct stable qualified selected roots, rejects
 iCloud and positively identified providers, and requires a physical capability
 gate when lookup fails. Completed Tactical `148` directly reuses the first-
 party JSTorrent SwiftUI presentation; completed Tactical `149` owns finite
-background and recovery behavior. None authorizes migration or publication.
+background and recovery behavior. Completed Tacticals `152` and `154` add
+qualified-root multifile correctness, publication-aware progress, and direct
+Apple Quick Look/video presentation of complete files under the existing
+scoped lease. None authorizes migration or public distribution.
 
 ## Desktop Extension And Embedded UI
 

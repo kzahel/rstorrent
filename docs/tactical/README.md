@@ -707,9 +707,10 @@ that scope and its cleanup or compatibility rules explicitly.
   LAN, attributes packet-rate ceilings, and records native Windows separately
   without claiming 2.5 GbE through the Mac's 1 GbE adapter.
 - [`154-ios-truthful-progress-and-system-preview.md`](154-ios-truthful-progress-and-system-preview.md):
-  active authoritative Now; reserves iOS 100%/Finished for canonical
-  complete-and-published state and opens available files directly in Apple's
-  Quick Look/video presentation under the existing scoped lease.
+  complete; reserves iOS 100%/Finished for canonical complete-and-published
+  state and opens available files directly in Apple's Quick Look/video
+  presentation under the existing scoped lease, with real-swarm playback and
+  exact cleanup proven on physical hardware.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

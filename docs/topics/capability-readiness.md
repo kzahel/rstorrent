@@ -442,7 +442,7 @@ folders, rejects iCloud and positively identified providers, directly adapts
 the first-party JSTorrent SwiftUI surface with Search deferred, and owns
 finite background/restart behavior plus cold/warm magnet and file handoff.
 Controlled one-peer physical transfer, publication, restart, Force recheck,
-share, unavailable-root repair, exact managed cleanup, phone/iPad simulator
+preview, unavailable-root repair, exact managed cleanup, phone/iPad simulator
 tests, notification opt-in, force-close and finite-background recovery, and
 unsigned/development archives pass. No indefinite background, cloud-provider,
 App Store, TestFlight, or public-release claim is made.
@@ -454,24 +454,28 @@ publishes, survives restart and Force recheck, hands off a complete file, and
 removes exactly. The repository Big Buck Bunny magnet completes 1,055 of
 1,055 pieces and all 276,445,467 bytes from the public swarm, publishes its
 three files, and plays the MP4 through Apple Files' system video presentation.
+Completed Tactical
+[`154`](../tactical/154-ios-truthful-progress-and-system-preview.md) reserves
+100% and Finished for canonical Complete/Published state and changes **Open
+using** to direct Apple Quick Look presentation. A second exact public-swarm
+run reached 1,055/1,055, Published/Seeding, opened the available MP4 in one tap,
+advanced system playback from 1:46 to 2:10, and removed the selected-root tree
+exactly.
 
 ## Current Queue
 
 ### Now
 
-- **Complete Tactical
-  [`154`](../tactical/154-ios-truthful-progress-and-system-preview.md).** Make
-  iOS progress publication-aware and open complete files directly in Apple's
-  system Quick Look/video presentation, then prove the exact Big Buck Bunny
-  path on the attached physical iPhone and clean it exactly.
+- **Prepare decision-complete Tactical `155` for Stage 4 v2 magnet and
+  authenticated hash exchange.** Complete the required BEP and pinned-
+  libtorrent source and test review, then bound missing-hash ownership,
+  persistence, hostile message handling, resource limits, and cross-platform
+  evidence before any implementation begins.
 
 ### Next
 
-- **Prepare decision-complete Tactical `155` for Stage 4 v2 magnet and
-  authenticated hash exchange.** This is the displaced engine-campaign action;
-  complete its source-first design after the bounded iOS product correction.
-- Planned Tactical `153` remains Later rather than competing with either
-  correctness slice.
+- There is no queued second authoritative item. Planned Tactical `153` remains
+  Later rather than competing with the v2 correctness campaign.
 
 ### Later
 
@@ -624,7 +628,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings including session/per-torrent transfer limits, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |
-| iOS native client | Implemented | deterministic, runtime, interop, simulator, physical, live | The maintained iOS 16+ SwiftUI product runs the application service in-process through generated Swift UniFFI. App Documents and qualified on-device selected roots support controlled single- and multifile transfer, exact-target coordinated descriptors, publication, restart/Force recheck, complete-file handoff, and managed cleanup. The exact three-file Big Buck Bunny public magnet completed 1,055/1,055 pieces and 276,445,467 bytes, published, and played through Apple Files' system video presentation. The directly adapted JSTorrent surface, lifecycle, intake, phone/iPad layouts, and archives remain implemented. iCloud/identified providers, indefinite background work, migration, and public distribution remain absent. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
+| iOS native client | Implemented | deterministic, runtime, interop, simulator, physical, live | The maintained iOS 16+ SwiftUI product runs the application service in-process through generated Swift UniFFI. App Documents and qualified on-device selected roots support controlled single- and multifile transfer, exact-target coordinated descriptors, publication, restart/Force recheck, complete-file handoff, and managed cleanup. Progress reserves 100%/Finished for Complete/Published. The exact three-file Big Buck Bunny public magnet completed 1,055/1,055 pieces and 276,445,467 bytes, published, and opened in one tap through Apple Quick Look; native video playback advanced before exact cleanup. The directly adapted JSTorrent surface, lifecycle, intake, phone/iPad layouts, and archives remain implemented. iCloud/identified providers, indefinite background work, embedded/progressive playback, migration, and public distribution remain absent. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |

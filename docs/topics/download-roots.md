@@ -318,6 +318,11 @@ scope through Rust's final pooled handle. Controlled three-file and public
 Big Buck Bunny physical runs prove sibling files, nested parents, atomic tree
 publication, restart/Force recheck, completed-file handoff, and exact managed
 cleanup beneath one qualified external root.
+Completed Tactical `154` retains that shareable-file security scope through a
+direct Quick Look presentation instead of a generic share-sheet hop. A second
+real-swarm Big Buck Bunny run reaches Complete/Published, advances native video
+playback, releases the preview lease on dismissal, removes managed data, and
+independently shows the selected folder at zero items in Apple Files.
 
 ## User-Visible Publication Layout
 
@@ -431,6 +436,8 @@ feasibility without implementing fast resume or a complete iOS client.
 Completed Tactical `123` records the historical app-owned-only result.
 Completed Tactical `147` is the qualified-selected-root successor;
 completed Tactical `152` closes qualified-root multifile coordination and
-publication with physical and live evidence;
+publication with physical and live evidence; completed Tactical `154` adds
+truthful publication-aware progress plus direct scoped Quick Look playback and
+exact physical cleanup;
 completed-file cloud export remains a separate copy/verification tactical
 rather than an active torrent-root feature.

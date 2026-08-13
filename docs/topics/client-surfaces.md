@@ -213,7 +213,11 @@ replacing its JavaScriptCore controller and omitting Search. Completed Tactical
 reproducible archives without publication. Completed Tactical `152` narrows
 long-lived selected-root coordination to exact files and physically proves
 controlled multifile publication plus the exact Big Buck Bunny public torrent
-through Apple Files system playback. Physical iPhone evidence supports the
+through Apple system playback. Completed Tactical `154` reserves 100% and
+Finished for Complete/Published state and changes **Open using** from a generic
+activity sheet to direct Quick Look. A physical real-swarm rerun proves one-tap
+native video presentation, advancing playback, lease-backed dismissal, and
+exact cleanup. Physical iPhone evidence supports the
 foreground and finite-background product claim; indefinite background,
 iCloud/File Provider roots, migration, and public distribution remain absent.
 
@@ -589,10 +593,12 @@ remote exposure, and Android streaming remain independent product decisions.
 - No embedded playback UI, stable media sharing, remote media listener, or
   Android HTTP playback server exists.
 - The maintained RSTorrent iOS product now supports the bounded scope recorded
-  by completed Tacticals `147`--`149` and `152`: qualified selected folders,
+  by completed Tacticals `147`--`149`, `152`, and `154`: qualified selected
+  folders,
   exact-target single- and multifile storage, publication, restart/Force
-  recheck, completed-file handoff, Apple Files playback after completion, the
-  adapted first-party JSTorrent presentation, cold/warm intake, finite
+  recheck, truthful Complete/Published progress, completed-file handoff, direct
+  Apple Quick Look/video playback after completion, the adapted first-party
+  JSTorrent presentation, cold/warm intake, finite
   lifecycle and force-close recovery, and local archive creation. Search,
   cloud/provider roots, migration, indefinite background work, embedded or
   progressive playback, and public distribution remain absent.

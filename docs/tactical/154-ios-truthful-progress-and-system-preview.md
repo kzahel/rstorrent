@@ -1,8 +1,9 @@
 # Tactical 154: iOS Truthful Progress And System Preview
 
-Status: **Active on 2026-08-13.** The maintainer authorized implementation,
-commits, and end-to-end validation on the attached physical iPhone with the
-repository Big Buck Bunny public magnet.
+Status: **Complete on 2026-08-13.** Truthful completion, direct Quick Look,
+simulator and repository gates, signed physical installation, the real Big
+Buck Bunny public-swarm playback flow, and exact cleanup pass. Stage 4 v2
+magnet/hash-exchange planning resumes as the authoritative Tactical `155`.
 
 Topics: `client-surfaces`, `capability-readiness`, `download-roots`
 
@@ -155,4 +156,86 @@ run-owned data, a weakened security-scope invariant, or external publication.
 
 ## Execution Record
 
-Pending implementation and validation.
+### Implementation
+
+`TorrentPresentation.swift` now derives one explicit published-completion
+fact from `TorrentState.complete` and `StorageState.published`. Only that fact
+returns `1.0`; all byte- or piece-derived nonterminal fractions are finite,
+bounded, and capped at `0.99`. Text formatting separately maps every fraction
+below one to at most `99%`. The Active and Finished filters consume the same
+published-completion fact rather than independently interpreting rounded
+progress or the display status.
+
+This deliberately leaves wanted-piece policy in Rust. A selective torrent can
+reach `Complete` without its global verified-piece count equaling its global
+piece count, while `AwaitingPublication` with zero remaining bytes cannot be
+presented as complete.
+
+`SystemFilePreview.swift` supplies one `QLPreviewController` inside a system
+navigation controller with Done plus Quick Look's own actions and sharing. The
+detail view's full-screen cover captures the existing `ShareableFileLease` for
+the preview lifetime and releases it on disappearance; the lease's idempotent
+release and deinitialization remain the teardown safety net. The prior generic
+`UIActivityViewController` first step is removed. No generated application
+contract, dependency, entitlement, payload owner, or decoder changed.
+
+### Deterministic and build evidence
+
+Eight focused simulator tests pass. They cover the exact 1,055-piece
+awaiting-publication/zero-remaining case at 99%, complete-but-unpublished,
+canonical complete/published, selective-completion geometry, ordinary
+rounding near 100%, malformed and out-of-range byte counts, nonfinite display
+input, Quick Look's one-item exact-URL data source, and its dismissal callback.
+The complete `RSTorrentTests` bundle also passes on an iOS 26.5 iPhone
+simulator with signing disabled.
+
+The following proportional repository gates pass:
+
+- `cargo fmt --all -- --check`;
+- `cargo clippy -p rstorrent-ios --all-targets -- -D warnings`;
+- `cargo test -p rstorrent-ios` with three tests passed;
+- focused and complete iOS simulator unit-test invocations; and
+- `git diff --check`.
+
+The application boundary did not change, so generated web/Kotlin, React, and
+Android packaging gates are inapplicable. A generic device build then signed
+and installed the exact development app without storing signing or device
+values in the repository.
+
+The signed build/install and UI proof used consecutive exclusive
+`machine-control` leases. A rejected selector ended the post-install session
+before magnet intake or torrent mutation; the complete real-swarm flow then
+ran in one fresh exclusive transaction against that exact installed product.
+No device mutation ran outside a testbed lease.
+
+### Physical public-swarm and playback evidence
+
+The attached wired iPhone passed host, Xcode, signing, runner, Developer Mode,
+connection, and unlock readiness. The installed app restored the qualified
+external root as healthy and began with zero torrents.
+
+The exact `big-buck-bunny` magnet from `tests/live/torrents.json`, with v1 info
+hash `dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`, ran against the changing
+public swarm. Samples progressed from 1% with 32 peers to 53% at 15.7 MB/s,
+then reached `100%` only with Seeding. Detail independently reported
+1,055/1,055 pieces and Published storage. Files reported the 140-byte subtitle,
+276.1 MB MP4, and 310 KB poster as Available.
+
+One tap on **Open using** changed directly from the RSTorrent file menu to
+Apple Quick Look's `Video` surface in the RSTorrent process, with native Done,
+Actions, Share, seek, speed, audio, and play/pause controls. No activity sheet,
+Files navigation, or embedded RSTorrent player intervened. The system player's
+elapsed position advanced from 1:46 to 2:10, and two independently inspected
+captures contained different decoded frames.
+
+Quick Look dismissed back to the torrent's Files tab. Managed removal with
+downloaded-file deletion returned the app to zero torrents; Apple Files then
+independently showed the qualified selected folder with zero items. RSTorrent,
+Files, the automation runner, the signed temporary build, and both captures
+were terminated or removed. No device identifier, selected path, bookmark,
+signing value, peer endpoint, screenshot, recording, or payload remains in the
+repository.
+
+Every stopping condition passes. iCloud and identified providers, embedded or
+progressive playback, incomplete-file preview, indefinite background work,
+migration, and public distribution remain outside the support claim.
