@@ -1,0 +1,196 @@
+# Tactical 150: Bounded uTP Sender Startup
+
+Status: **Active under Tactical 145.** Maintainer approval on 2026-08-13
+selects recommendation A from Tactical `145`: promote the diagnostic 10 ms
+queue-signal/30% retained-window startup policy, validate it end to end, and
+continue autonomously through the matched WAN cohort. Ordinary commits land
+by stage. The constrained `pimom` endpoint remains execution-only; exact ARM64
+Linux artifacts are built in the guarded `machine-control` UTM guest.
+
+Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
+`capability-readiness`, `oracle-driven-engine-campaign`
+
+Dependencies: active parent Tactical
+[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md), parent
+lab Tactical [`142`](142-wan-transport-performance-matrix.md), and completed
+Tacticals [`121`](121-deterministic-utp-loss-congestion-and-mtu.md),
+[`125`](125-shared-udp-utp-runtime-and-loopback-interop.md), and
+[`144`](144-long-rtt-utp-sender-window-utilization.md).
+
+## Decision And Desired Outcome
+
+RSTorrent's reliable 256 MiB remote-seed RSTorrent/RSTorrent median is
+2.139183 MiB/s, 78.0% of the retained 2.741167 MiB/s
+libtorrent/libtorrent forced-uTP control. It now matches the earlier
+RSTorrent-to-libtorrent sender result, and WAN telemetry shows a continuously
+fed, remote-window-unlimited, congestion-limited sender taking roughly 90
+seconds to reach path-rate flight. Sender startup—not receive composition,
+storage, application feed, or steady-state path capacity—is causal.
+
+Enable exponential acknowledged-byte congestion-window growth only during
+startup. Exit on the first 10,000-microsecond queue-delay signal, immediately
+retain 30% of the pre-exit window, then return to the existing linear RFC 6817
+controller. Loss exits startup after the ordinary window reduction and
+records the reduced window as the threshold for a later timeout restart.
+Timeout collapse may re-enter startup but must leave it before exceeding that
+threshold. Application-limited ACKs do not grow the window.
+
+This is intentionally more conservative than pinned libtorrent's direct
+target-delay exit. Tactical `145` rejected that exact diagnostic behavior at
+193.750 ms p95 queue delay against the retained 150 ms gate. The accepted
+10 ms/30% candidate improved three controlled long-RTT comparisons
+1.88x--1.90x, gave the TCP-like foreground flow 82.65% overlap share, and
+passed recovery, loss, MTU-isolation, integrity, and resource gates.
+
+The primary empirical outcome remains Tactical `145`'s median active payload
+rate of at least `0.85x` the alternating same-direction libtorrent/libtorrent
+uTP control for every RSTorrent-containing pairing at 256 MiB and 1 GiB. This
+tactical does not claim parity from deterministic results; it must run the
+controlled product and WAN evidence.
+
+## Normative And Source Oracle
+
+RFC 6817 Sections 2.2--2.5 and 3.2 remain normative for delay measurement,
+congestion response, yielding, and permitted slow-start behavior. Managed
+BEP 29 remains the uTP wire reference. The exact pinned libtorrent `2.0.13`
+revision `7d7fc38fac61177fa5e02148f791b2f65250b09d` supplies the completeness
+oracle:
+
+- `reference/libtorrent/src/utp_stream.cpp::utp_socket_impl` initializes
+  `m_slow_start` for a new connection;
+- `do_ledbat` separates application-limited ACKs, exponential startup,
+  target-delay exit, remembered threshold exit, and linear steady state;
+- `experienced_loss` exits startup after reducing the window and records the
+  reduced threshold;
+- `tick` collapses the timeout window and re-enters slow start; and
+- `reference/libtorrent/simulation/test_utp.cpp::{utp_plain,
+  utp_buffer_bloat,utp_straw,utp_small_kernel_send_buf}` plus
+  `reference/libtorrent/test/test_utp.cpp::utp` supply clean, queue, competing
+  flow, constrained send-buffer, and forced-uTP expectations.
+
+The adopted state transitions are independently authored. Intentional
+differences are the 10 ms startup exit, immediate 30% retained window,
+RSTorrent's existing two-MSS ordinary floor, unchanged `TARGET = 100 ms`,
+linear `GAIN = 1`, allowed-increase rule, pacing, and loss multiplier. The
+local JSTorrent reference has no uTP controller and adds no startup behavior.
+
+## Owner, Task, Cancellation, And Dependency Map
+
+```text
+runtime-independent congestion state
+  startup active/exit/threshold + linear steady state + bounded scalars
+        |
+        v
+runtime-independent transport
+  new and accepted connections select the one production startup policy
+        |
+        v
+uTP runtime worker and service snapshot
+  aggregate startup ACK/exit/active high-water evidence; no new task
+        |
+        v
+session/application roles and WAN harness
+  existing cancellation, mapping, revision, integrity, and cleanup owners
+```
+
+No task, socket, channel, timer, dependency, or product setting is added. The
+transport worker remains the sole mutable owner of one congestion controller.
+The shared UDP service retains existing cancellation and joined termination.
+Diagnostic current/candidate selection remains test-only; every non-test
+transport construction uses the selected production policy.
+
+Dependency direction remains protocol state -> transport -> runtime ->
+session/application evidence. Runtime types do not enter congestion state.
+
+## Scope And Implementation Stages
+
+1. **Production state.** Replace the diagnostic-only arbitrary startup shape
+   with named production constants and one explicit bounded-startup mode.
+   Ordinary initiating and accepting transports select it. Retain a
+   test-only linear constructor for paired comparisons.
+2. **Deterministic edge cases.** Prove exact exponential growth,
+   application-limited suppression, 10 ms queue exit, 30% retained window,
+   loss exit, timeout restart, remembered threshold, MTU update, time
+   reversal, saturation, and unchanged floors/bounds.
+3. **Transport and runtime evidence.** Carry startup counters and active/high-
+   water state through existing snapshots and public controlled-role JSON.
+   Add no endpoint, payload, packet trace, or unbounded history.
+4. **Controlled product gates.** Rerun clean long RTT, bounded queue,
+   TCP-like fairness/recovery, fixed loss, timeout, receive pressure, dynamic
+   MTU, sustained wrap, real-socket runtime, and the 160 ms product transfer.
+5. **WAN cohort.** Build the exact clean committed revision in the guarded
+   ARM64 Linux VM, stage verified artifacts to `pimom`, and run three rotating
+   remote-seed 256 MiB forced-uTP repetitions for all four implementation
+   pairings with matched TCP controls. If stable and informative, run the
+   remote-seed 1 GiB cohort and one bounded local-seed scaling smoke required
+   by Tactical `145`.
+6. **Platform and closure.** Run both Android native ABI builds, formatting,
+   warning-denying workspace Clippy, workspace tests, relevant Python
+   contracts, reconcile Tactical `142`, Tactical `145`, living topics, and
+   the protocol claim, then remove owned temporary artifacts.
+
+An evidence-backed defect in the startup, congestion, transport, runtime
+telemetry, or existing WAN harness owners may be repaired autonomously. Stop
+for human direction only if evidence selects a different production policy,
+steady-state controller change, dependency, resource-bound expansion,
+protocol-support claim, another host/network mechanism, or destructive or
+externally visible scope not authorized here.
+
+## Invariants And Resource Limits
+
+- Production startup begins at the existing two-MSS window. It grows only on
+  acknowledged payload while congestion limited and never beyond the existing
+  1 MiB congestion/send ceiling.
+- The first queue-delay sample at or above 10,000 microseconds exits startup
+  once. Retained window is exactly 30% of the pre-exit window subject to the
+  unchanged ordinary floor and ceiling.
+- Congestion loss applies the existing once-per-RTT reduction before startup
+  exit. Isolated MTU-probe loss cannot exit startup or reduce the window.
+- Timeout retains the existing one-MSS collapse. Re-entered startup cannot
+  grow beyond the last recorded threshold and ordinary ACK recovery restores
+  the existing floor.
+- `TARGET`, linear gain, pacing, allowed increase, loss multiplier, MTU
+  search, delayed ACK, packetization, receive credit, and reorder positions do
+  not change.
+- Per connection, sent/unsent/receive payload remains at most 1 MiB,
+  outstanding packets at most 1,024, reorder positions 953, shared and
+  connection ingress queues 256 datagrams, runtime turn 64 datagrams, and
+  eight transmission attempts per packet.
+- New observations are saturating scalar counters, Boolean/current counts,
+  and high waters. They retain no address, peer ID, payload, or timeline.
+- WAN runs retain exact revision, builder/runtime, forced-transport, mapping,
+  integrity, process, resource, wire-stop, journal, deadline, cleanup, and
+  redaction fences. No Cargo or rustc process runs on `pimom`.
+
+## Validation And Stopping Condition
+
+| Layer | Required evidence |
+| --- | --- |
+| Pure congestion | selected constants and every startup/exit/loss/timeout/application-limit transition; exact current/candidate A/B |
+| Deterministic transport | clean/long-RTT, queue, fairness/recovery, loss, timeout, pressure, MTU, wrap, integrity, and zero ownership |
+| Scripted runtime | initiating and accepted roles, telemetry aggregation, cancellation, socket replacement, queue bounds, and zero terminal ownership |
+| Controlled product | RSTorrent/RSTorrent and mixed roles over clean 160 ms, exact hash, one connection, forced uTP, resource and cleanup proof |
+| WAN | alternating three-repetition 256 MiB cohort plus applicable 1 GiB scaling, matching oracle/TCP controls, no fallback/reconnect or unexplained exclusion |
+| Platform/repository | both Android native ABIs, format, workspace Clippy/tests, interop contracts, and reconciled documentation |
+
+The tactical completes only when production uses the selected bounded startup,
+all preserved fairness/resource/correctness gates pass, the required WAN
+cohort is recorded, and every RSTorrent-containing median reaches `0.85x` the
+matched libtorrent uTP control. If production behaves correctly but a stable
+route cannot supply a valid oracle cohort, close evidence-limited with the
+typed environmental record and no parity claim. If a RSTorrent pairing
+remains below `0.85x`, retain the result and return to review before any
+steady-state controller change.
+
+## Non-Goals And Next Boundary
+
+This tactical does not copy libtorrent, change steady-state gain or target,
+raise packet/byte/queue bounds, expose a startup setting, add UI, add a
+dependency, modify NAT or IPv6 behavior, compile on the Pi, repair the
+separate remote-placement TCP seed disconnect, optimize endpoint storage or
+ISP service, run a public swarm, or broaden the existing **Partial** uTP
+support claim without the required cohort.
+
+After closure, any steady-state controller modernization, multi-flow campaign,
+different startup policy, broader support claim, or unrelated engine feature
+requires its own decision.

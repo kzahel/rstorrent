@@ -1,15 +1,12 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Paused at the production congestion-policy human-review gate under
-parent Tactical 142.** Terminal provenance, repeated-cycle gates, release recovery,
-packetization and receive-position repairs, off-device WAN builds, and the
-diagnostic startup A/B are implemented. Maintainer direction on 2026-08-13
-selected this tactical after Tactical `143` completed and activated continued
-uTP performance work with the goal of approaching pinned-libtorrent uTP
-throughput. Later explicit direction the same day superseded it with the iOS
-client campaign beginning at Tactical `147`; this checkpoint remains the exact
-restart point. Ordinary product construction still uses the existing linear
-LEDBAT controller; no slow-start policy has been enabled.
+Status: **Active under parent Tactical 142 through child Tactical 150.**
+Terminal provenance, repeated-cycle gates, release recovery, packetization and
+receive-position repairs, off-device WAN builds, and the diagnostic startup
+A/B are implemented. Maintainer approval on 2026-08-13 resumes this checkpoint,
+selects recommendation A, and activates Tactical `150` to promote and validate
+the bounded 10 ms/30% startup policy. Production remains linear until that
+child implementation lands.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`

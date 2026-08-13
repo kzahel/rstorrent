@@ -573,10 +573,11 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Paused engine-campaign restart action: resume focused Tactical
+Current engine-campaign action: execute Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md) under focused Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-under Tactical `142` at its reached production congestion-policy human-review
-gate. Its terminal-provenance stage and clean 131,075-DATA/three-wrap transport
+and Tactical `142`. Its terminal-provenance stage and clean
+131,075-DATA/three-wrap transport
 proof are implemented. The clean proof rejects sequence reuse itself. Exact
 256 MiB WAN terminal evidence selected and a release-profile regression
 reproduced retransmission queue removal compiled away inside `debug_assert!`;
@@ -622,9 +623,9 @@ queue delay exceeds the retained 150 ms gate. The recommended bounded
 candidate exits exponential startup on 10 ms queue delay, retains 30% of that
 window, and then returns to unchanged linear LEDBAT. Three paired long-RTT
 profiles improve 1.88x--1.90x; existing fairness/recovery plus explicit loss,
-MTU, integrity, and resource gates pass. Tactical `145` has therefore reached
-its production congestion-policy human review gate. Ordinary product behavior
-remains unchanged until that decision. The
+MTU, integrity, and resource gates pass. Maintainer approval selects
+recommendation A. Tactical `150` now promotes the bounded policy and owns its
+deterministic, controlled, VM-built WAN, platform, and closure gates. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

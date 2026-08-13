@@ -148,7 +148,9 @@ queue delay at 45 ms. The existing TCP-like foreground share improves from
 70.37% to 82.65%; recovery remains within ten RTTs. Scripted 1% loss and
 dynamic-MTU black-hole profiles preserve retry, loss, and isolated-probe
 bounds. This is controlled policy-selection evidence, not a WAN throughput
-claim. Tactical `145` is at human review before any production startup change.
+claim. Maintainer approval selects the bounded candidate; active Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md) now owns production and
+WAN validation before any parity claim.
 
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and

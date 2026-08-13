@@ -1049,17 +1049,19 @@ application feed, storage, receive credit, and steady-state path capacity as
 the first remaining owner: the continuously congestion-limited sender takes
 roughly 90 seconds to grow from its two-MSS window to path-rate flight.
 
-Tactical `145` now reaches its production congestion-policy review gate with
-a test-only startup comparator. The direct libtorrent-style startup cuts its
+Tactical `145` reached its production congestion-policy review gate with a
+test-only startup comparator. The direct libtorrent-style startup cuts its
 80 ms one-way 8 MiB profile from 18.382 to 4.454 seconds but fails with
 193.750 ms p95 queue delay. A bounded candidate exits exponential growth on a
 10 ms queue signal and retains 30% of its pre-exit window. Across alternating
 70/80/90 ms one-way profiles it is 1.88x--1.90x faster than current linear
 startup with exact integrity, zero loss/drop, at most 45 ms queue delay, and
 unchanged bounds. Its TCP-like foreground share is 82.65% versus 70.37%
-current, and loss plus MTU-isolation profiles pass. Ordinary product
-construction remains linear. Recommendation A is the bounded startup-only
-policy; steady-state gain, target, allowed increase, and loss multiplication
+current, and loss plus MTU-isolation profiles pass. Maintainer approval selects
+recommendation A and activates child Tactical
+[`150`](../tactical/150-bounded-utp-sender-startup.md) to promote that bounded
+startup-only policy through controlled, VM-built WAN, platform, and closure
+gates. Steady-state gain, target, allowed increase, and loss multiplication
 remain unchanged and are not recommended. Another NAT mechanism, IPv6 uTP,
 permanent network change, another host, and a broader uTP support claim remain
 separate decisions.

@@ -436,29 +436,29 @@ App Store, TestFlight, or public-release claim is made.
 
 ### Now
 
-- **Plan the bounded Stage 3 pure-v2 `.torrent` vertical tactical.** Completed
-  Tactical
-  [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md)
-  provides exact validated metainfo, complete layers, aligned geometry, and
-  Merkle integrity primitives. The next tactical must source-review and own
-  one complete local pure-v2 download/check/restart/publication/seed path with
-  storage, cancellation, resource, controlled-libtorrent, generated-boundary,
-  and proportional Android evidence before implementation starts.
+- **Execute Tactical
+  [`150`](../tactical/150-bounded-utp-sender-startup.md) under Tactical
+  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md).**
+  Maintainer approval resumes the uTP checkpoint and selects recommendation A.
+  Promote the bounded 10 ms queue-signal/30% retained-window startup, preserve
+  the existing steady-state controller and limits, then run the deterministic,
+  controlled, VM-built WAN, platform, and near-parity gates end to end.
 
 ### Next
 
-- Execute the Stage 3 tactical only after its scope, sources, invariants,
-  owner/cancellation map, evidence, non-goals, and stopping condition are
-  decision-complete.
+- Plan and execute the bounded Stage 3 pure-v2 `.torrent` vertical only after
+  Tactical `150` reaches its stopping condition. Completed Tactical `146`
+  provides the runtime-free foundation; the future tactical must still own
+  local download/check/restart/publication/seed behavior and proportional
+  Android evidence.
 
 ### Later
 
-Paused parent Tactical
+Active parent Tactical
 [`142`](../tactical/142-wan-transport-performance-matrix.md) retains its 56
-post-repair cells and exact analysis checkpoint while paused child Tactical
+post-repair cells and exact analysis checkpoint while resumed child Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-retains the selected reliability and near-parity repair at its human-review
-gate. It is not resumed by the completed v2 foundation. The
+executes its approved startup policy through Tactical `150`. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
 seed 1 GiB libtorrent uTP control remain typed evidence outside that future
 repair.
