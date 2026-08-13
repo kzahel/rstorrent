@@ -124,21 +124,16 @@ impl CompletePieceLayers {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ParsedOuterMetainfo<'a> {
-    V1 {
-        info: ParsedInfo<'a>,
-        trackers: Vec<MetainfoTracker>,
-    },
-    V2 {
-        info: ParsedInfo<'a>,
-        piece_layers: CompletePieceLayers,
-        trackers: Vec<MetainfoTracker>,
-    },
-    Hybrid {
-        info: ParsedInfo<'a>,
-        piece_layers: CompletePieceLayers,
-        trackers: Vec<MetainfoTracker>,
-    },
+pub struct ParsedOuterMetainfo<'a> {
+    info: ParsedInfo<'a>,
+    hash_material: OuterHashMaterial,
+    trackers: Vec<MetainfoTracker>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OuterHashMaterial {
+    V1PieceHashes,
+    CompletePieceLayers(CompletePieceLayers),
 }
 
 impl<'a> ParsedOuterMetainfo<'a> {
@@ -149,8 +144,9 @@ impl<'a> ParsedOuterMetainfo<'a> {
         let outer = direct::scan_outer(bytes, limits)?;
         let info = parse_info(&bytes[outer.info_span], limits)?;
         match info.format() {
-            MetainfoFormat::V1 => Ok(Self::V1 {
+            MetainfoFormat::V1 => Ok(Self {
                 info,
+                hash_material: OuterHashMaterial::V1PieceHashes,
                 trackers: outer.trackers,
             }),
             MetainfoFormat::V2 | MetainfoFormat::Hybrid => {
@@ -158,41 +154,27 @@ impl<'a> ParsedOuterMetainfo<'a> {
                     .piece_layers_span
                     .ok_or(MetainfoError::MissingPieceLayers)?;
                 let layers = parse_piece_layers(&bytes[layer_span], &info, limits)?;
-                if info.format() == MetainfoFormat::V2 {
-                    Ok(Self::V2 {
-                        info,
-                        piece_layers: layers,
-                        trackers: outer.trackers,
-                    })
-                } else {
-                    Ok(Self::Hybrid {
-                        info,
-                        piece_layers: layers,
-                        trackers: outer.trackers,
-                    })
-                }
+                Ok(Self {
+                    info,
+                    hash_material: OuterHashMaterial::CompletePieceLayers(layers),
+                    trackers: outer.trackers,
+                })
             }
         }
     }
 
     pub const fn info(&self) -> &ParsedInfo<'a> {
-        match self {
-            Self::V1 { info, .. } | Self::V2 { info, .. } | Self::Hybrid { info, .. } => info,
-        }
+        &self.info
     }
 
     pub fn trackers(&self) -> &[MetainfoTracker] {
-        match self {
-            Self::V1 { trackers, .. }
-            | Self::V2 { trackers, .. }
-            | Self::Hybrid { trackers, .. } => trackers,
-        }
+        &self.trackers
     }
 
     pub const fn piece_layers(&self) -> Option<&CompletePieceLayers> {
-        match self {
-            Self::V1 { .. } => None,
-            Self::V2 { piece_layers, .. } | Self::Hybrid { piece_layers, .. } => Some(piece_layers),
+        match &self.hash_material {
+            OuterHashMaterial::V1PieceHashes => None,
+            OuterHashMaterial::CompletePieceLayers(piece_layers) => Some(piece_layers),
         }
     }
 }
