@@ -45,6 +45,17 @@ def local_route_address() -> str:
     return value
 
 
+def mapping_control(local_address: str) -> tuple[str, str]:
+    try:
+        return discover_control(
+            local_address, service_types=MAPPING_SERVICE_TYPES
+        )
+    except GateFailure as error:
+        raise MappingError(
+            "UPnP discovery could not select an accepted mapping service"
+        ) from error
+
+
 def _soap_values(
     control: str,
     service: str,
@@ -125,9 +136,7 @@ def add_mapping(port: int, protocol: str) -> dict[str, Any]:
     if not 1 <= port <= 65_535 or protocol not in {"TCP", "UDP"}:
         raise MappingError("matrix mapping endpoint is invalid")
     local_address = local_route_address()
-    control, service = discover_control(
-        local_address, service_types=MAPPING_SERVICE_TYPES
-    )
+    control, service = mapping_control(local_address)
     if query_mapping(control, service, port, protocol) is not None:
         raise MappingError("matrix external port is already mapped")
     _soap_values(
@@ -171,9 +180,7 @@ def remove_mapping(port: int, protocol: str) -> dict[str, Any]:
     if not 1 <= port <= 65_535 or protocol not in {"TCP", "UDP"}:
         raise MappingError("matrix mapping endpoint is invalid")
     local_address = local_route_address()
-    control, service = discover_control(
-        local_address, service_types=MAPPING_SERVICE_TYPES
-    )
+    control, service = mapping_control(local_address)
     installed = query_mapping(control, service, port, protocol)
     if installed is not None:
         if installed.get("NewPortMappingDescription") != MAPPING_DESCRIPTION:
