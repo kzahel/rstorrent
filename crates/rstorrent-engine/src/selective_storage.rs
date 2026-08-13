@@ -1607,8 +1607,50 @@ impl SelectiveStorage {
         verified: Vec<bool>,
     ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         let layout = ContentLayout::from(layout);
+        Self::create_with_platform_layout(
+            spec,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            PublicationShape::from_metainfo(metainfo),
+        )
+        .await
+    }
+
+    pub async fn create_content_with_platform(
+        spec: PlatformStorageSpec,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+        verified: Vec<bool>,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let layout = ContentLayout::from_content(&content);
+        let selection = FileSelection::new_content(&layout, skipped)?;
+        let shape = PublicationShape::from_content(&content);
+        let (mut storage, resumed) = Self::create_with_platform_layout(
+            spec,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            shape,
+        )
+        .await?;
+        storage.content = Some(content);
+        Ok((storage, resumed))
+    }
+
+    async fn create_with_platform_layout(
+        spec: PlatformStorageSpec,
+        artifact_identity: TorrentArtifactIdentity,
+        layout: ContentLayout,
+        selection: FileSelection,
+        verified: Vec<bool>,
+        publication_shape: PublicationShape,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
         validate_publication_name(&spec.publication_name)?;
-        if spec.publication_shape != PublicationShape::from_metainfo(metainfo) {
+        if spec.publication_shape != publication_shape {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "platform publication shape",
             ));
@@ -4360,13 +4402,23 @@ pub async fn verify_prepared_platform_files(
     metainfo: &Metainfo,
     prepared: &[PreparedFileHash],
 ) -> Result<(), SelectiveStorageError> {
+    let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+    verify_prepared_platform_content_files(spec, &content, prepared).await
+}
+
+pub async fn verify_prepared_platform_content_files(
+    spec: &PlatformStorageSpec,
+    content: &TorrentContent,
+    prepared: &[PreparedFileHash],
+) -> Result<(), SelectiveStorageError> {
     if !spec.published {
         return Err(SelectiveStorageError::InvalidStorageOperation(
             "verify unpublished platform namespace",
         ));
     }
+    let layout = ContentLayout::from_content(content);
     for expected in prepared {
-        let metainfo_file = metainfo.files.get(expected.file_index).ok_or(
+        let metainfo_file = layout.files().get(expected.file_index).ok_or(
             SelectiveStorageError::InvalidDescriptorManifest {
                 role: "published",
                 file_index: expected.file_index,
@@ -4458,6 +4510,36 @@ pub async fn validate_published_fast_resume_with_path(
     storage.validate_fast_resume(resumed).await
 }
 
+pub async fn validate_published_fast_resume_content_with_path(
+    storage_root: &Path,
+    artifact_identity: TorrentArtifactIdentity,
+    content: Arc<TorrentContent>,
+    verified: &[bool],
+    skipped: &[usize],
+    pool: StorageFilePool,
+) -> Result<FastResumeValidation, SelectiveStorageError> {
+    let layout = ContentLayout::from_content(&content);
+    let selection = FileSelection::new_content(&layout, skipped)?;
+    let paths = torrent_storage_paths_with_shape(
+        storage_root,
+        content.name(),
+        artifact_identity.torrent_id,
+        PublicationShape::from_content(&content),
+    )?;
+    let (mut storage, resumed) = SelectiveStorage::resume_with_paths_and_pool_expected(
+        paths,
+        artifact_identity,
+        layout,
+        selection,
+        verified.to_vec(),
+        pool,
+        Some(ResumeArtifactState::Published),
+    )
+    .await?;
+    storage.content = Some(content);
+    storage.validate_fast_resume(resumed).await
+}
+
 pub async fn validate_published_fast_resume_with_platform(
     spec: PlatformStorageSpec,
     artifact_identity: TorrentArtifactIdentity,
@@ -4473,6 +4555,24 @@ pub async fn validate_published_fast_resume_with_platform(
         metainfo,
         layout,
         selection,
+        verified.to_vec(),
+    )
+    .await?;
+    storage.validate_fast_resume(resumed).await
+}
+
+pub async fn validate_published_fast_resume_content_with_platform(
+    spec: PlatformStorageSpec,
+    artifact_identity: TorrentArtifactIdentity,
+    content: Arc<TorrentContent>,
+    verified: &[bool],
+    skipped: &[usize],
+) -> Result<FastResumeValidation, SelectiveStorageError> {
+    let (mut storage, resumed) = SelectiveStorage::create_content_with_platform(
+        spec,
+        artifact_identity,
+        content,
+        skipped,
         verified.to_vec(),
     )
     .await?;

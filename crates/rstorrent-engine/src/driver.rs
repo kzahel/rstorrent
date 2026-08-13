@@ -4645,10 +4645,7 @@ impl<'a> ContentSwarmDownload<'a> {
                 .map_err(download_peer_set_error)?;
         }
         let membership = self.control.incoming_peer_handle().map(|handle| {
-            handle.register_session_upload(
-                self.content.swarm_key().into_bytes(),
-                self.content.piece_length(),
-            )
+            handle.register_session_upload(self.content.swarm_key(), self.content.piece_length())
         });
         self.outgoing_uploads.insert(
             connection,
@@ -7175,17 +7172,11 @@ async fn run_selective_download(
     };
     let storage_creation = control.enter_safe_cancel_critical()?;
     let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
-        let v1 = content
-            .v1()
-            .ok_or(DownloadError::Metainfo(MetainfoError::Unsupported(
-                "v2 platform storage is not integrated",
-            )))?;
-        let (storage, resumed) = SelectiveStorage::create_with_platform(
+        let (storage, resumed) = SelectiveStorage::create_content_with_platform(
             platform,
             config.artifact_identity,
-            &v1.metainfo,
-            v1.layout.clone(),
-            selection.clone(),
+            Arc::new(content.clone()),
+            &config.skip_files,
             verified_pieces.clone(),
         )
         .await

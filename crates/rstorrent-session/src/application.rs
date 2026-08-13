@@ -28,7 +28,7 @@ use rstorrent_engine::{
     TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport, VerifiedFileError,
     VerifiedFileReader, decide_namespace_transition,
     download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
-    resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_files,
+    resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_content_files,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
@@ -36,7 +36,7 @@ use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
-use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
+use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -770,15 +770,15 @@ impl ApplicationService {
                 MediaFileAvailability::Checking,
             ));
         }
-        let Some(raw_info) = resume.raw_info.as_deref() else {
+        if resume.raw_info.is_none() {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
                 file_index,
                 MediaFileAvailability::MetadataUnavailable,
             ));
-        };
-        let metainfo = match parse_durable_metainfo(raw_info) {
-            Ok(metainfo) => metainfo,
+        }
+        let content = match parse_resume_content(&resume) {
+            Ok(content) => content,
             Err(_) => {
                 return Ok(MediaUrlResponse::unavailable(
                     torrent_id,
@@ -790,7 +790,8 @@ impl ApplicationService {
         let file_index_usize = usize::try_from(file_index).map_err(|_| {
             ApplicationError::Configuration("media file index overflows usize".to_owned())
         })?;
-        let Some(file) = metainfo.files.get(file_index_usize) else {
+        let layout = ContentLayout::from_content(&content);
+        let Some(file) = layout.files().get(file_index_usize) else {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
                 file_index,
@@ -833,7 +834,7 @@ impl ApplicationService {
             let published = match storage_root {
                 StorageRootLocation::Path(root) => Some(PublishedMediaSource::path(
                     root.clone(),
-                    metainfo.clone(),
+                    content.clone(),
                     file_index_usize,
                     self.storage_file_pool.clone(),
                     resume.torrent_id,
@@ -847,13 +848,13 @@ impl ApplicationService {
                             pool: self.storage_file_pool.clone(),
                             root_id: resume.storage_root.clone(),
                             storage_id: torrent_id.clone(),
-                            publication_shape: PublicationShape::from_metainfo(&metainfo),
-                            publication_name: metainfo.name.clone(),
+                            publication_shape: PublicationShape::from_content(&content),
+                            publication_name: content.name().to_owned(),
                             namespace_generation: 1,
                             managed: true,
                             published: true,
                         },
-                        metainfo.clone(),
+                        content.clone(),
                         file_index_usize,
                         self.media.read_jobs(),
                     ))
@@ -904,7 +905,7 @@ impl ApplicationService {
                 resume.state,
                 TorrentState::NeedsRepair | TorrentState::Error
             )
-            || resume.publication_name.as_deref() != Some(metainfo.name.as_str())
+            || resume.publication_name.as_deref() != Some(content.name())
         {
             return Ok(MediaUrlResponse::unavailable(
                 torrent_id,
@@ -929,9 +930,9 @@ impl ApplicationService {
         let read_jobs = self.media.read_jobs();
         let reader = match storage_root {
             StorageRootLocation::Path(root) => {
-                VerifiedFileReader::open_published_with_pool(
+                VerifiedFileReader::open_published_content_with_pool(
                     root,
-                    &metainfo,
+                    &content,
                     have.pieces(),
                     file_index_usize,
                     self.storage_file_pool.clone(),
@@ -941,18 +942,18 @@ impl ApplicationService {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                VerifiedFileReader::open_published_with_platform(
+                VerifiedFileReader::open_published_content_with_platform(
                     &PlatformStorageSpec {
                         pool: self.storage_file_pool.clone(),
                         root_id: resume.storage_root,
                         storage_id: torrent_id.clone(),
-                        publication_shape: PublicationShape::from_metainfo(&metainfo),
-                        publication_name: metainfo.name.clone(),
+                        publication_shape: PublicationShape::from_content(&content),
+                        publication_name: content.name().to_owned(),
                         namespace_generation: 1,
                         managed: true,
                         published: true,
                     },
-                    &metainfo,
+                    &content,
                     have.pieces(),
                     file_index_usize,
                     read_jobs,
@@ -2249,10 +2250,7 @@ impl ApplicationService {
         }
         let transition =
             decide_resume_namespace_transition(&resume, NamespaceAction::PreparePublication)?;
-        let raw_info = resume.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
+        let content = parse_resume_content(&resume)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         if transition.revoke_access {
             self.storage_file_pool.invalidate_storage(&torrent_id);
@@ -2260,7 +2258,7 @@ impl ApplicationService {
         Ok(PlatformPublicationPlan {
             torrent_id,
             storage_root: resume.storage_root,
-            name: metainfo.name,
+            name: content.name().to_owned(),
         })
     }
 
@@ -2291,10 +2289,7 @@ impl ApplicationService {
                 "torrent is not awaiting platform publication".to_owned(),
             ));
         }
-        let raw_info = resume.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
+        let content = parse_resume_content(&resume)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         let expected = self
             .store_mut()?
@@ -2311,18 +2306,18 @@ impl ApplicationService {
                 "torrent has no prepared publication manifest".to_owned(),
             ));
         }
-        verify_prepared_platform_files(
+        verify_prepared_platform_content_files(
             &PlatformStorageSpec {
                 pool: self.storage_file_pool.clone(),
                 root_id: resume.storage_root,
                 storage_id: torrent_id.clone(),
-                publication_shape: PublicationShape::from_metainfo(&metainfo),
-                publication_name: metainfo.name.clone(),
+                publication_shape: PublicationShape::from_content(&content),
+                publication_name: content.name().to_owned(),
                 namespace_generation: transition.generation,
                 managed: true,
                 published: true,
             },
-            &metainfo,
+            &content,
             &expected,
         )
         .await
@@ -2360,15 +2355,13 @@ impl ApplicationService {
                 "torrent has no shareable published platform file".to_owned(),
             ));
         }
-        let raw_info = resume.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
+        let content = parse_resume_content(&resume)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         let index = usize::try_from(file_index).map_err(|_| {
             ApplicationError::Configuration("file index exceeds this platform".to_owned())
         })?;
-        let file = metainfo.files.get(index).ok_or_else(|| {
+        let layout = ContentLayout::from_content(&content);
+        let file = layout.files().get(index).ok_or_else(|| {
             ApplicationError::Configuration("file index is outside verified metadata".to_owned())
         })?;
         if file.padding {
@@ -2379,7 +2372,6 @@ impl ApplicationService {
         let have = resume.have.ok_or_else(|| {
             ApplicationError::Configuration("torrent has no verified piece state".to_owned())
         })?;
-        let layout = TorrentLayout::from_metainfo(&metainfo);
         let pieces = layout
             .file_piece_range(index)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
@@ -2396,7 +2388,7 @@ impl ApplicationService {
                 "file is not completely verified".to_owned(),
             ));
         }
-        let artifact = PublishedArtifactLayout::from_metainfo(&metainfo)
+        let artifact = PublishedArtifactLayout::from_content(&content)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?
             .files
             .into_iter()
@@ -2481,13 +2473,13 @@ impl ApplicationService {
         }
         let transition =
             decide_removal_namespace_transition(&removal, NamespaceAction::BeginRemoval)?;
-        let raw_info = removal.raw_info.ok_or_else(|| {
-            ApplicationError::Configuration("torrent metadata is not available".to_owned())
-        })?;
-        let metainfo = parse_durable_metainfo(&raw_info)
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        let content = parse_resume_content(&resume)
             .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-        if let Some(publication_name) = removal.publication_name.as_deref() {
-            require_publication_name(Some(publication_name), &metainfo)?;
+        if removal.publication_name.as_deref() != Some(content.name()) {
+            return Err(ApplicationError::Configuration(
+                "stored publication name is missing or does not match verified metadata".to_owned(),
+            ));
         }
         if transition.revoke_access {
             self.storage_file_pool.invalidate_storage(&torrent_id);
@@ -2496,7 +2488,7 @@ impl ApplicationService {
             operation_id: removal.operation_id,
             torrent_id,
             storage_root: removal.storage_root,
-            name: metainfo.name,
+            name: content.name().to_owned(),
         })
     }
 
@@ -2731,17 +2723,15 @@ impl ApplicationService {
                         if transition.revoke_access {
                             self.storage_file_pool.invalidate_storage(torrent_id);
                         }
-                        let publication_shape = match removal
-                            .raw_info
-                            .as_deref()
-                            .map(parse_durable_metainfo)
-                            .transpose()
-                        {
-                            Ok(Some(metainfo)) => PublicationShape::from_metainfo(&metainfo),
-                            Ok(None) => PublicationShape::Tree,
-                            Err(error) => {
-                                return self.fail_removal(&removal, &error.to_string());
-                            }
+                        let publication_shape = match self
+                            .load_resume_conservative(torrent_id)
+                            .and_then(|resume| {
+                                parse_resume_content(&resume).map_err(|error| {
+                                    ApplicationError::Configuration(error.to_string())
+                                })
+                            }) {
+                            Ok(content) => PublicationShape::from_content(&content),
+                            Err(error) => return self.fail_removal(&removal, &error.to_string()),
                         };
                         let owned_torrent_id = torrent_id.to_owned();
                         let publication_name = removal.publication_name.clone();
@@ -3848,13 +3838,13 @@ impl MseHandshakeSink for ViewActivitySink {
 fn tracker_metadata_state(
     resume: &ResumeRecord,
 ) -> Result<(TorrentPrivacy, u64), ApplicationError> {
-    let Some(raw_info) = &resume.raw_info else {
+    if resume.raw_info.is_none() {
         return Ok((
             TorrentPrivacy::Unknown,
             rstorrent_engine::UNKNOWN_METADATA_LEFT_BYTES,
         ));
-    };
-    let Ok(metainfo) = parse_durable_metainfo(raw_info) else {
+    }
+    let Ok(content) = parse_resume_content(resume) else {
         // Discovery must not make startup less conservative than the storage
         // recovery path. Corrupt metadata has no trustworthy privacy or size
         // state, so retain tracker-only premetadata behavior and suppress DHT.
@@ -3863,7 +3853,7 @@ fn tracker_metadata_state(
             rstorrent_engine::UNKNOWN_METADATA_LEFT_BYTES,
         ));
     };
-    let privacy = if metainfo.private {
+    let privacy = if content.private() {
         TorrentPrivacy::Private
     } else {
         TorrentPrivacy::Public
@@ -3871,14 +3861,14 @@ fn tracker_metadata_state(
     if resume.state == TorrentState::Complete {
         return Ok((privacy, 0));
     }
-    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let layout = ContentLayout::from_content(&content);
     let skipped = resume
         .skip_files
         .iter()
         .map(|index| usize::try_from(*index))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| ApplicationError::Configuration("file index overflow".to_owned()))?;
-    let selection = FileSelection::new(&layout, &skipped)
+    let selection = FileSelection::new_content(&layout, &skipped)
         .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
     let verified = resume.have.as_ref().map(HaveState::pieces);
     let mut left = 0_u64;
@@ -5625,19 +5615,19 @@ fn durable_view_state(
             .map(|(index, _)| u32::try_from(index))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| ApplicationError::Configuration("piece index overflows u32".to_owned()))?;
-        let metainfo = resume
+        let content = resume
             .raw_info
-            .as_deref()
-            .and_then(|raw_info| parse_durable_metainfo(raw_info).ok());
-        let display_name = metainfo.as_ref().map(|metainfo| metainfo.name.clone());
-        let files = if let Some(metainfo) = metainfo.as_ref() {
+            .as_ref()
+            .and_then(|_| parse_resume_content(&resume).ok());
+        let display_name = content.as_ref().map(|content| content.name().to_owned());
+        let files = if let Some(content) = content.as_ref() {
             let filesystem_content_base = filesystem_content_base(
                 storage_roots.get(&resume.storage_root),
                 &torrent.torrent_id,
                 resume.publication_name.as_deref(),
             )?;
-            FileProgressModel::new_with_media(
-                metainfo,
+            FileProgressModel::new_content_with_media(
+                content,
                 &resume.skip_files,
                 &verified_indices,
                 filesystem_content_base,
@@ -5735,19 +5725,6 @@ fn filesystem_content_base(
         .into_string()
         .map(Some)
         .map_err(|_| ApplicationError::Configuration("storage path is not UTF-8".to_owned()))
-}
-
-fn require_publication_name(
-    publication_name: Option<&str>,
-    metainfo: &Metainfo,
-) -> Result<(), ApplicationError> {
-    if publication_name == Some(metainfo.name.as_str()) {
-        Ok(())
-    } else {
-        Err(ApplicationError::Configuration(
-            "stored publication name is missing or does not match verified metadata".to_owned(),
-        ))
-    }
 }
 
 fn resume_artifact_state(resume: &ResumeRecord) -> Result<ResumeArtifactState, ApplicationError> {
@@ -8362,6 +8339,14 @@ mod tests {
     #[tokio::test]
     async fn pure_v2_application_download_publishes_and_restarts_without_part_file() {
         let root = test_root("pure-v2-application-download");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                ..ClientSettings::default()
+            },
+        );
         let source = pure_v2_source();
         let projection =
             TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
@@ -8417,7 +8402,7 @@ mod tests {
                 }
             }
         });
-        let mut service = ApplicationService::open(config(&root))
+        let mut service = ApplicationService::open(configuration.clone())
             .await
             .expect("open application");
         let response = service
@@ -8459,7 +8444,7 @@ mod tests {
         service.shutdown().await.expect("shutdown application");
         drop(service);
 
-        let mut reopened = ApplicationService::open(config(&root))
+        let mut reopened = ApplicationService::open(configuration)
             .await
             .expect("reopen pure-v2 application");
         let resumed = reopened
@@ -8470,6 +8455,62 @@ mod tests {
         assert_eq!(resumed.state, TorrentState::Complete);
         assert_eq!(resumed.metainfo_source, Some(source));
         assert!(!paths.part.exists());
+        reopened
+            .configure_media_origin("http://127.0.0.1:43121")
+            .expect("configure v2 media origin");
+        let media = reopened
+            .create_media_url(&torrent_id, 0)
+            .await
+            .expect("create v2 media URL");
+        let MediaUrlOutcome::Created { url, .. } = media.outcome else {
+            panic!("verified v2 publication was unavailable")
+        };
+        let capability = url.rsplit('/').next().expect("v2 capability path");
+        let mut lease = reopened
+            .resolve_media_capability(capability)
+            .expect("resolve v2 media capability");
+        assert_eq!(lease.read_range(0, 1).await.expect("read v2 media"), b"x");
+        drop(lease);
+        wait_for_seed_registrations(&reopened, 1).await;
+        let (mut seed_peer, mut decoder, mut pending) =
+            connect_application_seed_with_expected_availability(
+                &reopened,
+                wire_hash,
+                *b"-RS-V2-SEED-00000000",
+                false,
+                vec![0x80],
+            )
+            .await;
+        seed_peer
+            .write_all(&encode_message(&PeerMessage::Interested).expect("encode interest"))
+            .await
+            .expect("send v2 seed interest");
+        assert_eq!(
+            read_peer_message(&mut seed_peer, &mut decoder, &mut pending).await,
+            PeerMessage::Unchoke
+        );
+        seed_peer
+            .write_all(
+                &encode_message(&PeerMessage::Request(
+                    rstorrent_protocol::peer_wire::BlockRequest {
+                        index: 0,
+                        begin: 0,
+                        length: 1,
+                    },
+                ))
+                .expect("encode v2 seed request"),
+            )
+            .await
+            .expect("send v2 seed request");
+        assert_eq!(
+            read_peer_message(&mut seed_peer, &mut decoder, &mut pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: b"x".to_vec(),
+            }
+        );
+        drop(seed_peer);
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove pure-v2 application root");

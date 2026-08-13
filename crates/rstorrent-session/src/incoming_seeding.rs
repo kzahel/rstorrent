@@ -11,10 +11,11 @@ use rstorrent_engine::{
     PlatformStorageSpec, PublicationShape, ResumeAdmissionOutcome, ResumeValidationIntent,
     ResumeValidationRejectReason, SeedContent, SeedContentError, SeedRegistration,
     SeedRegistrationToken, SelectiveStorageError, StorageFilePool, TorrentArtifactIdentity,
-    TorrentPeerHandle, decide_resume_admission, validate_published_fast_resume_with_path,
-    validate_published_fast_resume_with_platform,
+    TorrentPeerHandle, decide_resume_admission, validate_published_fast_resume_content_with_path,
+    validate_published_fast_resume_content_with_platform,
 };
-use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo};
+use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
+use rstorrent_protocol::metainfo::{DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError};
 
 use crate::control::{StorageState, TorrentState};
 use crate::store::{ResumeRecord, StorageRootLocation};
@@ -112,20 +113,16 @@ impl IncomingSeeding {
             .raw_info
             .as_ref()
             .expect("eligible seed has verified metadata");
-        let metainfo =
-            match Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS) {
-                Ok(metainfo) => metainfo,
-                Err(error) => {
-                    return Ok(SeedReconcileResult {
-                        outcome: SeedReconcileOutcome::Unavailable(error.to_string()),
-                        token: None,
-                    });
-                }
-            };
-        let v1_info_hash = resume.info_hashes.v1_hash().ok_or_else(|| {
-            IncomingSeedingError::InvalidDurableState("v1 torrent identity is absent".to_owned())
-        })?;
-        if v1_info_hash.into_bytes() != metainfo.info_hash {
+        let content = match parse_resume_content(resume) {
+            Ok(content) => Arc::new(content),
+            Err(error) => {
+                return Ok(SeedReconcileResult {
+                    outcome: SeedReconcileOutcome::Unavailable(error.to_string()),
+                    token: None,
+                });
+            }
+        };
+        if resume.info_hashes != content.info_hashes() {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "stored metadata does not match torrent identity".to_owned(),
@@ -133,7 +130,7 @@ impl IncomingSeeding {
                 token: None,
             });
         }
-        if resume.publication_name.as_deref() != Some(metainfo.name.as_str()) {
+        if resume.publication_name.as_deref() != Some(content.name()) {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "published name does not match verified metadata".to_owned(),
@@ -145,7 +142,7 @@ impl IncomingSeeding {
             .have
             .as_ref()
             .expect("eligible seed has durable have state");
-        if have.pieces().len() != metainfo.piece_count() {
+        if have.pieces().len() != content.piece_count() {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "durable have length does not match verified metadata".to_owned(),
@@ -173,10 +170,10 @@ impl IncomingSeeding {
         let validation_started = Instant::now();
         let validation = match root {
             StorageRootLocation::Path(root) => {
-                validate_published_fast_resume_with_path(
+                validate_published_fast_resume_content_with_path(
                     root,
                     artifact_identity,
-                    &metainfo,
+                    content.clone(),
                     have.pieces(),
                     &skipped,
                     storage_file_pool.clone(),
@@ -184,10 +181,10 @@ impl IncomingSeeding {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                validate_published_fast_resume_with_platform(
-                    platform_spec(resume, &metainfo, storage_file_pool),
+                validate_published_fast_resume_content_with_platform(
+                    platform_spec(resume, &content, storage_file_pool),
                     artifact_identity,
-                    &metainfo,
+                    content.clone(),
                     have.pieces(),
                     &skipped,
                 )
@@ -236,10 +233,10 @@ impl IncomingSeeding {
         }
         let opened = match root {
             StorageRootLocation::Path(root) => {
-                SeedContent::open_published_with_pool(
+                SeedContent::open_published_content_with_pool(
                     root,
                     resume.torrent_id,
-                    &metainfo,
+                    &content,
                     have.pieces(),
                     &skipped,
                     storage_file_pool.clone(),
@@ -247,16 +244,17 @@ impl IncomingSeeding {
                 .await
             }
             StorageRootLocation::PlatformCapability => {
-                SeedContent::open_published_with_platform(
-                    &platform_spec(resume, &metainfo, storage_file_pool),
-                    &metainfo,
+                SeedContent::open_published_content_with_platform(
+                    &platform_spec(resume, &content, storage_file_pool),
+                    &content,
                     have.pieces(),
                     &skipped,
                 )
                 .await
             }
         };
-        let content = match opened {
+        let swarm_key = content.swarm_key();
+        let seed_content = match opened {
             Ok(content) => content,
             Err(error) => {
                 return Ok(SeedReconcileResult {
@@ -265,7 +263,12 @@ impl IncomingSeeding {
                 });
             }
         };
-        let registration = match SeedRegistration::new(raw_info.clone(), content, torrent_peers) {
+        let registration = match SeedRegistration::new_with_swarm_key(
+            raw_info.clone(),
+            swarm_key,
+            seed_content,
+            torrent_peers,
+        ) {
             Ok(registration) => registration,
             Err(error) => {
                 return Ok(SeedReconcileResult {
@@ -307,17 +310,46 @@ impl IncomingSeeding {
     }
 }
 
+fn parse_resume_content(resume: &ResumeRecord) -> Result<TorrentContent, MetainfoError> {
+    match (resume.info_hashes.v1_hash(), resume.info_hashes.v2_hash()) {
+        (Some(_), None) => resume
+            .raw_info
+            .as_deref()
+            .ok_or(MetainfoError::Unsupported("missing durable v1 info"))
+            .and_then(|raw_info| {
+                Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+            })
+            .map(TorrentContent::from_v1_metainfo),
+        (None, Some(_)) => {
+            let source = resume
+                .metainfo_source
+                .as_deref()
+                .ok_or(MetainfoError::Unsupported("missing complete v2 source"))?;
+            let projection =
+                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)?;
+            if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
+                return Err(MetainfoError::Unsupported(
+                    "stored v2 info does not match complete source",
+                ));
+            }
+            Ok(projection.content)
+        }
+        (Some(_), Some(_)) => Err(MetainfoError::Unsupported("hybrid runtime content")),
+        (None, None) => Err(MetainfoError::Unsupported("missing torrent identity")),
+    }
+}
+
 fn platform_spec(
     resume: &ResumeRecord,
-    metainfo: &Metainfo,
+    content: &TorrentContent,
     storage_file_pool: &StorageFilePool,
 ) -> PlatformStorageSpec {
     PlatformStorageSpec {
         pool: storage_file_pool.clone(),
         root_id: resume.storage_root.clone(),
         storage_id: resume.torrent_id.to_string(),
-        publication_name: metainfo.name.clone(),
-        publication_shape: PublicationShape::from_metainfo(metainfo),
+        publication_name: content.name().to_owned(),
+        publication_shape: PublicationShape::from_content(content),
         namespace_generation: 1,
         managed: true,
         published: true,

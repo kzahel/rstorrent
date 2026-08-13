@@ -1039,3 +1039,31 @@ retained.
   two existing public-swarm cases remain ignored by their opt-in contract.
   The full `rstorrent-session` suite passes with 241 tests, two opt-in tests
   ignored, and strict all-target engine/session clippy remains clean.
+
+### 2026-08-13 Stage 4 versioned routing and completed upload
+
+- The shared incoming registry now owns registrations by tagged `SwarmKey`
+  rather than an untyped 20-byte value. Plaintext and MSE handshakes resolve a
+  wire value only when exactly one protocol version owns it. A deterministic
+  collision test registers equal v1 and truncated-v2 values simultaneously,
+  rejects the ambiguous route, then proves the remaining v1 route after the v2
+  owner is removed.
+- Active and completed pure-v2 registrations retain the selected v2 tag while
+  using the truncated bytes on the wire. Published seed content, fast-resume
+  validation, piece lengths, file-local upload reads, and storage-loss
+  invalidation all consume `TorrentContent` and `ContentLayout`.
+- The ordinary application vertical now reopens a completed pure-v2 torrent,
+  restores its incoming registration, sends the exact v2 bitfield, unchokes an
+  interested peer, and uploads the verified block. The same reopened
+  publication is read through a media capability.
+- Files/progress geometry, tracker privacy and remaining-byte calculation,
+  managed removal shape, platform storage construction, prepared-publication
+  validation, and platform published-file plans now use the format-aware
+  descriptor. Descriptor-backed storage remains deliberately v1-only.
+- Deferred BEP 52 hash messages 21--23 are explicitly covered by the bounded
+  peer decoder: each is unsupported and closes the peer, and an oversized
+  frame fails at the existing core-frame ceiling before retention.
+- `cargo test -p rstorrent-protocol -p rstorrent-engine -p
+  rstorrent-session` passes, including 552 engine tests with 11 opt-in tests
+  ignored and 241 session tests with two opt-in tests ignored. Strict
+  all-target clippy for those three crates passes.

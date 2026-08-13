@@ -17,7 +17,7 @@ use rstorrent_protocol::extension::{
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
-use rstorrent_protocol::identity::SwarmKey;
+use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
 use rstorrent_protocol::metadata::{
     MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
     UT_METADATA_LOCAL_ID, encode_metadata_data, encode_metadata_reject, parse_extension_handshake,
@@ -152,13 +152,13 @@ impl IncomingPeerServiceConfig {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SeedRegistrationToken {
-    pub info_hash: [u8; 20],
+    pub swarm_key: SwarmKey,
     pub generation: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct SeedRegistration {
-    info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     raw_info: Arc<[u8]>,
     content: RegisteredSeedContent,
     piece_lengths: Arc<[u32]>,
@@ -206,7 +206,25 @@ impl SeedRegistration {
         torrent_peers: TorrentPeerHandle,
     ) -> Result<Self, IncomingPeerError> {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        if info_hash != content.info_hash() {
+        Self::new_with_swarm_key(
+            raw_info,
+            SwarmKey::V1(info_hash.into()),
+            content,
+            torrent_peers,
+        )
+    }
+
+    pub fn new_with_swarm_key(
+        raw_info: Vec<u8>,
+        swarm_key: SwarmKey,
+        content: SeedContent,
+        torrent_peers: TorrentPeerHandle,
+    ) -> Result<Self, IncomingPeerError> {
+        let info_hash = swarm_key.into_bytes();
+        if info_hash != content.info_hash()
+            || matches!(swarm_key, SwarmKey::V1(_))
+                && <[u8; 20]>::from(Sha1::digest(&raw_info)) != info_hash
+        {
             return Err(IncomingPeerError::InvalidRegistration(
                 "metadata and seed content identities differ",
             ));
@@ -220,7 +238,7 @@ impl SeedRegistration {
             .map_err(|_| IncomingPeerError::InvalidRegistration("invalid seed piece geometry"))?;
         let private = content.is_private();
         Ok(Self {
-            info_hash,
+            swarm_key,
             raw_info,
             content: RegisteredSeedContent::Published(content),
             piece_lengths: piece_lengths.into(),
@@ -265,7 +283,7 @@ impl SeedRegistration {
         let piece_lengths = content.piece_lengths();
         let private = content.is_private();
         Ok(Self {
-            info_hash,
+            swarm_key,
             raw_info,
             content: RegisteredSeedContent::Active(content),
             piece_lengths,
@@ -275,7 +293,7 @@ impl SeedRegistration {
     }
 
     pub fn info_hash(&self) -> [u8; 20] {
-        self.info_hash
+        self.swarm_key.into_bytes()
     }
 }
 
@@ -381,7 +399,7 @@ struct ObservationState {
 
 #[derive(Debug)]
 struct PeerUploadEntry {
-    info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     counter: Arc<UploadCounter>,
 }
 
@@ -481,8 +499,8 @@ impl ByteMetricSink for IncomingUploadMetricSink {
 struct Shared {
     cancellation: CancellationToken,
     listener: Mutex<IncomingListenerObservation>,
-    registry: Mutex<BTreeMap<[u8; 20], Arc<RegistrationRuntime>>>,
-    mse_index: Mutex<HashMap<[u8; 20], BTreeSet<[u8; 20]>>>,
+    registry: Mutex<BTreeMap<SwarmKey, Arc<RegistrationRuntime>>>,
+    mse_index: Mutex<HashMap<[u8; 20], BTreeSet<SwarmKey>>>,
     mutations: AsyncMutex<()>,
     accepting_registrations: AtomicBool,
     next_generation: AtomicU64,
@@ -712,7 +730,7 @@ impl RegistrationRuntime {
                 shared.reject(
                     IncomingRejectionReason::Protocol,
                     None,
-                    Some(self.data.info_hash),
+                    Some(self.data.info_hash()),
                 );
             }
         }
@@ -727,7 +745,7 @@ impl RegistrationRuntime {
         let registration = self.clone();
         let piece_length = data.piece_lengths.first().copied().unwrap_or(1);
         let membership = shared.upload_coordinator.register(
-            data.info_hash,
+            data.info_hash(),
             piece_length,
             data.content.local_complete(),
         );
@@ -735,7 +753,7 @@ impl RegistrationRuntime {
         shared.peer_uploads_guard().insert(
             membership.id,
             PeerUploadEntry {
-                info_hash: data.info_hash,
+                swarm_key: data.swarm_key,
                 counter: peer_upload.clone(),
             },
         );
@@ -780,28 +798,28 @@ impl RegistrationRuntime {
                     shared.reject(
                         IncomingRejectionReason::Storage,
                         Some(remote),
-                        Some(registration.data.info_hash),
+                        Some(registration.data.info_hash()),
                     );
                 }
                 PeerTermination::Protocol => shared.reject(
                     IncomingRejectionReason::Protocol,
                     Some(remote),
-                    Some(registration.data.info_hash),
+                    Some(registration.data.info_hash()),
                 ),
                 PeerTermination::ActivityTimeout => shared.reject(
                     IncomingRejectionReason::ActivityTimeout,
                     Some(remote),
-                    Some(registration.data.info_hash),
+                    Some(registration.data.info_hash()),
                 ),
                 PeerTermination::NoRequestTimeout => shared.reject(
                     IncomingRejectionReason::NoRequestTimeout,
                     Some(remote),
-                    Some(registration.data.info_hash),
+                    Some(registration.data.info_hash()),
                 ),
                 PeerTermination::InactivityTimeout => shared.reject(
                     IncomingRejectionReason::InactivityTimeout,
                     Some(remote),
-                    Some(registration.data.info_hash),
+                    Some(registration.data.info_hash()),
                 ),
                 PeerTermination::Closed | PeerTermination::Cancelled => {}
             }
@@ -850,7 +868,7 @@ pub struct IncomingPeerHandle {
 
 pub(crate) struct SessionUploadMembership {
     shared: Arc<Shared>,
-    info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     id: crate::upload_scheduler::UploadPeerId,
     grants: tokio::sync::watch::Receiver<UploadGrant>,
     peer_upload: Arc<UploadCounter>,
@@ -874,7 +892,7 @@ impl SessionUploadMembership {
         self.payload_uploaded = self.payload_uploaded.saturating_add(bytes);
         self.peer_upload.record(bytes);
         self.shared.session_upload.record(bytes);
-        if let Some(registration) = self.shared.registry_guard().get(&self.info_hash) {
+        if let Some(registration) = self.shared.registry_guard().get(&self.swarm_key) {
             registration.upload.record(bytes);
         }
         self.shared
@@ -938,9 +956,10 @@ impl IncomingPeerHandle {
 
     pub(crate) fn register_session_upload(
         &self,
-        info_hash: [u8; 20],
+        swarm_key: SwarmKey,
         piece_length: u32,
     ) -> SessionUploadMembership {
+        let info_hash = swarm_key.into_bytes();
         let membership = self
             .shared
             .upload_coordinator
@@ -949,13 +968,13 @@ impl IncomingPeerHandle {
         self.shared.peer_uploads_guard().insert(
             membership.id,
             PeerUploadEntry {
-                info_hash,
+                swarm_key,
                 counter: peer_upload.clone(),
             },
         );
         SessionUploadMembership {
             shared: self.shared.clone(),
-            info_hash,
+            swarm_key,
             id: membership.id,
             grants: membership.grants,
             peer_upload,
@@ -991,18 +1010,18 @@ impl IncomingPeerHandle {
         if !self.shared.accepting_registrations.load(Ordering::Acquire) {
             return Err(IncomingPeerError::Closed);
         }
-        let info_hash = registration.info_hash;
+        let swarm_key = registration.swarm_key;
         let old = {
             let mut registry = self.shared.registry_guard();
-            if !registry.contains_key(&info_hash) && registry.len() == MAX_SEED_REGISTRATIONS {
+            if !registry.contains_key(&swarm_key) && registry.len() == MAX_SEED_REGISTRATIONS {
                 return Err(IncomingPeerError::RegistrationLimit {
                     maximum: MAX_SEED_REGISTRATIONS,
                 });
             }
-            registry.remove(&info_hash)
+            registry.remove(&swarm_key)
         };
         if let Some(old) = old {
-            self.shared.remove_mse_registration(info_hash);
+            self.shared.remove_mse_registration(swarm_key);
             old.shutdown().await?;
         }
         let generation = self
@@ -1011,12 +1030,12 @@ impl IncomingPeerHandle {
             .fetch_add(1, Ordering::AcqRel)
             .max(1);
         self.shared.registry_guard().insert(
-            info_hash,
+            swarm_key,
             Arc::new(RegistrationRuntime::new(generation, registration)),
         );
-        self.shared.add_mse_registration(info_hash);
+        self.shared.add_mse_registration(swarm_key);
         Ok(SeedRegistrationToken {
-            info_hash,
+            swarm_key,
             generation,
         })
     }
@@ -1028,9 +1047,9 @@ impl IncomingPeerHandle {
         let _mutation = self.shared.mutations.lock().await;
         let registration = {
             let mut registry = self.shared.registry_guard();
-            match registry.get(&token.info_hash) {
+            match registry.get(&token.swarm_key) {
                 Some(registration) if registration.generation == token.generation => {
-                    registry.remove(&token.info_hash)
+                    registry.remove(&token.swarm_key)
                 }
                 _ => None,
             }
@@ -1038,7 +1057,7 @@ impl IncomingPeerHandle {
         let Some(registration) = registration else {
             return Ok(false);
         };
-        self.shared.remove_mse_registration(token.info_hash);
+        self.shared.remove_mse_registration(token.swarm_key);
         registration.shutdown().await?;
         Ok(true)
     }
@@ -1415,30 +1434,32 @@ impl Shared {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn registry_guard(&self) -> MutexGuard<'_, BTreeMap<[u8; 20], Arc<RegistrationRuntime>>> {
+    fn registry_guard(&self) -> MutexGuard<'_, BTreeMap<SwarmKey, Arc<RegistrationRuntime>>> {
         self.registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn mse_index_guard(&self) -> MutexGuard<'_, HashMap<[u8; 20], BTreeSet<[u8; 20]>>> {
+    fn mse_index_guard(&self) -> MutexGuard<'_, HashMap<[u8; 20], BTreeSet<SwarmKey>>> {
         self.mse_index
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn add_mse_registration(&self, info_hash: [u8; 20]) {
+    fn add_mse_registration(&self, swarm_key: SwarmKey) {
+        let info_hash = swarm_key.into_bytes();
         self.mse_index_guard()
             .entry(req2_hash(&info_hash))
             .or_default()
-            .insert(info_hash);
+            .insert(swarm_key);
     }
 
-    fn remove_mse_registration(&self, info_hash: [u8; 20]) {
+    fn remove_mse_registration(&self, swarm_key: SwarmKey) {
+        let info_hash = swarm_key.into_bytes();
         let key = req2_hash(&info_hash);
         let mut index = self.mse_index_guard();
         let remove_bucket = index.get_mut(&key).is_some_and(|bucket| {
-            bucket.remove(&info_hash);
+            bucket.remove(&swarm_key);
             bucket.is_empty()
         });
         if remove_bucket {
@@ -1449,6 +1470,16 @@ impl Shared {
     fn identify_mse_torrent(&self, key: [u8; 20]) -> Option<[u8; 20]> {
         let index = self.mse_index_guard();
         unique_mse_registration(&index, key)
+    }
+
+    fn registration_for_wire_key(&self, info_hash: [u8; 20]) -> Option<Arc<RegistrationRuntime>> {
+        let registry = self.registry_guard();
+        let v1 = registry.get(&SwarmKey::V1(V1InfoHash::new(info_hash)));
+        let v2 = registry.get(&SwarmKey::V2Truncated(info_hash));
+        match (v1, v2) {
+            (Some(registration), None) | (None, Some(registration)) => Some(registration.clone()),
+            (Some(_), Some(_)) | (None, None) => None,
+        }
     }
 
     fn encryption_policy(&self) -> PeerEncryptionPolicy {
@@ -1497,11 +1528,11 @@ impl Shared {
         let registry = self.registry_guard();
         let torrent_uploads = registry
             .iter()
-            .map(|(info_hash, registration)| TorrentUploadSnapshot {
-                info_hash: *info_hash,
+            .map(|(swarm_key, registration)| TorrentUploadSnapshot {
+                info_hash: swarm_key.into_bytes(),
                 peers: peer_uploads
                     .values()
-                    .filter(|peer| peer.info_hash == *info_hash)
+                    .filter(|peer| peer.swarm_key == *swarm_key)
                     .count(),
                 traffic: registration.upload.snapshot(),
             })
@@ -1510,7 +1541,7 @@ impl Shared {
             .iter()
             .map(|(id, peer)| PeerUploadSnapshot {
                 generation: id.get(),
-                info_hash: peer.info_hash,
+                info_hash: peer.swarm_key.into_bytes(),
                 traffic: peer.counter.snapshot(),
             })
             .collect();
@@ -1550,11 +1581,16 @@ impl Shared {
 }
 
 fn unique_mse_registration(
-    index: &HashMap<[u8; 20], BTreeSet<[u8; 20]>>,
+    index: &HashMap<[u8; 20], BTreeSet<SwarmKey>>,
     key: [u8; 20],
 ) -> Option<[u8; 20]> {
     let bucket = index.get(&key)?;
-    (bucket.len() == 1).then(|| *bucket.first().expect("one-element MSE registration bucket"))
+    (bucket.len() == 1).then(|| {
+        bucket
+            .first()
+            .expect("one-element MSE registration bucket")
+            .into_bytes()
+    })
 }
 
 struct ObservationGuard {
@@ -2286,7 +2322,7 @@ async fn run_handshake(
         );
         return;
     }
-    let registration = shared.registry_guard().get(&info_hash).cloned();
+    let registration = shared.registration_for_wire_key(info_hash);
     let Some(registration) = registration else {
         finish_incoming_mse_failure(
             &shared,
@@ -2806,7 +2842,7 @@ async fn run_incoming_peer_loop(
     let allowed_fast = if supports_fast {
         match remote.ip() {
             std::net::IpAddr::V4(address) => match generate_allowed_fast_set(
-                registration.info_hash,
+                registration.info_hash(),
                 address,
                 registration.piece_lengths.len(),
                 MAX_GENERATED_ALLOWED_FAST_PIECES,
@@ -3627,6 +3663,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
     use rstorrent_protocol::metadata::{
         MetadataExtensionUpdate, MetadataMessage, MetadataUpload,
         encode_extension_handshake_with_id, encode_metadata_request, parse_extension_handshake,
@@ -3840,13 +3877,75 @@ mod tests {
     #[test]
     fn mse_req2_index_fails_closed_on_an_ambiguous_bucket() {
         let key = [7; 20];
-        let first = [1; 20];
-        let second = [2; 20];
+        let wire_key = [1; 20];
+        let first = SwarmKey::V1(V1InfoHash::new(wire_key));
+        let second = SwarmKey::V2Truncated(wire_key);
         let mut index = HashMap::from([(key, BTreeSet::from([first]))]);
-        assert_eq!(unique_mse_registration(&index, key), Some(first));
+        assert_eq!(unique_mse_registration(&index, key), Some(wire_key));
         index.get_mut(&key).expect("bucket").insert(second);
         assert_eq!(unique_mse_registration(&index, key), None);
         assert_eq!(unique_mse_registration(&index, [8; 20]), None);
+    }
+
+    #[tokio::test]
+    async fn equal_v1_and_v2_wire_keys_are_registered_but_rejected_as_ambiguous() {
+        let (root, _raw_info, v1, _torrent_peers, _peer_activity) =
+            registration("versioned-collision").await;
+        let info_hash = v1.info_hash();
+        let mut v2 = v1.clone();
+        v2.swarm_key = SwarmKey::V2Truncated(info_hash);
+        let service = IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLoopback))
+            .await
+            .expect("bind collision listener")
+            .expect("collision listener enabled");
+        let handle = service.handle();
+        let v1_token = handle.register(v1).await.expect("register v1 owner");
+        let v2_token = handle.register(v2).await.expect("register v2 owner");
+        assert_eq!(handle.snapshot().registrations, 2);
+
+        let mut ambiguous = TcpStream::connect(service.listen_address())
+            .await
+            .expect("connect ambiguous peer");
+        ambiguous
+            .write_all(&encode_handshake_with_reserved(
+                info_hash,
+                *b"-RS-COLLIDE-00000000",
+                [0; 8],
+            ))
+            .await
+            .expect("send ambiguous handshake");
+        let mut response = [0; HANDSHAKE_LENGTH];
+        let read = timeout(Duration::from_secs(1), ambiguous.read(&mut response))
+            .await
+            .expect("ambiguous route closes")
+            .expect("observe ambiguous route close");
+        assert_eq!(read, 0);
+        assert_eq!(
+            handle
+                .snapshot()
+                .rejection_counts
+                .get(&IncomingRejectionReason::UnknownTorrent),
+            Some(&1)
+        );
+
+        assert!(handle.unregister(v2_token).await.expect("remove v2 owner"));
+        let (mut peer, mut decoder, mut queued) = connect(
+            service.listen_address(),
+            info_hash,
+            *b"-RS-V1-ONLY-00000000",
+        )
+        .await;
+        assert!(matches!(
+            next_message(&mut peer, &mut decoder, &mut queued).await,
+            PeerMessage::Bitfield(_)
+        ));
+        drop(peer);
+        assert!(handle.unregister(v1_token).await.expect("remove v1 owner"));
+        service
+            .shutdown()
+            .await
+            .expect("shutdown collision listener");
+        tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 
     fn root(label: &str) -> PathBuf {
@@ -5185,7 +5284,9 @@ mod tests {
         let template = registration.clone();
         for value in 0..super::MAX_SEED_REGISTRATIONS {
             let mut registration = template.clone();
-            registration.info_hash[..8].copy_from_slice(&(value as u64).to_be_bytes());
+            let mut info_hash = registration.info_hash();
+            info_hash[..8].copy_from_slice(&(value as u64).to_be_bytes());
+            registration.swarm_key = SwarmKey::V2Truncated(info_hash);
             handle.register(registration).await.expect("fill registry");
             if value + 1 == 500 {
                 let retained = handle.snapshot();
@@ -5206,7 +5307,7 @@ mod tests {
             }
         }
         let mut overflow = template;
-        overflow.info_hash = [0xff; 20];
+        overflow.swarm_key = SwarmKey::V2Truncated([0xff; 20]);
         assert!(matches!(
             handle.register(overflow).await,
             Err(IncomingPeerError::RegistrationLimit { maximum })

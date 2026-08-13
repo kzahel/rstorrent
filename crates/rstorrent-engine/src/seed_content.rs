@@ -7,15 +7,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use rstorrent_protocol::content::TorrentContent;
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::peer_wire::BlockRequest;
-use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
+use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
 
 use crate::artifact_layout::{ArtifactLayoutError, PublicationShape, PublishedArtifactLayout};
 use crate::identity::TorrentId;
 use crate::positional_io::read_exact_at;
 use crate::selective_storage::{
-    PlatformStorageSpec, SelectiveStorageError, torrent_storage_paths_for_metainfo,
+    PlatformStorageSpec, SelectiveStorageError, torrent_storage_paths_with_shape,
 };
 use crate::storage_file_pool::{
     DEFAULT_STORAGE_FILE_LIMIT, PlatformStorageTarget, StorageFileAccess, StorageFileKey,
@@ -55,11 +56,38 @@ impl VerifiedFileReader {
         torrent_id: TorrentId,
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
-        let layout = TorrentLayout::from_metainfo(metainfo);
-        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo, torrent_id)
-            .map_err(VerifiedFileError::StoragePlan)?;
+        let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+        Self::open_published_content_with_pool(
+            storage_root,
+            &content,
+            verified,
+            file_index,
+            pool,
+            torrent_id,
+            read_jobs,
+        )
+        .await
+    }
+
+    pub async fn open_published_content_with_pool(
+        storage_root: &Path,
+        content: &TorrentContent,
+        verified: &[bool],
+        file_index: usize,
+        pool: StorageFilePool,
+        torrent_id: TorrentId,
+        read_jobs: Arc<tokio::sync::Semaphore>,
+    ) -> Result<Self, VerifiedFileError> {
+        let layout = ContentLayout::from_content(content);
+        let paths = torrent_storage_paths_with_shape(
+            storage_root,
+            content.name(),
+            torrent_id,
+            PublicationShape::from_content(content),
+        )
+        .map_err(VerifiedFileError::StoragePlan)?;
         let storage_id = torrent_id.to_string();
-        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+        let artifact = PublishedArtifactLayout::from_content(content)
             .map_err(VerifiedFileError::ArtifactLayout)?;
         let logical = artifact
             .files
@@ -88,7 +116,6 @@ impl VerifiedFileReader {
             StorageFileLocator::Path(path),
         );
         Self::open_with_reference(
-            metainfo,
             verified,
             file_index,
             layout,
@@ -107,14 +134,26 @@ impl VerifiedFileReader {
         file_index: usize,
         read_jobs: Arc<tokio::sync::Semaphore>,
     ) -> Result<Self, VerifiedFileError> {
+        let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+        Self::open_published_content_with_platform(spec, &content, verified, file_index, read_jobs)
+            .await
+    }
+
+    pub async fn open_published_content_with_platform(
+        spec: &PlatformStorageSpec,
+        content: &TorrentContent,
+        verified: &[bool],
+        file_index: usize,
+        read_jobs: Arc<tokio::sync::Semaphore>,
+    ) -> Result<Self, VerifiedFileError> {
         if !spec.published
-            || spec.publication_name != metainfo.name
-            || spec.publication_shape != PublicationShape::from_metainfo(metainfo)
+            || spec.publication_name != content.name()
+            || spec.publication_shape != PublicationShape::from_content(content)
         {
             return Err(VerifiedFileError::InvalidPlatformNamespace);
         }
-        let layout = TorrentLayout::from_metainfo(metainfo);
-        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+        let layout = ContentLayout::from_content(content);
+        let artifact = PublishedArtifactLayout::from_content(content)
             .map_err(VerifiedFileError::ArtifactLayout)?;
         let logical = artifact
             .files
@@ -145,7 +184,6 @@ impl VerifiedFileReader {
             logical.qualified_components.clone(),
         );
         Self::open_with_reference(
-            metainfo,
             verified,
             file_index,
             layout,
@@ -159,10 +197,9 @@ impl VerifiedFileReader {
 
     #[allow(clippy::too_many_arguments)]
     async fn open_with_reference(
-        metainfo: &Metainfo,
         verified: &[bool],
         file_index: usize,
-        layout: TorrentLayout,
+        layout: ContentLayout,
         artifact: PublishedArtifactLayout,
         namespace_reference: StorageFileReference,
         reference: StorageFileReference,
@@ -218,11 +255,11 @@ impl VerifiedFileReader {
         }
         let label = format!("payload file {file_index}");
         observe_exact_file(&reference, file.length, &label).await?;
-        let file_name = metainfo.files[file_index]
-            .path
+        let file_name = artifact.files[file_index]
+            .components
             .last()
             .cloned()
-            .unwrap_or_else(|| metainfo.name.clone());
+            .unwrap_or_else(|| artifact.namespace.clone());
         Ok(Self {
             file_index,
             file_name,
@@ -377,7 +414,7 @@ pub struct SeedContentSnapshot {
 pub struct SeedContent {
     info_hash: [u8; 20],
     private: bool,
-    layout: TorrentLayout,
+    layout: ContentLayout,
     files: Vec<Option<SeedFile>>,
     available: Arc<[AtomicBool]>,
     metrics: Arc<ReadMetrics>,
@@ -405,11 +442,36 @@ impl SeedContent {
         skipped: &[usize],
         pool: StorageFilePool,
     ) -> Result<Self, SeedContentError> {
-        let layout = TorrentLayout::from_metainfo(metainfo);
-        let paths = torrent_storage_paths_for_metainfo(storage_root, metainfo, torrent_id)
-            .map_err(SeedContentError::StoragePlan)?;
+        let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+        Self::open_published_content_with_pool(
+            storage_root,
+            torrent_id,
+            &content,
+            verified,
+            skipped,
+            pool,
+        )
+        .await
+    }
+
+    pub async fn open_published_content_with_pool(
+        storage_root: &Path,
+        torrent_id: TorrentId,
+        content: &TorrentContent,
+        verified: &[bool],
+        skipped: &[usize],
+        pool: StorageFilePool,
+    ) -> Result<Self, SeedContentError> {
+        let layout = ContentLayout::from_content(content);
+        let paths = torrent_storage_paths_with_shape(
+            storage_root,
+            content.name(),
+            torrent_id,
+            PublicationShape::from_content(content),
+        )
+        .map_err(SeedContentError::StoragePlan)?;
         let storage_id = torrent_id.to_string();
-        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+        let artifact = PublishedArtifactLayout::from_content(content)
             .map_err(SeedContentError::ArtifactLayout)?;
         let namespace_reference = StorageFileReference::new(
             pool.clone(),
@@ -440,7 +502,7 @@ impl SeedContent {
             })
             .collect();
         Self::open_with_references(
-            metainfo,
+            content,
             verified,
             skipped,
             layout,
@@ -457,14 +519,24 @@ impl SeedContent {
         verified: &[bool],
         skipped: &[usize],
     ) -> Result<Self, SeedContentError> {
+        let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+        Self::open_published_content_with_platform(spec, &content, verified, skipped).await
+    }
+
+    pub async fn open_published_content_with_platform(
+        spec: &PlatformStorageSpec,
+        content: &TorrentContent,
+        verified: &[bool],
+        skipped: &[usize],
+    ) -> Result<Self, SeedContentError> {
         if !spec.published
-            || spec.publication_name != metainfo.name
-            || spec.publication_shape != PublicationShape::from_metainfo(metainfo)
+            || spec.publication_name != content.name()
+            || spec.publication_shape != PublicationShape::from_content(content)
         {
             return Err(SeedContentError::InvalidPlatformNamespace);
         }
-        let layout = TorrentLayout::from_metainfo(metainfo);
-        let artifact = PublishedArtifactLayout::from_metainfo(metainfo)
+        let layout = ContentLayout::from_content(content);
+        let artifact = PublishedArtifactLayout::from_content(content)
             .map_err(SeedContentError::ArtifactLayout)?;
         let target = |role, path| PlatformStorageTarget {
             root_id: spec.root_id.clone(),
@@ -497,7 +569,7 @@ impl SeedContent {
             })
             .collect();
         Self::open_with_references(
-            metainfo,
+            content,
             verified,
             skipped,
             layout,
@@ -509,10 +581,10 @@ impl SeedContent {
     }
 
     async fn open_with_references(
-        metainfo: &Metainfo,
+        content: &TorrentContent,
         verified: &[bool],
         skipped: &[usize],
-        layout: TorrentLayout,
+        layout: ContentLayout,
         artifact: PublishedArtifactLayout,
         namespace_reference: StorageFileReference,
         references: Vec<StorageFileReference>,
@@ -523,7 +595,8 @@ impl SeedContent {
                 expected: layout.piece_count(),
             });
         }
-        let selection = FileSelection::new(&layout, skipped).map_err(SeedContentError::Layout)?;
+        let selection =
+            FileSelection::new_content(&layout, skipped).map_err(SeedContentError::Layout)?;
         let namespace =
             namespace_reference
                 .observe()
@@ -598,8 +671,8 @@ impl SeedContent {
         }
 
         Ok(Self {
-            info_hash: metainfo.info_hash,
-            private: metainfo.private,
+            info_hash: content.swarm_key().into_bytes(),
+            private: content.private(),
             layout,
             files,
             available: available.into(),

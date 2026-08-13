@@ -13,8 +13,8 @@ use rstorrent_engine::{
     ActiveFileError, ActiveFileReader, DownloadControl, PlatformStorageSpec, StorageFilePool,
     StreamingDemandError, StreamingDemandLease, TorrentId, VerifiedFileError, VerifiedFileReader,
 };
-use rstorrent_protocol::metainfo::Metainfo;
-use rstorrent_protocol::storage_layout::TorrentLayout;
+use rstorrent_protocol::content::TorrentContent;
+use rstorrent_protocol::storage_layout::ContentLayout;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
@@ -165,7 +165,7 @@ enum MediaCapabilityReader {
 pub(crate) enum PublishedMediaSource {
     Path {
         root: PathBuf,
-        metainfo: Arc<Metainfo>,
+        content: Arc<TorrentContent>,
         file_index: usize,
         pool: StorageFilePool,
         torrent_id: TorrentId,
@@ -173,7 +173,7 @@ pub(crate) enum PublishedMediaSource {
     },
     Platform {
         spec: PlatformStorageSpec,
-        metainfo: Arc<Metainfo>,
+        content: Arc<TorrentContent>,
         file_index: usize,
         read_jobs: Arc<Semaphore>,
     },
@@ -182,7 +182,7 @@ pub(crate) enum PublishedMediaSource {
 impl PublishedMediaSource {
     pub(crate) fn path(
         root: PathBuf,
-        metainfo: Metainfo,
+        content: TorrentContent,
         file_index: usize,
         pool: StorageFilePool,
         torrent_id: TorrentId,
@@ -190,7 +190,7 @@ impl PublishedMediaSource {
     ) -> Self {
         Self::Path {
             root,
-            metainfo: Arc::new(metainfo),
+            content: Arc::new(content),
             file_index,
             pool,
             torrent_id,
@@ -200,33 +200,33 @@ impl PublishedMediaSource {
 
     pub(crate) fn platform(
         spec: PlatformStorageSpec,
-        metainfo: Metainfo,
+        content: TorrentContent,
         file_index: usize,
         read_jobs: Arc<Semaphore>,
     ) -> Self {
         Self::Platform {
             spec,
-            metainfo: Arc::new(metainfo),
+            content: Arc::new(content),
             file_index,
             read_jobs,
         }
     }
 
     async fn open(&self) -> Result<VerifiedFileReader, VerifiedFileError> {
-        let (metainfo, file_index) = match self {
+        let (content, file_index) = match self {
             Self::Path {
-                metainfo,
+                content,
                 file_index,
                 ..
             }
             | Self::Platform {
-                metainfo,
+                content,
                 file_index,
                 ..
-            } => (metainfo, *file_index),
+            } => (content, *file_index),
         };
-        let layout = TorrentLayout::from_metainfo(metainfo);
-        let mut verified = vec![false; metainfo.piece_hashes.len()];
+        let layout = ContentLayout::from_content(content);
+        let mut verified = vec![false; content.piece_count()];
         for piece in layout
             .file_piece_range(file_index)
             .map_err(VerifiedFileError::Layout)?
@@ -239,15 +239,15 @@ impl PublishedMediaSource {
         match self {
             Self::Path {
                 root,
-                metainfo,
+                content,
                 file_index,
                 pool,
                 torrent_id,
                 read_jobs,
             } => {
-                VerifiedFileReader::open_published_with_pool(
+                VerifiedFileReader::open_published_content_with_pool(
                     root,
-                    metainfo,
+                    content,
                     &verified,
                     *file_index,
                     pool.clone(),
@@ -258,13 +258,13 @@ impl PublishedMediaSource {
             }
             Self::Platform {
                 spec,
-                metainfo,
+                content,
                 file_index,
                 read_jobs,
             } => {
-                VerifiedFileReader::open_published_with_platform(
+                VerifiedFileReader::open_published_content_with_platform(
                     spec,
-                    metainfo,
+                    content,
                     &verified,
                     *file_index,
                     read_jobs.clone(),

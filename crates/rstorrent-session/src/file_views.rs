@@ -7,9 +7,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use rstorrent_protocol::content::TorrentContent;
+#[cfg(test)]
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::storage_layout::{
-    FileSelection, LayoutError, RequiredPayloadGeometry, TorrentLayout,
+    ContentLayout, FileSelection, LayoutError, RequiredPayloadGeometry,
 };
 
 use crate::MediaFileAvailability;
@@ -50,7 +52,7 @@ pub struct FileView {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FileCatalog {
-    layout: TorrentLayout,
+    layout: ContentLayout,
     selection: FileSelection,
     filesystem_content_base: Option<String>,
     media_availability: MediaFileAvailability,
@@ -131,6 +133,7 @@ impl FileProgressModel {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_media(
         metainfo: &Metainfo,
         skipped: &[u32],
@@ -138,12 +141,29 @@ impl FileProgressModel {
         filesystem_content_base: Option<String>,
         media_availability: MediaFileAvailability,
     ) -> Result<Self, FileProgressError> {
-        let layout = TorrentLayout::from_metainfo(metainfo);
+        let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+        Self::new_content_with_media(
+            &content,
+            skipped,
+            verified_pieces,
+            filesystem_content_base,
+            media_availability,
+        )
+    }
+
+    pub(crate) fn new_content_with_media(
+        content: &TorrentContent,
+        skipped: &[u32],
+        verified_pieces: &[u32],
+        filesystem_content_base: Option<String>,
+        media_availability: MediaFileAvailability,
+    ) -> Result<Self, FileProgressError> {
+        let layout = ContentLayout::from_content(content);
         let skipped = skipped
             .iter()
             .map(|index| usize::try_from(*index).map_err(|_| FileProgressError::FileIndexOverflow))
             .collect::<Result<Vec<_>, _>>()?;
-        let selection = FileSelection::new(&layout, &skipped)?;
+        let selection = FileSelection::new_content(&layout, &skipped)?;
         let file_count = layout.files().len();
         u32::try_from(file_count).map_err(|_| FileProgressError::FileIndexOverflow)?;
         let mut model = Self {

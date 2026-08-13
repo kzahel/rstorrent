@@ -690,6 +690,31 @@ mod tests {
     }
 
     #[test]
+    fn deferred_v2_hash_messages_fail_closed_inside_core_frame_bound() {
+        for id in [21, 22, 23] {
+            let frame = [0, 0, 0, 1, id];
+            assert_eq!(
+                FrameDecoder::new().push(&frame),
+                Err(FrameError::UnsupportedMessage { id })
+            );
+
+            let oversized = u32::try_from(super::MAX_CORE_FRAME_LENGTH + 1)
+                .expect("core frame limit fits u32")
+                .to_be_bytes();
+            let mut frame = oversized.to_vec();
+            frame.push(id);
+            frame.resize(4 + super::MAX_CORE_FRAME_LENGTH + 1, 0);
+            assert_eq!(
+                FrameDecoder::new().push(&frame),
+                Err(FrameError::FrameLengthTooLarge {
+                    length: super::MAX_CORE_FRAME_LENGTH + 1,
+                    maximum: super::MAX_CORE_FRAME_LENGTH,
+                })
+            );
+        }
+    }
+
+    #[test]
     fn keepalive_has_no_message_id() {
         let frame = encode_message(&PeerMessage::KeepAlive).expect("encode keepalive");
         let mut decoder = FrameDecoder::new();
