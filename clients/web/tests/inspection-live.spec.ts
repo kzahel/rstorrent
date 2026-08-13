@@ -24,6 +24,13 @@ const expectFileSelection = process.env.RSTORRENT_LIVE_FILE_SELECTION === "1";
 const torrentFile = process.env.RSTORRENT_LIVE_TORRENT_FILE;
 const expectTorrentFilePicker =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_PICKER === "1";
+const expectTorrentFileCompletion =
+  process.env.RSTORRENT_LIVE_TORRENT_FILE_COMPLETE === "1";
+const expectTorrentFileRestart =
+  process.env.RSTORRENT_LIVE_TORRENT_FILE_RESTART === "1";
+const torrentFileSkipName = process.env.RSTORRENT_LIVE_TORRENT_FILE_SKIP_NAME;
+const torrentFileWantedName =
+  process.env.RSTORRENT_LIVE_TORRENT_FILE_WANTED_NAME;
 const clientSettingsPhase = process.env.RSTORRENT_LIVE_CLIENT_SETTINGS_PHASE;
 
 test("client settings apply live, persist, and recover bind failure", async ({
@@ -124,11 +131,11 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
 }) => {
   test.setTimeout(60_000);
   test.skip(
-    !expectTorrentFilePicker ||
+    (!expectTorrentFilePicker && !expectTorrentFileRestart) ||
       gateway === undefined ||
       applicationOrigin === undefined ||
       gatewayToken === undefined ||
-      torrentFile === undefined ||
+      (!expectTorrentFileRestart && torrentFile === undefined) ||
       torrentName === undefined,
     "controlled live torrent file picker is opt-in",
   );
@@ -159,6 +166,37 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   const transfers = page.getByRole("grid", { name: "Transfer queue" });
   await expect(transfers).toBeVisible();
   await expect.poll(() => applicationUpgrades).toBe(1);
+  if (expectTorrentFileRestart) {
+    const row = transfers.getByRole("row").filter({ hasText: torrentName! });
+    await expect(row).toContainText(/Complete|Seeding/, { timeout: 20_000 });
+    await row.click();
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("button", { name: "Workbench" })
+      .click();
+    const torrentRow = page
+      .getByRole("grid", { name: "Torrent library" })
+      .getByRole("row")
+      .filter({ hasText: torrentName! });
+    await expect(torrentRow).toContainText("complete");
+    await torrentRow.click();
+    await page.getByRole("tab", { name: "Files" }).click();
+    const files = page.getByRole("grid", { name: "Torrent files" });
+    await expect(files).toHaveAttribute("aria-rowcount", "4");
+    if (torrentFileSkipName !== undefined) {
+      await expect(
+        files
+          .getByRole("row")
+          .filter({ hasText: torrentFileSkipName })
+          .getByText("Skip", { exact: true }),
+      ).toBeVisible();
+    }
+    expect(binaryFrames).toBe(0);
+    console.log(
+      `torrent_file_picker_live_milestones ${JSON.stringify({ applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, restart: "complete" })}`,
+    );
+    return;
+  }
   const addForm = page.getByRole("form", { name: "Add torrent" });
   const chooserEvent = page.waitForEvent("filechooser");
   await addForm.getByRole("button", { name: "Add" }).click();
@@ -170,16 +208,66 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
     name: "Choose download options",
   });
   await expect(dialog).toBeVisible();
-  await dialog
-    .getByRole("checkbox", {
-      name: /Start downloading files when metadata is available/,
-    })
-    .uncheck();
+  const startContent = dialog.getByRole("checkbox", {
+    name: /Start downloading files when metadata is available/,
+  });
+  await startContent.uncheck();
   await dialog.getByRole("button", { name: "Add torrent" }).click();
   await expect(page.getByRole("status")).toHaveText("Added");
   const row = transfers.getByRole("row").filter({ hasText: torrentName! });
   await expect(row).toContainText(torrentName!, { timeout: 10_000 });
   await expect.poll(() => binaryFrames).toBe(1);
+
+  if (expectTorrentFileCompletion) {
+    expect(torrentFileSkipName).toBeDefined();
+    expect(torrentFileWantedName).toBeDefined();
+    await row.click();
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("button", { name: "Workbench" })
+      .click();
+    const torrentRow = page
+      .getByRole("grid", { name: "Torrent library" })
+      .getByRole("row")
+      .filter({ hasText: torrentName! });
+    await expect(torrentRow).toBeVisible();
+    await torrentRow.click();
+    await page.getByRole("tab", { name: "Files" }).click();
+    const files = page.getByRole("grid", { name: "Torrent files" });
+    await expect(files).toHaveAttribute("aria-rowcount", "4", {
+      timeout: 20_000,
+    });
+    const skipped = files
+      .getByRole("row")
+      .filter({ hasText: torrentFileSkipName! });
+    await skipped.click();
+    await page.getByRole("button", { name: "More file actions" }).click();
+    await page
+      .getByRole("menu", { name: "More file actions" })
+      .getByRole("menuitem", { name: "Skip", exact: true })
+      .click();
+    await expect(skipped.getByText("Skip", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
+    await expect(torrentRow).toContainText("complete", { timeout: 60_000 });
+    const wantedCells = files
+      .getByRole("row")
+      .filter({ hasText: torrentFileWantedName! })
+      .getByRole("gridcell");
+    await expect
+      .poll(async () => (await wantedCells.nth(6).textContent())?.trim(), {
+        timeout: 20_000,
+      })
+      .not.toBe("0 B");
+    await torrentRow.click({ button: "right" });
+    await page
+      .getByRole("menu")
+      .getByRole("menuitem", { name: "Force recheck", exact: true })
+      .click();
+    await expect(
+      page.getByText(`Started recheck for ${torrentName!}`, { exact: true }),
+    ).toBeVisible();
+    await expect(torrentRow).toContainText("complete", { timeout: 30_000 });
+  }
 
   const violations = (
     await new AxeBuilder({ page }).analyze()
@@ -192,7 +280,7 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   expect(binaryFrames).toBe(1);
   expect(semanticHttpRequests).toEqual([]);
   console.log(
-    `torrent_file_picker_live_milestones ${JSON.stringify({ applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
+    `torrent_file_picker_live_milestones ${JSON.stringify({ applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length, completion: expectTorrentFileCompletion ? "complete_rechecked" : "paused" })}`,
   );
 });
 
