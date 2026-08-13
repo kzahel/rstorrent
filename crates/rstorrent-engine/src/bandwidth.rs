@@ -1119,10 +1119,11 @@ mod tests {
             .register_torrent(TorrentTransferRateLimits::default())
             .expect("register");
         let mut wait = Box::pin(torrent.acquire_download(1_024));
-        tokio::select! {
-            _ = &mut wait => panic!("new finite bucket unexpectedly had quota"),
-            _ = tokio::task::yield_now() => {}
-        }
+        std::future::poll_fn(|context| {
+            assert!(std::future::Future::poll(wait.as_mut(), context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
         session.set_session_limits(TorrentTransferRateLimits::default());
         let permit = wait.await.expect("unlimited update grants");
         let granted = permit.bytes();
