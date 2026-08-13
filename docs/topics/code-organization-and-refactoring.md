@@ -44,6 +44,17 @@ transport trait, manager embedding framework, crate split, or product-owner
 unification was needed.
 
 Completed Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) keeps
+BEP 52's deterministic foundation inside `rstorrent-protocol`: the common
+direct scanner owns canonical bencode limits and path projection, a focused
+metainfo module owns v2/hybrid semantics and complete piece layers, and
+separate task-free Merkle and v2-layout modules own integrity arithmetic and
+format-aware geometry. No async runtime, socket, filesystem, persistence,
+platform, generated-boundary, generic codec, or full-tree framework points
+back into those modules. The existing protocol-to-engine dependency direction
+and workspace crate graph remain appropriate.
+
+Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds one
 task-free bandwidth core inside the engine and one joined upload/download
 service under the existing session-network owner. A fixed registration on

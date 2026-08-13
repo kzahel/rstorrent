@@ -6,11 +6,12 @@ Status: Research and campaign direction accepted on 2026-08-12. Completed
 Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) installs
 the v1-preserving opaque-owner, dual-identity, schema-19, artifact, runtime,
-and first-party client foundation. RSTorrent still rejects v2 and hybrid
-metainfo and magnets deterministically. Decision-complete Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is
-active as the sole **Now** after the completed iOS campaign; Tactical `145`
-remains paused at its congestion-policy review gate.
+and first-party client foundation. Completed Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) adds
+the runtime-free exact parser, aligned geometry, Merkle core, strict complete
+piece layers, and hybrid structural validator. RSTorrent still rejects v2 and
+hybrid metainfo and magnets at every product boundary. Tactical `145` remains
+paused at its congestion-policy review gate.
 
 ## Scope And Owning Role
 
@@ -41,16 +42,23 @@ This topic does not authorize:
 
 RSTorrent's accepted product and wire model remains intentionally v1-specific:
 
-- [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs) projects an
-  explicit `V1InfoHash` and one flat vector of 20-byte SHA-1 piece hashes. The
-  direct parser checks for `meta version` and explicitly rejects v2 and hybrid
-  info dictionaries.
+- Product-facing [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs)
+  still projects an explicit `V1InfoHash` and one flat vector of 20-byte SHA-1
+  piece hashes, and explicitly rejects v2 and hybrid info dictionaries. The
+  separate runtime-free `ParsedInfo`/`ParsedOuterMetainfo` APIs validate exact
+  v1, v2, and hybrid info bytes without entering application admission.
 - [`magnet.rs`](../../crates/rstorrent-protocol/src/magnet.rs) accepts bounded
   `btih` identity and explicitly rejects `btmh` or mixed v1/v2 identity.
 - [`TorrentLayout`](../../crates/rstorrent-protocol/src/storage_layout.rs)
   assumes one contiguous v1 byte space where `piece_start` is the piece index
   multiplied by one torrent-wide piece length. Multi-file pieces may cross
   ordinary files and explicit BEP 47 padding files.
+- `V2TorrentLayout` separately models aligned nonempty files, ordered empty
+  files, non-payload gaps, and checked global/file-local mappings without
+  allocating per-piece state. It is not accepted by the v1 runtime layout.
+- The task-free SHA-256 Merkle owner builds block, piece, and file roots with
+  at most 36 retained hashes, validates exact proofs with at most 35 siblings,
+  and reconstructs strict complete outer piece layers.
 - [`piece.rs`](../../crates/rstorrent-protocol/src/piece.rs) and the engine
   download driver verify a complete piece against one 20-byte expected hash.
   A failed generation resets the whole v1 piece.
@@ -402,10 +410,10 @@ runtime design.
 
 ## Tactical Campaign
 
-The first stage is complete, and Stage 2 is active as Tactical `146`. Later
-numbers remain unassigned until readiness selects them. Adjacent stages may be
-combined only when the resulting scope remains bounded and its stopping
-condition becomes clearer.
+The first two stages are complete. Readiness now selects planning the bounded
+Stage 3 pure-v2 vertical tactical; later numbers remain unassigned until that
+document is ready. Adjacent stages may be combined only when the resulting
+scope remains bounded and its stopping condition becomes clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
@@ -422,16 +430,18 @@ shape. It adds no v2 parser or support claim.
 
 ### 2. [Runtime-free BEP 52 metainfo, geometry, and Merkle core](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md)
 
-Add exact v2 info hashing, `meta version`, file-tree parsing, piece layers,
+Completed on 2026-08-13: exact v2 info hashing, `meta version`, file-tree
+parsing, piece layers,
 per-file roots, aligned logical geometry, pure Merkle primitives and proofs,
-and structural hybrid validation. Preserve the distinction between complete
-outer metainfo and info-only metadata.
+and structural hybrid validation pass while preserving the distinction
+between complete outer metainfo and info-only metadata.
 
-This stage stops when independently authored vectors and the applicable
+Independently authored vectors and the applicable
 pinned-libtorrent positive and negative corpus agree on accepted content,
 rejected hostile shapes, identities, file order, logical piece mapping, roots,
-piece layers, and proofs. It owns no socket or filesystem task and makes no
-product support claim.
+piece layers, and proofs. Both Android ABIs compile with no generated contract
+change. The stage owns no socket or filesystem task and makes no product
+support claim.
 
 ### 3. Pure-v2 `.torrent` download, checking, and seeding
 
@@ -517,8 +527,9 @@ language and evidence links.
 
 - Select sparse Merkle persistence granularity versus bounded refetch after
   restart.
-- Calibrate parser, piece-layer, tree-node, message, request, retry, and
-  attribution limits against independent maximum profiles.
+- Calibrate sparse-tree, hash-message, request, retry, and attribution limits
+  against independent maximum profiles; Tactical `146` now owns the parser,
+  complete-layer, geometry, scratch, and proof ceilings.
 - Define exact duplicate-add behavior when separate v1 and v2 magnets later
   prove to be one hybrid torrent, without unsafe live-owner merging.
 - Select the minimal proportional TCP, default-uTP, MSE, tracker, DHT,
@@ -537,9 +548,10 @@ the final tail pad, not missing internal padding.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) as the
-sole **Now** after the completed iOS campaign. Tactical `145` remains paused
-at its existing review gate. Product input and wire support remain v1-only and
-the protocol ledger remains **Unsupported** for BEP 52 throughout this
-runtime-free implementation.
+[`capability-readiness.md`](capability-readiness.md) records planning the
+bounded Stage 3 pure-v2 `.torrent` vertical slice as the sole **Now** after
+completed Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
+Tactical `145` remains paused at its existing review gate. Product input and
+wire support remain v1-only and the protocol ledger remains **Unsupported**
+for BEP 52.

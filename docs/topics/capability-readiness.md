@@ -436,20 +436,20 @@ App Store, TestFlight, or public-release claim is made.
 
 ### Now
 
-- **Execute Tactical
-  [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).**
-  The explicitly scheduled three-slice iOS campaign is complete. Resume the
-  queued engine campaign with runtime-free v2/hybrid metainfo, format-aware
-  aligned geometry, strict complete piece layers, and bounded Merkle
-  primitives. Product intake and peer-wire support remain v1-only throughout
-  this slice.
+- **Plan the bounded Stage 3 pure-v2 `.torrent` vertical tactical.** Completed
+  Tactical
+  [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md)
+  provides exact validated metainfo, complete layers, aligned geometry, and
+  Merkle integrity primitives. The next tactical must source-review and own
+  one complete local pure-v2 download/check/restart/publication/seed path with
+  storage, cancellation, resource, controlled-libtorrent, generated-boundary,
+  and proportional Android evidence before implementation starts.
 
 ### Next
 
-- Reassess paused Tactical
-  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-  only at its documented congestion-policy human-review gate; its parent
-  Tactical `142` and 56-cell WAN checkpoint remain intact.
+- Execute the Stage 3 tactical only after its scope, sources, invariants,
+  owner/cancellation map, evidence, non-goals, and stopping condition are
+  decision-complete.
 
 ### Later
 
@@ -458,7 +458,7 @@ Paused parent Tactical
 post-repair cells and exact analysis checkpoint while paused child Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
 retains the selected reliability and near-parity repair at its human-review
-gate. Active Tactical `146` remains the sole **Now** above. The
+gate. It is not resumed by the completed v2 foundation. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
 seed 1 GiB libtorrent uTP control remain typed evidence outside that future
 repair.
@@ -527,7 +527,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
 | Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
 | Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19, full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, generated clients, and both Android ABIs pass. Production rows remain v1-only; alias expansion is exercised only in pure/store tests. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) |
-| v2 and hybrid metadata, hashing, and transfer | Absent | deterministic rejection | The owner/identity foundation is complete, but BEP 52 still requires later metainfo, Merkle integrity, storage geometry, wire, discovery, and interoperability slices. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`protocol-support`](protocol-support.md) |
+| v2 and hybrid metadata, hashing, and transfer | Runtime-free foundation implemented; product absent | deterministic, oracle, Android build, deterministic rejection | Exact-byte v1/v2/hybrid models, aligned v2 geometry, strict complete piece layers, bounded SHA-256 Merkle roots/proofs, and structural hybrid padding validation agree with pinned libtorrent where policy matches. Existing application, engine, session, magnet, storage, and peer paths still reject or never admit v2/hybrid content; no transfer support follows. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
 

@@ -110,9 +110,10 @@ the engine campaign. Product Tacticals
 [`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) through
 [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
 are complete. Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is now
-the sole authoritative **Now**; Tactical `145` remains paused at its existing
-human-review gate rather than resuming implicitly.
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is also
+complete. Planning its bounded Stage 3 pure-v2 vertical successor is the sole
+authoritative **Now**; Tactical `145` remains paused at its existing human-
+review gate rather than resuming implicitly.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -478,33 +479,28 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **active at Tactical `146`; Tactical `145` remains
-paused under parent Tactical `142`.** Tactical `145` has reached its production
-congestion-policy human-review gate. Explicit maintainer direction on
-2026-08-13 moved the sole authoritative **Now** through product Tacticals `147`
-to `149`; that bounded iOS campaign is complete and the previously queued
-Tactical `146` is now active. Completed Tactical `143` installs the
+Engine campaign status: **Tactical `146` is complete; planning the bounded
+Stage 3 pure-v2 vertical tactical is the sole Now, while Tactical `145`
+remains paused under parent Tactical `142`.** Tactical `145` has reached its
+production congestion-policy human-review gate. Explicit maintainer direction
+on 2026-08-13 moved the sole authoritative **Now** through product Tacticals
+`147` to `149`; that bounded iOS campaign and the previously queued Tactical
+`146` are now complete. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
 and generated first-party identity contract. Tactical `142` and its paused
 child Tactical `145` retain their evidence and exact restart checkpoint.
 
-Latest completed cross-cutting engine tactical:
-[`143`](../tactical/143-dual-identity-and-persistence-foundation.md). Full
-identity authority is separate from opaque runtime/application ownership and
-version-tagged 20-byte wire selection. Schema 19 deliberately resets
-recognized pre-release catalogs without touching external payload; version-2
-have and part artifacts bind owner plus metadata fingerprint. Controlled
-pinned-libtorrent v1 roles, crash/restart/publication, generated web clients,
-both Android ABIs, and API-34 SAF schema-reset evidence pass. V2/hybrid input,
-Merkle integrity, and BEP 52 wire behavior remain absent.
-
-Current engine tactical:
+Latest completed engine tactical:
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
 It establishes exact v2/hybrid metainfo, aligned geometry, strict complete
-piece layers, and bounded Merkle primitives while leaving product admission
-and every runtime/wire path v1-only. Resolving Tactical `145`'s reached policy
-gate remains a separate maintainer decision.
+piece layers, bounded Merkle primitives, structural hybrid validation, and a
+controlled pinned-libtorrent oracle while leaving product admission and every
+runtime/wire path v1-only. Both Android ABIs and the full workspace pass with
+no generated contract change. The next executable campaign action is to write
+the decision-complete Stage 3 pure-v2 local `.torrent` vertical tactical;
+resolving Tactical `145`'s reached policy gate remains a separate maintainer
+decision.
 
 Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).

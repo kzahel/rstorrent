@@ -1,12 +1,11 @@
 # Tactical 146: Runtime-Free BEP 52 Metainfo, Geometry, And Merkle Core
 
-Status: **Active and decision-complete.** The completed iOS campaign activated
-this tactical as the sole authoritative **Now** on 2026-08-13. Tactical `145`
-remains paused at its existing human-review gate. BEP 52 remains
-**Unsupported** before and after this runtime-free slice. The clean protocol
-baseline and exact reference pins are recorded; the first implementation
-checkpoint now performs bounded outer/info lexical scanning and version-first
-classification while preserving every v1-only product admission boundary.
+Status: **Completed on 2026-08-13.** The runtime-free parser, format-aware
+geometry, bounded Merkle core, strict complete piece layers, structural hybrid
+validation, independent oracle, full workspace regression, and both Android
+native ABI builds pass. Tactical `145` remains paused at its existing human-
+review gate. BEP 52 product and wire support remain **Unsupported**: every
+existing product admission boundary is still v1-only.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `capability-readiness`, `oracle-driven-engine-campaign`,
@@ -550,8 +549,49 @@ empty required outer layers while the complete RSTorrent source rejects
 both, and libtorrent's zero-root sentinel rejects an all-zero pieces root
 that RSTorrent retains as present data. The controlled run retained at most
 two layer hashes, measured 2,240 transient RSTorrent allocation bytes,
-32,210,944 oracle RSS bytes, 1,851,392 child peak RSS bytes, and 2,229 bytes
+32,440,320 oracle RSS bytes, 1,867,776 child peak RSS bytes, and 2,229 bytes
 of temporary fixtures; the temporary directory was removed automatically.
+
+The final hostile-shape audit adds accepted hidden/executable metadata,
+rejected v2 symlink/padding attributes, malformed/missing/shared-root piece
+layers, single-file hybrids, and empty-file placement before, between, and
+after aligned hybrid payload files. The final protocol run passes 240 tests
+with four deliberate ignores plus the architecture test. Complete outer hash
+material is stored behind private fields, so callers cannot fabricate a v2 or
+hybrid complete-source value by pairing mismatched info and layer variants.
+
+### Completion evidence
+
+Implementation commits are `0068b07`, `07f14f1`, `66c4b38`, `381f40c`,
+`d26d4dd`, `450b395`, and `f27c9da`. No reference source, fixture, or test
+data was copied. The final validation ran:
+
+- `python3 scripts/references.py status`: the BEP, rqbit, libtorrent,
+  libutp, and librqbit-utp checkouts match their exact pins. The command
+  remains nonzero only for the previously recorded unrelated dirty JSTorrent
+  documentation and attachment files.
+- `cargo fmt --all -- --check`: passed.
+- `cargo clippy --workspace -- -D warnings`: passed.
+- `cargo test --workspace`: passed with only the repository's deliberate
+  ignored opt-in, maximum-allocation, public-network, and diagnostic cases.
+- `tests/interop/.venv/bin/python tests/interop/bep52_metainfo_oracle.py`:
+  four independently generated
+  fixtures agree with pinned libtorrent `2.0.13.0`; all three intentional
+  policy differences pass and all temporary files are cleaned.
+- `experiments/android-engine-bootstrap/build.sh`: release Rust libraries
+  compile for `x86_64-linux-android` and `aarch64-linux-android`; regenerated
+  UniFFI/Kotlin output, Android unit tests, and debug APK assembly pass. The
+  existing Android deprecation warnings remain unrelated.
+- `git diff` over generated web/schema/Android source and final `git status`:
+  no generated application contract or tracked build artifact changed.
+
+Merkle construction retains at most 36 hashes (1,152 digest bytes), proofs
+accept at most 35 siblings (1,120 digest bytes), v2 geometry retains one
+record per file, and complete layer retention is capped at 2,097,152 hashes.
+The controlled fixture cohort reached two retained layer hashes and 2,240
+measured transient parser allocation bytes. There is no new task, socket,
+descriptor, filesystem owner, database row, command, event, schema, generated
+client type, or cancellation path.
 
 ### Stage 1: Reconfirm sources, inventory, and baseline
 
