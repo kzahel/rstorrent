@@ -42,6 +42,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-pure-v2-saf",
     "product-identity-reset",
     "product-incomplete-duplex",
     "product-saf-grant-repair",
@@ -103,7 +104,7 @@ def ensure_interop_environment() -> None:
         os.execvpe(command[0], command, environment)
 
 
-def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
+def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType, ModuleType]:
     interop_root = repository_root() / "tests" / "interop"
     if str(interop_root) not in sys.path:
         sys.path.insert(0, str(interop_root))
@@ -123,7 +124,11 @@ def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
         "rstorrent_incomplete_duplex_support",
         interop_root / "incomplete_duplex.py",
     )
-    return probe, interop, tracker, duplex
+    pure_v2 = load_module(
+        "rstorrent_pure_v2_runtime_support",
+        interop_root / "pure_v2_runtime.py",
+    )
+    return probe, interop, tracker, duplex, pure_v2
 
 
 def build_apk() -> Path:
@@ -221,6 +226,91 @@ class SeedFixture:
             self.alerts.extend(
                 alert.message() for alert in self.session.pop_alerts()
             )
+        except Exception:
+            pass
+        try:
+            if self.handle.is_valid():
+                self.session.remove_torrent(self.handle)
+        except Exception:
+            pass
+        try:
+            self.session.pause()
+        except Exception:
+            pass
+        self.handle = None
+        self.session = None
+        gc.collect()
+        shutil.rmtree(self.run_path)
+
+
+@dataclass
+class PureV2SeedFixture:
+    run_path: Path
+    torrent_path: Path
+    expected_file_hashes: dict[str, str]
+    info_hash: str
+    wire_info_hash: str
+    name: str
+    session: Any
+    handle: Any
+    host_port: int
+    alerts: list[str]
+    piece_count: int
+
+    @classmethod
+    def create(cls, interop: ModuleType, pure_v2: ModuleType, label: str) -> "PureV2SeedFixture":
+        run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
+        files = (
+            pure_v2.SourceFile((b"a.bin",), pure_v2.deterministic_bytes(41, 9)),
+            pure_v2.SourceFile((b"b.bin",), pure_v2.deterministic_bytes(43, 40_000)),
+            pure_v2.SourceFile(
+                (b"nested", b"c.bin"),
+                pure_v2.deterministic_bytes(47, 17),
+            ),
+        )
+        fixture = pure_v2.make_fixture(run_path, "android-pure-v2", files, 32 * 1024)
+        expected_file_hashes = {
+            "/".join(component.decode("utf-8") for component in source.path):
+                hashlib.sha1(source.data).hexdigest()
+            for source in files
+        }
+        alerts: list[str] = []
+        session = interop.create_session()
+        host_port = interop.wait_for_listener(session, alerts)
+        handle = interop.add_seed(
+            session,
+            fixture.torrent_info,
+            fixture.libtorrent_storage_root,
+            alerts,
+        )
+        return cls(
+            run_path=run_path,
+            torrent_path=fixture.torrent_path,
+            expected_file_hashes=expected_file_hashes,
+            info_hash=fixture.full_info_hash,
+            wire_info_hash=fixture.wire_info_hash,
+            name=str(fixture.torrent_info.name()),
+            session=session,
+            handle=handle,
+            host_port=host_port,
+            alerts=alerts,
+            piece_count=fixture.torrent_info.num_pieces(),
+        )
+
+    def source_with_tracker(self, tracker_url: str) -> bytes:
+        import libtorrent as lt
+
+        metainfo = lt.bdecode(self.torrent_path.read_bytes())
+        metainfo[b"announce"] = tracker_url.encode("utf-8")
+        source = bytes(lt.bencode(metainfo))
+        identity = lt.torrent_info(source).info_hashes()
+        if identity.has_v1() or str(identity.v2) != self.info_hash:
+            raise BootstrapFailure("adding a tracker changed pure-v2 source identity")
+        return source
+
+    def close(self) -> None:
+        try:
+            self.alerts.extend(alert.message() for alert in self.session.pop_alerts())
         except Exception:
             pass
         try:
@@ -1665,6 +1755,36 @@ def wait_product_torrent_id(
     )
 
 
+def product_unknown_add_count(target: Any) -> int:
+    pattern = re.compile(
+        r"torrent_added torrent=t1-[0-9a-f]{32} protocol_v1=unknown\b"
+    )
+    return len(pattern.findall(product_logs(target)))
+
+
+def wait_product_unknown_torrent_id(
+    target: Any,
+    previous_count: int,
+    timeout: float = 20,
+) -> str:
+    pattern = re.compile(
+        r"torrent_added torrent=(t1-[0-9a-f]{32}) protocol_v1=unknown\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        matches = pattern.findall(logs)
+        if len(matches) > previous_count:
+            return matches[previous_count]
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(
+        "timed out waiting for an exact-byte Android torrent owner\n" + logs
+    )
+
+
 def request_product_torrent_action(target: Any, torrent_id: str, action: str) -> None:
     result = target.shell(
         [
@@ -2208,6 +2328,185 @@ def run_product_dynamic_saf_profile(
             target.shell(["rm", sentinel], check=False)
         for exact_path in (output_root, staging_root, part_path):
             target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if tracker_transport is not None:
+            tracker_transport.close()
+        if controlled_tracker is not None:
+            controlled_tracker.close()
+        if peer_transport is not None:
+            peer_transport.close()
+        fixture.close()
+
+
+def run_product_pure_v2_saf_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    tracker_support: ModuleType,
+    pure_v2: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-pure-v2-saf requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = PureV2SeedFixture.create(
+        interop,
+        pure_v2,
+        f"{target_kind}-product-pure-v2-saf-{ordinal}",
+    )
+    peer_transport: ReverseTransport | None = None
+    tracker_transport: ReverseTransport | None = None
+    controlled_tracker: Any | None = None
+    torrent_id = "pending"
+    grant_root = probe.grant_path(grant_storage)
+    output_root = f"{grant_root}/{fixture.name}"
+    staging_root = ""
+    part_path = ""
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            fixture.host_port,
+            ordinal,
+        )
+        controlled_tracker = tracker_support.ControlledHttpTracker(
+            fixture.wire_info_hash,
+            peer_transport.device_port,
+        )
+        controlled_tracker.start()
+        tracker_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            controlled_tracker.port,
+            ordinal,
+            slot=1,
+        )
+        tracker_url = controlled_tracker.url_for_port(tracker_transport.device_port)
+        metainfo = fixture.source_with_tracker(tracker_url)
+        add_count = product_unknown_add_count(target)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_torrent_base64",
+                base64.b64encode(metainfo).decode("ascii"),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            raise BootstrapFailure("could not add the Android pure-v2 torrent source")
+        torrent_id = wait_product_unknown_torrent_id(target, add_count)
+        staging_root = f"{grant_root}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{grant_root}/.{torrent_id}.rstorrent-parts"
+        metrics, fd_high_water = wait_product_publication(
+            target,
+            torrent_id,
+            baseline_fds,
+        )
+        controlled_tracker.wait_for_event("started")
+        if metrics["limit"] != 40 or metrics["owned_high_water"] > 40:
+            raise BootstrapFailure(f"pure-v2 SAF handle bound changed: {metrics}")
+        if metrics["pending_high_water"] > 16:
+            raise BootstrapFailure(f"pure-v2 SAF request bound changed: {metrics}")
+        if baseline_fds and fd_high_water - baseline_fds > 48:
+            raise BootstrapFailure(
+                "pure-v2 Android descriptor delta exceeded its bound: "
+                f"baseline={baseline_fds} high_water={fd_high_water}"
+            )
+        for relative_path, expected_hash in fixture.expected_file_hashes.items():
+            path = f"{output_root}/{relative_path}"
+            if target.shell(["test", "-f", path], check=False).returncode != 0:
+                raise BootstrapFailure(f"pure-v2 SAF output is absent: {relative_path}")
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != expected_hash:
+                raise BootstrapFailure(f"pure-v2 SAF output differs: {relative_path}")
+        for unexpected in (staging_root, part_path, f"{grant_root}/{torrent_id}"):
+            if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"unexpected pure-v2 managed artifact survived: {unexpected}"
+                )
+
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        restarted = target.shell(["am", "start", "-n", ACTIVITY], timeout=30, check=False)
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart the pure-v2 Android product")
+        wait_product_log(
+            target,
+            "saf_root_health source=startup available=true",
+            "healthy SAF root after pure-v2 restart",
+        )
+        restart_logs = wait_product_log(
+            target,
+            f"torrent={torrent_id} kind=patch state=COMPLETE",
+            "complete pure-v2 torrent after restart recheck",
+            timeout=30,
+        )
+        if (
+            f"torrent={torrent_id}" not in restart_logs
+            or "state=AWAITING_STORAGE" not in restart_logs
+            or "verified=0" not in restart_logs
+            or f"verified={fixture.piece_count}" not in restart_logs
+        ):
+            raise BootstrapFailure(
+                "pure-v2 restart did not expose conservative verification reconstruction"
+            )
+
+        request_product_torrent_action(target, torrent_id, "force_recheck")
+        request_product_torrent_action(target, torrent_id, "enable_upload")
+        uploaded_bytes = verify_product_upload(target, fixture)
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "pure-v2 SAF removal",
+        )
+        for exact_path in (output_root, staging_root, part_path):
+            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"pure-v2 managed artifact survived removal: {exact_path}"
+                )
+        return {
+            "target": target_kind,
+            "profile": "product-pure-v2-saf",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": torrent_id,
+            "v2_info_hash": fixture.info_hash,
+            "wire_info_hash": fixture.wire_info_hash,
+            "v1_info_hash": None,
+            "publication_name": fixture.name,
+            "files": len(fixture.expected_file_hashes),
+            "pieces": fixture.piece_count,
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "tracker_requests": len(controlled_tracker.requests),
+            "restart_recheck": "complete",
+            "force_recheck": "complete",
+            "uploaded_bytes": uploaded_bytes,
+            "removal": "exact",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            if exact_path:
+                target.shell(["rm", "-rf", exact_path], check=False)
         probe.remove_grant_folder(target, grant_storage)
         if tracker_transport is not None:
             tracker_transport.close()
@@ -3320,7 +3619,7 @@ def main() -> int:
         print("SAF removable storage is available only on motox4", file=sys.stderr)
         return 1
     ensure_interop_environment()
-    probe, interop, tracker_support, duplex_support = load_support()
+    probe, interop, tracker_support, duplex_support, pure_v2_support = load_support()
     apk = (
         bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
@@ -3366,6 +3665,7 @@ def main() -> int:
                 in (
                     "success",
                     "product-dynamic-saf",
+                    "product-pure-v2-saf",
                     "product-identity-reset",
                     "product-incomplete-duplex",
                     "product-https-tracker",
@@ -3400,6 +3700,18 @@ def main() -> int:
                         identity,
                         probe,
                         interop,
+                        ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-pure-v2-saf":
+                    result = run_product_pure_v2_saf_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        tracker_support,
+                        pure_v2_support,
                         ordinal,
                         arguments.storage,
                     )

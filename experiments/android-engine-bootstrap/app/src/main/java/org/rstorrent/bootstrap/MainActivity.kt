@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private var productMode = false
     private var pendingProductMagnet: String? = null
     private var pendingProductTorrentUri: String? = null
+    private var pendingProductTorrentBase64: String? = null
     private var pendingProductTorrentStartContent = true
     private var pendingProductTrackerPolicy: String? = null
     private var pendingProductEncryptionPolicy: String? = null
@@ -112,6 +113,14 @@ class MainActivity : ComponentActivity() {
                     pendingProductTorrentUri = null
                     service.addTorrentFile(
                         android.net.Uri.parse(encoded),
+                        pendingProductTorrentStartContent,
+                    )
+                    pendingProductTorrentStartContent = true
+                }
+                pendingProductTorrentBase64?.let { encoded ->
+                    pendingProductTorrentBase64 = null
+                    service.addTorrentBytes(
+                        android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
                         pendingProductTorrentStartContent,
                     )
                     pendingProductTorrentStartContent = true
@@ -354,6 +363,28 @@ class MainActivity : ComponentActivity() {
                         service.exerciseTorrentActionForTest(torrentId, action)
                     }
                 }
+            command
+                .getStringExtra(EXTRA_PRODUCT_TORRENT_BASE64)
+                ?.takeIf(String::isNotBlank)
+                ?.let { encoded ->
+                    command.removeExtra(EXTRA_PRODUCT_TORRENT_BASE64)
+                    val startContent =
+                        command.getBooleanExtra(EXTRA_PRODUCT_START_CONTENT, true)
+                    command.removeExtra(EXTRA_PRODUCT_START_CONTENT)
+                    val service = productService.value
+                    if (service == null) {
+                        pendingProductTorrentBase64 = encoded
+                        pendingProductTorrentStartContent = startContent
+                    } else {
+                        service.addTorrentBytes(
+                            android.util.Base64.decode(
+                                encoded,
+                                android.util.Base64.DEFAULT,
+                            ),
+                            startContent,
+                        )
+                    }
+                }
         }
         command.getStringExtra(EXTRA_PRODUCT_MAGNET)?.takeIf(String::isNotBlank)?.let {
             command.removeExtra(EXTRA_PRODUCT_MAGNET)
@@ -586,6 +617,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_PRODUCT_IPV6_POLICY = "product_ipv6_policy"
         const val EXTRA_PRODUCT_TORRENT_ACTION = "product_torrent_action"
         const val EXTRA_PRODUCT_TORRENT_ID = "product_torrent_id"
+        const val EXTRA_PRODUCT_TORRENT_BASE64 = "product_torrent_base64"
         const val EXTRA_PRODUCT_START_CONTENT = "product_start_content"
         const val EXTRA_PRODUCT_SKIP_FILES = "product_skip_files"
         const val EXTRA_PRODUCT_TRACKER_EVIDENCE_TORRENT = "product_tracker_evidence_torrent"

@@ -56,6 +56,7 @@ import org.rstorrent.session.uniffi.DiagnosticCategory
 import org.rstorrent.session.uniffi.DiagnosticFilter
 import org.rstorrent.session.uniffi.DiagnosticProfile
 import org.rstorrent.session.uniffi.DiagnosticSeverity
+import org.rstorrent.session.uniffi.DiagnosticValue
 import org.rstorrent.session.uniffi.EncryptionPolicy
 import org.rstorrent.session.uniffi.FileSelectionIntent
 import org.rstorrent.session.uniffi.FilePriority
@@ -244,24 +245,53 @@ class ProductEngineService : Service() {
             try {
                 clientReady.await()
                 val source = readTorrentSource(uri)
-                val request =
-                    AddTorrentBytesRequest(
-                        version = 1U.toUShort(),
-                        requestId = "android-$requestPrefix-${requestIds.getAndIncrement()}",
-                        expectedRevision = null,
-                        storageRoot = "downloads",
-                        startContent = startContent,
-                        selection = FileSelectionIntent.All,
-                        sourceLength = source.size.toUInt(),
-                    )
-                val response = client.addTorrentBytes(request, source)
-                val outcome = response.outcome
-                if (outcome is ResponseOutcome.Error) error(outcome.error.message)
-                logAddResult(response, null)
+                dispatchTorrentSource(source, startContent)
             } catch (error: Throwable) {
                 reportError(error)
             }
         }
+    }
+
+    fun addTorrentBytes(
+        source: ByteArray,
+        startContent: Boolean = true,
+    ) {
+        if (safTreeUri == null) {
+            mutableState.update { it.copy(error = "Select a download folder first") }
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                clientReady.await()
+                require(source.isNotEmpty()) { "Torrent file is empty" }
+                require(source.size <= MAX_TORRENT_SOURCE_BYTES) {
+                    "Torrent file exceeds the ${MAX_TORRENT_SOURCE_BYTES / (1024 * 1024)} MiB limit"
+                }
+                dispatchTorrentSource(source, startContent)
+            } catch (error: Throwable) {
+                reportError(error)
+            }
+        }
+    }
+
+    private suspend fun dispatchTorrentSource(
+        source: ByteArray,
+        startContent: Boolean,
+    ) {
+        val request =
+            AddTorrentBytesRequest(
+                version = 1U.toUShort(),
+                requestId = "android-$requestPrefix-${requestIds.getAndIncrement()}",
+                expectedRevision = null,
+                storageRoot = "downloads",
+                startContent = startContent,
+                selection = FileSelectionIntent.All,
+                sourceLength = source.size.toUInt(),
+            )
+        val response = client.addTorrentBytes(request, source)
+        val outcome = response.outcome
+        if (outcome is ResponseOutcome.Error) error(outcome.error.message)
+        logAddResult(response, null)
     }
 
     private fun readTorrentSource(uri: Uri): ByteArray {
@@ -1418,6 +1448,16 @@ class ProductEngineService : Service() {
             product.selectedTorrent?.let(product.torrents::get)
                 ?: product.torrents.values.firstOrNull()
         val active = product.selectedTorrent?.let(product.pieces::get)?.active?.firstOrNull()
+        val diagnostic = product.diagnostics.lastOrNull()
+        val diagnosticDetail =
+            diagnostic
+                ?.fields
+                ?.firstOrNull { it.key == "detail" }
+                ?.value
+                ?.let { it as? DiagnosticValue.Text }
+                ?.value
+                ?.replace(Regex("\\s+"), "_")
+                ?: "none"
         Log.i(
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +
@@ -1427,7 +1467,8 @@ class ProductEngineService : Service() {
                 "metadata=${torrent?.metadataAvailable ?: false} " +
                 "progress=${torrent?.progress?.disposition?.name ?: "none"} " +
                 "reason=${torrent?.progress?.reason?.name ?: "none"} " +
-                "diagnostic=${product.diagnostics.lastOrNull()?.code ?: "none"} " +
+                "diagnostic=${diagnostic?.code ?: "none"} " +
+                "diagnostic_detail=$diagnosticDetail " +
                 "verified=${torrent?.verifiedPieceCount ?: 0U} " +
                 "piece=${active?.pieceIndex?.toString() ?: "none"} " +
                 "requested=${active?.requested?.sumOf(::rangeBytes) ?: 0UL} " +
