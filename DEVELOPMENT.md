@@ -264,8 +264,9 @@ in-process adapter. Paste a magnet into the toolbar and use Add or Enter;
 unsupported remote `.torrent` URLs are rejected without clearing the input.
 More > Add test torrent exposes the five recorded WebTorrent magnets for quick
 interactive testing. These are variable public swarms, not deterministic
-success fixtures. Local `.torrent` file selection is reserved for a later
-slice. The Android Compose UI remains a separate platform presentation.
+success fixtures. Empty Add opens the shared local `.torrent` chooser; v1 and
+strict complete-source pure-v2 files use the same root, selection, and start
+controls. The Android Compose UI remains a separate platform presentation.
 
 ## Exercising The Frontend Headlessly
 
@@ -315,6 +316,18 @@ resource high-water bounds, and removes all temporary state:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/pure_v2_runtime.py
+```
+
+The authenticated production-browser lifecycle keeps one v1 control paused,
+adds a complete pure-v2 source through the binary WebSocket operation, changes
+file selection, completes exact wanted bytes over uTP, forces a recheck, and
+restarts without uploading the source again. It also checks accessibility,
+semantic transport use, gateway resource bounds, part-artifact absence, and
+temporary cleanup:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/browser_torrent_file_intake.py
 ```
 
 The incomplete-file streaming profile uses a throttled pinned-libtorrent seed

@@ -119,7 +119,10 @@ pure-v2 Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) was then
 selected. Later physical iOS evidence temporarily activated correctness
 Tactical [`152`](../tactical/152-ios-multifile-selected-root-coordination.md),
-which is now complete; `151` resumes as the sole authoritative **Now**.
+which is now complete. Tactical `151` subsequently completed the strict
+complete-source pure-v2 runtime/product vertical and promoted only that exact
+BEP 52 subset to Partial. The authoritative **Now** is source-first planning
+for Stage 4 v2 magnet and authenticated hash-exchange Tactical `154`.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -485,8 +488,9 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **Tactical `151` is the sole Now after Tactical `152`
-closed.** Tacticals `142`,
+Engine campaign status: **Tactical `151` is complete; prepare
+decision-complete Stage 4 v2 magnet and authenticated hash-exchange Tactical `154`
+before implementation.** Tacticals `142`,
 `145`, and `150` complete the uTP performance campaign at the maintainer-
 selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -495,6 +499,17 @@ and generated first-party identity contract. Tacticals `142`, `145`, and `150`
 retain the completed exact uTP restart checkpoint.
 
 Latest completed engine tactical:
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md). It admits
+only strict complete local pure-v2 `.torrent` input and carries aligned
+file-local geometry, SHA-256 Merkle integrity, selective storage, durable
+have, restart/recheck, publication, verified reads, active upload, completed
+seeding, and versioned tracker/DHT/TCP/uTP/MSE routing through the ordinary
+application. Exact pinned-libtorrent transfer passes in both roles alongside
+browser, platform, Android AVD, iOS archive, recovery, bounded-resource, and
+full-repository evidence. V2 magnets, messages 21--23, hybrids, and creation
+remain absent.
+
+Prior completed uTP tactical:
 [`150`](../tactical/150-bounded-utp-sender-startup.md). It promotes bounded
 10 ms queue-signal/30% retained-window sender startup without changing steady-
 state LEDBAT. Its stable 24-cell remote-seed 256 MiB cohort places every
@@ -502,9 +517,7 @@ RSTorrent-containing uTP median at 94.85%--100.74% of the matched libtorrent
 oracle and at least 98.49% of its own TCP median on one connection. Fourteen
 exact 1 GiB cells corroborate scale but are not a stable second cohort; one
 reverse smoke closes pre-payload on typed current-network UPnP capability.
-Both Android ABIs and complete repository gates pass. Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
-active decision-complete Stage 3 pure-v2 local `.torrent` vertical.
+Both Android ABIs and complete repository gates pass.
 
 Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -577,9 +590,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: execute Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md). Completed
-Tactical `152` closes the intervening iOS correctness repair. Completed
+Current engine-campaign action: prepare decision-complete Stage 4 Tactical
+`154` for v2 magnets and authenticated hash exchange. Reinspect pinned BEP 52,
+BEP 9, and libtorrent hash-picker/peer-wire implementation and tests, then
+resolve missing-hash ownership, persistence/refetch policy, messages 21--23,
+request/proof/rejection scheduling, hostile-input/resource bounds, restart,
+interop roles, and proportional client/Android evidence. Do not implement the
+stage before that tactical exists. Completed Tacticals `151` and `152` close
+the pure-v2 complete-source vertical and intervening iOS repair. Completed
 Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
 stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at
 94.85%--100.74% of the matched libtorrent oracle and at least 98.49% of its

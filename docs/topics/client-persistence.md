@@ -196,6 +196,17 @@ fail-closed. The reset targets only `session.db` and its SQLite sidecars;
 user-selected roots, old partial artifacts, and published payload remain
 untouched and are never adopted as verified state.
 
+Completed Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) reuses
+schema 19 for the strict complete-source pure-v2 subset. The retained verbatim
+outer source is required runtime authority because piece layers live outside
+the hashed info dictionary; restart reparses it, requires the same full
+32-byte identity and exact raw-info span, and reconstructs only conservative
+selection, have, artifact, publication, and versioned wire state. Missing,
+truncated, stale, corrupt, and interrupted-storage cases fail closed or enter
+the existing repair/check path. No compatibility migration or second source
+format was needed.
+
 ## Terms And Ownership
 
 RSTorrent uses these terms to keep "client" from collapsing several different

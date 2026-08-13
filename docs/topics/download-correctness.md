@@ -8,7 +8,12 @@ multi-file profiles. Completed Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) binds
 durable have and part state to opaque owner plus raw-info fingerprint and
 re-proves crash-conservative restart, topology repair, publication, checking,
-streaming, transfer, and exact v1 hashes; v2 integrity remains absent.
+streaming, transfer, and exact v1 hashes. Completed Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) adds the
+strict complete-source pure-v2 vertical with aligned file-local storage,
+streamed SHA-256 Merkle verification, conservative restart/recheck,
+publication, verified reads, and active/completed upload. V2 magnets, sparse
+hash acquisition, and hybrid integrity remain absent.
 Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
@@ -319,6 +324,7 @@ related unit test exists.
 | DL-C35 | Stable complete torrent A restarts beside torrent B killed before sync, after sync before commit, or after commit. | A performs zero payload reads and hash jobs and remains seed-ready. B trusts only synchronized committed bits; physically present false-bit bytes may be downloaded again, and no crash invalidates another torrent. | Passing Tactical [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) crash/count evidence. Pre-sync and post-sync/pre-commit retain zero bits and redownload exactly 67,108,864 bytes despite 256 physically valid false negatives; post-commit retains all 256 and downloads zero. The completed neighbor stays at generation zero. |
 | DL-C36 | A partial managed resume has coherent committed bits, then separately has missing, short, oversized, or truncated-slot evidence. | Matching structure accepts with zero payload reads/hashes. Checker-readable disagreement starts one full generation for that torrent only; malformed ownership or wrong-kind artifacts enter repair without mutation. | Passing pure policy, path/platform structural observation, common-checker fallback, cancellation, controlled restart, and pinned-libtorrent oracle evidence from Tactical `120`. |
 | DL-C37 | An external actor changes committed payload bytes without changing required structural observations. | Ordinary fast resume may accept the historical bitmap and is not described as freshly checked; explicit Force recheck hashes all readable pieces and clears the mismatch. | Passing Tactical `120` trust-risk evidence: ordinary resume deliberately accepts the same-length mutation, then Force hashes and clears the affected 262,144-byte piece in verification generation one. |
+| DL-C38 | A strict complete-source pure-v2 torrent contains aligned empty, sub-block, exact-block, exact-piece, multi-piece, selected, and skipped files, then encounters restart, corruption, incomplete storage, publication interruption, or concurrent upload. | Only file-local payload ranges are requested or written; alignment gaps and skipped pieces create no payload or part artifact. A piece becomes have, streamable, publishable, or uploadable only after the correct SHA-256 Merkle result and durability transition. Restart/recheck conservatively invalidates missing, short, structurally incompatible, stale, or corrupt evidence while retaining exact verified content. | Passing Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) deterministic, runtime, two-role pinned-libtorrent, browser, path/platform, Android SAF/AVD, and resource evidence. The selective oracle fixture verifies four of five pieces and omits exactly 137 skipped bytes; the active uploader serves one exact verified 16-KiB block before final completion. |
 
 ## Required Scheduler Observability
 

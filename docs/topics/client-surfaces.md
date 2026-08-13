@@ -9,6 +9,11 @@ Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) makes
 React, Tauri, media, Compose, and Android service routing use canonical opaque
 torrent IDs while explicit v1 hashes remain available for display and export.
+Completed Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) admits
+strict complete-source pure-v2 `.torrent` files through the same Add,
+selection, progress, Files, Force recheck, export, restart, and seeding
+surfaces. Clients gain no format-specific workflow or storage policy.
 The Android
 foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
@@ -481,6 +486,18 @@ declaration/admission and zero retained connections after joined shutdown;
 the metadata-only run creates no payload artifacts. Tauri reuses these React
 components and its tested raw-IPC adapter rather than gaining a path or native
 source-file owner.
+
+Tactical `151` extends that authenticated production-browser seam from paused
+intake through an exact pure-v2 lifecycle. One v1 control remains paused while
+the v2 row selects a skipped file, completes wanted bytes over uTP, exposes
+verified file behavior, force-rechecks, restarts without another source
+upload, and retains selection and exact output. The generations observe one
+binary source attachment where expected, no semantic HTTP control calls, no
+serious/critical accessibility findings, no part artifact, and joined gateway
+cleanup. Tauri's direct adapters pass without a visible launch. The Android
+Compose application independently passes complete and selective pure-v2 SAF
+profiles on an owned API 34 no-window AVD, including restart/recheck,
+publication, exact upload, bounded handles, and cleanup.
 
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and

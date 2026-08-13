@@ -416,7 +416,20 @@ complete. One opaque stable owner and explicit full protocol aliases replace
 the old hash-as-owner assumption across schema 19, artifacts, runtime,
 generated clients, React, Tauri, and Android. Controlled v1 transfer,
 persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
-52 input and wire behavior remain absent.
+52 input and wire behavior remain absent at that foundation checkpoint.
+
+Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is
+complete. Strict complete local pure-v2 `.torrent` input now passes through
+ordinary product intake, aligned selective path/SAF storage, streamed SHA-256
+Merkle verification, durable have, restart/recheck, publication, verified
+reads, active upload, and completed seeding. Controlled pinned-libtorrent
+transfer passes in both roles with TCP, default uTP, forced RC4 MSE, tracker,
+and DHT coverage. Browser lifecycle, platform storage, both Android ABIs, an
+API 34 AVD, Tauri adapters, an unsigned iOS archive, recovery cases, exact
+cleanup, and bounded-resource gates pass. The BEP 52 claim is Partial only for
+this complete-source subset; v2 magnets, hash messages 21--23, hybrid runtime,
+and creation remain absent.
 
 Tacticals [`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md),
 [`148`](../tactical/148-jstorrent-swiftui-product-surface.md),
@@ -446,15 +459,16 @@ three files, and plays the MP4 through Apple Files' system video presentation.
 
 ### Now
 
-- **Execute Tactical
-  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md).**
-  Implement the decision-complete complete-source pure-v2 runtime and product
-  vertical now that the iOS selected-root correctness repair is closed.
+- **Prepare decision-complete Tactical `154` for Stage 4 v2 magnet and
+  authenticated hash exchange.** Complete the required BEP and pinned-
+  libtorrent source and test review, then bound missing-hash ownership,
+  persistence, hostile message handling, resource limits, and cross-platform
+  evidence before any implementation begins.
 
 ### Next
 
 - There is no queued second authoritative item. Planned Tactical `153` remains
-  Later rather than competing with the pure-v2 vertical.
+  Later rather than competing with the v2 correctness campaign.
 
 ### Later
 
@@ -531,14 +545,14 @@ and parole selection remain evidence-gated rather than preplanned slices.
 
 | Capability | State | Evidence | Highest-risk limit | Owner |
 | --- | --- | --- | --- | --- |
-| Bounded bencode and v1 info dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 `.torrent` ingestion passes; v2 and hybrid info dictionaries are rejected. | [`protocol-support`](protocol-support.md) |
+| Bounded bencode and metainfo dictionaries | Implemented | deterministic, runtime, interop | Generic, 30-MiB peer BEP 9, and 64-MiB explicit/durable/local-upload profiles independently bound bytes, decoded items, depth, collections, files, pieces, paths, and trackers. Product v1 and strict complete-source pure-v2 `.torrent` ingestion pass; hybrid and v2 info-only product input are rejected. | [`protocol-support`](protocol-support.md) |
 | Product add from a v1 magnet | Implemented | deterministic, runtime, interop, web, AVD, physical, live | Only a v1 `btih` identity and supported magnet fields survive canonicalization. Controlled tracker-only and official Ubuntu metadata-only paths activate discovery during acquisition, remain durably paused, and create no payload artifacts. | [`client-persistence`](client-persistence.md) |
 | BEP 53 select-only magnet intent | Implemented | deterministic, persistence, runtime, oracle, web, Android build | Strict bounded `so` ranges remain compact before metadata and become a skipped default plus at most 4,096 wanted exceptions. Duplicate selection is additive; ordinary duplicates are typed no-ops. The pinned libtorrent magnet suite, maximum-span parser case, 4,097-file atomic rejection, restart/runtime fences, generated adapters, and React reveal behavior pass. | [`protocol-support`](protocol-support.md), [`client-persistence`](client-persistence.md) |
 | BEP 9 metadata download | Implemented | deterministic, runtime, interop, live | One bounded torrent owner assembles blocks across up to eight workers, accepts an authoritative piece-zero size up to 30 MiB, and recovers from expiry, rejection, and hash failure. Pinned libtorrent transfers the exact 31,457,280-byte maximum profile in 1,920 blocks. | [`peer-lifecycle`](peer-lifecycle.md) |
 | Bounded metadata upload | Implemented | deterministic, runtime, interop | The diagnostic server remains metadata-only; the application listener shares immutable registration-owned metadata across bounded incoming peers and serves every requested 16-KiB block of valid local metadata up to the 64-MiB profile. | [`incoming-reachability-and-seeding`](incoming-reachability-and-seeding.md), [`peer-lifecycle`](peer-lifecycle.md) |
-| Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, and raw Tauri IPC. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
-| Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19, full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, generated clients, and both Android ABIs pass. Production rows remain v1-only; alias expansion is exercised only in pure/store tests. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) |
-| v2 and hybrid metadata, hashing, and transfer | Runtime-free foundation implemented; product absent | deterministic, oracle, Android build, deterministic rejection | Exact-byte v1/v2/hybrid models, aligned v2 geometry, strict complete piece layers, bounded SHA-256 Merkle roots/proofs, and structural hybrid padding validation agree with pinned libtorrent where policy matches. Existing application, engine, session, magnet, storage, and peer paths still reject or never admit v2/hybrid content; no transfer support follows. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md), [`protocol-support`](protocol-support.md) |
+| Product add from a `.torrent` file | Implemented | deterministic, runtime, interop, web, Tauri, AVD | One atomic 64-MiB byte operation preserves exact source, operational info and tracker tiers across restart through HTTP, WebSocket, raw Tauri IPC, and native adapters. V1 and the strict complete-source pure-v2 subset pass. Empty Add opens the shared single-file chooser, reuses root/start options, sends selection `all`, and requires no caller digest or secure context. | [`application-control`](application-control.md) |
+| Opaque torrent ownership and protocol identity foundation | Implemented | deterministic, persistence, runtime, interop, web, AVD | Schema 19, full v1/v2 alias values, versioned wire-key lookup, owner/fingerprint-bound have and part state, retained exact sources, generated clients, and both Android ABIs pass. Production pure-v2 rows retain the full 32-byte identity while tracker, DHT, handshake, and MSE paths use its tagged truncation. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) |
+| v2 and hybrid metadata, hashing, and transfer | Partial pure-v2; hybrid absent | deterministic, runtime, interop, web, Android build, AVD | Exact-byte models, aligned file-local geometry, strict complete piece layers, bounded SHA-256 Merkle verification, selective path/SAF storage, restart/recheck, publication, active upload, seeding, standard peer transfer, and versioned tracker/DHT/TCP/uTP/MSE routing pass for complete local pure-v2 `.torrent` input. Pinned libtorrent passes in both roles; exact browser and Android lifecycle evidence passes. V2 magnets, SHA-256 BEP 9, hash messages 21--23, sparse hash state, hybrid runtime, and creation remain absent. | [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md), [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md), [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md), [`protocol-support`](protocol-support.md) |
 
 ### Discovery
 

@@ -9,11 +9,13 @@ the v1-preserving opaque-owner, dual-identity, schema-19, artifact, runtime,
 and first-party client foundation. Completed Tactical
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) adds
 the runtime-free exact parser, aligned geometry, Merkle core, strict complete
-piece layers, and hybrid structural validator. RSTorrent still rejects v2 and
-hybrid metainfo and magnets at every product boundary. Active Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
-decision-complete Stage 3 successor and the authoritative Now after completed
-uTP Tactical `150`.
+piece layers, and hybrid structural validator. Completed Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) carries
+strict complete local pure-v2 `.torrent` content through product intake,
+aligned storage, Merkle verification, restart/recheck, publication, standard
+peer transfer, discovery, streaming, and seeding. The BEP 52 claim is now
+**Partial**. V2 magnets, authenticated hash exchange, hybrid product behavior,
+and creation remain unsupported.
 
 ## Scope And Owning Role
 
@@ -42,38 +44,44 @@ This topic does not authorize:
 
 ## Current Truth
 
-RSTorrent's accepted product and wire model remains intentionally v1-specific:
+RSTorrent has one deliberately narrow pure-v2 product and wire subset alongside
+the existing v1 behavior:
 
 - Product-facing [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs)
-  still projects an explicit `V1InfoHash` and one flat vector of 20-byte SHA-1
-  piece hashes, and explicitly rejects v2 and hybrid info dictionaries. The
-  separate runtime-free `ParsedInfo`/`ParsedOuterMetainfo` APIs validate exact
-  v1, v2, and hybrid info bytes without entering application admission.
+  remains the v1 projection. `TorrentContent` is the runtime-owned v1/pure-v2
+  sum; its v2 constructor accepts only a strict `ParsedOuterMetainfo` whose
+  exact retained source supplies every required piece layer. Hybrid and
+  info-only v2 input still cannot enter runtime ownership.
 - [`magnet.rs`](../../crates/rstorrent-protocol/src/magnet.rs) accepts bounded
   `btih` identity and explicitly rejects `btmh` or mixed v1/v2 identity.
 - [`TorrentLayout`](../../crates/rstorrent-protocol/src/storage_layout.rs)
-  assumes one contiguous v1 byte space where `piece_start` is the piece index
-  multiplied by one torrent-wide piece length. Multi-file pieces may cross
-  ordinary files and explicit BEP 47 padding files.
-- `V2TorrentLayout` separately models aligned nonempty files, ordered empty
-  files, non-payload gaps, and checked global/file-local mappings without
-  allocating per-piece state. It is not accepted by the v1 runtime layout.
+  remains the contiguous v1 layout. `ContentLayout` projects either that shape
+  or v2's aligned file-local logical space through one checked runtime
+  boundary.
+- `V2TorrentLayout` models aligned nonempty files, ordered empty files,
+  non-payload gaps, and checked global/file-local mappings without allocating
+  per-piece state. Gaps are never payload, selection entries, part bytes, or
+  uploadable ranges.
 - The task-free SHA-256 Merkle owner builds block, piece, and file roots with
   at most 36 retained hashes, validates exact proofs with at most 35 siblings,
   and reconstructs strict complete outer piece layers.
-- [`piece.rs`](../../crates/rstorrent-protocol/src/piece.rs) and the engine
-  download driver verify a complete piece against one 20-byte expected hash.
-  A failed generation resets the whole v1 piece.
+- The engine integrity plan explicitly selects v1 SHA-1 or streamed v2
+  SHA-256 Merkle verification. V2 uses fixed 16-KiB leaves and distinguishes
+  one-piece file roots from multi-piece layer roots before durable have state.
 - Peer handshakes, trackers, DHT, MSE routing, incoming registration, and peer
   picking explicitly select a version-tagged `SwarmKey`; their 20-byte codec
   shape is no longer the authoritative torrent owner.
 - The engine and application use a canonical opaque `TorrentId`; schema 19
-  stores full protocol aliases separately. `HaveState` version 2, part-file
-  version 2, retained sources, path/SAF artifacts, routes, and generated
-  clients bind to that opaque owner plus integrity context where required.
-- The [protocol ledger](protocol-support.md) therefore reports BEP 52 as
-  **Unsupported**. Safe rejection is useful evidence but is not partial v2
-  support.
+  stores full protocol aliases separately. Exact v2 outer source, selection,
+  durable have state, path/SAF artifacts, publication, and versioned incoming
+  routes survive restart without a schema migration.
+- Trackers, DHT, plaintext handshakes, MSE routing, TCP, and uTP use the tagged
+  20-byte v2 truncation while the full 32-byte identity remains authoritative.
+  Standard bitfield/have/request/piece/cancel exchange serves active verified
+  pieces and completed content.
+- The [protocol ledger](protocol-support.md) reports BEP 52 as **Partial** for
+  that exact complete-source subset. It does not claim v2 magnet acquisition,
+  messages 21--23, sparse hash state, hybrid swarms, or creation.
 
 This is not a SHA-1-to-SHA-256 substitution. BEP 52 changes the identity
 cardinality, file-to-piece geometry, expected-hash source, verification unit,
@@ -412,10 +420,8 @@ runtime design.
 
 ## Tactical Campaign
 
-The first two stages are complete. Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) now owns
-the bounded Stage 3 pure-v2 vertical after completed Tactical `150`; later
-stages remain unassigned. Adjacent stages may be combined only
+The first three stages are complete. Later stages remain unassigned. Adjacent
+stages may be combined only
 when the resulting scope remains bounded and its stopping condition becomes
 clearer.
 
@@ -449,19 +455,15 @@ support claim.
 
 ### 3. [Pure-v2 `.torrent` download, checking, and seeding](../tactical/151-complete-source-pure-v2-runtime-vertical.md)
 
-Thread v2 geometry and integrity through storage planning, block hashing,
-piece completion, selective files, part storage, durable have, recheck,
-publication, streaming eligibility, upload, and protocol-version-aware peer
-routing. Begin with a complete local `.torrent` whose piece layers are already
-available so missing-hash acquisition does not obscure the storage slice.
-
-The stopping condition is exact controlled transfer against pinned libtorrent
-in both seed and leecher roles, including multi-file alignment, selective
-files, corruption, restart, incomplete storage, publication, bounded
-resources, terminal owner cleanup, generated boundaries, and proportional
-Android evidence. Tracker/DHT and supported peer transports receive
-proportional regression evidence. The BEP 52 claim remains scoped because v2
-magnet hash acquisition is still absent.
+Completed on 2026-08-13. Strict complete local pure-v2 `.torrent` input now
+passes through format-aware storage, streamed Merkle verification, durable
+have, checking, publication, streaming eligibility, active upload, completed
+seeding, and versioned discovery/peer routing. Exact single-file and aligned
+multi-file transfers pass against pinned libtorrent in both roles, including
+selective files, recovery, restart, TCP, default uTP, forced RC4 MSE, tracker,
+DHT, browser, platform storage, Android AVD, iOS archive, and bounded-resource
+evidence. V1 remains green and the resulting BEP 52 claim is intentionally
+Partial because v2 magnet hash acquisition is absent.
 
 ### 4. V2 magnets and authenticated hash exchange
 
@@ -552,10 +554,9 @@ the final tail pad, not missing internal padding.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records active Tactical
-`150` as the sole **Now**. Decision-complete Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
-next bounded Stage 3 pure-v2 `.torrent` vertical after `150` reaches its
-stopping condition. Product input and wire support remain v1-only and the
-protocol ledger remains **Unsupported** for BEP 52 until `151` earns its exact
-complete-local-source subset.
+[`capability-readiness.md`](capability-readiness.md) records planning
+decision-complete Tactical `154` for Stage 4 as the sole **Now**. Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) completed
+the exact complete-local-source Stage 3 subset. No Stage 4 implementation is
+authorized until its tactical resolves authenticated missing-hash ownership,
+persistence, wire scheduling, hostile-input bounds, and evidence.

@@ -2,9 +2,10 @@
 
 Topic: `protocol-support`
 
-Status: RSTorrent implements a bounded subset of the v1 protocol sufficient
-for controlled verified downloads, BEP 9 metadata exchange, scheduled BEP 15
-UDP tracker announces, an IPv4 Mainline DHT foundation, and bounded
+Status: RSTorrent implements bounded v1 behavior and a strict complete-local-
+source pure-v2 subset sufficient for controlled verified downloads, v1 BEP 9
+metadata exchange, scheduled BEP 15 UDP tracker announces, an IPv4 Mainline
+DHT foundation, and bounded
 multi-peer payload seeding including one externally verified UPnP-mapped TCP
 path. In the long-lived application owner, UDP, HTTP, and HTTPS trackers share
 the selected family-correct advertisement lifecycle; DHT advertises each
@@ -24,9 +25,12 @@ gateway returns typed `606` to `AddPinhole`, so positive physical capability is
 unknown on the current hardware and its off-LAN proof does not pass. It does
 not claim complete
 BEP 3 or BEP 5 support, full BEP 7 announcing, public-swarm advertisement
-reliability on public incomplete swarms, complete BEP 29/uTP, or v2 support.
-HTTPS now defaults to authenticated desktop/Android platform trust; one explicit hidden
-compatibility policy remains encrypted but unauthenticated.
+reliability on public incomplete swarms, complete BEP 29/uTP, or full BEP 52
+support. The BEP 52 claim is **Partial** only for complete local pure-v2
+`.torrent` input; v2 magnets, hash exchange, hybrid behavior, and creation are
+absent.
+HTTPS now defaults to authenticated desktop/Android platform trust; one
+explicit hidden compatibility policy remains encrypted but unauthenticated.
 Tactical [`111`](../tactical/111-mse-peer-stream-encryption.md)'s implemented
 slice additionally supports the de facto MSE/PE protocol over TCP in both
 directions under a bounded four-value session policy. Its claim is peer
@@ -209,7 +213,7 @@ BEP is external protocol metadata, not RSTorrent readiness.
 | [BEP 43: Read-only DHT Nodes](https://www.bittorrent.org/beps/bep_0043.html) | Partial | KRPC parses and emits `ro`; nodes declaring read-only are not admitted from incoming queries. Deterministic codec and admission tests pass. | Product policy does not yet select read-only mode for uncontactable, metered, VPN, or Android lifecycle states. |
 | [BEP 47: Padding files and extended file attributes](https://www.bittorrent.org/beps/bep_0047.html) | Partial | Multi-file `p` attributes produce synthetic zero ranges for verification without writing padding files. Deterministic storage-layout and controlled selective-file evidence passes. | Symlinks are explicitly rejected. Executable, hidden, and per-file SHA-1 attributes are not product behavior. |
 | [BEP 48: Tracker Protocol Extension: Scrape](https://www.bittorrent.org/beps/bep_0048.html) | Unsupported | None. | Tracker scrape values and application presentation are absent. |
-| [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Unsupported | Completed Tactical [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) adds full typed identity slots, an opaque stable owner, explicit versioned wire projection, and replacement persistence/artifact ownership. Completed Tactical [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) adds explicitly selected exact-byte v1/v2/hybrid models, iterative canonical file-tree parsing, aligned v2 geometry, strict complete outer piece layers, bounded SHA-256 Merkle roots/proofs, and structural hybrid validation. Independently generated fixtures agree with pinned libtorrent `2.0.13.0` on identities, files, geometry, roots, and layers where policy matches; current product metainfo and magnet admission still reject v2/hybrid input. | No accepted product v2 input, payload verification, storage/check/restart/publication path, hash exchange, hybrid negotiation, or v2 swarm behavior exists. Runtime-free parsing and vectors do not advance this claim. Decision-complete Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the active complete-local-source subset; magnets, hash exchange, and hybrids remain later stages in [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md). |
+| [BEP 52: The BitTorrent Protocol Specification v2](https://www.bittorrent.org/beps/bep_0052.html) | Partial | Tacticals [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) and [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) add explicit identities, stable ownership, exact-byte v2 models, aligned geometry, strict complete piece layers, and bounded SHA-256 Merkle primitives. Completed Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) admits strict complete local pure-v2 `.torrent` bytes and carries them through selective path/SAF storage, Merkle verification, durable have, restart/recheck, publication, verified reads, active upload, completed seeding, and standard peer payload messages. The full 32-byte identity remains authoritative; tracker, DHT, plaintext handshake, MSE, TCP, and uTP routing use the tagged 20-byte truncation. Exact pinned-libtorrent transfer passes in both roles, with tracker/DHT/default-uTP, accepted uTP-only, forced RC4 MSE, selective files, recovery, browser, platform, Android AVD, iOS archive, and bounded-resource evidence. | Every participant in the supported contract starts with the complete outer `.torrent` and all required piece layers. `btmh` intake/export, SHA-256 BEP 9 acquisition, sparse Merkle persistence, hash request/hashes/hash-reject messages 21--23, hybrid negotiation and dual-swarm verification, and torrent creation remain unsupported. Info-only, layer-incomplete, hybrid, and magnet input do not enter this runtime subset. |
 | [BEP 53: Magnet URI extension - Select specific file indices for download](https://www.bittorrent.org/beps/bep_0053.html) | Supported | Strict bounded repeated `so` parsing and canonical compact ranges; pre-metadata restart; skipped-default plus bounded wanted exceptions; metadata-time catalog/padding filtering; additive duplicate promotion; typed idempotent duplicate outcomes; active-owner fencing; generated adapters; and React reveal/feedback pass. The pinned libtorrent magnet suite passes its select-only, malformed, bounds, and round-trip cases. | Zero-based indices are limited to the product's 374,998-file catalog and at most 4,096 materialized exceptions. Ordinary duplicates remain no-ops; only explicit `so` promotes files. BEP 53 adds no peer-wire message, so interoperability is an intake/oracle and existing hash-verified payload composition claim, not wire observation of `so`. |
 | [BEP 55: Holepunch extension](https://www.bittorrent.org/beps/bep_0055.html) | Unsupported | None. | Depends on PEX, uTP, extension negotiation, incoming reachability, address policy, and NAT behavior. |
 
@@ -284,11 +288,11 @@ Protocol breadth follows the current ownership campaign:
 5. retain completed platform certificate/hostname validation and per-family
    advertisement ownership while keeping multi-address fan-out outside any
    full BEP 7 claim; and
-6. evaluate incoming service, uTP, hole punching, web seeds, and v2 only after
-   their prerequisite owners and validation plans exist. Explicit maintainer
-   direction now activates the bounded identity/persistence foundation from
-   [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) without changing
-   the **Unsupported** BEP 52 claim.
+6. retain the completed incoming service and uTP foundations, the exact
+   complete-source pure-v2 **Partial** claim, and its fail-closed limits; plan
+   v2 magnet/authenticated hash exchange from
+   [`bittorrent-v2-and-hybrid`](bittorrent-v2-and-hybrid.md) before expanding
+   that claim, while hole punching and web seeds remain separate work.
 
 This order is a default, not a promise to implement every listed proposal.
 New real-swarm evidence may reorder common interoperability work, but it must

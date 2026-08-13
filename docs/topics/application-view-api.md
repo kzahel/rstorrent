@@ -7,8 +7,13 @@ Status: Completed Tactical
 every torrent route and view key to canonical opaque `TorrentId` and adds a
 separate optional full v1/v2 identity projection. Regenerated schemas,
 TypeScript, reducers, validators, and stale-ID rejection pass without changing
-the view protocol version. The bounded leased view-set, authenticated JSON
-polling adapter, pure reducer, and lifecycle controller are implemented by
+the view protocol version. Completed Tactical
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) carries
+strict complete-source pure-v2 rows through the same torrent, progress, Files,
+tracker, command, and event projections. No v2-specific DTO or API version
+change was necessary; the optional v2 identity and opaque route remain the
+only format-specific client facts. The bounded leased view-set, authenticated
+JSON polling adapter, pure reducer, and lifecycle controller are implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
 Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable

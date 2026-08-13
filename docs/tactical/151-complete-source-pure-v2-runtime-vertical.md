@@ -1,7 +1,8 @@
 # Tactical 151: Complete-Source Pure-v2 Runtime Vertical
 
-Status: **Active authoritative Now on 2026-08-13.** This decision-complete
-tactical resumes after iOS selected-root correctness Tactical `152` completed.
+Status: **Complete on 2026-08-13.** The exact complete-local-source pure-v2
+subset reached every stopping condition below. V2 magnets, authenticated hash
+exchange, hybrid torrents, and creation remain later work.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `application-view-api`,
@@ -1067,3 +1068,84 @@ retained.
   rstorrent-session` passes, including 552 engine tests with 11 opt-in tests
   ignored and 241 session tests with two opt-in tests ignored. Strict
   all-target clippy for those three crates passes.
+
+### 2026-08-13 Stage 5 application and first-party platforms
+
+- The ordinary application byte operation, store, restart projection, file
+  priorities, progress, Files view, Force recheck, export, media capability,
+  removal, and completed seed paths all accept the strict complete-source
+  pure-v2 subset without a new client DTO or persistence migration. Priority
+  changes reconstruct the complete retained v2 outer source rather than
+  passing through the v1-only metainfo parser.
+- The authenticated production-build browser proof adds the exact `.torrent`
+  bytes over the binary WebSocket operation, keeps one v1 control paused,
+  selects one v2 file as Skip, completes the wanted files over uTP, forces a
+  recheck, restarts the application without uploading the source again, and
+  retains exact wanted bytes and selection. Both generations have zero
+  semantic HTTP control calls, zero serious/critical axe violations, and no v2
+  part artifact. One discovered selected-success contrast defect was corrected
+  to `5.018:1`.
+- The platform storage fake exercises complete v2 intake, aligned file-local
+  writes, publication, restart, recheck, verified read/upload, and exact
+  removal through the platform boundary.
+- Both Android native ABIs, UniFFI generation, `assembleDebug`, and JVM tests
+  pass. An owned API 34 no-window AVD runs the real Compose application and
+  SAF adapter through complete and selective profiles: exact intake,
+  selection, four verified pieces, restart/recheck, publication, a 40,026-byte
+  upload, and cleanup pass. The selective profile leaves the skipped file
+  absent, writes only exact wanted bytes, and creates no part artifact. SAF
+  handle high-water is `3/40` and pending work never exceeds three.
+- The unchanged Swift boundary regenerates cleanly and an unsigned iOS archive
+  succeeds. Tauri compiles through the workspace gates and all five direct
+  desktop adapter tests pass without launching a visible product window.
+
+### 2026-08-13 Stage 6 interoperability and closure
+
+- The locked harness uses Rasterbar libtorrent `2.0.13.0` to generate an
+  independent 32,905-byte single-file torrent with three pieces and a
+  148,324-byte aligned multi-file torrent with five pieces and five real
+  files. The latter includes empty, sub-block, exact-block, exact-piece, and
+  multi-piece shapes. Exact payload transfer passes with RSTorrent in both
+  seed and leecher roles, including application-owned seeding after restart.
+- The selective multi-file run skips 137 bytes, verifies four of five logical
+  pieces, writes the exact wanted manifest, and creates neither alignment-gap
+  output nor a part artifact. Tracker-only and DHT-only discovery use the
+  tagged v2 truncation over outgoing default uTP. An accepted uTP-only
+  libtorrent leecher observes one uTP and zero TCP connections. Forced RC4 MSE
+  passes with each implementation initiating.
+- The incomplete two-peer application fixture gates the final source piece,
+  proves that an accepted peer initially sees only the already-verified bit,
+  serves that exact 16-KiB block from active selective storage, then completes
+  and publishes after the final piece arrives. Active registration closes and
+  completed registration remains available for seeding.
+- Missing, truncated, structurally incompatible, read-only, stale-have,
+  same-length corruption, and publication-interruption recovery cases pass.
+  No have, streaming, publication, or upload authority precedes successful
+  Merkle verification and the applicable durability transition.
+- Merkle verification retains at most the bounded active frontier and uses a
+  16-KiB verification buffer. Controlled payload buffering peaks at 49,152
+  bytes; upload reads peak at 16,384 bytes; queued requests peak at seven and
+  queued request bytes at 82,788; connection and established high-water are
+  one. The oracle RSS sample is 45,613,056 bytes and the harness child-process
+  peak is 2,153,234,432 bytes. Every harness-owned process, socket, temporary
+  torrent, payload, profile, and artifact is removed.
+- `cargo fmt --all -- --check`, strict workspace clippy, and the complete
+  workspace test suite pass. The engine harness enumerates 563 cases with its
+  documented opt-ins; the session suite reports 242 passed and two ignored.
+  TypeScript generation has no drift; 248 web unit tests pass with two
+  controlled skips, and 33 browser end-to-end tests pass with 11 opt-in skips.
+  The focused browser lifecycle, Android build/AVD profiles, iOS archive, and
+  controlled pure-v2 interoperability harness all pass independently.
+
+### Completion audit
+
+Commits `3e3a31a` through `a91d2a3` implement and prove the vertical in
+bounded stages. Every stopping condition is satisfied for the strict complete
+local pure-v2 `.torrent` contract. Schema 19 and the generated application
+contract required no compatibility migration or semantic expansion.
+
+The earned protocol claim is deliberately **Partial**. Each peer in the
+controlled contract already has the complete outer `.torrent` and all piece
+layers. `btmh` intake/export, SHA-256 BEP 9 acquisition, sparse Merkle state,
+BEP 52 messages 21--23, hybrid dual-swarm behavior, and torrent creation are
+not implemented and are not implied by this closure.
