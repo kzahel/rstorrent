@@ -3231,6 +3231,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rstorrent-ios"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rstorrent-engine",
+ "rstorrent-session",
+ "rustix",
+ "sha1",
+ "tokio",
+ "uniffi",
+]
+
+[[package]]
 name = "rstorrent-media"
 version = "0.1.0"
 dependencies = [

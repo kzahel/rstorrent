@@ -11,6 +11,9 @@
 .gradle/
 **/build/
 /clients/desktop/src-tauri/gen/
+/clients/ios/DerivedData/
+/clients/ios/Generated/
+/clients/ios/RSTorrent.xcodeproj/
 local.properties
 *.iml
 

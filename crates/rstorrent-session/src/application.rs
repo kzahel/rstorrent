@@ -197,6 +197,8 @@ pub struct ApplicationConfig {
     pub initial_client_settings: crate::ClientSettings,
     pub peer_transport_policy: PeerTransportPolicy,
     pub download_resource_limits: DownloadResourceLimits,
+    /// Maximum number of payload descriptors retained by this platform.
+    pub storage_file_limit: usize,
     /// Optional platform ceiling applied after the persisted configured limit.
     pub active_download_cap: Option<u16>,
     pub dht: DhtConfig,
@@ -299,6 +301,7 @@ impl ApplicationConfig {
             initial_client_settings: crate::ClientSettings::default(),
             peer_transport_policy: PeerTransportPolicy::PreferUtp,
             download_resource_limits: DownloadResourceLimits::DESKTOP,
+            storage_file_limit: DEFAULT_STORAGE_FILE_LIMIT,
             active_download_cap: None,
             dht,
             upload_read_jobs: DEFAULT_UPLOAD_READ_JOBS,
@@ -491,7 +494,7 @@ impl ApplicationService {
         let admission_wake = Arc::new(Notify::new());
         let discovery_wake = Arc::new(Notify::new());
         let storage_file_pool =
-            StorageFilePool::new(DEFAULT_STORAGE_FILE_LIMIT, config.platform_storage_client)
+            StorageFilePool::new(config.storage_file_limit, config.platform_storage_client)
                 .map_err(|error| ApplicationError::Configuration(error.to_owned()))?;
         storage_file_pool.set_platform_health_wake(admission_wake.clone());
         let mut session_network = SessionNetworkRuntime::start(SessionNetworkConfig {

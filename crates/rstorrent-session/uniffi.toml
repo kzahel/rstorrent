@@ -1,3 +1,8 @@
 [bindings.kotlin]
 package_name = "org.rstorrent.session.uniffi"
 android = true
+
+[bindings.swift]
+module_name = "RSTorrentSession"
+ffi_module_name = "RSTorrentSessionFFI"
+generate_module_map = true

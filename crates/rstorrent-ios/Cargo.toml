@@ -1,0 +1,27 @@
+[package]
+name = "rstorrent-ios"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "rstorrent-ios-uniffi-bindgen"
+path = "src/bin/uniffi_bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+libc = "=0.2.189"
+rstorrent-engine = { path = "../rstorrent-engine" }
+rstorrent-session = { path = "../rstorrent-session", features = ["uniffi"] }
+rustix.workspace = true
+sha1.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+uniffi = { version = "=0.31.0", default-features = false, features = ["tokio"] }

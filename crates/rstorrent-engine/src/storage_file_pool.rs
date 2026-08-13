@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::fs::OpenOptions;
@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_STORAGE_FILE_LIMIT: usize = 40;
 pub const PLATFORM_STORAGE_REQUEST_CAPACITY: usize = 16;
+pub const PLATFORM_STORAGE_RELEASE_CAPACITY: usize = 64;
 pub const PLATFORM_STORAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const MAX_STORAGE_OBSERVATION_TOKEN_BYTES: usize = 256;
 
@@ -211,6 +212,7 @@ impl StorageFileReference {
 pub struct StorageFileHandle {
     file: std::fs::File,
     _permit: OwnedSemaphorePermit,
+    _platform_release: Option<PlatformStorageReleaseGuard>,
 }
 
 impl StorageFileHandle {
@@ -365,9 +367,51 @@ pub struct PlatformStorageRequest {
 
 #[derive(Debug)]
 enum PlatformStorageResponse {
-    File(std::fs::File),
+    File(AcquiredStorageFile),
     Observation(StorageObservation),
     Deleted,
+}
+
+#[derive(Debug)]
+struct AcquiredStorageFile {
+    file: std::fs::File,
+    release: Option<PlatformStorageReleaseGuard>,
+}
+
+#[derive(Debug)]
+struct PlatformStorageReleases {
+    sender: mpsc::Sender<u64>,
+    ids: Mutex<HashSet<u64>>,
+    outstanding: AtomicUsize,
+}
+
+impl PlatformStorageReleases {
+    fn acknowledge(&self, release_id: u64) -> bool {
+        let removed = self
+            .ids
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&release_id);
+        if removed {
+            let previous = self.outstanding.fetch_sub(1, Ordering::AcqRel);
+            debug_assert!(previous > 0, "platform release count underflowed");
+        }
+        removed
+    }
+}
+
+#[derive(Debug)]
+struct PlatformStorageReleaseGuard {
+    release_id: u64,
+    releases: Arc<PlatformStorageReleases>,
+}
+
+impl Drop for PlatformStorageReleaseGuard {
+    fn drop(&mut self) {
+        if self.releases.sender.try_send(self.release_id).is_err() {
+            self.releases.acknowledge(self.release_id);
+        }
+    }
 }
 
 struct PendingPlatformStorageRequest {
@@ -411,7 +455,7 @@ impl PlatformStorageClient {
         &self,
         target: &PlatformStorageTarget,
         access: StorageFileAccess,
-    ) -> Result<std::fs::File, StorageFilePoolError> {
+    ) -> Result<AcquiredStorageFile, StorageFilePoolError> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let request = PlatformStorageRequest {
             request_id,
@@ -630,6 +674,9 @@ pub struct PlatformStorageBroker {
         HashMap<u64, oneshot::Sender<Result<PlatformStorageResponse, PlatformStorageFailure>>>,
     >,
     cancellation: CancellationToken,
+    releases: Arc<PlatformStorageReleases>,
+    release_receiver: AsyncMutex<mpsc::Receiver<u64>>,
+    release_cancellation: CancellationToken,
 }
 
 impl PlatformStorageBroker {
@@ -665,7 +712,84 @@ impl PlatformStorageBroker {
     pub fn complete_file(&self, request_id: u64, file: std::fs::File) -> bool {
         self.pending_guard()
             .remove(&request_id)
-            .is_some_and(|reply| reply.send(Ok(PlatformStorageResponse::File(file))).is_ok())
+            .is_some_and(|reply| {
+                reply
+                    .send(Ok(PlatformStorageResponse::File(AcquiredStorageFile {
+                        file,
+                        release: None,
+                    })))
+                    .is_ok()
+            })
+    }
+
+    /// Completes an open with a file whose platform coordination must remain
+    /// alive until the pooled Rust handle is finally released.
+    pub fn complete_leased_file(
+        &self,
+        request_id: u64,
+        file: std::fs::File,
+        release_id: u64,
+    ) -> bool {
+        let Some(reply) = self.pending_guard().remove(&request_id) else {
+            return false;
+        };
+        let rejected = {
+            let mut ids = self
+                .releases
+                .ids
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if release_id == 0 {
+                Some("platform storage release ID must be nonzero")
+            } else if ids.contains(&release_id) {
+                Some("platform storage release ID is already outstanding")
+            } else if ids.len() >= PLATFORM_STORAGE_RELEASE_CAPACITY {
+                Some("platform storage release capacity is exhausted")
+            } else {
+                ids.insert(release_id);
+                self.releases.outstanding.fetch_add(1, Ordering::AcqRel);
+                None
+            }
+        };
+        if let Some(detail) = rejected {
+            let _ = reply.send(Err(PlatformStorageFailure::new(
+                PlatformStorageFailureKind::Internal,
+                detail,
+            )));
+            return false;
+        }
+        let release = PlatformStorageReleaseGuard {
+            release_id,
+            releases: self.releases.clone(),
+        };
+        reply
+            .send(Ok(PlatformStorageResponse::File(AcquiredStorageFile {
+                file,
+                release: Some(release),
+            })))
+            .is_ok()
+    }
+
+    pub async fn next_release(&self) -> Option<u64> {
+        let mut receiver = tokio::select! {
+            biased;
+            _ = self.release_cancellation.cancelled() => return None,
+            receiver = self.release_receiver.lock() => receiver,
+        };
+        let release_id = tokio::select! {
+            biased;
+            _ = self.release_cancellation.cancelled() => return None,
+            release_id = receiver.recv() => release_id?,
+        };
+        Some(release_id)
+    }
+
+    pub fn acknowledge_release(&self, release_id: u64) -> bool {
+        self.releases.acknowledge(release_id)
+    }
+
+    pub fn pending_releases(&self) -> usize {
+        self.releases.outstanding.load(Ordering::Acquire)
     }
 
     pub fn is_pending(&self, request_id: u64) -> bool {
@@ -703,7 +827,7 @@ impl PlatformStorageBroker {
             .is_some_and(|reply| reply.send(Err(failure)).is_ok())
     }
 
-    pub fn cancel_all(&self) {
+    pub fn cancel_pending(&self) {
         self.cancellation.cancel();
         if let Ok(mut receiver) = self.receiver.try_lock() {
             receiver.close();
@@ -715,6 +839,21 @@ impl PlatformStorageBroker {
         for (_, reply) in pending {
             cancel_platform_reply(reply);
         }
+    }
+
+    pub fn close_release_stream(&self) {
+        self.release_cancellation.cancel();
+        if let Ok(mut receiver) = self.release_receiver.try_lock() {
+            receiver.close();
+            while let Ok(release_id) = receiver.try_recv() {
+                self.releases.acknowledge(release_id);
+            }
+        }
+    }
+
+    pub fn cancel_all(&self) {
+        self.cancel_pending();
+        self.close_release_stream();
     }
 
     fn pending_guard(
@@ -731,6 +870,12 @@ impl PlatformStorageBroker {
 
 pub fn platform_storage_channel() -> (PlatformStorageClient, Arc<PlatformStorageBroker>) {
     let (sender, receiver) = mpsc::channel(PLATFORM_STORAGE_REQUEST_CAPACITY);
+    let (release_sender, release_receiver) = mpsc::channel(PLATFORM_STORAGE_RELEASE_CAPACITY);
+    let releases = Arc::new(PlatformStorageReleases {
+        sender: release_sender,
+        ids: Mutex::new(HashSet::new()),
+        outstanding: AtomicUsize::new(0),
+    });
     (
         PlatformStorageClient {
             sender,
@@ -744,6 +889,9 @@ pub fn platform_storage_channel() -> (PlatformStorageClient, Arc<PlatformStorage
             receiver: AsyncMutex::new(receiver),
             pending: Mutex::new(HashMap::new()),
             cancellation: CancellationToken::new(),
+            releases,
+            release_receiver: AsyncMutex::new(release_receiver),
+            release_cancellation: CancellationToken::new(),
         }),
     )
 }
@@ -877,7 +1025,7 @@ impl StorageFilePool {
         let storage_version = self.storage_version(&reference.key.storage_id)?;
 
         let permit = self.acquire_permit().await?;
-        let file = match self.acquire_file(&reference.locator, access).await {
+        let acquired = match self.acquire_file(&reference.locator, access).await {
             Ok(file) => file,
             Err(first) if is_descriptor_exhaustion(&first) => {
                 self.inner
@@ -896,8 +1044,9 @@ impl StorageFilePool {
             }
         };
         let handle = Arc::new(StorageFileHandle {
-            file,
+            file: acquired.file,
             _permit: permit,
+            _platform_release: acquired.release,
         });
         self.observe_owned_high_water();
         let replaced = {
@@ -1162,9 +1311,16 @@ impl StorageFilePool {
         &self,
         locator: &StorageFileLocator,
         access: StorageFileAccess,
-    ) -> Result<std::fs::File, StorageFilePoolError> {
+    ) -> Result<AcquiredStorageFile, StorageFilePoolError> {
         match locator {
-            StorageFileLocator::Path(path) => open_path(path.clone(), access).await,
+            StorageFileLocator::Path(path) => {
+                open_path(path.clone(), access)
+                    .await
+                    .map(|file| AcquiredStorageFile {
+                        file,
+                        release: None,
+                    })
+            }
             StorageFileLocator::Platform(target) => {
                 let platform = self
                     .inner
@@ -1457,6 +1613,56 @@ mod tests {
         drop(handle);
         pool.shutdown().await.expect("shutdown");
         std::fs::remove_file(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn leased_platform_file_releases_after_final_pooled_handle() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(2, Some(client)).expect("pool");
+        let reference = StorageFileReference::new(
+            pool.clone(),
+            StorageFileKey {
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 3,
+                role: StorageFileRole::Part,
+            },
+            StorageFileLocator::Platform(super::PlatformStorageTarget {
+                root_id: "root".to_owned(),
+                storage_id: "torrent".to_owned(),
+                namespace_generation: 3,
+                role: StorageFileRole::Part,
+                path: vec!["part".to_owned()],
+            }),
+        );
+        let open =
+            tokio::spawn(async move { reference.open(StorageFileAccess::ReadWriteCreate).await });
+        let request = broker.next_request().await.expect("request");
+        let path = temp_root("leased-platform");
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("platform file");
+        assert!(broker.complete_leased_file(request.request_id, file, 41));
+        let handle = open.await.expect("open task").expect("platform handle");
+        assert_eq!(broker.pending_releases(), 1);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), broker.next_release())
+                .await
+                .is_err()
+        );
+
+        drop(handle);
+        pool.invalidate_storage("torrent");
+        assert_eq!(broker.next_release().await, Some(41));
+        assert_eq!(broker.pending_releases(), 1);
+        assert!(broker.acknowledge_release(41));
+        assert!(!broker.acknowledge_release(41));
+        assert_eq!(broker.pending_releases(), 0);
+        pool.shutdown().await.expect("shutdown");
+        broker.cancel_all();
+        std::fs::remove_file(path).expect("cleanup");
     }
 
     #[tokio::test]

@@ -1,0 +1,7 @@
+[bindings.swift]
+module_name = "RSTorrentIOS"
+ffi_module_name = "RSTorrentIOSFFI"
+generate_module_map = true
+
+[bindings.swift.external_packages]
+rstorrent_session = "RSTorrentSession"

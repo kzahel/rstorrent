@@ -212,3 +212,34 @@ explicitly authorized. Protected authentication and signing-account changes
 remain human-only. Stop only for a materially different provider policy, a new
 entitlement/dependency/license posture, payload callbacks, destructive
 unrelated data handling, or external publication.
+
+## Execution Record
+
+### 2026-08-13 foundation checkpoint
+
+- The workspace now contains the focused `rstorrent-ios` static library and a
+  generated iOS 16+ SwiftUI/XcodeGen project. The signed development build uses
+  a separate bundle identity supplied without a repository signing team,
+  profile, account, or device identifier.
+- The common file pool now accepts an optional platform release identity. A
+  bounded, acknowledged release stream keeps the exact Swift coordinator and
+  security-scope lease alive until the final pooled Rust handle drops. The iOS
+  application selects an eight-entry pool while existing products retain 40.
+- Swift owns the bounded root registry, bookmark restoration, eligibility
+  checks, destructive Rust qualification, coordination workers, descriptor
+  transfer, release acknowledgement, and application-service shutdown.
+- Focused Rust tests pass for the iOS boundary and final-handle release. The
+  generated project builds unsigned for the simulator, and five Swift unit
+  tests pass there for eligibility and persistent-registry bounds.
+- The development app builds signed, installs, and opens the real durable Rust
+  service on the attached iPhone. Through the system picker, a run-owned
+  `On My iPhone` folder passed qualification, persisted, survived the service
+  restart, and reported `Qualified on-device folder`. Selecting the empty
+  iCloud Drive root in the same build returned the non-mutating rejection
+  `iCloud folders are not supported. Choose a folder under On My iPhone.`; the
+  previously qualified root remained registered and ready.
+
+This is an implementation checkpoint, not tactical completion. Controlled
+torrent publication, restart/recheck/read/removal, failure and resource-drain
+cases, full repository and Android compatibility gates, and exact cleanup are
+still required before activating Tactical `148`.
