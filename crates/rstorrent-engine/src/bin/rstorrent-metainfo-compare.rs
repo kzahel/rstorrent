@@ -5,7 +5,11 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::time::Instant;
 
-use rstorrent_protocol::metainfo::{Metainfo, MetainfoLimits};
+use rstorrent_protocol::metainfo::{
+    EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoLimits, ParsedInfoKind, ParsedOuterMetainfo,
+    V2Metainfo,
+};
+use serde::Serialize;
 
 const MIB: usize = 1024 * 1024;
 const EXPLICIT_MAX_BYTES: usize = 64 * MIB;
@@ -73,6 +77,7 @@ fn main() {
     let result = match arguments.get(1).map(String::as_str) {
         Some("generate") => generate_command(&arguments[2..]),
         Some("profile") => profile_command(&arguments[2..]),
+        Some("bep52") => bep52_command(&arguments[2..]),
         _ => Err(usage()),
     };
     if let Err(error) = result {
@@ -86,12 +91,176 @@ fn usage() -> String {
         "usage:\n",
         "  rstorrent-metainfo-compare generate FIXTURE OUTPUT VALUE [SECOND]\n",
         "  rstorrent-metainfo-compare profile explicit|peer INPUT\n",
+        "  rstorrent-metainfo-compare bep52 INPUT\n",
         "fixtures: size-outer, structure-outer, structure-info, many-files-outer, ",
         "many-files-info, many-trackers-outer, many-pieces-outer, many-pieces-info, ",
         "piece-length-outer, piece-length-info, tracker-url-outer, ",
         "long-path-outer, deep-outer, invalid-utf8-path-outer\n",
     )
     .to_owned()
+}
+
+#[derive(Serialize)]
+struct NormalizedBep52 {
+    implementation: &'static str,
+    format: &'static str,
+    exact_info_bytes: usize,
+    v1_info_hash: Option<String>,
+    v2_info_hash: Option<String>,
+    piece_length: u32,
+    payload_bytes: u64,
+    logical_bytes: u64,
+    logical_pieces: usize,
+    files: Vec<NormalizedV2File>,
+    v1_files: Vec<NormalizedV1File>,
+    piece_layers: Vec<NormalizedPieceLayer>,
+    retained_layer_hashes: usize,
+    parse_wall_us: u128,
+    transient_peak_bytes: usize,
+}
+
+#[derive(Serialize)]
+struct NormalizedV2File {
+    raw_path_hex: Vec<String>,
+    length: u64,
+    logical_offset: u64,
+    start_piece: u32,
+    piece_count: u32,
+    pieces_root: Option<String>,
+}
+
+#[derive(Serialize)]
+struct NormalizedV1File {
+    path: Vec<String>,
+    length: u64,
+    offset: u64,
+    padding: bool,
+}
+
+#[derive(Serialize)]
+struct NormalizedPieceLayer {
+    pieces_root: String,
+    hashes: Vec<String>,
+}
+
+fn bep52_command(arguments: &[String]) -> Result<(), String> {
+    let [input] = arguments else {
+        return Err(usage());
+    };
+    let bytes = fs::read(input).map_err(|error| format!("read {input}: {error}"))?;
+    let baseline = LIVE_BYTES.load(Ordering::Relaxed);
+    PEAK_BYTES.store(baseline, Ordering::Relaxed);
+    let started = Instant::now();
+    let parsed =
+        ParsedOuterMetainfo::from_bytes_with_limits(&bytes, EXPLICIT_IMPORT_METAINFO_LIMITS)
+            .map_err(|error| format!("parse {input}: {error:?}"))?;
+    let parse_wall_us = started.elapsed().as_micros();
+    let transient_peak_bytes = PEAK_BYTES.load(Ordering::Relaxed).saturating_sub(baseline);
+    let info = parsed.info();
+    let (format, v2, v1_files) = match info.kind() {
+        ParsedInfoKind::V1(v1) => ("v1", None, normalized_v1_files(v1)),
+        ParsedInfoKind::V2(v2) => ("v2", Some(v2), Vec::new()),
+        ParsedInfoKind::Hybrid(hybrid) => {
+            ("hybrid", Some(&hybrid.v2), normalized_v1_files(&hybrid.v1))
+        }
+    };
+    let (piece_length, payload_bytes, logical_bytes, logical_pieces, files) = v2.map_or_else(
+        || {
+            let ParsedInfoKind::V1(v1) = info.kind() else {
+                unreachable!("non-v2 parsed kind is v1")
+            };
+            (
+                v1.piece_length,
+                v1.total_length,
+                v1.total_length,
+                v1.piece_count(),
+                Vec::new(),
+            )
+        },
+        normalized_v2_files,
+    );
+    let layers = parsed.piece_layers();
+    let piece_layers = layers
+        .into_iter()
+        .flat_map(|layers| {
+            layers.entries().iter().map(|entry| NormalizedPieceLayer {
+                pieces_root: hex(entry.pieces_root),
+                hashes: layers.hashes()[entry.hashes.clone()]
+                    .iter()
+                    .copied()
+                    .map(hex)
+                    .collect(),
+            })
+        })
+        .collect();
+    let output = NormalizedBep52 {
+        implementation: "rstorrent",
+        format,
+        exact_info_bytes: info.exact_info_bytes().len(),
+        v1_info_hash: info.info_hashes().v1_hash().map(|hash| hash.to_string()),
+        v2_info_hash: info.info_hashes().v2_hash().map(|hash| hash.to_string()),
+        piece_length,
+        payload_bytes,
+        logical_bytes,
+        logical_pieces,
+        files,
+        v1_files,
+        retained_layer_hashes: layers.map_or(0, |layers| layers.hashes().len()),
+        parse_wall_us,
+        transient_peak_bytes,
+        piece_layers,
+    };
+    println!(
+        "{}",
+        serde_json::to_string(&output).map_err(|error| error.to_string())?
+    );
+    Ok(())
+}
+
+fn normalized_v2_files(v2: &V2Metainfo) -> (u32, u64, u64, usize, Vec<NormalizedV2File>) {
+    let files = v2
+        .files
+        .iter()
+        .zip(v2.layout.files())
+        .map(|(file, geometry)| NormalizedV2File {
+            raw_path_hex: file.raw_path.iter().map(hex).collect(),
+            length: file.length,
+            logical_offset: geometry.logical_offset(),
+            start_piece: geometry.start_piece(),
+            piece_count: geometry.piece_count(),
+            pieces_root: file.pieces_root.map(hex),
+        })
+        .collect();
+    (
+        v2.piece_length,
+        v2.total_length,
+        v2.layout.logical_length(),
+        v2.layout.piece_count(),
+        files,
+    )
+}
+
+fn normalized_v1_files(v1: &Metainfo) -> Vec<NormalizedV1File> {
+    v1.files
+        .iter()
+        .map(|file| NormalizedV1File {
+            path: file.path.clone(),
+            length: file.length,
+            offset: file.offset,
+            padding: file.padding,
+        })
+        .collect()
+}
+
+fn hex(bytes: impl AsRef<[u8]>) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let bytes = bytes.as_ref();
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        output.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 fn generate_command(arguments: &[String]) -> Result<(), String> {

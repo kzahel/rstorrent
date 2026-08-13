@@ -538,6 +538,21 @@ projected collisions, file/component bounds, historical missing-tail-pad and
 canonical-tail-pad hybrids, root reconstruction, corrupt and short layers,
 and unchanged v1-only product rejection.
 
+The fifth checkpoint adds a bounded normalized comparer and independently
+authored Python oracle. Four temporary fixtures cover pure-v2 single-file,
+pure-v2 multi-file at 64 KiB pieces, creator-style hybrid tail padding, and
+the accepted missing-tail hybrid. Independent `hashlib` Merkle and identity
+construction agrees with pinned libtorrent `2.0.13.0` and RSTorrent on exact
+info bytes, full identities, payload file order, lengths, aligned offsets,
+logical piece counts, roots, and retained piece layers. The comparer also
+asserts three intentional differences: pinned libtorrent admits absent or
+empty required outer layers while the complete RSTorrent source rejects
+both, and libtorrent's zero-root sentinel rejects an all-zero pieces root
+that RSTorrent retains as present data. The controlled run retained at most
+two layer hashes, measured 2,240 transient RSTorrent allocation bytes,
+32,210,944 oracle RSS bytes, 1,851,392 child peak RSS bytes, and 2,229 bytes
+of temporary fixtures; the temporary directory was removed automatically.
+
 ### Stage 1: Reconfirm sources, inventory, and baseline
 
 - verify the exact BEP and libtorrent pins and record any dirty-reference
