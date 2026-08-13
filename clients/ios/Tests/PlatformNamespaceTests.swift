@@ -220,6 +220,27 @@ final class PlatformNamespaceTests: XCTestCase {
         )
     }
 
+    func testRootObservationSupportsTheEmptyHealthProbePath() throws {
+        let root = try temporaryRoot(named: "root-observation")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertEqual(
+            try PlatformStorageBridge.storageTarget(root: root, components: []),
+            root
+        )
+        let observation = try PlatformStorageBridge.observe(root: root, components: [])
+        XCTAssertTrue(observation.exists)
+        XCTAssertEqual(observation.kind, .directory)
+        XCTAssertNil(observation.length)
+        XCTAssertThrowsError(
+            try PlatformStorageBridge.openDescriptor(
+                root: root,
+                components: [],
+                access: .readWriteCreate
+            )
+        )
+    }
+
     func testObservationAndDeleteDoNotFollowSymlinks() throws {
         let root = try temporaryRoot(named: "observe-delete")
         let outside = try temporaryRoot(named: "observe-delete-outside")

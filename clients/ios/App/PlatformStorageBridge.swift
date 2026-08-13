@@ -417,7 +417,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
     }
 
     static func storageTarget(root: URL, components: [String]) throws -> URL {
-        guard root.isFileURL, !components.isEmpty else {
+        guard root.isFileURL else {
             throw POSIXFailure(operation: "validate storage target", code: EINVAL)
         }
         var target = root
@@ -489,6 +489,23 @@ final class PlatformStorageBridge: @unchecked Sendable {
     }
 
     static func observe(root: URL, components: [String]) throws -> IosStorageObservation {
+        if components.isEmpty {
+            let descriptor = Darwin.open(
+                root.path,
+                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+            )
+            guard descriptor >= 0 else {
+                if errno == ENOENT { return missingObservation() }
+                throw POSIXFailure(operation: "open selected root", code: errno)
+            }
+            defer { Darwin.close(descriptor) }
+            var status = Darwin.stat()
+            guard Darwin.fstat(descriptor, &status) == 0 else {
+                throw POSIXFailure(operation: "observe selected root", code: errno)
+            }
+            return observation(from: status)
+        }
+
         let parentAndLeaf: (Int32, String)
         do {
             parentAndLeaf = try openParent(
@@ -512,6 +529,10 @@ final class PlatformStorageBridge: @unchecked Sendable {
         guard result == 0 else {
             throw POSIXFailure(operation: "observe storage file", code: errno)
         }
+        return observation(from: status)
+    }
+
+    private static func observation(from status: Darwin.stat) -> IosStorageObservation {
         let fileType = status.st_mode & S_IFMT
         let kind: IosStorageObjectKind
         if fileType == S_IFREG {
@@ -561,6 +582,9 @@ final class PlatformStorageBridge: @unchecked Sendable {
         components: [String],
         createDirectories: Bool
     ) throws -> (Int32, String) {
+        guard !components.isEmpty else {
+            throw POSIXFailure(operation: "validate storage path", code: EINVAL)
+        }
         _ = try storageTarget(root: root, components: components)
         var current = Darwin.open(
             root.path,
