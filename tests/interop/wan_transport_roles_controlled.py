@@ -646,7 +646,7 @@ def run(
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--size-mib", type=int, choices=(8, 64), default=8)
+    parser.add_argument("--size-mib", type=int, choices=(8, 64, 256), default=8)
     parser.add_argument("--seed", choices=IMPLEMENTATIONS, action="append")
     parser.add_argument("--leech", choices=IMPLEMENTATIONS, action="append")
     parser.add_argument("--transport", choices=TRANSPORTS, action="append")
