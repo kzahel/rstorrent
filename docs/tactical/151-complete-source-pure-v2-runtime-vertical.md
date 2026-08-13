@@ -936,3 +936,28 @@ document as it lands. Temporary oracle torrents, payloads, profiles, captures,
 logs, packages, simulator/AVD state, and subprocesses are removed before
 closure unless an explicitly linked bounded artifact is intentionally
 retained.
+
+## Execution Record
+
+### 2026-08-13 Stage 0 baseline
+
+- The readiness queue and campaign checkpoint both name this tactical as the
+  sole `Now`; Tactical `150` and the intervening iOS repair Tactical `152` are
+  complete, and the RSTorrent worktree was clean at activation.
+- `scripts/references.py status` confirmed the BEP checkout at
+  `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06` and libtorrent at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d`. The separate JSTorrent checkout
+  has pre-existing documentation and image changes, so it remains read-only;
+  no source or fixture will be imported from it.
+- The source/test reconfirmation found no correction to the accepted design:
+  complete outer piece layers remain sufficient expected-hash authority for
+  the bounded peer contract, while hash messages 21--23 remain outside it.
+- The direct-assumption inventory found 2,086 references across protocol,
+  engine, session, and ungenerated web sources. The shape-changing owners are
+  the v1 `Metainfo`/`TorrentLayout` parse boundary, application byte intake and
+  `ResumeRecord`, `SelectiveStorage` plans, the content driver and storage
+  pipeline, publication/active/published readers, incoming seeding, and the
+  versioned peer/discovery registry. Test-only v1 fixtures remain v1-owned.
+- `cargo test --workspace` passed the pre-change baseline. Opt-in public,
+  remote, platform-trust, and large-allocation tests remained ignored by their
+  existing contracts.
