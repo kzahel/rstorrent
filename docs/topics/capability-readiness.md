@@ -423,45 +423,39 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
 ### Now
 
 - **Execute Tactical
-  [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md).**
-  Tactical `143` is complete, and explicit maintainer direction resumes the
-  uTP campaign through parent Tactical `142`. First make sustained transfers
-  reliable on one connection, then close the measured throughput gap against
-  matched pinned-libtorrent uTP without weakening delay/fairness behavior.
-  Two causal release recovery repairs now pass a rotating three-repetition
-  remote-seed 256 MiB reliability cohort: all 12 cells complete exactly and
-  every RSTorrent role stays on one connection. The remaining 98.5%, 77.7%,
-  and 55.4% mixed/RST median oracle ratios selected ordinary DATA
-  packetization. Its fairness-preserving repair cuts packet/ACK work about 40%
-  and recovery/reorder work about 47%, but improves the focused WAN median only
-  2.94%. Aligning reorder positions with unchanged receive byte credit then
-  improves the focused median another 36.85% to 2.139 MiB/s and eliminates
-  recovery cascades and too-far drops at a measured 464-packet/668 KiB high
-  water. This is 78.0% of the retained oracle and matches the earlier
-  RSTorrent-to-libtorrent sender result. WAN telemetry selects startup, and a
-  test-only A/B now rejects direct libtorrent-style slow start on queue delay
-  while a bounded 10 ms/30% startup candidate improves three long-RTT pairs
-  1.88x--1.90x and passes the existing fairness, recovery, loss, MTU, and
-  resource gates. Ordinary product behavior is unchanged. Tactical `145` is
-  at its human review gate with recommendation A to promote that startup-only
-  candidate; the full near-parity cohort remains. Remote revisions are built
-  in the guarded ARM64 Linux VM, not on the constrained WAN peer.
+  [`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md).**
+  Explicit maintainer direction on 2026-08-13 starts the first maintained iOS
+  product campaign and supersedes Tactical `145` at its documented human-
+  review gate. Build the iOS 16+ in-process Rust/UniFFI foundation, platform-
+  owned coordinated descriptor leases, durable profile, app Documents root,
+  and qualified external folder selection. Reject iCloud and positively
+  identified providers, physically capability-qualify the repeated local
+  lookup-failure case, then prove one exact controlled download, restart,
+  recheck, read, removal, and resource cleanup on the attached iPhone.
 
 ### Next
 
-- After Tactical `145` reaches its stopping condition or explicit policy
-  review gate, activate decision-complete Tactical
-  [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) for
-  runtime-free BEP 52 metainfo, geometry, piece-layer, and Merkle behavior.
-  Planning does not make it active, and product input remains v1-only.
+- After Tactical `147` closes, execute
+  [`148`](../tactical/148-jstorrent-swiftui-product-surface.md) to directly
+  reuse the first-party JSTorrent SwiftUI product surface over typed
+  RSTorrent models, with app Search and unsupported High priority deferred.
+- After Tactical `148` closes, execute
+  [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
+  for finite background ownership, process-death recovery, cold/warm input,
+  privacy metadata, and reproducible development/archive packaging without
+  external publication.
 
 ### Later
 
-Active parent Tactical
+Paused parent Tactical
 [`142`](../tactical/142-wan-transport-performance-matrix.md) retains its 56
-post-repair cells and exact analysis checkpoint while active child Tactical
+post-repair cells and exact analysis checkpoint while paused child Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-owns the selected reliability and near-parity repair. The
+retains the selected reliability and near-parity repair at its human-review
+gate. Decision-complete Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) remains
+queued after the explicitly scheduled iOS campaign; product input remains
+v1-only. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted local-
 seed 1 GiB libtorrent uTP control remain typed evidence outside that future
 repair.
@@ -599,7 +593,7 @@ and parole selection remain evidence-gated rather than preplanned slices.
 | Authenticated private web host | Implemented | deterministic, runtime, web, live | One explicitly configured maintainer host serves the production React bundle and multiplexed application WebSocket behind bounded Basic authentication and exact HTTPS Origin checks. Exact-push isolated build, candidate smoke, supervised restart, authenticated private-listener/public verification, and rollback-on-failure pass; this is not a relay, account, pairing, encryption, or stable public compatibility claim. | [`application-connection-architecture`](application-connection-architecture.md), [`client-surfaces`](client-surfaces.md) |
 | Local headless web authentication | Implemented | deterministic, runtime, web | Fresh loopback profiles have a communicated ten-minute setup choice between local-open and at most 32 rolling remembered-browser sessions. Four-digit one-use approval, five-attempt exhaustion, HttpOnly Strict cookies, exact Host/Origin checks, Settings revocation, typed live-socket termination, restart persistence, and explicit one-browser recovery pass. This is not password, LAN, relay, device-identity, or E2E remote authentication. | [`application-connection-architecture`](application-connection-architecture.md), [`web-ui-design`](web-ui-design.md), [`remote-access-authentication`](remote-access-authentication.md) |
 | Android Compose foreground client | Implemented | deterministic, runtime, AVD, physical | The maintained Material 3 product provides the JSTorrent-shaped Library, six-tab torrent detail, Speed, dual-family DHT, structured Logs, and Settings hierarchy with RSTorrent branding. One service-scoped owner consumes every Android-relevant bounded projection; magnet and `.torrent` intake, SAF setup/repair, file selection/open, torrent and queue actions, backed settings including session/per-torrent transfer limits, activity/process recovery, and controlled concurrent downloads pass. Search/plugins, playback, richer file priority, tracker mutation, and dynamic network/power controls remain explicitly unavailable; Tactical `117` makes no new physical-device UI claim. | [`client-surfaces`](client-surfaces.md) |
-| Eventual iOS native client | Absent | deterministic, simulator, physical feasibility | No product target or support claim exists. Tacticals `116` and `123` link the real Rust pool, storage, SHA-1, namespace, TCP, and UDP operations; app-owned Documents persistence, generation-fenced force-close recovery, per-operation coordination, exact cleanup, ordinary expiration, and finite continued processing pass on iOS 26.6. App-owned Documents is the sole graduated root assumption. System-picked local, iCloud, and other File Provider roots are classification-only and compiled out of registration; product persistence, notification policy, and indefinite background operation remain unimplemented. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
+| iOS native client | Absent; active implementation | deterministic, simulator, physical feasibility | Tacticals `116` and `123` link the real Rust pool, storage, SHA-1, namespace, TCP, and UDP operations; app-owned Documents persistence, generation-fenced force-close recovery, per-operation coordination, exact cleanup, ordinary expiration, and finite continued processing pass on iOS 26.6. Tacticals `147`--`149` now own the maintained iOS 16+ target, qualified selected roots, copied first-party JSTorrent SwiftUI presentation, lifecycle, and packaging. No product support claim exists until their physical stopping conditions pass. | [`product-direction`](product-direction.md), [`client-surfaces`](client-surfaces.md), [`download-roots`](download-roots.md) |
 | Derived progress, torrent ETA, and bounded diagnostics | Implemented | deterministic, runtime, interop, web, AVD | Progress remains an application projection. Selection-aware torrent ETA adds exact required/remaining non-padding peer work, a 184-byte scalar model, one shared cadence, and typed warming/estimate/stalled/unavailable presentation; file ETA, richer priority, and Size/Progress repair remain absent. Structured hierarchical diagnostics, typed context, capture interest, explicit source/delivery/local loss, and the global ordered console are complete. | [`application-control`](application-control.md), [`application-view-api`](application-view-api.md), [`download-correctness`](download-correctness.md) |
 | Offline, loopback-only, and online egress policy | Implemented | deterministic, runtime, web, AVD | Policy is fixed for one service lifetime; Android VPN and metered-network controls are absent. | [`application-control`](application-control.md) |
 | Headless product validation | Implemented | web, AVD | Physical devices and visible desktop automation still require explicit authorization. | [`client-surfaces`](client-surfaces.md) |

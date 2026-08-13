@@ -26,7 +26,7 @@ configured payload root while making the native picker unavailable; it does
 not add ambient remote path authority or change durable root identity.
 Windows remains unimplemented, and Android already proves one
 user-selected persisted SAF root but not general multi-root management.
-Eventual iOS product root behavior is accepted in shape but unimplemented.
+The first maintained iOS product root campaign is active but not yet supported.
 Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
 physically proves app-owned Documents and coordinated, security-scoped
@@ -35,9 +35,11 @@ restoration of an app-owned bookmarked fixture. Completed Tactical
 proves stable app-owned persistence and interrupted recovery. Its later
 physical picker controls reject iCloud as ubiquitous but leave a distinct
 **On My iPhone** directory unclassifiable after the public File Provider
-lookup fails. Picker-root registration therefore remains compiled off, and
-app-owned Documents is the sole root assumption for the first complete iOS
-product tactical.
+lookup fails. Explicit maintainer direction on 2026-08-13 supersedes that
+product conclusion: Tactical `147` must implement the picker and may accept
+that exact lookup-failure shape only for a non-ubiquitous local/internal root
+that passes the full bounded Rust capability and recovery matrix. A positive
+provider identity and iCloud remain rejected.
 
 Completed Tactical
 [`138`](../tactical/138-verified-http-file-serving.md) consumes stable root
@@ -284,9 +286,9 @@ The existing one-root Android product is a valid initial presentation limit.
 General multi-root Settings parity with desktop may land later, but it must not
 change the shared root identity and per-torrent binding semantics.
 
-### Eventual iOS and iPadOS
+### iOS and iPadOS
 
-The eventual native iOS product uses the same stable root ID and per-torrent
+The native iOS product uses the same stable root ID and per-torrent
 binding semantics. The platform adapter, not SQLite or Rust domain state, owns
 an app-container URL or user-selected directory bookmark, security-scope
 lifetime, File Provider coordination, stale-bookmark repair, and permission
@@ -297,14 +299,17 @@ because the display name or path is unavailable.
 Tactical `116` proves app-owned Documents plus non-stale bookmark restoration,
 balanced security scope, and coordination around Rust-owned I/O on a physical
 device. Tactical `123` adds a versioned opaque app-owned record, generation-
-fenced interrupted-workspace recovery, exact resource accounting, and a
-fail-closed classifier. Physical picker controls report the separate local
-**On My iPhone** directory as `unclassifiable/provider_lookup_failed` and the
-iCloud negative control as `unsupported_provider/ubiquitous`; both report
-local and internal volume flags. Picker selection consequently remains
-classification-only: it cannot persist a bookmark or root or invoke Rust.
-External local-provider, iCloud, offloaded-item, third-party-provider,
-relocation, and cloud-export behavior require separate tacticals.
+fenced interrupted-workspace recovery, exact resource accounting, and the
+physical observation that **On My iPhone** reports
+`provider_lookup_failed/ubiquitous=false/local=true/internal=true` while iCloud
+reports `ubiquitous=true` with the same volume flags. Tactical `147` explicitly
+replaces classification-only behavior with a product gate: reject ubiquitous,
+nonlocal, external-volume, symlink, overlapping, and positively identified
+provider roots; when provider lookup fails, accept only after bounded Rust
+qualification and physical persistence/recovery evidence. Support wording
+must remain “qualified on-device folder,” because the public facts do not
+prove every possible provider identity. Offloaded, iCloud, identified third-
+party provider, relocation, and cloud-export behavior remain unsupported.
 
 ## User-Visible Publication Layout
 
@@ -415,6 +420,7 @@ without moving file selection out of the Files tab.
 Completed Tactical `116` adds backend-neutral observations and root-health
 semantics, closes SAF published reads, and records bounded physical iOS root
 feasibility without implementing fast resume or a complete iOS client.
-Completed Tactical `123` records the app-owned-only iOS result and leaves
-completed-file cloud export as a separate copy/verification tactical rather
-than an active torrent-root feature.
+Completed Tactical `123` records the historical app-owned-only result.
+Tactical `147` is the explicitly authorized successor for qualified selected
+roots; completed-file cloud export remains a separate copy/verification
+tactical rather than an active torrent-root feature.

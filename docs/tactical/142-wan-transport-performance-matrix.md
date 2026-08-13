@@ -1,9 +1,11 @@
 # Tactical 142: WAN Transport Performance Matrix
 
-Status: **Active at an analysis checkpoint through child Tactical 145.**
+Status: **Paused at an analysis checkpoint through child Tactical 145.**
 Tactical [`143`](143-dual-identity-and-persistence-foundation.md) completed,
-and explicit maintainer direction on 2026-08-13 resumes this campaign through
-[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md). The
+and earlier maintainer direction on 2026-08-13 resumed this campaign through
+[`145`](145-sustained-utp-reliability-and-throughput-near-parity.md). Later
+direction the same day explicitly superseded it with the iOS client campaign
+beginning at Tactical `147`; no uTP result is discarded or relabeled. The
 reusable lab and focused sender repair are implemented. A
 post-repair epoch has 56 exact successful
 cells and 13,440 MiB of verified payload: complete 8/64/256 MiB grids and all

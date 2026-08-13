@@ -11,8 +11,10 @@ security boundaries, rollout policy, and imported fields remain to be designed
 and validated in bounded tacticals. Maintainer direction on 2026-08-09 accepts
 iOS as an eventual first-party in-process backend; Tactical
 [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md)
-front-loads only the physical storage/network/lifecycle feasibility that can
-shape the common engine boundary.
+front-loads the physical storage/network/lifecycle feasibility that shaped the
+common engine boundary. Explicit direction on 2026-08-13 schedules the first
+maintained SwiftUI product in Tacticals `147`--`149`, including qualified
+external folder selection and physical lifecycle evidence without publication.
 
 ## Scope
 
@@ -83,7 +85,7 @@ The likely successor has these useful compositions:
 | ChromeOS | Rust application service in Crostini | Browser extension | Owns a Linux profile and roots |
 | ChromeOS | Rust application service in the Android app | Browser extension | Shares the Android profile |
 | ChromeOS or Android | Same Android application service | Android Compose | Shares the Android backend and profile |
-| iOS/iPadOS (eventual) | Rust application service in the native app | Native platform UI, toolkit to be selected later | Owns an iOS profile and initially one app-owned Documents root |
+| iOS/iPadOS | Rust application service in the native app | First-party JSTorrent SwiftUI presentation adapted to typed RSTorrent models | Owns an iOS profile, app Documents, and qualified selected on-device roots |
 
 ChromeOS therefore has **two backends and three presentation
 configurations**:
@@ -96,7 +98,7 @@ The second and third configurations are two views of the same Android backend.
 The Crostini configuration is a different backend with different state and
 storage.
 
-The eventual iOS application is another native backend, not a remote
+The iOS application is another native backend, not a remote
 presentation of desktop or Android. It runs the first-party Rust engine
 in-process and owns its own profile, root capabilities, networking, and
 lifecycle. An Apple bookmark or File Provider identity cannot be shared with
@@ -105,9 +107,14 @@ verified state. Tactical `116` tests this shape on a physical device without
 choosing the final UI toolkit, release channel, minimum OS, or migration path.
 Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
-further fixes the first client boundary at a freshly resolved app-owned
-Documents payload root. Picker bookmarks, iCloud, and other File Provider
-roots are not migration destinations or active storage capabilities.
+records the former app-owned-only boundary and the evidence that iCloud is
+ubiquitous while a separate local folder may return no public provider
+identity. Tactical `147` supersedes that product decision: iOS 16+ uses
+app-owned Documents plus distinct stable qualified selected roots, rejects
+iCloud and positively identified providers, and requires a physical capability
+gate when lookup fails. Tactical `148` directly reuses the first-party
+JSTorrent SwiftUI presentation; Tactical `149` owns finite background and
+recovery behavior. None authorizes migration or publication.
 
 ## Desktop Extension And Embedded UI
 
@@ -461,10 +468,10 @@ fixture, or wire contract from either sibling project.
   backend launches and recovery from stale or incompatible installations.
 - Physical ChromeOS TCP and UDP torrent behavior and representative Android
   versus Crostini resource and throughput measurements.
-- The eventual iOS product's UI toolkit, minimum OS, background policy,
-  packaging/distribution, migration source, and any future reconsideration of
-  external File Provider roots. Tacticals `116` and `123` supply feasibility
-  and app-owned recovery evidence, not these product decisions.
+- iOS migration source and public distribution/release policy. Tacticals
+  `147`--`149` select iOS 16+, SwiftUI, generated UniFFI, qualified on-device
+  roots, finite lifecycle behavior, and reproducible development/archive
+  packaging without App Store/TestFlight publication.
 
 ## Recommended Next Work
 

@@ -670,13 +670,28 @@ that scope and its cleanup or compatibility rules explicitly.
   per-connection ingress bounds exposed by a full window, without changing
   the accepted no-slow-start RFC 6817 controller.
 - [`145-sustained-utp-reliability-and-throughput-near-parity.md`](145-sustained-utp-reliability-and-throughput-near-parity.md):
-  active child of Tactical `142`; first makes repeated 16-bit sequence-cycle
+  paused child of Tactical `142`; first makes repeated 16-bit sequence-cycle
   transfers reliable on one connection, then targets at least `0.85x` matched
-  pinned-libtorrent uTP throughput without regressing delay/fairness behavior.
+  pinned-libtorrent uTP throughput without regressing delay/fairness behavior;
+  its exact human-review checkpoint is retained while the iOS campaign runs.
 - [`146-runtime-free-bep52-metainfo-geometry-merkle.md`](146-runtime-free-bep52-metainfo-geometry-merkle.md):
-  decision-complete and queued after Tactical `145`; plans exact v2/hybrid
+  decision-complete and queued after the explicitly scheduled iOS campaign;
+  plans exact v2/hybrid
   metainfo, format-aware aligned geometry, strict complete piece layers, and
   bounded runtime-free Merkle primitives while product support remains v1-only.
+- [`147-ios-client-foundation-and-qualified-roots.md`](147-ios-client-foundation-and-qualified-roots.md):
+  active first iOS product slice; establishes the maintained iOS 16+ target,
+  generated Swift boundary, durable in-process application, coordinated
+  descriptor-release seam, and physically qualified selected on-device roots
+  while rejecting iCloud and positively identified providers.
+- [`148-jstorrent-swiftui-product-surface.md`](148-jstorrent-swiftui-product-surface.md):
+  decision-complete second iOS slice; directly reuses the first-party
+  JSTorrent SwiftUI views, assets, and localizations over typed RSTorrent
+  models while deferring Search and unsupported High priority.
+- [`149-ios-lifecycle-recovery-and-distribution-readiness.md`](149-ios-lifecycle-recovery-and-distribution-readiness.md):
+  decision-complete third iOS slice; owns finite background work, process-death
+  recovery, cold/warm input, privacy metadata, physical lifecycle evidence,
+  and reproducible development/archive packaging without publication.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

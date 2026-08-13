@@ -15,8 +15,13 @@ in-process product, beginning with the bounded physical-device feasibility in
 Tactical [`116`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
 Completed Tactical
 [`123`](../tactical/123-ios-on-device-root-persistence-and-recovery.md)
-settles the initial iOS payload policy at app-owned, user-visible Documents
-only; system-picked and File Provider roots remain disabled.
+records the physical evidence behind the former app-owned-only iOS policy.
+Explicit maintainer direction on 2026-08-13 supersedes that product decision
+and schedules Tacticals [`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md)
+through [`149`](../tactical/149-ios-lifecycle-recovery-and-distribution-readiness.md)
+as the first maintained iOS product campaign. User-selected folders are now
+required, with iCloud and positively identified providers rejected and every
+accepted on-device root capability-qualified on physical hardware.
 
 ## Scope
 
@@ -84,16 +89,17 @@ foreground-service lifecycle, and Storage Access Framework document creation.
 The preferred storage seam is to give Rust usable file descriptors or another
 bulk-I/O capability rather than copying piece payloads through callbacks.
 
-On an eventual iOS product, Swift may own native presentation, directory
+On the maintained iOS product, Swift owns native presentation, directory
 selection, bookmarks and security-scope lifetime, File Provider coordination,
 background-task integration, and other Apple lifecycle work. Rust still owns
 peer networking, hashing, scheduling, persistence, and payload I/O. Tactical
 `116` proves the bounded direct-I/O seam, and Tactical `123` proves app-owned
-Documents persistence and recovery on a physical device. Its completed picker
-controls reject iCloud as ubiquitous but cannot positively classify the
-separate local directory after a public File Provider lookup failure, so
-picker-root registration remains compiled off. Payload callbacks through
-Swift are not the fallback.
+Documents persistence and recovery on a physical device. Its picker controls
+reject iCloud as ubiquitous and show that volume flags cannot positively name
+the separate local provider. Tactical `147` deliberately permits a provider-
+lookup failure only for non-ubiquitous local/internal selections that pass the
+complete bounded Rust capability gate; a returned provider identity rejects
+the root. Payload callbacks through Swift are not the fallback.
 
 ### Generated Kotlin boundary
 
@@ -114,10 +120,10 @@ Handwritten JNI is a narrow escape hatch for a concrete Android capability
 that UniFFI cannot express safely. It is not a parallel application API or a
 payload path.
 
-The eventual Rust/Swift binding technology is deliberately unselected.
-Tacticals `116` and `123` use the smallest bridge required for the physical
-probe, but those experiments do not establish the full product API, UI toolkit,
-or a second application contract.
+Tactical `147` selects UniFFI-generated Swift over a focused iOS static library
+and the existing typed application service. The SwiftUI presentation is
+directly reused from the first-party JSTorrent iOS product in Tactical `148`;
+no second application contract or payload bridge is introduced.
 
 ### In-process by default
 
@@ -144,15 +150,13 @@ Android/ChromeOS and desktop are the initial product surfaces. Desktop is the
 fastest bring-up and diagnostic environment. Android/ChromeOS supplies the
 primary product pressure and must receive physical-device validation.
 
-iOS is now accepted as an eventual first-party native surface around the same
-Rust engine and typed application service. It is not part of the initial
-release sequence, but platform constraints that can change engine ownership
-or storage/lifecycle seams should be tested early on a physical device rather
-than discovered after path and Android behavior harden. Tactical `116` owns
-the first bounded storage, direct-networking, and lifecycle feasibility probe;
-Tactical `123` adds app-owned root persistence, interrupted recovery, and the
-app-owned-only decision. Neither authorizes a complete iOS client or
-distribution path.
+iOS is an explicitly scheduled first-party native surface around the same Rust
+engine and typed application service. Tacticals `116` and `123` remain the
+completed physical feasibility and negative-classification records. Explicit
+maintainer authorization on 2026-08-13 activates the maintained product in
+Tacticals `147`--`149`: foundation and qualified roots, direct JSTorrent
+SwiftUI reuse, then lifecycle/recovery and distribution-ready archives. This
+does not authorize TestFlight, App Store, or other publication.
 
 ### Android engine parity gate
 
@@ -377,10 +381,10 @@ testing evidence justifies it.
 - Chrome extension or Chrome native-messaging integration.
 - Android companion HTTP/WebSocket service.
 - A generic socket or filesystem daemon.
-- A complete iOS product during initial bring-up. Tacticals `116` and `123`
-  deliberately front-load bounded physical-device feasibility and the
-  app-owned-only root policy without changing this release-sequencing
-  non-goal.
+- App Store/TestFlight publication or an iOS release claim during the first
+  maintained-client campaign. Tacticals `147`--`149` may build, archive,
+  development-sign, install, and physically validate the product without
+  publishing it.
 - Search plugins, streaming playback, or remote administration in the first
   useful client.
 - Exact JSTorrent API, engine, persistence, or feature parity. Completed

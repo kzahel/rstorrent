@@ -21,9 +21,9 @@ Android clients. Exact support claims and their evidence live in the
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. ChromeOS deployment
-  and extension integration remain planned rather than released. iOS is an
-  accepted eventual in-process product, with physical feasibility planned
-  before a complete client. See
+  and extension integration remain planned rather than released. A bounded
+  first-party in-process iOS implementation campaign is active; iOS remains
+  unsupported until its physical-device stopping conditions pass. See
   [client and platform readiness](docs/topics/client-surfaces.md).
 
 ## What RSTorrent Is
@@ -66,8 +66,9 @@ to graduate this work into the next generation of **JSTorrent**: replace the
 current engine and related internals while retaining the JSTorrent product
 name and providing a deliberate transition for existing installations.
 
-Desktop, Android, ChromeOS, and an eventual iOS client are intended to use the
-same first-party Rust engine. A future JSTorrent browser extension may attach
+Desktop, Android, ChromeOS, and the in-progress iOS client are intended to use
+the same first-party Rust engine. A future JSTorrent browser extension may
+attach
 as a control and presentation surface, while networking, hashing, scheduling,
 persistence, and payload I/O remain in the native engine. The rollout, backend
 choices,

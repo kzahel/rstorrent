@@ -104,10 +104,13 @@ Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), which
 completed on 2026-08-13. The post-143 readiness review activated Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-under parent Tactical `142` as the sole authoritative **Now**. Decision-
-complete Tactical
-[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is
-queued **Next** and is not yet active.
+under parent Tactical `142`; it reached its production congestion-policy
+human-review gate before explicit maintainer direction on 2026-08-13 paused
+the engine campaign. Product Tactical
+[`147`](../tactical/147-ios-client-foundation-and-qualified-roots.md) is now
+the sole authoritative **Now**. Decision-complete Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) remains
+queued after the bounded iOS campaign and is not active.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -473,13 +476,15 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Active tactical: **Tactical `145` under parent Tactical `142`.** The sole
-authoritative **Now** resumes the uTP campaign after the completed post-143
-maintainer readiness review. Completed Tactical `143` installs the
+Engine campaign status: **paused at Tactical `145` under parent Tactical
+`142`.** Tactical `145` has reached its production congestion-policy
+human-review gate. Explicit maintainer direction on 2026-08-13 moved the sole
+authoritative **Now** to product Tactical `147`, followed by bounded iOS
+Tacticals `148` and `149`. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
 persistence epoch, fail-closed pre-task reset, storage artifact versioning,
-and generated first-party identity contract. Tactical `142` and its active
-child Tactical `145` retain their evidence and next causal hypothesis.
+and generated first-party identity contract. Tactical `142` and its paused
+child Tactical `145` retain their evidence and exact restart checkpoint.
 
 Latest completed cross-cutting engine tactical:
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md). Full
@@ -493,10 +498,11 @@ Merkle integrity, and BEP 52 wire behavior remain absent.
 
 Next queued engine tactical:
 [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
-After active Tactical `145` reaches its stopping condition or explicit policy
-review gate, this runtime-free slice establishes exact v2/hybrid metainfo,
-aligned geometry, strict complete piece layers, and bounded Merkle primitives.
-It leaves product admission and every runtime/wire path v1-only.
+After the bounded iOS campaign completes, the maintainer may resolve Tactical
+`145`'s reached policy gate or activate this runtime-free slice, which
+establishes exact v2/hybrid metainfo, aligned geometry, strict complete piece
+layers, and bounded Merkle primitives. It leaves product admission and every
+runtime/wire path v1-only.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -567,17 +573,15 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Next engine-campaign action: execute focused Tactical
+Paused engine-campaign restart action: resume focused Tactical
 [`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
-under Tactical `142`. It starts with repeated 16-bit sequence-cycle
-reproduction and exact terminal-reason capture as the leading causal uTP
-action, then requires reliable single-connection transfers before bounded
-throughput repairs and matched-oracle WAN reruns. Its terminal-provenance
-stage and clean 131,075-DATA/three-wrap transport proof are implemented. The
-clean proof rejects sequence reuse itself. Exact 256 MiB WAN terminal evidence
-then selects and a release-profile regression reproduces retransmission queue
-removal compiled away inside `debug_assert!`; the mutation is now
-unconditional. The repaired 256 MiB mixed WAN cell completes over one uTP
+under Tactical `142` at its reached production congestion-policy human-review
+gate. Its terminal-provenance stage and clean 131,075-DATA/three-wrap transport
+proof are implemented. The clean proof rejects sequence reuse itself. Exact
+256 MiB WAN terminal evidence selected and a release-profile regression
+reproduced retransmission queue removal compiled away inside `debug_assert!`;
+the mutation is now unconditional. The repaired 256 MiB mixed WAN cell
+completes over one uTP
 connection with zero retry exhaustion, peer failure, TCP, or ingress drop and
 improves 27.7% to 2.093 MiB/s across 185,178 seed payload packets. A subsequent
 RSTorrent/RSTorrent reproduction proves SACK fast recovery was blocked after
