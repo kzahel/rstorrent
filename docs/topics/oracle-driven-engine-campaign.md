@@ -102,8 +102,12 @@ uTP peer-wire protocol failure before any further repair. Explicit maintainer
 direction on 2026-08-12 paused that campaign at this checkpoint and activated
 Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md), which
-completed on 2026-08-13. The sole authoritative **Now** is the maintainer
-readiness review; no implementation tactical is implicitly active.
+completed on 2026-08-13. The post-143 readiness review activated Tactical
+[`145`](../tactical/145-sustained-utp-reliability-and-throughput-near-parity.md)
+under parent Tactical `142` as the sole authoritative **Now**. Decision-
+complete Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is
+queued **Next** and is not yet active.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -486,6 +490,13 @@ have and part artifacts bind owner plus metadata fingerprint. Controlled
 pinned-libtorrent v1 roles, crash/restart/publication, generated web clients,
 both Android ABIs, and API-34 SAF schema-reset evidence pass. V2/hybrid input,
 Merkle integrity, and BEP 52 wire behavior remain absent.
+
+Next queued engine tactical:
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md).
+After active Tactical `145` reaches its stopping condition or explicit policy
+review gate, this runtime-free slice establishes exact v2/hybrid metainfo,
+aligned geometry, strict complete piece layers, and bounded Merkle primitives.
+It leaves product admission and every runtime/wire path v1-only.
 
 Latest graduated tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).

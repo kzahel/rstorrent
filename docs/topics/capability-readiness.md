@@ -432,8 +432,10 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
 ### Next
 
 - After Tactical `145` reaches its stopping condition or explicit policy
-  review gate, draft one bounded tactical for runtime-free BEP 52 metainfo,
-  geometry, and Merkle behavior from the accepted v2/hybrid topic.
+  review gate, activate decision-complete Tactical
+  [`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) for
+  runtime-free BEP 52 metainfo, geometry, piece-layer, and Merkle behavior.
+  Planning does not make it active, and product input remains v1-only.
 
 ### Later
 

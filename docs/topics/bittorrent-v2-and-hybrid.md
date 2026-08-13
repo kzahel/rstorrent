@@ -7,9 +7,10 @@ Tactical
 [`143`](../tactical/143-dual-identity-and-persistence-foundation.md) installs
 the v1-preserving opaque-owner, dual-identity, schema-19, artifact, runtime,
 and first-party client foundation. RSTorrent still rejects v2 and hybrid
-metainfo and magnets deterministically. Tactical
-[`142`](../tactical/142-wan-transport-performance-matrix.md) remains paused at
-its recorded analysis checkpoint, and no later BEP 52 tactical is active.
+metainfo and magnets deterministically. Decision-complete Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is
+queued after active Tactical `145`; no BEP 52 implementation tactical is
+active.
 
 ## Scope And Owning Role
 
@@ -401,9 +402,10 @@ runtime design.
 
 ## Tactical Campaign
 
-The first stage is complete. Later numbers remain unassigned until readiness
-selects them. Adjacent stages may be combined only when the resulting scope
-remains bounded and its stopping condition becomes clearer.
+The first stage is complete, and Stage 2 is assigned to queued Tactical
+`146`. Later numbers remain unassigned until readiness selects them. Adjacent
+stages may be combined only when the resulting scope remains bounded and its
+stopping condition becomes clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
@@ -418,7 +420,7 @@ metainfo, magnet, restart, incoming/outgoing transfer, trackers, DHT, MSE,
 seeding, removal, and generated client contracts pass with the new identity
 shape. It adds no v2 parser or support claim.
 
-### 2. Runtime-free BEP 52 metainfo, geometry, and Merkle core
+### 2. [Runtime-free BEP 52 metainfo, geometry, and Merkle core](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md)
 
 Add exact v2 info hashing, `meta version`, file-tree parsing, piece layers,
 per-file roots, aligned logical geometry, pure Merkle primitives and proofs,
@@ -511,13 +513,8 @@ content owner to participate through both identities while verifying both
 schemes. [`protocol-support.md`](protocol-support.md) owns the final claim
 language and evidence links.
 
-## Open Decisions For The Implementing Tacticals
+## Open Decisions For Later Implementing Tacticals
 
-- Decide whether an explicitly imported layer-incomplete v2 `.torrent` is
-  rejected strictly or admitted as typed partial metadata that must fetch
-  hashes before transfer.
-- Decide whether to accept libtorrent's historical missing-tail-padding
-  hybrid compatibility shape.
 - Select sparse Merkle persistence granularity versus bounded refetch after
   restart.
 - Calibrate parser, piece-layer, tree-node, message, request, retry, and
@@ -532,14 +529,18 @@ new engine dependency, weakens fail-closed integrity, deletes published user
 payload, or changes product identity semantics beyond this topic remains a
 human review gate.
 
+Tactical `146` resolves two earlier Stage 2 questions: an explicit complete
+v2/hybrid `.torrent` requires complete validated piece layers, while BEP 9
+info-only metadata has a distinct layer-unavailable representation; and
+hybrid comparison accepts only the pinned-libtorrent historical omission of
+the final tail pad, not missing internal padding.
+
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records Tactical `143` as
-complete and leaves Tactical `142` paused at its exact analysis checkpoint.
-The sole **Now** is a maintainer readiness review; no implementation tactical
-is implicitly active.
-
-The next campaign candidate is the runtime-free BEP 52 metainfo, geometry,
-and Merkle core described above. Drafting or activating it requires an
-explicit readiness decision. Until then, product input and wire support remain
-v1-only and the protocol ledger remains **Unsupported** for BEP 52.
+[`capability-readiness.md`](capability-readiness.md) records Tactical `145`
+under parent Tactical `142` as the sole **Now**. Decision-complete Tactical
+[`146`](../tactical/146-runtime-free-bep52-metainfo-geometry-merkle.md) is the
+queued **Next** and may be activated only after Tactical `145` reaches its
+stopping condition or explicit policy review gate and the readiness queue is
+advanced. Until then, product input and wire support remain v1-only and the
+protocol ledger remains **Unsupported** for BEP 52.

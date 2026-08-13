@@ -673,6 +673,10 @@ that scope and its cleanup or compatibility rules explicitly.
   active child of Tactical `142`; first makes repeated 16-bit sequence-cycle
   transfers reliable on one connection, then targets at least `0.85x` matched
   pinned-libtorrent uTP throughput without regressing delay/fairness behavior.
+- [`146-runtime-free-bep52-metainfo-geometry-merkle.md`](146-runtime-free-bep52-metainfo-geometry-merkle.md):
+  decision-complete and queued after Tactical `145`; plans exact v2/hybrid
+  metainfo, format-aware aligned geometry, strict complete piece layers, and
+  bounded runtime-free Merkle primitives while product support remains v1-only.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart
