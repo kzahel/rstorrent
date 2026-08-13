@@ -600,13 +600,22 @@ their intended payload. Its controlled product gate passes, and three exact
 WAN RSTorrent/RSTorrent repetitions improve median rate 2.94% while reducing
 DATA datagrams and ACK work about 40% and recovery/reorder work about 47%.
 
-The remaining WAN flight reaches a median 461 packets but one loss still puts
+The remaining WAN flight reached a median 461 packets but one loss still put
 398 later packets beyond RSTorrent's fixed 64-packet receive distance while
-more than 925 KiB of advertised byte credit remains. Pinned libtorrent derives
-953 reorder positions from the same 1 MiB receive capacity. The next
-executable action is a resource-accounted reorder-position repair with exact
-packet/byte high waters and no increase to payload credit, followed by the
-same focused WAN gate before any congestion-policy decision. The
+more than 925 KiB of advertised byte credit remained. The repaired owner now
+derives 953 positions from the unchanged 1 MiB capacity and retains an
+explicit 64-connection payload/metadata budget. Three exact WAN repetitions
+use 462--464 positions and 665--668 KiB, improve median rate 36.85% to
+2.139 MiB/s, reduce retransmissions from 399 to one, and eliminate median
+timeout collapse plus every too-far drop. Each remains one-connection and
+clean.
+
+RSTorrent/RSTorrent now matches the earlier RSTorrent-to-libtorrent sender
+rate but remains at 78.0% of the retained libtorrent oracle. The next
+executable action is residual sender utilization and startup attribution,
+including bounded diagnostic-only controller variants if ordinary evidence
+does not select another existing owner. Any production congestion-policy
+change remains at the tactical's human review gate. The
 separate remote-placement RSTorrent TCP seed disconnect and interrupted
 libtorrent-only 1 GiB control remain outside that future repair.
 Durable seeding goals remain the leading unrelated policy candidate, while

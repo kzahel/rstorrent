@@ -1033,3 +1033,19 @@ receive-reorder bound repair with packet/byte high-water telemetry and no
 increase to receive payload credit; it still does not authorize controller-
 policy changes. Another NAT mechanism, IPv6 uTP, permanent network change,
 another host, and a broader uTP support claim remain separate decisions.
+
+That repair now derives 953 positions from the unchanged 1 MiB receive credit
+and budgets all 64 connections at 64 MiB payload plus at most 14.891 MiB of
+conservative metadata. The three exact WAN repetitions use 462--464 positions
+and 664,614--668,205 bytes, confirming real headroom within both limits. Median
+rate improves 36.85% to 2.139 MiB/s, retransmissions fall from 399 to one,
+timeout collapses from 326 to zero, and too-far drops from 398 to zero. Every
+case stays on one connection and cleans up.
+
+RSTorrent/RSTorrent now matches the earlier RSTorrent-to-libtorrent rate,
+closing receiver composition as the primary owner, but remains at 78.0% of
+the retained libtorrent oracle. Tactical `145` next returns to sender startup
+and utilization attribution. Production slow start, gain, target, allowed
+increase, and loss response remain review-gated. Another NAT mechanism, IPv6
+uTP, permanent network change, another host, and a broader uTP support claim
+remain separate decisions.

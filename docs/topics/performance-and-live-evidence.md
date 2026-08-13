@@ -120,6 +120,18 @@ reorder distance despite at least 925 KiB of advertised receive credit. The
 next existing owner is a resource-accounted reorder-position bound; controller
 constants remain unchanged and review-gated.
 
+The bounded receive repair derives 953 positions from the unchanged 1 MiB
+credit. Across 64 connections, payload ownership remains 64 MiB and the
+conservative position-metadata allowance is at most 14.891 MiB. New runtime
+high waters make both dimensions visible. Three exact WAN
+RSTorrent/RSTorrent repetitions at `dba2677` use 462--464 positions and
+664,614--668,205 bytes, complete at 2.136027--2.139756 MiB/s, stay on one
+connection, and clean up. Relative to the packetization cohort median, rate
+improves 36.85%, retransmissions fall 399 to one, and timeout collapses and
+too-far drops fall to zero. The resulting 2.139183 MiB/s median is 78.0% of
+the retained oracle and matches the earlier RSTorrent-to-libtorrent result;
+residual work returns to sender utilization and review-gated startup policy.
+
 Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the

@@ -475,6 +475,59 @@ positions. A resource-accounted receive-reorder bound repair, with packet and
 byte high-water telemetry and unchanged 1 MiB payload credit, is now the next
 executable action.
 
+### Stage 7: receive-position repair
+
+RSTorrent now derives 953 reorder positions from the unchanged 1 MiB receive
+credit at one position per 1,100 bytes, matching the exact pinned-libtorrent
+owner. The 954th position is the first typed too-far disposition. The furthest
+admissible position produces a bounded 120-byte SACK, remains within the
+existing 252-byte hostile-wire limit, and rejects the next position without
+state mutation. The existing 1 MiB shared delivered/reorder byte limit is
+unchanged.
+
+The aggregate 64-connection budget therefore remains 64 MiB of receive
+payload. A conservative 256-byte metadata allowance for each of the 60,992
+positions adds at most 14.891 MiB, while fixed SACK arrays add 7,680 bytes.
+Runtime evidence now exposes separate reorder-packet and total-buffered-byte
+high waters. All 215 routine protocol tests, 23 routine uTP runtime tests,
+warning-denying protocol/engine/session Clippy, and 26 Python evidence
+contracts pass.
+
+The post-repair controlled 64 MiB product transfer over the 160 ms relay stays
+on one connection per role and completes at 1.181999 MiB/s with 47,082 DATA
+datagrams, zero retransmission/drop, exact integrity, and zero cleanup
+ownership. It selects a 1,457-byte MTU, and the new receive fields report zero
+reordered packets plus 107,775 buffered bytes on the leecher's clean path.
+
+The exact three-repetition WAN RSTorrent/RSTorrent 256 MiB cohort at revision
+`dba267731d9bf061fdf7170e9901b5b1010beead` then produces the causal result:
+
+| Metric | Before position repair | After position repair | Change |
+| --- | ---: | ---: | ---: |
+| Active MiB/s | 1.563165 | 2.139183 | +36.85% |
+| DATA datagrams | 188,149 | 187,622 | -0.28% |
+| Congestion ACK events | 96,269 | 95,857 | -0.43% |
+| Retransmissions | 399 | 1 | -99.75% |
+| Timeout collapses | 326 | 0 | -100% |
+| Too-far-ahead DATA | 398 | 0 | -100% |
+
+Rates span 2.136027--2.139756 MiB/s. Every case verifies all 256 MiB and
+1,024 pieces on one connection with zero retry exhaustion, peer/content
+error, fallback, or cleanup failure. Reorder high water is 462--464 packets
+and 664,614--668,205 bytes, proving that the previous 64-position limit—not
+payload credit—caused the recovery cascade. The seed emits only one, one, and
+two retransmissions; two samples have zero timeout collapse and the third has
+one without a rate penalty. Ingress reaches 43--59 of 256 datagrams, and the
+VM/Pi audit finds no compiler, role process, mapping run, or revision stage.
+
+The repaired RSTorrent/RSTorrent median is 78.0% of the retained 2.741167
+MiB/s libtorrent/libtorrent control and effectively matches the pre-repair
+2.129650 MiB/s RSTorrent/libtorrent median. Receiver composition is therefore
+closed as the primary owner. Residual sender utilization and startup
+attribution, including a bounded diagnostic-only controller A/B if ordinary
+telemetry cannot explain the gap, is the next executable action under the
+existing human review gate.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text

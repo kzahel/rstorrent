@@ -434,10 +434,14 @@ persistence/crash, both-ABI build, and API-34 reset evidence passes while BEP
   and 55.4% mixed/RST median oracle ratios selected ordinary DATA
   packetization. Its fairness-preserving repair cuts packet/ACK work about 40%
   and recovery/reorder work about 47%, but improves the focused WAN median only
-  2.94%. The residual 461-packet flight still exceeds a fixed 64-packet
-  receive-reorder distance despite ample byte credit, selecting that bounded
-  resource owner next; the full near-parity cohort remains. Remote revisions
-  are built in the guarded ARM64 Linux VM, not on the constrained WAN peer.
+  2.94%. Aligning reorder positions with unchanged receive byte credit then
+  improves the focused median another 36.85% to 2.139 MiB/s and eliminates
+  recovery cascades and too-far drops at a measured 464-packet/668 KiB high
+  water. This is 78.0% of the retained oracle and matches the earlier
+  RSTorrent-to-libtorrent sender result, selecting residual sender utilization
+  and review-gated startup attribution next; the full near-parity cohort
+  remains. Remote revisions are built in the guarded ARM64 Linux VM, not on
+  the constrained WAN peer.
 
 ### Next
 
