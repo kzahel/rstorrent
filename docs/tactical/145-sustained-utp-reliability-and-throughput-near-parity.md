@@ -295,6 +295,21 @@ owners after reliability.
 
 ### Stage 4: blocked fast recovery and WAN verification
 
+The first one-repetition remote-seed 256 MiB cohort at exact revision
+`bafe3c3` established the pre-fast-recovery comparison:
+
+| Seed -> leecher | Active MiB/s | RSTorrent connections | Oracle ratio |
+| --- | ---: | ---: | ---: |
+| libtorrent -> libtorrent | 2.741 | n/a | 100.0% |
+| libtorrent -> RSTorrent | 2.705 | 1 | 98.7% |
+| RSTorrent -> libtorrent | 2.140 | 1 | 78.1% |
+| RSTorrent -> RSTorrent | 1.154 | 2 | 42.1% |
+
+Every cell verified the exact payload and cleanup. The two mixed directions
+were stable on one connection; only RSTorrent/RSTorrent reconnected, making
+its retained terminal state the causal next sample rather than treating the
+four rates as a parity cohort.
+
 The first exact RSTorrent/RSTorrent 256 MiB WAN reproduction after terminal
 provenance completed only after a peer reconnect. The leecher rejected 751
 later DATA packets outside its unchanged 64-packet reorder allowance, while
