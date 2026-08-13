@@ -1,16 +1,18 @@
 # Tactical 150: Bounded uTP Sender Startup
 
-Status: **Active under Tactical 145.** Maintainer approval on 2026-08-13
-selects recommendation A from Tactical `145`: promote the diagnostic 10 ms
-queue-signal/30% retained-window startup policy, validate it end to end, and
-continue autonomously through the matched WAN cohort. Ordinary commits land
-by stage. The constrained `pimom` endpoint remains execution-only; exact ARM64
-Linux artifacts are built in the guarded `machine-control` UTM guest.
+Status: **Complete on 2026-08-13 at the maintainer-selected bounded evidence
+stop.** Recommendation A from Tactical `145` is production behavior, all
+preserved controlled/platform/repository gates pass, and the complete
+three-repetition remote-seed 256 MiB cohort proves near parity. A bounded
+one-to-two-sample 1 GiB follow-up corroborates scaling but is not presented as
+a stable cohort. The constrained `pimom` endpoint remained execution-only;
+exact ARM64 Linux artifacts were built in the guarded `machine-control` UTM
+guest.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
 
-Dependencies: active parent Tactical
+Dependencies: completed parent Tactical
 [`145`](145-sustained-utp-reliability-and-throughput-near-parity.md), parent
 lab Tactical [`142`](142-wan-transport-performance-matrix.md), and completed
 Tacticals [`121`](121-deterministic-utp-loss-congestion-and-mtu.md),
@@ -44,9 +46,10 @@ passed recovery, loss, MTU-isolation, integrity, and resource gates.
 
 The primary empirical outcome remains Tactical `145`'s median active payload
 rate of at least `0.85x` the alternating same-direction libtorrent/libtorrent
-uTP control for every RSTorrent-containing pairing at 256 MiB and 1 GiB. This
-tactical does not claim parity from deterministic results; it must run the
-controlled product and WAN evidence.
+uTP control for every RSTorrent-containing pairing. The stable claim is made
+from the complete three-repetition 256 MiB cohort. The later 1 GiB samples are
+bounded corroboration rather than a second stable median because maintainer
+review stopped bulk execution once its marginal diagnostic value flattened.
 
 ## Normative And Source Oracle
 
@@ -171,10 +174,10 @@ datagrams, zero reordered packets, and 125,019 buffered bytes. The relay has
 zero drop, 694 queued datagrams and 944,361 queued bytes at high water, then
 drains completely; exact payload verification and all process cleanup pass.
 
-Raw controlled reports are retained during execution at
+Raw controlled reports were retained during execution at
 `/tmp/rstorrent-t150-mixed.json` and
 `/tmp/rstorrent-t150-controlled.json`. They are temporary evidence inputs,
-not repository artifacts.
+not repository artifacts, and were removed after reconciliation.
 
 ### First WAN attempt and receive-window repair
 
@@ -243,6 +246,58 @@ RSTorrent RSS remains at most 19.7 MiB while seeding and 17.0 MiB while
 leeching. These are bounded exact measurements, not a broader BEP 29 support
 claim.
 
+### Bounded 1 GiB scaling follow-up
+
+Bulk execution stopped at maintainer review after 14 exact 1 GiB cases because
+the results repeated the 256 MiB conclusion without selecting another repair.
+The first repetition completed all eight TCP/uTP pairings; the second
+completed both transports for libtorrent/libtorrent and both mixed pairings.
+One in-flight RSTorrent/RSTorrent uTP cell and its following TCP cell were
+operator-stopped, cleaned successfully, and are excluded. Consequently these
+one-to-two-sample summaries are corroboration, not stable three-repetition
+medians:
+
+| Pairing, seed -> leech | TCP samples / middle MiB/s | uTP samples / middle MiB/s | uTP / oracle | uTP / own TCP |
+| --- | ---: | ---: | ---: | ---: |
+| libtorrent -> libtorrent | 2 / 2.647546 | 2 / 2.723313 | 100.00% | 102.86% |
+| libtorrent -> RSTorrent | 2 / 2.656844 | 2 / 2.730754 | 100.27% | 102.78% |
+| RSTorrent -> libtorrent | 2 / 2.649726 | 2 / 2.692556 | 98.87% | 101.62% |
+| RSTorrent -> RSTorrent | 1 / 2.635353 | 1 / 2.698530 | 99.09% | 102.40% |
+
+Every completed RSTorrent uTP role uses one connection with zero retry
+exhaustion. RSTorrent/RSTorrent records six retransmissions/loss reductions
+and zero timeout collapse; the two RSTorrent-to-libtorrent samples have zero
+retry and at most one clean timeout recovery; the two libtorrent-to-RSTorrent
+receivers use 714--721 reorder positions and 1,037,465--1,047,622 buffered
+bytes within the unchanged 953-position/1 MiB bounds, with zero receive-window
+drop. RSTorrent RSS remains at most 20.8 MiB. Together with the 24 exact
+256 MiB cases, the closing campaign transfers 20 GiB of exact payload.
+
+### Reverse-direction environment result
+
+One bounded local-seed RSTorrent/RSTorrent 1 GiB uTP smoke used a second exact
+UTM-built ARM64 artifact from revision `f34f3d0`. The host and Pi agreed on its
+14,188,944-byte size and SHA-256
+`c358c6b85a92475def918bf9ecdd556581349a46f67a23040d14b005cadb4136`;
+the Pi again ran no compiler. Before any mapping or payload, independent UPnP
+discovery on the current local network could not select an accepted mapped
+IGD service. The run therefore makes no reverse throughput claim. It cleaned
+all role processes and per-run artifacts, and the harness now reports that
+pre-payload condition through the existing typed mapping failure rather than
+an unclassified exception. The already proven remote-mapped and earlier
+local-mapped directions remain intact; this is current-network capability
+evidence, not a uTP failure.
+
+### Platform and repository closure
+
+Both Android native release ABIs (`x86_64` and `arm64-v8a`), Kotlin binding
+generation, JVM debug unit tests, and debug APK assembly pass. Final
+formatting, warning-denying workspace Clippy, the complete serial workspace
+test suite, and all 28 focused WAN mapping/matrix/uTP Python contracts pass.
+The exact dynamic-MTU, bandwidth-update, queue-saturation, and incoming
+half-open resource gates were made deterministic without relaxing their
+production bounds.
+
 An evidence-backed defect in the startup, congestion, transport, runtime
 telemetry, or existing WAN harness owners may be repaired autonomously. Stop
 for human direction only if evidence selects a different production policy,
@@ -287,14 +342,15 @@ externally visible scope not authorized here.
 | WAN | alternating three-repetition 256 MiB cohort plus applicable 1 GiB scaling, matching oracle/TCP controls, no fallback/reconnect or unexplained exclusion |
 | Platform/repository | both Android native ABIs, format, workspace Clippy/tests, interop contracts, and reconciled documentation |
 
-The tactical completes only when production uses the selected bounded startup,
-all preserved fairness/resource/correctness gates pass, the required WAN
-cohort is recorded, and every RSTorrent-containing median reaches `0.85x` the
-matched libtorrent uTP control. If production behaves correctly but a stable
-route cannot supply a valid oracle cohort, close evidence-limited with the
-typed environmental record and no parity claim. If a RSTorrent pairing
-remains below `0.85x`, retain the result and return to review before any
-steady-state controller change.
+The tactical completes when production uses the selected bounded startup, all
+preserved fairness/resource/correctness gates pass, and the complete stable
+256 MiB cohort places every RSTorrent-containing median above `0.85x` the
+matched libtorrent uTP control. The originally desired three repetitions at
+1 GiB were superseded by explicit maintainer review after one complete and one
+partial corroborating repetition stopped producing a new diagnosis. No stable
+1 GiB median or reverse-direction cohort is claimed. The local-seed smoke
+closed as typed pre-payload environmental evidence because the current local
+network exposed no accepted UPnP IGD service.
 
 ## Non-Goals And Next Boundary
 

@@ -1,6 +1,6 @@
 # Tactical 142: WAN Transport Performance Matrix
 
-Status: **Paused at an analysis checkpoint through child Tactical 145.**
+Status: **Complete on 2026-08-13 through child Tacticals 145 and 150.**
 Tactical [`143`](143-dual-identity-and-persistence-foundation.md) completed,
 and earlier maintainer direction on 2026-08-13 resumed this campaign through
 [`145`](145-sustained-utp-reliability-and-throughput-near-parity.md). Later
@@ -12,8 +12,8 @@ cells and 13,440 MiB of verified payload: complete 8/64/256 MiB grids and all
 eight remote-seed 1 GiB cells. Bulk execution stopped at maintainer review
 because the remaining local-seed 1 GiB controls had declining diagnostic
 value; one interrupted libtorrent/libtorrent control is excluded from ratios.
-The active child targets the newly isolated RSTorrent long-transfer
-reliability boundary rather than resuming undirected volume.
+The reusable lab remains available; its causal repair campaign now closes
+with a stable 256 MiB near-parity cohort and bounded 1 GiB corroboration.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -441,6 +441,30 @@ congestion policy. Tactical
 [`145`](145-sustained-utp-reliability-and-throughput-near-parity.md) records
 that reliability-first plan and the subsequent matched-libtorrent performance
 gate.
+
+### Child-campaign closure
+
+Tacticals [`145`](145-sustained-utp-reliability-and-throughput-near-parity.md)
+and [`150`](150-bounded-utp-sender-startup.md) used the lab to turn the large-
+transfer failures into causal repairs: release retransmission ownership, fast-
+retransmission admission, residual packetization, receive reorder capacity,
+nonfatal advertised-window overshoot, and bounded sender startup. The final
+remote-seed 256 MiB epoch completes all 24 TCP/uTP cells across all four
+pairings and three repetitions. RSTorrent-containing uTP medians are 100.74%,
+97.34%, and 94.85% of the same-direction libtorrent/libtorrent oracle and at
+least 98.49% of their own TCP medians. Every RSTorrent sender sample stays on
+one connection with no retry exhaustion or terminal failure.
+
+Fourteen exact 1 GiB cells provide bounded one-to-two-sample corroboration:
+RSTorrent-containing uTP results are 98.87%--100.27% of their corresponding
+oracle observation and 101.62%--102.78% of their own TCP middle rate, with the
+single RSTorrent/RSTorrent cell at 99.09% and 102.40%. Maintainer review stops
+there because additional bulk cases no longer select a repair. Together the
+child campaign transfers 20 GiB of exact payload. A local-seed smoke stops
+pre-payload on typed absence of an accepted UPnP IGD service on the current
+local network, cleans exactly, and makes no reverse-direction throughput
+claim. The lab is complete as reusable infrastructure; further volume is not
+an active campaign.
 
 ## Non-Goals And Escalation
 

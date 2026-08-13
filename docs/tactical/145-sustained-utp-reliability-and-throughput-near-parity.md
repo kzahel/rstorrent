@@ -1,12 +1,10 @@
 # Tactical 145: Sustained uTP Reliability And Throughput Near-Parity
 
-Status: **Active under parent Tactical 142 through child Tactical 150.**
-Terminal provenance, repeated-cycle gates, release recovery, packetization and
-receive-position repairs, off-device WAN builds, and the diagnostic startup
-A/B are implemented. Maintainer approval on 2026-08-13 resumes this checkpoint,
-selects recommendation A, and activates Tactical `150` to promote and validate
-the bounded 10 ms/30% startup policy. Production remains linear until that
-child implementation lands.
+Status: **Complete on 2026-08-13 under parent Tactical 142 through child
+Tactical 150.** Terminal provenance, repeated-cycle gates, release recovery,
+packetization and receive-position repairs, off-device WAN builds, bounded
+sender startup, the stable 256 MiB near-parity cohort, 1 GiB corroboration,
+and all closure gates pass.
 
 Topics: `utp-transport-campaign`, `performance-and-live-evidence`,
 `capability-readiness`, `oracle-driven-engine-campaign`
@@ -611,8 +609,49 @@ gain. Recommendation A is to promote the bounded 10 ms/30% startup behavior,
 then run the controlled product and WAN cohort before making any parity claim.
 The exact libtorrent rule is rejected, and changing steady-state gain,
 `TARGET`, ordinary allowed increase, or loss multiplication is not
-recommended. Production implementation now stops at the required human
-review gate.
+recommended. At that checkpoint, production implementation stopped at the
+required human review gate.
+
+### Stage 9: production startup and near-parity closure
+
+Maintainer review selected recommendation A, and child Tactical
+[`150`](150-bounded-utp-sender-startup.md) promotes it to every initiating and
+accepted uTP transport. Startup grows only on congestion-limited acknowledged
+payload, exits on the first 10 ms queue signal while retaining 30% of its
+window, and then returns to the unchanged linear RFC 6817 controller. Loss,
+timeout restart, application-limited suppression, dynamic MTU, fairness,
+recovery, receive pressure, and all existing resource bounds pass.
+
+The closing remote-seed 256 MiB cohort has all 24 exact cells: four
+implementation pairings, forced TCP and uTP, and three rotating repetitions.
+Every RSTorrent-containing uTP median clears the `0.85x` oracle target and
+reaches at least 98.49% of its own TCP median:
+
+| Pairing, seed -> leech | uTP median MiB/s | uTP / oracle | uTP / own TCP |
+| --- | ---: | ---: | ---: |
+| libtorrent -> RSTorrent | 2.761146 | 100.74% | 102.87% |
+| RSTorrent -> libtorrent | 2.668005 | 97.34% | 99.82% |
+| RSTorrent -> RSTorrent | 2.599811 | 94.85% | 98.49% |
+
+Every RSTorrent sender sample stays on one connection without retry
+exhaustion, terminal failure, or timeout collapse. Queue-delay high water is
+at most 80.150 ms, congestion/flight remains within 1 MiB, the receiver uses
+at most 463 reorder positions and 666,768 buffered bytes in this cohort, and
+RSTorrent RSS remains below 20 MiB.
+
+A bounded 1 GiB follow-up contributes 14 more exact cells. Its one-to-two
+samples place the RSTorrent-containing uTP pairings at 98.87%--100.27% of the
+corresponding libtorrent uTP observation and 101.62%--102.78% of their own TCP
+middle rate; the single RSTorrent/RSTorrent sample reaches 99.09% and 102.40%.
+This corroborates scale but is not a stable median. Maintainer review stopped
+bulk execution after 20 GiB total exact Tactical `150` payload because the
+marginal diagnostic value had flattened. A bounded local-seed smoke stopped
+before payload when the current local network exposed no accepted UPnP IGD
+service; cleanup passed and no reverse-direction parity claim follows.
+
+Both Android native ABIs and final repository gates pass. The stable
+near-parity claim is deliberately limited to the complete 256 MiB remote-seed
+cohort, and BEP 29 remains **Partial**.
 
 ## Owner, Task, Cancellation, And Dependency Map
 
@@ -746,7 +785,7 @@ runtime infrastructure into protocol state.
 | Scripted runtime | Fixed and dynamic MTU, clean and impaired links, no starvation, bounded queues/turns, cancellation and socket-generation replacement, exact terminal cause |
 | Controlled interop | RSTorrent/RSTorrent and both mixed directions, one connection, forced uTP, exact hashes, more than two cycles, clean 160 ms and relevant impairment profiles |
 | Reliability WAN | Alternating 256 MiB affected cells, zero unexplained reconnect/retry/drop/fallback, exact integrity and cleanup |
-| Throughput WAN | Three rotating 256 MiB repetitions in both directions and remote-seed 1 GiB repetitions; every RSTorrent pairing median at least `0.85x` matched libtorrent/libtorrent uTP |
+| Throughput WAN | Three rotating remote-seed 256 MiB repetitions; bounded 1 GiB corroboration and a typed reverse-direction environment result; every stable RSTorrent pairing median at least `0.85x` matched libtorrent/libtorrent uTP |
 | Fairness | Existing queue-delay, bufferbloat, TCP-like competitor share/yield, recovery, loss, timeout, receive-pressure, and dynamic-MTU thresholds do not regress |
 | Platform/repository | Both Android native builds; formatting; warning-denying workspace Clippy; workspace tests; relevant Python contracts and controlled profiles |
 
@@ -756,11 +795,14 @@ reference path in each cohort. One-off ratios are observations; the near-
 parity claim uses three valid alternating repetitions and reports the median
 and range.
 
-This tactical completes only when sustained transfers remain on one
-connection, exact integrity and cleanup pass, every RSTorrent-containing
-pairing meets the `0.85x` median target, and all fairness/resource/platform
-gates pass. If a stable path cannot supply a valid oracle cohort, close only
-with typed environmental evidence and no parity claim.
+This tactical completes when sustained transfers remain on one connection,
+exact integrity and cleanup pass, every RSTorrent-containing pairing in the
+stable three-repetition remote-seed 256 MiB cohort meets the `0.85x` median
+target, and all fairness/resource/platform gates pass. Explicit maintainer
+review superseded the original full 1 GiB/both-direction cardinality after
+bounded scaling corroborated the same result and the local direction stopped
+pre-payload on typed current-network UPnP capability. No stable 1 GiB or
+reverse-direction parity claim follows.
 
 ## Human Review Gate
 
