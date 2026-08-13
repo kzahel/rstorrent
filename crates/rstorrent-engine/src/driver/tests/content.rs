@@ -10,8 +10,8 @@ fn maximum_piece_is_the_only_member_of_an_over_budget_plan_window() {
     raw_info.extend_from_slice(&[0; 60]);
     raw_info.push(b'e');
     let metainfo = Metainfo::from_info_bytes(&raw_info).expect("maximum-piece metainfo");
-    let layout = TorrentLayout::from_metainfo(&metainfo);
-    let selection = FileSelection::new(&layout, &[]).expect("wanted selection");
+    let layout = ContentLayout::from(TorrentLayout::from_metainfo(&metainfo));
+    let selection = FileSelection::new_content(&layout, &[]).expect("wanted selection");
     let mut pieces = vec![0, 1, 2].into_iter();
 
     let (plans, blocks, bytes) = build_content_plan_window(

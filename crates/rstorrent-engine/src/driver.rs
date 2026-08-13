@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::content::{
+    ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection,
+};
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
     encode_extension_handshake as encode_recognized_extension_handshake,
@@ -29,7 +32,7 @@ use rstorrent_protocol::peer_wire::{
     FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage,
 };
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
-use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
+use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
 use rstorrent_protocol::udp_tracker::{MAX_COMPACT_PEERS, UdpTrackerError};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -39,7 +42,6 @@ use tokio::time::Instant as TokioInstant;
 use tokio_util::sync::CancellationToken;
 
 use crate::active_seed_content::{ActiveSeedContent, ActiveUploadFailureSignal};
-use crate::artifact_layout::PublicationShape;
 use crate::dht::{DhtError, DhtHandle};
 use crate::http_tracker::{HTTP_TRACKER_TIMEOUT, HttpTrackerClients, TrackerRetryDirective};
 use crate::identity::{ContentFingerprint, TorrentIdentityContext};
@@ -74,10 +76,10 @@ use crate::resume_validation::{
     ResumeAdmissionOutcome, ResumeStorageEvidence, ResumeValidationIntent, decide_resume_admission,
 };
 use crate::selective_storage::{
-    DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage, SelectiveStorage,
-    SelectiveStorageError, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
+    ComputedPieceHash, DescriptorStorage, PreparedFileHash, ResumeArtifactState, ResumedStorage,
+    SelectiveStorage, SelectiveStorageError, TorrentArtifactIdentity, VERIFICATION_CHUNK_LENGTH,
     remove_selective_part_if_present, remove_selective_staging_if_present,
-    torrent_storage_paths_for_output_with_shape, validate_publication_name,
+    validate_publication_name,
 };
 use crate::streaming::{
     MAX_STREAMING_CANDIDATE_INSPECTIONS, StreamingCandidateCursor, StreamingDemandSnapshot,
@@ -300,6 +302,29 @@ pub struct ResumableMagnetDownloadConfig {
     pub dht: Option<DhtHandle>,
     /// Authoritative operational tracker catalog. `None` uses the
     /// independently bounded UDP and HTTP(S) trackers parsed from the magnet URI.
+    pub trackers: Option<Vec<TrackerConfig>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ResumableMetainfoDownloadConfig {
+    pub identity: TorrentIdentityContext,
+    /// Exact complete outer metainfo source retained by byte intake.
+    pub metainfo_source: Vec<u8>,
+    /// Selected containing directory. The validated content name supplies the
+    /// recognizable publication entry beneath this root.
+    pub storage_root: PathBuf,
+    pub network: NetworkConfig,
+    pub peer_budget: PeerBudget,
+    pub mse_dh: MseDhWorkOwner,
+    pub encryption: PeerEncryptionPolicyHandle,
+    pub torrent_peers: Option<TorrentPeerHandle>,
+    pub resource_limits: DownloadResourceLimits,
+    pub skip_files: Vec<usize>,
+    pub verified_pieces: Vec<bool>,
+    pub artifact_state: ResumeArtifactState,
+    pub resume_validation: ResumeValidationIntent,
+    pub download_missing: bool,
+    pub dht: Option<DhtHandle>,
     pub trackers: Option<Vec<TrackerConfig>>,
 }
 
@@ -640,6 +665,22 @@ pub async fn resume_magnet_with_control(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     resume_magnet_owned(config, checkpoints, control, None).await
+}
+
+pub async fn resume_metainfo_with_control(
+    config: ResumableMetainfoDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    validate_network_config(config.network)?;
+    config.resource_limits.validate()?;
+    if control.is_cancelled() {
+        return Err(DownloadError::Cancelled);
+    }
+    let result = run_resumable_metainfo_download(config, checkpoints, control.clone()).await;
+    let result = require_terminal_owner_cleanup(&control, result);
+    control.clear_buffered_payload();
+    result
 }
 
 #[cfg_attr(not(feature = "descriptor-storage-diagnostics"), allow(dead_code))]
@@ -1023,6 +1064,23 @@ fn validate_v1_runtime_identity(
             "v2 wire operation is not implemented",
         )),
     }
+}
+
+fn validate_content_runtime_identity(
+    identity: TorrentIdentityContext,
+    content: &TorrentContent,
+) -> Result<(), DownloadError> {
+    if identity.info_hashes() != content.info_hashes() {
+        return Err(DownloadError::InvalidTorrentIdentity(
+            "full identity set does not match complete metainfo",
+        ));
+    }
+    if identity.swarm_key() != content.swarm_key() {
+        return Err(DownloadError::InvalidTorrentIdentity(
+            "selected wire key does not match complete metainfo",
+        ));
+    }
+    Ok(())
 }
 
 fn preserves_existing_artifact(error: &DownloadError) -> bool {
@@ -2710,6 +2768,45 @@ impl TorrentPeerCoordinator {
         Ok(peers)
     }
 
+    fn from_complete_content(
+        info_hash: [u8; 20],
+        trackers: Vec<TrackerConfig>,
+        network: NetworkConfig,
+        control: DownloadControl,
+        dht: Option<DhtHandle>,
+        resources: TorrentPeerResources,
+    ) -> Result<Self, DownloadError> {
+        let mut peers = Self::new_with_peer_state(
+            network,
+            control,
+            resources.peer_budget,
+            resources.torrent_peers,
+            resources.mse_dh,
+            resources.encryption,
+        )?;
+        peers.publish_peer_registry(true);
+        peers.dht = dht;
+        if peers.control.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
+        if !trackers.is_empty() {
+            peers.tracker = Some(TrackerManager::start_with_configs(
+                trackers,
+                info_hash,
+                network,
+                peers.control.clone(),
+            )?);
+        }
+        if peers.registry_is_empty()
+            && peers.tracker.is_none()
+            && peers.dht.is_none()
+            && !peers.external_discovery
+        {
+            return Err(DownloadError::NoUsablePeer);
+        }
+        Ok(peers)
+    }
+
     async fn resolve_peer_hints(&mut self, hints: &[PeerHint]) {
         for hint in hints {
             let addresses =
@@ -3544,7 +3641,15 @@ async fn run_magnet_download_with_peers(
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
-    run_content_download(content_config, metainfo, control, None, peers, None).await
+    run_content_download(
+        content_config,
+        TorrentContent::from_v1_metainfo(metainfo),
+        control,
+        None,
+        peers,
+        None,
+    )
+    .await
 }
 
 async fn run_magnet_metadata(
@@ -3675,7 +3780,7 @@ async fn run_resumable_magnet_download(
         };
         let result = run_content_download(
             content_config,
-            metainfo,
+            TorrentContent::from_v1_metainfo(metainfo),
             control,
             descriptors,
             &mut peers,
@@ -3734,7 +3839,7 @@ async fn run_resumable_magnet_download(
         };
         run_content_download(
             content_config,
-            metainfo,
+            TorrentContent::from_v1_metainfo(metainfo),
             control,
             None,
             &mut peers,
@@ -3742,6 +3847,85 @@ async fn run_resumable_magnet_download(
         )
         .await
     }
+    .await;
+    let tracker_shutdown = if result.is_ok() {
+        peers.finish_tracker().await
+    } else {
+        peers.shutdown_tracker().await
+    };
+    merge_tracker_shutdown(result, tracker_shutdown)
+}
+
+async fn run_resumable_metainfo_download(
+    config: ResumableMetainfoDownloadConfig,
+    checkpoints: Arc<dyn DownloadCheckpointSink>,
+    control: DownloadControl,
+) -> Result<DownloadReport, DownloadError> {
+    let projection = TorrentContentProjection::from_bytes_with_limits(
+        &config.metainfo_source,
+        DURABLE_METAINFO_LIMITS,
+    )
+    .map_err(DownloadError::Metainfo)?;
+    let content = projection.content;
+    validate_content_runtime_identity(config.identity, &content)?;
+    validate_publication_name(content.name()).map_err(DownloadError::SelectiveStorage)?;
+    let raw_info = Arc::<[u8]>::from(
+        config.metainfo_source[projection.info_span]
+            .to_vec()
+            .into_boxed_slice(),
+    );
+    let info_hash = content.swarm_key().into_bytes();
+    let content_dht = if content.private() {
+        control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
+        None
+    } else {
+        config.dht.clone()
+    };
+    let trackers = config.trackers.clone().unwrap_or_default();
+    let mut peers = TorrentPeerCoordinator::from_complete_content(
+        info_hash,
+        trackers,
+        config.network,
+        control.clone(),
+        content_dht,
+        TorrentPeerResources {
+            peer_budget: config.peer_budget,
+            torrent_peers: config.torrent_peers,
+            mse_dh: config.mse_dh,
+            encryption: config.encryption,
+        },
+    )?;
+    let resume = ResumeContext {
+        raw_info: Some(raw_info.clone()),
+        verified_pieces: config.verified_pieces,
+        checkpoints,
+        initialize_descriptors: false,
+        artifact_state: config.artifact_state,
+        validation: config.resume_validation,
+        download_missing: config.download_missing,
+    };
+    let content_config = ContentDownloadConfig {
+        artifact_identity: TorrentArtifactIdentity {
+            torrent_id: config.identity.torrent_id(),
+            content_fingerprint: ContentFingerprint::for_info_bytes(&raw_info),
+        },
+        output_path: config.storage_root.join(content.name()),
+        max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
+        storage_intake_high_watermark_bytes: config
+            .resource_limits
+            .storage_intake_high_watermark_bytes,
+        swarm_config: config.resource_limits.swarm_config(),
+        skip_files: config.skip_files,
+        materialize_files: Vec::new(),
+    };
+    let result = run_content_download(
+        content_config,
+        content,
+        control,
+        None,
+        &mut peers,
+        Some(resume),
+    )
     .await;
     let tracker_shutdown = if result.is_ok() {
         peers.finish_tracker().await
@@ -4070,7 +4254,7 @@ async fn run_download(
     };
     let result = run_content_download(
         content_config,
-        metainfo,
+        TorrentContent::from_v1_metainfo(metainfo),
         control,
         descriptors,
         &mut peers,
@@ -4082,19 +4266,19 @@ async fn run_download(
 
 async fn run_content_download(
     config: ContentDownloadConfig,
-    metainfo: Metainfo,
+    content: impl Into<TorrentContent>,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
+    let content = content.into();
     peers.control = control.clone();
     if peers.owns_peer_sink {
         peers.peers.set_sink(Arc::new(control.clone()));
     }
     peers.publish_peer_registry(true);
-    let result =
-        run_selective_download(config, metainfo, control, descriptors, peers, resume).await;
+    let result = run_selective_download(config, content, control, descriptors, peers, resume).await;
     peers.close_current(result.as_ref().err().and_then(content_peer_failure))?;
     result
 }
@@ -4109,6 +4293,7 @@ use storage_pipeline::{
 };
 use storage_pipeline::{
     ContentStorage, ContentStorageCommand, ContentStorageCompletion, ContentStoragePipeline,
+    content_hash_matches,
 };
 
 struct ContentSwarmDownload<'a> {
@@ -4121,8 +4306,8 @@ struct ContentSwarmDownload<'a> {
     active_registration: Option<(IncomingPeerHandle, SeedRegistrationToken)>,
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
-    metainfo: &'a Metainfo,
-    layout: &'a TorrentLayout,
+    content: &'a TorrentContent,
+    layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
     total_blocks: usize,
@@ -4168,15 +4353,15 @@ struct AppliedFileSelection {
 }
 
 struct ContentDownloadContext<'a> {
-    metainfo: &'a Metainfo,
-    layout: &'a TorrentLayout,
+    content: &'a TorrentContent,
+    layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
 }
 
 #[cfg(test)]
 fn build_content_plan_window(
-    layout: &TorrentLayout,
+    layout: &ContentLayout,
     selection: &FileSelection,
     pieces: &mut std::vec::IntoIter<u32>,
     maximum_pieces: usize,
@@ -4208,7 +4393,7 @@ fn build_content_plan_window(
 }
 
 fn build_content_piece_plan(
-    layout: &TorrentLayout,
+    layout: &ContentLayout,
     selection: &FileSelection,
     piece: u32,
 ) -> Result<(PiecePlan, usize, usize), DownloadError> {
@@ -4250,7 +4435,7 @@ impl<'a> ContentSwarmDownload<'a> {
         context: ContentDownloadContext<'a>,
     ) -> Result<Self, DownloadError> {
         let ContentDownloadContext {
-            metainfo,
+            content,
             layout,
             resume,
             control,
@@ -4285,14 +4470,15 @@ impl<'a> ContentSwarmDownload<'a> {
         )
         .await?;
         let active_content = ActiveSeedContent::new(
-            metainfo.info_hash,
-            metainfo.private,
+            content.swarm_key().into_bytes(),
+            content.private(),
             piece_lengths,
             availability.clone(),
             storage_pipeline.active_upload_planner(),
         );
         let active_reader = active_content.configure_file_access(
-            metainfo,
+            content.name(),
+            layout,
             &selection.selection,
             control.cancellation_token(),
             storage_pipeline.active_file_planner(),
@@ -4310,7 +4496,7 @@ impl<'a> ContentSwarmDownload<'a> {
             active_registration: None,
             outgoing_uploads: BTreeMap::new(),
             incoming_content: BTreeMap::new(),
-            metainfo,
+            content,
             layout,
             resume,
             control,
@@ -4425,7 +4611,7 @@ impl<'a> ContentSwarmDownload<'a> {
         let allowed_fast = if supports_fast {
             match remote {
                 std::net::IpAddr::V4(address) => generate_allowed_fast_set(
-                    self.metainfo.info_hash,
+                    self.content.swarm_key().into_bytes(),
                     address,
                     self.layout.piece_count(),
                     MAX_GENERATED_ALLOWED_FAST_PIECES,
@@ -4459,7 +4645,10 @@ impl<'a> ContentSwarmDownload<'a> {
                 .map_err(download_peer_set_error)?;
         }
         let membership = self.control.incoming_peer_handle().map(|handle| {
-            handle.register_session_upload(self.metainfo.info_hash, self.metainfo.piece_length)
+            handle.register_session_upload(
+                self.content.swarm_key().into_bytes(),
+                self.content.piece_length(),
+            )
         });
         self.outgoing_uploads.insert(
             connection,
@@ -5065,7 +5254,7 @@ impl<'a> ContentSwarmDownload<'a> {
             PeerMessage::Extended {
                 id: UT_PEX_LOCAL_ID,
                 payload,
-            } => match peers.receive_pex(connection, &payload, !self.metainfo.private) {
+            } => match peers.receive_pex(connection, &payload, !self.content.private()) {
                 Ok(PexReceiveDisposition::RateLimited { close: true, .. }) | Err(_) => {
                     return Ok(ContentMessageDisposition::ClosePeer {
                         failure: PeerFailure::Protocol,
@@ -5158,13 +5347,14 @@ impl<'a> ContentSwarmDownload<'a> {
                     .piece_ready_for_generation(block.piece, generation)
                     .map_err(DownloadError::Swarm)?
                 {
-                    let piece_index = usize::try_from(block.piece)
-                        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
                     let length = self
                         .layout
                         .piece_length_at(block.piece)
                         .map_err(DownloadError::Layout)?;
-                    let expected = self.metainfo.piece_hashes[piece_index];
+                    let expected = self
+                        .content
+                        .expected_piece(block.piece)
+                        .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                     let durable = self.resume.is_some();
                     self.state
                         .begin_piece_hash(block.piece, generation)
@@ -5195,16 +5385,22 @@ impl<'a> ContentSwarmDownload<'a> {
                     return Ok(ContentMessageDisposition::Continue);
                 }
                 let verification = result?;
-                self.control
-                    .record_bytes(ByteMetric::LogicalHashRead, length as usize);
-                let actual = verification.actual;
                 let piece_index = usize::try_from(piece)
                     .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
-                let expected = self.metainfo.piece_hashes[piece_index];
+                let reported_hash = match verification.actual {
+                    ComputedPieceHash::Sha1(hash) => hash,
+                    ComputedPieceHash::Sha256 { root, .. } => {
+                        let mut truncated = [0_u8; 20];
+                        truncated.copy_from_slice(&root[..20]);
+                        truncated
+                    }
+                };
+                self.control
+                    .record_bytes(ByteMetric::LogicalHashRead, length as usize);
                 self.state
-                    .finish_piece_hash(piece, generation, actual == expected)
+                    .finish_piece_hash(piece, generation, verification.matched)
                     .map_err(DownloadError::Swarm)?;
-                if actual != expected {
+                if !verification.matched {
                     let failure = self
                         .state
                         .mark_piece_hash_failed_for_generation(piece, generation)
@@ -5239,7 +5435,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     self.control.record_streaming_piece_verified(piece);
                     self.last_piece = Some(VerifiedPiece {
                         index: piece,
-                        hash: actual,
+                        hash: reported_hash,
                         length,
                     });
                     self.control
@@ -5298,8 +5494,8 @@ impl<'a> ContentSwarmDownload<'a> {
         if update.revision <= self.selection_revision {
             return Ok(());
         }
-        let next_selection =
-            FileSelection::new(self.layout, &update.skip_files).map_err(DownloadError::Layout)?;
+        let next_selection = FileSelection::new_content(self.layout, &update.skip_files)
+            .map_err(DownloadError::Layout)?;
         let previous_availability_empty = self.availability.snapshot().available_count == 0;
         self.stop_storage(false).await?;
         let mut storage = self.take_storage()?;
@@ -5504,7 +5700,7 @@ async fn record_failed_piece_contributors(
 }
 
 fn torrent_payload_offset(
-    layout: &TorrentLayout,
+    layout: &ContentLayout,
     piece: u32,
     begin: u32,
 ) -> Result<u64, DownloadError> {
@@ -5512,6 +5708,25 @@ fn torrent_payload_offset(
         .checked_mul(u64::from(layout.piece_length()))
         .and_then(|offset| offset.checked_add(u64::from(begin)))
         .ok_or(DownloadError::Layout(LayoutError::ArithmeticOverflow))
+}
+
+fn diagnostic_piece_hash(
+    content: &TorrentContent,
+    piece_index: usize,
+) -> Result<[u8; 20], DownloadError> {
+    let piece = u32::try_from(piece_index)
+        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+    match content
+        .expected_piece(piece)
+        .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+    {
+        ExpectedPieceIntegrity::V1Sha1(hash) => Ok(hash),
+        ExpectedPieceIntegrity::V2Merkle { expected_root, .. } => {
+            let mut truncated = [0_u8; 20];
+            truncated.copy_from_slice(&expected_root[..20]);
+            Ok(truncated)
+        }
+    }
 }
 
 fn validated_compact_availability(bitfield: Vec<u8>, piece_count: usize) -> Option<Vec<u8>> {
@@ -6019,7 +6234,7 @@ async fn run_selective_swarm_loop(
             )
             .await?;
         if peers.network.peer_exchange
-            && !download.metainfo.private
+            && !download.content.private()
             && sockets
                 .send(
                     id,
@@ -6203,7 +6418,7 @@ async fn run_selective_swarm_loop(
                 peers,
                 sockets,
                 &mut download.state,
-                download.metainfo.info_hash,
+                download.content.swarm_key().into_bytes(),
                 download.incoming_content.len(),
             )?;
         }
@@ -6475,7 +6690,7 @@ async fn run_selective_swarm_loop(
                         }
                         if peers.network.peer_exchange
                             && handshake.supports_extensions()
-                            && !download.metainfo.private
+                            && !download.content.private()
                             && sockets
                                 .send(
                                     id,
@@ -6593,7 +6808,7 @@ async fn download_content_swarm<'a>(
         .with_bandwidth(peers.peers.bandwidth());
     let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
     let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
-    let mut discovery = ContentDiscovery::start(peers, download.metainfo.info_hash);
+    let mut discovery = ContentDiscovery::start(peers, download.content.swarm_key().into_bytes());
     let result = match download.register_active_route(peers.peers.clone()).await {
         Ok(()) => {
             run_selective_swarm_loop(
@@ -6680,8 +6895,8 @@ async fn wait_for_checking_resume(
 
 async fn full_recheck_managed_storage(
     storage: &mut SelectiveStorage,
-    metainfo: &Metainfo,
-    layout: &TorrentLayout,
+    content: &TorrentContent,
+    layout: &ContentLayout,
     previous: &[bool],
     selection: &mut AppliedFileSelection,
     control: &DownloadControl,
@@ -6719,8 +6934,8 @@ async fn full_recheck_managed_storage(
         if running.is_empty()
             && let Some(update) = pending_selection.as_ref()
         {
-            let next_selection =
-                FileSelection::new(layout, &update.skip_files).map_err(DownloadError::Layout)?;
+            let next_selection = FileSelection::new_content(layout, &update.skip_files)
+                .map_err(DownloadError::Layout)?;
             let reconcile = storage
                 .reconcile_selection(next_selection.clone())
                 .await
@@ -6804,7 +7019,7 @@ async fn full_recheck_managed_storage(
                     piece_length,
                     bytes_hashed,
                     started_at,
-                    operation.execute().await,
+                    operation.execute_content().await,
                 )
             });
         }
@@ -6837,8 +7052,11 @@ async fn full_recheck_managed_storage(
                         continue;
                     }
                 };
+                let expected = content
+                    .expected_piece(piece_index)
+                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                 let outcome = match result {
-                    Ok(actual) if actual == metainfo.piece_hashes[piece_index_usize] => {
+                    Ok(actual) if content_hash_matches(actual, expected) => {
                         CheckerPieceOutcome::Matched
                     }
                     Ok(_) => CheckerPieceOutcome::Mismatched,
@@ -6886,15 +7104,15 @@ async fn full_recheck_managed_storage(
 
 async fn run_selective_download(
     config: ContentDownloadConfig,
-    metainfo: Metainfo,
+    content: TorrentContent,
     control: DownloadControl,
     descriptors: Option<DescriptorStorage>,
     peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
-    let layout = TorrentLayout::from_metainfo(&metainfo);
+    let layout = ContentLayout::from_content(&content);
     let selection =
-        FileSelection::new(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
+        FileSelection::new_content(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
     for &file_index in &config.materialize_files {
         let file = layout.files().get(file_index).ok_or(DownloadError::Layout(
             LayoutError::InvalidFileIndex {
@@ -6953,11 +7171,16 @@ async fn run_selective_download(
     };
     let storage_creation = control.enter_safe_cancel_critical()?;
     let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
+        let v1 = content
+            .v1()
+            .ok_or(DownloadError::Metainfo(MetainfoError::Unsupported(
+                "v2 platform storage is not integrated",
+            )))?;
         let (storage, resumed) = SelectiveStorage::create_with_platform(
             platform,
             config.artifact_identity,
-            &metainfo,
-            layout.clone(),
+            &v1.metainfo,
+            v1.layout.clone(),
             selection.clone(),
             verified_pieces.clone(),
         )
@@ -6972,33 +7195,36 @@ async fn run_selective_download(
         (storage, Some(resumed))
     } else {
         match (descriptors, &resume) {
-            (Some(descriptors), None) => (
-                SelectiveStorage::create_with_descriptors(
-                    config.artifact_identity,
-                    &metainfo,
-                    layout.clone(),
-                    selection.clone(),
-                    &config.materialize_files,
-                    descriptors,
+            (Some(descriptors), None) => {
+                let v1 =
+                    content
+                        .v1()
+                        .ok_or(DownloadError::Metainfo(MetainfoError::Unsupported(
+                            "v2 descriptor storage",
+                        )))?;
+                (
+                    SelectiveStorage::create_with_descriptors(
+                        config.artifact_identity,
+                        &v1.metainfo,
+                        v1.layout.clone(),
+                        selection.clone(),
+                        &config.materialize_files,
+                        descriptors,
+                    )
+                    .await
+                    .map_err(DownloadError::SelectiveStorage)?,
+                    None,
                 )
-                .await
-                .map_err(DownloadError::SelectiveStorage)?,
-                None,
-            ),
+            }
             (None, Some(resume)) => {
-                let paths = torrent_storage_paths_for_output_with_shape(
-                    config.output_path.clone(),
-                    config.artifact_identity.torrent_id,
-                    PublicationShape::from_metainfo(&metainfo),
-                )
-                .map_err(DownloadError::SelectiveStorage)?;
+                let content = Arc::new(content.clone());
                 let (storage, resumed) = match control.storage_file_pool() {
                     Some(pool) => {
-                        SelectiveStorage::resume_with_paths_and_pool_expected(
-                            paths,
+                        SelectiveStorage::resume_content_with_pool(
+                            config.output_path.clone(),
                             config.artifact_identity,
-                            layout.clone(),
-                            selection.clone(),
+                            content,
+                            &config.skip_files,
                             verified_pieces.clone(),
                             pool,
                             Some(resume.artifact_state),
@@ -7006,13 +7232,13 @@ async fn run_selective_download(
                         .await
                     }
                     None => {
-                        SelectiveStorage::resume_with_paths_expected(
-                            paths,
+                        SelectiveStorage::resume_content(
+                            config.output_path.clone(),
                             config.artifact_identity,
-                            layout.clone(),
-                            selection.clone(),
+                            content,
+                            &config.skip_files,
                             verified_pieces.clone(),
-                            resume.artifact_state,
+                            Some(resume.artifact_state),
                         )
                         .await
                     }
@@ -7025,25 +7251,24 @@ async fn run_selective_download(
                 (storage, Some(resumed))
             }
             (None, None) => {
+                let content = Arc::new(content.clone());
                 let storage = match control.storage_file_pool() {
                     Some(pool) => {
-                        SelectiveStorage::create_with_pool(
+                        SelectiveStorage::create_content_with_pool(
                             config.output_path.clone(),
                             config.artifact_identity,
-                            &metainfo,
-                            layout.clone(),
-                            selection.clone(),
+                            content,
+                            &config.skip_files,
                             pool,
                         )
                         .await
                     }
                     None => {
-                        SelectiveStorage::create(
+                        SelectiveStorage::create_content(
                             config.output_path.clone(),
                             config.artifact_identity,
-                            &metainfo,
-                            layout.clone(),
-                            selection.clone(),
+                            content,
+                            &config.skip_files,
                         )
                         .await
                     }
@@ -7052,6 +7277,12 @@ async fn run_selective_download(
                 (storage, None)
             }
             (Some(descriptors), Some(resume)) => {
+                let v1 =
+                    content
+                        .v1()
+                        .ok_or(DownloadError::Metainfo(MetainfoError::Unsupported(
+                            "v2 descriptor storage",
+                        )))?;
                 let descriptor_is_empty = descriptors
                     .part_file
                     .metadata()
@@ -7065,8 +7296,8 @@ async fn run_selective_download(
                 let storage = if initialize {
                     SelectiveStorage::create_with_descriptors(
                         config.artifact_identity,
-                        &metainfo,
-                        layout.clone(),
+                        &v1.metainfo,
+                        v1.layout.clone(),
                         selection.clone(),
                         &[],
                         descriptors,
@@ -7076,8 +7307,8 @@ async fn run_selective_download(
                 } else {
                     SelectiveStorage::resume_with_descriptors(
                         config.artifact_identity,
-                        &metainfo,
-                        layout.clone(),
+                        &v1.metainfo,
+                        v1.layout.clone(),
                         selection.clone(),
                         descriptors,
                         verified_pieces.clone(),
@@ -7208,7 +7439,7 @@ async fn run_selective_download(
             } else {
                 match full_recheck_managed_storage(
                     &mut storage,
-                    &metainfo,
+                    &content,
                     &layout,
                     &previous,
                     &mut applied_selection,
@@ -7259,8 +7490,8 @@ async fn run_selective_download(
         .latest_file_selection()
         .filter(|update| update.revision > selection_revision)
     {
-        let next_selection =
-            FileSelection::new(&layout, &update.skip_files).map_err(DownloadError::Layout)?;
+        let next_selection = FileSelection::new_content(&layout, &update.skip_files)
+            .map_err(DownloadError::Layout)?;
         let reconcile = storage
             .reconcile_selection(next_selection.clone())
             .await
@@ -7318,8 +7549,8 @@ async fn run_selective_download(
         && !wanted_pieces.is_empty()
     {
         return Ok(DownloadReport {
-            info_hash: metainfo.info_hash,
-            piece_hash: metainfo.piece_hashes[last_wanted_piece],
+            info_hash: content.swarm_key().into_bytes(),
+            piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
             bytes_written: 0,
             block_count: 0,
             payload_limit: config.max_buffered_payload_bytes,
@@ -7360,14 +7591,14 @@ async fn run_selective_download(
                 intake_high_watermark_bytes: config.storage_intake_high_watermark_bytes,
             },
             wanted_pieces,
-            picker_seed(metainfo.info_hash, peers.network.peer_id),
+            picker_seed(content.swarm_key().into_bytes(), peers.network.peer_id),
             AppliedFileSelection {
                 selection: plan_selection,
                 revision: selection_revision,
             },
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
-                metainfo: &metainfo,
+                content: &content,
                 layout: &layout,
                 resume: resume.as_ref(),
                 control: &control,
@@ -7414,8 +7645,8 @@ async fn run_selective_download(
     if selected_file_bytes == 0 {
         let part_slots = storage.part_slots();
         return Ok(DownloadReport {
-            info_hash: metainfo.info_hash,
-            piece_hash: metainfo.piece_hashes[last_wanted_piece],
+            info_hash: content.swarm_key().into_bytes(),
+            piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
             bytes_written: total_bytes,
             block_count: total_blocks,
             payload_limit: config.max_buffered_payload_bytes,
@@ -7500,10 +7731,12 @@ async fn run_selective_download(
     }
     let part_slots_before_materialization = storage.part_slots();
     let part_reopened = storage.has_part_file();
-    storage
-        .reopen_part_file()
-        .await
-        .map_err(DownloadError::SelectiveStorage)?;
+    if content.v1().is_some() {
+        storage
+            .reopen_part_file()
+            .await
+            .map_err(DownloadError::SelectiveStorage)?;
+    }
     let mut materialized_bytes = 0_u64;
     for file_index in config.materialize_files {
         materialized_bytes += storage
@@ -7530,11 +7763,11 @@ async fn run_selective_download(
             .map_err(DownloadError::Checkpoint)?;
     }
     Ok(DownloadReport {
-        info_hash: metainfo.info_hash,
+        info_hash: content.swarm_key().into_bytes(),
         // Selective pieces may complete in any order. Keep the diagnostic
         // report stable by naming the highest-index wanted piece rather than
         // whichever verification completion happened to arrive last.
-        piece_hash: metainfo.piece_hashes[last_wanted_piece],
+        piece_hash: diagnostic_piece_hash(&content, last_wanted_piece)?,
         bytes_written: total_bytes,
         block_count: total_blocks,
         payload_limit: config.max_buffered_payload_bytes,

@@ -4,6 +4,188 @@ use crate::{
     FileSelectionUpdate, IncomingPeerService, IncomingPeerServiceConfig, IncomingTcpBootstrap,
     PeerBudget, ResumeValidationIntent, TorrentPeerHandle,
 };
+use rstorrent_protocol::content::TorrentContentProjection;
+use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
+use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
+
+fn bstr(output: &mut Vec<u8>, value: &[u8]) {
+    output.extend_from_slice(value.len().to_string().as_bytes());
+    output.push(b':');
+    output.extend_from_slice(value);
+}
+
+fn pure_v2_source(files: &[(&[u8], &[u8])], piece_length: u32) -> Vec<u8> {
+    let roots = files
+        .iter()
+        .map(|(_, data)| file_root_from_data(data).expect("nonempty v2 fixture file"))
+        .collect::<Vec<_>>();
+    let mut info = b"d9:file treed".to_vec();
+    for ((name, data), root) in files.iter().zip(&roots) {
+        bstr(&mut info, name);
+        info.extend_from_slice(b"d0:d6:lengthi");
+        info.extend_from_slice(data.len().to_string().as_bytes());
+        info.extend_from_slice(b"e11:pieces root32:");
+        info.extend_from_slice(root);
+        info.extend_from_slice(b"ee");
+    }
+    info.extend_from_slice(b"e12:meta versioni2e4:name4:root12:piece lengthi");
+    info.extend_from_slice(piece_length.to_string().as_bytes());
+    info.extend_from_slice(b"ee");
+
+    let mut source = b"d4:info".to_vec();
+    source.extend_from_slice(&info);
+    let large = files
+        .iter()
+        .zip(&roots)
+        .filter(|((_, data), _)| data.len() > piece_length as usize)
+        .collect::<Vec<_>>();
+    if !large.is_empty() {
+        source.extend_from_slice(b"12:piece layersd");
+        for ((_, data), root) in large {
+            bstr(&mut source, root);
+            let hashes = data
+                .chunks(piece_length as usize)
+                .map(|piece| piece_root_from_data(piece, piece_length).expect("v2 piece root"))
+                .collect::<Vec<_>>();
+            bstr(&mut source, &hashes.concat());
+        }
+        source.push(b'e');
+    }
+    source.push(b'e');
+    source
+}
+
+#[tokio::test]
+async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file() {
+    let small = vec![0x19; 17];
+    let large = (0..40_000)
+        .map(|index| ((index * 37 + index / 11) & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let piece_length = 32 * 1024;
+    let source = pure_v2_source(&[(b"a", &small), (b"b", &large)], piece_length);
+    let projection =
+        TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+            .expect("complete pure-v2 source");
+    let identity = TorrentIdentityContext::new(
+        test_torrent_id(),
+        projection.content.info_hashes(),
+        projection.content.swarm_key(),
+    )
+    .expect("pure-v2 runtime identity");
+    let wire_hash = projection.content.swarm_key().into_bytes();
+    let pieces = Arc::new(vec![
+        small.clone(),
+        large[..piece_length as usize].to_vec(),
+        large[piece_length as usize..].to_vec(),
+    ]);
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind pure-v2 content peer");
+    let address = listener.local_addr().expect("pure-v2 peer address");
+    let (requested, mut requests) = mpsc::unbounded_channel();
+    let peer_task = tokio::spawn(serve_content_peer_recording(
+        listener,
+        wire_hash,
+        pieces,
+        vec![true; 3],
+        Duration::from_secs(2),
+        Some(requested),
+    ));
+    let root = test_path("pure-v2-complete-source");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create pure-v2 storage root");
+    let control = DownloadControl::new();
+    let peers = TorrentPeerHandle::new(Arc::new(control.clone())).expect("pure-v2 peer state");
+    peers
+        .observe_discovered_peer(PeerObservation::dialable(
+            PeerEndpoint::new(address).expect("pure-v2 peer endpoint"),
+            PeerSource::Manual,
+        ))
+        .expect("observe pure-v2 peer");
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let report = timeout(
+        Duration::from_secs(4),
+        resume_metainfo_with_control(
+            ResumableMetainfoDownloadConfig {
+                identity,
+                metainfo_source: source.clone(),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(2)),
+                peer_budget: PeerBudget::system_default(),
+                mse_dh: crate::MseDhWorkOwner::new(),
+                encryption: crate::PeerEncryptionPolicyHandle::default(),
+                torrent_peers: Some(peers),
+                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: vec![0],
+                verified_pieces: vec![false; 3],
+                artifact_state: ResumeArtifactState::None,
+                resume_validation: ResumeValidationIntent::Full,
+                download_missing: true,
+                dht: None,
+                trackers: None,
+            },
+            checkpoints.clone(),
+            control,
+        ),
+    )
+    .await
+    .expect("bounded pure-v2 download")
+    .expect("pure-v2 download");
+
+    assert_eq!(report.info_hash, wire_hash);
+    assert_eq!(report.verified_piece_count, 2);
+    assert_eq!(report.skipped_piece_count, 1);
+    assert_eq!(report.part_written_bytes, 0);
+    assert!(!report.part_reopened);
+    assert_eq!(tokio::fs::read(root.join("root/b")).await.unwrap(), large);
+    assert!(!root.join("root/a").exists());
+    while let Ok(piece) = requests.try_recv() {
+        assert_ne!(piece, 0, "skipped v2 file piece was requested");
+    }
+    timeout(Duration::from_secs(1), peer_task)
+        .await
+        .expect("pure-v2 peer joined")
+        .expect("pure-v2 peer task");
+    let mut durable = checkpoints.batches();
+    assert_eq!(durable.len(), 1);
+    durable[0].sort_unstable();
+    assert_eq!(durable, vec![vec![1, 2]]);
+
+    let reopen_control = DownloadControl::new();
+    let reopen_peers =
+        TorrentPeerHandle::new(Arc::new(reopen_control.clone())).expect("reopen peer state");
+    let reopen = resume_metainfo_with_control(
+        ResumableMetainfoDownloadConfig {
+            identity,
+            metainfo_source: source,
+            storage_root: root.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            peer_budget: PeerBudget::system_default(),
+            mse_dh: crate::MseDhWorkOwner::new(),
+            encryption: crate::PeerEncryptionPolicyHandle::default(),
+            torrent_peers: Some(reopen_peers),
+            resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+            skip_files: vec![0],
+            verified_pieces: vec![false, true, true],
+            artifact_state: ResumeArtifactState::Published,
+            resume_validation: ResumeValidationIntent::Full,
+            download_missing: false,
+            dht: None,
+            trackers: None,
+        },
+        Arc::new(RecordingCheckpointSink::default()),
+        reopen_control,
+    )
+    .await
+    .expect("pure-v2 published reopen");
+    assert_eq!(reopen.verified_piece_count, 2);
+    assert!(!reopen.part_reopened);
+    assert_eq!(tokio::fs::read(root.join("root/b")).await.unwrap(), large);
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove pure-v2 fixture root");
+}
 
 fn test_identity_from_outer(bytes: &[u8]) -> TorrentIdentityContext {
     let metainfo = Metainfo::from_bytes(bytes).expect("valid test metainfo");
@@ -477,10 +659,12 @@ async fn full_recheck_verifies_readable_skipped_pieces() {
         selection: skipped,
         revision: 0,
     };
+    let content = TorrentContent::from_v1_metainfo(metainfo.clone());
+    let content_layout = ContentLayout::from_content(&content);
     let checked = full_recheck_managed_storage(
         &mut storage,
-        &metainfo,
-        &layout,
+        &content,
+        &content_layout,
         &vec![false; layout.piece_count()],
         &mut selection,
         &control,
@@ -569,8 +753,9 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
     control.set_activity_sink(activity.clone());
     control.checker_started(11, layout.piece_count());
     let task_control = control.clone();
-    let task_metainfo = metainfo.clone();
-    let task_layout = layout.clone();
+    let task_content = TorrentContent::from_v1_metainfo(metainfo.clone());
+    let task_content_layout = ContentLayout::from_content(&task_content);
+    let task_piece_count = task_content_layout.piece_count();
     let task = tokio::spawn(async move {
         let mut selection = AppliedFileSelection {
             selection,
@@ -578,9 +763,9 @@ async fn selection_fence_and_slow_hash_heartbeat_share_one_check_generation() {
         };
         let result = full_recheck_managed_storage(
             &mut storage,
-            &task_metainfo,
-            &task_layout,
-            &vec![false; task_layout.piece_count()],
+            &task_content,
+            &task_content_layout,
+            &vec![false; task_piece_count],
             &mut selection,
             &task_control,
         )

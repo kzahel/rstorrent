@@ -1006,3 +1006,25 @@ retained.
 - `cargo test -p rstorrent-engine` and `cargo clippy
   -p rstorrent-protocol -p rstorrent-engine --all-targets -- -D warnings`
   pass, including the unchanged v1 storage, publication, and resume suites.
+
+### 2026-08-13 Stage 3 driver, checking, and path publication
+
+- The content driver, storage queue, scheduler geometry, and managed full
+  checker now consume `TorrentContent` and `ContentLayout`. Expected integrity
+  and computed hash results are explicitly typed; the common pipeline compares
+  SHA-1 only with v1 expectations and Merkle roots only with v2 expectations.
+- Complete outer metainfo has a dedicated resumable engine entry point. It
+  reparses the strict durable source, validates both the full identity set and
+  selected tagged wire key, retains the exact raw info span for the artifact
+  fingerprint, and bypasses the v1-only magnet metadata path.
+- Active verified-file geometry now uses a format-aware piece-space file
+  origin. V1 boundary offsets remain unchanged while each v2 file begins at
+  its authenticated global piece, so file-alignment gaps cannot leak into
+  streaming availability or read decisions.
+- A controlled pure-v2 peer test downloads a skipped one-piece file plus a
+  selected multi-piece file. It proves the tagged v2 handshake, no request for
+  the skipped piece, standard payload transfer, durable Merkle verification,
+  exact tree publication, no part bytes or reopen, then a full published
+  restart recheck from the same complete source.
+- The focused v2 vertical and all 98 non-network driver regressions pass; the
+  two existing public-swarm cases remain ignored by their opt-in contract.

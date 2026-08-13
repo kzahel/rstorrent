@@ -48,6 +48,12 @@ pub enum TorrentContent {
     V2(V2TorrentContent),
 }
 
+impl From<Metainfo> for TorrentContent {
+    fn from(metainfo: Metainfo) -> Self {
+        Self::from_v1_metainfo(metainfo)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TorrentContentProjection {
     pub content: TorrentContent,

@@ -1,4 +1,5 @@
 use super::*;
+use rstorrent_protocol::content::ExpectedPieceIntegrity;
 
 #[tokio::test]
 async fn checkpoint_delays_preserve_storage_progress_bounds_and_final_flush() {
@@ -37,7 +38,7 @@ async fn checkpoint_delays_preserve_storage_progress_bounds_and_final_flush() {
             piece: 0,
             generation: PieceGeneration::new(1).expect("generation"),
             length: 16,
-            expected,
+            expected: ExpectedPieceIntegrity::V1Sha1(expected),
             durable: false,
         },
         &control,
@@ -673,7 +674,7 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
                 piece: piece as u32,
                 generation: PieceGeneration::new(1).expect("generation"),
                 length: block_length as u32,
-                expected,
+                expected: ExpectedPieceIntegrity::V1Sha1(expected),
                 durable: false,
             })
             .expect("enqueue hash-limit command");
@@ -695,7 +696,7 @@ async fn storage_executor_enforces_independent_write_and_hash_limits() {
             piece: piece as u32,
             generation: PieceGeneration::new(1).expect("generation"),
             length: block_length as u32,
-            expected,
+            expected: ExpectedPieceIntegrity::V1Sha1(expected),
             durable: false,
         })
         .expect("enqueue over-limit hash");
@@ -744,7 +745,7 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
             piece: 0,
             generation: PieceGeneration::new(1).expect("generation"),
             length: block_length as u32,
-            expected,
+            expected: ExpectedPieceIntegrity::V1Sha1(expected),
             durable: false,
         })
         .expect("enqueue delayed hash");
@@ -812,7 +813,7 @@ async fn storage_executor_overlaps_classes_and_survives_full_completion_queue() 
                 piece: piece as u32,
                 generation: PieceGeneration::new(1).expect("generation"),
                 length: block_length as u32,
-                expected,
+                expected: ExpectedPieceIntegrity::V1Sha1(expected),
                 durable: false,
             })
             .expect("enqueue completion saturation hash");

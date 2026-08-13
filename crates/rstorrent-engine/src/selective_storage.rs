@@ -1184,10 +1184,6 @@ fn hash_file_span(
 }
 
 impl SelectiveHashPlan {
-    pub(crate) async fn execute(self) -> Result<[u8; 20], SelectiveStorageError> {
-        self.hash().await.map(|(hash, _stats)| hash)
-    }
-
     pub(crate) async fn execute_content(self) -> Result<ComputedPieceHash, SelectiveStorageError> {
         self.hash_content().await
     }
@@ -1441,6 +1437,36 @@ impl SelectiveStorage {
         Ok((storage, resumed))
     }
 
+    pub(crate) async fn resume_content_with_pool(
+        output_root: PathBuf,
+        artifact_identity: TorrentArtifactIdentity,
+        content: Arc<TorrentContent>,
+        skipped: &[usize],
+        verified: Vec<bool>,
+        pool: StorageFilePool,
+        expected_artifacts: Option<ResumeArtifactState>,
+    ) -> Result<(Self, ResumedStorage), SelectiveStorageError> {
+        let layout = ContentLayout::from_content(&content);
+        let selection = FileSelection::new_content(&layout, skipped)?;
+        let paths = torrent_storage_paths_for_output_with_shape(
+            output_root,
+            artifact_identity.torrent_id,
+            PublicationShape::from_content(&content),
+        )?;
+        let (mut storage, resumed) = Self::resume_with_paths_and_pool_expected(
+            paths,
+            artifact_identity,
+            layout,
+            selection,
+            verified,
+            pool,
+            expected_artifacts,
+        )
+        .await?;
+        storage.content = Some(content);
+        Ok((storage, resumed))
+    }
+
     pub async fn create(
         output_root: PathBuf,
         artifact_identity: TorrentArtifactIdentity,
@@ -1456,6 +1482,7 @@ impl SelectiveStorage {
         Self::create_with_paths(paths, artifact_identity, layout, selection).await
     }
 
+    #[cfg(test)]
     pub(crate) async fn create_with_pool(
         output_root: PathBuf,
         artifact_identity: TorrentArtifactIdentity,
@@ -1945,6 +1972,7 @@ impl SelectiveStorage {
         .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn resume_with_paths_expected(
         paths: TorrentStoragePaths,
         artifact_identity: TorrentArtifactIdentity,

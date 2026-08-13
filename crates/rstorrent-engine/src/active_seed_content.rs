@@ -5,9 +5,8 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::peer_wire::BlockRequest;
-use rstorrent_protocol::storage_layout::FileSelection;
+use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -154,7 +153,8 @@ impl ActiveSeedContent {
 
     pub(crate) fn configure_file_access(
         &self,
-        metainfo: &Metainfo,
+        name: &str,
+        layout: &ContentLayout,
         selection: &FileSelection,
         cancellation: CancellationToken,
         planner: mpsc::Sender<ActiveFilePlanRequest>,
@@ -163,25 +163,25 @@ impl ActiveSeedContent {
             .file_planner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(planner);
-        let files = metainfo
-            .files
+        let files = layout
+            .files()
             .iter()
-            .map(|file| ActiveFileDescriptor {
-                name: file
-                    .path
-                    .last()
-                    .cloned()
-                    .unwrap_or_else(|| metainfo.name.clone()),
-                length: file.length,
-                torrent_offset: file.offset,
-                padding: file.padding,
+            .enumerate()
+            .map(|(file_index, file)| {
+                Ok(ActiveFileDescriptor {
+                    name: file.path.last().cloned().unwrap_or_else(|| name.to_owned()),
+                    length: file.length,
+                    torrent_offset: layout.file_piece_space_offset(file_index)?,
+                    padding: file.padding,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, rstorrent_protocol::storage_layout::LayoutError>>()
+            .expect("validated content layout has file piece-space offsets");
         let selected = (0..files.len())
             .map(|file_index| selection.is_wanted(file_index))
             .collect();
         let reader = ActiveContentReader {
-            piece_length: metainfo.piece_length,
+            piece_length: layout.piece_length(),
             files: files.into(),
             selected: Arc::new(Mutex::new(selected)),
             availability: self.availability.clone(),
@@ -613,7 +613,7 @@ impl Error for ActiveSeedContentError {}
 
 #[cfg(test)]
 mod tests {
-    use rstorrent_protocol::metainfo::{MetainfoFile, MetainfoMode};
+    use rstorrent_protocol::metainfo::{Metainfo, MetainfoFile, MetainfoMode};
     use rstorrent_protocol::storage_layout::TorrentLayout;
 
     use super::*;
@@ -652,8 +652,14 @@ mod tests {
             availability,
             uploads,
         );
-        let reader =
-            content.configure_file_access(&metainfo, &selection, CancellationToken::new(), files);
+        let layout = ContentLayout::from(TorrentLayout::from_metainfo(&metainfo));
+        let reader = content.configure_file_access(
+            &metainfo.name,
+            &layout,
+            &selection,
+            CancellationToken::new(),
+            files,
+        );
         let file = reader.file(0).expect("active file");
 
         let (current, ahead) = file
@@ -681,8 +687,14 @@ mod tests {
             availability.clone(),
             uploads,
         );
-        let reader =
-            content.configure_file_access(&metainfo, &selection, CancellationToken::new(), files);
+        let layout = ContentLayout::from(TorrentLayout::from_metainfo(&metainfo));
+        let reader = content.configure_file_access(
+            &metainfo.name,
+            &layout,
+            &selection,
+            CancellationToken::new(),
+            files,
+        );
         let file = reader.file(0).expect("active file");
         assert_eq!(file.is_range_verified(0, 4), Ok(true));
         assert_eq!(file.is_range_verified(0, 8), Ok(false));
@@ -694,7 +706,7 @@ mod tests {
             Err(ActiveFileError::Unavailable)
         );
 
-        let skipped = FileSelection::new(&layout, &[0]).expect("skipped selection");
+        let skipped = FileSelection::new_content(&layout, &[0]).expect("skipped selection");
         content.update_file_selection(&skipped);
         assert!(matches!(
             reader.file(0),

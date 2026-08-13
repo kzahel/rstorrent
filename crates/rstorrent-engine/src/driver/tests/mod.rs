@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::content::TorrentContent;
 use rstorrent_protocol::dht::{
     DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, Query as DhtQuery, Want,
     decode_message as decode_dht, encode_response as encode_dht_response,
@@ -26,7 +27,9 @@ use rstorrent_protocol::peer_wire::{
     encode_message,
 };
 use rstorrent_protocol::piece::MIN_PAYLOAD_ALLOWANCE;
-use rstorrent_protocol::storage_layout::{FileSelection, LayoutError, TorrentLayout};
+use rstorrent_protocol::storage_layout::{
+    ContentLayout, FileSelection, LayoutError, TorrentLayout,
+};
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -45,16 +48,17 @@ use super::{
     MAX_DIAGNOSTIC_ERROR_LENGTH, MAX_METADATA_PEERS, MAX_RECENT_METADATA_ATTEMPTS,
     MagnetDownloadConfig, MetadataAcquisitionPhase, MetadataPeerStage, PeerConnection,
     PreparedContentWrite, QueuedContentStorageCommand, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, ResumedStorage, SwarmConfig, TorrentPeerCoordinator, TrackerManager,
-    UdpTrackerAnnounce, UdpTrackerExchange, UdpTrackerTiming, UdpTrackerTokenCache,
-    announce_udp_tracker, announce_udp_tracker_address, atomic_saturating_add,
-    atomic_saturating_increment, build_content_plan_window, coalesce_content_writes,
-    collect_content_write_batch, content_dial_slot_available, content_storage_job_limit,
-    download_magnet, download_magnet_metadata_with_control, download_magnet_metadata_with_dht,
-    download_magnet_with_control, download_verified_piece, download_verified_piece_with_control,
-    execute_content_storage_verification, execute_content_storage_writes,
-    full_recheck_managed_storage, next_peer_message, resume_magnet, resume_magnet_with_control,
-    retrying_dht_lookup, run_content_download, run_magnet_download_with_peers, send_message,
+    ResumableMetainfoDownloadConfig, ResumeArtifactState, ResumedStorage, SwarmConfig,
+    TorrentPeerCoordinator, TrackerManager, UdpTrackerAnnounce, UdpTrackerExchange,
+    UdpTrackerTiming, UdpTrackerTokenCache, announce_udp_tracker, announce_udp_tracker_address,
+    atomic_saturating_add, atomic_saturating_increment, build_content_plan_window,
+    coalesce_content_writes, collect_content_write_batch, content_dial_slot_available,
+    content_storage_job_limit, download_magnet, download_magnet_metadata_with_control,
+    download_magnet_metadata_with_dht, download_magnet_with_control, download_verified_piece,
+    download_verified_piece_with_control, execute_content_storage_verification,
+    execute_content_storage_writes, full_recheck_managed_storage, next_peer_message, resume_magnet,
+    resume_magnet_with_control, resume_metainfo_with_control, retrying_dht_lookup,
+    run_content_download, run_magnet_download_with_peers, send_message,
     validate_v1_runtime_identity,
 };
 

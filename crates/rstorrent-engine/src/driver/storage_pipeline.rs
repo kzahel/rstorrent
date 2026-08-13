@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::content::ExpectedPieceIntegrity;
 use rstorrent_protocol::peer_wire::MAX_REQUEST_BLOCK_LENGTH;
 use rstorrent_protocol::storage_layout::LayoutError;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
@@ -25,7 +26,7 @@ use crate::checkpoint::{
     DurabilityTarget,
 };
 use crate::selective_storage::{
-    CheckpointHandles, SelectiveHashPlan, SelectiveStorage, SelectiveWriteJob,
+    CheckpointHandles, ComputedPieceHash, SelectiveHashPlan, SelectiveStorage, SelectiveWriteJob,
 };
 use crate::swarm::{BlockKey, PieceGeneration, SwarmError};
 
@@ -62,7 +63,7 @@ pub(super) enum ContentStorageCommand {
         piece: u32,
         generation: PieceGeneration,
         length: u32,
-        expected: [u8; 20],
+        expected: ExpectedPieceIntegrity,
         durable: bool,
     },
 }
@@ -137,7 +138,7 @@ struct ContentHashJob {
     piece: u32,
     generation: PieceGeneration,
     length: u32,
-    expected: [u8; 20],
+    expected: ExpectedPieceIntegrity,
     durable: bool,
     durability_targets: Vec<DurabilityTarget>,
     operation: ContentHashOperation,
@@ -147,10 +148,10 @@ struct ContentHashJobResult {
     piece: u32,
     generation: PieceGeneration,
     length: u32,
-    expected: [u8; 20],
+    expected: ExpectedPieceIntegrity,
     durable: bool,
     durability_targets: Vec<DurabilityTarget>,
-    result: Result<[u8; 20], DownloadError>,
+    result: Result<ComputedPieceHash, DownloadError>,
 }
 
 enum ContentStorageJobResult {
@@ -181,7 +182,8 @@ pub(super) enum ContentStorageCompletion {
 }
 
 pub(super) struct ContentVerification {
-    pub(super) actual: [u8; 20],
+    pub(super) actual: ComputedPieceHash,
+    pub(super) matched: bool,
     pub(super) durability_targets: Vec<DurabilityTarget>,
 }
 
@@ -1473,7 +1475,7 @@ async fn execute_content_hash_job(job: ContentHashJob) -> ContentHashJobResult {
     let result = job
         .operation
         .0
-        .execute()
+        .execute_content()
         .await
         .map_err(DownloadError::SelectiveStorage);
     ContentHashJobResult {
@@ -1493,7 +1495,8 @@ fn finish_content_hash_job(
     control: &DownloadControl,
 ) -> ContentStorageCompletion {
     let verification = result.result.and_then(|actual| {
-        if actual == result.expected {
+        let matched = content_hash_matches(actual, result.expected);
+        if matched {
             let piece_index = usize::try_from(result.piece)
                 .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
             storage
@@ -1503,7 +1506,8 @@ fn finish_content_hash_job(
         }
         Ok(ContentVerification {
             actual,
-            durability_targets: if actual == result.expected {
+            matched,
+            durability_targets: if matched {
                 result.durability_targets
             } else {
                 Vec::new()
@@ -1512,7 +1516,7 @@ fn finish_content_hash_job(
     });
     if verification
         .as_ref()
-        .is_ok_and(|verification| verification.actual == result.expected)
+        .is_ok_and(|verification| verification.matched)
     {
         control.disk_piece_hash_verified(result.piece, result.length, result.durable);
     }
@@ -1521,5 +1525,24 @@ fn finish_content_hash_job(
         generation: result.generation,
         length: result.length,
         result: verification,
+    }
+}
+
+pub(super) fn content_hash_matches(
+    actual: ComputedPieceHash,
+    expected: ExpectedPieceIntegrity,
+) -> bool {
+    match (actual, expected) {
+        (ComputedPieceHash::Sha1(actual), ExpectedPieceIntegrity::V1Sha1(expected)) => {
+            actual == expected
+        }
+        (
+            ComputedPieceHash::Sha256 { root: actual, .. },
+            ExpectedPieceIntegrity::V2Merkle {
+                expected_root: expected,
+                ..
+            },
+        ) => actual == expected,
+        _ => false,
     }
 }

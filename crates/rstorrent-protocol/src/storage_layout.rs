@@ -394,6 +394,130 @@ impl ContentLayout {
         }
     }
 
+    pub fn file_segments(
+        &self,
+        piece: u32,
+        begin: u32,
+        length: u32,
+    ) -> Result<Vec<FileLayoutSegment>, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.file_segments(piece, begin, length),
+            Self::V2 { layout, .. } => {
+                if length == 0 {
+                    return Err(LayoutError::EmptyInterval);
+                }
+                let geometry = layout
+                    .piece(piece)
+                    .map_err(|_| LayoutError::InvalidPieceIndex {
+                        index: piece,
+                        piece_count: layout.piece_count(),
+                    })?;
+                let end = begin
+                    .checked_add(length)
+                    .ok_or(LayoutError::IntervalOutOfRange {
+                        piece,
+                        begin,
+                        length,
+                        piece_length: geometry.payload_length,
+                    })?;
+                if end > geometry.payload_length {
+                    return Err(LayoutError::IntervalOutOfRange {
+                        piece,
+                        begin,
+                        length,
+                        piece_length: geometry.payload_length,
+                    });
+                }
+                Ok(vec![FileLayoutSegment {
+                    piece_offset: begin,
+                    block_offset: 0,
+                    length: usize::try_from(length).map_err(|_| LayoutError::ArithmeticOverflow)?,
+                    file_index: geometry.file_index,
+                    file_offset: geometry
+                        .file_offset
+                        .checked_add(u64::from(begin))
+                        .ok_or(LayoutError::ArithmeticOverflow)?,
+                    padding: false,
+                }])
+            }
+        }
+    }
+
+    pub fn required_payload_geometry(
+        &self,
+        selection: &FileSelection,
+        have: &[bool],
+    ) -> Result<RequiredPayloadGeometry, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.required_payload_geometry(selection, have),
+            Self::V2 { files, .. } => {
+                if selection.file_count() != files.len() {
+                    return Err(LayoutError::InvalidFileIndex {
+                        index: selection.file_count(),
+                        file_count: files.len(),
+                    });
+                }
+                if have.len() != self.piece_count() {
+                    return Err(LayoutError::InvalidHaveLength {
+                        length: have.len(),
+                        piece_count: self.piece_count(),
+                    });
+                }
+                let mut geometry = RequiredPayloadGeometry::default();
+                for (piece_index, verified) in have.iter().copied().enumerate() {
+                    let piece =
+                        u32::try_from(piece_index).map_err(|_| LayoutError::ArithmeticOverflow)?;
+                    let spans = self.segments(piece, 0, self.piece_length_at(piece)?, selection)?;
+                    let wanted = spans
+                        .iter()
+                        .any(|span| matches!(span.target, SegmentTarget::WantedFile { .. }));
+                    if !wanted {
+                        continue;
+                    }
+                    let length = u64::from(self.piece_length_at(piece)?);
+                    geometry.required_payload_bytes = geometry
+                        .required_payload_bytes
+                        .checked_add(length)
+                        .ok_or(LayoutError::ArithmeticOverflow)?;
+                    if verified {
+                        geometry.verified_required_payload_bytes = geometry
+                            .verified_required_payload_bytes
+                            .checked_add(length)
+                            .ok_or(LayoutError::ArithmeticOverflow)?;
+                    }
+                }
+                Ok(geometry)
+            }
+        }
+    }
+
+    pub fn file_piece_space_offset(&self, index: usize) -> Result<u64, LayoutError> {
+        match self {
+            Self::V1(layout) => layout.files().get(index).map(|file| file.offset).ok_or(
+                LayoutError::InvalidFileIndex {
+                    index,
+                    file_count: layout.files().len(),
+                },
+            ),
+            Self::V2 { layout, files } => {
+                files.get(index).ok_or(LayoutError::InvalidFileIndex {
+                    index,
+                    file_count: files.len(),
+                })?;
+                let range =
+                    layout
+                        .file_piece_range(index)
+                        .map_err(|_| LayoutError::InvalidFileIndex {
+                            index,
+                            file_count: files.len(),
+                        })?;
+                u64::from(range.start)
+                    .checked_mul(u64::from(layout.piece_length()))
+                    .ok_or(LayoutError::ArithmeticOverflow)
+            }
+        }
+    }
+
     pub fn file_piece_range(
         &self,
         index: usize,
