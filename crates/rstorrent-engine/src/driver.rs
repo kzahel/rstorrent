@@ -5580,9 +5580,13 @@ impl<'a> ContentSwarmDownload<'a> {
         let Some(raw_info) = self.resume.and_then(|resume| resume.raw_info.clone()) else {
             return Ok(());
         };
-        let registration =
-            SeedRegistration::new_active(raw_info, self.active_content.clone(), torrent_peers)
-                .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        let registration = SeedRegistration::new_active_with_swarm_key(
+            raw_info,
+            self.content.swarm_key(),
+            self.active_content.clone(),
+            torrent_peers,
+        )
+        .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
         let token = handle
             .register(registration)
             .await

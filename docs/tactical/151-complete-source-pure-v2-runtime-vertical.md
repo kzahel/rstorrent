@@ -1026,5 +1026,16 @@ retained.
   the skipped piece, standard payload transfer, durable Merkle verification,
   exact tree publication, no part bytes or reopen, then a full published
   restart recheck from the same complete source.
+- The ordinary application byte operation now selects the complete-source
+  engine entry only for pure v2. Restart reconstruction requires the verbatim
+  outer source and checks its exact raw-info span before any runtime work;
+  v1 remains on the existing magnet/resume entry and hybrid remains rejected.
+  Active verified-piece upload registration uses the explicitly tagged v2
+  wire key rather than deriving SHA-1 from the retained raw info.
+- The focused application vertical downloads and publishes a one-piece pure-v2
+  source from a controlled peer, proves the exact output and absence of a part
+  file, and reopens with complete state plus the same verbatim source.
 - The focused v2 vertical and all 98 non-network driver regressions pass; the
   two existing public-swarm cases remain ignored by their opt-in contract.
+  The full `rstorrent-session` suite passes with 241 tests, two opt-in tests
+  ignored, and strict all-target engine/session clippy remains clean.

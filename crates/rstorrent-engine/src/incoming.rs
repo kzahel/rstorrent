@@ -17,6 +17,7 @@ use rstorrent_protocol::extension::{
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
+use rstorrent_protocol::identity::SwarmKey;
 use rstorrent_protocol::metadata::{
     MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
     UT_METADATA_LOCAL_ID, encode_metadata_data, encode_metadata_reject, parse_extension_handshake,
@@ -228,13 +229,32 @@ impl SeedRegistration {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn new_active(
         raw_info: Arc<[u8]>,
         content: ActiveSeedContent,
         torrent_peers: TorrentPeerHandle,
     ) -> Result<Self, IncomingPeerError> {
         let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
-        if info_hash != content.info_hash() {
+        Self::new_active_with_swarm_key(
+            raw_info,
+            SwarmKey::V1(info_hash.into()),
+            content,
+            torrent_peers,
+        )
+    }
+
+    pub(crate) fn new_active_with_swarm_key(
+        raw_info: Arc<[u8]>,
+        swarm_key: SwarmKey,
+        content: ActiveSeedContent,
+        torrent_peers: TorrentPeerHandle,
+    ) -> Result<Self, IncomingPeerError> {
+        let info_hash = swarm_key.into_bytes();
+        if info_hash != content.info_hash()
+            || matches!(swarm_key, SwarmKey::V1(_))
+                && <[u8; 20]>::from(Sha1::digest(&raw_info)) != info_hash
+        {
             return Err(IncomingPeerError::InvalidRegistration(
                 "metadata and active seed content identities differ",
             ));

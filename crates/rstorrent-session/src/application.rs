@@ -20,15 +20,17 @@ use rstorrent_engine::{
     NamespaceTransitionOutcome, NetworkConfig, NetworkPolicy, PathPublicationStage,
     PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
     PlatformStorageSpec, PreparedFileHash, PublicationShape, PublishedArtifactLayout,
-    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
-    SelectiveStorageError, SessionDownloadResourceSnapshot, SessionDownloadResources,
-    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
-    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId,
-    TorrentIdentityContext, TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource,
-    TrackerTransport, VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
+    ResumableMagnetDownloadConfig, ResumableMetainfoDownloadConfig, ResumeArtifactState,
+    ResumeValidationIntent, ResumedStorage, SelectiveStorageError, SessionDownloadResourceSnapshot,
+    SessionDownloadResources, SessionSocketError, SessionUdpError, StorageFileKey,
+    StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot, StorageFileReference,
+    StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext, TorrentPrivacy,
+    TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport, VerifiedFileError,
+    VerifiedFileReader, decide_namespace_transition,
     download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
-    torrent_storage_paths, verify_prepared_platform_files,
+    resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_files,
 };
+use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
@@ -73,6 +75,33 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
 
 fn parse_peer_metainfo(raw_info: &[u8]) -> Result<Metainfo, MetainfoError> {
     Metainfo::from_info_bytes_with_limits(raw_info, BEP9_METAINFO_LIMITS)
+}
+
+fn parse_resume_content(resume: &ResumeRecord) -> Result<TorrentContent, MetainfoError> {
+    match (resume.info_hashes.v1_hash(), resume.info_hashes.v2_hash()) {
+        (Some(_), None) => resume
+            .raw_info
+            .as_deref()
+            .ok_or(MetainfoError::Unsupported("missing durable v1 info"))
+            .and_then(parse_durable_metainfo)
+            .map(TorrentContent::from_v1_metainfo),
+        (None, Some(_)) => {
+            let source = resume
+                .metainfo_source
+                .as_deref()
+                .ok_or(MetainfoError::Unsupported("missing complete v2 source"))?;
+            let projection =
+                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)?;
+            if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
+                return Err(MetainfoError::Unsupported(
+                    "stored v2 info does not match complete source",
+                ));
+            }
+            Ok(projection.content)
+        }
+        (Some(_), Some(_)) => Err(MetainfoError::Unsupported("hybrid runtime content")),
+        (None, None) => Err(MetainfoError::Unsupported("missing torrent identity")),
+    }
 }
 
 fn runtime_identity(
@@ -356,6 +385,11 @@ impl ApplicationConfig {
 enum ApplicationTaskReport {
     Metadata,
     Download,
+}
+
+enum ResumableDownloadConfig {
+    Magnet(ResumableMagnetDownloadConfig),
+    Metainfo(ResumableMetainfoDownloadConfig),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2961,25 +2995,23 @@ impl ApplicationService {
         {
             return Ok(());
         }
-        if let Some(raw_info) = &resume.raw_info {
-            let metainfo = match parse_durable_metainfo(raw_info) {
-                Ok(metainfo) => metainfo,
+        if resume.raw_info.is_some() {
+            let content = match parse_resume_content(&resume) {
+                Ok(content) => content,
                 Err(error) => {
                     self.store_mut()?
                         .mark_needs_repair(torrent_id, &error.to_string())?;
                     return Ok(());
                 }
             };
-            if resume.info_hashes.v1_hash().map(|hash| hash.into_bytes())
-                != Some(metainfo.info_hash)
-            {
+            if resume.info_hashes != content.info_hashes() {
                 self.store_mut()?.mark_needs_repair(
                     torrent_id,
                     "stored metadata does not match torrent identity",
                 )?;
                 return Ok(());
             }
-            if resume.publication_name.as_deref() != Some(metainfo.name.as_str()) {
+            if resume.publication_name.as_deref() != Some(content.name()) {
                 self.store_mut()?.mark_needs_repair(
                     torrent_id,
                     "stored publication name is missing or does not match verified metadata",
@@ -3101,13 +3133,11 @@ impl ApplicationService {
             StorageRootLocation::Path(root) => root.clone(),
             StorageRootLocation::PlatformCapability => PathBuf::new(),
         };
-        if !platform_root
-            && resume.storage_state == StorageState::None
-            && let Some(raw_info) = resume.raw_info.as_ref()
+        if !platform_root && resume.storage_state == StorageState::None && resume.raw_info.is_some()
         {
-            let metainfo = parse_durable_metainfo(raw_info)
+            let content = parse_resume_content(&resume)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
-            let paths = torrent_storage_paths(&root_path, &metainfo.name, resume.torrent_id)
+            let paths = torrent_storage_paths(&root_path, content.name(), resume.torrent_id)
                 .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             let collision = [
                 ("output", paths.output),
@@ -3189,25 +3219,6 @@ impl ApplicationService {
         } else {
             ResumeValidationIntent::FastEligible
         };
-        let config = ResumableMagnetDownloadConfig {
-            identity,
-            magnet: resume.magnet,
-            storage_root: root_path,
-            network: self.network,
-            peer_budget: self.session_network().peer_budget(),
-            mse_dh: self.session_network().mse_dh(),
-            encryption: self.session_network().encryption(),
-            torrent_peers: Some(torrent_peers),
-            resource_limits: self.download_resource_limits,
-            skip_files,
-            verified_info: resume.raw_info,
-            verified_pieces,
-            artifact_state,
-            resume_validation,
-            download_missing: resume.desired_running,
-            dht: None,
-            trackers: Some(Vec::new()),
-        };
         let checkpoints: Arc<dyn DownloadCheckpointSink> = Arc::new(StoreCheckpointSink {
             store: self.store.clone(),
             storage_roots: self.storage_roots.clone(),
@@ -3216,29 +3227,87 @@ impl ApplicationService {
             recheck_generation: Mutex::new(None),
         });
         let (control, eta_generation) = self.download_control(torrent_id)?;
+        let parsed_content = resume
+            .raw_info
+            .as_ref()
+            .map(|_| parse_resume_content(&resume))
+            .transpose()
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
         if platform_root {
-            let raw_info = config
-                .verified_info
+            let content = parsed_content
                 .as_ref()
                 .expect("platform content start requires verified metadata");
-            let metainfo = parse_durable_metainfo(raw_info)
-                .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
             control.set_platform_storage(PlatformStorageSpec {
                 pool: self.storage_file_pool.clone(),
                 root_id: resume.storage_root.clone(),
                 storage_id: torrent_id.to_owned(),
-                publication_shape: PublicationShape::from_metainfo(&metainfo),
-                publication_name: metainfo.name,
+                publication_shape: PublicationShape::from_content(content),
+                publication_name: content.name().to_owned(),
                 namespace_generation: u64::from(resume.storage_state == StorageState::Published),
                 managed: resume.storage_state != StorageState::None,
                 published: resume.storage_state == StorageState::Published,
             });
         }
+        let common_peer_budget = self.session_network().peer_budget();
+        let common_mse_dh = self.session_network().mse_dh();
+        let common_encryption = self.session_network().encryption();
+        let is_pure_v2 =
+            resume.info_hashes.v1_hash().is_none() && resume.info_hashes.v2_hash().is_some();
+        let config = if is_pure_v2 {
+            ResumableDownloadConfig::Metainfo(ResumableMetainfoDownloadConfig {
+                identity,
+                metainfo_source: resume.metainfo_source.ok_or_else(|| {
+                    ApplicationError::Configuration(
+                        "pure-v2 runtime requires complete metainfo source".to_owned(),
+                    )
+                })?,
+                storage_root: root_path,
+                network: self.network,
+                peer_budget: common_peer_budget,
+                mse_dh: common_mse_dh,
+                encryption: common_encryption,
+                torrent_peers: Some(torrent_peers),
+                resource_limits: self.download_resource_limits,
+                skip_files,
+                verified_pieces,
+                artifact_state,
+                resume_validation,
+                download_missing: resume.desired_running,
+                dht: None,
+                trackers: Some(Vec::new()),
+            })
+        } else {
+            ResumableDownloadConfig::Magnet(ResumableMagnetDownloadConfig {
+                identity,
+                magnet: resume.magnet,
+                storage_root: root_path,
+                network: self.network,
+                peer_budget: common_peer_budget,
+                mse_dh: common_mse_dh,
+                encryption: common_encryption,
+                torrent_peers: Some(torrent_peers),
+                resource_limits: self.download_resource_limits,
+                skip_files,
+                verified_info: resume.raw_info,
+                verified_pieces,
+                artifact_state,
+                resume_validation,
+                download_missing: resume.desired_running,
+                dht: None,
+                trackers: Some(Vec::new()),
+            })
+        };
         let task_control = control.clone();
         let operation = async move {
-            resume_magnet_with_control(config, checkpoints, task_control)
-                .await
-                .map(|_| ApplicationTaskReport::Download)
+            match config {
+                ResumableDownloadConfig::Magnet(config) => {
+                    resume_magnet_with_control(config, checkpoints, task_control).await
+                }
+                ResumableDownloadConfig::Metainfo(config) => {
+                    resume_metainfo_with_control(config, checkpoints, task_control).await
+                }
+            }
+            .map(|_| ApplicationTaskReport::Download)
         };
         let task = self.spawn_supervised_task(torrent_id, eta_generation, operation)?;
         self.install_active_download(
@@ -5898,6 +5967,7 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_engine::dht::BootstrapNode;
+    use rstorrent_engine::peer::{PeerEndpoint, PeerObservation, PeerSource};
     use rstorrent_engine::{
         ByteMetric, ByteMetricSink, CheckerPhase, DEFAULT_PEER_ID, DownloadError, NetworkConfig,
         NetworkPolicy, PathPublicationStage, PeerBudgetDirection, PlatformStorageFailure,
@@ -5905,6 +5975,7 @@ mod tests {
         StorageFileLocator, StorageFileReference, StorageFileRole, StorageObjectKind,
         StorageObservation, TorrentId, platform_storage_channel, torrent_storage_paths,
     };
+    use rstorrent_protocol::content::TorrentContentProjection;
     use rstorrent_protocol::dht::{
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
@@ -5912,6 +5983,7 @@ mod tests {
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
     };
+    use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
         FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake,
@@ -8285,6 +8357,122 @@ mod tests {
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[tokio::test]
+    async fn pure_v2_application_download_publishes_and_restarts_without_part_file() {
+        let root = test_root("pure-v2-application-download");
+        let source = pure_v2_source();
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("pure-v2 application fixture");
+        let wire_hash = projection.content.swarm_key().into_bytes();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind pure-v2 application peer");
+        let address = listener.local_addr().expect("pure-v2 peer address");
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept pure-v2 peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read pure-v2 handshake");
+            decode_handshake(&handshake, wire_hash).expect("pure-v2 wire identity");
+            stream
+                .write_all(&encode_handshake(wire_hash, *b"-RS-APP-V2-000000000"))
+                .await
+                .expect("send pure-v2 handshake");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0x80])).unwrap())
+                .await
+                .expect("send pure-v2 availability");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).unwrap())
+                .await
+                .expect("unchoke pure-v2 client");
+            let mut decoder = FrameDecoder::new();
+            let mut pending = std::collections::VecDeque::new();
+            loop {
+                match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                    PeerMessage::Interested | PeerMessage::Extended { id: 0, .. } => {}
+                    PeerMessage::Request(request) => {
+                        assert_eq!(request.index, 0);
+                        assert_eq!(request.begin, 0);
+                        assert_eq!(request.length, 1);
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Piece {
+                                    index: 0,
+                                    begin: 0,
+                                    block: b"x".to_vec(),
+                                })
+                                .unwrap(),
+                            )
+                            .await
+                            .expect("send pure-v2 payload");
+                    }
+                    PeerMessage::Have(0) => break,
+                    message => panic!("unexpected pure-v2 client message {message:?}"),
+                }
+            }
+        });
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open application");
+        let response = service
+            .add_torrent_bytes(
+                torrent_bytes_request("pure-v2-download", &source, true),
+                source.clone(),
+            )
+            .await
+            .expect("add running pure-v2 source");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pure-v2 running add result"),
+        };
+        let runtime_peers = service
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("pure-v2 torrent runtime")
+            .handle()
+            .peers();
+        runtime_peers
+            .observe_discovered_peer(PeerObservation::dialable(
+                PeerEndpoint::new(address).expect("pure-v2 peer endpoint"),
+                PeerSource::Manual,
+            ))
+            .expect("observe pure-v2 application peer");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "pure-v2-complete",
+        )
+        .await;
+        peer_task.await.expect("pure-v2 application peer task");
+        let owner = torrent_id.parse::<TorrentId>().expect("pure-v2 owner");
+        let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
+            .expect("pure-v2 storage paths");
+        assert_eq!(fs::read(paths.output.join("a")).unwrap(), b"x");
+        assert!(!paths.part.exists());
+        service.shutdown().await.expect("shutdown application");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(config(&root))
+            .await
+            .expect("reopen pure-v2 application");
+        let resumed = reopened
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("reopen pure-v2 row");
+        assert_eq!(resumed.state, TorrentState::Complete);
+        assert_eq!(resumed.metainfo_source, Some(source));
+        assert!(!paths.part.exists());
+        reopened.shutdown().await.expect("shutdown reopened");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove pure-v2 application root");
     }
 
     #[tokio::test]
