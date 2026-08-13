@@ -339,7 +339,6 @@ def prepare_remote(
                         [
                             "rsync",
                             "-az",
-                            "--chmod=F755",
                             "-e",
                             "ssh " + " ".join(SSH_OPTIONS),
                             str(artifact.path),
