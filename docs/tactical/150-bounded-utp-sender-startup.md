@@ -129,6 +129,50 @@ session/application evidence. Runtime types do not enter congestion state.
    contracts, reconcile Tactical `142`, Tactical `145`, living topics, and
    the protocol claim, then remove owned temporary artifacts.
 
+## Execution Record
+
+### Production state and deterministic gates
+
+Commit `9522e64` promotes the selected policy to all initiating and accepted
+uTP transports. The controller now exposes its active state, remembered
+threshold, startup acknowledgements, and exits through bounded snapshots;
+the existing runtime high-water owner carries those scalars through the
+controlled-role and WAN JSON without adding a task, queue, or history.
+
+The complete 245-test protocol library has 241 routine passes and four
+intentional opt-in tests. Focused engine product-runtime evidence passes, as
+do warning-denying protocol/engine/session all-target Clippy and all 16 WAN
+contract tests. The paired opt-in controller evidence reproduces the approved
+three long-RTT improvements, 1.88x--1.90x, with candidate p95 queue delay of
+1.0--1.5 ms and a 45 ms maximum. TCP-like foreground overlap share is 82.65%,
+recovery is 293 ms, the fixed-loss case has 21 loss reductions with no
+timeout, and MTU probe loss remains isolated. The exact libtorrent-like exit
+again reaches 193.75 ms p95 queue delay and remains rejected.
+
+### Controlled product evidence
+
+The mixed libtorrent/RSTorrent forced-uTP loopback transfers complete exact in
+both directions with one uTP peer and zero TCP peers. The RSTorrent seed
+records 22 startup acknowledgements; the leecher correctly records no sender
+growth for its acknowledgement-only role.
+
+The retained production-owner 64 MiB RSTorrent/RSTorrent gate over the clean
+160 ms relay completes in 27.509258 seconds at 2.326489 MiB/s. This is a 96.8%
+increase over Tactical `145`'s post-reorder 1.181999 MiB/s controlled result.
+Both roles use one connection; the seed emits 47,039 DATA datagrams with zero
+retransmission, loss reduction, or timeout collapse. Startup has 404
+congestion-limited acknowledgements and one exit, records a 524,288-byte
+threshold, observes 21.036 ms maximum queue delay, and reaches the unchanged
+1 MiB congestion/flight bound. The leecher reaches 128 of 256 queued
+datagrams, zero reordered packets, and 125,019 buffered bytes. The relay has
+zero drop, 694 queued datagrams and 944,361 queued bytes at high water, then
+drains completely; exact payload verification and all process cleanup pass.
+
+Raw controlled reports are retained during execution at
+`/tmp/rstorrent-t150-mixed.json` and
+`/tmp/rstorrent-t150-controlled.json`. They are temporary evidence inputs,
+not repository artifacts.
+
 An evidence-backed defect in the startup, congestion, transport, runtime
 telemetry, or existing WAN harness owners may be repaired autonomously. Stop
 for human direction only if evidence selects a different production policy,
