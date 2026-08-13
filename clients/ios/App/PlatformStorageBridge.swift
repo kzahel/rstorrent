@@ -46,16 +46,13 @@ final class PlatformStorageBridge: @unchecked Sendable {
         )
     }
 
-    func publish(_ plan: IosRemovalPlan, name: String) throws {
-        guard plan.name == name else {
-            throw NamespaceTransitionError.publicationNameMismatch
-        }
-        guard let record = roots[plan.storageRoot] else {
-            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+    func publish(torrentID: String, storageRoot: String, name: String) throws {
+        guard let record = roots[storageRoot] else {
+            throw NamespaceTransitionError.unregisteredRoot(storageRoot)
         }
         try withCoordinatedRoot(record: record) { root in
             let staging = root.appendingPathComponent(
-                ".\(plan.torrentId).rstorrent-staging",
+                ".\(torrentID).rstorrent-staging",
                 isDirectory: true
             )
             let published = root.appendingPathComponent(name, isDirectory: true)
@@ -95,6 +92,52 @@ final class PlatformStorageBridge: @unchecked Sendable {
                     continue
                 }
             }
+        }
+    }
+
+    func openShareableFile(_ plan: IosPublishedFilePlan) throws -> ShareableFileLease {
+        guard let record = roots[plan.storageRoot] else {
+            throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
+        }
+        let root = try RootAccess.resolveBookmark(record.bookmarkData)
+        guard root.startAccessingSecurityScopedResource() else {
+            throw RootAccessError.securityScopeDenied
+        }
+        do {
+            let target = try safeTarget(root: root, components: plan.components)
+            var coordinationError: NSError?
+            var result: Result<URL, Error>?
+            NSFileCoordinator(filePresenter: nil).coordinate(
+                readingItemAt: target,
+                options: .withoutChanges,
+                error: &coordinationError
+            ) { coordinatedURL in
+                result = Result {
+                    let values = try coordinatedURL.resourceValues(forKeys: [
+                        .isRegularFileKey,
+                        .fileSizeKey,
+                    ])
+                    guard values.isRegularFile == true else {
+                        throw NamespaceTransitionError.shareTargetIsNotFile
+                    }
+                    guard values.fileSize.map(UInt64.init) == plan.length else {
+                        throw NamespaceTransitionError.shareTargetLengthChanged
+                    }
+                    return coordinatedURL
+                }
+            }
+            if let coordinationError {
+                throw RootAccessError.coordinationFailed(
+                    coordinationError.localizedDescription
+                )
+            }
+            guard let result else {
+                throw RootAccessError.coordinationAccessorDidNotRun
+            }
+            return ShareableFileLease(url: try result.get(), scopedRoot: root)
+        } catch {
+            root.stopAccessingSecurityScopedResource()
+            throw error
         }
     }
 
@@ -401,8 +444,9 @@ private struct POSIXFailure: Error, LocalizedError {
 private enum NamespaceTransitionError: Error, LocalizedError {
     case bothPublicationSidesExist
     case stagingMissing
-    case publicationNameMismatch
     case unregisteredRoot(String)
+    case shareTargetIsNotFile
+    case shareTargetLengthChanged
 
     var errorDescription: String? {
         switch self {
@@ -410,12 +454,32 @@ private enum NamespaceTransitionError: Error, LocalizedError {
             return "both staging and published torrent outputs exist"
         case .stagingMissing:
             return "torrent staging output is absent"
-        case .publicationNameMismatch:
-            return "prepared publication name changed before rename"
         case .unregisteredRoot(let rootID):
             return "storage root \(rootID) is not registered with the platform bridge"
+        case .shareTargetIsNotFile:
+            return "the published item is not a regular file"
+        case .shareTargetLengthChanged:
+            return "the published file length changed after verification"
         }
     }
+}
+
+final class ShareableFileLease: Identifiable {
+    let id = UUID()
+    let url: URL
+    private var scopedRoot: URL?
+
+    init(url: URL, scopedRoot: URL) {
+        self.url = url
+        self.scopedRoot = scopedRoot
+    }
+
+    func release() {
+        scopedRoot?.stopAccessingSecurityScopedResource()
+        scopedRoot = nil
+    }
+
+    deinit { release() }
 }
 
 private final class CoordinatedLease: @unchecked Sendable {

@@ -177,6 +177,17 @@ final class AppModel: ObservableObject {
         return result.torrentId
     }
 
+    func shareableFile(torrentID: String, fileIndex: UInt32) async throws -> ShareableFileLease {
+        guard let client, let storageBridge else { throw AppModelError.notReady }
+        let plan = try await client.publishedFilePlan(
+            torrentId: torrentID,
+            fileIndex: fileIndex
+        )
+        return try await Task.detached {
+            try storageBridge.openShareableFile(plan)
+        }.value
+    }
+
     func resetExternalFolders() async {
         guard !isBusy else { return }
         isBusy = true
@@ -272,12 +283,15 @@ final class AppModel: ObservableObject {
                         guard !(try await client.preparedFiles(torrentId: torrent.torrentId)).isEmpty else {
                             throw AppModelError.emptyPublicationManifest
                         }
-                        let name = try await client.preparePlatformPublication(
+                        let plan = try await client.preparePlatformPublication(
                             torrentId: torrent.torrentId
                         )
-                        let plan = try await client.removalPlan(torrentId: torrent.torrentId)
                         try await Task.detached {
-                            try storageBridge.publish(plan, name: name)
+                            try storageBridge.publish(
+                                torrentID: plan.torrentId,
+                                storageRoot: plan.storageRoot,
+                                name: plan.name
+                            )
                         }.value
                         try await client.confirmPlatformPublication(torrentId: torrent.torrentId)
                     } else {

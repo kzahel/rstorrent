@@ -7,6 +7,7 @@ struct AddTorrentSheet: View {
     let onBrowse: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var isMagnetFieldFocused: Bool
 
     private var canAddMagnet: Bool {
         !magnetInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -29,6 +30,9 @@ struct AddTorrentSheet: View {
                     )
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .focused($isMagnetFieldFocused)
+                    .submitLabel(.done)
+                    .onSubmit(submitMagnet)
 
                     Button(L10n.string("dialog_add_torrent_paste_button")) {
                         magnetInput = clipboardText ?? magnetInput
@@ -38,8 +42,7 @@ struct AddTorrentSheet: View {
 
                 Section {
                     Button(L10n.string("dialog_add_torrent_add_button")) {
-                        onAdd()
-                        dismiss()
+                        submitMagnet()
                     }
                     .disabled(!canAddMagnet)
 
@@ -55,7 +58,21 @@ struct AddTorrentSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("dialog_add_torrent_cancel_button")) { dismiss() }
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button(L10n.string("dialog_add_torrent_add_button")) {
+                        submitMagnet()
+                    }
+                    .disabled(!canAddMagnet)
+                }
             }
         }
+    }
+
+    private func submitMagnet() {
+        guard canAddMagnet else { return }
+        isMagnetFieldFocused = false
+        onAdd()
+        dismiss()
     }
 }

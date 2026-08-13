@@ -19,13 +19,13 @@ use rstorrent_engine::{
     MseHandshakeSink, NamespaceAction, NamespaceState, NamespaceTransitionInput,
     NamespaceTransitionOutcome, NetworkConfig, NetworkPolicy, PathPublicationStage,
     PeerEncryptionPolicy, PeerTransportPolicy, PlatformStorageClient, PlatformStorageFailureKind,
-    PlatformStorageSpec, PreparedFileHash, PublicationShape, ResumableMagnetDownloadConfig,
-    ResumeArtifactState, ResumeValidationIntent, ResumedStorage, SelectiveStorageError,
-    SessionDownloadResourceSnapshot, SessionDownloadResources, SessionSocketError, SessionUdpError,
-    StorageFileKey, StorageFileLocator, StorageFilePool, StorageFilePoolSnapshot,
-    StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId, TorrentIdentityContext,
-    TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource, TrackerTransport,
-    VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
+    PlatformStorageSpec, PreparedFileHash, PublicationShape, PublishedArtifactLayout,
+    ResumableMagnetDownloadConfig, ResumeArtifactState, ResumeValidationIntent, ResumedStorage,
+    SelectiveStorageError, SessionDownloadResourceSnapshot, SessionDownloadResources,
+    SessionSocketError, SessionUdpError, StorageFileKey, StorageFileLocator, StorageFilePool,
+    StorageFilePoolSnapshot, StorageFileReference, StorageFileRole, StorageObjectKind, TorrentId,
+    TorrentIdentityContext, TorrentPrivacy, TrackerConfig, TrackerEndpoint, TrackerSource,
+    TrackerTransport, VerifiedFileError, VerifiedFileReader, decide_namespace_transition,
     download_magnet_metadata_with_external_discovery, resume_magnet_with_control,
     torrent_storage_paths, verify_prepared_platform_files,
 };
@@ -356,6 +356,21 @@ pub struct PlatformRemovalPlan {
     pub torrent_id: String,
     pub storage_root: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformPublicationPlan {
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformPublishedFilePlan {
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub components: Vec<String>,
+    pub length: u64,
 }
 
 #[derive(Debug)]
@@ -2176,7 +2191,7 @@ impl ApplicationService {
     pub async fn prepare_platform_publication(
         &mut self,
         torrent_id: &str,
-    ) -> Result<String, ApplicationError> {
+    ) -> Result<PlatformPublicationPlan, ApplicationError> {
         self.reap_finished().await?;
         let torrent_id = torrent_id.to_ascii_lowercase();
         let resume = self.load_resume_conservative(&torrent_id)?;
@@ -2200,7 +2215,11 @@ impl ApplicationService {
         if transition.revoke_access {
             self.storage_file_pool.invalidate_storage(&torrent_id);
         }
-        Ok(metainfo.name)
+        Ok(PlatformPublicationPlan {
+            torrent_id,
+            storage_root: resume.storage_root,
+            name: metainfo.name,
+        })
     }
 
     pub async fn confirm_platform_publication(
@@ -2274,6 +2293,81 @@ impl ApplicationService {
         self.refresh_views()?;
         self.start_recheck_if_possible(&torrent_id).await?;
         Ok(())
+    }
+
+    pub async fn platform_published_file_plan(
+        &mut self,
+        torrent_id: &str,
+        file_index: u32,
+    ) -> Result<PlatformPublishedFilePlan, ApplicationError> {
+        self.reap_finished().await?;
+        let torrent_id = torrent_id.to_ascii_lowercase();
+        let resume = self.load_resume_conservative(&torrent_id)?;
+        if resume.storage_state != StorageState::Published
+            || resume.verification.is_pending()
+            || matches!(
+                resume.state,
+                TorrentState::Checking | TorrentState::NeedsRepair | TorrentState::Error
+            )
+            || !matches!(
+                self.storage_roots.get(&resume.storage_root),
+                Some(StorageRootLocation::PlatformCapability)
+            )
+        {
+            return Err(ApplicationError::Configuration(
+                "torrent has no shareable published platform file".to_owned(),
+            ));
+        }
+        let raw_info = resume.raw_info.ok_or_else(|| {
+            ApplicationError::Configuration("torrent metadata is not available".to_owned())
+        })?;
+        let metainfo = parse_durable_metainfo(&raw_info)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        let index = usize::try_from(file_index).map_err(|_| {
+            ApplicationError::Configuration("file index exceeds this platform".to_owned())
+        })?;
+        let file = metainfo.files.get(index).ok_or_else(|| {
+            ApplicationError::Configuration("file index is outside verified metadata".to_owned())
+        })?;
+        if file.padding {
+            return Err(ApplicationError::Configuration(
+                "padding files cannot be shared".to_owned(),
+            ));
+        }
+        let have = resume.have.ok_or_else(|| {
+            ApplicationError::Configuration("torrent has no verified piece state".to_owned())
+        })?;
+        let layout = TorrentLayout::from_metainfo(&metainfo);
+        let pieces = layout
+            .file_piece_range(index)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+        if pieces.is_some_and(|pieces| {
+            pieces.into_iter().any(|piece| {
+                !usize::try_from(piece)
+                    .ok()
+                    .and_then(|index| have.pieces().get(index))
+                    .copied()
+                    .unwrap_or(false)
+            })
+        }) {
+            return Err(ApplicationError::Configuration(
+                "file is not completely verified".to_owned(),
+            ));
+        }
+        let artifact = PublishedArtifactLayout::from_metainfo(&metainfo)
+            .map_err(|error| ApplicationError::Configuration(error.to_string()))?
+            .files
+            .into_iter()
+            .find(|artifact| artifact.file_index == index)
+            .ok_or_else(|| {
+                ApplicationError::Configuration("published file layout is absent".to_owned())
+            })?;
+        Ok(PlatformPublishedFilePlan {
+            torrent_id,
+            storage_root: resume.storage_root,
+            components: artifact.qualified_components,
+            length: file.length,
+        })
     }
 
     pub async fn mark_storage_unavailable(
@@ -12893,6 +12987,63 @@ mod tests {
             crate::StorageRootAvailability::Unavailable
         );
         provider.await.expect("provider task");
+        service.shutdown().await.expect("shutdown");
+        drop(service);
+        fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[tokio::test]
+    async fn platform_file_handoff_requires_published_verified_content() {
+        let root = test_root("platform-file-handoff");
+        let payload = b"abcdefg";
+        let raw_info = single_file_info("seed.bin", payload, 4);
+        let info_hash: [u8; 20] = Sha1::digest(&raw_info).into();
+        let info_hash_hex = crate::control::encode_info_hash(info_hash);
+        let mut configuration = config(&root);
+        configuration.storage_roots = vec![ConfiguredStorageRoot::platform("downloads")];
+        let (client, _broker) = platform_storage_channel();
+        configuration.platform_storage_client = Some(client);
+        let torrent_id = {
+            let mut store = SessionStore::open(
+                configuration
+                    .durable_profile_root()
+                    .expect("durable profile"),
+                &configuration.profile_id,
+                &configuration.storage_roots,
+            )
+            .expect("open fixture store");
+            let torrent_id = add_store_torrent(&mut store, "add", &info_hash_hex);
+            store
+                .record_metadata(&torrent_id, &raw_info)
+                .expect("record metadata");
+            store
+                .record_pieces(&torrent_id, &[0, 1])
+                .expect("record verified pieces");
+            store
+                .mark_storage_prepared(&torrent_id, StorageState::Published)
+                .expect("record publication");
+            store.mark_complete(&torrent_id).expect("record completion");
+            torrent_id
+        };
+
+        let mut service = ApplicationService::open(configuration)
+            .await
+            .expect("open application");
+        let plan = service
+            .platform_published_file_plan(&torrent_id, 0)
+            .await
+            .expect("published file plan");
+        assert_eq!(plan.torrent_id, torrent_id);
+        assert_eq!(plan.storage_root, "downloads");
+        assert_eq!(plan.components, ["seed.bin"]);
+        assert_eq!(plan.length, payload.len() as u64);
+        assert!(
+            service
+                .platform_published_file_plan(&torrent_id, 1)
+                .await
+                .is_err()
+        );
+
         service.shutdown().await.expect("shutdown");
         drop(service);
         fs::remove_dir_all(root).expect("remove root");

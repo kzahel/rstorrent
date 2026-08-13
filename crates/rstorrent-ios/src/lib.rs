@@ -16,8 +16,8 @@ use rstorrent_engine::{
 };
 use rstorrent_session::{
     AddTorrentBytesRequest, ApplicationConfig, ApplicationService, ConfiguredStorageRoot,
-    PlatformRemovalPlan, RequestEnvelope, ResponseEnvelope, SubscriptionSpec, ViewSubscription,
-    ViewUpdate,
+    PlatformPublicationPlan, PlatformPublishedFilePlan, PlatformRemovalPlan, RequestEnvelope,
+    ResponseEnvelope, SubscriptionSpec, ViewSubscription, ViewUpdate,
 };
 use rustix::fs::{CWD, RenameFlags, renameat_with};
 use sha1::{Digest, Sha1};
@@ -185,6 +185,21 @@ pub struct IosRemovalPlan {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct IosPublicationPlan {
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct IosPublishedFilePlan {
+    pub torrent_id: String,
+    pub storage_root: String,
+    pub components: Vec<String>,
+    pub length: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct IosRootQualification {
     pub sha1_hex: String,
     pub initial_length: u64,
@@ -304,7 +319,7 @@ impl IosApplicationClient {
     pub async fn prepare_platform_publication(
         &self,
         torrent_id: String,
-    ) -> Result<String, IosClientError> {
+    ) -> Result<IosPublicationPlan, IosClientError> {
         self.service
             .lock()
             .await
@@ -312,6 +327,7 @@ impl IosApplicationClient {
             .ok_or_else(|| IosClientError::message("application client is shut down"))?
             .prepare_platform_publication(&torrent_id)
             .await
+            .map(map_publication_plan)
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
@@ -352,6 +368,22 @@ impl IosApplicationClient {
             .platform_removal_plan(&torrent_id)
             .await
             .map(map_removal_plan)
+            .map_err(|error| IosClientError::message(error.to_string()))
+    }
+
+    pub async fn published_file_plan(
+        &self,
+        torrent_id: String,
+        file_index: u32,
+    ) -> Result<IosPublishedFilePlan, IosClientError> {
+        self.service
+            .lock()
+            .await
+            .as_mut()
+            .ok_or_else(|| IosClientError::message("application client is shut down"))?
+            .platform_published_file_plan(&torrent_id, file_index)
+            .await
+            .map(map_published_file_plan)
             .map_err(|error| IosClientError::message(error.to_string()))
     }
 
@@ -849,6 +881,23 @@ fn map_removal_plan(plan: PlatformRemovalPlan) -> IosRemovalPlan {
         torrent_id: plan.torrent_id,
         storage_root: plan.storage_root,
         name: plan.name,
+    }
+}
+
+fn map_publication_plan(plan: PlatformPublicationPlan) -> IosPublicationPlan {
+    IosPublicationPlan {
+        torrent_id: plan.torrent_id,
+        storage_root: plan.storage_root,
+        name: plan.name,
+    }
+}
+
+fn map_published_file_plan(plan: PlatformPublishedFilePlan) -> IosPublishedFilePlan {
+    IosPublishedFilePlan {
+        torrent_id: plan.torrent_id,
+        storage_root: plan.storage_root,
+        components: plan.components,
+        length: plan.length,
     }
 }
 

@@ -294,6 +294,7 @@ impl AndroidApplicationClient {
             .ok_or_else(|| AndroidClientError::message("application client is shut down"))?
             .prepare_platform_publication(&torrent_id)
             .await
+            .map(|plan| plan.name)
             .map_err(|error| AndroidClientError::message(error.to_string()))
     }
 

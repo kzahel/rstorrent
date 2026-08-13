@@ -19,6 +19,7 @@ struct RemoveTorrentSheet: View {
                     Toggle(isOn: $deleteFiles) {
                         Text(L10n.string("dialog_remove_delete_files_label"))
                     }
+                    .accessibilityIdentifier("remove-delete-files")
                 }
             }
             .navigationTitle(L10n.string("dialog_remove_title"))
@@ -34,6 +35,6 @@ struct RemoveTorrentSheet: View {
                 }
             }
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(280)])
     }
 }
