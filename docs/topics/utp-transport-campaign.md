@@ -975,7 +975,11 @@ this is one causal verification sample, not yet the alternating cohort or
 near-parity claim. Named high-cost real-socket regressions also pass in debug
 and release with 69,210,112 fixed-548 bytes and 190,320,640 dynamic-MTU bytes;
 each exceeds two complete DATA sequence cycles on one exact ordered stream and
-terminates with zero uTP/UDP ownership.
+terminates with zero uTP/UDP ownership. The 256 MiB all-pairing controlled
+matrix likewise passes one-connection integrity and cleanup for all four uTP
+pairings. RSTorrent/RSTorrent reaches 94.5% of the libtorrent/libtorrent rate;
+the mixed directions remain below that local control and select the next
+throughput-attribution work.
 Another bulk WAN cohort, another NAT mechanism, IPv6 uTP, permanent network
 change, another host, and a broader uTP support claim remain separate
 decisions.

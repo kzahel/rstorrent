@@ -271,6 +271,28 @@ selected datagram size of at least 1,456 bytes. Both pass optimized debug and
 host. They are ignored from routine runs because together they move roughly
 248 MiB over loopback, but remain named release acceptance gates.
 
+The extended controlled role matrix then runs all four forced-uTP pairings at
+256 MiB with one direct loopback peer. Every case verifies 268,435,456 bytes
+and 1,024 pieces, joins both roles, removes the output, and records one
+connection with no retry exhaustion, last failure, ingress drop, or worker
+panic for each RSTorrent role. RSTorrent seeding emits 196,696--199,015 DATA
+datagrams, so both RSTorrent-sender pairings cross more than two sequence
+cycles with dynamic MTU. Active rates are 166.991 MiB/s RSTorrent/RSTorrent,
+137.999 MiB/s RSTorrent/libtorrent, 86.507 MiB/s libtorrent/RSTorrent, and
+176.691 MiB/s libtorrent/libtorrent. Thus local RSTorrent/RSTorrent reaches
+94.5% of the oracle control after the reliability repair, while the two mixed
+directions remain useful throughput-attribution targets rather than failures.
+All four cases and fixture cleanup finish in 12.21 seconds.
+
+The matching 256 MiB TCP controls also pass all four one-connection integrity
+and cleanup cases at 425.629, 333.542, 381.406, and 258.280 MiB/s in the same
+pairing order. Loopback is CPU/syscall sensitive and is not a WAN parity
+target, but the result confirms that neither RSTorrent's torrent scheduler nor
+storage path imposes the mixed-uTP ceilings. The uTP-specific local ratios are
+39.2%, 41.4%, 22.7%, and 68.4% of each pairing's own TCP result; controller,
+datagram, ACK, and runtime-turn utilization therefore remain the selected
+owners after reliability.
+
 ## Owner, Task, Cancellation, And Dependency Map
 
 ```text
