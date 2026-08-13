@@ -31,8 +31,8 @@ private enum TorrentListFilter: CaseIterable, Identifiable {
     func includes(_ torrent: TorrentListItem) -> Bool {
         switch self {
         case .all: return true
-        case .active: return !torrent.isStopped && torrent.progress < 1
-        case .finished: return torrent.progress >= 1 || torrent.status == "seeding"
+        case .active: return !torrent.isStopped && !torrent.isPublishedComplete
+        case .finished: return torrent.isPublishedComplete
         }
     }
 }

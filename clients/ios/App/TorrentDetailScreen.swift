@@ -1,6 +1,5 @@
 import SwiftUI
 import RSTorrentSession
-import UIKit
 
 private enum TorrentDetailSection: CaseIterable, Identifiable {
     case status
@@ -39,7 +38,7 @@ struct TorrentDetailScreen: View {
     @State private var selectedSection: TorrentDetailSection = .status
     @State private var pendingRemovalTorrent: TorrentListItem?
     @State private var actionError: String?
-    @State private var shareLease: ShareableFileLease?
+    @State private var previewLease: ShareableFileLease?
 
     private var torrent: TorrentListItem? {
         presentation.torrents.first { $0.torrentId == torrentID }.map(TorrentListItem.init)
@@ -100,11 +99,13 @@ struct TorrentDetailScreen: View {
                         onCancel: { pendingRemovalTorrent = nil }
                     )
                 }
-                .sheet(item: $shareLease, onDismiss: {
-                    shareLease?.release()
-                    shareLease = nil
+                .fullScreenCover(item: $previewLease, onDismiss: {
+                    previewLease = nil
                 }) { lease in
-                    ShareActivitySheet(url: lease.url)
+                    SystemFilePreview(url: lease.url) {
+                        previewLease = nil
+                    }
+                    .onDisappear { lease.release() }
                 }
             } else {
                 VStack(spacing: 12) {
@@ -146,10 +147,10 @@ struct TorrentDetailScreen: View {
                 onDownloadNow: { index in
                     command(.downloadFiles(torrentId: torrentID, fileIndices: [index]))
                 },
-                onShare: { file in
+                onOpen: { file in
                     Task {
                         do {
-                            shareLease = try await appModel.shareableFile(
+                            previewLease = try await appModel.shareableFile(
                                 torrentID: torrentID,
                                 fileIndex: file.fileIndex
                             )
@@ -325,7 +326,7 @@ private struct TorrentFilesSection: View {
     let files: [FileView]
     let onPriority: ([UInt32], FilePriority) -> Void
     let onDownloadNow: (UInt32) -> Void
-    let onShare: (FileView) -> Void
+    let onOpen: (FileView) -> Void
 
     var body: some View {
         if files.isEmpty {
@@ -367,7 +368,7 @@ private struct TorrentFilesSection: View {
                             }
                             if file.mediaAvailability == .available {
                                 Button(L10n.string("torrent_detail_open_with")) {
-                                    onShare(file)
+                                    onOpen(file)
                                 }
                             }
                         } label: {
@@ -380,19 +381,6 @@ private struct TorrentFilesSection: View {
             .detailCard()
         }
     }
-}
-
-private struct ShareActivitySheet: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
-    }
-
-    func updateUIViewController(
-        _ uiViewController: UIActivityViewController,
-        context: Context
-    ) {}
 }
 
 private struct TorrentTrackersSection: View {

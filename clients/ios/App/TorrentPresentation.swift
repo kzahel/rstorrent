@@ -39,22 +39,57 @@ struct TorrentListItem: Identifiable, Equatable {
     var isStopped: Bool {
         value.operationalState == .paused || value.operationalState == .error
     }
+    var isPublishedComplete: Bool {
+        torrentIsPublishedComplete(state: value.state, storageState: value.storageState)
+    }
     var progress: Double {
-        if value.state == .complete { return 1 }
-        if
-            let requiredText = value.requiredPayloadBytes,
-            let remainingText = value.remainingPayloadBytes,
-            let required = Double(requiredText),
-            let remaining = Double(remainingText),
-            required > 0
-        {
-            return min(max((required - remaining) / required, 0), 1)
-        }
-        guard value.pieceCount > 0 else { return 0 }
-        return min(Double(value.verifiedPieceCount) / Double(value.pieceCount), 1)
+        torrentDisplayProgress(
+            state: value.state,
+            storageState: value.storageState,
+            requiredPayloadBytes: value.requiredPayloadBytes,
+            remainingPayloadBytes: value.remainingPayloadBytes,
+            pieceCount: value.pieceCount,
+            verifiedPieceCount: value.verifiedPieceCount
+        )
     }
     var downloadSpeed: Int { Int(value.payloadDownloadRateBytes) ?? 0 }
     var numPeers: Int { Int(value.activePeerConnections) }
+}
+
+func torrentIsPublishedComplete(state: TorrentState, storageState: StorageState) -> Bool {
+    state == .complete && storageState == .published
+}
+
+func torrentDisplayProgress(
+    state: TorrentState,
+    storageState: StorageState,
+    requiredPayloadBytes: String?,
+    remainingPayloadBytes: String?,
+    pieceCount: UInt32,
+    verifiedPieceCount: UInt32
+) -> Double {
+    if torrentIsPublishedComplete(state: state, storageState: storageState) {
+        return 1
+    }
+
+    let fraction: Double
+    if
+        let requiredText = requiredPayloadBytes,
+        let remainingText = remainingPayloadBytes,
+        let required = Double(requiredText),
+        let remaining = Double(remainingText),
+        required.isFinite,
+        remaining.isFinite,
+        required > 0
+    {
+        fraction = (required - remaining) / required
+    } else if pieceCount > 0 {
+        fraction = Double(verifiedPieceCount) / Double(pieceCount)
+    } else {
+        fraction = 0
+    }
+
+    return min(max(fraction, 0), 0.99)
 }
 
 func localizedTorrentStatus(_ status: String) -> String {
@@ -77,7 +112,10 @@ func torrentDisplayName(_ torrent: TorrentListItem) -> String {
 }
 
 func formattedProgress(_ progress: Double) -> String {
-    "\(Int((progress * 100).rounded()))%"
+    guard progress.isFinite else { return "0%" }
+    let bounded = min(max(progress, 0), 1)
+    let rounded = Int((bounded * 100).rounded())
+    return "\(bounded < 1 ? min(rounded, 99) : 100)%"
 }
 
 func formattedBytesPerSecond(_ value: Int) -> String {
