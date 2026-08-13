@@ -20,7 +20,7 @@ use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
     MetainfoTrackerTransport,
 };
-use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
+use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sha2::{Digest as Sha256Digest, Sha256};
 
@@ -1884,13 +1884,14 @@ impl SessionStore {
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
-        let metainfo = parse_durable_metainfo(&raw_info)?;
+        let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
+        let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
         let skip_files = read_selection(&self.connection, &torrent_id)?
             .into_iter()
             .map(|index| index as usize)
             .collect::<Vec<_>>();
-        let layout = TorrentLayout::from_metainfo(&metainfo);
-        let selection = FileSelection::new(&layout, &skip_files)
+        let layout = ContentLayout::from_content(&content);
+        let selection = FileSelection::new_content(&layout, &skip_files)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let wanted = layout
             .files()
@@ -2117,8 +2118,9 @@ impl SessionStore {
             .ok_or_else(|| {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
-        let metainfo = parse_durable_metainfo(&raw_info)?;
-        if metainfo.info_hash != read_v1_info_hash(&self.connection, &torrent_id)? {
+        let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
+        let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
+        if content.info_hashes() != read_info_hashes(&self.connection, &torrent_id)? {
             return Err(StoreError::DurableState(
                 "stored metadata does not match torrent identity".to_owned(),
             ));
@@ -2126,7 +2128,7 @@ impl SessionStore {
         let have = HaveState::empty(
             torrent_id,
             ContentFingerprint::for_info_bytes(&raw_info),
-            metainfo.piece_count(),
+            content.piece_count(),
         )?;
         self.replace_have(&torrent_id.to_string(), &have)?;
         Ok(have)
@@ -4744,12 +4746,13 @@ fn read_selection(connection: &Connection, torrent_id: &TorrentId) -> Result<Vec
     let Some(raw_info) = raw_info else {
         return Ok(Vec::new());
     };
-    let metainfo = parse_durable_metainfo(&raw_info)?;
+    let metainfo_source = read_verbatim_metainfo_source(connection, torrent_id)?;
+    let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
     let mut skipped = Vec::new();
-    for (index, file) in metainfo.files.iter().enumerate() {
+    for (index, file) in content.files().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| StoreError::DurableState("file index overflow".to_owned()))?;
-        if !file.padding && exceptions.binary_search(&index).is_err() {
+        if !file.padding() && exceptions.binary_search(&index).is_err() {
             skipped.push(index);
         }
     }
@@ -5070,6 +5073,28 @@ fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, StoreError> {
     })
 }
 
+fn parse_durable_content(
+    raw_info: &[u8],
+    metainfo_source: Option<&[u8]>,
+) -> Result<TorrentContent, StoreError> {
+    match metainfo_source {
+        Some(source) => {
+            let projection =
+                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)
+                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
+            if &source[projection.info_span.clone()] != raw_info {
+                return Err(StoreError::DurableState(
+                    "retained metainfo source does not match raw_info".to_owned(),
+                ));
+            }
+            Ok(projection.content)
+        }
+        None => Ok(TorrentContent::from_v1_metainfo(parse_durable_metainfo(
+            raw_info,
+        )?)),
+    }
+}
+
 fn wanted_piece_evidence(
     raw_info: &[u8],
     metainfo_source: Option<&[u8]>,
@@ -5083,20 +5108,7 @@ fn wanted_piece_evidence(
                 .map_err(|_| StoreError::DurableState("file index overflow".to_owned()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let content = match metainfo_source {
-        Some(source) => {
-            let projection =
-                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)
-                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
-            if &source[projection.info_span.clone()] != raw_info {
-                return Err(StoreError::DurableState(
-                    "retained metainfo source does not match raw_info".to_owned(),
-                ));
-            }
-            projection.content
-        }
-        None => TorrentContent::from_v1_metainfo(parse_durable_metainfo(raw_info)?),
-    };
+    let content = parse_durable_content(raw_info, metainfo_source)?;
     if content.piece_count() != have.pieces().len() {
         return Err(StoreError::DurableState(
             "runtime content piece count does not match have state".to_owned(),
@@ -6045,6 +6057,34 @@ mod tests {
         let duplicate_id = added_torrent_id(&duplicate);
         assert_eq!(duplicate_id, torrent_id);
         assert_eq!(duplicate.revision, added.revision);
+
+        store
+            .record_piece(&torrent_id, 0)
+            .expect("record pure-v2 piece");
+        store
+            .record_prepared_files(
+                &torrent_id,
+                &[PreparedFileHash {
+                    file_index: 0,
+                    length: 1,
+                    sha1: [7; 20],
+                }],
+            )
+            .expect("record pure-v2 prepared manifest");
+        assert_eq!(
+            store
+                .load_prepared_files(&torrent_id)
+                .expect("load pure-v2 manifest"),
+            vec![PreparedFileRecord {
+                file_index: 0,
+                length: 1,
+                sha1: [7; 20],
+            }]
+        );
+        let reset = store
+            .reset_have_from_metadata(&torrent_id)
+            .expect("reset pure-v2 have from retained source");
+        assert_eq!(reset.pieces(), &[false]);
 
         drop(store);
         let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
