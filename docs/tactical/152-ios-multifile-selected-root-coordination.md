@@ -262,3 +262,28 @@ and validates exact-target creation as the implementation direction.
 
 The motivating public-swarm run remains an observed failure, not completion
 evidence. Production code is unchanged at this checkpoint.
+
+### Exact-target implementation and deterministic gates
+
+The production bridge now derives and validates the exact target before
+coordination. Open accessors coordinate that file rather than the selected
+root and retain the same balanced security-scope and release-ID lease until
+Rust drops the final pooled handle. Sibling file access can therefore overlap,
+while two writers for the same file remain serialized.
+
+Descriptor-relative `openat`, `mkdirat`, `fstatat`, and `unlinkat` operations
+keep every parent beneath the opened selected-root descriptor and use
+`O_NOFOLLOW`. Missing nested parents are created inside the exact-target
+accessor; symlinked parents and non-regular payload targets fail closed.
+Observation and file deletion now coordinate exact targets. Publication uses
+one coordinated source/destination move and managed cleanup coordinates each
+exact artifact for deletion rather than acquiring the entire selected root.
+The eight-handle pool and 30-second request deadline are unchanged.
+
+Focused simulator namespace tests pass for the legacy exclusion control,
+concurrent siblings, same-file serialization, nonexistent nested targets,
+coordinator substitution, symlink rejection, no-follow observation, and
+idempotent deletion. A new Rust pool test holds three distinct leased platform
+files concurrently, observes a three-handle high-water, invalidates them, and
+delivers and acknowledges the three release IDs exactly once with terminal
+zero ownership. Physical controlled and public-swarm gates remain pending.

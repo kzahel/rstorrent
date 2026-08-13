@@ -50,26 +50,41 @@ final class PlatformStorageBridge: @unchecked Sendable {
         guard let record = roots[storageRoot] else {
             throw NamespaceTransitionError.unregisteredRoot(storageRoot)
         }
-        try withCoordinatedRoot(record: record) { root in
-            let staging = root.appendingPathComponent(
-                ".\(torrentID).rstorrent-staging",
-                isDirectory: true
+        let root = try RootAccess.resolveBookmark(record.bookmarkData)
+        try RootAccess.withSecurityScope(root) {
+            let staging = try Self.storageTarget(
+                root: root,
+                components: [".\(torrentID).rstorrent-staging"]
             )
-            let published = root.appendingPathComponent(name, isDirectory: true)
-            let stagingExists = FileManager.default.fileExists(atPath: staging.path)
-            let publishedExists = FileManager.default.fileExists(atPath: published.path)
-            guard !(stagingExists && publishedExists) else {
-                throw NamespaceTransitionError.bothPublicationSidesExist
-            }
-            guard !publishedExists else { return }
-            guard stagingExists else { throw NamespaceTransitionError.stagingMissing }
-            let status = staging.path.withCString { source in
-                published.path.withCString { destination in
-                    renameatx_np(AT_FDCWD, source, AT_FDCWD, destination, UInt32(RENAME_EXCL))
+            let published = try Self.storageTarget(root: root, components: [name])
+            try withCoordinatedMove(source: staging, destination: published) {
+                coordinatedStaging,
+                coordinatedPublished in
+                let stagingExists = FileManager.default.fileExists(
+                    atPath: coordinatedStaging.path
+                )
+                let publishedExists = FileManager.default.fileExists(
+                    atPath: coordinatedPublished.path
+                )
+                guard !(stagingExists && publishedExists) else {
+                    throw NamespaceTransitionError.bothPublicationSidesExist
                 }
-            }
-            guard status == 0 else {
-                throw POSIXFailure(operation: "publish torrent", code: errno)
+                guard !publishedExists else { return }
+                guard stagingExists else { throw NamespaceTransitionError.stagingMissing }
+                let status = coordinatedStaging.path.withCString { source in
+                    coordinatedPublished.path.withCString { destination in
+                        renameatx_np(
+                            AT_FDCWD,
+                            source,
+                            AT_FDCWD,
+                            destination,
+                            UInt32(RENAME_EXCL)
+                        )
+                    }
+                }
+                guard status == 0 else {
+                    throw POSIXFailure(operation: "publish torrent", code: errno)
+                }
             }
         }
     }
@@ -78,18 +93,22 @@ final class PlatformStorageBridge: @unchecked Sendable {
         guard let record = roots[plan.storageRoot] else {
             throw NamespaceTransitionError.unregisteredRoot(plan.storageRoot)
         }
-        try withCoordinatedRoot(record: record) { root in
+        let root = try RootAccess.resolveBookmark(record.bookmarkData)
+        try RootAccess.withSecurityScope(root) {
             for name in Self.managedArtifactNames(
                 torrentID: plan.torrentId,
                 publishedName: plan.name
             ) {
-                let target = root.appendingPathComponent(name, isDirectory: false)
-                do {
-                    try FileManager.default.removeItem(at: target)
-                } catch let error as CocoaError where
-                    error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
-                {
-                    continue
+                let target = try Self.storageTarget(root: root, components: [name])
+                try withCoordinatedWriting(at: target, options: .forDeleting) {
+                    coordinatedTarget in
+                    do {
+                        try FileManager.default.removeItem(at: coordinatedTarget)
+                    } catch let error as CocoaError where
+                        error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
+                    {
+                        return
+                    }
                 }
             }
         }
@@ -104,7 +123,7 @@ final class PlatformStorageBridge: @unchecked Sendable {
             throw RootAccessError.securityScopeDenied
         }
         do {
-            let target = try safeTarget(root: root, components: plan.components)
+            let target = try Self.storageTarget(root: root, components: plan.components)
             var coordinationError: NSError?
             var result: Result<URL, Error>?
             NSFileCoordinator(filePresenter: nil).coordinate(
@@ -113,14 +132,18 @@ final class PlatformStorageBridge: @unchecked Sendable {
                 error: &coordinationError
             ) { coordinatedURL in
                 result = Result {
-                    let values = try coordinatedURL.resourceValues(forKeys: [
-                        .isRegularFileKey,
-                        .fileSizeKey,
-                    ])
-                    guard values.isRegularFile == true else {
+                    try Self.validateCoordinatedTarget(
+                        coordinatedURL,
+                        requested: target
+                    )
+                    let observation = try Self.observe(
+                        root: root,
+                        components: plan.components
+                    )
+                    guard observation.exists, observation.kind == .file else {
                         throw NamespaceTransitionError.shareTargetIsNotFile
                     }
-                    guard values.fileSize.map(UInt64.init) == plan.length else {
+                    guard observation.length == plan.length else {
                         throw NamespaceTransitionError.shareTargetLengthChanged
                     }
                     return coordinatedURL
@@ -155,29 +178,62 @@ final class PlatformStorageBridge: @unchecked Sendable {
         return workerCounter
     }
 
-    private func withCoordinatedRoot<T>(
-        record: SelectedRootRecord,
+    private func withCoordinatedWriting<T>(
+        at target: URL,
+        options: NSFileCoordinator.WritingOptions,
         body: (URL) throws -> T
     ) throws -> T {
-        let url = try RootAccess.resolveBookmark(record.bookmarkData)
-        return try RootAccess.withSecurityScope(url) {
-            var coordinationError: NSError?
-            var result: Result<T, Error>?
-            NSFileCoordinator(filePresenter: nil).coordinate(
-                writingItemAt: url,
-                options: .forMerging,
-                error: &coordinationError
-            ) { coordinatedRoot in
-                result = Result { try body(coordinatedRoot) }
+        var coordinationError: NSError?
+        var result: Result<T, Error>?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            writingItemAt: target,
+            options: options,
+            error: &coordinationError
+        ) { coordinatedTarget in
+            result = Result {
+                try Self.validateCoordinatedTarget(coordinatedTarget, requested: target)
+                return try body(coordinatedTarget)
             }
-            if let coordinationError {
-                throw RootAccessError.coordinationFailed(coordinationError.localizedDescription)
-            }
-            guard let result else {
-                throw RootAccessError.coordinationAccessorDidNotRun
-            }
-            return try result.get()
         }
+        if let coordinationError {
+            throw RootAccessError.coordinationFailed(coordinationError.localizedDescription)
+        }
+        guard let result else {
+            throw RootAccessError.coordinationAccessorDidNotRun
+        }
+        return try result.get()
+    }
+
+    private func withCoordinatedMove<T>(
+        source: URL,
+        destination: URL,
+        body: (URL, URL) throws -> T
+    ) throws -> T {
+        var coordinationError: NSError?
+        var result: Result<T, Error>?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            writingItemAt: source,
+            options: .forMoving,
+            writingItemAt: destination,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedSource, coordinatedDestination in
+            result = Result {
+                try Self.validateCoordinatedTarget(coordinatedSource, requested: source)
+                try Self.validateCoordinatedTarget(
+                    coordinatedDestination,
+                    requested: destination
+                )
+                return try body(coordinatedSource, coordinatedDestination)
+            }
+        }
+        if let coordinationError {
+            throw RootAccessError.coordinationFailed(coordinationError.localizedDescription)
+        }
+        guard let result else {
+            throw RootAccessError.coordinationAccessorDidNotRun
+        }
+        return try result.get()
     }
 
     private let workerCounterLock = NSLock()
@@ -238,6 +294,14 @@ final class PlatformStorageBridge: @unchecked Sendable {
             fail(request, .grantUnavailable, error.localizedDescription)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             fail(request, .missing, error.localizedDescription)
+        } catch let error as POSIXFailure where error.code == ENOENT {
+            fail(request, .missing, error.localizedDescription)
+        } catch let error as POSIXFailure where error.code == EACCES || error.code == EPERM {
+            fail(request, .permissionDenied, error.localizedDescription)
+        } catch let error as POSIXFailure where
+            error.code == ELOOP || error.code == ENOTDIR || error.code == EISDIR
+        {
+            fail(request, .wrongKind, error.localizedDescription)
         } catch {
             fail(request, .providerRefused, error.localizedDescription)
         }
@@ -249,33 +313,20 @@ final class PlatformStorageBridge: @unchecked Sendable {
         var accessorRan = false
         let lease = CoordinatedLease()
         let releaseID = leases.allocate(lease)
+        let target = try Self.storageTarget(root: rootURL, components: request.path)
         NSFileCoordinator(filePresenter: nil).coordinate(
-            writingItemAt: rootURL,
+            writingItemAt: target,
             options: .forMerging,
             error: &coordinationError
-        ) { coordinatedRoot in
+        ) { coordinatedTarget in
             accessorRan = true
             do {
-                let target = try safeTarget(root: coordinatedRoot, components: request.path)
-                if request.access == .readWriteCreate {
-                    try FileManager.default.createDirectory(
-                        at: target.deletingLastPathComponent(),
-                        withIntermediateDirectories: true
-                    )
-                }
-                let flags: Int32
-                switch request.access {
-                case .readExisting:
-                    flags = O_RDONLY | O_CLOEXEC
-                case .readWriteExisting:
-                    flags = O_RDWR | O_CLOEXEC
-                case .readWriteCreate:
-                    flags = O_RDWR | O_CREAT | O_CLOEXEC
-                }
-                let descriptor = Darwin.open(target.path, flags, S_IRUSR | S_IWUSR)
-                guard descriptor >= 0 else {
-                    throw POSIXFailure(operation: "open", code: errno)
-                }
+                try Self.validateCoordinatedTarget(coordinatedTarget, requested: target)
+                let descriptor = try Self.openDescriptor(
+                    root: rootURL,
+                    components: request.path,
+                    access: request.access
+                )
                 defer { Darwin.close(descriptor) }
                 let accepted = try client.completeStorageRequest(
                     requestId: request.requestId,
@@ -307,48 +358,19 @@ final class PlatformStorageBridge: @unchecked Sendable {
         var coordinationError: NSError?
         var accessorError: Error?
         var accessorRan = false
+        let target = try Self.storageTarget(root: rootURL, components: request.path)
         NSFileCoordinator(filePresenter: nil).coordinate(
-            readingItemAt: rootURL,
+            readingItemAt: target,
             options: [],
             error: &coordinationError
-        ) { coordinatedRoot in
+        ) { coordinatedTarget in
             accessorRan = true
             do {
-                let target = try safeTarget(root: coordinatedRoot, components: request.path)
-                let observation: IosStorageObservation
-                do {
-                    let values = try target.resourceValues(forKeys: [
-                        .isRegularFileKey,
-                        .isDirectoryKey,
-                        .fileSizeKey,
-                        .contentModificationDateKey,
-                    ])
-                    let kind: IosStorageObjectKind
-                    if values.isRegularFile == true {
-                        kind = .file
-                    } else if values.isDirectory == true {
-                        kind = .directory
-                    } else {
-                        kind = .other
-                    }
-                    let length = kind == .file ? values.fileSize.map(UInt64.init) : nil
-                    let modified = values.contentModificationDate.map {
-                        Int64($0.timeIntervalSince1970 * 1_000_000_000)
-                    }
-                    observation = IosStorageObservation(
-                        exists: true,
-                        kind: kind,
-                        length: length,
-                        opaqueToken: modified.map { "mtime-ns:\($0)" }
-                    )
-                } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-                    observation = IosStorageObservation(
-                        exists: false,
-                        kind: nil,
-                        length: nil,
-                        opaqueToken: nil
-                    )
-                }
+                try Self.validateCoordinatedTarget(coordinatedTarget, requested: target)
+                let observation = try Self.observe(
+                    root: rootURL,
+                    components: request.path
+                )
                 _ = try client.completeStorageObservation(
                     requestId: request.requestId,
                     observation: observation
@@ -370,19 +392,16 @@ final class PlatformStorageBridge: @unchecked Sendable {
         var coordinationError: NSError?
         var accessorError: Error?
         var accessorRan = false
+        let target = try Self.storageTarget(root: rootURL, components: request.path)
         NSFileCoordinator(filePresenter: nil).coordinate(
-            writingItemAt: rootURL,
-            options: .forMerging,
+            writingItemAt: target,
+            options: .forDeleting,
             error: &coordinationError
-        ) { coordinatedRoot in
+        ) { coordinatedTarget in
             accessorRan = true
             do {
-                let target = try safeTarget(root: coordinatedRoot, components: request.path)
-                do {
-                    try FileManager.default.removeItem(at: target)
-                } catch let error as CocoaError where error.code == .fileNoSuchFile {
-                    // Deletion is idempotent.
-                }
+                try Self.validateCoordinatedTarget(coordinatedTarget, requested: target)
+                try Self.delete(root: rootURL, components: request.path)
                 _ = client.completeStorageDelete(requestId: request.requestId)
             } catch {
                 accessorError = error
@@ -397,7 +416,10 @@ final class PlatformStorageBridge: @unchecked Sendable {
         if let accessorError { throw accessorError }
     }
 
-    private func safeTarget(root: URL, components: [String]) throws -> URL {
+    static func storageTarget(root: URL, components: [String]) throws -> URL {
+        guard root.isFileURL, !components.isEmpty else {
+            throw POSIXFailure(operation: "validate storage target", code: EINVAL)
+        }
         var target = root
         for component in components {
             guard
@@ -412,6 +434,185 @@ final class PlatformStorageBridge: @unchecked Sendable {
             target.appendPathComponent(component, isDirectory: false)
         }
         return target
+    }
+
+    static func validateCoordinatedTarget(_ coordinated: URL, requested: URL) throws {
+        guard
+            coordinated.isFileURL,
+            coordinated.standardizedFileURL.path == requested.standardizedFileURL.path
+        else {
+            throw NamespaceTransitionError.coordinatedTargetChanged
+        }
+    }
+
+    static func openDescriptor(
+        root: URL,
+        components: [String],
+        access: IosStorageAccess
+    ) throws -> Int32 {
+        let createParents = access == .readWriteCreate
+        let (parent, leaf) = try openParent(
+            root: root,
+            components: components,
+            createDirectories: createParents
+        )
+        defer { Darwin.close(parent) }
+
+        let flags: Int32
+        switch access {
+        case .readExisting:
+            flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+        case .readWriteExisting:
+            flags = O_RDWR | O_CLOEXEC | O_NOFOLLOW
+        case .readWriteCreate:
+            flags = O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW
+        }
+        let descriptor = leaf.withCString {
+            Darwin.openat(parent, $0, flags, S_IRUSR | S_IWUSR)
+        }
+        guard descriptor >= 0 else {
+            throw POSIXFailure(operation: "open storage file", code: errno)
+        }
+        do {
+            var status = Darwin.stat()
+            guard Darwin.fstat(descriptor, &status) == 0 else {
+                throw POSIXFailure(operation: "inspect storage file", code: errno)
+            }
+            guard status.st_mode & S_IFMT == S_IFREG else {
+                throw POSIXFailure(operation: "require regular storage file", code: EISDIR)
+            }
+            return descriptor
+        } catch {
+            Darwin.close(descriptor)
+            throw error
+        }
+    }
+
+    static func observe(root: URL, components: [String]) throws -> IosStorageObservation {
+        let parentAndLeaf: (Int32, String)
+        do {
+            parentAndLeaf = try openParent(
+                root: root,
+                components: components,
+                createDirectories: false
+            )
+        } catch let error as POSIXFailure where error.code == ENOENT {
+            return missingObservation()
+        }
+        let (parent, leaf) = parentAndLeaf
+        defer { Darwin.close(parent) }
+
+        var status = Darwin.stat()
+        let result = leaf.withCString {
+            Darwin.fstatat(parent, $0, &status, AT_SYMLINK_NOFOLLOW)
+        }
+        if result != 0, errno == ENOENT {
+            return missingObservation()
+        }
+        guard result == 0 else {
+            throw POSIXFailure(operation: "observe storage file", code: errno)
+        }
+        let fileType = status.st_mode & S_IFMT
+        let kind: IosStorageObjectKind
+        if fileType == S_IFREG {
+            kind = .file
+        } else if fileType == S_IFDIR {
+            kind = .directory
+        } else {
+            kind = .other
+        }
+        let length = kind == .file ? UInt64(max(0, status.st_size)) : nil
+        let seconds = Int64(status.st_mtimespec.tv_sec)
+        let nanoseconds = Int64(status.st_mtimespec.tv_nsec)
+        let (scaledSeconds, overflowed) = seconds.multipliedReportingOverflow(by: 1_000_000_000)
+        let modified = overflowed ? nil : scaledSeconds.addingReportingOverflow(nanoseconds)
+        let token = modified.flatMap { value, overflowed in
+            overflowed ? nil : "mtime-ns:\(value)"
+        }
+        return IosStorageObservation(
+            exists: true,
+            kind: kind,
+            length: length,
+            opaqueToken: token
+        )
+    }
+
+    static func delete(root: URL, components: [String]) throws {
+        let parentAndLeaf: (Int32, String)
+        do {
+            parentAndLeaf = try openParent(
+                root: root,
+                components: components,
+                createDirectories: false
+            )
+        } catch let error as POSIXFailure where error.code == ENOENT {
+            return
+        }
+        let (parent, leaf) = parentAndLeaf
+        defer { Darwin.close(parent) }
+        let result = leaf.withCString { Darwin.unlinkat(parent, $0, 0) }
+        guard result == 0 || errno == ENOENT else {
+            throw POSIXFailure(operation: "delete storage file", code: errno)
+        }
+    }
+
+    private static func openParent(
+        root: URL,
+        components: [String],
+        createDirectories: Bool
+    ) throws -> (Int32, String) {
+        _ = try storageTarget(root: root, components: components)
+        var current = Darwin.open(
+            root.path,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard current >= 0 else {
+            throw POSIXFailure(operation: "open selected root", code: errno)
+        }
+        do {
+            for component in components.dropLast() {
+                var next = component.withCString {
+                    Darwin.openat(
+                        current,
+                        $0,
+                        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                    )
+                }
+                if next < 0, errno == ENOENT, createDirectories {
+                    let created = component.withCString {
+                        Darwin.mkdirat(current, $0, S_IRWXU)
+                    }
+                    guard created == 0 || errno == EEXIST else {
+                        throw POSIXFailure(operation: "create storage directory", code: errno)
+                    }
+                    next = component.withCString {
+                        Darwin.openat(
+                            current,
+                            $0,
+                            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                        )
+                    }
+                }
+                guard next >= 0 else {
+                    throw POSIXFailure(operation: "open storage directory", code: errno)
+                }
+                Darwin.close(current)
+                current = next
+            }
+            return (current, components.last!)
+        } catch {
+            Darwin.close(current)
+            throw error
+        }
+    }
+
+    private static func missingObservation() -> IosStorageObservation {
+        IosStorageObservation(
+            exists: false,
+            kind: nil,
+            length: nil,
+            opaqueToken: nil
+        )
     }
 
     private func fail(
@@ -443,6 +644,7 @@ private struct POSIXFailure: Error, LocalizedError {
 
 private enum NamespaceTransitionError: Error, LocalizedError {
     case bothPublicationSidesExist
+    case coordinatedTargetChanged
     case stagingMissing
     case unregisteredRoot(String)
     case shareTargetIsNotFile
@@ -452,6 +654,8 @@ private enum NamespaceTransitionError: Error, LocalizedError {
         switch self {
         case .bothPublicationSidesExist:
             return "both staging and published torrent outputs exist"
+        case .coordinatedTargetChanged:
+            return "file coordination changed the requested storage target"
         case .stagingMissing:
             return "torrent staging output is absent"
         case .unregisteredRoot(let rootID):

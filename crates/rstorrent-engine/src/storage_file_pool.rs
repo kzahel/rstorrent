@@ -1666,6 +1666,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn three_leased_platform_files_coexist_and_release_exactly_once() {
+        let (client, broker) = platform_storage_channel();
+        let pool = StorageFilePool::new(8, Some(client)).expect("pool");
+        let mut opens = Vec::new();
+        for index in 0..3 {
+            let reference = StorageFileReference::new(
+                pool.clone(),
+                StorageFileKey {
+                    storage_id: "multifile".to_owned(),
+                    namespace_generation: 9,
+                    role: StorageFileRole::Payload(index),
+                },
+                StorageFileLocator::Platform(super::PlatformStorageTarget {
+                    root_id: "root".to_owned(),
+                    storage_id: "multifile".to_owned(),
+                    namespace_generation: 9,
+                    role: StorageFileRole::Payload(index),
+                    path: vec!["staging".to_owned(), format!("{index}.bin")],
+                }),
+            );
+            opens.push(tokio::spawn(async move {
+                reference.open(StorageFileAccess::ReadWriteCreate).await
+            }));
+        }
+
+        let root = temp_root("three-leased-platform");
+        std::fs::create_dir_all(&root).expect("platform root");
+        let mut paths = Vec::new();
+        for _ in 0..3 {
+            let request = broker.next_request().await.expect("platform request");
+            let path = root.join(format!("{}.bin", request.request_id));
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .expect("platform file");
+            let StorageFileRole::Payload(index) = request.role else {
+                panic!("expected payload request");
+            };
+            let release_id = 50 + u64::try_from(index).expect("payload index");
+            assert!(broker.complete_leased_file(request.request_id, file, release_id));
+            paths.push(path);
+        }
+
+        let mut handles = Vec::new();
+        for open in opens {
+            handles.push(open.await.expect("join open").expect("platform handle"));
+        }
+        assert_eq!(pool.snapshot().current_owned, 3);
+        assert_eq!(pool.snapshot().cached_entries, 3);
+        assert_eq!(pool.snapshot().owned_high_water, 3);
+        assert_eq!(broker.pending_releases(), 3);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), broker.next_release())
+                .await
+                .is_err()
+        );
+
+        drop(handles);
+        pool.invalidate_storage("multifile");
+        let mut released = std::collections::BTreeSet::new();
+        for _ in 0..3 {
+            let release_id = broker.next_release().await.expect("release");
+            assert!(released.insert(release_id));
+            assert!(broker.acknowledge_release(release_id));
+            assert!(!broker.acknowledge_release(release_id));
+        }
+        assert_eq!(released, [50, 51, 52].into_iter().collect());
+        assert_eq!(broker.pending_releases(), 0);
+        assert_eq!(pool.snapshot().current_owned, 0);
+        assert_eq!(pool.snapshot().cached_entries, 0);
+
+        pool.shutdown().await.expect("shutdown");
+        broker.cancel_all();
+        for path in paths {
+            std::fs::remove_file(path).expect("remove platform file");
+        }
+        std::fs::remove_dir(root).expect("cleanup platform root");
+    }
+
+    #[tokio::test]
     async fn invalidation_fences_an_in_flight_platform_completion() {
         let (client, broker) = platform_storage_channel();
         let pool = StorageFilePool::new(2, Some(client)).expect("pool");
