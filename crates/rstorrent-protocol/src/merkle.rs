@@ -8,6 +8,8 @@ use sha2::{Digest, Sha256};
 pub type Sha256Hash = [u8; 32];
 
 pub const MERKLE_BLOCK_SIZE: usize = 16 * 1024;
+pub const MIN_BEP52_PIECE_LENGTH: u32 = MERKLE_BLOCK_SIZE as u32;
+pub const MAX_BEP52_PIECE_LENGTH: u32 = 256 * 1024 * 1024;
 pub const MAX_MERKLE_LEAVES: u64 = 1_u64 << 35;
 pub const MAX_MERKLE_HEIGHT: u8 = 35;
 pub const MAX_MERKLE_SCRATCH_HASHES: usize = MAX_MERKLE_HEIGHT as usize + 1;
@@ -370,9 +372,9 @@ pub fn file_root_from_piece_hashes(
 }
 
 pub fn piece_layer(piece_length: u32) -> Result<u8, MerkleError> {
-    if piece_length < MERKLE_BLOCK_SIZE as u32
+    if piece_length < MIN_BEP52_PIECE_LENGTH
         || !piece_length.is_power_of_two()
-        || piece_length > 256 * 1024 * 1024
+        || piece_length > MAX_BEP52_PIECE_LENGTH
     {
         return Err(MerkleError::InvalidPieceLength {
             length: piece_length,

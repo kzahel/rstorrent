@@ -507,6 +507,16 @@ padding, range, and root rejection, and maximum arithmetic/resource cases
 pass. The protocol architecture test explicitly admits only `sha2` in
 addition to its previous dependencies.
 
+The third checkpoint adds `V2TorrentLayout` beside the existing v1
+`TorrentLayout`. It retains exactly one geometry record per file, aligns only
+nonempty files, lets empty files retain canonical order without consuming a
+piece, exposes each gap before its following file, and derives global-to-
+file/local piece and reverse file-range mappings arithmetically. Boundary
+lengths `0`, `1`, `16,383`, `16,384`, and `16,385`, the 256 MiB piece maximum,
+empty-file placement, short final pieces, explicit gap exclusion, invalid
+ranges, the logical-piece cap, and checked `u64` overflow pass. No v2 geometry
+enters the current v1 runtime layout API.
+
 ### Stage 1: Reconfirm sources, inventory, and baseline
 
 - verify the exact BEP and libtorrent pins and record any dirty-reference

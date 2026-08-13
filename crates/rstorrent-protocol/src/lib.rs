@@ -17,3 +17,4 @@ pub mod piece;
 pub mod storage_layout;
 pub mod udp_tracker;
 pub mod utp;
+pub mod v2_layout;
