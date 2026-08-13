@@ -205,8 +205,11 @@ roots, and a coordinated descriptor-release seam. Completed Tactical `148`
 directly reuses the first-party JSTorrent iOS views/assets/localizations while
 replacing its JavaScriptCore controller and omitting Search. Completed Tactical
 `149` owns finite background, process-death recovery, cold/warm handoff, and
-reproducible archives without publication. Physical iPhone evidence supports
-the foreground and finite-background product claim; indefinite background,
+reproducible archives without publication. Completed Tactical `152` narrows
+long-lived selected-root coordination to exact files and physically proves
+controlled multifile publication plus the exact Big Buck Bunny public torrent
+through Apple Files system playback. Physical iPhone evidence supports the
+foreground and finite-background product claim; indefinite background,
 iCloud/File Provider roots, migration, and public distribution remain absent.
 
 Desktop product content is web UI. Native desktop code is limited to the
@@ -569,10 +572,13 @@ remote exposure, and Android streaming remain independent product decisions.
 - No embedded playback UI, stable media sharing, remote media listener, or
   Android HTTP playback server exists.
 - The maintained RSTorrent iOS product now supports the bounded scope recorded
-  by completed Tacticals `147`--`149`: qualified selected folders, the adapted
-  first-party JSTorrent presentation, cold/warm intake, finite lifecycle and
-  force-close recovery, and local archive creation. Search, cloud/provider
-  roots, migration, indefinite background work, and publication remain absent.
+  by completed Tacticals `147`--`149` and `152`: qualified selected folders,
+  exact-target single- and multifile storage, publication, restart/Force
+  recheck, completed-file handoff, Apple Files playback after completion, the
+  adapted first-party JSTorrent presentation, cold/warm intake, finite
+  lifecycle and force-close recovery, and local archive creation. Search,
+  cloud/provider roots, migration, indefinite background work, embedded or
+  progressive playback, and public distribution remain absent.
 
 Tacticals `008` and `009` record the implemented contract, exact controlled
 evidence, and bounded deferrals. Tactical `012` records the completed

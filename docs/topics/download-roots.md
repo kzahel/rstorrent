@@ -312,6 +312,12 @@ qualification and physical persistence/recovery evidence. Support wording
 must remain “qualified on-device folder,” because the public facts do not
 prove every possible provider identity. Offloaded, iCloud, identified third-
 party provider, relocation, and cloud-export behavior remain unsupported.
+Completed Tactical `152` narrows each descriptor's long-lived coordination
+lease to its exact validated file while retaining the selected-root security
+scope through Rust's final pooled handle. Controlled three-file and public
+Big Buck Bunny physical runs prove sibling files, nested parents, atomic tree
+publication, restart/Force recheck, completed-file handoff, and exact managed
+cleanup beneath one qualified external root.
 
 ## User-Visible Publication Layout
 
@@ -424,5 +430,7 @@ semantics, closes SAF published reads, and records bounded physical iOS root
 feasibility without implementing fast resume or a complete iOS client.
 Completed Tactical `123` records the historical app-owned-only result.
 Completed Tactical `147` is the qualified-selected-root successor;
+completed Tactical `152` closes qualified-root multifile coordination and
+publication with physical and live evidence;
 completed-file cloud export remains a separate copy/verification tactical
 rather than an active torrent-root feature.

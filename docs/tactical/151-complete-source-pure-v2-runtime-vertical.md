@@ -1,9 +1,7 @@
 # Tactical 151: Complete-Source Pure-v2 Runtime Vertical
 
-Status: **Planned and paused on 2026-08-13.** This document remains
-decision-complete, but explicit maintainer direction made iOS selected-root
-correctness Tactical `152` the sole authoritative **Now** before this
-tactical's implementation began.
+Status: **Active authoritative Now on 2026-08-13.** This decision-complete
+tactical resumes after iOS selected-root correctness Tactical `152` completed.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `application-view-api`,

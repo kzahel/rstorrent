@@ -175,6 +175,15 @@ fixtures, native Linux or Windows, and a separate native Windows epoch when
 available. It does not alter the completed WAN result or current queue.
 
 Completed Tactical
+[`152`](../tactical/152-ios-multifile-selected-root-coordination.md) records a
+product live-correctness result, not a speed baseline. The exact catalog Big
+Buck Bunny magnet downloaded all 276,445,467 bytes and verified 1,055 of
+1,055 pieces on the attached iPhone beneath a qualified external root. One
+mid-run UI sample reported 13.7 MB/s, but changing public-swarm throughput is
+not retained as a threshold. Publication, three-file visibility, advancing
+Apple Files video playback, managed deletion, and empty-root cleanup pass.
+
+Completed Tactical
 [`128`](../tactical/128-controlled-tcp-performance-diagnosis.md) pauses uTP and
 returns to byte-identical TCP-only loopback fixtures. It reproduces the
 sustained large-transfer gap, rejects checkpoint sync, observation overhead,

@@ -261,3 +261,9 @@ The stopping condition is met. The supported wording is exactly **app-owned
 Documents and qualified on-device selected folders; iCloud and positively
 identified providers rejected**. This does not widen support to cloud or an
 arbitrary File Provider root.
+
+Subsequent Tactical `152` preserves this single-file execution record while
+closing the later-discovered sibling-file coordination defect. Its controlled
+three-file and Big Buck Bunny physical runs add qualified-root multifile
+publication, restart/Force recheck, completed-file handoff, exact removal, and
+Apple Files system playback evidence without widening provider policy.

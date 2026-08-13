@@ -122,6 +122,12 @@ portable schema on stable root IDs while the maintained iOS adapter owns a
 separate bounded registry of minimal security-scoped bookmark bytes, labels,
 and generations. App Documents is resolved afresh; qualified selected roots
 reopen, report per-root health, and repair without changing their opaque ID.
+Completed Tactical
+[`152`](../tactical/152-ios-multifile-selected-root-coordination.md) keeps that
+registry and portable state unchanged while exact-file leases allow multifile
+payloads to publish. A controlled physical tree survives process restart and
+Force recheck before exact removal; no locator, bookmark, or resume heuristic
+enters portable persistence.
 
 Completed Tactical
 [`120`](../tactical/120-per-torrent-trusting-fast-resume.md) records the now-

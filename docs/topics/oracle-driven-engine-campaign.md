@@ -117,9 +117,9 @@ Tactical `142` are now complete with stable remote-seed 256 MiB uTP near
 parity, bounded 1 GiB corroboration, and all closure gates. Decision-complete
 pure-v2 Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) was then
-selected, but later physical iOS evidence activated correctness Tactical
-[`152`](../tactical/152-ios-multifile-selected-root-coordination.md) as the sole
-authoritative **Now** and left `151` ready next.
+selected. Later physical iOS evidence temporarily activated correctness
+Tactical [`152`](../tactical/152-ios-multifile-selected-root-coordination.md),
+which is now complete; `151` resumes as the sole authoritative **Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -485,8 +485,8 @@ closed evidence-limited after its bounded physical attempts retained one exact
 repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
-Engine campaign status: **Tactical `152` is the sole Now and Tactical `151`
-is ready Next.** Tacticals `142`,
+Engine campaign status: **Tactical `151` is the sole Now after Tactical `152`
+closed.** Tacticals `142`,
 `145`, and `150` complete the uTP performance campaign at the maintainer-
 selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -503,9 +503,8 @@ oracle and at least 98.49% of its own TCP median on one connection. Fourteen
 exact 1 GiB cells corroborate scale but are not a stable second cohort; one
 reverse smoke closes pre-payload on typed current-network UPnP capability.
 Both Android ABIs and complete repository gates pass. Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) remains the
-decision-complete Stage 3 pure-v2 local `.torrent` vertical after active
-Tactical `152` closes.
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) is the
+active decision-complete Stage 3 pure-v2 local `.torrent` vertical.
 
 Latest graduated storage-feasibility tactical:
 [`116-platform-storage-coherence-and-ios-feasibility.md`](../tactical/116-platform-storage-coherence-and-ios-feasibility.md).
@@ -579,8 +578,8 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Current engine-campaign action: execute Tactical
-[`152`](../tactical/152-ios-multifile-selected-root-coordination.md), then
-resume decision-complete Tactical `151`. Completed
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md). Completed
+Tactical `152` closes the intervening iOS correctness repair. Completed
 Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
 stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at
 94.85%--100.74% of the matched libtorrent oracle and at least 98.49% of its

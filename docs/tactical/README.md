@@ -696,13 +696,12 @@ that scope and its cleanup or compatibility rules explicitly.
   VM-built WAN, platform, and near-parity evidence without changing steady-
   state LEDBAT.
 - [`151-complete-source-pure-v2-runtime-vertical.md`](151-complete-source-pure-v2-runtime-vertical.md):
-  planned and paused before implementation when explicit maintainer direction
-  selected the iOS selected-root correctness repair; the decision-complete
-  pure-v2 vertical remains ready after that repair.
+  active authoritative Now after Tactical `152` closed; implements the
+  decision-complete complete-source pure-v2 runtime and product vertical.
 - [`152-ios-multifile-selected-root-coordination.md`](152-ios-multifile-selected-root-coordination.md):
-  active authoritative Now; narrows long-lived selected-root coordination to
-  exact files and requires controlled multifile plus physical Big Buck Bunny
-  completion, system playback, and exact cleanup evidence.
+  complete selected-root correctness repair; exact-file coordination,
+  controlled multifile hardware evidence, Big Buck Bunny public-swarm
+  completion, Apple Files playback, and exact cleanup pass.
 - [`153-wired-lan-utp-data-plane-scalability.md`](153-wired-lan-utp-data-plane-scalability.md):
   planned after the current queue; measures RSTorrent TCP/uTP and pinned-
   libtorrent throughput over a wired gigabit-effective Mac-to-Linux/Windows
