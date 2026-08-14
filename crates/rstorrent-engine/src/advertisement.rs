@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey};
 use rstorrent_protocol::udp_tracker::{AnnounceEvent, MAX_COMPACT_PEERS};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
@@ -186,6 +187,7 @@ fn atomic_saturating_add(value: &AtomicU64, increment: u64) {
 pub struct DiscoveryAdvertisementRegistration {
     pub generation: u64,
     pub info_hash: [u8; 20],
+    pub info_hashes: InfoHashes,
     pub trackers: Vec<TrackerConfig>,
     pub desired_running: bool,
     pub complete: bool,
@@ -202,6 +204,7 @@ impl fmt::Debug for DiscoveryAdvertisementRegistration {
             .debug_struct("DiscoveryAdvertisementRegistration")
             .field("generation", &self.generation)
             .field("info_hash", &self.info_hash)
+            .field("info_hashes", &self.info_hashes)
             .field("trackers", &self.trackers)
             .field("desired_running", &self.desired_running)
             .field("complete", &self.complete)
@@ -209,6 +212,15 @@ impl fmt::Debug for DiscoveryAdvertisementRegistration {
             .field("privacy", &self.privacy)
             .field("counters", &self.counters)
             .finish_non_exhaustive()
+    }
+}
+
+impl DiscoveryAdvertisementRegistration {
+    fn swarm_keys(&self) -> Vec<SwarmKey> {
+        let mut keys = Vec::with_capacity(self.info_hashes.identity_count());
+        self.info_hashes
+            .for_each(|identity| keys.push(identity.swarm_key()));
+        keys
     }
 }
 
@@ -533,17 +545,23 @@ struct Removal {
 #[derive(Debug)]
 struct TorrentEntry {
     registration: DiscoveryAdvertisementRegistration,
-    schedule: TrackerSchedule,
-    tracker_key: u32,
     control: DownloadControl,
-    token_caches: BTreeMap<TrackerId, UdpTrackerTokenCache>,
-    http_tracker_ids: BTreeMap<TrackerId, Vec<u8>>,
+    lanes: Vec<DiscoveryAdvertisementLane>,
     tracker_cancellation: CancellationToken,
     schedule_epoch: u64,
-    last_endpoint_generation: u64,
     removal: Option<Removal>,
     pending_replacement: Option<DiscoveryAdvertisementRegistration>,
     dht_epoch: u64,
+}
+
+#[derive(Debug)]
+struct DiscoveryAdvertisementLane {
+    swarm_key: SwarmKey,
+    schedule: TrackerSchedule,
+    tracker_key: u32,
+    token_caches: BTreeMap<TrackerId, UdpTrackerTokenCache>,
+    http_tracker_ids: BTreeMap<TrackerId, Vec<u8>>,
+    last_endpoint_generation: u64,
     dht_inflight: bool,
     next_dht_action: Instant,
     last_dht_endpoint_generation: u64,
@@ -565,40 +583,56 @@ impl TorrentEntry {
     ) -> Result<Self, DiscoveryAdvertisementError> {
         let control = DownloadControl::new();
         control.set_activity_sink(registration.activity_sink.clone());
-        let mut scheduled_trackers = registration.trackers.clone();
-        shuffle_tracker_configs(&mut scheduled_trackers)
-            .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?;
-        let mut schedule = TrackerSchedule::from_configs(scheduled_trackers);
-        schedule.set_https_authentication(https_authentication);
-        let tracker_key = random_nonzero_u32()
-            .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?;
+        let mut lanes = Vec::with_capacity(registration.info_hashes.identity_count());
+        for swarm_key in registration.swarm_keys() {
+            let mut scheduled_trackers = registration.trackers.clone();
+            shuffle_tracker_configs(&mut scheduled_trackers)
+                .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?;
+            let mut schedule = TrackerSchedule::from_configs(scheduled_trackers);
+            schedule.set_https_authentication(https_authentication);
+            lanes.push(DiscoveryAdvertisementLane {
+                swarm_key,
+                schedule,
+                tracker_key: random_nonzero_u32()
+                    .map_err(|error| DiscoveryAdvertisementError::Entropy(error.to_string()))?,
+                token_caches: BTreeMap::new(),
+                http_tracker_ids: BTreeMap::new(),
+                last_endpoint_generation: 0,
+                dht_inflight: false,
+                next_dht_action: Instant::now(),
+                last_dht_endpoint_generation: 0,
+            });
+        }
+        if !lanes
+            .iter()
+            .any(|lane| lane.swarm_key.into_bytes() == registration.info_hash)
+        {
+            return Err(DiscoveryAdvertisementError::Convergence(
+                "registration owner hash is not one of its torrent identities".to_owned(),
+            ));
+        }
         let entry = Self {
             registration,
-            schedule,
-            tracker_key,
             control,
-            token_caches: BTreeMap::new(),
-            http_tracker_ids: BTreeMap::new(),
+            lanes,
             tracker_cancellation: CancellationToken::new(),
             schedule_epoch: 1,
-            last_endpoint_generation: 0,
             removal: None,
             pending_replacement: None,
             dht_epoch: 1,
-            dht_inflight: false,
-            next_dht_action: Instant::now(),
-            last_dht_endpoint_generation: 0,
         };
         entry.emit_snapshot(entry.registration.desired_running);
         Ok(entry)
     }
 
     fn emit_snapshot(&self, active: bool) {
-        self.control
-            .emit(DownloadActivityEvent::TrackerState(Box::new(
-                self.schedule
-                    .snapshot(self.control.diagnostic_elapsed(), active),
-            )));
+        for lane in &self.lanes {
+            self.control
+                .emit(DownloadActivityEvent::TrackerState(Box::new(
+                    lane.schedule
+                        .snapshot(self.control.diagnostic_elapsed(), active),
+                )));
+        }
     }
 
     fn begin_stop(
@@ -609,10 +643,12 @@ impl TorrentEntry {
         self.tracker_cancellation.cancel();
         self.tracker_cancellation = CancellationToken::new();
         self.schedule_epoch = self.schedule_epoch.saturating_add(1);
-        self.schedule.cancel_inflight();
         self.dht_epoch = self.dht_epoch.saturating_add(1);
-        self.dht_inflight = false;
-        self.schedule.request_stop();
+        for lane in &mut self.lanes {
+            lane.schedule.cancel_inflight();
+            lane.dht_inflight = false;
+            lane.schedule.request_stop();
+        }
         self.removal = Some(Removal {
             deadline: Instant::now() + TRACKER_STOP_TIMEOUT,
             response,
@@ -624,13 +660,14 @@ impl TorrentEntry {
 #[derive(Debug)]
 struct RegistrationEffect {
     info_hash: [u8; 20],
-    cancel_dht: bool,
+    cancel_dht: Vec<SwarmKey>,
     purge_dht_from: Option<TorrentPeerHandle>,
 }
 
 #[derive(Debug)]
 struct TrackerOperationResult {
-    info_hash: [u8; 20],
+    owner_info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     registration_generation: u64,
     schedule_epoch: u64,
     endpoint_generation: u64,
@@ -648,7 +685,8 @@ enum DhtOperationSuccess {
 
 #[derive(Debug)]
 struct DhtOperationResult {
-    info_hash: [u8; 20],
+    owner_info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     registration_generation: u64,
     dht_epoch: u64,
     endpoint_generation: u64,
@@ -731,8 +769,8 @@ async fn run_service(
                 let Some(command) = command else {
                     shutting_down = true;
                     begin_session_shutdown(&mut entries, &mut shutdown_deadline);
-                    for info_hash in entries.keys().copied().collect::<Vec<_>>() {
-                        let _ = dht.cancel_lookup(info_hash).await;
+                    for swarm_key in discovery_swarm_keys(&entries) {
+                        let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                     }
                     continue;
                 };
@@ -750,8 +788,8 @@ async fn run_service(
                             registration,
                             desired_https_authentication,
                         )?;
-                        if effect.cancel_dht {
-                            let _ = dht.cancel_lookup(effect.info_hash).await;
+                        for swarm_key in effect.cancel_dht {
+                            let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                         }
                         if let Some(peers) = effect.purge_dht_from {
                             let _ = peers.remove_discovery_source(PeerSource::Dht);
@@ -764,7 +802,9 @@ async fn run_service(
                         match entries.get_mut(&info_hash) {
                             Some(entry) if entry.registration.generation == generation => {
                                 entry.begin_stop(Some(response));
-                                let _ = dht.cancel_lookup(info_hash).await;
+                                for swarm_key in entry.lanes.iter().map(|lane| lane.swarm_key) {
+                                    let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
+                                }
                             }
                             _ => {
                                 let _ = response.send(Ok(()));
@@ -793,7 +833,9 @@ async fn run_service(
                                 http_clients = Arc::new(clients);
                                 desired_https_authentication = authentication;
                                 for entry in entries.values_mut() {
-                                    entry.schedule.set_https_authentication(authentication);
+                                    for lane in &mut entry.lanes {
+                                        lane.schedule.set_https_authentication(authentication);
+                                    }
                                     entry.emit_snapshot(entry.registration.desired_running);
                                 }
                                 let _ = response.send(Ok(()));
@@ -802,7 +844,9 @@ async fn run_service(
                                 if fence_unauthenticated || previous.is_none() {
                                     desired_https_authentication = authentication;
                                     for entry in entries.values_mut() {
-                                        entry.schedule.set_https_authentication(authentication);
+                                        for lane in &mut entry.lanes {
+                                            lane.schedule.set_https_authentication(authentication);
+                                        }
                                         entry.emit_snapshot(entry.registration.desired_running);
                                     }
                                 }
@@ -819,7 +863,9 @@ async fn run_service(
                             network.encryption = policy;
                             for entry in entries.values_mut() {
                                 if entry.registration.desired_running && entry.removal.is_none() {
-                                    entry.schedule.request_update();
+                                    for lane in &mut entry.lanes {
+                                        lane.schedule.request_update();
+                                    }
                                 }
                             }
                         }
@@ -832,16 +878,18 @@ async fn run_service(
                             while operations.join_next().await.is_some() {}
                             dht_operations.abort_all();
                             while dht_operations.join_next().await.is_some() {}
-                            for info_hash in entries.keys().copied().collect::<Vec<_>>() {
-                                let _ = dht.cancel_lookup(info_hash).await;
+                            for swarm_key in discovery_swarm_keys(&entries) {
+                                let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                             }
                             for entry in entries.values_mut() {
-                                entry.schedule.cancel_inflight();
-                                entry.schedule.request_update();
-                                entry.token_caches.clear();
                                 entry.dht_epoch = entry.dht_epoch.saturating_add(1);
-                                entry.dht_inflight = false;
-                                entry.next_dht_action = Instant::now();
+                                for lane in &mut entry.lanes {
+                                    lane.schedule.cancel_inflight();
+                                    lane.schedule.request_update();
+                                    lane.token_caches.clear();
+                                    lane.dht_inflight = false;
+                                    lane.next_dht_action = Instant::now();
+                                }
                             }
                         }
                         let deadline = Instant::now() + Duration::from_secs(5);
@@ -889,8 +937,8 @@ async fn run_service(
                         shutting_down = true;
                         shutdown_response = Some(response);
                         begin_session_shutdown(&mut entries, &mut shutdown_deadline);
-                        for info_hash in entries.keys().copied().collect::<Vec<_>>() {
-                            let _ = dht.cancel_lookup(info_hash).await;
+                        for swarm_key in discovery_swarm_keys(&entries) {
+                            let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                         }
                     }
                 }
@@ -906,29 +954,38 @@ async fn run_service(
                         http_clients = Arc::new(rebound);
                     }
                     for entry in entries.values_mut() {
-                        if entry.registration.incoming_routable
-                            && entry.last_endpoint_generation != endpoint.generation
-                            && entry.removal.is_none()
-                        {
-                            entry.token_caches.clear();
-                            entry.schedule.request_update();
+                        if entry.registration.incoming_routable && entry.removal.is_none() {
+                            for lane in &mut entry.lanes {
+                                if lane.last_endpoint_generation != endpoint.generation {
+                                    lane.token_caches.clear();
+                                    lane.schedule.request_update();
+                                }
+                            }
                         }
                     }
-                    let corrected = entries
-                        .iter_mut()
-                        .filter_map(|(info_hash, entry)| {
-                            dht_announce_ports(network.policy, endpoint, &entry.registration)?;
-                            if entry.last_dht_endpoint_generation == endpoint.generation {
-                                return None;
-                            }
-                            entry.dht_epoch = entry.dht_epoch.saturating_add(1);
-                            entry.dht_inflight = false;
-                            entry.next_dht_action = Instant::now();
-                            Some(*info_hash)
-                        })
-                        .collect::<Vec<_>>();
-                    for info_hash in corrected {
-                        let _ = dht.cancel_lookup(info_hash).await;
+                    let mut corrected = Vec::new();
+                    for entry in entries.values_mut() {
+                        let announce_enabled = dht_announce_ports(
+                            network.policy,
+                            endpoint,
+                            &entry.registration,
+                        )
+                        .is_some();
+                        let stale = entry.lanes.iter().any(|lane| {
+                            lane.last_dht_endpoint_generation != endpoint.generation
+                        });
+                        if !announce_enabled || !stale {
+                            continue;
+                        }
+                        entry.dht_epoch = entry.dht_epoch.saturating_add(1);
+                        for lane in &mut entry.lanes {
+                            lane.dht_inflight = false;
+                            lane.next_dht_action = Instant::now();
+                            corrected.push(lane.swarm_key);
+                        }
+                    }
+                    for swarm_key in corrected {
+                        let _ = dht.cancel_lookup(swarm_key.into_bytes()).await;
                     }
                 }
             }
@@ -967,6 +1024,13 @@ async fn run_service(
     })
 }
 
+fn discovery_swarm_keys(entries: &BTreeMap<[u8; 20], TorrentEntry>) -> Vec<SwarmKey> {
+    entries
+        .values()
+        .flat_map(|entry| entry.lanes.iter().map(|lane| lane.swarm_key))
+        .collect()
+}
+
 fn apply_registration(
     entries: &mut BTreeMap<[u8; 20], TorrentEntry>,
     registration: DiscoveryAdvertisementRegistration,
@@ -982,14 +1046,14 @@ fn apply_registration(
         );
         return Ok(RegistrationEffect {
             info_hash,
-            cancel_dht: false,
+            cancel_dht: Vec::new(),
             purge_dht_from: private_peers,
         });
     };
     if registration.generation < entry.registration.generation {
         return Ok(RegistrationEffect {
             info_hash,
-            cancel_dht: false,
+            cancel_dht: Vec::new(),
             purge_dht_from: None,
         });
     }
@@ -999,11 +1063,12 @@ fn apply_registration(
         }
         return Ok(RegistrationEffect {
             info_hash,
-            cancel_dht: true,
+            cancel_dht: entry.lanes.iter().map(|lane| lane.swarm_key).collect(),
             purge_dht_from: private_peers,
         });
     }
     if registration.generation > entry.registration.generation
+        || registration.info_hashes != entry.registration.info_hashes
         || registration.trackers != entry.registration.trackers
     {
         entry.pending_replacement = Some(registration);
@@ -1012,7 +1077,7 @@ fn apply_registration(
         }
         return Ok(RegistrationEffect {
             info_hash,
-            cancel_dht: true,
+            cancel_dht: entry.lanes.iter().map(|lane| lane.swarm_key).collect(),
             purge_dht_from: private_peers,
         });
     }
@@ -1029,33 +1094,43 @@ fn apply_registration(
         .control
         .set_activity_sink(entry.registration.activity_sink.clone());
     if resume {
-        entry.schedule = TrackerSchedule::from_configs(entry.registration.trackers.clone());
-        entry
-            .schedule
-            .set_https_authentication(https_authentication);
-        entry.token_caches.clear();
-        entry.http_tracker_ids.clear();
+        for lane in &mut entry.lanes {
+            lane.schedule = TrackerSchedule::from_configs(entry.registration.trackers.clone());
+            lane.schedule.set_https_authentication(https_authentication);
+            lane.token_caches.clear();
+            lane.http_tracker_ids.clear();
+        }
         entry.schedule_epoch = entry.schedule_epoch.saturating_add(1);
         entry.removal = None;
     }
     if incoming_changed {
-        entry.schedule.request_update();
+        for lane in &mut entry.lanes {
+            lane.schedule.request_update();
+        }
     }
     if completed {
-        entry.schedule.request_completed();
+        for lane in &mut entry.lanes {
+            lane.schedule.request_completed();
+        }
     }
     if !entry.registration.desired_running && entry.removal.is_none() {
         entry.begin_stop(None);
     }
     if dht_changed {
         entry.dht_epoch = entry.dht_epoch.saturating_add(1);
-        entry.dht_inflight = false;
-        entry.next_dht_action = Instant::now();
+        for lane in &mut entry.lanes {
+            lane.dht_inflight = false;
+            lane.next_dht_action = Instant::now();
+        }
     }
     entry.emit_snapshot(entry.registration.desired_running || entry.removal.is_some());
     Ok(RegistrationEffect {
         info_hash,
-        cancel_dht: dht_changed,
+        cancel_dht: if dht_changed {
+            entry.lanes.iter().map(|lane| lane.swarm_key).collect()
+        } else {
+            Vec::new()
+        },
         purge_dht_from: private_peers,
     })
 }
@@ -1080,7 +1155,7 @@ fn finish_stopped_entries(
         .iter_mut()
         .filter_map(|(info_hash, entry)| {
             let removal = entry.removal.as_ref()?;
-            let exhausted = entry.schedule.stop_complete();
+            let exhausted = entry.lanes.iter().all(|lane| lane.schedule.stop_complete());
             (exhausted
                 || now >= removal.deadline
                 || shutdown_deadline.is_some_and(|deadline| now >= deadline))
@@ -1120,144 +1195,148 @@ fn fill_tracker_operations(
     loop {
         let mut spawned = false;
         for entry in entries.values_mut() {
-            if operations.len() >= MAX_TRACKER_OPERATIONS {
-                return minimum_wait;
-            }
             if !entry.registration.desired_running && entry.removal.is_none() {
                 continue;
             }
-            match entry
-                .schedule
-                .next_action(entry.control.diagnostic_elapsed())
-            {
-                TrackerAction::Announce {
-                    id,
-                    url,
-                    endpoint: tracker_endpoint,
-                    tier,
-                    event,
-                    attempt,
-                    fallback,
-                    ..
-                } => {
-                    let tracker = redacted_tracker_label(&url);
-                    if fallback {
+            for lane_index in 0..entry.lanes.len() {
+                if operations.len() >= MAX_TRACKER_OPERATIONS {
+                    return minimum_wait;
+                }
+                let action = entry.lanes[lane_index]
+                    .schedule
+                    .next_action(entry.control.diagnostic_elapsed());
+                match action {
+                    TrackerAction::Announce {
+                        id,
+                        url,
+                        endpoint: tracker_endpoint,
+                        tier,
+                        event,
+                        attempt,
+                        fallback,
+                        ..
+                    } => {
+                        let tracker = redacted_tracker_label(&url);
+                        if fallback {
+                            entry
+                                .control
+                                .emit(DownloadActivityEvent::TrackerFallbackSelected {
+                                    tracker: tracker.clone(),
+                                    tier,
+                                });
+                        }
                         entry
                             .control
-                            .emit(DownloadActivityEvent::TrackerFallbackSelected {
+                            .emit(DownloadActivityEvent::TrackerAnnounceStarted {
                                 tracker: tracker.clone(),
                                 tier,
-                            });
-                    }
-                    entry
-                        .control
-                        .emit(DownloadActivityEvent::TrackerAnnounceStarted {
-                            tracker: tracker.clone(),
-                            tier,
-                            attempt,
-                            event,
-                        });
-                    entry.emit_snapshot(true);
-                    let counters = entry.registration.counters.snapshot();
-                    let ports = tracker_ports(
-                        network.policy,
-                        endpoint,
-                        entry.registration.incoming_routable,
-                    );
-                    let num_want = if event == AnnounceEvent::Stopped {
-                        0
-                    } else {
-                        MAX_COMPACT_PEERS as i32
-                    };
-                    let control = entry.control.clone();
-                    let info_hash = entry.registration.info_hash;
-                    let registration_generation = entry.registration.generation;
-                    let schedule_epoch = entry.schedule_epoch;
-                    let cancellation = entry.tracker_cancellation.clone();
-                    let tracker_key = entry.tracker_key;
-                    let is_udp = matches!(tracker_endpoint, TrackerEndpoint::Udp(_));
-                    let mut token_cache = if is_udp {
-                        entry.token_caches.remove(&id).unwrap_or_default()
-                    } else {
-                        UdpTrackerTokenCache::default()
-                    };
-                    let tracker_id = entry.http_tracker_ids.get(&id).cloned();
-                    let clients = http_clients.clone();
-                    let timeout = if event == AnnounceEvent::Stopped {
-                        TRACKER_STOP_TIMEOUT
-                    } else {
-                        HTTP_TRACKER_TIMEOUT
-                    };
-                    operations.spawn(async move {
-                        let result = execute_tracker_operation(
-                            tracker_endpoint,
-                            &url,
-                            &tracker,
-                            network,
-                            TrackerOperationSources {
-                                ipv4: endpoint.ipv4.source_address,
-                                ipv6: endpoint.ipv6.source_address,
-                            },
-                            Some(clients),
-                            TrackerAnnounceInput {
-                                info_hash,
-                                peer_id: network.peer_id,
-                                key: tracker_key,
-                                downloaded: counters.downloaded,
-                                left: counters.left,
-                                uploaded: counters.uploaded,
+                                attempt,
                                 event,
-                                num_want,
-                                port: ports.ipv4,
-                                ipv6_port: ports.ipv6,
-                                support_crypto: network.encryption.accepts_incoming_mse(),
-                            },
-                            timeout,
-                            &mut token_cache,
-                            tracker_id,
-                            &control,
-                            &cancellation,
-                        )
-                        .await;
-                        TrackerOperationResult {
-                            info_hash,
-                            registration_generation,
-                            schedule_epoch,
-                            endpoint_generation: endpoint.generation,
-                            id,
-                            tracker,
-                            token_cache: is_udp.then_some(token_cache),
-                            result,
-                        }
-                    });
-                    spawned = true;
-                }
-                TrackerAction::Wait {
-                    delay, url, kind, ..
-                } => {
-                    let tracker = redacted_tracker_label(&url);
-                    match kind {
-                        TrackerWaitKind::FailureRetry => {
-                            entry
-                                .control
-                                .emit(DownloadActivityEvent::TrackerRetryScheduled {
-                                    tracker,
-                                    retry_in_seconds: delay.as_secs(),
-                                })
-                        }
-                        TrackerWaitKind::Reannounce => {
-                            entry
-                                .control
-                                .emit(DownloadActivityEvent::TrackerReannounceScheduled {
+                            });
+                        entry.emit_snapshot(true);
+                        let counters = entry.registration.counters.snapshot();
+                        let ports = tracker_ports(
+                            network.policy,
+                            endpoint,
+                            entry.registration.incoming_routable,
+                        );
+                        let num_want = if event == AnnounceEvent::Stopped {
+                            0
+                        } else {
+                            MAX_COMPACT_PEERS as i32
+                        };
+                        let control = entry.control.clone();
+                        let owner_info_hash = entry.registration.info_hash;
+                        let registration_generation = entry.registration.generation;
+                        let schedule_epoch = entry.schedule_epoch;
+                        let cancellation = entry.tracker_cancellation.clone();
+                        let lane = &mut entry.lanes[lane_index];
+                        let swarm_key = lane.swarm_key;
+                        let tracker_key = lane.tracker_key;
+                        let is_udp = matches!(tracker_endpoint, TrackerEndpoint::Udp(_));
+                        let mut token_cache = if is_udp {
+                            lane.token_caches.remove(&id).unwrap_or_default()
+                        } else {
+                            UdpTrackerTokenCache::default()
+                        };
+                        let tracker_id = lane.http_tracker_ids.get(&id).cloned();
+                        let clients = http_clients.clone();
+                        let timeout = if event == AnnounceEvent::Stopped {
+                            TRACKER_STOP_TIMEOUT
+                        } else {
+                            HTTP_TRACKER_TIMEOUT
+                        };
+                        operations.spawn(async move {
+                            let result = execute_tracker_operation(
+                                tracker_endpoint,
+                                &url,
+                                &tracker,
+                                network,
+                                TrackerOperationSources {
+                                    ipv4: endpoint.ipv4.source_address,
+                                    ipv6: endpoint.ipv6.source_address,
+                                },
+                                Some(clients),
+                                TrackerAnnounceInput {
+                                    info_hash: swarm_key.into_bytes(),
+                                    peer_id: network.peer_id,
+                                    key: tracker_key,
+                                    downloaded: counters.downloaded,
+                                    left: counters.left,
+                                    uploaded: counters.uploaded,
+                                    event,
+                                    num_want,
+                                    port: ports.ipv4,
+                                    ipv6_port: ports.ipv6,
+                                    support_crypto: network.encryption.accepts_incoming_mse(),
+                                },
+                                timeout,
+                                &mut token_cache,
+                                tracker_id,
+                                &control,
+                                &cancellation,
+                            )
+                            .await;
+                            TrackerOperationResult {
+                                owner_info_hash,
+                                swarm_key,
+                                registration_generation,
+                                schedule_epoch,
+                                endpoint_generation: endpoint.generation,
+                                id,
+                                tracker,
+                                token_cache: is_udp.then_some(token_cache),
+                                result,
+                            }
+                        });
+                        spawned = true;
+                    }
+                    TrackerAction::Wait {
+                        delay, url, kind, ..
+                    } => {
+                        let tracker = redacted_tracker_label(&url);
+                        match kind {
+                            TrackerWaitKind::FailureRetry => {
+                                entry
+                                    .control
+                                    .emit(DownloadActivityEvent::TrackerRetryScheduled {
+                                        tracker,
+                                        retry_in_seconds: delay.as_secs(),
+                                    })
+                            }
+                            TrackerWaitKind::Reannounce => entry.control.emit(
+                                DownloadActivityEvent::TrackerReannounceScheduled {
                                     tracker,
                                     announce_in_seconds: delay.as_secs(),
-                                })
+                                },
+                            ),
                         }
+                        minimum_wait = Some(
+                            minimum_wait.map_or(delay, |current: Duration| current.min(delay)),
+                        );
                     }
-                    minimum_wait =
-                        Some(minimum_wait.map_or(delay, |current: Duration| current.min(delay)));
+                    TrackerAction::Pending | TrackerAction::Exhausted => {}
                 }
-                TrackerAction::Pending | TrackerAction::Exhausted => {}
             }
         }
         if !spawned || operations.len() >= MAX_TRACKER_OPERATIONS {
@@ -1276,50 +1355,58 @@ fn fill_dht_operations(
     let now = Instant::now();
     let mut minimum_wait = None;
     for entry in entries.values_mut() {
-        if operations.len() >= MAX_ACTIVE_LOOKUPS {
-            break;
-        }
         if entry.removal.is_some()
             || !entry.registration.desired_running
             || entry.registration.privacy == TorrentPrivacy::Private
-            || entry.dht_inflight
         {
             continue;
         }
-        if entry.next_dht_action > now {
-            let wait = entry.next_dht_action.saturating_duration_since(now);
-            minimum_wait = Some(minimum_wait.map_or(wait, |current: Duration| current.min(wait)));
-            continue;
-        }
-
-        let announce_ports = dht_announce_ports(policy, endpoint, &entry.registration);
-        let info_hash = entry.registration.info_hash;
-        let registration_generation = entry.registration.generation;
-        let dht_epoch = entry.dht_epoch;
-        let endpoint_generation = endpoint.generation;
-        let operation_dht = dht.clone();
-        entry.dht_inflight = true;
-        entry.control.emit(DownloadActivityEvent::DhtLookupStarted);
-        operations.spawn(async move {
-            let result = match announce_ports {
-                Some(ports) => operation_dht
-                    .lookup_and_announce_ports(info_hash, ports)
-                    .await
-                    .map(DhtOperationSuccess::Announce),
-                None => operation_dht
-                    .lookup(info_hash)
-                    .await
-                    .map(DhtOperationSuccess::Lookup),
-            };
-            DhtOperationResult {
-                info_hash,
-                registration_generation,
-                dht_epoch,
-                endpoint_generation,
-                announce_ports,
-                result,
+        for lane in &mut entry.lanes {
+            if operations.len() >= MAX_ACTIVE_LOOKUPS {
+                return minimum_wait;
             }
-        });
+            if lane.dht_inflight {
+                continue;
+            }
+            if lane.next_dht_action > now {
+                let wait = lane.next_dht_action.saturating_duration_since(now);
+                minimum_wait =
+                    Some(minimum_wait.map_or(wait, |current: Duration| current.min(wait)));
+                continue;
+            }
+
+            let announce_ports = dht_announce_ports(policy, endpoint, &entry.registration);
+            let owner_info_hash = entry.registration.info_hash;
+            let swarm_key = lane.swarm_key;
+            let registration_generation = entry.registration.generation;
+            let dht_epoch = entry.dht_epoch;
+            let endpoint_generation = endpoint.generation;
+            let operation_dht = dht.clone();
+            lane.dht_inflight = true;
+            entry.control.emit(DownloadActivityEvent::DhtLookupStarted);
+            operations.spawn(async move {
+                let info_hash = swarm_key.into_bytes();
+                let result = match announce_ports {
+                    Some(ports) => operation_dht
+                        .lookup_and_announce_ports(info_hash, ports)
+                        .await
+                        .map(DhtOperationSuccess::Announce),
+                    None => operation_dht
+                        .lookup(info_hash)
+                        .await
+                        .map(DhtOperationSuccess::Lookup),
+                };
+                DhtOperationResult {
+                    owner_info_hash,
+                    swarm_key,
+                    registration_generation,
+                    dht_epoch,
+                    endpoint_generation,
+                    announce_ports,
+                    result,
+                }
+            });
+        }
     }
     minimum_wait
 }
@@ -1330,7 +1417,7 @@ fn apply_dht_result(
     policy: NetworkPolicy,
     endpoint: PeerAdvertisementEndpoint,
 ) {
-    let Some(entry) = entries.get_mut(&operation.info_hash) else {
+    let Some(entry) = entries.get_mut(&operation.owner_info_hash) else {
         return;
     };
     if entry.registration.generation != operation.registration_generation
@@ -1338,13 +1425,20 @@ fn apply_dht_result(
     {
         return;
     }
-    entry.dht_inflight = false;
+    let Some(lane_index) = entry
+        .lanes
+        .iter()
+        .position(|lane| lane.swarm_key == operation.swarm_key)
+    else {
+        return;
+    };
+    entry.lanes[lane_index].dht_inflight = false;
     if operation.announce_ports.is_some()
         && (operation.endpoint_generation != endpoint.generation
             || operation.announce_ports
                 != dht_announce_ports(policy, endpoint, &entry.registration))
     {
-        entry.next_dht_action = Instant::now();
+        entry.lanes[lane_index].next_dht_action = Instant::now();
         return;
     }
 
@@ -1354,7 +1448,8 @@ fn apply_dht_result(
             let (peers, interval) = match success {
                 DhtOperationSuccess::Lookup(peers) => (peers, DHT_LOOKUP_INTERVAL),
                 DhtOperationSuccess::Announce(report) => {
-                    entry.last_dht_endpoint_generation = operation.endpoint_generation;
+                    entry.lanes[lane_index].last_dht_endpoint_generation =
+                        operation.endpoint_generation;
                     entry
                         .control
                         .emit(DownloadActivityEvent::DhtAnnounceCompleted {
@@ -1378,18 +1473,18 @@ fn apply_dht_result(
                 let Ok(endpoint) = PeerEndpoint::new(address) else {
                     continue;
                 };
-                let _ = entry
-                    .registration
-                    .peers
-                    .observe_discovered_peer(PeerObservation::dialable(endpoint, PeerSource::Dht));
+                let _ = entry.registration.peers.observe_discovered_peer_on_swarm(
+                    PeerObservation::dialable(endpoint, PeerSource::Dht),
+                    operation.swarm_key,
+                );
             }
             entry
                 .control
                 .emit(DownloadActivityEvent::DhtLookupSucceeded { peer_count });
-            entry.next_dht_action = now + interval;
+            entry.lanes[lane_index].next_dht_action = now + interval;
         }
         Err(DhtError::Cancelled) => {
-            entry.next_dht_action = now;
+            entry.lanes[lane_index].next_dht_action = now;
         }
         Err(error) => {
             entry.control.emit(DownloadActivityEvent::DhtLookupFailed {
@@ -1400,7 +1495,7 @@ fn apply_dht_result(
                 .emit(DownloadActivityEvent::DhtRetryScheduled {
                     retry_in_seconds: DHT_LOOKUP_INTERVAL.as_secs(),
                 });
-            entry.next_dht_action = now + DHT_LOOKUP_INTERVAL;
+            entry.lanes[lane_index].next_dht_action = now + DHT_LOOKUP_INTERVAL;
         }
     }
 }
@@ -1430,7 +1525,7 @@ fn apply_tracker_result(
     policy: NetworkPolicy,
     endpoint: PeerAdvertisementEndpoint,
 ) {
-    let Some(entry) = entries.get_mut(&operation.info_hash) else {
+    let Some(entry) = entries.get_mut(&operation.owner_info_hash) else {
         return;
     };
     if entry.registration.generation != operation.registration_generation
@@ -1438,19 +1533,28 @@ fn apply_tracker_result(
     {
         return;
     }
+    let Some(lane_index) = entry
+        .lanes
+        .iter()
+        .position(|lane| lane.swarm_key == operation.swarm_key)
+    else {
+        return;
+    };
     if let Some(token_cache) = operation.token_cache {
-        entry.token_caches.insert(operation.id, token_cache);
+        entry.lanes[lane_index]
+            .token_caches
+            .insert(operation.id, token_cache);
     }
     let now = entry.control.diagnostic_elapsed();
     if operation.endpoint_generation != endpoint.generation && entry.removal.is_none() {
-        entry.schedule.supersede(operation.id);
+        entry.lanes[lane_index].schedule.supersede(operation.id);
         entry.emit_snapshot(true);
         return;
     }
     match operation.result {
         Ok(response) => {
             let peer_count = response.peers.len().try_into().unwrap_or(u32::MAX);
-            let success = entry.schedule.succeeded_outcome(
+            let success = entry.lanes[lane_index].schedule.succeeded_outcome(
                 operation.id,
                 now,
                 TrackerAcceptedOutcome {
@@ -1462,9 +1566,11 @@ fn apply_tracker_result(
                 },
             );
             if let Some(tracker_id) = response.tracker_id {
-                entry.http_tracker_ids.insert(operation.id, tracker_id);
+                entry.lanes[lane_index]
+                    .http_tracker_ids
+                    .insert(operation.id, tracker_id);
             }
-            entry.last_endpoint_generation = operation.endpoint_generation;
+            entry.lanes[lane_index].last_endpoint_generation = operation.endpoint_generation;
             entry
                 .control
                 .emit(DownloadActivityEvent::TrackerAnnounceSucceeded {
@@ -1485,17 +1591,17 @@ fn apply_tracker_result(
                 let Ok(endpoint) = PeerEndpoint::new(peer) else {
                     continue;
                 };
-                let _ = entry
-                    .peers()
-                    .observe_discovered_peer(PeerObservation::dialable(
-                        endpoint,
-                        PeerSource::Tracker,
-                    ));
+                let _ = entry.registration.peers.observe_discovered_peer_on_swarm(
+                    PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                    operation.swarm_key,
+                );
             }
         }
         Err(TrackerOperationFailure::Cancelled) => {}
         Err(TrackerOperationFailure::Transport(detail)) => {
-            let failure = entry.schedule.failed(operation.id, now, &detail);
+            let failure = entry.lanes[lane_index]
+                .schedule
+                .failed(operation.id, now, &detail);
             entry
                 .control
                 .emit(DownloadActivityEvent::TrackerAnnounceFailed {
@@ -1508,18 +1614,25 @@ fn apply_tracker_result(
         Err(TrackerOperationFailure::Declared { reason, retry }) => {
             let (failures, retry_in_seconds) = match retry {
                 Some(TrackerRetryDirective::After(delay)) => {
-                    let failure =
-                        entry
-                            .schedule
-                            .failed_with_retry(operation.id, now, &reason, delay);
+                    let failure = entry.lanes[lane_index].schedule.failed_with_retry(
+                        operation.id,
+                        now,
+                        &reason,
+                        delay,
+                    );
                     (failure.failures, failure.retry_in.as_secs())
                 }
                 Some(TrackerRetryDirective::Never) => {
-                    entry.schedule.disable(operation.id, now, &reason);
+                    entry.lanes[lane_index]
+                        .schedule
+                        .disable(operation.id, now, &reason);
                     (0, 0)
                 }
                 None => {
-                    let failure = entry.schedule.failed(operation.id, now, &reason);
+                    let failure =
+                        entry.lanes[lane_index]
+                            .schedule
+                            .failed(operation.id, now, &reason);
                     (failure.failures, failure.retry_in.as_secs())
                 }
             };
@@ -1534,12 +1647,6 @@ fn apply_tracker_result(
         }
     }
     entry.emit_snapshot(true);
-}
-
-impl TorrentEntry {
-    fn peers(&self) -> &TorrentPeerHandle {
-        &self.registration.peers
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1616,6 +1723,7 @@ mod tests {
     use super::*;
     use crate::peer::PeerRegistrySnapshot;
     use crate::{PeerConnectionObservation, TorrentPeerActivitySink};
+    use rstorrent_protocol::identity::{V1InfoHash, V2InfoHash};
     use std::net::{Ipv4Addr, SocketAddrV4};
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
@@ -1931,7 +2039,7 @@ mod tests {
             TrackerHttpsAuthentication::SystemTrust,
         )
         .expect("private transition");
-        assert!(effect.cancel_dht);
+        assert!(!effect.cancel_dht.is_empty());
         effect
             .purge_dht_from
             .expect("private transition supplies purge owner")
@@ -1992,10 +2100,31 @@ mod tests {
         assert!(replacement.removal.is_none());
     }
 
+    #[test]
+    fn hybrid_registration_owns_two_typed_lanes_under_one_entry() {
+        let mut registration = test_registration(1, 41001);
+        registration.info_hashes =
+            InfoHashes::hybrid(V1InfoHash::new([4; 20]), V2InfoHash::new([9; 32]));
+        let mut entries = BTreeMap::new();
+        apply_registration(
+            &mut entries,
+            registration,
+            TrackerHttpsAuthentication::SystemTrust,
+        )
+        .expect("hybrid registration");
+
+        assert_eq!(entries.len(), 1);
+        let entry = entries.get(&[4; 20]).expect("single torrent owner");
+        assert_eq!(entry.lanes.len(), 2);
+        assert_eq!(entry.lanes[0].swarm_key.protocol().as_str(), "v1");
+        assert_eq!(entry.lanes[1].swarm_key.protocol().as_str(), "v2");
+    }
+
     fn test_registration(generation: u64, tracker_port: u16) -> DiscoveryAdvertisementRegistration {
         DiscoveryAdvertisementRegistration {
             generation,
             info_hash: [4; 20],
+            info_hashes: InfoHashes::v1([4; 20].into()),
             trackers: vec![TrackerConfig {
                 url: format!("udp://127.0.0.1:{tracker_port}"),
                 endpoint: TrackerEndpoint::Udp(rstorrent_protocol::magnet::UdpTrackerUrl {
@@ -2036,6 +2165,7 @@ mod tests {
         DiscoveryAdvertisementRegistration {
             generation: 1,
             info_hash,
+            info_hashes: InfoHashes::v1(info_hash.into()),
             trackers: vec![TrackerConfig {
                 endpoint: TrackerEndpoint::from_http_url(&url).expect("HTTP tracker endpoint"),
                 url,
@@ -2137,6 +2267,7 @@ mod tests {
         let registration = DiscoveryAdvertisementRegistration {
             generation: 3,
             info_hash: [4; 20],
+            info_hashes: InfoHashes::v1([4; 20].into()),
             trackers: vec![TrackerConfig {
                 endpoint: TrackerEndpoint::from_http_url(&tracker_url)
                     .expect("HTTP tracker endpoint"),
@@ -2483,6 +2614,7 @@ mod tests {
             .upsert(DiscoveryAdvertisementRegistration {
                 generation: 9,
                 info_hash: [9; 20],
+                info_hashes: InfoHashes::v1([9; 20].into()),
                 trackers: vec![TrackerConfig {
                     endpoint: TrackerEndpoint::from_http_url(&tracker_url)
                         .expect("HTTP tracker endpoint"),
@@ -2660,6 +2792,7 @@ mod tests {
                 .upsert(DiscoveryAdvertisementRegistration {
                     generation: 1,
                     info_hash: [index; 20],
+                    info_hashes: InfoHashes::v1([index; 20].into()),
                     trackers: vec![TrackerConfig {
                         endpoint,
                         url,
@@ -2793,6 +2926,7 @@ mod tests {
         let registration = DiscoveryAdvertisementRegistration {
             generation: 3,
             info_hash: [4; 20],
+            info_hashes: InfoHashes::v1([4; 20].into()),
             trackers: vec![TrackerConfig {
                 url: format!("udp://{tracker_address}"),
                 endpoint: TrackerEndpoint::Udp(rstorrent_protocol::magnet::UdpTrackerUrl {
@@ -2931,6 +3065,7 @@ mod tests {
             .upsert(DiscoveryAdvertisementRegistration {
                 generation: 1,
                 info_hash: [12; 20],
+                info_hashes: InfoHashes::v1([12; 20].into()),
                 trackers: Vec::new(),
                 desired_running: true,
                 complete: true,

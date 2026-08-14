@@ -1,12 +1,13 @@
 //! Per-torrent peer state and connection cancellation shared by socket owners.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::identity::SwarmKey;
 use rstorrent_protocol::mse::MseMethod;
 use rstorrent_protocol::peer_wire::PeerMessage;
 use tokio::sync::mpsc;
@@ -381,6 +382,7 @@ struct TorrentPeerHandleInner {
     sink: Mutex<Arc<dyn TorrentPeerActivitySink>>,
     incoming_content: Mutex<IncomingContentRouteState>,
     bandwidth: Mutex<Option<TorrentBandwidth>>,
+    discovery_swarm_keys: Mutex<BTreeMap<SocketAddr, BTreeSet<SwarmKey>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -450,6 +452,7 @@ impl TorrentPeerHandle {
                 sink: Mutex::new(sink),
                 incoming_content: Mutex::new(IncomingContentRouteState::default()),
                 bandwidth: Mutex::new(None),
+                discovery_swarm_keys: Mutex::new(BTreeMap::new()),
             }),
         })
     }
@@ -622,17 +625,69 @@ impl TorrentPeerHandle {
         &self,
         observation: PeerObservation,
     ) -> Result<(), TorrentPeerError> {
+        self.observe_discovered_peer_inner(observation, None)
+    }
+
+    pub fn observe_discovered_peer_on_swarm(
+        &self,
+        observation: PeerObservation,
+        swarm_key: SwarmKey,
+    ) -> Result<(), TorrentPeerError> {
+        self.observe_discovered_peer_inner(observation, Some(swarm_key))
+    }
+
+    fn observe_discovered_peer_inner(
+        &self,
+        observation: PeerObservation,
+        swarm_key: Option<SwarmKey>,
+    ) -> Result<(), TorrentPeerError> {
         let address = observation.endpoint().address();
         if !self.address_family_policy().permits(address.ip()) {
             return Err(TorrentPeerError::AddressFamilyDenied(address));
         }
         let now = self.elapsed();
         self.with_state(|state| state.registry.observe(observation, now))?;
+        if let Some(swarm_key) = swarm_key {
+            self.inner
+                .discovery_swarm_keys
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .entry(address)
+                .or_default()
+                .insert(swarm_key);
+            self.prune_discovery_swarm_keys();
+        }
         self.publish(true, true)
+    }
+
+    pub(crate) fn discovery_swarm_keys(&self, address: SocketAddr) -> BTreeSet<SwarmKey> {
+        self.inner
+            .discovery_swarm_keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&address)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn prune_discovery_swarm_keys(&self) {
+        let retained = self.with_state(|state| {
+            state
+                .registry
+                .records()
+                .map(|record| record.endpoint().address())
+                .collect::<BTreeSet<_>>()
+        });
+        self.inner
+            .discovery_swarm_keys
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|address, _| retained.contains(address));
     }
 
     pub fn remove_discovery_source(&self, source: PeerSource) -> Result<usize, TorrentPeerError> {
         let removed = self.with_state(|state| state.registry.remove_source(source));
+        self.prune_discovery_swarm_keys();
         self.publish(true, true)?;
         Ok(removed)
     }
@@ -664,6 +719,7 @@ impl TorrentPeerHandle {
             }
         }
         drop(cancellations);
+        self.prune_discovery_swarm_keys();
         self.publish(true, true)?;
         Ok(connections.len())
     }
@@ -892,6 +948,7 @@ mod tests {
         PeerUploadGrant,
     };
     use crate::swarm::ConnectionId;
+    use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
     use rstorrent_protocol::mse::MseMethod;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -952,6 +1009,39 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let handle = TorrentPeerHandle::new(sink.clone()).expect("handle");
         (handle, sink)
+    }
+
+    #[test]
+    fn discovered_peer_retains_bounded_hybrid_swarm_lanes() {
+        let (handle, _) = handle();
+        let endpoint = PeerEndpoint::new("127.0.0.1:49001".parse().expect("peer address"))
+            .expect("peer endpoint");
+        let v1 = SwarmKey::V1(V1InfoHash::new([1; 20]));
+        let v2 = SwarmKey::V2Truncated([2; 20]);
+        handle
+            .observe_discovered_peer_on_swarm(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                v2,
+            )
+            .expect("observe v2 tracker peer");
+        handle
+            .observe_discovered_peer_on_swarm(
+                PeerObservation::dialable(endpoint, PeerSource::Tracker),
+                v1,
+            )
+            .expect("merge v1 tracker peer");
+
+        assert_eq!(
+            handle.discovery_swarm_keys(endpoint.address()),
+            [v1, v2].into_iter().collect()
+        );
+        assert_eq!(
+            handle
+                .remove_discovery_source(PeerSource::Tracker)
+                .expect("remove tracker source"),
+            1
+        );
+        assert!(handle.discovery_swarm_keys(endpoint.address()).is_empty());
     }
 
     #[test]

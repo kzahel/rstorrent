@@ -3758,6 +3758,7 @@ impl ApplicationService {
         let registration = DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
             info_hash: handle.identity().swarm_key().into_bytes(),
+            info_hashes: handle.identity().info_hashes(),
             trackers: operational_trackers(&resume.trackers)?,
             desired_running: if complete {
                 resume.desired_running
@@ -4229,6 +4230,7 @@ async fn reconcile_completed_advertisement(
         .upsert(DiscoveryAdvertisementRegistration {
             generation: runtime.generation(),
             info_hash: runtime.identity().swarm_key().into_bytes(),
+            info_hashes: runtime.identity().info_hashes(),
             trackers: operational_trackers(&resume.trackers).map_err(|error| error.to_string())?,
             desired_running: resume.desired_running,
             complete: resume.state == TorrentState::Complete,

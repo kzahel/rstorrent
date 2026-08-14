@@ -2162,7 +2162,6 @@ struct TorrentPeerCoordinator {
     hybrid_upgrade_hash: Option<[u8; 20]>,
     swarm_key: Option<SwarmKey>,
     swarm_keys: Vec<SwarmKey>,
-    peer_swarm_keys: BTreeMap<SocketAddr, BTreeSet<SwarmKey>>,
 }
 
 #[derive(Debug)]
@@ -2434,7 +2433,6 @@ impl TorrentPeerCoordinator {
             hybrid_upgrade_hash: None,
             swarm_key: None,
             swarm_keys: Vec::new(),
-            peer_swarm_keys: BTreeMap::new(),
         })
     }
 
@@ -3037,29 +3035,14 @@ impl TorrentPeerCoordinator {
             return Err(DownloadError::NoUsablePeer);
         }
         let endpoint = PeerEndpoint::new(address).map_err(DownloadError::PeerRegistry)?;
-        let now = self.elapsed();
-        self.peers
-            .with_state(|state| {
-                state
-                    .registry
-                    .observe(PeerObservation::dialable(endpoint, source), now)
-            })
-            .map_err(DownloadError::PeerRegistry)?;
-        if let Some(swarm_key) = swarm_key {
-            self.peer_swarm_keys
-                .entry(address)
-                .or_default()
-                .insert(swarm_key);
-            let retained = self.peers.with_state(|state| {
-                state
-                    .registry
-                    .records()
-                    .map(|record| record.endpoint().address())
-                    .collect::<BTreeSet<_>>()
-            });
-            self.peer_swarm_keys
-                .retain(|address, _| retained.contains(address));
+        let observation = PeerObservation::dialable(endpoint, source);
+        match swarm_key {
+            Some(swarm_key) => self
+                .peers
+                .observe_discovered_peer_on_swarm(observation, swarm_key),
+            None => self.peers.observe_discovered_peer(observation),
         }
+        .map_err(map_torrent_peer_error)?;
         self.publish_peer_runtime(true)
     }
 
@@ -3067,9 +3050,12 @@ impl TorrentPeerCoordinator {
         let primary = self
             .swarm_key
             .expect("peer coordinator has a selected primary swarm key");
-        let Some(keys) = self.peer_swarm_keys.get(&candidate.endpoint().address()) else {
+        let keys = self
+            .peers
+            .discovery_swarm_keys(candidate.endpoint().address());
+        if keys.is_empty() {
             return primary;
-        };
+        }
         if keys.contains(&primary) {
             primary
         } else {

@@ -8,9 +8,12 @@ import gc
 import json
 import resource
 import shutil
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -35,14 +38,271 @@ from pure_v2_runtime import (
     libtorrent_session,
     observed_encryption,
     start_libtorrent_seed,
+    stop_rstorrent_download,
     stop_rstorrent_seed,
     validate_libtorrent_utp,
     wait_application_complete,
+    wait_rstorrent_download,
+)
+from udp_tracker_magnet import (
+    ANNOUNCE_ACTION,
+    ANNOUNCE_FORMAT,
+    CONNECTION_ID,
+    CONNECT_ACTION,
+    PROTOCOL_ID,
 )
 
 
 SKIPPED_FILE = 3
 SELECTED_FILES = frozenset({0, 1, 2, 4, 5})
+NODE_ID = b"rstorrent-hybrid-dht"
+
+
+class DualIdentityUdpTracker:
+    """Return one peer only after observing both exact hybrid announces."""
+
+    def __init__(self, fixture: RuntimeFixture, peer_port: int) -> None:
+        self.expected = {
+            bytes.fromhex(fixture.wire_info_hash),
+            bytes.fromhex(fixture.full_info_hash[:40]),
+        }
+        self.expected_left = fixture.total_size
+        self.peer_port = peer_port
+        self.announces: dict[str, int] = {}
+        self.lifecycle: dict[str, list[int]] = {}
+        self.requests = 0
+        self.failure: BaseException | None = None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(("127.0.0.1", 0))
+        self.socket.settimeout(10)
+        self.port = self.socket.getsockname()[1]
+        self.thread = threading.Thread(
+            target=self._serve,
+            name=f"rstorrent-hybrid-tracker-{self.port}",
+        )
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def join(self) -> None:
+        self.thread.join(timeout=12)
+        if self.thread.is_alive():
+            raise ScenarioFailure("hybrid UDP tracker did not terminate")
+        if self.failure is not None:
+            raise ScenarioFailure(f"hybrid UDP tracker failed: {self.failure}")
+        if set(self.announces) != {value.hex() for value in self.expected}:
+            raise ScenarioFailure(
+                f"hybrid UDP tracker missed an identity: {self.announces}"
+            )
+
+    def close(self) -> None:
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+        self.thread.join(timeout=2)
+
+    def _serve(self) -> None:
+        try:
+            while set(self.announces) != {value.hex() for value in self.expected}:
+                packet, client = self.socket.recvfrom(2048)
+                self.requests += 1
+                if len(packet) == 16:
+                    protocol_id, action, transaction = struct.unpack("!QII", packet)
+                    if protocol_id != PROTOCOL_ID or action != CONNECT_ACTION:
+                        raise ScenarioFailure("hybrid tracker received an invalid connect")
+                    self.socket.sendto(
+                        struct.pack("!IIQ", CONNECT_ACTION, transaction, CONNECTION_ID),
+                        client,
+                    )
+                    continue
+                if len(packet) != struct.calcsize(ANNOUNCE_FORMAT):
+                    raise ScenarioFailure(
+                        f"hybrid tracker received {len(packet)} unexpected bytes"
+                    )
+                (
+                    connection_id,
+                    action,
+                    transaction,
+                    info_hash,
+                    peer_id,
+                    downloaded,
+                    left,
+                    uploaded,
+                    event,
+                    announced_ip,
+                    key,
+                    num_want,
+                    listen_port,
+                ) = struct.unpack(ANNOUNCE_FORMAT, packet)
+                if (
+                    connection_id != CONNECTION_ID
+                    or action != ANNOUNCE_ACTION
+                    or info_hash not in self.expected
+                    or not peer_id.startswith(b"-RS0001-")
+                    or downloaded + left != self.expected_left
+                    or uploaded != 0
+                    or event not in (0, 1, 2)
+                    or announced_ip != 0
+                    or key == 0
+                    or num_want != 200
+                    or listen_port == 0
+                ):
+                    raise ScenarioFailure(
+                        "hybrid tracker announce fields changed: "
+                        f"connection={connection_id} action={action} "
+                        f"identity={info_hash.hex()} peer_id={peer_id!r} "
+                        f"counters={(downloaded, left, uploaded)} "
+                        f"expected_left={self.expected_left} event={event} "
+                        f"ip={announced_ip} key={key} want={num_want} "
+                        f"port={listen_port}"
+                    )
+                identity = info_hash.hex()
+                self.announces[identity] = self.announces.get(identity, 0) + 1
+                self.lifecycle.setdefault(identity, []).append(event)
+                response = struct.pack(
+                    "!IIIII",
+                    ANNOUNCE_ACTION,
+                    transaction,
+                    1800,
+                    1,
+                    1,
+                )
+                if set(self.announces) == {
+                    value.hex() for value in self.expected
+                }:
+                    response += socket.inet_aton("127.0.0.1") + struct.pack(
+                        "!H", self.peer_port
+                    )
+                self.socket.sendto(response, client)
+        except BaseException as error:
+            self.failure = ScenarioFailure(
+                f"{error}; announces={self.announces} lifecycle={self.lifecycle}"
+            )
+        finally:
+            self.socket.close()
+
+
+class DualIdentityDhtRouter:
+    """Observe lookup and announce for both versioned hybrid keys."""
+
+    def __init__(self, fixture: RuntimeFixture, peer_port: int) -> None:
+        self.expected = {
+            bytes.fromhex(fixture.wire_info_hash),
+            bytes.fromhex(fixture.full_info_hash[:40]),
+        }
+        self.peer_port = peer_port
+        self.find_node_queries = 0
+        self.get_peers: dict[str, int] = {}
+        self.announces: dict[str, int] = {}
+        self.failure: BaseException | None = None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(("127.0.0.1", 0))
+        self.socket.settimeout(10)
+        self.port = self.socket.getsockname()[1]
+        self.thread = threading.Thread(
+            target=self._serve,
+            name=f"rstorrent-hybrid-dht-{self.port}",
+        )
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def join(self) -> None:
+        self.thread.join(timeout=12)
+        if self.thread.is_alive():
+            raise ScenarioFailure("hybrid DHT router did not terminate")
+        if self.failure is not None:
+            raise ScenarioFailure(f"hybrid DHT router failed: {self.failure}")
+        expected = {value.hex() for value in self.expected}
+        if (
+            set(self.get_peers) != expected
+            or set(self.announces) != expected
+            or self.find_node_queries < 1
+        ):
+            raise ScenarioFailure(
+                "hybrid DHT missed a versioned operation: "
+                f"find_node={self.find_node_queries} get={self.get_peers} "
+                f"announce={self.announces}"
+            )
+
+    def close(self) -> None:
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+        self.thread.join(timeout=2)
+
+    def _response(
+        self,
+        transaction: bytes,
+        client: tuple[str, int],
+        values: bool,
+    ) -> bytes:
+        response: dict[bytes, object] = {b"id": NODE_ID}
+        if values:
+            response[b"token"] = b"hybrid-fixture"
+            response[b"values"] = [
+                socket.inet_aton("127.0.0.1")
+                + struct.pack("!H", self.peer_port)
+            ]
+        return bytes(
+            lt.bencode(
+                {
+                    b"ip": socket.inet_aton(client[0])
+                    + struct.pack("!H", client[1]),
+                    b"r": response,
+                    b"t": transaction,
+                    b"y": b"r",
+                }
+            )
+        )
+
+    def _serve(self) -> None:
+        expected = {value.hex() for value in self.expected}
+        try:
+            while set(self.announces) != expected:
+                packet, client = self.socket.recvfrom(2048)
+                message = lt.bdecode(packet)
+                if not isinstance(message, dict) or message.get(b"y") != b"q":
+                    raise ScenarioFailure("hybrid DHT received a non-query")
+                transaction = message.get(b"t")
+                arguments = message.get(b"a")
+                method = message.get(b"q")
+                if (
+                    not isinstance(transaction, bytes)
+                    or not 1 <= len(transaction) <= 8
+                    or not isinstance(arguments, dict)
+                    or len(arguments.get(b"id", b"")) != 20
+                ):
+                    raise ScenarioFailure("hybrid DHT query envelope changed")
+                values = False
+                if method == b"find_node":
+                    self.find_node_queries += 1
+                    if len(arguments.get(b"target", b"")) != 20:
+                        raise ScenarioFailure("hybrid DHT find_node target changed")
+                elif method in (b"get_peers", b"announce_peer"):
+                    info_hash = arguments.get(b"info_hash")
+                    if info_hash not in self.expected:
+                        raise ScenarioFailure("hybrid DHT used an unrelated identity")
+                    identity = info_hash.hex()
+                    if method == b"get_peers":
+                        self.get_peers[identity] = self.get_peers.get(identity, 0) + 1
+                        values = True
+                    else:
+                        if arguments.get(b"token") != b"hybrid-fixture":
+                            raise ScenarioFailure("hybrid DHT announce token changed")
+                        self.announces[identity] = self.announces.get(identity, 0) + 1
+                else:
+                    raise ScenarioFailure(f"unexpected hybrid DHT method {method!r}")
+                self.socket.sendto(
+                    self._response(transaction, client, values),
+                    client,
+                )
+        except BaseException as error:
+            self.failure = error
+        finally:
+            self.socket.close()
 
 
 def make_fixture(root: Path) -> RuntimeFixture:
@@ -622,6 +882,200 @@ def transport_roles(
     }
 
 
+def hybrid_discovery_fixture(
+    fixture: RuntimeFixture,
+    root: Path,
+    *,
+    tracker_url: str | None = None,
+) -> RuntimeFixture:
+    root.mkdir()
+    torrent_path = fixture.torrent_path
+    torrent_info = fixture.torrent_info
+    if tracker_url is not None:
+        outer = lt.bdecode(fixture.torrent_path.read_bytes())
+        if not isinstance(outer, dict):
+            raise ScenarioFailure("hybrid discovery metainfo is not a dictionary")
+        outer[b"announce"] = tracker_url.encode("utf-8")
+        torrent_path = root / "discovery.torrent"
+        torrent_path.write_bytes(bytes(lt.bencode(outer)))
+        torrent_info = lt.torrent_info(str(torrent_path))
+        hashes = torrent_info.info_hashes()
+        if (
+            str(hashes.v1) != fixture.wire_info_hash
+            or str(hashes.v2) != fixture.full_info_hash
+        ):
+            raise ScenarioFailure("hybrid outer tracker changed an identity")
+    storage_root = root / "download"
+    storage_root.mkdir()
+    return RuntimeFixture(
+        name=fixture.name,
+        torrent_path=torrent_path,
+        torrent_info=torrent_info,
+        files=fixture.files,
+        storage_root=storage_root,
+        libtorrent_storage_root=fixture.libtorrent_storage_root,
+        profile_root=root / "profile",
+        full_info_hash=fixture.full_info_hash,
+        wire_info_hash=fixture.wire_info_hash,
+    )
+
+
+def start_hybrid_discovery_download(
+    binary: Path,
+    fixture: RuntimeFixture,
+    *,
+    dht_port: int | None = None,
+) -> tuple[subprocess.Popen[str], dict[str, object]]:
+    command = [
+        str(binary),
+        "--profile-root",
+        str(fixture.profile_root),
+        "--storage-root",
+        str(fixture.storage_root),
+        "--metainfo",
+        str(fixture.torrent_path),
+        "--download-fixture",
+        "--utp",
+        "--encryption",
+        "disabled",
+        "--download-rate-limit",
+        str(BLOCK),
+    ]
+    if dht_port is not None:
+        command.extend(["--dht-bootstrap", f"127.0.0.1:{dht_port}"])
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        ready = read_json_line(process, 30)
+        if (
+            ready.get("event") != "ready"
+            or ready.get("protocol") != "hybrid"
+            or ready.get("full_info_hash")
+            != f"{fixture.wire_info_hash}+{fixture.full_info_hash}"
+            or ready.get("registrations") != 2
+        ):
+            raise ScenarioFailure(f"unexpected hybrid discovery readiness: {ready}")
+        return process, ready
+    except BaseException:
+        terminate_process(process)
+        raise
+
+
+def tracker_discovery_role(
+    binary: Path,
+    fixture: RuntimeFixture,
+    root: Path,
+) -> dict[str, object]:
+    session, handle, diagnostics = start_libtorrent_seed(fixture, utp_only=True)
+    tracker = DualIdentityUdpTracker(fixture, session.listen_port())
+    discovered = hybrid_discovery_fixture(
+        fixture,
+        root,
+        tracker_url=f"udp://127.0.0.1:{tracker.port}/announce",
+    )
+    process: subprocess.Popen[str] | None = None
+    tracker.start()
+    try:
+        process, ready = start_hybrid_discovery_download(
+            binary,
+            discovered,
+        )
+        try:
+            _, application = wait_rstorrent_download(process, discovered)
+        except BaseException as error:
+            raise ScenarioFailure(
+                f"{error}; tracker_announces={tracker.announces} "
+                f"tracker_lifecycle={tracker.lifecycle} "
+                f"tracker_failure={tracker.failure}"
+            ) from error
+        tracker.join()
+        oracle = validate_libtorrent_utp(session, diagnostics)
+        stopped = stop_rstorrent_download(process)
+        process = None
+        return {
+            "announces": tracker.announces,
+            "lifecycle": tracker.lifecycle,
+            "requests": tracker.requests,
+            "application": application,
+            "oracle": oracle,
+            "ready_udp": ready.get("utp_listen"),
+            "cleanup": stopped.get("event") == "stopped",
+        }
+    finally:
+        if process is not None:
+            terminate_process(process)
+        tracker.close()
+        if handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        gc.collect()
+
+
+def dht_discovery_role(
+    binary: Path,
+    fixture: RuntimeFixture,
+    root: Path,
+) -> dict[str, object]:
+    session, handle, diagnostics = start_libtorrent_seed(fixture, utp_only=True)
+    router = DualIdentityDhtRouter(fixture, session.listen_port())
+    discovered = hybrid_discovery_fixture(fixture, root)
+    process: subprocess.Popen[str] | None = None
+    router.start()
+    try:
+        process, ready = start_hybrid_discovery_download(
+            binary,
+            discovered,
+            dht_port=router.port,
+        )
+        _, application = wait_rstorrent_download(process, discovered)
+        router.join()
+        oracle = validate_libtorrent_utp(session, diagnostics)
+        stopped = stop_rstorrent_download(process)
+        process = None
+        return {
+            "find_node_queries": router.find_node_queries,
+            "get_peers": router.get_peers,
+            "announces": router.announces,
+            "application": application,
+            "oracle": oracle,
+            "ready_udp": ready.get("utp_listen"),
+            "cleanup": stopped.get("event") == "stopped",
+        }
+    finally:
+        if process is not None:
+            terminate_process(process)
+        router.close()
+        if handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        gc.collect()
+
+
+def discovery_roles(
+    binary: Path,
+    fixture: RuntimeFixture,
+    root: Path,
+) -> dict[str, object]:
+    root.mkdir()
+    return {
+        "tracker": tracker_discovery_role(
+            binary,
+            fixture,
+            root / "tracker",
+        ),
+        "dht": dht_discovery_role(
+            binary,
+            fixture,
+            root / "dht",
+        ),
+    }
+
+
 def run(repository: Path, *, no_build: bool) -> None:
     run_root = Path(tempfile.mkdtemp(prefix="rstorrent-hybrid-runtime-"))
     failure: BaseException | None = None
@@ -650,6 +1104,11 @@ def run(repository: Path, *, no_build: bool) -> None:
             "transports": transport_roles(
                 seed_binary, fixture, run_root / "transport-roles"
             ),
+            "discovery": discovery_roles(
+                seed_binary,
+                fixture,
+                run_root / "discovery-roles",
+            ),
         }
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         child_rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
@@ -661,7 +1120,8 @@ def run(repository: Path, *, no_build: bool) -> None:
             "interop=hybrid-runtime "
             f"libtorrent_binding={lt.__version__} libtorrent_native={lt.version} "
             "roles=both entry_lanes=v1-upgrade,direct-v2 "
-            "selection=promotion restart=true mse=rc4 utp=true cleanup=true "
+            "selection=promotion restart=true tracker=both dht=both "
+            "mse=rc4 utp=true cleanup=true "
             f"oracle_rss_bytes={rss} child_peak_rss_bytes={child_rss}"
         )
     except BaseException as error:
