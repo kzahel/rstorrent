@@ -5267,6 +5267,27 @@ impl ViewActivitySink {
                     ],
                 );
             }
+            DownloadActivityEvent::DiscoveryLane {
+                protocol,
+                operation,
+                phase,
+            } => {
+                self.record_structured(
+                    DiagnosticSeverity::Debug,
+                    category::DISCOVERY_DHT,
+                    "discovery_lane_operation",
+                    "Versioned torrent discovery lane changed state",
+                    Vec::new(),
+                    vec![
+                        DiagnosticField::text("protocol", protocol.as_str()),
+                        DiagnosticField::text(
+                            "operation",
+                            format!("{operation:?}").to_ascii_lowercase(),
+                        ),
+                        DiagnosticField::text("phase", format!("{phase:?}").to_ascii_lowercase()),
+                    ],
+                );
+            }
             DownloadActivityEvent::TrackerAnnounceStarted {
                 tracker,
                 tier,

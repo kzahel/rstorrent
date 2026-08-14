@@ -398,11 +398,11 @@ use control::{
 };
 pub use control::{
     CheckerPhase, CheckerProgress, ContentPeerActivitySnapshot, ContentRequestWindowPhase,
-    DiskCheckpointStage, DiskPieceRuntimeSnapshot, DiskPieceStage, DiskPressure,
-    DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink, DownloadControl,
-    DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate, MetadataAcquisitionPhase,
-    MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage, PathPublicationStage,
-    StreamingDemandLease, SwarmActivitySnapshot,
+    DiscoveryLaneOperation, DiscoveryLanePhase, DiskCheckpointStage, DiskPieceRuntimeSnapshot,
+    DiskPieceStage, DiskPressure, DiskRuntimeSnapshot, DownloadActivityEvent, DownloadActivitySink,
+    DownloadControl, DownloadDiagnosticSnapshot, DownloadProgress, FileSelectionUpdate,
+    MetadataAcquisitionPhase, MetadataAcquisitionSnapshot, MetadataPeerSnapshot, MetadataPeerStage,
+    PathPublicationStage, StreamingDemandLease, SwarmActivitySnapshot,
 };
 use control::{CheckerPieceOutcome, StorageCommandKind};
 

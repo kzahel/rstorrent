@@ -15,9 +15,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::dht::{DhtAnnouncePorts, DhtAnnounceResult, DhtError, DhtHandle, MAX_ACTIVE_LOOKUPS};
 use crate::driver::{
-    DownloadActivityEvent, DownloadActivitySink, DownloadControl, DownloadError,
-    TrackerAnnounceInput, TrackerAnnounceOutcome, TrackerOperationFailure, TrackerOperationSources,
-    UdpTrackerTokenCache, execute_tracker_operation, random_nonzero_u32, redacted_tracker_label,
+    DiscoveryLaneOperation, DiscoveryLanePhase, DownloadActivityEvent, DownloadActivitySink,
+    DownloadControl, DownloadError, TrackerAnnounceInput, TrackerAnnounceOutcome,
+    TrackerOperationFailure, TrackerOperationSources, UdpTrackerTokenCache,
+    execute_tracker_operation, random_nonzero_u32, redacted_tracker_label,
 };
 use crate::http_tracker::{
     HTTP_TRACKER_TIMEOUT, HttpTrackerClients, HttpTrackerError, TrackerRetryDirective,
@@ -635,6 +636,19 @@ impl TorrentEntry {
         }
     }
 
+    fn emit_lane(
+        &self,
+        swarm_key: SwarmKey,
+        operation: DiscoveryLaneOperation,
+        phase: DiscoveryLanePhase,
+    ) {
+        self.control.emit(DownloadActivityEvent::DiscoveryLane {
+            protocol: swarm_key.protocol(),
+            operation,
+            phase,
+        });
+    }
+
     fn begin_stop(
         &mut self,
         response: Option<oneshot::Sender<Result<(), DiscoveryAdvertisementError>>>,
@@ -644,6 +658,18 @@ impl TorrentEntry {
         self.tracker_cancellation = CancellationToken::new();
         self.schedule_epoch = self.schedule_epoch.saturating_add(1);
         self.dht_epoch = self.dht_epoch.saturating_add(1);
+        for lane in &self.lanes {
+            self.emit_lane(
+                lane.swarm_key,
+                DiscoveryLaneOperation::Tracker,
+                DiscoveryLanePhase::Cancelled,
+            );
+            self.emit_lane(
+                lane.swarm_key,
+                DiscoveryLaneOperation::DhtLookup,
+                DiscoveryLanePhase::Cancelled,
+            );
+        }
         for lane in &mut self.lanes {
             lane.schedule.cancel_inflight();
             lane.dht_inflight = false;
@@ -1217,6 +1243,12 @@ fn fill_tracker_operations(
                         ..
                     } => {
                         let tracker = redacted_tracker_label(&url);
+                        let swarm_key = entry.lanes[lane_index].swarm_key;
+                        entry.emit_lane(
+                            swarm_key,
+                            DiscoveryLaneOperation::Tracker,
+                            DiscoveryLanePhase::Started,
+                        );
                         if fallback {
                             entry
                                 .control
@@ -1251,7 +1283,6 @@ fn fill_tracker_operations(
                         let schedule_epoch = entry.schedule_epoch;
                         let cancellation = entry.tracker_cancellation.clone();
                         let lane = &mut entry.lanes[lane_index];
-                        let swarm_key = lane.swarm_key;
                         let tracker_key = lane.tracker_key;
                         let is_udp = matches!(tracker_endpoint, TrackerEndpoint::Udp(_));
                         let mut token_cache = if is_udp {
@@ -1383,6 +1414,11 @@ fn fill_dht_operations(
             let endpoint_generation = endpoint.generation;
             let operation_dht = dht.clone();
             lane.dht_inflight = true;
+            entry.control.emit(DownloadActivityEvent::DiscoveryLane {
+                protocol: swarm_key.protocol(),
+                operation: DiscoveryLaneOperation::DhtLookup,
+                phase: DiscoveryLanePhase::Started,
+            });
             entry.control.emit(DownloadActivityEvent::DhtLookupStarted);
             operations.spawn(async move {
                 let info_hash = swarm_key.into_bytes();
@@ -1445,9 +1481,19 @@ fn apply_dht_result(
     let now = Instant::now();
     match operation.result {
         Ok(success) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::DhtLookup,
+                DiscoveryLanePhase::Succeeded,
+            );
             let (peers, interval) = match success {
                 DhtOperationSuccess::Lookup(peers) => (peers, DHT_LOOKUP_INTERVAL),
                 DhtOperationSuccess::Announce(report) => {
+                    entry.emit_lane(
+                        operation.swarm_key,
+                        DiscoveryLaneOperation::DhtAnnounce,
+                        DiscoveryLanePhase::Succeeded,
+                    );
                     entry.lanes[lane_index].last_dht_endpoint_generation =
                         operation.endpoint_generation;
                     entry
@@ -1484,9 +1530,24 @@ fn apply_dht_result(
             entry.lanes[lane_index].next_dht_action = now + interval;
         }
         Err(DhtError::Cancelled) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::DhtLookup,
+                DiscoveryLanePhase::Cancelled,
+            );
             entry.lanes[lane_index].next_dht_action = now;
         }
         Err(error) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::DhtLookup,
+                DiscoveryLanePhase::Failed,
+            );
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::DhtLookup,
+                DiscoveryLanePhase::RetryScheduled,
+            );
             entry.control.emit(DownloadActivityEvent::DhtLookupFailed {
                 detail: error.to_string(),
             });
@@ -1553,6 +1614,11 @@ fn apply_tracker_result(
     }
     match operation.result {
         Ok(response) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::Tracker,
+                DiscoveryLanePhase::Succeeded,
+            );
             let peer_count = response.peers.len().try_into().unwrap_or(u32::MAX);
             let success = entry.lanes[lane_index].schedule.succeeded_outcome(
                 operation.id,
@@ -1597,8 +1663,22 @@ fn apply_tracker_result(
                 );
             }
         }
-        Err(TrackerOperationFailure::Cancelled) => {}
+        Err(TrackerOperationFailure::Cancelled) => entry.emit_lane(
+            operation.swarm_key,
+            DiscoveryLaneOperation::Tracker,
+            DiscoveryLanePhase::Cancelled,
+        ),
         Err(TrackerOperationFailure::Transport(detail)) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::Tracker,
+                DiscoveryLanePhase::Failed,
+            );
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::Tracker,
+                DiscoveryLanePhase::RetryScheduled,
+            );
             let failure = entry.lanes[lane_index]
                 .schedule
                 .failed(operation.id, now, &detail);
@@ -1612,6 +1692,18 @@ fn apply_tracker_result(
                 });
         }
         Err(TrackerOperationFailure::Declared { reason, retry }) => {
+            entry.emit_lane(
+                operation.swarm_key,
+                DiscoveryLaneOperation::Tracker,
+                DiscoveryLanePhase::Failed,
+            );
+            if !matches!(retry, Some(TrackerRetryDirective::Never)) {
+                entry.emit_lane(
+                    operation.swarm_key,
+                    DiscoveryLaneOperation::Tracker,
+                    DiscoveryLanePhase::RetryScheduled,
+                );
+            }
             let (failures, retry_in_seconds) = match retry {
                 Some(TrackerRetryDirective::After(delay)) => {
                     let failure = entry.lanes[lane_index].schedule.failed_with_retry(
@@ -1723,7 +1815,7 @@ mod tests {
     use super::*;
     use crate::peer::PeerRegistrySnapshot;
     use crate::{PeerConnectionObservation, TorrentPeerActivitySink};
-    use rstorrent_protocol::identity::{V1InfoHash, V2InfoHash};
+    use rstorrent_protocol::identity::{ProtocolVersion, V1InfoHash, V2InfoHash};
     use std::net::{Ipv4Addr, SocketAddrV4};
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
@@ -1775,6 +1867,7 @@ mod tests {
         successes: Mutex<usize>,
         failures: Mutex<Vec<String>>,
         dht_announces: Mutex<Vec<DhtAnnounceReport>>,
+        lane_events: Mutex<Vec<(ProtocolVersion, DiscoveryLaneOperation, DiscoveryLanePhase)>>,
         changed: Notify,
     }
 
@@ -1828,6 +1921,19 @@ mod tests {
 
     impl DownloadActivitySink for RecordingActivity {
         fn record(&self, event: DownloadActivityEvent) {
+            if let DownloadActivityEvent::DiscoveryLane {
+                protocol,
+                operation,
+                phase,
+            } = &event
+            {
+                self.lane_events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push((*protocol, *operation, *phase));
+                self.changed.notify_waiters();
+                return;
+            }
             if matches!(
                 event,
                 DownloadActivityEvent::TrackerAnnounceSucceeded { .. }
@@ -2103,6 +2209,8 @@ mod tests {
     #[test]
     fn hybrid_registration_owns_two_typed_lanes_under_one_entry() {
         let mut registration = test_registration(1, 41001);
+        let activity = Arc::new(RecordingActivity::default());
+        registration.activity_sink = activity.clone();
         registration.info_hashes =
             InfoHashes::hybrid(V1InfoHash::new([4; 20]), V2InfoHash::new([9; 32]));
         let mut entries = BTreeMap::new();
@@ -2114,10 +2222,26 @@ mod tests {
         .expect("hybrid registration");
 
         assert_eq!(entries.len(), 1);
-        let entry = entries.get(&[4; 20]).expect("single torrent owner");
+        let entry = entries.get_mut(&[4; 20]).expect("single torrent owner");
         assert_eq!(entry.lanes.len(), 2);
         assert_eq!(entry.lanes[0].swarm_key.protocol().as_str(), "v1");
         assert_eq!(entry.lanes[1].swarm_key.protocol().as_str(), "v2");
+        entry.begin_stop(None);
+        let events = activity
+            .lane_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(events.len(), 4);
+        assert!(events.iter().any(|(protocol, operation, phase)| {
+            *protocol == ProtocolVersion::V1
+                && *operation == DiscoveryLaneOperation::Tracker
+                && *phase == DiscoveryLanePhase::Cancelled
+        }));
+        assert!(events.iter().any(|(protocol, operation, phase)| {
+            *protocol == ProtocolVersion::V2
+                && *operation == DiscoveryLaneOperation::DhtLookup
+                && *phase == DiscoveryLanePhase::Cancelled
+        }));
     }
 
     fn test_registration(generation: u64, tracker_port: u16) -> DiscoveryAdvertisementRegistration {

@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rstorrent_protocol::identity::ProtocolVersion;
 use rstorrent_protocol::metadata::TorrentMetadataDownload;
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use tokio::sync::{Notify, watch};
@@ -55,6 +56,22 @@ pub(super) const MAX_DIAGNOSTIC_ERROR_LENGTH: usize = 256;
 
 pub trait DownloadActivitySink: Send + Sync + fmt::Debug {
     fn record(&self, event: DownloadActivityEvent);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryLaneOperation {
+    Tracker,
+    DhtLookup,
+    DhtAnnounce,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryLanePhase {
+    Started,
+    Succeeded,
+    Failed,
+    RetryScheduled,
+    Cancelled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,6 +137,11 @@ pub enum DownloadActivityEvent {
     },
     PathPublicationStage(PathPublicationStage),
     StorageState(Box<DiskRuntimeSnapshot>),
+    DiscoveryLane {
+        protocol: ProtocolVersion,
+        operation: DiscoveryLaneOperation,
+        phase: DiscoveryLanePhase,
+    },
     TrackerAnnounceStarted {
         tracker: String,
         tier: u32,
