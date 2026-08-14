@@ -1012,3 +1012,21 @@ unless one bounded artifact is explicitly retained and linked.
 - Maximum runtime descriptor, padding-map, dual-check, reconciliation, and
   lane accounting cases land with their owning stages so each bound is tested
   at the mutation boundary it protects.
+
+### 2026-08-14: Hybrid content and one-pass dual integrity foundation
+
+- Added an explicit runtime-free `TorrentContent::Hybrid` descriptor with
+  exact full aliases, raw info, validated v1 and v2 geometry, logical payload
+  files, and a bounded synthetic-zero padding map derived only after strict
+  BEP 52 structural validation.
+- Added hybrid expected-piece lookup and the pure `Verified`, `Invalid`, or
+  `Inconsistent` dual-result classifier. The storage pipeline now treats a
+  one-scheme pass as a typed terminal `InconsistentHybridHashes` failure and
+  never installs have for it.
+- Added one storage read path that feeds real bytes to SHA-1 and the v2 Merkle
+  accumulator together, then feeds validated padding zeros only to SHA-1.
+  Padding is not represented as a product file or storage artifact.
+- Focused validation: the hybrid descriptor/padding/expectation protocol test,
+  the hybrid single-read dual-hash storage test, all 13 storage-pipeline tests,
+  and compile checks for `rstorrent-protocol`, `rstorrent-engine`, and
+  `rstorrent-session` passed.

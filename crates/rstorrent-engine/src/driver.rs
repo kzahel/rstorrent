@@ -446,6 +446,11 @@ pub enum DownloadError {
     },
     InvalidResourceLimit(&'static str),
     InvalidTorrentIdentity(&'static str),
+    InconsistentHybridHashes {
+        piece: u32,
+        v1_matched: bool,
+        v2_matched: bool,
+    },
     MetainfoTooLarge {
         maximum: usize,
     },
@@ -521,6 +526,14 @@ impl fmt::Display for DownloadError {
             Self::InvalidTorrentIdentity(message) => {
                 write!(formatter, "invalid torrent identity context: {message}")
             }
+            Self::InconsistentHybridHashes {
+                piece,
+                v1_matched,
+                v2_matched,
+            } => write!(
+                formatter,
+                "hybrid piece {piece} has inconsistent integrity results (v1={v1_matched}, v2={v2_matched})"
+            ),
             Self::MetainfoTooLarge { maximum } => {
                 write!(formatter, "metainfo exceeds input limit {maximum}")
             }
@@ -4667,7 +4680,7 @@ impl<'a> ContentSwarmDownload<'a> {
             let candidate = candidate_pieces.contains(&piece);
             match content {
                 TorrentContent::V1(_) => requestable_pieces.push(piece),
-                TorrentContent::V2(_) => match content
+                TorrentContent::V2(_) | TorrentContent::Hybrid(_) => match content
                     .v2_expected_piece(&*integrity, piece)
                     .map_err(|error| DownloadError::StorageTask(error.to_string()))?
                 {
@@ -4687,7 +4700,7 @@ impl<'a> ContentSwarmDownload<'a> {
         let hash_scheduler = V2HashScheduler::new(hash_needs)
             .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
         let v2_hashes = match &*integrity {
-            TorrentIntegrity::V2(catalog) => {
+            TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog) => {
                 Some(V2SeedHashService::new(content.clone(), catalog.clone()))
             }
             TorrentIntegrity::V1 => None,
@@ -5825,7 +5838,10 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Extended { .. } => {}
             PeerMessage::SuggestPiece(_) | PeerMessage::AllowedFast(_) => {}
             PeerMessage::HashRequest(request) => {
-                if !matches!(&*self.integrity, TorrentIntegrity::V2(_)) {
+                if !matches!(
+                    &*self.integrity,
+                    TorrentIntegrity::V2(_) | TorrentIntegrity::Hybrid(_)
+                ) {
                     return Ok(ContentMessageDisposition::ClosePeer {
                         failure: PeerFailure::Protocol,
                         reason: "v2 hash request arrived on v1 content",
@@ -5850,7 +5866,9 @@ impl<'a> ContentSwarmDownload<'a> {
                         .scheduler
                         .owns_attempt(connection, response.request)
                 });
-                let TorrentIntegrity::V2(catalog) = &mut *self.integrity else {
+                let (TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog)) =
+                    &mut *self.integrity
+                else {
                     return Ok(ContentMessageDisposition::ClosePeer {
                         failure: PeerFailure::Protocol,
                         reason: "v2 hashes arrived on v1 content",
@@ -6054,12 +6072,26 @@ impl<'a> ContentSwarmDownload<'a> {
                         truncated.copy_from_slice(&root[..20]);
                         truncated
                     }
+                    ComputedPieceHash::Hybrid { sha1, .. } => sha1,
                 };
                 self.control
                     .record_bytes(ByteMetric::LogicalHashRead, length as usize);
                 self.state
                     .finish_piece_hash(piece, generation, verification.matched)
                     .map_err(DownloadError::Swarm)?;
+                if let Some(
+                    rstorrent_protocol::content::HybridVerificationOutcome::Inconsistent {
+                        v1_matched,
+                        v2_matched,
+                    },
+                ) = verification.hybrid_outcome
+                {
+                    return Err(DownloadError::InconsistentHybridHashes {
+                        piece,
+                        v1_matched,
+                        v2_matched,
+                    });
+                }
                 if !verification.matched {
                     if self.begin_leaf_diagnosis(piece, generation, length, now)? {
                         self.control.disk_piece_failed(
@@ -6136,6 +6168,31 @@ impl<'a> ContentSwarmDownload<'a> {
                         self.control
                             .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
                         ContentMessageDisposition::PieceVerified(Vec::new())
+                    }
+                    Ok(verification)
+                        if matches!(
+                            verification.hybrid_outcome,
+                            Some(
+                                rstorrent_protocol::content::HybridVerificationOutcome::Inconsistent {
+                                    ..
+                                }
+                            )
+                        ) =>
+                    {
+                        let Some(
+                            rstorrent_protocol::content::HybridVerificationOutcome::Inconsistent {
+                                v1_matched,
+                                v2_matched,
+                            },
+                        ) = verification.hybrid_outcome
+                        else {
+                            unreachable!("guard checked hybrid inconsistency")
+                        };
+                        return Err(DownloadError::InconsistentHybridHashes {
+                            piece,
+                            v1_matched,
+                            v2_matched,
+                        });
                     }
                     Ok(_) | Err(_) => {
                         self.candidate_pieces.remove(&piece);
@@ -6294,7 +6351,7 @@ impl<'a> ContentSwarmDownload<'a> {
             }
             match self.content {
                 TorrentContent::V1(_) => requestable.push(piece_index_u32),
-                TorrentContent::V2(_) => {
+                TorrentContent::V2(_) | TorrentContent::Hybrid(_) => {
                     let candidate = if self.candidate_pieces.contains(&piece_index_u32) {
                         true
                     } else {
@@ -6548,6 +6605,7 @@ fn diagnostic_piece_hash(
             truncated.copy_from_slice(&expected_root[..20]);
             Ok(truncated)
         }
+        ExpectedPieceIntegrity::Hybrid { v1_sha1, .. } => Ok(v1_sha1),
     }
 }
 
@@ -7770,7 +7828,7 @@ fn expected_piece_for_recheck(
             .expected_piece(integrity, piece)
             .map(Some)
             .map_err(|error| DownloadError::StorageTask(error.to_string())),
-        TorrentContent::V2(_) => content
+        TorrentContent::V2(_) | TorrentContent::Hybrid(_) => content
             .v2_expected_piece(integrity, piece)
             .map(|expected| match expected {
                 V2ExpectedPieceQuery::Known(expected) => Some(expected),

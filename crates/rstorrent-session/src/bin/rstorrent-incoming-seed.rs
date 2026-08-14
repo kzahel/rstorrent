@@ -170,7 +170,11 @@ async fn run() -> Result<(), SeedHarnessError> {
     let ready_json = serde_json::json!({
         "event": if arguments.staged_ipv6_pinhole { "pre_pinhole" } else { "ready" },
         "torrent_id": torrent_id.to_string(),
-        "protocol": match content { TorrentContent::V1(_) => "v1", TorrentContent::V2(_) => "v2" },
+        "protocol": match content {
+            TorrentContent::V1(_) => "v1",
+            TorrentContent::V2(_) => "v2",
+            TorrentContent::Hybrid(_) => "hybrid",
+        },
         "info_hash": hex(content.swarm_key().into_bytes()),
         "full_info_hash": full_info_hash(content),
         "listen": ready.listen_address.to_string(),
@@ -557,6 +561,15 @@ fn full_info_hash(content: &TorrentContent) -> String {
             .v2_hash()
             .expect("pure-v2 content has a v2 identity")
             .to_string(),
+        TorrentContent::Hybrid(_) => format!(
+            "{}+{}",
+            info_hashes
+                .v1_hash()
+                .expect("hybrid content has a v1 identity"),
+            info_hashes
+                .v2_hash()
+                .expect("hybrid content has a v2 identity")
+        ),
     }
 }
 

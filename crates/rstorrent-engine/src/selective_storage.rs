@@ -975,6 +975,7 @@ pub(crate) struct SelectiveHashPlan {
 enum PieceHashAlgorithm {
     Sha1,
     V2Merkle { target_height: u8 },
+    Hybrid { target_height: u8, zero_length: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -982,6 +983,11 @@ pub enum ComputedPieceHash {
     Sha1([u8; 20]),
     Sha256 {
         root: Sha256Hash,
+        retained_hash_high_water: usize,
+    },
+    Hybrid {
+        sha1: [u8; 20],
+        sha256_root: Sha256Hash,
         retained_hash_high_water: usize,
     },
 }
@@ -1066,13 +1072,21 @@ impl SelectiveHashPlan {
     }
 
     async fn hash_content(self) -> Result<ComputedPieceHash, SelectiveStorageError> {
-        let PieceHashAlgorithm::V2Merkle { target_height } = self.algorithm else {
-            return self
-                .hash()
-                .await
-                .map(|(hash, _)| ComputedPieceHash::Sha1(hash));
+        let (target_height, hybrid_zero_length) = match self.algorithm {
+            PieceHashAlgorithm::Sha1 => {
+                return self
+                    .hash()
+                    .await
+                    .map(|(hash, _)| ComputedPieceHash::Sha1(hash));
+            }
+            PieceHashAlgorithm::V2Merkle { target_height } => (target_height, None),
+            PieceHashAlgorithm::Hybrid {
+                target_height,
+                zero_length,
+            } => (target_height, Some(zero_length)),
         };
         let mut accumulator = MerkleAccumulator::new(0)?;
+        let mut sha1 = hybrid_zero_length.map(|_| Sha1::new());
         let mut high_water = 0;
         for span in self.spans {
             let (source, offset, length) = match span {
@@ -1085,23 +1099,47 @@ impl SelectiveHashPlan {
                     file_offset,
                     length,
                 ),
-                BlockingHashSpan::PartFile { .. } | BlockingHashSpan::Padding { .. } => {
+                BlockingHashSpan::PartFile { file, span } => (
+                    file.acquire(StorageFileAccess::ReadExisting)
+                        .await
+                        .map_err(SelectiveStorageError::PartFile)?,
+                    span.file_offset,
+                    span.length,
+                ),
+                BlockingHashSpan::Padding { .. } => {
                     return Err(SelectiveStorageError::InvalidStorageOperation(
-                        "v2 Merkle plan contains a part or padding span",
+                        "v2 Merkle plan contains a padding span",
                     ));
                 }
             };
-            accumulator = tokio::task::spawn_blocking(move || {
-                hash_merkle_file_span(accumulator, source, offset, length)
+            let (next_accumulator, next_sha1) = tokio::task::spawn_blocking(move || {
+                hash_merkle_file_span_with_sha1(accumulator, sha1, source, offset, length)
             })
             .await
             .map_err(|source| SelectiveStorageError::Io {
                 operation: "join v2 piece blocking verification job",
                 source: io::Error::other(source),
             })??;
+            accumulator = next_accumulator;
+            sha1 = next_sha1;
             high_water = high_water.max(accumulator.retained_hash_high_water());
         }
         let root = accumulator.finish_padded_to(target_height)?;
+        if let (Some(mut sha1), Some(zero_length)) = (sha1, hybrid_zero_length) {
+            let zeroes = [0_u8; VERIFICATION_CHUNK_LENGTH];
+            let mut remaining = usize::try_from(zero_length)
+                .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
+            while remaining != 0 {
+                let length = remaining.min(zeroes.len());
+                sha1.update(&zeroes[..length]);
+                remaining -= length;
+            }
+            return Ok(ComputedPieceHash::Hybrid {
+                sha1: sha1.finalize().into(),
+                sha256_root: root,
+                retained_hash_high_water: high_water,
+            });
+        }
         Ok(ComputedPieceHash::Sha256 {
             root,
             retained_hash_high_water: high_water,
@@ -1109,7 +1147,10 @@ impl SelectiveHashPlan {
     }
 
     pub(crate) async fn hash_v2_leaves(self) -> Result<Vec<Sha256Hash>, SelectiveStorageError> {
-        if !matches!(self.algorithm, PieceHashAlgorithm::V2Merkle { .. }) {
+        if !matches!(
+            self.algorithm,
+            PieceHashAlgorithm::V2Merkle { .. } | PieceHashAlgorithm::Hybrid { .. }
+        ) {
             return Err(SelectiveStorageError::InvalidStorageOperation(
                 "v2 leaf hashing requires a v2 Merkle plan",
             ));
@@ -1167,12 +1208,13 @@ impl SelectiveHashPlan {
     }
 }
 
-fn hash_merkle_file_span(
+fn hash_merkle_file_span_with_sha1(
     mut accumulator: MerkleAccumulator,
+    mut sha1: Option<Sha1>,
     file: StorageFileLease,
     file_offset: u64,
     span_length: usize,
-) -> Result<MerkleAccumulator, SelectiveStorageError> {
+) -> Result<(MerkleAccumulator, Option<Sha1>), SelectiveStorageError> {
     let mut buffer = [0_u8; VERIFICATION_CHUNK_LENGTH];
     let mut consumed = 0_usize;
     while consumed < span_length {
@@ -1191,10 +1233,13 @@ fn hash_merkle_file_span(
                 source,
             }
         })?;
+        if let Some(hasher) = sha1.as_mut() {
+            hasher.update(&buffer[..length]);
+        }
         accumulator.push(hash_block(&buffer[..length])?)?;
         consumed += length;
     }
-    Ok(accumulator)
+    Ok((accumulator, sha1))
 }
 
 async fn spawn_blocking_hash_span(
@@ -3125,18 +3170,32 @@ impl SelectiveStorage {
             .segments(piece_index, 0, piece_length, &self.selection)?;
         let piece_index_usize = usize::try_from(piece_index)
             .map_err(|_| SelectiveStorageError::Layout(LayoutError::ArithmeticOverflow))?;
-        let algorithm = match self
-            .content
-            .as_ref()
-            .map(|content| content.piece_hash_target_height(piece_index))
-            .transpose()
-            .map_err(|_| {
-                SelectiveStorageError::InvalidStorageOperation("invalid expected piece geometry")
-            })?
-            .flatten()
-        {
-            Some(target_height) => PieceHashAlgorithm::V2Merkle { target_height },
-            None => PieceHashAlgorithm::Sha1,
+        let algorithm = match self.content.as_deref() {
+            Some(content @ TorrentContent::V2(_)) => PieceHashAlgorithm::V2Merkle {
+                target_height: content
+                    .piece_hash_target_height(piece_index)
+                    .map_err(|_| {
+                        SelectiveStorageError::InvalidStorageOperation(
+                            "invalid expected piece geometry",
+                        )
+                    })?
+                    .expect("v2 piece hash target exists"),
+            },
+            Some(TorrentContent::Hybrid(content)) => PieceHashAlgorithm::Hybrid {
+                target_height: self
+                    .content
+                    .as_deref()
+                    .expect("hybrid content exists")
+                    .piece_hash_target_height(piece_index)
+                    .map_err(|_| {
+                        SelectiveStorageError::InvalidStorageOperation(
+                            "invalid expected piece geometry",
+                        )
+                    })?
+                    .expect("hybrid v2 piece hash target exists"),
+                zero_length: content.padding.zero_length(piece_index),
+            },
+            Some(TorrentContent::V1(_)) | None => PieceHashAlgorithm::Sha1,
         };
         self.prepare_blocking_hash_plan(piece_index_usize, &segments, algorithm)
     }
@@ -5125,6 +5184,100 @@ mod tests {
         )
         .expect("complete pure-v2 fixture");
         (projection.content, projection.integrity)
+    }
+
+    fn hybrid_content() -> (
+        TorrentContent,
+        rstorrent_protocol::content::TorrentIntegrity,
+    ) {
+        let piece_length = 16 * 1024;
+        let roots = [
+            file_root_from_data(&[1]).expect("first hybrid root"),
+            file_root_from_data(&[2]).expect("second hybrid root"),
+        ];
+        let mut tree = vec![b'd'];
+        for (name, root) in [(b'a', roots[0]), (b'b', roots[1])] {
+            bstr(&mut tree, &[name]);
+            tree.extend_from_slice(b"d0:d6:lengthi1e11:pieces root32:");
+            tree.extend_from_slice(&root);
+            tree.extend_from_slice(b"ee");
+        }
+        tree.push(b'e');
+        let mut first_piece = vec![1];
+        first_piece.resize(piece_length, 0);
+        let pieces = [
+            <[u8; 20]>::from(Sha1::digest(&first_piece)),
+            <[u8; 20]>::from(Sha1::digest([2])),
+        ];
+        let mut info = b"d9:file tree".to_vec();
+        info.extend_from_slice(&tree);
+        info.extend_from_slice(
+            concat!(
+                "5:filesl",
+                "d6:lengthi1e4:pathl1:aee",
+                "d4:attr1:p6:lengthi16383ee",
+                "d6:lengthi1e4:pathl1:bee",
+                "e12:meta versioni2e4:name4:root12:piece lengthi16384e",
+                "6:pieces40:"
+            )
+            .as_bytes(),
+        );
+        info.extend_from_slice(&pieces.concat());
+        info.push(b'e');
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersdee");
+        let projection = TorrentContentProjection::from_bytes_with_limits(
+            &source,
+            EXPLICIT_IMPORT_METAINFO_LIMITS,
+        )
+        .expect("complete hybrid fixture");
+        (projection.content, projection.integrity)
+    }
+
+    #[tokio::test]
+    async fn hybrid_hashes_real_bytes_once_and_synthesizes_v1_padding() {
+        let (content, integrity) = hybrid_content();
+        let content = Arc::new(content);
+        let output = test_path("hybrid-root");
+        let mut storage = SelectiveStorage::create_content(
+            output,
+            test_artifact_identity(),
+            content.clone(),
+            &[],
+        )
+        .await
+        .expect("create hybrid storage");
+        for (piece, byte) in [(0, 1), (1, 2)] {
+            storage
+                .write_block(piece, 0, vec![byte])
+                .await
+                .expect("write hybrid payload byte");
+            let actual = storage
+                .hash_piece_content(piece)
+                .await
+                .expect("one-pass hybrid hash");
+            let expected = content
+                .expected_piece(&integrity, piece)
+                .expect("dual hybrid expectation");
+            assert!(matches!(
+                (actual, expected),
+                (
+                    ComputedPieceHash::Hybrid {
+                        sha1,
+                        sha256_root,
+                        retained_hash_high_water: 1,
+                    },
+                    ExpectedPieceIntegrity::Hybrid {
+                        v1_sha1,
+                        v2_expected_root,
+                        ..
+                    }
+                ) if sha1 == v1_sha1 && sha256_root == v2_expected_root
+            ));
+        }
+        assert_eq!(content.hybrid_padding().unwrap().zero_length(0), 16_383);
+        assert_eq!(content.hybrid_padding().unwrap().zero_length(1), 0);
     }
 
     #[tokio::test]

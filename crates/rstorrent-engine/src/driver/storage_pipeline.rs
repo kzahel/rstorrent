@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rstorrent_protocol::content::ExpectedPieceIntegrity;
+use rstorrent_protocol::content::{ExpectedPieceIntegrity, HybridVerificationOutcome};
 use rstorrent_protocol::merkle::Sha256Hash;
 use rstorrent_protocol::peer_wire::MAX_REQUEST_BLOCK_LENGTH;
 use rstorrent_protocol::storage_layout::LayoutError;
@@ -225,6 +225,7 @@ pub(super) enum ContentStorageCompletion {
 pub(super) struct ContentVerification {
     pub(super) actual: ComputedPieceHash,
     pub(super) matched: bool,
+    pub(super) hybrid_outcome: Option<HybridVerificationOutcome>,
     pub(super) durability_targets: Vec<DurabilityTarget>,
 }
 
@@ -1645,7 +1646,7 @@ fn finish_content_hash_job(
             result: hash_result,
         } => {
             let verification = hash_result.and_then(|actual| {
-                let matched = content_hash_matches(actual, expected);
+                let (matched, hybrid_outcome) = content_hash_outcome(actual, expected);
                 if matched {
                     let piece_index = usize::try_from(result.piece)
                         .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
@@ -1657,6 +1658,7 @@ fn finish_content_hash_job(
                 Ok(ContentVerification {
                     actual,
                     matched,
+                    hybrid_outcome,
                     durability_targets: if matched {
                         durability_targets
                     } else {
@@ -1691,9 +1693,16 @@ pub(super) fn content_hash_matches(
     actual: ComputedPieceHash,
     expected: ExpectedPieceIntegrity,
 ) -> bool {
+    content_hash_outcome(actual, expected).0
+}
+
+fn content_hash_outcome(
+    actual: ComputedPieceHash,
+    expected: ExpectedPieceIntegrity,
+) -> (bool, Option<HybridVerificationOutcome>) {
     match (actual, expected) {
         (ComputedPieceHash::Sha1(actual), ExpectedPieceIntegrity::V1Sha1(expected)) => {
-            actual == expected
+            (actual == expected, None)
         }
         (
             ComputedPieceHash::Sha256 { root: actual, .. },
@@ -1701,7 +1710,26 @@ pub(super) fn content_hash_matches(
                 expected_root: expected,
                 ..
             },
-        ) => actual == expected,
-        _ => false,
+        ) => (actual == expected, None),
+        (
+            ComputedPieceHash::Hybrid {
+                sha1, sha256_root, ..
+            },
+            ExpectedPieceIntegrity::Hybrid {
+                v1_sha1,
+                v2_expected_root,
+                ..
+            },
+        ) => {
+            let outcome = HybridVerificationOutcome::classify(
+                sha1 == v1_sha1,
+                sha256_root == v2_expected_root,
+            );
+            (
+                outcome == HybridVerificationOutcome::Verified,
+                Some(outcome),
+            )
+        }
+        _ => (false, None),
     }
 }

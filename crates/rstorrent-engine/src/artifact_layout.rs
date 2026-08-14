@@ -23,13 +23,16 @@ impl PublicationShape {
     pub fn from_content(content: &TorrentContent) -> Self {
         match content {
             TorrentContent::V1(content) => Self::from_metainfo(&content.metainfo),
-            TorrentContent::V2(content)
-                if content.metainfo.files.len() == 1
-                    && content.metainfo.files[0].path == [content.metainfo.name.as_str()] =>
-            {
-                Self::File
+            TorrentContent::V2(_) | TorrentContent::Hybrid(_) => {
+                let metainfo = content
+                    .v2_metainfo()
+                    .expect("v2-shaped content has v2 metainfo");
+                if metainfo.files.len() == 1 && metainfo.files[0].path == [metainfo.name.as_str()] {
+                    Self::File
+                } else {
+                    Self::Tree
+                }
             }
-            TorrentContent::V2(_) => Self::Tree,
         }
     }
 }
@@ -58,17 +61,20 @@ impl PublishedArtifactLayout {
     pub fn from_content(content: &TorrentContent) -> Result<Self, ArtifactLayoutError> {
         match content {
             TorrentContent::V1(content) => Self::from_metainfo(&content.metainfo),
-            TorrentContent::V2(content) => {
-                validate_component(&content.metainfo.name)?;
-                let shape = if content.metainfo.files.len() == 1
-                    && content.metainfo.files[0].path == [content.metainfo.name.as_str()]
+            TorrentContent::V2(_) | TorrentContent::Hybrid(_) => {
+                let metainfo = content
+                    .v2_metainfo()
+                    .expect("v2-shaped content has v2 metainfo");
+                validate_component(&metainfo.name)?;
+                let shape = if metainfo.files.len() == 1
+                    && metainfo.files[0].path == [metainfo.name.as_str()]
                 {
                     PublicationShape::File
                 } else {
                     PublicationShape::Tree
                 };
-                let mut files = Vec::with_capacity(content.metainfo.files.len());
-                for (file_index, file) in content.metainfo.files.iter().enumerate() {
+                let mut files = Vec::with_capacity(metainfo.files.len());
+                for (file_index, file) in metainfo.files.iter().enumerate() {
                     if file.path.is_empty()
                         || file
                             .path
@@ -78,8 +84,8 @@ impl PublishedArtifactLayout {
                         return Err(ArtifactLayoutError::InvalidComponent);
                     }
                     let qualified_components = match shape {
-                        PublicationShape::File => vec![content.metainfo.name.clone()],
-                        PublicationShape::Tree => std::iter::once(content.metainfo.name.clone())
+                        PublicationShape::File => vec![metainfo.name.clone()],
+                        PublicationShape::Tree => std::iter::once(metainfo.name.clone())
                             .chain(file.path.iter().cloned())
                             .collect(),
                     };
@@ -92,7 +98,7 @@ impl PublishedArtifactLayout {
                     });
                 }
                 Ok(Self {
-                    namespace: content.metainfo.name.clone(),
+                    namespace: metainfo.name.clone(),
                     shape,
                     files,
                 })

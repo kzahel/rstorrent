@@ -207,6 +207,12 @@ impl PreparedTorrentBytes {
                     .v2_hash()
                     .expect("pure-v2 projection has a v2 identity"),
             ),
+            TorrentContent::Hybrid(content) => FullInfoHash::V1(
+                content
+                    .info_hashes
+                    .v1_hash()
+                    .expect("hybrid projection has a v1 identity"),
+            ),
         }
     }
 }
@@ -5160,7 +5166,7 @@ fn wanted_piece_evidence(
                     .map_err(|error| StoreError::DurableState(error.to_string()))?
                     .is_empty()
             }
-            ContentLayout::V2 { layout, .. } => {
+            ContentLayout::V2 { layout, .. } | ContentLayout::Hybrid { layout, .. } => {
                 let piece = layout
                     .piece(piece_index)
                     .map_err(|error| StoreError::DurableState(error.to_string()))?;

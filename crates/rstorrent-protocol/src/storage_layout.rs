@@ -221,6 +221,10 @@ pub enum ContentLayout {
         layout: V2TorrentLayout,
         files: Vec<MetainfoFile>,
     },
+    Hybrid {
+        layout: V2TorrentLayout,
+        files: Vec<MetainfoFile>,
+    },
 }
 
 impl From<TorrentLayout> for ContentLayout {
@@ -248,6 +252,22 @@ impl ContentLayout {
                     })
                     .collect(),
             },
+            TorrentContent::Hybrid(content) => Self::Hybrid {
+                layout: content.metainfo.v2.layout.clone(),
+                files: content
+                    .metainfo
+                    .v2
+                    .files
+                    .iter()
+                    .zip(content.metainfo.v2.layout.files())
+                    .map(|(file, geometry)| MetainfoFile {
+                        path: file.path.clone(),
+                        length: file.length,
+                        offset: geometry.logical_offset(),
+                        padding: false,
+                    })
+                    .collect(),
+            },
         }
     }
 
@@ -255,41 +275,42 @@ impl ContentLayout {
         match self {
             Self::V1(_) => MetainfoFormat::V1,
             Self::V2 { .. } => MetainfoFormat::V2,
+            Self::Hybrid { .. } => MetainfoFormat::Hybrid,
         }
     }
 
     pub fn files(&self) -> &[MetainfoFile] {
         match self {
             Self::V1(layout) => layout.files(),
-            Self::V2 { files, .. } => files,
+            Self::V2 { files, .. } | Self::Hybrid { files, .. } => files,
         }
     }
 
     pub fn piece_count(&self) -> usize {
         match self {
             Self::V1(layout) => layout.piece_count(),
-            Self::V2 { layout, .. } => layout.piece_count(),
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => layout.piece_count(),
         }
     }
 
     pub fn piece_length(&self) -> u32 {
         match self {
             Self::V1(layout) => layout.piece_length(),
-            Self::V2 { layout, .. } => layout.piece_length(),
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => layout.piece_length(),
         }
     }
 
     pub fn total_length(&self) -> u64 {
         match self {
             Self::V1(layout) => layout.total_length(),
-            Self::V2 { layout, .. } => layout.payload_length(),
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => layout.payload_length(),
         }
     }
 
     pub fn piece_length_at(&self, index: u32) -> Result<u32, LayoutError> {
         match self {
             Self::V1(layout) => layout.piece_length_at(index),
-            Self::V2 { layout, .. } => layout
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => layout
                 .piece(index)
                 .map(|piece| piece.payload_length)
                 .map_err(|_| LayoutError::InvalidPieceIndex {
@@ -308,7 +329,7 @@ impl ContentLayout {
     ) -> Result<Vec<LayoutSegment>, LayoutError> {
         match self {
             Self::V1(layout) => layout.segments(piece, begin, length, selection),
-            Self::V2 { layout, files } => {
+            Self::V2 { layout, files } | Self::Hybrid { layout, files } => {
                 if length == 0 {
                     return Err(LayoutError::EmptyInterval);
                 }
@@ -372,7 +393,7 @@ impl ContentLayout {
     ) -> Result<Vec<RequestRange>, LayoutError> {
         match self {
             Self::V1(layout) => layout.request_ranges(index, selection),
-            Self::V2 { layout, .. } => {
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => {
                 let piece = layout
                     .piece(index)
                     .map_err(|_| LayoutError::InvalidPieceIndex {
@@ -402,7 +423,7 @@ impl ContentLayout {
     ) -> Result<Vec<FileLayoutSegment>, LayoutError> {
         match self {
             Self::V1(layout) => layout.file_segments(piece, begin, length),
-            Self::V2 { layout, .. } => {
+            Self::V2 { layout, .. } | Self::Hybrid { layout, .. } => {
                 if length == 0 {
                     return Err(LayoutError::EmptyInterval);
                 }
@@ -450,7 +471,7 @@ impl ContentLayout {
     ) -> Result<RequiredPayloadGeometry, LayoutError> {
         match self {
             Self::V1(layout) => layout.required_payload_geometry(selection, have),
-            Self::V2 { files, .. } => {
+            Self::V2 { files, .. } | Self::Hybrid { files, .. } => {
                 if selection.file_count() != files.len() {
                     return Err(LayoutError::InvalidFileIndex {
                         index: selection.file_count(),
@@ -499,7 +520,7 @@ impl ContentLayout {
                     file_count: layout.files().len(),
                 },
             ),
-            Self::V2 { layout, files } => {
+            Self::V2 { layout, files } | Self::Hybrid { layout, files } => {
                 files.get(index).ok_or(LayoutError::InvalidFileIndex {
                     index,
                     file_count: files.len(),
@@ -524,7 +545,7 @@ impl ContentLayout {
     ) -> Result<Option<RangeInclusive<u32>>, LayoutError> {
         match self {
             Self::V1(layout) => layout.file_piece_range(index),
-            Self::V2 { layout, files } => {
+            Self::V2 { layout, files } | Self::Hybrid { layout, files } => {
                 let file = files.get(index).ok_or(LayoutError::InvalidFileIndex {
                     index,
                     file_count: files.len(),

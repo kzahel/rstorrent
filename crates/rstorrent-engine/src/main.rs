@@ -210,7 +210,7 @@ async fn main() -> ExitCode {
                     };
                     download_verified_piece_with_control(config, control.clone()).await
                 }
-                TorrentContent::V2(v2) => {
+                content @ (TorrentContent::V2(_) | TorrentContent::Hybrid(_)) => {
                     if !config.materialize_files.is_empty() {
                         return report_result(
                             Err(DownloadError::InvalidTorrentIdentity(
@@ -250,7 +250,7 @@ async fn main() -> ExitCode {
                             activity.first_verified_piece(),
                         );
                     }
-                    let piece_count = v2.metainfo.layout.piece_count();
+                    let piece_count = content.piece_count();
                     let encryption = PeerEncryptionPolicyHandle::new(config.network.encryption);
                     resume_metainfo_with_control(
                         ResumableMetainfoDownloadConfig {
