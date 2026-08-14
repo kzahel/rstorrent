@@ -283,10 +283,24 @@ function GeneralDetail({
           value={torrent.peersKnown?.toLocaleString() ?? "—"}
         />
       </dl>
-      <div className={styles.identity}>
-        <span>Info hash</span>
-        <code>{torrent.infoHash}</code>
-      </div>
+      {torrent.protocolIdentities?.v1 != null &&
+      torrent.protocolIdentities.v2 != null ? (
+        <>
+          <div className={styles.identity}>
+            <span>Info hash (v1)</span>
+            <code>{torrent.protocolIdentities.v1}</code>
+          </div>
+          <div className={styles.identity}>
+            <span>Info hash (v2)</span>
+            <code>{torrent.protocolIdentities.v2}</code>
+          </div>
+        </>
+      ) : (
+        <div className={styles.identity}>
+          <span>Info hash</span>
+          <code>{torrent.infoHash}</code>
+        </div>
+      )}
       <TorrentRateLimits torrent={torrent} />
       {torrent.error === null ? null : (
         <div ref={errorRef} className={styles.error} role="alert" tabIndex={-1}>

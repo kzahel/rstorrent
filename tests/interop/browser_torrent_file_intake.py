@@ -190,6 +190,12 @@ def run_v2_magnet_playwright(
     torrent_name: str,
     magnet: str,
     phase: str,
+    *,
+    skip_name: str = "skip.bin",
+    second_magnet: str | None = None,
+    v1_info_hash: str | None = None,
+    v2_info_hash: str | None = None,
+    file_count: int = 4,
 ) -> str:
     environment = os.environ.copy()
     environment.pop("FORCE_COLOR", None)
@@ -201,9 +207,16 @@ def run_v2_magnet_playwright(
             "RSTORRENT_LIVE_GATEWAY_TOKEN": TOKEN,
             "RSTORRENT_LIVE_TORRENT_NAME": torrent_name,
             "RSTORRENT_LIVE_V2_MAGNET_PHASE": phase,
-            "RSTORRENT_LIVE_V2_MAGNET_SKIP_NAME": "skip.bin",
+            "RSTORRENT_LIVE_V2_MAGNET_SKIP_NAME": skip_name,
+            "RSTORRENT_LIVE_V2_MAGNET_FILE_COUNT": str(file_count),
         }
     )
+    if second_magnet is not None:
+        environment["RSTORRENT_LIVE_SECOND_MAGNET"] = second_magnet
+    if v1_info_hash is not None:
+        environment["RSTORRENT_LIVE_V1_INFO_HASH"] = v1_info_hash
+    if v2_info_hash is not None:
+        environment["RSTORRENT_LIVE_V2_INFO_HASH"] = v2_info_hash
     if phase == "add":
         environment["RSTORRENT_LIVE_MAGNET"] = magnet
     completed = subprocess.run(

@@ -3563,6 +3563,10 @@ impl ApplicationService {
             self.unregister_incoming(&reconciliation.loser).await?;
             let _joined = self.join_active_content(&reconciliation.loser).await;
             self.torrent_runtimes.remove(&reconciliation.loser);
+            self.stop_discovery_torrent(&reconciliation.winner).await?;
+            self.unregister_incoming(&reconciliation.winner).await?;
+            let _joined = self.join_active_content(&reconciliation.winner).await;
+            self.torrent_runtimes.remove(&reconciliation.winner);
             self.views.record_diagnostic(
                 DiagnosticSeverity::Info,
                 category::METADATA_EXCHANGE,
@@ -6063,8 +6067,8 @@ mod tests {
         OpenViewSetOptions, OpenViewSetRequest, PeerDirection, PeerFlagView, PeerLifecycle,
         PeerRole, PeerSourceView, PeerTransportKind, PeerView, ProgressDisposition, ProgressReason,
         RemovalDataPolicy, RemovalState, RequestEnvelope, ResponseOutcome, SessionStore,
-        StorageState, SubscriptionSpec, SwarmCatalogState, SwarmPeerState, SwarmPeerView,
-        TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
+        StorageState, StoreError, SubscriptionSpec, SwarmCatalogState, SwarmPeerState,
+        SwarmPeerView, TorrentState, TrackerConnectionFamilyView, TrackerSecurityView, TrackerView,
         ViewDeliveryPolicy, ViewPatch, ViewProjection, ViewSelector, ViewSetError, ViewSetOwner,
         ViewSetUpdate, ViewSnapshot, ViewSpec, ViewUpdatePayload,
     };
@@ -8912,6 +8916,93 @@ mod tests {
         reopened.shutdown().await.expect("shutdown reopened hybrid");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove hybrid application root");
+    }
+
+    #[tokio::test]
+    async fn hybrid_reconciliation_restarts_survivor_with_both_identities() {
+        let root = test_root("hybrid-runtime-reconciliation");
+        let mut service = ApplicationService::open(config(&root))
+            .await
+            .expect("open hybrid reconciliation application");
+        let source = hybrid_source();
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("hybrid reconciliation fixture");
+        let raw_info = source[projection.info_span.clone()].to_vec();
+        let hashes = projection.content.info_hashes();
+        let v1 = hashes.v1_hash().expect("hybrid v1 identity");
+        let v2 = hashes.v2_hash().expect("hybrid v2 identity");
+        let add = |request_id: &str, magnet: String| RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet,
+                storage_root: "downloads".to_owned(),
+                start_content: true,
+                skip_files: Vec::new(),
+            },
+        };
+        let first = service
+            .dispatch(add(
+                "hybrid-runtime-v1",
+                format!("magnet:?xt=urn:btih:{v1}"),
+            ))
+            .await
+            .expect("add first provisional hybrid owner");
+        let first_id = match first.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("first provisional add result"),
+        };
+        let second = service
+            .dispatch(add(
+                "hybrid-runtime-v2",
+                format!("magnet:?xt=urn:btmh:1220{v2}"),
+            ))
+            .await
+            .expect("add second provisional hybrid owner");
+        let second_id = match second.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("second provisional add result"),
+        };
+        assert_ne!(first_id, second_id);
+        let reconciliation = service
+            .store_mut()
+            .expect("hybrid reconciliation store")
+            .record_metadata(&second_id, &raw_info)
+            .expect_err("second owner reconciles into first");
+        assert!(matches!(
+            reconciliation,
+            StoreError::Reconciled {
+                ref winner,
+                ref loser,
+            } if winner == &first_id && loser == &second_id
+        ));
+
+        service
+            .reconcile_admission()
+            .await
+            .expect("restart reconciled survivor");
+        let snapshot = service
+            .store_mut()
+            .expect("hybrid reconciliation store")
+            .snapshot()
+            .expect("hybrid reconciliation snapshot");
+        assert_eq!(snapshot.torrents.len(), 1);
+        assert_eq!(snapshot.torrents[0].torrent_id, first_id);
+        assert!(!service.torrent_runtimes.contains_key(&second_id));
+        let survivor = service
+            .torrent_runtimes
+            .get(&first_id)
+            .expect("reconciled survivor runtime");
+        assert!(survivor.handle().identity().info_hashes().is_hybrid());
+        assert!(survivor.active_download().is_some());
+
+        service
+            .shutdown()
+            .await
+            .expect("shutdown hybrid reconciliation application");
+        fs::remove_dir_all(root).expect("remove hybrid reconciliation root");
     }
 
     #[tokio::test]

@@ -1105,6 +1105,7 @@ function mapTorrent(torrent: TorrentView): TorrentRow {
     deleteManagedDataSupported: torrent.delete_managed_data_supported,
     forceRecheckAvailable: torrent.force_recheck_available,
     infoHash,
+    protocolIdentities: torrent.protocol_identities,
     error: torrent.error ?? null,
     progressReason: torrent.progress.reason.replaceAll("_", " "),
   };

@@ -199,6 +199,10 @@ export interface TorrentRow {
   readonly deleteManagedDataSupported: boolean;
   readonly forceRecheckAvailable: boolean;
   readonly infoHash: string;
+  readonly protocolIdentities?: {
+    readonly v1?: string | null;
+    readonly v2?: string | null;
+  };
   readonly error: string | null;
   readonly progressReason: string;
 }

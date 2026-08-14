@@ -33,6 +33,10 @@ const torrentFileWantedName =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_WANTED_NAME;
 const v2MagnetPhase = process.env.RSTORRENT_LIVE_V2_MAGNET_PHASE;
 const v2MagnetSkipName = process.env.RSTORRENT_LIVE_V2_MAGNET_SKIP_NAME;
+const v2MagnetSecond = process.env.RSTORRENT_LIVE_SECOND_MAGNET;
+const v2MagnetV1Hash = process.env.RSTORRENT_LIVE_V1_INFO_HASH;
+const v2MagnetV2Hash = process.env.RSTORRENT_LIVE_V2_INFO_HASH;
+const v2MagnetFileCount = process.env.RSTORRENT_LIVE_V2_MAGNET_FILE_COUNT;
 const clientSettingsPhase = process.env.RSTORRENT_LIVE_CLIENT_SETTINGS_PHASE;
 
 test("client settings apply live, persist, and recover bind failure", async ({
@@ -335,6 +339,12 @@ test("live v2 magnet lifecycle uses the production application", async ({
     await input.press("Enter");
     await confirmDefaultAddOptions(page);
     await expect(page.getByRole("status")).toHaveText(/Added|Torrent added/);
+    if (v2MagnetSecond !== undefined) {
+      await input.fill(v2MagnetSecond);
+      await input.press("Enter");
+      await confirmDefaultAddOptions(page);
+      await expect(page.getByRole("status")).toHaveText(/Added|Torrent added/);
+    }
   }
 
   const transferRow = transfers
@@ -343,6 +353,9 @@ test("live v2 magnet lifecycle uses the production application", async ({
   await expect(transferRow).toContainText(/Complete|Seeding/, {
     timeout: 60_000,
   });
+  if (v2MagnetSecond !== undefined) {
+    await expect(transfers.locator("[data-row-id]")).toHaveCount(1);
+  }
   await transferRow.click();
   await page
     .getByRole("navigation", { name: "Primary" })
@@ -354,9 +367,19 @@ test("live v2 magnet lifecycle uses the production application", async ({
     .filter({ hasText: torrentName! });
   await expect(torrentRow).toContainText("complete");
   await torrentRow.click();
+  if (v2MagnetV1Hash !== undefined && v2MagnetV2Hash !== undefined) {
+    await page.getByRole("tab", { name: "General" }).click();
+    await expect(page.getByText("Info hash (v1)", { exact: true })).toBeVisible();
+    await expect(page.getByText(v2MagnetV1Hash, { exact: true })).toBeVisible();
+    await expect(page.getByText("Info hash (v2)", { exact: true })).toBeVisible();
+    await expect(page.getByText(v2MagnetV2Hash, { exact: true })).toBeVisible();
+  }
   await page.getByRole("tab", { name: "Files" }).click();
   const files = page.getByRole("grid", { name: "Torrent files" });
-  await expect(files).toHaveAttribute("aria-rowcount", "4");
+  await expect(files).toHaveAttribute(
+    "aria-rowcount",
+    v2MagnetFileCount ?? "4",
+  );
   await expect(
     files
       .getByRole("row")
@@ -364,12 +387,25 @@ test("live v2 magnet lifecycle uses the production application", async ({
       .getByText("Skip", { exact: true }),
   ).toBeVisible();
 
+  if (v2MagnetV1Hash !== undefined && v2MagnetV2Hash !== undefined) {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: applicationOrigin!,
+    });
+  }
   await torrentRow.click({ button: "right" });
   await page
     .getByRole("menu")
     .getByRole("menuitem", { name: "Copy magnet link" })
     .click();
   await expect(page.getByText("Magnet link copied", { exact: true })).toBeVisible();
+  if (v2MagnetV1Hash !== undefined && v2MagnetV2Hash !== undefined) {
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toMatch(
+      new RegExp(
+        `^magnet:\\?xt=urn:btih:${v2MagnetV1Hash}&xt=urn:btmh:1220${v2MagnetV2Hash}`,
+      ),
+    );
+  }
 
   const violations = (
     await new AxeBuilder({ page }).analyze()
@@ -398,7 +434,7 @@ test("live v2 magnet lifecycle uses the production application", async ({
   expect(binaryFrames).toBe(0);
   expect(semanticHttpRequests).toEqual([]);
   console.log(
-    `v2_magnet_live_milestone ${JSON.stringify({ phase: v2MagnetPhase, applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
+    `v2_magnet_live_milestone ${JSON.stringify({ phase: v2MagnetPhase, applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length, reconciledRows: v2MagnetSecond === undefined ? null : 1, identities: v2MagnetV1Hash === undefined ? 1 : 2 })}`,
   );
 });
 
