@@ -1029,3 +1029,27 @@ unless a bounded artifact is explicitly retained and linked.
 Stage 3 begins with the torrent-owned logical-need and attempt scheduler,
 payload gating, candidate verification, and complete-file reconstruction. Do
 not infer payload download support from wire decoding alone.
+
+### 2026-08-14 Stage 6 controlled interoperability checkpoint
+
+- The pinned libtorrent `2.0.13.0` Python/native oracle now completes direct
+  plaintext TCP `btmh` plus `x.pe` magnet downloads in both roles without a
+  preloaded torrent on the leecher. The aligned multi-file RSTorrent role
+  applies `so` only after authenticated metadata reveals file geometry and
+  writes no skipped-file payload. Repeated RSTorrent seed runs prove restart
+  from durable complete source.
+- A frame-aware bounded TCP oracle asserts messages 21 and 22 in both the
+  initiated and accepted roles. It independently retains exact base, index,
+  count, and proof-layer observations and caught the proof-layer
+  interpretation corrected in Stage 2.
+- The aligned multi-file oracle now gates two distinct pinned-libtorrent seed
+  peers, corrupts one exact 16-KiB payload frame, observes a base-zero leaf
+  request and valid hashes response from the clean peer, and verifies exact
+  final content. Every other block in the failed four-block piece is fetched
+  once while the diagnosed block is fetched exactly once from the repair
+  peer, proving selective repair rather than whole-piece fallback. Proxy,
+  peer, session, process, and temporary-tree cleanup is joined and asserted.
+- The existing controlled matrix remains green for forced-RC4 TCP and both
+  accepted and initiated uTP roles, including UDP-tracker-only and DHT-only
+  discovery. Same-session selection promotion and first-party platform gates
+  remain before Stage 6 closure.

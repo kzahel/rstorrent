@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the complete-source pure-v2 runtime against pinned libtorrent."""
+"""Prove pure-v2 magnet, hash, recovery, and seed roles against libtorrent."""
 
 from __future__ import annotations
 
@@ -8,10 +8,13 @@ import gc
 import hashlib
 import json
 import resource
+import select
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,8 +58,270 @@ class RuntimeFixture:
         return sum(len(source.data) for source in self.files)
 
 
+class PlaintextBep52Proxy:
+    """Frame-aware TCP proxy for exact BEP 52 observations and one mutation."""
+
+    def __init__(
+        self,
+        upstream: tuple[str, int],
+        *,
+        corrupt_first_piece: bool = False,
+        activation: threading.Event | None = None,
+        release_on_corruption: threading.Event | None = None,
+        peer_id_salt: int = 0,
+        gate_unchoke: bool = False,
+    ) -> None:
+        self._upstream = upstream
+        self._corrupt_first_piece = corrupt_first_piece
+        self._activation = activation
+        self._release_on_corruption = release_on_corruption
+        self._peer_id_salt = peer_id_salt
+        self._gate_unchoke = gate_unchoke
+        self._gated_unchoke = False
+        self._send_lock = threading.Lock()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._sockets: list[socket.socket] = []
+        self._workers: list[threading.Thread] = []
+        self._hash_requests: list[tuple[int, int, int, int]] = []
+        self._hash_responses = 0
+        self._hash_rejects = 0
+        self._piece_frames = 0
+        self._piece_messages: list[tuple[int, int, int]] = []
+        self._corrupted: tuple[int, int, int] | None = None
+        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(("127.0.0.1", 0))
+        self._listener.listen()
+        self._listener.settimeout(0.1)
+        address = self._listener.getsockname()
+        self.endpoint = (str(address[0]), int(address[1]))
+        self._acceptor = threading.Thread(target=self._accept, daemon=True)
+        self._acceptor.start()
+
+    def _accept(self) -> None:
+        while not self._stop.is_set():
+            try:
+                client, _ = self._listener.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            with self._lock:
+                self._sockets.append(client)
+            worker = threading.Thread(target=self._forward, args=(client,), daemon=True)
+            with self._lock:
+                self._workers.append(worker)
+            worker.start()
+
+    def _forward(self, client: socket.socket) -> None:
+        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        with self._lock:
+            self._sockets.append(upstream)
+        buffers = {client: bytearray(), upstream: bytearray()}
+        handshakes = {client: False, upstream: False}
+        try:
+            upstream.connect(self._upstream)
+            client.setblocking(False)
+            upstream.setblocking(False)
+            open_reads = {client, upstream}
+            while open_reads and not self._stop.is_set():
+                readable, _, _ = select.select(list(open_reads), [], [], 0.1)
+                for source in readable:
+                    destination = upstream if source is client else client
+                    try:
+                        chunk = source.recv(64 * 1024)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        open_reads.remove(source)
+                        try:
+                            destination.shutdown(socket.SHUT_WR)
+                        except OSError:
+                            pass
+                        continue
+                    direction = "client" if source is client else "upstream"
+                    output = self._frame_bytes(
+                        buffers[source],
+                        handshakes,
+                        source,
+                        destination,
+                        chunk,
+                        direction,
+                    )
+                    self._send_all(destination, output)
+                    if self._corrupt_first_piece and self._corrupted is not None:
+                        open_reads.clear()
+                        break
+        except (ConnectionError, OSError, ValueError):
+            pass
+        finally:
+            for stream in (client, upstream):
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+
+    def _frame_bytes(
+        self,
+        buffer: bytearray,
+        handshakes: dict[socket.socket, bool],
+        source: socket.socket,
+        destination: socket.socket,
+        chunk: bytes,
+        direction: str,
+    ) -> bytes:
+        buffer.extend(chunk)
+        output = bytearray()
+        if not handshakes[source]:
+            if len(buffer) < 68:
+                return b""
+            handshake = bytearray(buffer[:68])
+            if self._peer_id_salt:
+                handshake[67] ^= self._peer_id_salt
+            output.extend(handshake)
+            del buffer[:68]
+            handshakes[source] = True
+        while len(buffer) >= 4:
+            payload_length = int.from_bytes(buffer[:4], "big")
+            if payload_length > 4 * 1024 * 1024:
+                raise ValueError("peer frame exceeds controlled proxy bound")
+            frame_length = 4 + payload_length
+            if len(buffer) < frame_length:
+                break
+            frame = bytes(buffer[:frame_length])
+            del buffer[:frame_length]
+            output.extend(self._observe_frame(direction, destination, frame))
+        return bytes(output)
+
+    def _observe_frame(
+        self, direction: str, destination: socket.socket, frame: bytes
+    ) -> bytes:
+        if len(frame) < 5:
+            return frame
+        message_id = frame[4]
+        if (
+            direction == "upstream"
+            and message_id == 1
+            and self._gate_unchoke
+            and self._activation is not None
+            and not self._activation.is_set()
+            and not self._gated_unchoke
+        ):
+            self._gated_unchoke = True
+            worker = threading.Thread(
+                target=self._release_unchoke,
+                args=(destination,),
+                daemon=True,
+            )
+            with self._lock:
+                self._workers.append(worker)
+            worker.start()
+            return b"\x00\x00\x00\x01\x00"
+        if direction == "client" and message_id == 21 and len(frame) == 53:
+            request = tuple(
+                int.from_bytes(frame[offset : offset + 4], "big")
+                for offset in (37, 41, 45, 49)
+            )
+            with self._lock:
+                self._hash_requests.append(request)
+        elif direction == "upstream" and message_id == 22:
+            with self._lock:
+                self._hash_responses += 1
+        elif direction == "upstream" and message_id == 23:
+            with self._lock:
+                self._hash_rejects += 1
+        elif direction == "upstream" and message_id == 7 and len(frame) > 13:
+            piece = int.from_bytes(frame[5:9], "big")
+            begin = int.from_bytes(frame[9:13], "big")
+            with self._lock:
+                self._piece_frames += 1
+                self._piece_messages.append((piece, begin, len(frame) - 13))
+                should_corrupt = (
+                    self._corrupt_first_piece and self._corrupted is None
+                    and len(frame) - 13 == BLOCK
+                )
+                if should_corrupt:
+                    changed = bytearray(frame)
+                    changed[13] ^= 0x01
+                    self._corrupted = (piece, begin, len(frame) - 13)
+                    if self._release_on_corruption is not None:
+                        self._release_on_corruption.set()
+                    return bytes(changed) + b"\x00\x00\x00\x01\x00"
+        return frame
+
+    def _release_unchoke(self, destination: socket.socket) -> None:
+        if self._activation is None or not self._activation.wait(timeout=10):
+            return
+        try:
+            self._send_all(destination, b"\x00\x00\x00\x01\x01")
+        except (ConnectionError, OSError):
+            pass
+
+    def _send_all(self, destination: socket.socket, payload: bytes) -> None:
+        with self._send_lock:
+            view = memoryview(payload)
+            while view:
+                try:
+                    written = destination.send(view)
+                except BlockingIOError:
+                    select.select([], [destination], [], 0.1)
+                    continue
+                if written == 0:
+                    raise ConnectionError("BEP 52 proxy made no forwarding progress")
+                view = view[written:]
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            requests = list(self._hash_requests)
+            return {
+                "hash_requests": requests,
+                "piece_layer_requests": sum(base > 0 for base, _, _, _ in requests),
+                "leaf_requests": sum(base == 0 for base, _, _, _ in requests),
+                "hash_responses": self._hash_responses,
+                "hash_rejects": self._hash_rejects,
+                "piece_frames": self._piece_frames,
+                "piece_messages": list(self._piece_messages),
+                "corrupted": self._corrupted,
+            }
+
+    def close(self) -> None:
+        self._stop.set()
+        try:
+            self._listener.close()
+        except OSError:
+            pass
+        with self._lock:
+            sockets = list(self._sockets)
+        for stream in sockets:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                stream.close()
+            except OSError:
+                pass
+        self._acceptor.join(timeout=2)
+        with self._lock:
+            workers = list(self._workers)
+        for worker in workers:
+            worker.join(timeout=2)
+        if self._acceptor.is_alive() or any(worker.is_alive() for worker in workers):
+            raise ScenarioFailure("BEP 52 proxy did not join every forwarding task")
+
+
 def deterministic_bytes(seed: int, length: int) -> bytes:
     return bytes(((seed + index) * 37 + index // 11) % 251 for index in range(length))
+
+
+def available_tcp_port() -> int:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+    finally:
+        probe.close()
 
 
 def make_fixture(
@@ -258,11 +523,16 @@ def seed_summary(stopped: dict[str, object]) -> dict[str, object]:
 
 
 def libtorrent_session(
-    *, incoming: bool, require_mse: bool = False, utp_only: bool = False
+    *,
+    incoming: bool,
+    require_mse: bool = False,
+    utp_only: bool = False,
+    listen_port: int | None = None,
 ) -> lt.session:
+    interface = f"127.0.0.1:{listen_port or 0}"
     session = lt.session(
         {
-            "listen_interfaces": "127.0.0.1:0",
+            "listen_interfaces": interface,
             "enable_dht": False,
             "enable_lsd": False,
             "enable_upnp": False,
@@ -370,8 +640,10 @@ def leech_with_libtorrent(
             if utp_only
             else parse_address(ready)
         )
-        if require_mse or magnet_only:
+        if require_mse:
             proxy = TcpProxy(peer_address)
+        elif magnet_only:
+            proxy = PlaintextBep52Proxy(peer_address)
         endpoint = proxy.endpoint if proxy is not None else peer_address
         parameters = (
             lt.parse_magnet_uri(
@@ -404,7 +676,7 @@ def leech_with_libtorrent(
                 break
             time.sleep(0.02)
         else:
-            if proxy is not None:
+            if isinstance(proxy, TcpProxy):
                 for index, trace in enumerate(proxy.traces()):
                     diagnostics.append(
                         f"proxy[{index}] client_to_upstream="
@@ -420,8 +692,23 @@ def leech_with_libtorrent(
             )
         compare_libtorrent_files(fixture, output_root)
         if require_mse:
+            assert isinstance(proxy, TcpProxy)
             assert_successful_wire_shape(proxy.traces(), "rc4")
             negotiated = "rc4"
+        elif magnet_only:
+            assert isinstance(proxy, PlaintextBep52Proxy)
+            observation = proxy.snapshot()
+            if (
+                not observation["hash_requests"]
+                or int(observation["hash_responses"]) < 1
+            ):
+                raise ScenarioFailure(
+                    "libtorrent did not obtain BEP 52 hashes from RSTorrent: "
+                    f"{observation}"
+                )
+            diagnostics.append(
+                "bep52_wire=" + json.dumps(observation, sort_keys=True)
+            )
         if utp_only:
             validate_libtorrent_utp(session, diagnostics)
         return diagnostics[-20:], negotiated
@@ -441,9 +728,13 @@ def start_libtorrent_seed(
     *,
     require_mse: bool = False,
     utp_only: bool = False,
+    listen_port: int | None = None,
 ) -> tuple[lt.session, lt.torrent_handle, list[str]]:
     session = libtorrent_session(
-        incoming=True, require_mse=require_mse, utp_only=utp_only
+        incoming=True,
+        require_mse=require_mse,
+        utp_only=utp_only,
+        listen_port=listen_port,
     )
     parameters = lt.add_torrent_params()
     parameters.ti = fixture.torrent_info
@@ -570,6 +861,150 @@ def leech_with_rstorrent(
             proxy.close()
         handle = None
         session = None
+        gc.collect()
+
+
+def corrupt_payload_recovery_with_rstorrent(
+    binary: Path,
+    fixture: RuntimeFixture,
+    output_root: Path,
+) -> dict[str, object]:
+    selected = len(fixture.files) - 1
+    skipped = frozenset(index for index in range(len(fixture.files)) if index != selected)
+    seeds: list[tuple[lt.session, lt.torrent_handle, list[str]]] = []
+    proxies: list[PlaintextBep52Proxy] = []
+    process: subprocess.Popen[str] | None = None
+    try:
+        clean_activation = threading.Event()
+        for index in range(2):
+            session, handle, alerts = start_libtorrent_seed(
+                fixture, listen_port=available_tcp_port()
+            )
+            seeds.append((session, handle, alerts))
+            proxies.append(
+                PlaintextBep52Proxy(
+                    ("127.0.0.1", session.listen_port()),
+                    corrupt_first_piece=index == 0,
+                    activation=clean_activation if index == 1 else None,
+                    release_on_corruption=clean_activation if index == 0 else None,
+                    peer_id_salt=index,
+                    gate_unchoke=index == 1,
+                )
+            )
+        hints = "".join(
+            f"&x.pe={proxy.endpoint[0]}:{proxy.endpoint[1]}" for proxy in proxies
+        )
+        magnet = (
+            "magnet:?xt=urn:btmh:1220"
+            f"{fixture.full_info_hash}{hints}&so={selected}"
+        )
+        process = subprocess.Popen(
+            [
+                str(binary),
+                "--magnet",
+                magnet,
+                "--output",
+                str(output_root),
+                "--timeout-seconds",
+                str(TRANSFER_TIMEOUT_SECONDS),
+                "--max-buffered-payload-bytes",
+                str(DEFAULT_PAYLOAD_ALLOWANCE),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.communicate()
+            raise ScenarioFailure(
+                "corrupt-payload v2 leech exceeded its process deadline"
+            ) from error
+        diagnostics: list[str] = []
+        for session, _, alerts in seeds:
+            alerts.extend(alert.message() for alert in session.pop_alerts())
+            diagnostics.extend(alerts[-20:])
+        if process.returncode != 0:
+            raise ScenarioFailure(
+                f"corrupt-payload v2 leech exited with {process.returncode}\n"
+                f"stdout:\n{stdout}\nstderr:\n{stderr}\n"
+                + "\n".join(diagnostics[-40:])
+            )
+        fields = {
+            key: value
+            for token in stdout.split()
+            if "=" in token
+            for key, value in [token.split("=", 1)]
+        }
+        compare_files(
+            fixture,
+            output_root,
+            skipped=skipped,
+            named_root=False,
+        )
+        observations = [proxy.snapshot() for proxy in proxies]
+        corrupted = observations[0].get("corrupted")
+        if not isinstance(corrupted, tuple):
+            raise ScenarioFailure("controlled v2 proxy did not corrupt a payload block")
+        leaf_requests = sum(int(item["leaf_requests"]) for item in observations)
+        piece_layer_requests = sum(
+            int(item["piece_layer_requests"]) for item in observations
+        )
+        hash_responses = sum(int(item["hash_responses"]) for item in observations)
+        piece_frames = sum(int(item["piece_frames"]) for item in observations)
+        expected_blocks = (len(fixture.files[selected].data) + BLOCK - 1) // BLOCK
+        if leaf_requests < 1 or piece_layer_requests < 1 or hash_responses < 2:
+            raise ScenarioFailure(
+                f"corrupt-payload v2 exchange lacked hash proof traffic: {observations}"
+            )
+        repaired_piece, repaired_begin, repaired_length = corrupted
+        clean_piece_messages = observations[1].get("piece_messages")
+        if not isinstance(clean_piece_messages, list):
+            raise ScenarioFailure("clean v2 proxy lost its piece observations")
+        matching_repairs = [
+            message
+            for message in clean_piece_messages
+            if tuple(message) == (repaired_piece, repaired_begin, repaired_length)
+        ]
+        same_piece_repairs = [
+            message
+            for message in clean_piece_messages
+            if isinstance(message, tuple) and message[0] == repaired_piece
+        ]
+        expected_piece_blocks = {
+            (repaired_piece, begin, BLOCK)
+            for begin in range(0, BLOCK * 4, BLOCK)
+        }
+        if len(matching_repairs) != 1 or set(same_piece_repairs) != expected_piece_blocks:
+            raise ScenarioFailure(
+                "corrupt-payload v2 repair refetched a retained good block: "
+                f"observations={observations}"
+            )
+        if fields.get("selected_file_bytes") != str(len(fixture.files[selected].data)):
+            raise ScenarioFailure(
+                f"corrupt-payload v2 selection accounting changed: {fields}"
+            )
+        return {
+            "selected_file": selected,
+            "selected_bytes": len(fixture.files[selected].data),
+            "expected_payload_blocks": expected_blocks,
+            "wire_piece_frames": piece_frames,
+            "repaired_block": corrupted,
+            "proxies": observations,
+            "rstorrent": fields,
+            "cleanup": True,
+        }
+    finally:
+        if process is not None and process.poll() is None:
+            terminate_process(process)
+        for proxy in proxies:
+            proxy.close()
+        for session, handle, _ in seeds:
+            if handle.is_valid():
+                session.remove_torrent(handle)
+            session.pause()
         gc.collect()
 
 
@@ -922,6 +1357,13 @@ def run(repository: Path, *, no_build: bool) -> None:
                     skipped=skipped,
                     magnet_only=True,
                 )
+            corruption_evidence = None
+            if fixture.name == "pure-v2-aligned-multi":
+                corruption_evidence = corrupt_payload_recovery_with_rstorrent(
+                    download_binary,
+                    fixture,
+                    fixture.torrent_path.parent / "rstorrent-corrupt-recovery",
+                )
             mse_evidence = None
             discovery_evidence = None
             if fixture.name == "pure-v2-single":
@@ -993,6 +1435,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                         "restarted_rstorrent_seed": seed_summary(restarted_stop),
                         "rstorrent_leech": full_fields,
                         "rstorrent_selective_leech": selective_fields,
+                        "corrupt_payload_recovery": corruption_evidence,
                         "mse": mse_evidence,
                         "discovery": discovery_evidence,
                         "libtorrent_seed_alerts": reverse_alerts,
