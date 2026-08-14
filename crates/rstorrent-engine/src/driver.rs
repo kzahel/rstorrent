@@ -36,6 +36,7 @@ use rstorrent_protocol::peer_wire::{
 use rstorrent_protocol::piece::{PieceError, VerifiedPiece};
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
 use rstorrent_protocol::udp_tracker::{MAX_COMPACT_PEERS, UdpTrackerError};
+use rstorrent_protocol::v2_hashes::{HashExchangeError, V2FileHashGeometry};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::{mpsc, watch};
@@ -5781,6 +5782,12 @@ impl<'a> ContentSwarmDownload<'a> {
                     }
                     Ok(_) | Err(_) => {
                         self.candidate_pieces.remove(&piece);
+                        if let Some(resume) = self.resume {
+                            resume
+                                .checkpoints
+                                .pieces_invalidated(&[piece_index])
+                                .map_err(DownloadError::Checkpoint)?;
+                        }
                         self.state
                             .add_wanted_pieces(&[piece])
                             .map_err(DownloadError::Swarm)?;
@@ -5868,7 +5875,10 @@ impl<'a> ContentSwarmDownload<'a> {
                 .pieces_invalidated(&reconcile.invalidated_pieces)
                 .map_err(DownloadError::Checkpoint)?;
         }
-        let mut wanted = Vec::new();
+        let mut requestable = Vec::new();
+        let mut hash_needs = Vec::new();
+        let mut next_candidates = BTreeSet::new();
+        let mut ready_candidates = Vec::new();
         for piece_index in 0..self.layout.piece_count() {
             let piece_index_u32 = match u32::try_from(piece_index) {
                 Ok(piece_index) => piece_index,
@@ -5884,11 +5894,62 @@ impl<'a> ContentSwarmDownload<'a> {
                     return Err(DownloadError::Layout(error));
                 }
             };
-            if !ranges.is_empty() && !storage.0.verified_pieces()[piece_index] {
-                wanted.push(piece_index_u32);
+            if ranges.is_empty() || storage.0.verified_pieces()[piece_index] {
+                continue;
+            }
+            match self.content {
+                TorrentContent::V1(_) => requestable.push(piece_index_u32),
+                TorrentContent::V2(_) => {
+                    let candidate = if self.candidate_pieces.contains(&piece_index_u32) {
+                        true
+                    } else {
+                        match storage.0.has_piece_sources(piece_index_u32).await {
+                            Ok(candidate) => candidate,
+                            Err(error) => {
+                                self.restart_storage(storage).await?;
+                                return Err(DownloadError::SelectiveStorage(error));
+                            }
+                        }
+                    };
+                    let expected = match self
+                        .content
+                        .v2_expected_piece(self.integrity, piece_index_u32)
+                    {
+                        Ok(expected) => expected,
+                        Err(error) => {
+                            self.restart_storage(storage).await?;
+                            return Err(DownloadError::StorageTask(error.to_string()));
+                        }
+                    };
+                    match expected {
+                        V2ExpectedPieceQuery::Known(_) if candidate => {
+                            next_candidates.insert(piece_index_u32);
+                            ready_candidates.push(piece_index_u32);
+                        }
+                        V2ExpectedPieceQuery::Known(_) => requestable.push(piece_index_u32),
+                        V2ExpectedPieceQuery::Missing { geometry, request } => {
+                            if candidate {
+                                next_candidates.insert(piece_index_u32);
+                            }
+                            hash_needs.push(HashNeedInput {
+                                geometry,
+                                request,
+                                piece: piece_index_u32,
+                                candidate,
+                            });
+                        }
+                    }
+                }
             }
         }
-        let cancellations = match self.state.replace_wanted_pieces(wanted) {
+        let next_hash_scheduler = match V2HashScheduler::new(hash_needs) {
+            Ok(scheduler) => scheduler,
+            Err(error) => {
+                self.restart_storage(storage).await?;
+                return Err(DownloadError::StorageTask(error.to_owned()));
+            }
+        };
+        let cancellations = match self.state.replace_wanted_pieces(requestable) {
             Ok(cancellations) => cancellations,
             Err(error) => {
                 self.restart_storage(storage).await?;
@@ -5906,6 +5967,9 @@ impl<'a> ContentSwarmDownload<'a> {
         }
         self.control.clear_outstanding_requests();
         self.contributor_attempts.clear();
+        self.hash_scheduler = next_hash_scheduler;
+        self.candidate_pieces = next_candidates;
+        self.candidate_verifications.clear();
         self.selection = next_selection;
         self.selection_revision = update.revision;
         self.control.file_selection_applied(update.revision);
@@ -5920,6 +5984,9 @@ impl<'a> ContentSwarmDownload<'a> {
             }
         }
         self.restart_storage(storage).await?;
+        for piece in ready_candidates {
+            self.enqueue_candidate_verification(piece)?;
+        }
         self.active_content.update_file_selection(&self.selection);
         Ok(())
     }
@@ -7259,6 +7326,27 @@ async fn download_content_swarm<'a>(
 struct FullRecheckResult {
     verified: Vec<bool>,
     recovered: Vec<u32>,
+    candidates: BTreeSet<u32>,
+}
+
+fn expected_piece_for_recheck(
+    content: &TorrentContent,
+    integrity: &TorrentIntegrity,
+    piece: u32,
+) -> Result<Option<ExpectedPieceIntegrity>, DownloadError> {
+    match content {
+        TorrentContent::V1(_) => content
+            .expected_piece(integrity, piece)
+            .map(Some)
+            .map_err(|error| DownloadError::StorageTask(error.to_string())),
+        TorrentContent::V2(_) => content
+            .v2_expected_piece(integrity, piece)
+            .map(|expected| match expected {
+                V2ExpectedPieceQuery::Known(expected) => Some(expected),
+                V2ExpectedPieceQuery::Missing { .. } => None,
+            })
+            .map_err(|error| DownloadError::StorageTask(error.to_string())),
+    }
 }
 
 async fn wait_for_checking_resume(
@@ -7301,6 +7389,7 @@ async fn full_recheck_managed_storage(
     let hash_concurrency = control.storage_execution_limits().1;
     let mut running = JoinSet::new();
     let mut recovered = Vec::new();
+    let mut candidates = BTreeSet::new();
     let mut cancelled = false;
     let mut first_error = None;
     let mut next_piece_index = 0_usize;
@@ -7384,6 +7473,16 @@ async fn full_recheck_managed_storage(
                 control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
                 continue;
             }
+            let Some(expected) = expected_piece_for_recheck(content, integrity, piece_index)?
+            else {
+                // Info-only v2 metadata authenticates the file root but not a
+                // multi-piece file's piece layer. Preserve readable bytes as
+                // candidates for the runtime hash coordinator instead of
+                // treating the persisted have bit as authority.
+                candidates.insert(piece_index);
+                control.checker_piece_processed(piece_index, 0, CheckerPieceOutcome::Absent);
+                continue;
+            };
             let operation = match storage.prepare_hash(piece_index) {
                 Ok(operation) => operation,
                 Err(error) if error.is_missing_or_short_source() => {
@@ -7408,6 +7507,7 @@ async fn full_recheck_managed_storage(
                     piece_index,
                     piece_length,
                     bytes_hashed,
+                    expected,
                     started_at,
                     operation.execute_content().await,
                 )
@@ -7428,7 +7528,7 @@ async fn full_recheck_managed_storage(
             break;
         };
         match result {
-            Ok((piece_index, piece_length, bytes_hashed, started_at, result)) => {
+            Ok((piece_index, piece_length, bytes_hashed, expected, started_at, result)) => {
                 control.storage_command_completed(
                     StorageCommandKind::Hash,
                     started_at,
@@ -7442,9 +7542,6 @@ async fn full_recheck_managed_storage(
                         continue;
                     }
                 };
-                let expected = content
-                    .expected_piece(integrity, piece_index)
-                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
                 let outcome = match result {
                     Ok(actual) if content_hash_matches(actual, expected) => {
                         CheckerPieceOutcome::Matched
@@ -7489,7 +7586,99 @@ async fn full_recheck_managed_storage(
     Ok(FullRecheckResult {
         verified,
         recovered,
+        candidates,
     })
+}
+
+async fn reconstruct_complete_selected_v2_piece_layers(
+    content: &TorrentContent,
+    integrity: &mut TorrentIntegrity,
+    selection: &FileSelection,
+    storage: &mut SelectiveStorage,
+    control: &DownloadControl,
+) -> Result<usize, DownloadError> {
+    let TorrentContent::V2(content) = content else {
+        return Ok(0);
+    };
+    let TorrentIntegrity::V2(catalog) = integrity else {
+        return Err(DownloadError::StorageTask(
+            "v2 content has non-v2 integrity state".to_owned(),
+        ));
+    };
+
+    let mut reconstructed_files = 0_usize;
+    for (file, file_geometry) in content
+        .metainfo
+        .files
+        .iter()
+        .zip(content.metainfo.layout.files())
+    {
+        if file_geometry.piece_count() <= 1 || !selection.is_wanted(file_geometry.file_index()) {
+            continue;
+        }
+        if catalog.piece_root(file_geometry.start_piece()).is_some() {
+            continue;
+        }
+        let pieces_root = file.pieces_root.ok_or_else(|| {
+            DownloadError::StorageTask("v2 file is missing its authenticated root".to_owned())
+        })?;
+        let geometry = V2FileHashGeometry::new(
+            pieces_root,
+            file.length,
+            content.metainfo.piece_length,
+            file_geometry.start_piece(),
+            file_geometry.piece_count(),
+        )
+        .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let mut roots = Vec::with_capacity(file_geometry.piece_count() as usize);
+        for piece in file_geometry.piece_range() {
+            if control.is_cancelled() {
+                return Err(DownloadError::Cancelled);
+            }
+            if !storage
+                .has_piece_sources(piece)
+                .await
+                .map_err(DownloadError::SelectiveStorage)?
+            {
+                roots.clear();
+                break;
+            }
+            let length = content
+                .metainfo
+                .layout
+                .piece(piece)
+                .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+                .payload_length;
+            let _session_permit = control.wait_before_storage_hash().await;
+            control.disk_piece_hashing(piece, length);
+            control.emit(DownloadActivityEvent::PieceHashing { piece_index: piece });
+            let started_at = Instant::now();
+            control.storage_command_started(StorageCommandKind::Hash, started_at, started_at);
+            let actual = storage.hash_piece_content(piece).await;
+            control.storage_command_completed(StorageCommandKind::Hash, started_at, Instant::now());
+            let actual = actual.map_err(DownloadError::SelectiveStorage)?;
+            let ComputedPieceHash::Sha256 { root, .. } = actual else {
+                return Err(DownloadError::StorageTask(
+                    "v2 reconstruction used a non-SHA-256 hash".to_owned(),
+                ));
+            };
+            control.record_bytes(ByteMetric::LogicalHashRead, length as usize);
+            roots.push(root);
+        }
+        if roots.is_empty() {
+            continue;
+        }
+        match catalog.seed_complete_piece_layer(geometry, &roots) {
+            Ok(()) => reconstructed_files += 1,
+            Err(HashExchangeError::BadProof) => {
+                // Complete local bytes which do not reach the authenticated
+                // file root remain non-have candidates and are repaired by
+                // the ordinary hash-first download path.
+            }
+            Err(error) => return Err(DownloadError::StorageTask(error.to_string())),
+        }
+    }
+    Ok(reconstructed_files)
 }
 
 async fn run_selective_download(
@@ -7563,6 +7752,23 @@ async fn run_selective_download(
         }
         None => vec![false; layout.piece_count()],
     };
+    let mut candidate_pieces = BTreeSet::new();
+    if resume.is_some() && matches!(content, TorrentContent::V2(_)) {
+        for &piece in &wanted_pieces {
+            let piece_index = usize::try_from(piece)
+                .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+            if verified_pieces[piece_index]
+                && matches!(
+                    content
+                        .v2_expected_piece(&integrity, piece)
+                        .map_err(|error| DownloadError::StorageTask(error.to_string()))?,
+                    V2ExpectedPieceQuery::Missing { .. }
+                )
+            {
+                candidate_pieces.insert(piece);
+            }
+        }
+    }
     let storage_creation = control.enter_safe_cancel_critical()?;
     let (mut storage, resumed_storage) = if let Some(platform) = platform_storage {
         let (storage, resumed) = SelectiveStorage::create_content_with_platform(
@@ -7719,6 +7925,15 @@ async fn run_selective_download(
     };
     drop(storage_creation);
 
+    reconstruct_complete_selected_v2_piece_layers(
+        &content,
+        &mut integrity,
+        &selection,
+        &mut storage,
+        &control,
+    )
+    .await?;
+
     let mut applied_selection = AppliedFileSelection {
         selection,
         revision: 0,
@@ -7823,6 +8038,7 @@ async fn run_selective_download(
                 FullRecheckResult {
                     verified: vec![false; layout.piece_count()],
                     recovered: Vec::new(),
+                    candidates: BTreeSet::new(),
                 }
             } else {
                 match full_recheck_managed_storage(
@@ -7845,6 +8061,7 @@ async fn run_selective_download(
                     }
                 }
             };
+            candidate_pieces = checked.candidates.clone();
             let mut pause_updates = control.checking_pause_updates();
             wait_for_checking_resume(&control, &mut pause_updates).await?;
             control.checker_set_phase(CheckerPhase::ReconcilingStorage);
@@ -7861,7 +8078,13 @@ async fn run_selective_download(
             }
             wait_for_checking_resume(&control, &mut pause_updates).await?;
             control.checker_set_phase(CheckerPhase::Finalizing);
-            if let Err(error) = resume.checkpoints.have_rechecked(&verified_pieces) {
+            let mut durable_have = verified_pieces.clone();
+            for &piece in &candidate_pieces {
+                let piece = usize::try_from(piece)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                durable_have[piece] = true;
+            }
+            if let Err(error) = resume.checkpoints.have_rechecked(&durable_have) {
                 control.checker_finished(generation);
                 return Err(DownloadError::Checkpoint(error));
             }
@@ -7922,11 +8145,41 @@ async fn run_selective_download(
     }
 
     wanted_pieces.retain(|piece_index| {
-        usize::try_from(*piece_index)
-            .ok()
-            .and_then(|piece_index| verified_pieces.get(piece_index))
-            .is_none_or(|verified| !*verified)
+        candidate_pieces.contains(piece_index)
+            || usize::try_from(*piece_index)
+                .ok()
+                .and_then(|piece_index| verified_pieces.get(piece_index))
+                .is_none_or(|verified| !*verified)
     });
+    let wanted_piece_set = wanted_pieces.iter().copied().collect::<BTreeSet<_>>();
+    candidate_pieces.retain(|piece| wanted_piece_set.contains(piece));
+    if matches!(content, TorrentContent::V2(_)) {
+        for &piece in &wanted_pieces {
+            if candidate_pieces.contains(&piece) {
+                continue;
+            }
+            if matches!(
+                content
+                    .v2_expected_piece(&integrity, piece)
+                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?,
+                V2ExpectedPieceQuery::Missing { .. }
+            ) && storage
+                .has_piece_sources(piece)
+                .await
+                .map_err(DownloadError::SelectiveStorage)?
+            {
+                candidate_pieces.insert(piece);
+            }
+        }
+    }
+    for &piece in &candidate_pieces {
+        let piece_index = usize::try_from(piece)
+            .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+        verified_pieces[piece_index] = false;
+        storage
+            .set_verified(piece_index, false)
+            .map_err(DownloadError::SelectiveStorage)?;
+    }
     let selected_file_bytes = storage.selected_bytes();
     let skipped_file_bytes = storage.skipped_bytes();
     let padding_bytes = storage.padding_bytes();
@@ -7992,7 +8245,7 @@ async fn run_selective_download(
                 layout: &layout,
                 resume: resume.as_ref(),
                 control: &control,
-                candidate_pieces: BTreeSet::new(),
+                candidate_pieces,
             },
         )
         .await?;

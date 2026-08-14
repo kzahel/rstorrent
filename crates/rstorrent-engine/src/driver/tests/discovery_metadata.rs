@@ -1,6 +1,6 @@
 use super::*;
 use crate::tracker::{TrackerConfig, TrackerEndpoint, TrackerSource};
-use crate::{PeerBudget, TrackerConnectionFamily};
+use crate::{PeerBudget, ResumeValidationIntent, TrackerConnectionFamily};
 use std::net::{IpAddr, Ipv6Addr};
 
 fn pure_v2_info(payload: &[u8]) -> Vec<u8> {
@@ -220,6 +220,88 @@ async fn serve_v2_metadata_hashes_and_payload(
     }
 }
 
+async fn serve_v2_hashes_and_missing_payload(
+    listener: TcpListener,
+    wire_hash: [u8; 20],
+    pieces: [Vec<u8>; 2],
+    piece_roots: [[u8; 32]; 2],
+) -> Vec<u32> {
+    let (mut stream, _) = listener.accept().await.expect("accept resumed v2 client");
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read resumed v2 handshake");
+    decode_handshake(&handshake_bytes, wire_hash).expect("resumed v2 wire identity");
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            wire_hash,
+            scripted_peer_id(&listener, *b"-RS-V2RS-00000000000"),
+            reserved,
+        ))
+        .await
+        .expect("send resumed v2 handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(5));
+    peer.set_protocol(rstorrent_protocol::peer_wire::PeerProtocol::V2);
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b1100_0000]))
+        .await
+        .expect("send resumed v2 availability");
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .expect("unchoke resumed v2 client");
+
+    let mut requested = Vec::new();
+    loop {
+        match next_peer_message(&mut peer)
+            .await
+            .expect("read resumed v2 content message")
+        {
+            PeerMessage::HashRequest(request) => {
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Hashes(rstorrent_protocol::v2_hashes::HashResponse {
+                        request,
+                        hashes: piece_roots.to_vec(),
+                    }),
+                )
+                .await
+                .expect("send resumed authenticated piece layer");
+            }
+            PeerMessage::Request(request) => {
+                requested.push(request.index);
+                assert_eq!(
+                    request.index, 1,
+                    "valid candidate piece must not be refetched"
+                );
+                let begin = usize::try_from(request.begin).expect("bounded block begin");
+                let length = usize::try_from(request.length).expect("bounded block length");
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Piece {
+                        index: request.index,
+                        begin: request.begin,
+                        block: pieces[1][begin..begin + length].to_vec(),
+                    },
+                )
+                .await
+                .expect("send resumed missing payload");
+                if begin + length == pieces[1].len() {
+                    return requested;
+                }
+            }
+            PeerMessage::KeepAlive
+            | PeerMessage::Interested
+            | PeerMessage::NotInterested
+            | PeerMessage::HaveNone
+            | PeerMessage::Have(_)
+            | PeerMessage::Extended { .. } => {}
+            message => panic!("unexpected resumed v2 client message: {message:?}"),
+        }
+    }
+}
+
 #[tokio::test]
 async fn pure_v2_magnet_metadata_uses_full_sha256_and_strict_format() {
     async fn acquire(info: Vec<u8>) -> Result<Vec<u8>, DownloadError> {
@@ -307,6 +389,94 @@ async fn pure_v2_magnet_authenticates_piece_layer_before_payload() {
     );
     peer.await.expect("join v2 peer");
     let _ = tokio::fs::remove_dir_all(output).await;
+}
+
+#[tokio::test]
+async fn pure_v2_restart_refetches_hashes_before_promoting_candidate_payload() {
+    let pieces = [vec![0x41; 16 * 1024], vec![0x62; 16 * 1024]];
+    let (info, piece_roots) = two_piece_v2_info(&pieces[0], &pieces[1]);
+    let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+    let identity = V2InfoHash::new(full_hash);
+    let runtime = TorrentContent::from_v2_info_bytes_with_limits(&info, BEP9_METAINFO_LIMITS)
+        .expect("info-only v2 runtime");
+    let root = test_path("v2-candidate-restart");
+    tokio::fs::create_dir(&root)
+        .await
+        .expect("create v2 candidate root");
+    let artifact_identity = TorrentArtifactIdentity {
+        torrent_id: test_torrent_id(),
+        content_fingerprint: ContentFingerprint::for_info_bytes(&info),
+    };
+    let mut storage = SelectiveStorage::create_content(
+        root.join(runtime.content.name()),
+        artifact_identity,
+        Arc::new(runtime.content.clone()),
+        &[],
+    )
+    .await
+    .expect("create v2 candidate staging");
+    storage
+        .write_block(0, 0, pieces[0].clone())
+        .await
+        .expect("write candidate piece");
+    storage.sync_piece(0).await.expect("sync candidate piece");
+    storage
+        .set_verified(0, true)
+        .expect("record pre-restart candidate bit");
+    drop(storage);
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind resumed v2 peer");
+    let address = listener.local_addr().expect("resumed v2 peer address");
+    let peer = tokio::spawn(serve_v2_hashes_and_missing_payload(
+        listener,
+        identity.swarm_key().into_bytes(),
+        pieces.clone(),
+        piece_roots,
+    ));
+    let checkpoints = Arc::new(RecordingCheckpointSink::default());
+    let report = timeout(
+        Duration::from_secs(10),
+        resume_magnet(
+            ResumableMagnetDownloadConfig {
+                identity: test_v2_identity(full_hash),
+                magnet: format!("magnet:?xt=urn:btmh:1220{identity}&x.pe={address}"),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(2)),
+                peer_budget: PeerBudget::system_default(),
+                mse_dh: crate::MseDhWorkOwner::new(),
+                encryption: crate::PeerEncryptionPolicyHandle::default(),
+                torrent_peers: None,
+                resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+                skip_files: Vec::new(),
+                verified_info: Some(info),
+                verified_pieces: vec![true, false],
+                artifact_state: ResumeArtifactState::Staging,
+                resume_validation: ResumeValidationIntent::Full,
+                download_missing: true,
+                dht: None,
+                trackers: Some(Vec::new()),
+            },
+            checkpoints,
+        ),
+    )
+    .await
+    .expect("bounded v2 candidate restart")
+    .expect("complete v2 candidate restart");
+    let requested = peer.await.expect("join resumed v2 peer");
+    assert!(!requested.is_empty());
+    assert!(requested.iter().all(|piece| *piece == 1));
+    assert_eq!(report.verified_piece_count, 2);
+    assert_eq!(
+        tokio::fs::read(root.join("root/a"))
+            .await
+            .expect("read resumed v2 publication"),
+        pieces.concat()
+    );
+    tokio::fs::remove_dir_all(root)
+        .await
+        .expect("remove v2 candidate root");
 }
 
 #[tokio::test]

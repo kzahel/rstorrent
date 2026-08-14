@@ -66,6 +66,17 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
     let projection =
         TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
             .expect("complete pure-v2 source");
+    let info_only = projection
+        .content
+        .v2()
+        .expect("v2 descriptor")
+        .raw_info
+        .clone();
+    let v2_hash = projection
+        .content
+        .info_hashes()
+        .v2_hash()
+        .expect("v2 identity");
     let identity = TorrentIdentityContext::new(
         test_torrent_id(),
         projection.content.info_hashes(),
@@ -181,6 +192,45 @@ async fn pure_v2_complete_source_download_rechecks_and_reopens_without_part_file
     .expect("pure-v2 published reopen");
     assert_eq!(reopen.verified_piece_count, 2);
     assert!(!reopen.part_reopened);
+    assert_eq!(tokio::fs::read(root.join("root/b")).await.unwrap(), large);
+
+    let unavailable_peer = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("reserve unavailable v2 peer");
+    let unavailable_address = unavailable_peer.local_addr().expect("peer address");
+    drop(unavailable_peer);
+    let candidate_control = DownloadControl::new();
+    let candidate = timeout(
+        Duration::from_secs(4),
+        resume_magnet_with_control(
+            ResumableMagnetDownloadConfig {
+                identity,
+                magnet: format!("magnet:?xt=urn:btmh:1220{v2_hash}&x.pe={unavailable_address}"),
+                storage_root: root.clone(),
+                network: loopback_network(Duration::from_secs(1)),
+                peer_budget: PeerBudget::system_default(),
+                mse_dh: crate::MseDhWorkOwner::new(),
+                encryption: crate::PeerEncryptionPolicyHandle::default(),
+                torrent_peers: None,
+                resource_limits: resource_limits(2 * MIN_PAYLOAD_ALLOWANCE),
+                skip_files: vec![0],
+                verified_info: Some(info_only),
+                verified_pieces: vec![false, true, true],
+                artifact_state: ResumeArtifactState::Published,
+                resume_validation: ResumeValidationIntent::FastEligible,
+                download_missing: true,
+                dht: None,
+                trackers: Some(Vec::new()),
+            },
+            Arc::new(RecordingCheckpointSink::default()),
+            candidate_control.clone(),
+        ),
+    )
+    .await
+    .expect("local reconstruction stays bounded")
+    .expect("reconstruct complete v2 file without a peer");
+    assert_eq!(candidate.verified_piece_count, 2);
+    assert_eq!(candidate.bytes_written, 0);
     assert_eq!(tokio::fs::read(root.join("root/b")).await.unwrap(), large);
     tokio::fs::remove_dir_all(root)
         .await
