@@ -54,11 +54,11 @@ Topics own the current truth for a continuing concern. Tactical docs under
 - [`protocol-support.md`](protocol-support.md): precise BEP support claims,
   deliberate limits, interoperability evidence, and protocol sequencing.
 - [`bittorrent-v2-and-hybrid.md`](bittorrent-v2-and-hybrid.md): accepted BEP
-  52 source dossier, identity/integrity/storage direction, resettable
-  pre-release persistence policy, and proposed multi-tactical campaign.
-- [`dht-discovery.md`](dht-discovery.md): integrated session-owned IPv4 DHT
-  routing, lookup, private-torrent policy, bounded warm restart, evidence, and
-  named address-family and participation gaps.
+  52 source dossier, implemented pure-v2/hybrid consumption campaign,
+  identity/integrity/storage direction, and remaining Partial-claim gaps.
+- [`dht-discovery.md`](dht-discovery.md): integrated session-owned dual-stack
+  DHT routing, lookup, private-torrent policy, bounded warm restart, versioned
+  hybrid lanes, evidence, and named participation gaps.
 - [`performance-and-live-evidence.md`](performance-and-live-evidence.md):
   headless libtorrent comparison, public-smoke classification, performance
   measurement, and artifact-safety policy.

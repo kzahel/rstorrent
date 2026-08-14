@@ -41,6 +41,16 @@ the explicit active session UDP/uTP endpoint, including its independently
 mapped external port; IPv6 retains the TCP endpoint because IPv6 uTP is out of
 scope. The DHT actor still owns no gateway or lease state.
 
+Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) schedules the one
+or two fixed identity lanes from a central torrent advertisement registration
+through this same actor. A strict hybrid independently performs `get_peers`
+and eligible `announce_peer` for its exact v1 and truncated-v2 keys while
+sharing bootstrap, routing, transaction, peer, and global operation bounds.
+Returned peers retain their versioned lane into the common registry.
+Controlled evidence observed both exact keys, one shared bootstrap, two
+lookups and one announcement per key, uTP completion, and joined cleanup.
+
 ## Why DHT Was Front-Loaded
 
 Tracker discovery is useful but cannot be the only ordinary peer source.

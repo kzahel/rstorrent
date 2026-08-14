@@ -23,7 +23,16 @@ Tactical
 that lifetime owner from the version-tagged v1 `SwarmKey` used by incoming,
 tracker, DHT, handshake, and MSE routing. Controlled incoming TCP/uTP,
 tracker-only, DHT-only, MSE, seeding, removal, and terminal cleanup evidence
-passes with opaque owner routing; no v2 incoming behavior is implied.
+passes with opaque owner routing; no v2 incoming behavior was implied at that
+foundation checkpoint. Completed Tacticals
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md),
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), and
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) now add pure-v2
+and strict hybrid incoming behavior. One hybrid registration installs both
+versioned routes atomically, v1 accepts may upgrade only to the identical
+owner/metadata v2 route, and active or complete seeds unregister both routes
+together. Direct-v2, upgraded-v1, declined-v1, MSE, uTP, restart, padding,
+metadata/hash/payload service, and terminal cleanup evidence pass.
 Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds live
 session/torrent upload and download limits at the common established-peer
@@ -212,9 +221,9 @@ registrations omit PEX. Neither changes this campaign's current action.
 
 ## Current Truth
 
-RSTorrent can download real v1 torrents and the controlled pure-v2 source and
-magnet subsets through outgoing peers, and can seed controlled incoming peers
-locally or through one proven UPnP-mapped public TCP endpoint:
+RSTorrent can download real v1 torrents and the controlled pure-v2 and strict
+hybrid source/magnet subsets through outgoing peers, and can seed controlled
+incoming peers locally or through one proven UPnP-mapped public TCP endpoint:
 
 - immutable bootstrap includes internal disabled and automatic/fixed loopback
   policies for controlled use plus ordinary automatic/fixed IPv4 policies;
@@ -239,11 +248,12 @@ locally or through one proven UPnP-mapped public TCP endpoint:
   unregister before lifecycle or storage-authority changes. Both use the
   common logical published-content owner, verified/readable availability,
   session file pool, and read admission;
-- complete info-only pure-v2 magnets rebuild their descriptor from
-  authenticated durable info at application open. Negotiated v2 peers can
-  obtain BEP 9 metadata, authenticated piece/leaf hashes, and only verified
-  payload through the same bounded registration; no complete outer metainfo
-  or durable sparse-hash cache is invented;
+- complete info-only pure-v2 or hybrid magnets rebuild their descriptor from
+  authenticated durable info at application open. Negotiated/direct v2 peers
+  can obtain BEP 9 metadata, authenticated piece/leaf hashes, and only
+  verified payload through the same bounded registration; a hybrid's v1 lane
+  serves the same dual-verified payload and synthetic padding. No complete
+  outer metainfo or durable sparse-hash cache is invented;
 - admitted metadata-verified incomplete torrents install a generation-fenced
   active route as soon as storage exists. Initiated and accepted peers share
   the ordinary download swarm, dynamic verified/readable availability,

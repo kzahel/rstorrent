@@ -218,6 +218,17 @@ therefore restore incoming metadata/hash/payload service without pretending a
 complete outer source exists. No migration is needed for the unreleased
 catalog.
 
+Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) also keeps schema
+19. One hybrid row stores the retained exact source/raw info and both unique
+full aliases while one selection, artifact set, have bitmap, publication
+lifecycle, and opaque owner survive restart. Authenticated pre-content
+duplicates reconcile transactionally into the oldest owner; the loser is
+cancelled and joined, and only bounded trackers and peer hints combine.
+Sparse incomplete v2 hash knowledge stays volatile, so restart remains
+conservative. The existing format expressed these facts without a migration
+or development-data reset.
+
 ## Terms And Ownership
 
 RSTorrent uses these terms to keep "client" from collapsing several different

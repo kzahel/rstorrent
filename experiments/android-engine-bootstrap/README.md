@@ -79,6 +79,9 @@ python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
   --profile product-incomplete-duplex --no-build
 python3 experiments/android-engine-bootstrap/run_bootstrap.py \
+  --target avd --avd jstorrent-tablet --storage saf-internal --runs 1 \
+  --profile product-hybrid-saf --no-build
+python3 experiments/android-engine-bootstrap/run_bootstrap.py \
   --target motox4 --storage saf-sdcard --runs 3 --profile success
 ```
 
@@ -118,6 +121,15 @@ Android in both directions before completion, including cross-file and
 part-backed second blocks. The profile verifies exact wanted and oracle hashes,
 absent skipped/padding publication, handle/provider/descriptor high waters,
 and exact managed, reverse-transport, application, and fresh-AVD cleanup.
+
+The `product-hybrid-saf` profile adds a controlled aligned six-file hybrid to
+the ordinary product service. It downloads an exact selected subset, promotes
+another file, excludes and synthesizes BEP 47 padding, serves equal verified
+payload through direct-v2 and legacy-upgraded libtorrent connections,
+force-stops and restores complete content without peer payload or hash
+requests, Force rechecks both integrity lanes, and removes the SAF namespace
+exactly. It records storage-handle, pending-operation, and process-descriptor
+high-water marks under the existing bounds.
 
 Every device command is addressed through the exact verified target
 controller. The runner owns and removes its reverse port, controlled seed,

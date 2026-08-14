@@ -1,16 +1,19 @@
 # Tactical 156: Hybrid Dual-Swarm Runtime Closure
 
-Status: **In progress.** Stage 0 reconfirmed the normative and source-oracle
-pins and recorded green focused baselines. Implementation is proceeding from
-the runtime-free hybrid content and integrity foundation. This tactical closes
-the bounded BEP 52 hybrid consumption and seeding
-subset through one torrent owner, two protocol identities, two swarm lanes,
-mandatory SHA-1 plus SHA-256 verification, safe metadata-time reconciliation,
-and proportional first-party evidence. Torrent creation remains separate.
+Status: **Complete (2026-08-15).** The bounded BEP 52 hybrid consumption and
+seeding subset now runs through one torrent owner, two protocol identities,
+two swarm lanes, mandatory SHA-1 plus SHA-256 verification, safe metadata-time
+reconciliation, and the ordinary first-party product surfaces. Controlled
+pinned-libtorrent transfers, product tracker and DHT discovery on both exact
+swarm keys, restart/recheck, selective files, seeding, browser, desktop,
+Android, iOS-build, resource, cleanup, and full repository gates pass. Torrent
+creation, arbitrary Merkle base layers, durable sparse hash state, broader
+historical hybrid layouts, and public-swarm reliability remain separate.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `peer-lifecycle`,
-`incoming-reachability-and-seeding`, `application-view-api`,
+`tracker-discovery`, `dht-discovery`, `incoming-reachability-and-seeding`,
+`application-view-api`,
 `client-surfaces`, `code-organization-and-refactoring`,
 `capability-readiness`, `oracle-driven-engine-campaign`
 
@@ -1111,3 +1114,98 @@ unless one bounded artifact is explicitly retained and linked.
   `cargo test -p rstorrent-session` passed with 247 library tests and 2
   ignored, plus all binary and documentation targets. The focused dual-topic
   test also proved exactly two tracker lane owners and joined cleanup.
+
+### 2026-08-15: Dual-verified payload, restart, and upload closure
+
+- Hybrid pieces now enter have state only after one storage read satisfies
+  both the exact v1 SHA-1 expectation and the v2 Merkle expectation. A
+  one-scheme pass is a typed terminal integrity inconsistency; ordinary
+  corruption remains retryable and cannot become readable or uploadable.
+- Hash-first scheduling, selected-file promotion, leaf-level diagnosis, and
+  candidate-payload recovery share the existing v2 sparse-hash limits while
+  the legacy lane retains exact v1 piece geometry. Internal BEP 47 padding is
+  synthesized only for SHA-1 verification and v1 upload and is never exposed
+  as a file or written to storage.
+- Schema 19 already expressed the required one-owner/two-alias source,
+  selection, artifact, have, and restart state, so no migration or reset was
+  needed. Incomplete restart conservatively refetches sparse hash authority;
+  complete restart can reconstruct it locally, and recheck requires both
+  integrity lanes before restoring have.
+- Active and complete seeds serve the same verified payload through direct-v2,
+  upgraded-v1, and declined-v1 connections. Focused restart, recheck,
+  publication, selected-file, padding, upload, accepted/incoming, and
+  cancellation tests passed without introducing a second payload or storage
+  owner.
+
+### 2026-08-15: Product dual-lane discovery and diagnostics
+
+- The central application discovery registration now carries the typed full
+  identity set and owns one or two fixed advertisement lanes. Each lane runs
+  the existing tracker and DHT lifecycle with its exact versioned swarm key;
+  both remain under the pre-existing global operation, transaction, peer,
+  connection, and descriptor ceilings.
+- Tracker and DHT observations preserve their lane into the peer registry and
+  dial owner. V2-only observations select a direct-v2 connection; v1
+  observations offer the authenticated BEP 52 upgrade. Duplicate endpoints
+  still occupy one bounded registry record and use a deterministic entry lane.
+- Structured `discovery_lane_operation` diagnostics record the protocol
+  version and start, success, failure/retry, and cancellation phase for each
+  tracker or DHT operation. A deterministic application test proves separate
+  v1 and v2 records without making log strings part of product state.
+- The controlled tracker observed one announce on each exact key: v1
+  `4df4b19eaa55c217be1e8108a7284ac3a74634d5` and v2 truncation
+  `9e2e66a4333329fe8b9f3f432851727626f07805`. The controlled DHT observed
+  two `get_peers` operations and one `announce_peer` for each key; its one
+  shared bootstrap `find_node` did not duplicate long-lived ownership.
+
+### 2026-08-15: Pinned-libtorrent and product evidence
+
+- `tests/interop/hybrid_runtime.py --no-build` completed exact selected
+  content in both RSTorrent/libtorrent roles through the v1-upgrade and
+  direct-v2 entry lanes. It also passed selection promotion, restart without
+  payload redownload, forced-RC4 MSE, default uTP, tracker and DHT discovery on
+  both exact keys, complete seeding, exact removal, subprocess cleanup, and a
+  26,820,608-byte child peak RSS; the oracle peak was 49,938,432 bytes.
+- The same controlled fixture exercises canonical hybrid metainfo and the
+  pinned-libtorrent-compatible historical omission of only the final tail
+  padding. Deterministic negative cases reject missing internal padding,
+  conflicting dual topics, response-hash mismatch, unsupported upgrade, alias
+  collisions after the provisional fence, and one-scheme integrity success.
+- `tests/interop/browser_hybrid_runtime.py` proved one React row with both
+  identities, separate `btih`/`btmh` reconciliation into that row, exact file
+  selection, local restart, completed seeding, hash and payload service, exact
+  removal, bounded gateway ownership, and zero Axe violations.
+- The native desktop crate built. Both Android ABIs, unit tests, lint, debug
+  APK, and instrumentation APK passed. The API 34 `product-hybrid-saf`
+  profile downloaded the six-file fixture with four initially selected pieces,
+  promoted another file, served 196,608 bytes through each direct-v2 and
+  upgraded route, synthesized all padding, restarted complete without peer
+  payload or hash requests, removed the torrent exactly, stayed within five
+  storage handles and three pending operations, and finished at 135 file
+  descriptors after a 118 baseline and 139 high-water mark. The unsigned iOS
+  archive also succeeded.
+
+### 2026-08-15: Full closure gates and retained limits
+
+- `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`,
+  and `cargo test --workspace` passed. The engine reported 573 passed and 11
+  ignored tests, the session crate 251 passed and 2 ignored, and the protocol
+  crate 259 passed and 4 ignored; every other crate and documentation target
+  passed.
+- The generated web contract was current. Web type checking passed, and its
+  suite reported 34 files passed, 2 skipped, 248 tests passed, and 2 skipped.
+  The pure-v2 controlled runtime remained green in both roles with tracker,
+  DHT, uTP, MSE, restart, and cleanup; the v1 first-verified-piece regression
+  returned the exact 40,000-byte SHA-1-verified payload.
+- Resource evidence retained one or two fixed lane records per torrent, one
+  endpoint record per peer, one connection and one pending read in the seed
+  profiles, at most seven queued 16-KiB upload requests (114,688 bytes), and
+  at most four queued uTP datagrams. Browser gateway high-water marks were one
+  active connection, one attachment, two outbound items across restart, one
+  pending call, and zero errors or timeouts. All owners joined and temporary
+  torrents, payloads, archives, captures, and subprocesses were removed.
+- The stopping condition is met only for the demonstrated strict hybrid
+  consumption/seeding subset. First-party torrent creation; arbitrary Merkle
+  base layers; durable incomplete sparse-tree state; missing internal padding
+  or historical shapes beyond the final-tail omission; public-swarm or
+  physical-device reliability; and a complete BEP 52 claim remain deferred.

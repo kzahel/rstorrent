@@ -265,8 +265,9 @@ unsupported remote `.torrent` URLs are rejected without clearing the input.
 More > Add test torrent exposes the five recorded WebTorrent magnets for quick
 interactive testing. These are variable public swarms, not deterministic
 success fixtures. Empty Add opens the shared local `.torrent` chooser; v1 and
-strict complete-source pure-v2 files use the same root, selection, and start
-controls. The Android Compose UI remains a separate platform presentation.
+strict complete-source pure-v2 or hybrid files use the same root, selection,
+and start controls. The Android Compose UI remains a separate platform
+presentation.
 
 ## Exercising The Frontend Headlessly
 
@@ -321,6 +322,18 @@ uv run --project tests/interop --locked \
   python tests/interop/pure_v2_runtime.py
 ```
 
+The hybrid runtime scenario generates an aligned multi-file BEP 52 hybrid and
+transfers exact selected content in both RSTorrent/libtorrent roles through
+the legacy-to-v2 upgrade and direct-v2 entry lanes. It promotes selection,
+restarts from local verified content, forces RC4 MSE, uses default uTP, checks
+the exact v1 and v2 tracker/DHT keys, serves complete content, enforces
+resource bounds, and removes every temporary owner and artifact:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/hybrid_runtime.py
+```
+
 The authenticated production-browser lifecycle keeps one v1 control paused,
 adds a complete pure-v2 source through the binary WebSocket operation, changes
 file selection, completes exact wanted bytes over uTP, forces a recheck, and
@@ -334,6 +347,17 @@ temporary cleanup:
 ```bash
 uv run --project tests/interop --locked \
   python tests/interop/browser_torrent_file_intake.py
+```
+
+The production-browser hybrid scenario adds the two exact magnet topics
+separately, proves atomic reconciliation into one row with both identities,
+applies exact file selection, completes and restarts locally, captures hash
+and payload service, removes the owner exactly, checks accessibility, and
+asserts bounded gateway cleanup:
+
+```bash
+uv run --project tests/interop --locked \
+  python tests/interop/browser_hybrid_runtime.py
 ```
 
 The incomplete-file streaming profile uses a throttled pinned-libtorrent seed

@@ -114,6 +114,16 @@ late, mismatched, and bad-proof outcomes release or fail only their bounded
 work. The selected TCP/uTP/MSE/tracker/DHT and both-role pinned-libtorrent
 matrix passes without a v2 peer registry or parallel connection owner.
 
+Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) gives a hybrid at
+most two fixed `SwarmKey` lanes beneath those same owners and limits. Tracker
+and DHT observations retain their version into one endpoint-keyed registry;
+v2-only observations dial directly, while v1 observations offer the
+authenticated reserved-bit upgrade. Incoming v1/v2 routes, initiated TCP/uTP
+and MSE generations, hash attempts, payload attempts, cancellation, and
+cleanup all attach to one `TorrentPeerHandle`; no parallel registry,
+connection scheduler, or per-lane task budget was introduced.
+
 ## Scope
 
 This topic owns the torrent-engine vocabulary and invariants for peer

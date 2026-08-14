@@ -17,8 +17,13 @@ publication, verified reads, and active/completed upload. Completed Tactical
 authority to pure-v2 magnets: payload waits for proved piece roots, candidate
 bytes remain unverified across missing-hash restart, complete files may
 reconstruct their tree locally, and authenticated leaf proofs retain good
-blocks while repairing exact corrupt blocks. Hybrid dual verification remains
-absent.
+blocks while repairing exact corrupt blocks. Hybrid dual verification was
+absent at the Tactical `155` checkpoint. Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) now requires both
+the exact v1 SHA-1 result and the v2 Merkle result before hybrid have,
+readability, publication, or upload. One-scheme success is a typed terminal
+inconsistency; ordinary corruption remains retryable, internal padding is
+synthetic, and restart/recheck restores only dual-verified state.
 Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
@@ -331,6 +336,7 @@ related unit test exists.
 | DL-C37 | An external actor changes committed payload bytes without changing required structural observations. | Ordinary fast resume may accept the historical bitmap and is not described as freshly checked; explicit Force recheck hashes all readable pieces and clears the mismatch. | Passing Tactical `120` trust-risk evidence: ordinary resume deliberately accepts the same-length mutation, then Force hashes and clears the affected 262,144-byte piece in verification generation one. |
 | DL-C38 | A strict complete-source pure-v2 torrent contains aligned empty, sub-block, exact-block, exact-piece, multi-piece, selected, and skipped files, then encounters restart, corruption, incomplete storage, publication interruption, or concurrent upload. | Only file-local payload ranges are requested or written; alignment gaps and skipped pieces create no payload or part artifact. A piece becomes have, streamable, publishable, or uploadable only after the correct SHA-256 Merkle result and durability transition. Restart/recheck conservatively invalidates missing, short, structurally incompatible, stale, or corrupt evidence while retaining exact verified content. | Passing Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) deterministic, runtime, two-role pinned-libtorrent, browser, path/platform, Android SAF/AVD, and resource evidence. The selective oracle fixture verifies four of five pieces and omits exactly 137 skipped bytes; the active uploader serves one exact verified 16-KiB block before final completion. |
 | DL-C39 | A pure-v2 magnet has authenticated info and selected candidate bytes but lacks durable piece or leaf hashes, then encounters corruption, selection change, or restart. | New payload waits for a piece root proved to the authenticated file root. Candidate bytes remain unavailable until refetch and verification; a complete file may reconstruct locally. A valid leaf proof retains good blocks and resets only exact corrupt blocks, while reject/stall falls back to whole-piece recovery. | Passing Tactical [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) deterministic hostile-state, scripted restart/fallback, two-role pinned-libtorrent wire, same-session promotion, production browser, Android incomplete-candidate, and bounded-resource evidence. The AVD interrupts after wire pieces 0 and 1 of nine selected pieces and observes hash requests increase from one to two after restart. |
+| DL-C40 | A strict hybrid piece arrives through either swarm lane, crosses real files and BEP 47 padding, restarts, rechecks, uploads, or yields disagreeing v1/v2 results. | One storage read feeds both integrity schemes; only validated synthetic padding feeds legacy SHA-1. Both schemes must pass before have or service. One-scheme success fails typed and closed, ordinary corruption retries without retaining authority, incomplete restart refetches sparse hashes, and complete reconstruction still revalidates the exact file root. | Passing Tactical [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) deterministic disagreement/padding/restart tests, both-role and both-entry-lane pinned-libtorrent transfer, selection promotion, browser restart/seeding, Android API 34 SAF recheck/upload, resource, and cleanup evidence. |
 
 ## Required Scheduler Observability
 

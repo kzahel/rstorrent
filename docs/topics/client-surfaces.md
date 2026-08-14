@@ -19,7 +19,14 @@ Completed Tactical
 pure-v2 `btmh` magnets through that same Add, BEP 53 selection, progress,
 Files, export, restart, promotion, removal, and seeding surface. Protocol and
 Merkle policy remain in the in-process engine; clients gain no hash-specific
-controls. The Android foreground product client now uses durable SAF storage without
+controls. Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) sends complete or
+single-/dual-topic hybrid input through that same one-row workflow. Both exact
+identities remain visible/exportable while selection, promotion, progress,
+Files, restart, recheck, seeding, and removal remain format-neutral. The
+production browser and Android API 34 SAF profiles pass; Tauri builds and the
+unsigned iOS archive require no presentation fork or hybrid control. The
+Android foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
 the original Linux development host. Closing its macOS window detaches that
@@ -516,6 +523,15 @@ an incomplete verified candidate, refetches hashes after restart, completes
 and promotes selection, serves a magnet-only libtorrent leecher, and cleans
 SAF state within the existing 40-handle and 16-request bounds. Tauri and iOS
 require no new presentation contract; their adapter/build gates pass.
+
+Tactical `156` adds the hybrid lifecycle to the same production seams. The
+browser reconciles separate exact `btih` and `btmh` additions into one row,
+retains both identities, applies exact selection, restarts complete, serves
+hash and payload requests, and removes exact managed state with bounded
+gateway ownership and zero Axe violations. The Android AVD runs a six-file
+SAF hybrid, promotes selection, serves both direct-v2 and upgraded routes,
+synthesizes padding, restarts/rechecks without peer payload, and cleans within
+the existing handle/request bounds. Desktop and iOS require no new contract.
 
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and

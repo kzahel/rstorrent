@@ -44,6 +44,15 @@ all three cases. Tracker owners consume only the selected endpoint and do not
 own or infer gateway state. Scripted coverage passes; off-LAN incoming IPv6
 evidence remains pending.
 Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) lets one central
+torrent advertisement registration carry one or two fixed versioned lanes. A
+strict hybrid announces its exact v1 key and truncated-v2 key independently
+through the existing tier schedule and global operation ceiling; peer results
+retain the lane into the common registry. Structured diagnostics record
+versioned start/success/failure/retry/cancel phases. The controlled hybrid
+tracker observed one exact announce per key and completed through the returned
+uTP seed without creating a second torrent or tracker manager.
+Completed Tactical
 [`140`](../tactical/140-incoming-utp-reachability.md) makes the endpoint source
 transport-specific without changing tracker semantics. UDP, HTTP, and HTTPS
 trackers still advertise the selected TCP peer-listener port, even when the

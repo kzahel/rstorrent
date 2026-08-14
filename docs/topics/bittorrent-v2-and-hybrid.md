@@ -18,11 +18,14 @@ peer transfer, discovery, streaming, and seeding. Completed Tactical
 bounded pure-v2 magnet vertical: exact `btmh`, SHA-256 BEP 9 metadata,
 authenticated hash messages 21--23, sparse hash scheduling, candidate
 recovery, selective payload, corruption repair, restart, and hash/payload
-service. Decision-complete Tactical
-[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) now owns the
-planned hybrid consumption/seeding closure. The BEP 52 claim remains
-**Partial** because Tactical `156` is not implemented and creation and broader
-BEP 52 behavior remain absent.
+service. Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) adds the strict
+hybrid consumption/seeding vertical: one owner and payload namespace, two
+full aliases and discovery lanes, negotiated/direct v2 entry, mandatory dual
+integrity, provisional-owner reconciliation, restart/recheck, upload, and
+first-party product evidence. The BEP 52 claim remains **Partial** because
+creation, arbitrary Merkle base layers, durable incomplete sparse-tree state,
+broader historical hybrid layouts, and public-swarm reliability remain absent.
 
 ## Scope And Owning Role
 
@@ -51,16 +54,18 @@ This topic does not authorize:
 
 ## Current Truth
 
-RSTorrent has one deliberately narrow pure-v2 product and wire subset alongside
-the existing v1 behavior:
+RSTorrent has deliberately bounded pure-v2 and hybrid product/wire subsets
+alongside the existing v1 behavior:
 
 - Product-facing [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs)
-  remains the v1 projection. `TorrentContent` is the runtime-owned v1/pure-v2
-  sum; pure v2 may enter from a strict complete outer source or from exact
-  SHA-256-authenticated info-only metadata. Hybrid content remains rejected.
+  remains the v1 projection. `TorrentContent` is the runtime-owned
+  v1/pure-v2/hybrid sum; pure v2 and hybrid may enter from a strict complete
+  outer source or authenticated info-only metadata. A hybrid retains its
+  validated v1 geometry, v2 logical file catalog, and synthetic padding map.
 - [`magnet.rs`](../../crates/rstorrent-protocol/src/magnet.rs) accepts bounded
-  `btih` or exact hexadecimal `btmh:1220` identity, canonicalizes by protocol,
-  and fails closed on conflicting, malformed, or mixed v1/v2 identity.
+  `btih`, exact hexadecimal `btmh:1220`, or a matching dual-topic hybrid,
+  canonicalizes topics v1 then v2, and fails closed on malformed, conflicting,
+  or metadata-inconsistent identity.
 - [`TorrentLayout`](../../crates/rstorrent-protocol/src/storage_layout.rs)
   remains the contiguous v1 layout. `ContentLayout` projects either that shape
   or v2's aligned file-local logical space through one checked runtime
@@ -79,11 +84,14 @@ the existing v1 behavior:
   one-piece file roots from multi-piece layer roots before durable have state.
 - Peer handshakes, trackers, DHT, MSE routing, incoming registration, and peer
   picking explicitly select a version-tagged `SwarmKey`; their 20-byte codec
-  shape is no longer the authoritative torrent owner.
+  shape is no longer the authoritative torrent owner. A hybrid owns two fixed
+  lanes beneath the same global budgets and can enter directly through v2 or
+  through the authenticated BEP 52 v1-to-v2 upgrade.
 - The engine and application use a canonical opaque `TorrentId`; schema 19
-  stores full protocol aliases separately. Exact v2 outer source, selection,
-  durable have state, path/SAF artifacts, publication, and versioned incoming
-  routes survive restart without a schema migration.
+  stores full protocol aliases separately. Exact v2/hybrid outer source,
+  selection, durable have state, path/SAF artifacts, publication, and
+  versioned incoming routes survive restart. Tactical `156` required no
+  migration or reset because that format already expressed the final shape.
 - Trackers, DHT, plaintext handshakes, MSE routing, TCP, and uTP use the tagged
   20-byte v2 truncation while the full 32-byte identity remains authoritative.
   Standard bitfield/have/request/piece/cancel exchange serves active verified
@@ -92,9 +100,10 @@ the existing v1 behavior:
   an authenticated expected root, and upload serves required piece or leaf
   proofs under existing storage budgets.
 - The [protocol ledger](protocol-support.md) reports BEP 52 as **Partial** for
-  the demonstrated complete-source and pure-v2 magnet subsets. It does not
-  claim mixed identity, hybrid swarms, dual verification, durable sparse hash
-  state, arbitrary Merkle-base behavior, or creation.
+  the demonstrated complete-source, pure-v2 magnet, and strict hybrid subsets.
+  It does not claim creation, durable incomplete sparse-hash state, arbitrary
+  Merkle-base behavior, broader historical hybrid layouts, or public-swarm
+  reliability.
 
 This is not a SHA-1-to-SHA-256 substitution. BEP 52 changes the identity
 cardinality, file-to-piece geometry, expected-hash source, verification unit,
@@ -433,10 +442,9 @@ runtime design.
 
 ## Tactical Campaign
 
-The first four stages are complete. Stage 5 is assigned to decision-complete
-Tactical `156` and has not started. Adjacent stages may be combined only
-when the resulting scope remains bounded and its stopping condition becomes
-clearer.
+All five consumption/seeding stages are complete. Adjacent future stages may
+be combined only when the resulting scope remains bounded and its stopping
+condition becomes clearer.
 
 ### 1. [Identity and resettable persistence foundation](../tactical/143-dual-identity-and-persistence-foundation.md)
 
@@ -494,18 +502,19 @@ Tauri/iOS build, both Android ABIs, and API 34 SAF evidence.
 
 ### 5. [Hybrid dual-swarm runtime closure](../tactical/156-hybrid-dual-swarm-runtime-closure.md)
 
-Planned Tactical `156` adds simultaneous v1/v2 identity aliases, per-version
-tracker and DHT participation, hybrid handshake upgrade, shared peer/storage
-ownership, duplicate-add and metadata-time collision behavior, BEP 47 layout
+Completed on 2026-08-15. Strict complete and info-only hybrid metadata now
+produce one owner with simultaneous v1/v2 aliases, per-version tracker and DHT
+participation, authenticated handshake upgrade, direct-v2 entry, shared
+peer/storage ownership, atomic provisional reconciliation, BEP 47 layout
 comparison, and mandatory dual verification.
 
-The stopping condition requires controlled pinned-libtorrent transfers through
-both the v1 and v2 swarm identities, both initiated and accepted roles,
-consistent and inconsistent hybrid metadata, historical padding compatibility
-if selected, corruption that disagrees between schemes, restart, seeding,
-MSE and default uTP routing where applicable, exact publication, resource
-bounds, generated clients, and Android evidence. Only then may the protocol
-ledger describe a hybrid-supported subset.
+Pinned libtorrent passes in both roles through both swarm entry paths with
+selection promotion, restart, active and complete upload, forced-RC4 MSE,
+default uTP, exact dual tracker/DHT keys, canonical and accepted historical
+final-tail layouts, inconsistent-hash rejection, resource bounds, browser,
+desktop, Android API 34 SAF, and iOS-build evidence. The protocol ledger may
+therefore describe this exact hybrid-supported subset, but not creation or
+unproven broader BEP 52 behavior.
 
 ### Separate later creation capability
 
@@ -536,12 +545,11 @@ outstanding-request, resident-hash, task, descriptor, and storage high-water
 marks. Temporary torrents, payloads, captures, logs, and oracle processes must
 be bounded and cleaned.
 
-Parsing a v2 file is not a support claim. The complete-source and magnet
-subsets graduate only the exact paths their evidence proves. Hybrid support
-still requires one
-content owner to participate through both identities while verifying both
-schemes. [`protocol-support.md`](protocol-support.md) owns the final claim
-language and evidence links.
+Parsing a v2 file is not a support claim. The complete-source, magnet, and
+hybrid subsets graduate only the exact paths their evidence proves. Tactical
+`156` demonstrates one hybrid content owner participating through both
+identities while verifying both schemes. [`protocol-support.md`](protocol-support.md)
+owns the final claim language and evidence links.
 
 ## Resolved Decisions For Implementing Tacticals
 
@@ -576,12 +584,12 @@ cross-product.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records implementing
-decision-complete Tactical `156` as the sole **Now**. Completed
-Tacticals
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) and
-[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) own the exact
-complete-source and magnet pure-v2 subsets. Tactical
-[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) fixes the Stage 5
-identity reconciliation, dual verification, ownership, resource bounds, and
-controlled evidence contract before code changes begin.
+[`capability-readiness.md`](capability-readiness.md) records measurement-only
+Tactical [`153`](../tactical/153-wired-lan-utp-data-plane-scalability.md) as the
+sole **Now** after the v2/hybrid campaign closure. Completed Tacticals
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md),
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md), and
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) own the exact
+complete-source, pure-v2 magnet, and strict hybrid consumption/seeding subsets.
+Torrent creation remains a separately planned capability rather than implied
+follow-on scope.

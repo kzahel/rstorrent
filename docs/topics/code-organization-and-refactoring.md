@@ -66,6 +66,17 @@ daemon, peer registry, filesystem owner, platform policy fork, generated DTO,
 or crate split was introduced.
 
 Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) preserves the same
+dependency direction. `TorrentContent::Hybrid` and dual-integrity/padding
+decisions stay task-free in protocol/engine state; `TorrentPeerHandle` carries
+the immutable paired-lane facts used by existing peer owners; and one central
+discovery registration owns a fixed one- or two-lane table under existing
+global tracker/DHT budgets. The session remains the sole durable owner and
+application lifecycle coordinator. No second torrent, registry, scheduler,
+filesystem, discovery service, platform adapter, DTO family, or crate split
+was introduced.
+
+Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds one
 task-free bandwidth core inside the engine and one joined upload/download
 service under the existing session-network owner. A fixed registration on

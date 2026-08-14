@@ -16,7 +16,13 @@ only format-specific client facts. Completed Tactical
 [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) carries
 pure-v2 magnet metadata, hash waiting/recovery, selected progress, restart,
 export, and completed seeding through those same commands and views, again
-without a v2-only DTO or protocol-version change. The bounded leased view-set,
+without a v2-only DTO or protocol-version change. Completed Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) carries one
+hybrid owner as one torrent row with optional full v1 and v2 identities. Dual
+topic reconciliation, selection, progress, Files, Force recheck, export,
+restart, upload, seeding, and removal reuse the same commands, snapshots, and
+events; discovery-lane diagnostics add typed version/phase fields without a
+view protocol-version or hybrid-only DTO change. The bounded leased view-set,
 authenticated JSON polling adapter, pure reducer, and lifecycle controller are
 implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
