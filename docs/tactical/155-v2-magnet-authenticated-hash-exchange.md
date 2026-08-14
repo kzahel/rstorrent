@@ -1005,10 +1005,15 @@ unless a bounded artifact is explicitly retained and linked.
   Complete catalogs construct proof siblings from authenticated piece roots;
   sparse catalogs retain only bounded proof nodes. Accounting remains under
   the Stage 0 80-MiB ceiling.
-- Source comparison corrected an important BEP 52 field interpretation:
-  `proof layers` is the number of tree levels omitted above the named base,
-  so a response carries `count + proof_layers - log2(count)` hashes. Request,
-  proof, and exact-frame validation now share that checked rule.
+- Controlled exchange with pinned libtorrent corrected an important BEP 52
+  field interpretation beyond the initial deterministic reading. A response
+  omits the first `log2(count) - 1` proof layers already covered by its base
+  hashes, so it carries `count + max(0, proof_layers -
+  (log2(count) - 1))` hashes. A fully authenticated range of two or more
+  hashes requests `tree height - base layer - 1` proof layers. Request,
+  proof, and exact-frame validation share that checked rule; the exact
+  libtorrent `base=0,index=0,count=4,proof_layers=1` request is retained as a
+  regression vector.
 - `PeerMessage` encodes and decodes IDs 21, 22, and 23 with exact big-endian
   fields and message-specific preallocation bounds. Only a v2-negotiated
   decoder accepts them; v1, malformed, oversized, mismatched-count, invalid-

@@ -276,7 +276,7 @@ async fn serve_clean_v2_repair_peer(
                         base_layer: 0,
                         index: 0,
                         count: 2,
-                        proof_layers: 2,
+                        proof_layers: 1,
                     };
                     send_message(&mut peer, &PeerMessage::HashRequest(request))
                         .await
@@ -463,7 +463,7 @@ async fn serve_v2_metadata_hashes_and_payload(
                 assert_eq!(request.base_layer, 0);
                 assert_eq!(request.index, 0);
                 assert_eq!(request.count, 2);
-                assert_eq!(request.proof_layers, 1);
+                assert_eq!(request.proof_layers, 0);
                 hash_served = true;
                 send_message(
                     &mut peer,

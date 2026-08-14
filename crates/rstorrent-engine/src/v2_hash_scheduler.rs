@@ -370,7 +370,7 @@ mod tests {
             base_layer: 0,
             index: 0,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         let response = HashResponse {
             request,

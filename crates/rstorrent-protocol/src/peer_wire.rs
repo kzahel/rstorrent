@@ -579,7 +579,6 @@ fn validate_hash_wire_request(
         || (request.count == 1 && !allow_count_one)
         || !request.index.is_multiple_of(request.count)
         || request.proof_layers > MAX_HASH_PROOF_LAYERS
-        || request.proof_layers < request.count.trailing_zeros()
     {
         return Err(FrameError::InvalidHashRequest);
     }
@@ -885,7 +884,7 @@ mod tests {
         let response = HashResponse {
             request,
             hashes: vec![
-                [0x21; 32], [0x22; 32], [0x31; 32], [0x32; 32], [0x33; 32], [0x34; 32],
+                [0x21; 32], [0x22; 32], [0x31; 32], [0x32; 32], [0x33; 32], [0x34; 32], [0x35; 32],
             ],
         };
         let messages = [
@@ -921,10 +920,7 @@ mod tests {
             count: 2,
             proof_layers: 0,
         };
-        assert_eq!(
-            encode_message(&PeerMessage::HashRequest(request)),
-            Err(FrameError::InvalidHashRequest)
-        );
+        assert!(encode_message(&PeerMessage::HashRequest(request)).is_ok());
 
         let mut malformed = vec![0, 0, 0, 49, 21];
         malformed.extend_from_slice(&[0; 32]);
@@ -944,7 +940,7 @@ mod tests {
         };
         let mut wrong_count = encode_message(&PeerMessage::Hashes(HashResponse {
             request: valid,
-            hashes: vec![[1; 32], [2; 32], [3; 32]],
+            hashes: vec![[1; 32], [2; 32], [3; 32], [4; 32]],
         }))
         .expect("encode valid hashes");
         wrong_count.truncate(wrong_count.len() - 32);
@@ -953,8 +949,8 @@ mod tests {
         assert_eq!(
             FrameDecoder::for_v2().push(&wrong_count),
             Err(FrameError::InvalidHashCount {
-                expected: 3,
-                actual: 2,
+                expected: 4,
+                actual: 3,
             })
         );
 
@@ -986,6 +982,26 @@ mod tests {
                 .expect("decode count-one compatibility reject"),
             [reject]
         );
+    }
+
+    #[test]
+    fn v2_hash_decoder_accepts_libtorrent_whole_padded_leaf_request() {
+        let request = HashRequest {
+            pieces_root: [0x42; 32],
+            base_layer: 0,
+            index: 0,
+            count: 4,
+            proof_layers: 1,
+        };
+        let frame = encode_message(&PeerMessage::HashReject(request))
+            .expect("encode libtorrent-shaped hash reject");
+        assert_eq!(
+            FrameDecoder::for_v2()
+                .push(&frame)
+                .expect("decode libtorrent-shaped hash reject"),
+            [PeerMessage::HashReject(request)]
+        );
+        assert_eq!(request.response_hash_count(), Ok(4));
     }
 
     #[test]

@@ -5246,7 +5246,7 @@ mod tests {
             base_layer: 1,
             index: 0,
             count: 2,
-            proof_layers: 1,
+            proof_layers: 0,
         };
         send(&mut peer, &PeerMessage::HashRequest(piece_request)).await;
         assert_eq!(
@@ -5261,7 +5261,7 @@ mod tests {
             base_layer: 0,
             index: 0,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         send(&mut peer, &PeerMessage::HashRequest(leaf_request)).await;
         assert_eq!(

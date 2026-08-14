@@ -567,7 +567,8 @@ fn expected_v2_piece(
             .height()
             .checked_sub(base_layer)
             .ok_or(ContentGeometryError::ArithmeticOverflow)?,
-    );
+    )
+    .saturating_sub(u32::from(count > 1));
     Ok(V2ExpectedPieceQuery::Missing {
         geometry,
         request: HashRequest {
@@ -749,7 +750,7 @@ mod tests {
                     base_layer: 1,
                     index: 0,
                     count: 2,
-                    proof_layers: 1,
+                    proof_layers: 0,
                     ..
                 },
                 ..

@@ -272,6 +272,7 @@ def libtorrent_session(
             "enable_incoming_tcp": incoming,
             "enable_outgoing_tcp": not incoming,
             "alert_queue_size": 1000,
+            "alert_mask": int(lt.alert.category_t.all_categories),
         }
     )
     if require_mse:
@@ -309,9 +310,11 @@ def compare_files(
     root: Path,
     *,
     skipped: frozenset[int] = frozenset(),
+    named_root: bool = True,
 ) -> None:
+    content_root = root / "root" if named_root else root
     for index, source in enumerate(fixture.files):
-        path = root / "root" / Path(
+        path = content_root / Path(
             *(component.decode("utf-8") for component in source.path)
         )
         if index in skipped:
@@ -351,6 +354,7 @@ def leech_with_libtorrent(
     *,
     require_mse: bool = False,
     utp_only: bool = False,
+    magnet_only: bool = False,
 ) -> tuple[list[str], str | None]:
     output_root.mkdir()
     session = libtorrent_session(
@@ -359,20 +363,34 @@ def leech_with_libtorrent(
     handle: lt.torrent_handle | None = None
     diagnostics: list[str] = []
     negotiated = None
-    proxy = TcpProxy(parse_address(ready)) if require_mse else None
+    proxy = None
     try:
-        parameters = lt.add_torrent_params()
-        parameters.ti = fixture.torrent_info
-        parameters.save_path = str(output_root)
-        parameters.flags &= ~lt.torrent_flags.paused
-        parameters.flags &= ~lt.torrent_flags.auto_managed
-        handle = session.add_torrent(parameters)
         peer_address = (
             parse_address({"listen": ready.get("utp_listen")})
             if utp_only
             else parse_address(ready)
         )
-        handle.connect_peer(proxy.endpoint if proxy is not None else peer_address)
+        if require_mse or magnet_only:
+            proxy = TcpProxy(peer_address)
+        endpoint = proxy.endpoint if proxy is not None else peer_address
+        parameters = (
+            lt.parse_magnet_uri(
+                "magnet:?xt=urn:btmh:1220"
+                f"{fixture.full_info_hash}&x.pe={endpoint[0]}:{endpoint[1]}"
+            )
+            if magnet_only
+            else lt.add_torrent_params()
+        )
+        if not magnet_only:
+            parameters.ti = fixture.torrent_info
+        parameters.save_path = str(output_root)
+        parameters.flags &= ~lt.torrent_flags.paused
+        parameters.flags &= ~lt.torrent_flags.auto_managed
+        handle = session.add_torrent(parameters)
+        # The pinned Python binding retains the magnet identity but does not
+        # schedule x.pe itself. Treat the parsed hint as the sole discovery
+        # input and inject that exact endpoint through libtorrent's public API.
+        handle.connect_peer(endpoint)
         deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
@@ -386,6 +404,16 @@ def leech_with_libtorrent(
                 break
             time.sleep(0.02)
         else:
+            if proxy is not None:
+                for index, trace in enumerate(proxy.traces()):
+                    diagnostics.append(
+                        f"proxy[{index}] client_to_upstream="
+                        f"{bytes(trace.client_to_upstream)!r}"
+                    )
+                    diagnostics.append(
+                        f"proxy[{index}] upstream_to_client="
+                        f"{bytes(trace.upstream_to_client)!r}"
+                    )
             raise ScenarioFailure(
                 "libtorrent did not complete from the RSTorrent v2 seed\n"
                 + "\n".join(diagnostics[-40:])
@@ -448,8 +476,8 @@ def leech_with_rstorrent(
     *,
     skipped: frozenset[int] = frozenset(),
     require_mse: bool = False,
+    magnet_only: bool = False,
 ) -> tuple[dict[str, str], list[str], str | None]:
-    output_root.mkdir()
     session, handle, diagnostics = start_libtorrent_seed(
         fixture, require_mse=require_mse
     )
@@ -457,16 +485,25 @@ def leech_with_rstorrent(
         TcpProxy(("127.0.0.1", session.listen_port())) if require_mse else None
     )
     try:
+        endpoint = (
+            f"{proxy.endpoint[0]}:{proxy.endpoint[1]}"
+            if proxy is not None
+            else f"127.0.0.1:{session.listen_port()}"
+        )
+        source = ["--metainfo", str(fixture.torrent_path), "--peer", endpoint]
+        if magnet_only:
+            selected = [
+                index for index in range(len(fixture.files)) if index not in skipped
+            ]
+            select_only = ",".join(str(index) for index in selected)
+            source = [
+                "--magnet",
+                "magnet:?xt=urn:btmh:1220"
+                f"{fixture.full_info_hash}&x.pe={endpoint}&so={select_only}",
+            ]
         command = [
             str(binary),
-            "--metainfo",
-            str(fixture.torrent_path),
-            "--peer",
-            (
-                f"{proxy.endpoint[0]}:{proxy.endpoint[1]}"
-                if proxy is not None
-                else f"127.0.0.1:{session.listen_port()}"
-            ),
+            *source,
             "--output",
             str(output_root),
             "--timeout-seconds",
@@ -474,8 +511,9 @@ def leech_with_rstorrent(
             "--max-buffered-payload-bytes",
             str(DEFAULT_PAYLOAD_ALLOWANCE),
         ]
-        for index in sorted(skipped):
-            command.extend(["--skip-file", str(index)])
+        if not magnet_only:
+            for index in sorted(skipped):
+                command.extend(["--skip-file", str(index)])
         if require_mse:
             command.extend(["--encryption", "required"])
         process = subprocess.Popen(
@@ -522,7 +560,7 @@ def leech_with_rstorrent(
         if require_mse:
             assert_successful_wire_shape(proxy.traces(), "rc4")
             negotiated = "rc4"
-        compare_files(fixture, output_root, skipped=skipped)
+        compare_files(fixture, output_root, skipped=skipped, named_root=False)
         return fields, diagnostics[-20:], negotiated
     finally:
         if handle.is_valid():
@@ -831,11 +869,16 @@ def run(repository: Path, *, no_build: bool) -> None:
                     fixture,
                     seed_ready,
                     fixture.torrent_path.parent / "libtorrent-from-rstorrent",
+                    magnet_only=True,
                 )
                 first_stop = stop_rstorrent_seed(seed_process, fixture.total_size)
-            except BaseException:
+            except BaseException as error:
+                snapshot = seed_snapshot(seed_process)
                 terminate_process(seed_process)
-                raise
+                raise ScenarioFailure(
+                    f"{error}\nRSTorrent seed snapshot:\n"
+                    f"{json.dumps(snapshot, indent=2, sort_keys=True)}"
+                ) from error
 
             restarted_process, restarted_ready = start_rstorrent_seed(
                 seed_binary, fixture
@@ -845,18 +888,24 @@ def run(repository: Path, *, no_build: bool) -> None:
                     fixture,
                     restarted_ready,
                     fixture.torrent_path.parent / "libtorrent-from-restarted-rstorrent",
+                    magnet_only=True,
                 )
                 restarted_stop = stop_rstorrent_seed(
                     restarted_process, fixture.total_size
                 )
-            except BaseException:
+            except BaseException as error:
+                snapshot = seed_snapshot(restarted_process)
                 terminate_process(restarted_process)
-                raise
+                raise ScenarioFailure(
+                    f"{error}\nRSTorrent restarted seed snapshot:\n"
+                    f"{json.dumps(snapshot, indent=2, sort_keys=True)}"
+                ) from error
 
             full_fields, reverse_alerts, _ = leech_with_rstorrent(
                 download_binary,
                 fixture,
                 fixture.torrent_path.parent / "rstorrent-from-libtorrent",
+                magnet_only=True,
             )
             skipped = (
                 frozenset({1})
@@ -871,6 +920,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                     fixture.torrent_path.parent
                     / "rstorrent-selective-from-libtorrent",
                     skipped=skipped,
+                    magnet_only=True,
                 )
             mse_evidence = None
             discovery_evidence = None
@@ -884,6 +934,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                         mse_ready,
                         fixture.torrent_path.parent / "libtorrent-mse-from-rstorrent",
                         require_mse=True,
+                        magnet_only=True,
                     )
                     mse_stop = stop_rstorrent_seed(mse_process, fixture.total_size)
                 except BaseException:
@@ -894,6 +945,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                     fixture,
                     fixture.torrent_path.parent / "rstorrent-mse-from-libtorrent",
                     require_mse=True,
+                    magnet_only=True,
                 )
                 mse_evidence = {
                     "libtorrent_initiates": incoming_method,

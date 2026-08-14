@@ -34,12 +34,14 @@ pub struct HashRequest {
 }
 
 impl HashRequest {
+    fn omitted_proof_layers(self) -> u32 {
+        self.count.trailing_zeros().saturating_sub(1)
+    }
+
     pub fn response_hash_count(self) -> Result<usize, HashExchangeError> {
-        let omitted = self.count.trailing_zeros();
         let proof_hashes = self
             .proof_layers
-            .checked_sub(omitted)
-            .ok_or(HashExchangeError::InvalidProofLayers)?;
+            .saturating_sub(self.omitted_proof_layers());
         usize::try_from(self.count)
             .ok()
             .and_then(|count| count.checked_add(proof_hashes as usize))
@@ -424,8 +426,7 @@ impl V2HashCatalog {
         let mut proof_index = validated.subject_index;
         let proof_hashes = request
             .proof_layers
-            .checked_sub(request.count.trailing_zeros())
-            .ok_or(HashExchangeError::InvalidProofLayers)?;
+            .saturating_sub(request.omitted_proof_layers());
         for layer in validated.subject_layer..validated.subject_layer + proof_hashes as u8 {
             let sibling = proof_index ^ 1;
             let sibling_start = sibling
@@ -522,8 +523,7 @@ impl V2HashCatalog {
         let mut proof_index = validated.subject_index;
         let proof_hashes = request
             .proof_layers
-            .checked_sub(request.count.trailing_zeros())
-            .ok_or(HashExchangeError::InvalidProofLayers)?;
+            .saturating_sub(request.omitted_proof_layers());
         for layer in validated.subject_layer..validated.subject_layer + proof_hashes as u8 {
             let sibling = proof_index ^ 1;
             let hash = if layer < piece_layer {
@@ -707,9 +707,12 @@ fn validate_request_range(
     let subject_layer = base_layer
         .checked_add(range_height)
         .ok_or(HashExchangeError::ArithmeticOverflow)?;
-    if subject_layer > shape.height()
-        || u32::from(shape.height() - base_layer) != request.proof_layers
-    {
+    if subject_layer > shape.height() {
+        return Err(HashExchangeError::InvalidProofLayers);
+    }
+    let required_proof_layers =
+        u32::from(shape.height() - base_layer).saturating_sub(u32::from(request.count > 1));
+    if required_proof_layers != request.proof_layers {
         return Err(HashExchangeError::InvalidProofLayers);
     }
     let padded_base_nodes = shape.padded_leaf_count() >> base_layer;
@@ -888,7 +891,7 @@ mod tests {
             base_layer: 0,
             index: 2,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         let response = HashResponse {
             request,
@@ -930,7 +933,7 @@ mod tests {
             base_layer: 0,
             index: 2,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         let mut source = V2HashCatalog::new(8).unwrap();
         source
@@ -968,7 +971,7 @@ mod tests {
             base_layer: 0,
             index: 0,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         let mut catalog = V2HashCatalog::new(8).unwrap();
         catalog
@@ -997,7 +1000,7 @@ mod tests {
             base_layer: 0,
             index: 0,
             count: 2,
-            proof_layers: 2,
+            proof_layers: 1,
         };
         assert_eq!(validate_request(geometry, valid, false), Ok(()));
         for count in [0, 1, 3, 513] {

@@ -3741,6 +3741,7 @@ async fn run_magnet_download_with_peers(
 ) -> Result<DownloadReport, DownloadError> {
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
     let content = runtime_content_from_acquired(&raw_info, metainfo)?;
+    let skip_files = effective_magnet_skip_files(&magnet, &content.content, config.skip_files)?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
             torrent_id: config.identity.torrent_id(),
@@ -3752,10 +3753,50 @@ async fn run_magnet_download_with_peers(
             .resource_limits
             .storage_intake_high_watermark_bytes,
         swarm_config: config.resource_limits.swarm_config(),
-        skip_files: config.skip_files,
+        skip_files,
         materialize_files: config.materialize_files,
     };
     run_content_download(content_config, content, control, None, peers, None).await
+}
+
+fn effective_magnet_skip_files(
+    magnet: &Magnet,
+    content: &TorrentContent,
+    configured: Vec<usize>,
+) -> Result<Vec<usize>, DownloadError> {
+    let Some(selection) = magnet.select_only.as_ref() else {
+        return Ok(configured);
+    };
+    let file_count = content.files().len();
+    let file_count_u32 = u32::try_from(file_count)
+        .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+    if selection
+        .ranges()
+        .iter()
+        .any(|range| range.end as usize >= file_count)
+    {
+        return Err(DownloadError::Magnet(
+            MagnetError::SelectOnlyIndexOutOfRange {
+                maximum_exclusive: file_count_u32,
+            },
+        ));
+    }
+    if !configured.is_empty() {
+        return Ok(configured);
+    }
+    Ok(content
+        .files()
+        .enumerate()
+        .filter_map(|(index, file)| {
+            let index_u32 = u32::try_from(index).ok()?;
+            (!file.padding()
+                && !selection
+                    .ranges()
+                    .iter()
+                    .any(|range| range.start <= index_u32 && index_u32 <= range.end))
+            .then_some(index)
+        })
+        .collect())
 }
 
 async fn run_magnet_metadata(
@@ -3894,6 +3935,8 @@ async fn run_resumable_magnet_download(
         } else {
             config.storage_root.join(runtime_content.content.name())
         };
+        let skip_files =
+            effective_magnet_skip_files(&magnet, &runtime_content.content, config.skip_files)?;
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
                 torrent_id: config.identity.torrent_id(),
@@ -3905,7 +3948,7 @@ async fn run_resumable_magnet_download(
                 .resource_limits
                 .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
-            skip_files: config.skip_files,
+            skip_files,
             materialize_files: Vec::new(),
         };
         let result = run_content_download(
@@ -3954,6 +3997,8 @@ async fn run_resumable_magnet_download(
             return Err(DownloadError::Checkpoint(message));
         }
         let content_fingerprint = ContentFingerprint::for_info_bytes(&raw_info);
+        let skip_files =
+            effective_magnet_skip_files(&magnet, &runtime_content.content, config.skip_files)?;
         resume.raw_info = Some(raw_info.into());
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
@@ -3966,7 +4011,7 @@ async fn run_resumable_magnet_download(
                 .resource_limits
                 .storage_intake_high_watermark_bytes,
             swarm_config: config.resource_limits.swarm_config(),
-            skip_files: config.skip_files,
+            skip_files,
             materialize_files: Vec::new(),
         };
         run_content_download(
@@ -4858,7 +4903,8 @@ impl<'a> ContentSwarmDownload<'a> {
             )
             .map_err(|error| DownloadError::StorageTask(error.to_string()))?
             .height(),
-        );
+        )
+        .saturating_sub(1);
         let mut needs = Vec::new();
         let mut offset = 0_u64;
         while offset < leaves_per_piece {
