@@ -78,6 +78,8 @@ class ProductNavigationTest {
         }
 
         compose.onNodeWithText("Fixture torrent").performClick()
+        compose.onNodeWithText("Info hash (v1)").assertIsDisplayed()
+        compose.onNodeWithText("Info hash (v2)").assertIsDisplayed()
         listOf("Details", "Status", "Files", "Trackers", "Peers", "Pieces").forEach {
             compose.onNodeWithText(it).performScrollTo().assertIsDisplayed().performClick()
         }
@@ -97,7 +99,7 @@ class ProductNavigationTest {
             protocolIdentities =
                 TorrentProtocolIdentities(
                     v1 = "0123456789abcdef0123456789abcdef01234567",
-                    v2 = null,
+                    v2 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 ),
             displayName = "Fixture torrent",
             state = TorrentState.DOWNLOADING,

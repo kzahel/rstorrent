@@ -42,6 +42,7 @@ RESULT_TIMEOUT_SECONDS = 45
 PROFILE_CHOICES = (
     "success",
     "product-dynamic-saf",
+    "product-hybrid-saf",
     "product-pure-v2-saf",
     "product-identity-reset",
     "product-incomplete-duplex",
@@ -104,7 +105,9 @@ def ensure_interop_environment() -> None:
         os.execvpe(command[0], command, environment)
 
 
-def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType, ModuleType]:
+def load_support() -> tuple[
+    ModuleType, ModuleType, ModuleType, ModuleType, ModuleType, ModuleType
+]:
     interop_root = repository_root() / "tests" / "interop"
     if str(interop_root) not in sys.path:
         sys.path.insert(0, str(interop_root))
@@ -128,7 +131,11 @@ def load_support() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType, Modu
         "rstorrent_pure_v2_runtime_support",
         interop_root / "pure_v2_runtime.py",
     )
-    return probe, interop, tracker, duplex, pure_v2
+    hybrid = load_module(
+        "rstorrent_hybrid_runtime_support",
+        interop_root / "hybrid_runtime.py",
+    )
+    return probe, interop, tracker, duplex, pure_v2, hybrid
 
 
 def build_apk() -> Path:
@@ -354,6 +361,82 @@ class PureV2SeedFixture:
         self.handle = None
         self.session = None
         gc.collect()
+        shutil.rmtree(self.run_path)
+
+
+@dataclass
+class HybridSeedFixture:
+    run_path: Path
+    torrent_path: Path
+    expected_file_hashes: dict[str, str]
+    info_hash: str
+    wire_info_hash: str
+    name: str
+    session: Any
+    handle: Any
+    host_port: int
+    alerts: list[str]
+    piece_count: int
+    skipped_file: int
+
+    @classmethod
+    def create(
+        cls,
+        interop: ModuleType,
+        hybrid: ModuleType,
+        label: str,
+    ) -> "HybridSeedFixture":
+        run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
+        fixture = hybrid.make_fixture(run_path)
+        expected_file_hashes = {
+            "/".join(component.decode("utf-8") for component in source.path):
+                hashlib.sha1(source.data).hexdigest()
+            for source in fixture.files
+        }
+        alerts: list[str] = []
+        session = interop.create_session()
+        host_port = interop.wait_for_listener(session, alerts)
+        handle = interop.add_seed(
+            session,
+            fixture.torrent_info,
+            fixture.libtorrent_storage_root,
+            alerts,
+        )
+        return cls(
+            run_path=run_path,
+            torrent_path=fixture.torrent_path,
+            expected_file_hashes=expected_file_hashes,
+            info_hash=fixture.full_info_hash,
+            wire_info_hash=fixture.wire_info_hash,
+            name=str(fixture.torrent_info.name()),
+            session=session,
+            handle=handle,
+            host_port=host_port,
+            alerts=alerts,
+            piece_count=fixture.torrent_info.num_pieces(),
+            skipped_file=hybrid.SKIPPED_FILE,
+        )
+
+    def stop_seed(self) -> None:
+        try:
+            self.alerts.extend(alert.message() for alert in self.session.pop_alerts())
+        except Exception:
+            pass
+        try:
+            if self.handle.is_valid():
+                self.session.remove_torrent(self.handle)
+        except Exception:
+            pass
+        try:
+            self.session.pause()
+        except Exception:
+            pass
+        self.handle = None
+        self.session = None
+        gc.collect()
+
+    def close(self) -> None:
+        self.stop_seed()
         shutil.rmtree(self.run_path)
 
 
@@ -1913,6 +1996,7 @@ def verify_product_upload(
     *,
     pure_v2: ModuleType | None = None,
     magnet_only: bool = False,
+    expect_hybrid_upgrade: bool = False,
 ) -> int:
     import libtorrent as lt
 
@@ -1937,6 +2021,8 @@ def verify_product_upload(
             "enable_outgoing_utp": False,
             "enable_incoming_tcp": False,
             "enable_outgoing_tcp": True,
+            "in_enc_policy": int(lt.enc_policy.pe_disabled),
+            "out_enc_policy": int(lt.enc_policy.pe_disabled),
             "alert_queue_size": 1000,
         }
     )
@@ -1944,36 +2030,68 @@ def verify_product_upload(
     hash_proxy = None
     diagnostics: list[str] = []
     try:
-        if magnet_only:
-            parameters = lt.parse_magnet_uri(
-                f"magnet:?xt=urn:btmh:1220{fixture.info_hash}"
-            )
-        else:
-            parameters = lt.add_torrent_params()
-            parameters.ti = lt.torrent_info(str(fixture.torrent_path))
-        parameters.save_path = str(output_root)
-        parameters.flags &= ~lt.torrent_flags.paused
-        parameters.flags &= ~lt.torrent_flags.auto_managed
-        handle = session.add_torrent(parameters)
         peer_port = host_port
         if pure_v2 is not None:
             hash_proxy = pure_v2.PlaintextBep52Proxy(("127.0.0.1", host_port))
             peer_port = hash_proxy.endpoint[1]
-        handle.connect_peer(("127.0.0.1", peer_port))
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            diagnostics.extend(alert.message() for alert in session.pop_alerts())
-            status = handle.status()
-            if status.errc.value() != 0:
-                raise BootstrapFailure(f"Android upload leech failed: {status.errc.message()}")
-            if status.is_seeding:
-                break
-            time.sleep(0.02)
-        else:
-            raise BootstrapFailure(
-                "libtorrent did not complete from Android SAF storage\n"
-                + "\n".join(diagnostics[-30:])
+        if magnet_only:
+            worker = repository_root() / "tests" / "interop" / "controlled_libtorrent_leech.py"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(worker),
+                    "--magnet",
+                    f"magnet:?xt=urn:btmh:1220{fixture.info_hash}",
+                    "--peer-host",
+                    "127.0.0.1",
+                    "--peer-port",
+                    str(peer_port),
+                    "--output",
+                    str(output_root),
+                ],
+                cwd=repository_root(),
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
             )
+            if completed.returncode != 0:
+                raise BootstrapFailure(
+                    "isolated libtorrent Android upload leech failed\n"
+                    f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+                )
+            try:
+                report = json.loads(completed.stdout.strip().splitlines()[-1])
+            except (IndexError, json.JSONDecodeError) as error:
+                raise BootstrapFailure(
+                    f"isolated libtorrent leecher returned invalid evidence: {completed.stdout!r}"
+                ) from error
+            downloaded = int(report["payload_download"])
+        else:
+            parameters = lt.add_torrent_params()
+            parameters.ti = lt.torrent_info(str(fixture.torrent_path))
+            parameters.save_path = str(output_root)
+            parameters.flags &= ~lt.torrent_flags.paused
+            parameters.flags &= ~lt.torrent_flags.auto_managed
+            handle = session.add_torrent(parameters)
+            handle.connect_peer(("127.0.0.1", peer_port))
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                diagnostics.extend(alert.message() for alert in session.pop_alerts())
+                status = handle.status()
+                if status.errc.value() != 0:
+                    raise BootstrapFailure(
+                        f"Android upload leech failed: {status.errc.message()}"
+                    )
+                if status.is_seeding:
+                    break
+                time.sleep(0.02)
+            else:
+                raise BootstrapFailure(
+                    "libtorrent did not complete from Android SAF storage\n"
+                    + "\n".join(diagnostics[-30:])
+                )
+            downloaded = int(handle.status().total_payload_download)
         for relative_path, expected_hash in fixture.expected_file_hashes.items():
             actual_path = output_root / fixture.name / relative_path
             if not actual_path.is_file():
@@ -1981,12 +2099,45 @@ def verify_product_upload(
             actual_hash = hashlib.sha1(actual_path.read_bytes()).hexdigest()
             if actual_hash != expected_hash:
                 raise BootstrapFailure(f"Android upload hash differs: {relative_path}")
-        downloaded = int(handle.status().total_payload_download)
         if downloaded <= 0:
             raise BootstrapFailure("libtorrent received no payload from Android")
         if hash_proxy is not None:
             wire = hash_proxy.snapshot()
-            if not wire["hash_requests"] or wire["hash_responses"] < 1:
+            handshakes = wire["handshakes"]
+            if expect_hybrid_upgrade:
+                offered = [
+                    row
+                    for row in handshakes
+                    if row.get("direction") == "client"
+                    and row.get("info_hash") == fixture.wire_info_hash
+                    and row.get("hybrid_v2") is True
+                ]
+                accepted = [
+                    row
+                    for row in handshakes
+                    if row.get("direction") == "upstream"
+                    and row.get("info_hash") == fixture.info_hash[:40]
+                ]
+                if not offered or not accepted:
+                    raise BootstrapFailure(
+                        "Android hybrid upload omitted the exact v1-to-v2 upgrade: "
+                        f"{wire}"
+                    )
+            else:
+                direct_v2 = [
+                    row
+                    for row in handshakes
+                    if row.get("direction") == "client"
+                    and row.get("info_hash") == fixture.info_hash[:40]
+                ]
+                if not direct_v2:
+                    raise BootstrapFailure(
+                        "Android v2 upload omitted direct-v2 incoming routing: "
+                        f"{wire}"
+                    )
+            if not expect_hybrid_upgrade and (
+                not wire["hash_requests"] or wire["hash_responses"] < 1
+            ):
                 raise BootstrapFailure(
                     "Android v2 magnet upload omitted authenticated hash service: "
                     f"{wire}"
@@ -2823,6 +2974,279 @@ def run_product_pure_v2_saf_profile(
             magnet_peer_transport.close()
         if magnet_hash_proxy is not None:
             magnet_hash_proxy.close()
+        fixture.close()
+
+
+def run_product_hybrid_saf_profile(
+    target: Any,
+    target_kind: str,
+    identity: dict[str, str],
+    probe: ModuleType,
+    interop: ModuleType,
+    pure_v2: ModuleType,
+    hybrid: ModuleType,
+    ordinal: int,
+    storage: str,
+) -> dict[str, Any]:
+    if not storage.startswith("saf-"):
+        raise BootstrapFailure("product-hybrid-saf requires a SAF storage mode")
+    grant_storage = "sdcard" if storage == "saf-sdcard" else "internal"
+    fixture = HybridSeedFixture.create(
+        interop,
+        hybrid,
+        f"{target_kind}-product-hybrid-saf-{ordinal}",
+    )
+    hash_proxy: Any | None = None
+    peer_transport: ReverseTransport | None = None
+    torrent_id = "pending"
+    grant_root = probe.grant_path(grant_storage)
+    output_root = f"{grant_root}/{fixture.name}"
+    staging_root = ""
+    part_path = ""
+    try:
+        clear_application(target)
+        prepare_product_saf(target, probe, grant_storage)
+        baseline_fds = product_fd_count(target)
+        hash_proxy = pure_v2.PlaintextBep52Proxy(
+            ("127.0.0.1", fixture.host_port)
+        )
+        peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            hash_proxy.endpoint[1],
+            ordinal,
+        )
+        selection = "0-2,4-5"
+        magnet = (
+            f"magnet:?xt=urn:btmh:1220{fixture.info_hash}"
+            f"&x.pe=127.0.0.1:{peer_transport.device_port}&so={selection}"
+        )
+        add_count = product_unknown_add_count(target)
+        started = target.shell(
+            [
+                "am",
+                "start",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "product_magnet",
+                shlex.quote(magnet),
+            ],
+            timeout=30,
+            check=False,
+        )
+        if "Error:" in started.stdout or (
+            started.returncode != 0 and "Starting:" not in started.stdout
+        ):
+            raise BootstrapFailure("could not add the Android hybrid magnet")
+        torrent_id = wait_product_unknown_torrent_id(target, add_count)
+        staging_root = f"{grant_root}/.{torrent_id}.rstorrent-staging"
+        part_path = f"{grant_root}/.{torrent_id}.rstorrent-parts"
+        metrics, fd_high_water = wait_product_publication(
+            target,
+            torrent_id,
+            baseline_fds,
+        )
+        selected_pieces = fixture.piece_count - 2
+        logs = wait_product_torrent_progress(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            verified=selected_pieces,
+            description="selected Android hybrid magnet",
+        )
+        identities = f"v1={fixture.wire_info_hash} v2={fixture.info_hash}"
+        if identities not in logs:
+            raise BootstrapFailure(
+                "Android hybrid view omitted authenticated identities\n" + logs
+            )
+        wire = hash_proxy.snapshot()
+        requested_pieces = {piece for piece, _, _ in wire["piece_messages"]}
+        if (
+            not wire["hash_requests"]
+            or wire["hash_responses"] < 1
+            or requested_pieces & {3, 4}
+        ):
+            raise BootstrapFailure(
+                f"Android hybrid wire evidence is incomplete: {wire}"
+            )
+        if (
+            metrics["limit"] != 40
+            or metrics["owned_high_water"] > 40
+            or metrics["pending_high_water"] > 16
+        ):
+            raise BootstrapFailure(f"hybrid SAF resource bound changed: {metrics}")
+        if baseline_fds and fd_high_water - baseline_fds > 48:
+            raise BootstrapFailure(
+                "hybrid Android descriptor delta exceeded its bound: "
+                f"baseline={baseline_fds} high_water={fd_high_water}"
+            )
+        for file_index, (relative_path, expected_hash) in enumerate(
+            fixture.expected_file_hashes.items()
+        ):
+            path = f"{output_root}/{relative_path}"
+            exists = target.shell(["test", "-f", path], check=False).returncode == 0
+            if file_index == fixture.skipped_file:
+                if exists:
+                    raise BootstrapFailure("selected hybrid published its skipped file")
+                continue
+            if not exists:
+                raise BootstrapFailure(f"hybrid SAF output is absent: {relative_path}")
+            digest = target.shell(["sha1sum", path]).stdout.split()[0]
+            if digest != expected_hash:
+                raise BootstrapFailure(f"hybrid SAF output differs: {relative_path}")
+        for unexpected in (
+            staging_root,
+            part_path,
+            f"{output_root}/.pad",
+            f"{grant_root}/{torrent_id}",
+        ):
+            if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"unexpected hybrid managed artifact survived: {unexpected}"
+                )
+
+        uploaded_before_restart = int(fixture.handle.status().total_upload)
+        target.run(["logcat", "-c"], check=False)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        restarted = target.shell(["am", "start", "-n", ACTIVITY], timeout=30, check=False)
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart the hybrid Android product")
+        wait_product_log(
+            target,
+            "saf_root_health source=startup available=true",
+            "healthy SAF root after hybrid restart",
+        )
+        restart_logs = wait_product_torrent_progress(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            verified=selected_pieces,
+            description="complete selected hybrid after restart",
+        )
+        if identities not in restart_logs:
+            raise BootstrapFailure(
+                "Android hybrid restart omitted authenticated identities\n"
+                + restart_logs
+            )
+        uploaded_after_restart = int(fixture.handle.status().total_upload)
+        if uploaded_after_restart != uploaded_before_restart:
+            raise BootstrapFailure(
+                "complete hybrid restart redownloaded payload: "
+                f"before={uploaded_before_restart} after={uploaded_after_restart}"
+            )
+
+        request_product_torrent_action(
+            target,
+            torrent_id,
+            f"download_file:{fixture.skipped_file}",
+        )
+        wait_product_torrent_progress(
+            target,
+            torrent_id,
+            state="COMPLETE",
+            verified=fixture.piece_count,
+            description="promoted Android hybrid selection",
+        )
+        skipped_relative, skipped_hash = list(
+            fixture.expected_file_hashes.items()
+        )[fixture.skipped_file]
+        skipped_path = f"{output_root}/{skipped_relative}"
+        if target.shell(["test", "-f", skipped_path], check=False).returncode != 0:
+            raise BootstrapFailure("promoted hybrid file is absent")
+        if target.shell(["sha1sum", skipped_path]).stdout.split()[0] != skipped_hash:
+            raise BootstrapFailure("promoted hybrid file differs")
+
+        recheck_hash_requests_before = len(hash_proxy.snapshot()["hash_requests"])
+        recheck_payload_before = int(fixture.handle.status().total_payload_upload)
+        request_product_torrent_action(target, torrent_id, "force_recheck")
+        recheck_hash_requests_after = len(hash_proxy.snapshot()["hash_requests"])
+        recheck_payload_after = int(fixture.handle.status().total_payload_upload)
+        if recheck_payload_after != recheck_payload_before:
+            checker = re.findall(
+                r"force_recheck_progress[^\n]+processed=([0-9]+) "
+                r"matched=([0-9]+) absent=([0-9]+) mismatched=([0-9]+)",
+                product_logs(target),
+            )
+            raise BootstrapFailure(
+                "hybrid force recheck redownloaded payload: "
+                f"before={recheck_payload_before} after={recheck_payload_after} "
+                f"checker={checker[-8:]}"
+            )
+        peer_transport.close()
+        peer_transport = None
+        hash_proxy.close()
+        hash_proxy = None
+        fixture.stop_seed()
+        request_product_torrent_action(target, torrent_id, "enable_upload")
+        direct_v2_upload_bytes = verify_product_upload(
+            target,
+            fixture,
+            pure_v2=pure_v2,
+            magnet_only=True,
+        )
+        upgraded_upload_bytes = verify_product_upload(
+            target,
+            fixture,
+            pure_v2=pure_v2,
+            expect_hybrid_upgrade=True,
+        )
+        request_product_torrent_action(target, torrent_id, "remove")
+        wait_product_log(
+            target,
+            f"saf_removal_confirmed torrent={torrent_id}",
+            "hybrid SAF removal",
+        )
+        wait_product_log(
+            target,
+            "diagnostic=torrent_removal_completed",
+            "joined hybrid application removal",
+        )
+        for exact_path in (output_root, staging_root, part_path):
+            if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
+                raise BootstrapFailure(
+                    f"hybrid managed artifact survived removal: {exact_path}"
+                )
+        return {
+            "target": target_kind,
+            "profile": "product-hybrid-saf",
+            "run": ordinal,
+            "identity": identity,
+            "torrent_id": torrent_id,
+            "v1_info_hash": fixture.wire_info_hash,
+            "v2_info_hash": fixture.info_hash,
+            "publication_name": fixture.name,
+            "files": len(fixture.expected_file_hashes),
+            "pieces": fixture.piece_count,
+            "selected_pieces": selected_pieces,
+            "storage_metrics": metrics,
+            "process_fds": {
+                "baseline": baseline_fds,
+                "high_water": fd_high_water,
+                "final": product_fd_count(target),
+            },
+            "restart": "complete_without_peer_payload",
+            "selection": "files_0_2_4_5_then_promoted_3",
+            "padding": "excluded_and_synthesized",
+            "entry": "direct_v2_download_v1_upgrade_and_v2_upload",
+            "recheck_hash_requests": (
+                recheck_hash_requests_after - recheck_hash_requests_before
+            ),
+            "recheck_payload_bytes": recheck_payload_after - recheck_payload_before,
+            "upgraded_upload_bytes": upgraded_upload_bytes,
+            "direct_v2_upload_bytes": direct_v2_upload_bytes,
+            "removal": "exact",
+        }
+    finally:
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        for exact_path in (output_root, staging_root, part_path):
+            if exact_path:
+                target.shell(["rm", "-rf", exact_path], check=False)
+        probe.remove_grant_folder(target, grant_storage)
+        if peer_transport is not None:
+            peer_transport.close()
+        if hash_proxy is not None:
+            hash_proxy.close()
         fixture.close()
 
 
@@ -3928,7 +4352,14 @@ def main() -> int:
         print("SAF removable storage is available only on motox4", file=sys.stderr)
         return 1
     ensure_interop_environment()
-    probe, interop, tracker_support, duplex_support, pure_v2_support = load_support()
+    (
+        probe,
+        interop,
+        tracker_support,
+        duplex_support,
+        pure_v2_support,
+        hybrid_support,
+    ) = load_support()
     apk = (
         bootstrap_root() / "app" / "build" / "outputs" / "apk" / "debug" /
         "app-debug.apk"
@@ -3974,6 +4405,7 @@ def main() -> int:
                 in (
                     "success",
                     "product-dynamic-saf",
+                    "product-hybrid-saf",
                     "product-pure-v2-saf",
                     "product-identity-reset",
                     "product-incomplete-duplex",
@@ -4021,6 +4453,18 @@ def main() -> int:
                         interop,
                         tracker_support,
                         pure_v2_support,
+                        ordinal,
+                        arguments.storage,
+                    )
+                elif profile == "product-hybrid-saf":
+                    result = run_product_hybrid_saf_profile(
+                        target,
+                        arguments.target,
+                        identity,
+                        probe,
+                        interop,
+                        pure_v2_support,
+                        hybrid_support,
                         ordinal,
                         arguments.storage,
                     )

@@ -533,13 +533,21 @@ private fun DetailTabContent(
             TorrentDetails(
                 torrent,
                 onTransferLimits,
-                "Info hash" to
-                    (torrent.protocolIdentities.v1 ?: torrent.protocolIdentities.v2 ?: "—"),
-                "State" to operationalLabel(torrent.operationalState),
-                "Required" to formatBytes(torrent.requiredPayloadBytes),
-                "Remaining" to formatBytes(torrent.remainingPayloadBytes),
-                "Pieces" to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}",
-                "Trackers" to (torrent.configuredTrackerCount?.toString() ?: "—"),
+                *buildList {
+                    val v1 = torrent.protocolIdentities.v1
+                    val v2 = torrent.protocolIdentities.v2
+                    if (v1 != null && v2 != null) {
+                        add("Info hash (v1)" to v1)
+                        add("Info hash (v2)" to v2)
+                    } else {
+                        add("Info hash" to (v1 ?: v2 ?: "—"))
+                    }
+                    add("State" to operationalLabel(torrent.operationalState))
+                    add("Required" to formatBytes(torrent.requiredPayloadBytes))
+                    add("Remaining" to formatBytes(torrent.remainingPayloadBytes))
+                    add("Pieces" to "${torrent.verifiedPieceCount} / ${torrent.pieceCount}")
+                    add("Trackers" to (torrent.configuredTrackerCount?.toString() ?: "—"))
+                }.toTypedArray(),
             )
         TorrentDetailTab.STATUS ->
             DetailList(

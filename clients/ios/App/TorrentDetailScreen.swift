@@ -303,10 +303,22 @@ private struct TorrentStatusSection: View {
                 title: L10n.string("tab_details_save_location"),
                 value: enumLabel(torrent.value.storageState)
             )
-            DetailFactRow(
-                title: L10n.string("tab_details_info_hash"),
-                value: torrent.infoHash
-            )
+            if let v1 = torrent.value.protocolIdentities.v1,
+               let v2 = torrent.value.protocolIdentities.v2 {
+                DetailFactRow(
+                    title: L10n.string("tab_details_info_hash_v1"),
+                    value: v1
+                )
+                DetailFactRow(
+                    title: L10n.string("tab_details_info_hash_v2"),
+                    value: v2
+                )
+            } else {
+                DetailFactRow(
+                    title: L10n.string("tab_details_info_hash"),
+                    value: torrent.infoHash
+                )
+            }
             if let error = torrent.value.error {
                 DetailFactRow(title: L10n.string("torrent_list_error"), value: error)
             }

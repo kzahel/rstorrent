@@ -894,7 +894,19 @@ class ProductEngineService : Service() {
                             }
                         }
                     when (torrent?.state) {
-                        TorrentState.CHECKING -> sawChecking = true
+                        TorrentState.CHECKING -> {
+                            sawChecking = true
+                            torrent.checking?.let { progress ->
+                                Log.i(
+                                    TAG,
+                                    "force_recheck_progress torrent=$torrentId " +
+                                        "processed=${progress.piecesProcessed} " +
+                                        "matched=${progress.piecesMatched} " +
+                                        "absent=${progress.piecesAbsent} " +
+                                        "mismatched=${progress.piecesMismatched}",
+                                )
+                            }
+                        }
                         TorrentState.COMPLETE -> if (sawChecking) return@withTimeout
                         else -> {}
                     }
@@ -1480,6 +1492,8 @@ class ProductEngineService : Service() {
             TAG,
             "view_update stream=${update.streamId} sequence=${update.sequence} " +
                 "torrent=${torrent?.torrentId ?: "none"} " +
+                "v1=${torrent?.protocolIdentities?.v1 ?: "none"} " +
+                "v2=${torrent?.protocolIdentities?.v2 ?: "none"} " +
                 "kind=$kind state=${torrent?.state?.name ?: "none"} " +
                 "storage=${torrent?.storageState?.name ?: "none"} " +
                 "metadata=${torrent?.metadataAvailable ?: false} " +
@@ -1488,6 +1502,9 @@ class ProductEngineService : Service() {
                 "diagnostic=${diagnostic?.code ?: "none"} " +
                 "diagnostic_detail=$diagnosticDetail " +
                 "verified=${torrent?.verifiedPieceCount ?: 0U} " +
+                "check=${torrent?.checking?.let { progress ->
+                    "${progress.piecesMatched},${progress.piecesAbsent},${progress.piecesMismatched}"
+                } ?: "none"} " +
                 "piece=${active?.pieceIndex?.toString() ?: "none"} " +
                 "requested=${active?.requested?.sumOf(::rangeBytes) ?: 0UL} " +
                 "received=${active?.received?.sumOf(::rangeBytes) ?: 0UL} " +

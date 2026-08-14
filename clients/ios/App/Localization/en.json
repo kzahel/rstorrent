@@ -401,6 +401,8 @@
   "tab_peers": "Peers",
   "tab_pieces": "Pieces",
   "tab_details_info_hash": "Info Hash",
+  "tab_details_info_hash_v1": "Info Hash (v1)",
+  "tab_details_info_hash_v2": "Info Hash (v2)",
   "tab_details_copy_info_hash": "Copy Info Hash",
   "tab_details_date_added": "Date Added",
   "tab_details_date_finished": "Date Finished",
