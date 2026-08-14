@@ -31,6 +31,8 @@ const expectTorrentFileRestart =
 const torrentFileSkipName = process.env.RSTORRENT_LIVE_TORRENT_FILE_SKIP_NAME;
 const torrentFileWantedName =
   process.env.RSTORRENT_LIVE_TORRENT_FILE_WANTED_NAME;
+const v2MagnetPhase = process.env.RSTORRENT_LIVE_V2_MAGNET_PHASE;
+const v2MagnetSkipName = process.env.RSTORRENT_LIVE_V2_MAGNET_SKIP_NAME;
 const clientSettingsPhase = process.env.RSTORRENT_LIVE_CLIENT_SETTINGS_PHASE;
 
 test("client settings apply live, persist, and recover bind failure", async ({
@@ -281,6 +283,122 @@ test("live torrent file picker uses one WebSocket binary attachment", async ({
   expect(semanticHttpRequests).toEqual([]);
   console.log(
     `torrent_file_picker_live_milestones ${JSON.stringify({ applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length, completion: expectTorrentFileCompletion ? "complete_rechecked" : "paused" })}`,
+  );
+});
+
+test("live v2 magnet lifecycle uses the production application", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  test.skip(
+    (v2MagnetPhase !== "add" && v2MagnetPhase !== "restart_remove") ||
+      gateway === undefined ||
+      applicationOrigin === undefined ||
+      gatewayToken === undefined ||
+      torrentName === undefined ||
+      v2MagnetSkipName === undefined ||
+      (v2MagnetPhase === "add" && magnet === undefined),
+    "controlled live v2 magnet lifecycle is opt-in",
+  );
+  let applicationUpgrades = 0;
+  let binaryFrames = 0;
+  const semanticHttpRequests: string[] = [];
+  const expectedSocket = `${applicationOrigin!.replace(/^http/, "ws")}/api/v1/connect`;
+  page.on("websocket", (socket) => {
+    if (socket.url() !== expectedSocket) return;
+    applicationUpgrades += 1;
+    socket.on("framesent", (frame) => {
+      if (typeof frame.payload !== "string") binaryFrames += 1;
+    });
+  });
+  page.on("request", (request) => {
+    if (!request.url().startsWith(applicationOrigin!)) return;
+    const url = new URL(request.url());
+    if (
+      url.pathname.startsWith("/api/") &&
+      url.pathname !== "/api/v1/connect"
+    ) {
+      semanticHttpRequests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await page.goto(liveUrl());
+  const transfers = page.getByRole("grid", { name: "Transfer queue" });
+  await expect(transfers).toBeVisible();
+  await expect.poll(() => applicationUpgrades).toBe(1);
+  if (v2MagnetPhase === "add") {
+    const input = page
+      .getByRole("form", { name: "Add torrent" })
+      .getByRole("textbox", { name: "Magnet link or torrent URL" });
+    await input.fill(magnet!);
+    await input.press("Enter");
+    await confirmDefaultAddOptions(page);
+    await expect(page.getByRole("status")).toHaveText(/Added|Torrent added/);
+  }
+
+  const transferRow = transfers
+    .getByRole("row")
+    .filter({ hasText: torrentName! });
+  await expect(transferRow).toContainText(/Complete|Seeding/, {
+    timeout: 60_000,
+  });
+  await transferRow.click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("button", { name: "Workbench" })
+    .click();
+  const torrentRow = page
+    .getByRole("grid", { name: "Torrent library" })
+    .getByRole("row")
+    .filter({ hasText: torrentName! });
+  await expect(torrentRow).toContainText("complete");
+  await torrentRow.click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  const files = page.getByRole("grid", { name: "Torrent files" });
+  await expect(files).toHaveAttribute("aria-rowcount", "4");
+  await expect(
+    files
+      .getByRole("row")
+      .filter({ hasText: v2MagnetSkipName! })
+      .getByText("Skip", { exact: true }),
+  ).toBeVisible();
+
+  await torrentRow.click({ button: "right" });
+  await page
+    .getByRole("menu")
+    .getByRole("menuitem", { name: "Copy magnet link" })
+    .click();
+  await expect(page.getByText("Magnet link copied", { exact: true })).toBeVisible();
+
+  const violations = (
+    await new AxeBuilder({ page }).analyze()
+  ).violations.filter(
+    (violation) =>
+      violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+
+  if (v2MagnetPhase === "restart_remove") {
+    await torrentRow.click({ button: "right" });
+    await page
+      .getByRole("menu")
+      .getByRole("menuitem", { name: "Remove", exact: true })
+      .click();
+    const removal = page.getByRole("dialog", { name: "Remove torrent?" });
+    await removal
+      .getByRole("checkbox", { name: "Also delete downloaded data" })
+      .check();
+    await removal
+      .getByRole("button", { name: "Remove and delete data" })
+      .click();
+    await expect(page.getByText(`Removed ${torrentName!}`, { exact: true })).toBeVisible();
+  }
+
+  expect(binaryFrames).toBe(0);
+  expect(semanticHttpRequests).toEqual([]);
+  console.log(
+    `v2_magnet_live_milestone ${JSON.stringify({ phase: v2MagnetPhase, applicationUpgrades, binaryFrames, semanticHttpRequests: semanticHttpRequests.length, axeViolations: violations.length })}`,
   );
 });
 

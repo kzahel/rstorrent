@@ -29,7 +29,12 @@ from first_verified_piece import ScenarioFailure
 from bep52_metainfo_oracle import SourceFile
 from first_verified_piece import add_seed, create_session, wait_for_listener
 from http_tracker_application import ControlledHttpTracker
-from pure_v2_runtime import RuntimeFixture, deterministic_bytes, make_fixture
+from pure_v2_runtime import (
+    PlaintextBep52Proxy,
+    RuntimeFixture,
+    deterministic_bytes,
+    make_fixture,
+)
 
 
 @dataclass(frozen=True)
@@ -178,6 +183,66 @@ def run_playwright(
     return milestone
 
 
+def run_v2_magnet_playwright(
+    repository: Path,
+    origin: str,
+    gateway_address: str,
+    torrent_name: str,
+    magnet: str,
+    phase: str,
+) -> str:
+    environment = os.environ.copy()
+    environment.pop("FORCE_COLOR", None)
+    environment.update(
+        {
+            "NO_COLOR": "1",
+            "RSTORRENT_PLAYWRIGHT_BASE_URL": origin,
+            "RSTORRENT_LIVE_GATEWAY_URL": f"http://{gateway_address}",
+            "RSTORRENT_LIVE_GATEWAY_TOKEN": TOKEN,
+            "RSTORRENT_LIVE_TORRENT_NAME": torrent_name,
+            "RSTORRENT_LIVE_V2_MAGNET_PHASE": phase,
+            "RSTORRENT_LIVE_V2_MAGNET_SKIP_NAME": "skip.bin",
+        }
+    )
+    if phase == "add":
+        environment["RSTORRENT_LIVE_MAGNET"] = magnet
+    completed = subprocess.run(
+        [
+            "npm",
+            "run",
+            "test:e2e",
+            "--prefix",
+            "clients/web",
+            "--",
+            "--grep",
+            "live v2 magnet lifecycle",
+        ],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ScenarioFailure(
+            f"live v2 magnet {phase} failed\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    milestone = next(
+        (
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.startswith("v2_magnet_live_milestone ")
+        ),
+        None,
+    )
+    if milestone is None:
+        raise ScenarioFailure("Playwright omitted v2 magnet lifecycle milestone")
+    return milestone
+
+
 def verify_metrics(
     metrics: dict[str, object], expected_connections: int, expected_uploads: int
 ) -> None:
@@ -213,6 +278,7 @@ def run() -> None:
     session: Any | None = None
     handle: Any | None = None
     tracker: ControlledHttpTracker | None = None
+    hash_proxy: PlaintextBep52Proxy | None = None
     failure: BaseException | None = None
     try:
         v1, v2_fixture = create_torrent_files(run_path)
@@ -296,6 +362,107 @@ def run() -> None:
         gateway = None
         restart_metrics = connection_metrics(restart_diagnostics)
         verify_metrics(restart_metrics, 1, 0)
+
+        if handle.is_valid():
+            session.remove_torrent(handle)
+        session.pause()
+        handle = None
+        session = create_session()
+        magnet_seed_diagnostics: list[str] = []
+        seed_port = wait_for_listener(session, magnet_seed_diagnostics)
+        handle = add_seed(
+            session,
+            v2_fixture.torrent_info,
+            v2_fixture.libtorrent_storage_root,
+            magnet_seed_diagnostics,
+        )
+        hash_proxy = PlaintextBep52Proxy(("127.0.0.1", seed_port))
+        magnet_profile = run_path / "magnet-profile"
+        magnet_downloads = run_path / "magnet-downloads"
+        magnet = (
+            "magnet:?xt=urn:btmh:1220"
+            f"{v2_fixture.full_info_hash}"
+            f"&x.pe={hash_proxy.endpoint[0]}:{hash_proxy.endpoint[1]}&so=0-1"
+        )
+        gateway, address = start_gateway(
+            build_gateway(repository),
+            magnet_profile,
+            magnet_downloads,
+            origin,
+            "loopback_only",
+        )
+        vite = build_and_start_production_web(repository, origin, vite_port, address)
+        milestones.append(
+            run_v2_magnet_playwright(
+                repository,
+                origin,
+                address,
+                v2.name,
+                magnet,
+                "add",
+            )
+        )
+        magnet_output = magnet_downloads / "root"
+        if (magnet_output / "skip.bin").exists():
+            raise ScenarioFailure("browser v2 magnet published skipped payload")
+        for relative in ("payload.bin", "nested/final.bin"):
+            source = sources[relative]
+            path = magnet_output / relative
+            if not path.is_file() or path.read_bytes() != source.data:
+                raise ScenarioFailure(f"browser v2 magnet output differs: {relative}")
+        before_magnet_restart = hash_proxy.snapshot()
+        if (
+            not before_magnet_restart["hash_requests"]
+            or before_magnet_restart["hash_responses"] < 1
+            or any(
+                piece == 3
+                for piece, _, _ in before_magnet_restart["piece_messages"]
+            )
+        ):
+            raise ScenarioFailure(
+                "browser v2 magnet wire evidence is incomplete: "
+                f"{before_magnet_restart}"
+            )
+        stop_process(vite, "Vite")
+        vite = None
+        magnet_diagnostics = stop_gateway(gateway)
+        gateway = None
+        magnet_metrics = connection_metrics(magnet_diagnostics)
+        verify_metrics(magnet_metrics, 1, 0)
+
+        gateway, address = start_gateway(
+            build_gateway(repository),
+            magnet_profile,
+            magnet_downloads,
+            origin,
+            "loopback_only",
+        )
+        vite = build_and_start_production_web(repository, origin, vite_port, address)
+        milestones.append(
+            run_v2_magnet_playwright(
+                repository,
+                origin,
+                address,
+                v2.name,
+                magnet,
+                "restart_remove",
+            )
+        )
+        after_magnet_restart = hash_proxy.snapshot()
+        if after_magnet_restart != before_magnet_restart:
+            raise ScenarioFailure(
+                "complete browser v2 magnet restart used the peer instead of local "
+                f"tree reconstruction: before={before_magnet_restart} "
+                f"after={after_magnet_restart}"
+            )
+        if magnet_output.exists():
+            raise ScenarioFailure("browser v2 magnet removal retained managed payload")
+        stop_process(vite, "Vite")
+        vite = None
+        magnet_restart_diagnostics = stop_gateway(gateway)
+        gateway = None
+        magnet_restart_metrics = connection_metrics(magnet_restart_diagnostics)
+        verify_metrics(magnet_restart_metrics, 1, 0)
         print(
             f"{' '.join(milestones)} "
             f"formats={','.join(case.format for case in cases)} "
@@ -303,9 +470,13 @@ def run() -> None:
             f"source_bytes={sum(case.path.stat().st_size for case in cases)} "
             "v1_start_content=false v2_completion=complete_rechecked "
             "selection=file_0_skipped_without_part restart=complete "
+            "v2_magnet_selection=files_0_1 v2_magnet_restart=local_reconstruction "
+            "v2_magnet_export=canonical v2_magnet_removal=exact "
             "gateway_shutdown=joined "
             f"connection_metrics={json.dumps(metrics, sort_keys=True, separators=(',', ':'))} "
             f"restart_connection_metrics={json.dumps(restart_metrics, sort_keys=True, separators=(',', ':'))}"
+            f" magnet_connection_metrics={json.dumps(magnet_metrics, sort_keys=True, separators=(',', ':'))}"
+            f" magnet_restart_connection_metrics={json.dumps(magnet_restart_metrics, sort_keys=True, separators=(',', ':'))}"
         )
     except BaseException as error:
         failure = error
@@ -319,6 +490,12 @@ def run() -> None:
                     },
                     sort_keys=True,
                 ),
+                file=sys.stderr,
+            )
+        if hash_proxy is not None:
+            print(
+                "browser_v2_magnet_wire_debug "
+                + json.dumps(hash_proxy.snapshot(), sort_keys=True),
                 file=sys.stderr,
             )
         if handle is not None and handle.is_valid():
@@ -373,6 +550,13 @@ def run() -> None:
                 if failure is None:
                     raise
                 print(f"tracker cleanup failed: {cleanup_error}", file=sys.stderr)
+        if hash_proxy is not None:
+            try:
+                hash_proxy.close()
+            except BaseException as cleanup_error:
+                if failure is None:
+                    raise
+                print(f"v2 magnet proxy cleanup failed: {cleanup_error}", file=sys.stderr)
         if handle is not None and session is not None:
             try:
                 if handle.is_valid():

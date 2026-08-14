@@ -262,7 +262,10 @@ class PureV2SeedFixture:
         run_path = Path(tempfile.mkdtemp(prefix=f"rstorrent-android-{label}-"))
         files = (
             pure_v2.SourceFile((b"a.bin",), pure_v2.deterministic_bytes(41, 9)),
-            pure_v2.SourceFile((b"b.bin",), pure_v2.deterministic_bytes(43, 40_000)),
+            pure_v2.SourceFile(
+                (b"b.bin",),
+                pure_v2.deterministic_bytes(43, 7 * 32 * 1024 + 123),
+            ),
             pure_v2.SourceFile(
                 (b"nested", b"c.bin"),
                 pure_v2.deterministic_bytes(47, 17),
@@ -307,6 +310,32 @@ class PureV2SeedFixture:
         if identity.has_v1() or str(identity.v2) != self.info_hash:
             raise BootstrapFailure("adding a tracker changed pure-v2 source identity")
         return source
+
+    def restart_seed(self, interop: ModuleType, *, upload_rate_limit: int = 0) -> None:
+        import libtorrent as lt
+
+        if self.handle.is_valid():
+            self.session.remove_torrent(self.handle)
+        self.session.pause()
+        self.handle = None
+        self.session = None
+        gc.collect()
+        self.alerts = []
+        self.session = interop.create_session()
+        if upload_rate_limit > 0:
+            self.session.apply_settings(
+                {
+                    "ignore_limits_on_local_network": False,
+                    "upload_rate_limit": upload_rate_limit,
+                }
+            )
+        self.host_port = interop.wait_for_listener(self.session, self.alerts)
+        self.handle = interop.add_seed(
+            self.session,
+            lt.torrent_info(str(self.torrent_path)),
+            self.torrent_path.parent / "libtorrent-published",
+            self.alerts,
+        )
 
     def close(self) -> None:
         try:
@@ -1721,6 +1750,71 @@ def wait_product_log(target: Any, marker: str, description: str, timeout: float 
     raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
 
 
+def wait_product_torrent_progress(
+    target: Any,
+    torrent_id: str,
+    *,
+    state: str,
+    verified: int,
+    description: str,
+    timeout: float = 30,
+) -> str:
+    pattern = re.compile(
+        rf"torrent={re.escape(torrent_id)} .*state={re.escape(state)} .*verified={verified}\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if any(pattern.search(line) for line in logs.splitlines()):
+            return logs
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+
+
+def wait_product_torrent_diagnostic(
+    target: Any,
+    torrent_id: str,
+    *,
+    diagnostic: str,
+    description: str,
+    timeout: float = 30,
+) -> str:
+    pattern = re.compile(
+        rf"torrent={re.escape(torrent_id)} .*diagnostic={re.escape(diagnostic)}\b"
+    )
+    deadline = time.monotonic() + timeout
+    logs = ""
+    while time.monotonic() < deadline:
+        logs = product_logs(target)
+        if any(pattern.search(line) for line in logs.splitlines()):
+            return logs
+        if "product service initialization failed" in logs:
+            break
+        time.sleep(0.1)
+    raise BootstrapFailure(f"timed out waiting for {description}\n{logs}")
+
+
+def wait_v2_proxy_candidate(
+    proxy: Any,
+    *,
+    selected_pieces: int,
+    description: str,
+    timeout: float = 30,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    snapshot: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        snapshot = proxy.snapshot()
+        pieces = {piece for piece, _, _ in snapshot["piece_messages"]}
+        if snapshot["hash_requests"] and 0 < len(pieces) < selected_pieces:
+            return snapshot
+        time.sleep(0.02)
+    raise BootstrapFailure(f"timed out waiting for {description}: {snapshot}")
+
+
 def product_add_count(target: Any, v1_info_hash: str) -> int:
     pattern = re.compile(
         rf"torrent_added torrent=t1-[0-9a-f]{{32}} "
@@ -1813,7 +1907,13 @@ def request_product_torrent_action(target: Any, torrent_id: str, action: str) ->
     )
 
 
-def verify_product_upload(target: Any, fixture: SeedFixture) -> int:
+def verify_product_upload(
+    target: Any,
+    fixture: SeedFixture,
+    *,
+    pure_v2: ModuleType | None = None,
+    magnet_only: bool = False,
+) -> int:
     import libtorrent as lt
 
     forwarded = target.run(
@@ -1841,15 +1941,25 @@ def verify_product_upload(target: Any, fixture: SeedFixture) -> int:
         }
     )
     handle = None
+    hash_proxy = None
     diagnostics: list[str] = []
     try:
-        parameters = lt.add_torrent_params()
-        parameters.ti = lt.torrent_info(str(fixture.torrent_path))
+        if magnet_only:
+            parameters = lt.parse_magnet_uri(
+                f"magnet:?xt=urn:btmh:1220{fixture.info_hash}"
+            )
+        else:
+            parameters = lt.add_torrent_params()
+            parameters.ti = lt.torrent_info(str(fixture.torrent_path))
         parameters.save_path = str(output_root)
         parameters.flags &= ~lt.torrent_flags.paused
         parameters.flags &= ~lt.torrent_flags.auto_managed
         handle = session.add_torrent(parameters)
-        handle.connect_peer(("127.0.0.1", host_port))
+        peer_port = host_port
+        if pure_v2 is not None:
+            hash_proxy = pure_v2.PlaintextBep52Proxy(("127.0.0.1", host_port))
+            peer_port = hash_proxy.endpoint[1]
+        handle.connect_peer(("127.0.0.1", peer_port))
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             diagnostics.extend(alert.message() for alert in session.pop_alerts())
@@ -1874,6 +1984,13 @@ def verify_product_upload(target: Any, fixture: SeedFixture) -> int:
         downloaded = int(handle.status().total_payload_download)
         if downloaded <= 0:
             raise BootstrapFailure("libtorrent received no payload from Android")
+        if hash_proxy is not None:
+            wire = hash_proxy.snapshot()
+            if not wire["hash_requests"] or wire["hash_responses"] < 1:
+                raise BootstrapFailure(
+                    "Android v2 magnet upload omitted authenticated hash service: "
+                    f"{wire}"
+                )
         return downloaded
     finally:
         if handle is not None and handle.is_valid():
@@ -1881,6 +1998,8 @@ def verify_product_upload(target: Any, fixture: SeedFixture) -> int:
         session.pause()
         handle = None
         session = None
+        if hash_proxy is not None:
+            hash_proxy.close()
         target.run(["forward", "--remove", f"tcp:{host_port}"], timeout=15, check=False)
         shutil.rmtree(output_root)
 
@@ -2159,8 +2278,8 @@ def run_product_dynamic_saf_profile(
             if target.shell(["test", "-e", unexpected], check=False).returncode == 0:
                 raise BootstrapFailure(f"unexpected managed artifact survived: {unexpected}")
 
-        target.run(["logcat", "-c"], check=False)
         target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
         restarted = target.shell(["am", "start", "-n", ACTIVITY], timeout=30, check=False)
         if "Error:" in restarted.stdout:
             raise BootstrapFailure("could not restart the Android product application")
@@ -2358,6 +2477,8 @@ def run_product_pure_v2_saf_profile(
         f"{target_kind}-product-pure-v2-saf-{ordinal}",
     )
     peer_transport: ReverseTransport | None = None
+    magnet_peer_transport: ReverseTransport | None = None
+    magnet_hash_proxy: Any | None = None
     tracker_transport: ReverseTransport | None = None
     controlled_tracker: Any | None = None
     torrent_id = "pending"
@@ -2473,13 +2594,33 @@ def run_product_pure_v2_saf_profile(
             f"saf_removal_confirmed torrent={torrent_id}",
             "pure-v2 SAF removal",
         )
+        wait_product_log(
+            target,
+            "diagnostic=torrent_removal_completed",
+            "joined pure-v2 application removal",
+        )
         for exact_path in (output_root, staging_root, part_path):
             if target.shell(["test", "-e", exact_path], check=False).returncode == 0:
                 raise BootstrapFailure(
                     f"pure-v2 managed artifact survived removal: {exact_path}"
                 )
 
+        fixture.restart_seed(interop, upload_rate_limit=12 * 1024)
+        magnet_hash_proxy = pure_v2.PlaintextBep52Proxy(
+            ("127.0.0.1", fixture.host_port)
+        )
+        magnet_peer_transport = ReverseTransport.create(
+            target,
+            target_kind,
+            magnet_hash_proxy.endpoint[1],
+            ordinal,
+            slot=2,
+        )
         add_count = product_unknown_add_count(target)
+        magnet = (
+            f"magnet:?xt=urn:btmh:1220{fixture.info_hash}"
+            f"&x.pe=127.0.0.1:{magnet_peer_transport.device_port}&so=0-1"
+        )
         selective = target.shell(
             [
                 "am",
@@ -2487,11 +2628,8 @@ def run_product_pure_v2_saf_profile(
                 "-n",
                 ACTIVITY,
                 "--es",
-                "product_torrent_base64",
-                base64.b64encode(metainfo).decode("ascii"),
-                "--es",
-                "product_wanted_file_ranges",
-                "1:3",
+                "product_magnet",
+                shlex.quote(magnet),
             ],
             timeout=30,
             check=False,
@@ -2499,24 +2637,83 @@ def run_product_pure_v2_saf_profile(
         if "Error:" in selective.stdout or (
             selective.returncode != 0 and "Starting:" not in selective.stdout
         ):
-            raise BootstrapFailure("could not add selective Android pure-v2 source")
+            raise BootstrapFailure("could not add selective Android pure-v2 magnet")
         selective_torrent_id = wait_product_unknown_torrent_id(target, add_count)
         staging_root = f"{grant_root}/.{selective_torrent_id}.rstorrent-staging"
         part_path = f"{grant_root}/.{selective_torrent_id}.rstorrent-parts"
-        selective_metrics, _ = wait_product_publication(
+        selected_pieces = fixture.piece_count - 1
+        magnet_baseline_fds = product_fd_count(target)
+        candidate_wire = wait_v2_proxy_candidate(
+            magnet_hash_proxy,
+            selected_pieces=selected_pieces,
+            description="incomplete selected pure-v2 magnet wire candidate",
+        )
+        wait_product_torrent_diagnostic(
+            target,
+            selective_torrent_id,
+            diagnostic="piece_verified",
+            description="verified incomplete pure-v2 magnet candidate",
+        )
+        candidate_wire = magnet_hash_proxy.snapshot()
+        candidate_pieces = {
+            piece for piece, _, _ in candidate_wire["piece_messages"]
+        }
+        if not candidate_pieces or len(candidate_pieces) >= selected_pieces:
+            raise BootstrapFailure(
+                "Android v2 magnet candidate completed before forced restart: "
+                f"{candidate_wire}"
+            )
+        candidate_fd_high_water = product_fd_count(target)
+        target.shell(["am", "force-stop", PACKAGE], check=False)
+        target.run(["logcat", "-c"], check=False)
+        restarted = target.shell(["am", "start", "-n", ACTIVITY], timeout=30, check=False)
+        if "Error:" in restarted.stdout:
+            raise BootstrapFailure("could not restart the Android v2 magnet candidate")
+        wait_product_log(
+            target,
+            "saf_root_health source=startup available=true",
+            "healthy SAF root after v2 magnet candidate restart",
+        )
+        selective_metrics, restarted_fd_high_water = wait_product_publication(
             target,
             selective_torrent_id,
             product_fd_count(target),
         )
+        magnet_fd_high_water = max(candidate_fd_high_water, restarted_fd_high_water)
+        restart_logs = wait_product_torrent_progress(
+            target,
+            selective_torrent_id,
+            state="COMPLETE",
+            verified=selected_pieces,
+            description="complete pure-v2 magnet after candidate restart",
+        )
+        if "state=AWAITING_STORAGE" not in restart_logs or "verified=0" not in restart_logs:
+            raise BootstrapFailure(
+                "Android v2 magnet restart did not expose conservative local reconstruction"
+            )
+        restarted_wire = magnet_hash_proxy.snapshot()
+        if len(restarted_wire["hash_requests"]) <= len(candidate_wire["hash_requests"]):
+            raise BootstrapFailure(
+                "Android v2 magnet restart did not refetch volatile hashes: "
+                f"before={candidate_wire} after={restarted_wire}"
+            )
+        if (
+            selective_metrics["limit"] != 40
+            or selective_metrics["owned_high_water"] > 40
+            or selective_metrics["pending_high_water"] > 16
+        ):
+            raise BootstrapFailure(
+                f"pure-v2 magnet SAF resource bound changed: {selective_metrics}"
+            )
         for file_index, (relative_path, expected_hash) in enumerate(
             fixture.expected_file_hashes.items()
         ):
             path = f"{output_root}/{relative_path}"
             exists = target.shell(["test", "-f", path], check=False).returncode == 0
-            if file_index == 0:
+            if file_index == 2:
                 if exists:
                     raise BootstrapFailure(
-                        "selective pure-v2 SAF publication retained skipped file 0"
+                        "selective pure-v2 magnet retained skipped file 2"
                     )
                 continue
             if not exists:
@@ -2529,7 +2726,38 @@ def run_product_pure_v2_saf_profile(
                     f"selective pure-v2 SAF output differs: {relative_path}"
                 )
         if target.shell(["test", "-e", part_path], check=False).returncode == 0:
-            raise BootstrapFailure("selective pure-v2 SAF created a part artifact")
+            raise BootstrapFailure("selective pure-v2 magnet created a part artifact")
+
+        request_product_torrent_action(
+            target,
+            selective_torrent_id,
+            "download_file:2",
+        )
+        wait_product_torrent_progress(
+            target,
+            selective_torrent_id,
+            state="COMPLETE",
+            verified=fixture.piece_count,
+            description="promoted Android v2 magnet selection",
+        )
+        final_relative_path, final_expected_hash = list(
+            fixture.expected_file_hashes.items()
+        )[2]
+        final_path = f"{output_root}/{final_relative_path}"
+        if target.shell(["test", "-f", final_path], check=False).returncode != 0:
+            raise BootstrapFailure("promoted Android v2 magnet file is absent")
+        final_digest = target.shell(["sha1sum", final_path]).stdout.split()[0]
+        if final_digest != final_expected_hash:
+            raise BootstrapFailure("promoted Android v2 magnet file differs")
+
+        request_product_torrent_action(target, selective_torrent_id, "force_recheck")
+        request_product_torrent_action(target, selective_torrent_id, "enable_upload")
+        magnet_uploaded_bytes = verify_product_upload(
+            target,
+            fixture,
+            pure_v2=pure_v2,
+            magnet_only=True,
+        )
         request_product_torrent_action(target, selective_torrent_id, "remove")
         wait_product_log(
             target,
@@ -2547,6 +2775,7 @@ def run_product_pure_v2_saf_profile(
             "run": ordinal,
             "identity": identity,
             "torrent_id": torrent_id,
+            "magnet_torrent_id": selective_torrent_id,
             "v2_info_hash": fixture.info_hash,
             "wire_info_hash": fixture.wire_info_hash,
             "v1_info_hash": None,
@@ -2564,8 +2793,19 @@ def run_product_pure_v2_saf_profile(
             "force_recheck": "complete",
             "uploaded_bytes": uploaded_bytes,
             "removal": "exact",
-            "selection": "file_0_skipped_without_part",
+            "selection": "complete_source_then_magnet_select_only",
             "selective_storage_metrics": selective_metrics,
+            "magnet_selection": "files_0_1_then_promoted_2",
+            "magnet_restart": "incomplete_candidate_hash_refetch",
+            "magnet_candidate_pieces": sorted(candidate_pieces),
+            "magnet_hash_requests_before_restart": len(
+                candidate_wire["hash_requests"]
+            ),
+            "magnet_hash_requests_after_restart": len(
+                restarted_wire["hash_requests"]
+            ),
+            "magnet_process_fd_high_water": magnet_fd_high_water,
+            "magnet_uploaded_bytes": magnet_uploaded_bytes,
         }
     finally:
         target.shell(["am", "force-stop", PACKAGE], check=False)
@@ -2579,6 +2819,10 @@ def run_product_pure_v2_saf_profile(
             controlled_tracker.close()
         if peer_transport is not None:
             peer_transport.close()
+        if magnet_peer_transport is not None:
+            magnet_peer_transport.close()
+        if magnet_hash_proxy is not None:
+            magnet_hash_proxy.close()
         fixture.close()
 
 

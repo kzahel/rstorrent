@@ -8587,6 +8587,13 @@ mod tests {
     async fn pure_v2_magnet_download_restarts_from_info_only_metadata() {
         let root = test_root("pure-v2-magnet-download");
         let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                ..ClientSettings::default()
+            },
+        );
         let piece_length = 32 * 1024_u32;
         let payload = (0..2 * piece_length as usize)
             .map(|index| ((index * 19 + 7) % 251) as u8)
@@ -8785,6 +8792,7 @@ mod tests {
         assert_eq!(resumed.state, TorrentState::Complete);
         assert_eq!(resumed.raw_info, Some(raw_info));
         assert_eq!(resumed.metainfo_source, None);
+        wait_for_seed_registrations(&reopened, 1).await;
         reopened
             .shutdown()
             .await

@@ -226,6 +226,7 @@ class ProductEngineService : Service() {
                 dispatchAddAwait(
                     Command.AddMagnet(magnet.trim(), "downloads", startContent, skipFiles),
                     magnetV1(magnet),
+                    magnetV2(magnet),
                 )
             } catch (error: Throwable) {
                 reportError(error)
@@ -784,18 +785,24 @@ class ProductEngineService : Service() {
         scope.launch {
             try {
                 clientReady.await()
-                when (action) {
-                    "pause" -> dispatchAwait(Command.Pause(torrentId))
-                    "resume" -> dispatchAwait(Command.Resume(torrentId))
-                    "force_recheck" -> forceRecheckAndAwaitForTest(torrentId)
-                    "remove" ->
+                when {
+                    action.startsWith("download_file:") -> {
+                        val fileIndex =
+                            action.substringAfter(':').toUIntOrNull()
+                                ?: error("download-file action has an invalid index")
+                        dispatchAwait(Command.DownloadFiles(torrentId, listOf(fileIndex)))
+                    }
+                    action == "pause" -> dispatchAwait(Command.Pause(torrentId))
+                    action == "resume" -> dispatchAwait(Command.Resume(torrentId))
+                    action == "force_recheck" -> forceRecheckAndAwaitForTest(torrentId)
+                    action == "remove" ->
                         dispatchAwait(
                             Command.RemoveTorrent(
                                 torrentId,
                                 RemovalDataPolicy.DELETE_MANAGED,
                             ),
                         )
-                    "enable_upload" -> {
+                    action == "enable_upload" -> {
                         val current = awaitIpv6Policy(null)
                         dispatchAwait(
                             Command.SetClientSettings(
@@ -1090,22 +1097,30 @@ class ProductEngineService : Service() {
         dispatchForResponse(command)
     }
 
-    private fun magnetV1(magnet: String): String =
+    private fun magnetV1(magnet: String): String? =
         Regex("(?i)urn:btih:([0-9a-f]{40})")
             .find(magnet)
             ?.groupValues
             ?.get(1)
             ?.lowercase()
-            ?: error("test magnet has no hexadecimal v1 identity")
+
+    private fun magnetV2(magnet: String): String? =
+        Regex("(?i)urn:btmh:1220([0-9a-f]{64})")
+            .find(magnet)
+            ?.groupValues
+            ?.get(1)
+            ?.lowercase()
 
     private suspend fun dispatchAddAwait(
         command: Command,
         v1InfoHash: String?,
-    ): String = logAddResult(dispatchForResponse(command), v1InfoHash)
+        v2InfoHash: String? = null,
+    ): String = logAddResult(dispatchForResponse(command), v1InfoHash, v2InfoHash)
 
     private fun logAddResult(
         response: org.rstorrent.session.uniffi.ResponseEnvelope,
         v1InfoHash: String?,
+        v2InfoHash: String? = null,
     ): String {
         val add = (response.result as? CommandResult.AddTorrent)?.result
             ?: error("add response omitted its result")
@@ -1113,6 +1128,7 @@ class ProductEngineService : Service() {
             TAG,
             "torrent_added torrent=${add.torrentId} " +
                 "protocol_v1=${v1InfoHash ?: "unknown"} " +
+                "protocol_v2=${v2InfoHash ?: "unknown"} " +
                 "disposition=${add.disposition::class.simpleName}",
         )
         return add.torrentId
