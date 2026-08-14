@@ -5,6 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use rstorrent_protocol::content::HybridPaddingMap;
 use rstorrent_protocol::peer_wire::BlockRequest;
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection};
 use tokio::sync::{mpsc, oneshot};
@@ -288,6 +289,44 @@ impl ActiveSeedContent {
             Ok(block) => Ok(block),
             Err(error) => Err(self.classify_storage_failure(request.index, snapshot.epoch, error)),
         }
+    }
+
+    pub(crate) async fn read_hybrid_v1_block(
+        &self,
+        request: BlockRequest,
+        piece_length: u32,
+        padding: &HybridPaddingMap,
+    ) -> Result<Vec<u8>, ActiveSeedContentError> {
+        let request_end = request
+            .begin
+            .checked_add(request.length)
+            .ok_or(ActiveSeedContentError::Unavailable)?;
+        if request.length == 0 || request_end > piece_length {
+            return Err(ActiveSeedContentError::Unavailable);
+        }
+        let padding_begin = padding
+            .piece_spans(request.index)
+            .map(|span| span.begin)
+            .min();
+        let Some(padding_begin) = padding_begin else {
+            return self.read_block(request).await;
+        };
+        let mut block = vec![0; request.length as usize];
+        let real_end = request_end.min(padding_begin);
+        if request.begin < real_end {
+            let real_length = real_end - request.begin;
+            let real = self
+                .read_block(BlockRequest {
+                    length: real_length,
+                    ..request
+                })
+                .await?;
+            if real.len() != real_length as usize {
+                return Err(ActiveSeedContentError::Unavailable);
+            }
+            block[..real.len()].copy_from_slice(&real);
+        }
+        Ok(block)
     }
 
     fn classify_storage_failure(

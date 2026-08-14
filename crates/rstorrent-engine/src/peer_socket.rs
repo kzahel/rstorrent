@@ -1094,6 +1094,7 @@ pub(crate) enum PeerTaskEvent {
 #[derive(Debug)]
 pub(crate) struct PeerSocketTask {
     attempt: DialAttempt,
+    protocol: PeerProtocol,
     commands: mpsc::Sender<PeerTaskCommand>,
     cancellation: CancellationToken,
     join: JoinHandle<()>,
@@ -1102,6 +1103,7 @@ pub(crate) struct PeerSocketTask {
 impl PeerSocketTask {
     pub(crate) fn spawn(connection: PeerConnection, events: mpsc::Sender<PeerTaskEvent>) -> Self {
         let attempt = connection.attempt;
+        let protocol = connection.protocol();
         let (commands, command_rx) = mpsc::channel(PEER_COMMAND_QUEUE);
         let cancellation = CancellationToken::new();
         let task_cancellation = cancellation.clone();
@@ -1117,6 +1119,7 @@ impl PeerSocketTask {
         });
         Self {
             attempt,
+            protocol,
             commands,
             cancellation,
             join,
@@ -1125,6 +1128,10 @@ impl PeerSocketTask {
 
     pub(crate) const fn attempt(&self) -> DialAttempt {
         self.attempt
+    }
+
+    pub(crate) const fn protocol(&self) -> PeerProtocol {
+        self.protocol
     }
 
     pub(crate) async fn send(&self, message: PeerMessage) -> Result<(), PeerTaskSendError> {
@@ -1302,6 +1309,10 @@ impl PeerSocketSet {
 
     pub(crate) fn attempt(&self, id: ConnectionId) -> Option<DialAttempt> {
         self.tasks.get(&id).map(PeerSocketTask::attempt)
+    }
+
+    pub(crate) fn protocol(&self, id: ConnectionId) -> Option<PeerProtocol> {
+        self.tasks.get(&id).map(PeerSocketTask::protocol)
     }
 
     pub(crate) fn begin_dial(

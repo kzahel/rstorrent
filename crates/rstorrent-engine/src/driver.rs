@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::content::{
-    ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection, TorrentContentWithIntegrity,
-    TorrentIntegrity, V2ExpectedPieceQuery,
+    ExpectedPieceIntegrity, HybridPaddingMap, TorrentContent, TorrentContentProjection,
+    TorrentContentWithIntegrity, TorrentIntegrity, V2ExpectedPieceQuery,
 };
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
@@ -4742,6 +4742,8 @@ enum ContentContributor {
 
 struct OutgoingUploadPeer {
     state: UploadPeerState,
+    piece_lengths: Arc<[u32]>,
+    hybrid_v1_padding: Option<Arc<HybridPaddingMap>>,
     cursor: AvailabilityCursor,
     pending_initial_haves: Option<(AvailabilitySnapshot, usize)>,
     membership: Option<SessionUploadMembership>,
@@ -5353,16 +5355,53 @@ impl<'a> ContentSwarmDownload<'a> {
         supports_fast: bool,
         send_initial_availability: bool,
     ) -> Result<(), DownloadError> {
-        let piece_lengths = self.active_content.piece_lengths();
+        let protocol =
+            sockets
+                .protocol(connection)
+                .ok_or(DownloadError::Swarm(SwarmError::Invariant(
+                    "outgoing upload socket disappeared",
+                )))?;
+        let hashes = self.content.info_hashes();
+        let swarm_key = match protocol {
+            PeerProtocol::V1 => hashes.v1_hash().map(FullInfoHash::V1),
+            PeerProtocol::V2 => hashes.v2_hash().map(FullInfoHash::V2),
+        }
+        .map(FullInfoHash::swarm_key)
+        .ok_or(DownloadError::Swarm(SwarmError::Invariant(
+            "outgoing upload protocol has no matching torrent identity",
+        )))?;
+        let hybrid_v1_padding = (protocol == PeerProtocol::V1 && hashes.is_hybrid()).then(|| {
+            Arc::new(
+                self.content
+                    .hybrid_padding()
+                    .expect("hybrid content has a padding map")
+                    .clone(),
+            )
+        });
+        let piece_lengths: Arc<[u32]> =
+            if hybrid_v1_padding.is_some() {
+                (0..self.layout.piece_count())
+                    .map(|piece| {
+                        self.content
+                            .hybrid_peer_piece_length_at(u32::try_from(piece).map_err(|_| {
+                                DownloadError::Layout(LayoutError::ArithmeticOverflow)
+                            })?)
+                            .map_err(|error| DownloadError::StorageTask(error.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into()
+            } else {
+                self.active_content.piece_lengths()
+            };
         let mut state =
-            UploadPeerState::from_availability(piece_lengths, self.availability.clone())
+            UploadPeerState::from_availability(piece_lengths.clone(), self.availability.clone())
                 .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
         let allowed_fast = if supports_fast {
             match remote {
                 std::net::IpAddr::V4(address) => generate_allowed_fast_set(
-                    self.content.swarm_key().into_bytes(),
+                    swarm_key.into_bytes(),
                     address,
-                    self.layout.piece_count(),
+                    piece_lengths.len(),
                     MAX_GENERATED_ALLOWED_FAST_PIECES,
                 )
                 .map_err(|error| DownloadError::StorageTask(error.to_owned()))?,
@@ -5393,13 +5432,16 @@ impl<'a> ContentSwarmDownload<'a> {
                 .await
                 .map_err(download_peer_set_error)?;
         }
-        let membership = self.control.incoming_peer_handle().map(|handle| {
-            handle.register_session_upload(self.content.swarm_key(), self.content.piece_length())
-        });
+        let membership = self
+            .control
+            .incoming_peer_handle()
+            .map(|handle| handle.register_session_upload(swarm_key, self.content.piece_length()));
         self.outgoing_uploads.insert(
             connection,
             OutgoingUploadPeer {
                 state,
+                piece_lengths,
+                hybrid_v1_padding,
                 cursor: snapshot.cursor(),
                 pending_initial_haves,
                 membership,
@@ -5472,6 +5514,20 @@ impl<'a> ContentSwarmDownload<'a> {
                             "outgoing upload read overlapped pending read",
                         )));
                     }
+                    let piece_length = peer
+                        .piece_lengths
+                        .get(usize::try_from(read.request.index).map_err(|_| {
+                            DownloadError::StorageTask(
+                                "outgoing upload piece index does not fit usize".to_owned(),
+                            )
+                        })?)
+                        .copied()
+                        .ok_or_else(|| {
+                            DownloadError::StorageTask(
+                                "outgoing upload piece index is out of bounds".to_owned(),
+                            )
+                        })?;
+                    let hybrid_v1_padding = peer.hybrid_v1_padding.clone();
                     let content = self.active_content.clone();
                     let handle = self.control.incoming_peer_handle();
                     peer.read = Some(OutgoingUploadRead {
@@ -5481,7 +5537,13 @@ impl<'a> ContentSwarmDownload<'a> {
                                 Some(handle) => Some(handle.acquire_upload_read().await.ok_or(())?),
                                 None => None,
                             };
-                            content.read_block(read.request).await.map_err(|_| ())
+                            match hybrid_v1_padding {
+                                Some(padding) => content
+                                    .read_hybrid_v1_block(read.request, piece_length, &padding)
+                                    .await
+                                    .map_err(|_| ()),
+                                None => content.read_block(read.request).await.map_err(|_| ()),
+                            }
                         }),
                     });
                 }

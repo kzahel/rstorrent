@@ -3302,14 +3302,14 @@ impl ApplicationService {
         let common_peer_budget = self.session_network().peer_budget();
         let common_mse_dh = self.session_network().mse_dh();
         let common_encryption = self.session_network().encryption();
-        let is_pure_v2 =
-            resume.info_hashes.v1_hash().is_none() && resume.info_hashes.v2_hash().is_some();
-        let config = if is_pure_v2 && resume.metainfo_source.is_some() {
+        let has_v2_metainfo =
+            resume.info_hashes.v2_hash().is_some() && resume.metainfo_source.is_some();
+        let config = if has_v2_metainfo {
             ResumableDownloadConfig::Metainfo(ResumableMetainfoDownloadConfig {
                 identity,
                 metainfo_source: resume.metainfo_source.ok_or_else(|| {
                     ApplicationError::Configuration(
-                        "pure-v2 runtime requires complete metainfo source".to_owned(),
+                        "v2 runtime requires complete metainfo source".to_owned(),
                     )
                 })?,
                 storage_root: root_path,
@@ -6041,8 +6041,9 @@ mod tests {
     use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake,
-        encode_handshake, encode_handshake_with_reserved, encode_message,
+        FrameDecoder, HANDSHAKE_LENGTH, HYBRID_V2_RESERVED_BIT, HYBRID_V2_RESERVED_INDEX,
+        PeerMessage, PeerProtocol, decode_handshake, decode_hybrid_response, encode_handshake,
+        encode_handshake_with_reserved, encode_message,
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
@@ -6250,6 +6251,46 @@ mod tests {
 
     fn pure_v2_source() -> Vec<u8> {
         pure_v2_source_for_payload(b"x", 16_384)
+    }
+
+    fn hybrid_source() -> Vec<u8> {
+        let roots = [
+            file_root_from_data(&[1]).expect("first hybrid file root"),
+            file_root_from_data(&[2]).expect("second hybrid file root"),
+        ];
+        let mut first_v1_piece = vec![0; 16_384];
+        first_v1_piece[0] = 1;
+        let v1_piece_hashes = [
+            <[u8; 20]>::from(Sha1::digest(&first_v1_piece)),
+            <[u8; 20]>::from(Sha1::digest([2])),
+        ];
+        let mut tree = vec![b'd'];
+        for (name, root) in [(b'a', roots[0]), (b'b', roots[1])] {
+            bencode_bytes(&mut tree, &[name]);
+            tree.extend_from_slice(b"d0:d6:lengthi1e11:pieces root32:");
+            tree.extend_from_slice(&root);
+            tree.extend_from_slice(b"ee");
+        }
+        tree.push(b'e');
+        let mut info = b"d9:file tree".to_vec();
+        info.extend_from_slice(&tree);
+        info.extend_from_slice(
+            concat!(
+                "5:filesl",
+                "d6:lengthi1e4:pathl1:aee",
+                "d4:attr1:p6:lengthi16383ee",
+                "d6:lengthi1e4:pathl1:bee",
+                "e12:meta versioni2e4:name4:root12:piece lengthi16384e",
+                "6:pieces40:"
+            )
+            .as_bytes(),
+        );
+        info.extend_from_slice(&v1_piece_hashes.concat());
+        info.push(b'e');
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersdee");
+        source
     }
 
     fn torrent_bytes_request(
@@ -8616,6 +8657,234 @@ mod tests {
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove pure-v2 application root");
+    }
+
+    #[tokio::test]
+    async fn hybrid_application_selective_download_restarts_and_seeds_both_aliases() {
+        let root = test_root("hybrid-application-download");
+        let configuration = config(&root);
+        persist_client_settings(
+            &configuration,
+            ClientSettings {
+                listener: ListenerPolicy::AutomaticLoopback,
+                ..ClientSettings::default()
+            },
+        );
+        let source = hybrid_source();
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("hybrid application fixture");
+        let hashes = projection.content.info_hashes();
+        assert!(hashes.is_hybrid());
+        let v1_swarm = rstorrent_protocol::identity::SwarmKey::V1(
+            hashes.v1_hash().expect("hybrid v1 identity"),
+        );
+        let v1_key = v1_swarm.into_bytes();
+        let v2_swarm = hashes.v2_hash().expect("hybrid v2 identity").swarm_key();
+        let v2_key = v2_swarm.into_bytes();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind hybrid application peer");
+        let address = listener.local_addr().expect("hybrid peer address");
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept hybrid peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read hybrid handshake");
+            let request = decode_handshake(&handshake, v1_key).expect("hybrid v1 dial identity");
+            assert!(request.supports_hybrid_v2());
+            stream
+                .write_all(&encode_handshake(v2_key, *b"-RS-APP-HYBRID-00000"))
+                .await
+                .expect("accept hybrid v2 upgrade");
+            stream
+                .write_all(&encode_message(&PeerMessage::Bitfield(vec![0xc0])).unwrap())
+                .await
+                .expect("send hybrid availability");
+            stream
+                .write_all(&encode_message(&PeerMessage::Unchoke).unwrap())
+                .await
+                .expect("unchoke hybrid client");
+            let mut decoder = FrameDecoder::new();
+            decoder.set_protocol(PeerProtocol::V2);
+            let mut pending = std::collections::VecDeque::new();
+            loop {
+                match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                    PeerMessage::Interested | PeerMessage::Extended { id: 0, .. } => {}
+                    PeerMessage::Request(request) => {
+                        assert_eq!(
+                            request,
+                            BlockRequest {
+                                index: 0,
+                                begin: 0,
+                                length: 1,
+                            }
+                        );
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Piece {
+                                    index: 0,
+                                    begin: 0,
+                                    block: vec![1],
+                                })
+                                .unwrap(),
+                            )
+                            .await
+                            .expect("send selected hybrid payload");
+                    }
+                    PeerMessage::Have(0) => break,
+                    message => panic!("unexpected hybrid client message {message:?}"),
+                }
+            }
+        });
+        let mut service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open hybrid application");
+        let mut request = torrent_bytes_request("hybrid-download", &source, true);
+        request.selection = crate::FileSelectionIntent::WantedRanges {
+            ranges: vec![crate::FileIndexRange {
+                start: 0,
+                end_exclusive: 1,
+            }],
+        };
+        let response = service
+            .add_torrent_bytes(request, source.clone())
+            .await
+            .expect("add running hybrid source");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("hybrid running add result"),
+        };
+        service
+            .torrent_runtimes
+            .get(&torrent_id)
+            .expect("hybrid torrent runtime")
+            .handle()
+            .peers()
+            .observe_discovered_peer(PeerObservation::dialable(
+                PeerEndpoint::new(address).expect("hybrid peer endpoint"),
+                PeerSource::Manual,
+            ))
+            .expect("observe hybrid application peer");
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "hybrid-complete",
+        )
+        .await;
+        peer_task.await.expect("hybrid application peer task");
+        let owner = torrent_id.parse::<TorrentId>().expect("hybrid owner");
+        let paths = torrent_storage_paths(&root.join("payload"), "root", owner)
+            .expect("hybrid storage paths");
+        assert_eq!(fs::read(paths.output.join("a")).unwrap(), [1]);
+        assert!(!paths.output.join("b").exists());
+        assert!(!paths.part.exists());
+        let snapshot = service.store_mut().expect("store").snapshot().unwrap();
+        assert_eq!(snapshot.torrents.len(), 1);
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("hybrid resume row");
+        assert!(resume.info_hashes.is_hybrid());
+        assert_eq!(resume.metainfo_source.as_deref(), Some(source.as_slice()));
+        service
+            .shutdown()
+            .await
+            .expect("shutdown hybrid application");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(configuration)
+            .await
+            .expect("reopen hybrid application");
+        let resumed = reopened
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("reopen hybrid row");
+        assert_eq!(resumed.state, TorrentState::Complete);
+        assert!(resumed.info_hashes.is_hybrid());
+        assert_eq!(resumed.metainfo_source, Some(source));
+        assert!(!paths.part.exists());
+        wait_for_seed_registrations(&reopened, 2).await;
+
+        let incoming_address = reopened
+            .incoming_peer_snapshot()
+            .expect("incoming hybrid service")
+            .listen_address;
+        let mut upgraded = tokio::net::TcpStream::connect(incoming_address)
+            .await
+            .expect("connect hybrid upgrade seed");
+        let mut reserved = [0; 8];
+        reserved[HYBRID_V2_RESERVED_INDEX] = HYBRID_V2_RESERVED_BIT;
+        upgraded
+            .write_all(&encode_handshake_with_reserved(
+                v1_key,
+                *b"-RS-HYB-UPGRADE-0000",
+                reserved,
+            ))
+            .await
+            .expect("offer incoming hybrid upgrade");
+        let mut response = [0; HANDSHAKE_LENGTH];
+        upgraded
+            .read_exact(&mut response)
+            .await
+            .expect("read incoming hybrid upgrade");
+        let selection = decode_hybrid_response(&response, v1_swarm, v2_swarm, true)
+            .expect("incoming seed accepted v2 upgrade");
+        assert_eq!(selection.protocol, PeerProtocol::V2);
+        let mut upgraded_decoder = FrameDecoder::new();
+        upgraded_decoder.set_protocol(PeerProtocol::V2);
+        let mut upgraded_pending = std::collections::VecDeque::new();
+        assert_eq!(
+            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending,).await,
+            PeerMessage::Bitfield(vec![0x80])
+        );
+        drop(upgraded);
+
+        let (mut legacy, mut legacy_decoder, mut legacy_pending) =
+            connect_application_seed_with_expected_availability(
+                &reopened,
+                v1_key,
+                *b"-RS-HYB-LEGACY-00000",
+                false,
+                vec![0x80],
+            )
+            .await;
+        legacy
+            .write_all(&encode_message(&PeerMessage::Interested).unwrap())
+            .await
+            .expect("interest legacy hybrid seed");
+        assert_eq!(
+            read_peer_message(&mut legacy, &mut legacy_decoder, &mut legacy_pending).await,
+            PeerMessage::Unchoke
+        );
+        legacy
+            .write_all(
+                &encode_message(&PeerMessage::Request(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 5,
+                }))
+                .unwrap(),
+            )
+            .await
+            .expect("request hybrid payload and padding");
+        assert_eq!(
+            read_peer_message(&mut legacy, &mut legacy_decoder, &mut legacy_pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: vec![1, 0, 0, 0, 0],
+            }
+        );
+        drop(legacy);
+        reopened.shutdown().await.expect("shutdown reopened hybrid");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove hybrid application root");
     }
 
     #[tokio::test]
