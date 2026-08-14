@@ -212,18 +212,18 @@ registrations omit PEX. Neither changes this campaign's current action.
 
 ## Current Truth
 
-RSTorrent can download real v1 torrents through outgoing TCP and can seed
-controlled incoming peers locally or through one proven UPnP-mapped public TCP
-endpoint:
+RSTorrent can download real v1 torrents and the controlled pure-v2 source and
+magnet subsets through outgoing peers, and can seed controlled incoming peers
+locally or through one proven UPnP-mapped public TCP endpoint:
 
 - immutable bootstrap includes internal disabled and automatic/fixed loopback
   policies for controlled use plus ordinary automatic/fixed IPv4 policies;
   ordinary modes bind `0.0.0.0`, retain a best-effort concrete routed address
   for reachability bookkeeping, and report fixed bind failure as typed state;
 - one joined session listener uses a five-entry backlog, bounds eight
-  pre-handshake tasks, routes exact v1 info hashes through up to 1,024
-  generation-fenced registrations, and admits peers under one session budget
-  shared with outgoing connecting and established sockets;
+  pre-handshake tasks, and routes version-tagged 20-byte v1 or v2 swarm keys
+  through up to 1,024 generation-fenced registrations. It admits peers under
+  one session budget shared with outgoing connecting and established sockets;
 - that listener detects ordinary BitTorrent versus MSE before torrent identity,
   shares the existing handshake deadline and four-job session DH owner, and
   uses a collision-preserving `req2` index for expected `O(1)` provisional
@@ -239,6 +239,11 @@ endpoint:
   unregister before lifecycle or storage-authority changes. Both use the
   common logical published-content owner, verified/readable availability,
   session file pool, and read admission;
+- complete info-only pure-v2 magnets rebuild their descriptor from
+  authenticated durable info at application open. Negotiated v2 peers can
+  obtain BEP 9 metadata, authenticated piece/leaf hashes, and only verified
+  payload through the same bounded registration; no complete outer metainfo
+  or durable sparse-hash cache is invented;
 - admitted metadata-verified incomplete torrents install a generation-fenced
   active route as soon as storage exists. Initiated and accepted peers share
   the ordinary download swarm, dynamic verified/readable availability,

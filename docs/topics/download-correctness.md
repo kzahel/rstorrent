@@ -12,8 +12,13 @@ streaming, transfer, and exact v1 hashes. Completed Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) adds the
 strict complete-source pure-v2 vertical with aligned file-local storage,
 streamed SHA-256 Merkle verification, conservative restart/recheck,
-publication, verified reads, and active/completed upload. V2 magnets, sparse
-hash acquisition, and hybrid integrity remain absent.
+publication, verified reads, and active/completed upload. Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) extends that
+authority to pure-v2 magnets: payload waits for proved piece roots, candidate
+bytes remain unverified across missing-hash restart, complete files may
+reconstruct their tree locally, and authenticated leaf proofs retain good
+blocks while repairing exact corrupt blocks. Hybrid dual verification remains
+absent.
 Tactical `017` closes the recorded one-peer liveness
 mechanisms with request expiry, failover, late discovery, and replacement.
 Tactical `020` adds useful-payload request windows and sampled connection
@@ -325,6 +330,7 @@ related unit test exists.
 | DL-C36 | A partial managed resume has coherent committed bits, then separately has missing, short, oversized, or truncated-slot evidence. | Matching structure accepts with zero payload reads/hashes. Checker-readable disagreement starts one full generation for that torrent only; malformed ownership or wrong-kind artifacts enter repair without mutation. | Passing pure policy, path/platform structural observation, common-checker fallback, cancellation, controlled restart, and pinned-libtorrent oracle evidence from Tactical `120`. |
 | DL-C37 | An external actor changes committed payload bytes without changing required structural observations. | Ordinary fast resume may accept the historical bitmap and is not described as freshly checked; explicit Force recheck hashes all readable pieces and clears the mismatch. | Passing Tactical `120` trust-risk evidence: ordinary resume deliberately accepts the same-length mutation, then Force hashes and clears the affected 262,144-byte piece in verification generation one. |
 | DL-C38 | A strict complete-source pure-v2 torrent contains aligned empty, sub-block, exact-block, exact-piece, multi-piece, selected, and skipped files, then encounters restart, corruption, incomplete storage, publication interruption, or concurrent upload. | Only file-local payload ranges are requested or written; alignment gaps and skipped pieces create no payload or part artifact. A piece becomes have, streamable, publishable, or uploadable only after the correct SHA-256 Merkle result and durability transition. Restart/recheck conservatively invalidates missing, short, structurally incompatible, stale, or corrupt evidence while retaining exact verified content. | Passing Tactical [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) deterministic, runtime, two-role pinned-libtorrent, browser, path/platform, Android SAF/AVD, and resource evidence. The selective oracle fixture verifies four of five pieces and omits exactly 137 skipped bytes; the active uploader serves one exact verified 16-KiB block before final completion. |
+| DL-C39 | A pure-v2 magnet has authenticated info and selected candidate bytes but lacks durable piece or leaf hashes, then encounters corruption, selection change, or restart. | New payload waits for a piece root proved to the authenticated file root. Candidate bytes remain unavailable until refetch and verification; a complete file may reconstruct locally. A valid leaf proof retains good blocks and resets only exact corrupt blocks, while reject/stall falls back to whole-piece recovery. | Passing Tactical [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) deterministic hostile-state, scripted restart/fallback, two-role pinned-libtorrent wire, same-session promotion, production browser, Android incomplete-candidate, and bounded-resource evidence. The AVD interrupts after wire pieces 0 and 1 of nine selected pieces and observes hash requests increase from one to two after restart. |
 
 ## Required Scheduler Observability
 

@@ -14,8 +14,12 @@ Completed Tactical
 strict complete-source pure-v2 `.torrent` files through the same Add,
 selection, progress, Files, Force recheck, export, restart, and seeding
 surfaces. Clients gain no format-specific workflow or storage policy.
-The Android
-foreground product client now uses durable SAF storage without
+Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) sends
+pure-v2 `btmh` magnets through that same Add, BEP 53 selection, progress,
+Files, export, restart, promotion, removal, and seeding surface. Protocol and
+Merkle policy remain in the in-process engine; clients gain no hash-specific
+controls. The Android foreground product client now uses durable SAF storage without
 placing platform capabilities in the portable UI command contract. The
 one-command desktop launcher is smoke-tested on Apple silicon macOS as well as
 the original Linux development host. Closing its macOS window detaches that
@@ -502,6 +506,16 @@ cleanup. Tauri's direct adapters pass without a visible launch. The Android
 Compose application independently passes complete and selective pure-v2 SAF
 profiles on an owned API 34 no-window AVD, including restart/recheck,
 publication, exact upload, bounded handles, and cleanup.
+
+Tactical `155` adds the production magnet lifecycle to that seam. The browser
+uses exact `btmh`, one peer hint, and select-only intent; it completes wanted
+files, leaves the skipped file absent, exports the canonical magnet, restarts
+without peer traffic, and removes exact managed data with no semantic HTTP
+control or accessibility regression. The Android AVD independently interrupts
+an incomplete verified candidate, refetches hashes after restart, completes
+and promotes selection, serves a magnet-only libtorrent leecher, and cleans
+SAF state within the existing 40-handle and 16-request bounds. Tauri and iOS
+require no new presentation contract; their adapter/build gates pass.
 
 Android presentation requires separate evidence because it is implemented in
 Compose. Routine automation targets an explicitly owned no-window AVD and

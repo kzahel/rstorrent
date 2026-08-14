@@ -103,6 +103,17 @@ sends the loser cancel and releases exact attempt ownership. Removing the
 final transient demand restores ordinary scheduling without replacing the
 peer or download generation.
 
+Completed pure-v2 Tacticals
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) and
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) retain those
+same peer records, connection generations, discovery sources, transport
+selection, and cancellation boundaries. V2 metadata selects exact SHA-256;
+hash needs are torrent-owned while each peer holds at most two correlated
+attempts and the torrent at most 16. Reject, timeout, disconnect, duplicate,
+late, mismatched, and bad-proof outcomes release or fail only their bounded
+work. The selected TCP/uTP/MSE/tracker/DHT and both-role pinned-libtorrent
+matrix passes without a v2 peer registry or parallel connection owner.
+
 ## Scope
 
 This topic owns the torrent-engine vocabulary and invariants for peer

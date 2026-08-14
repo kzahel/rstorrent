@@ -207,6 +207,17 @@ truncated, stale, corrupt, and interrupted-storage cases fail closed or enter
 the existing repair/check path. No compatibility migration or second source
 format was needed.
 
+Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) keeps schema
+19 and adds no sparse-hash artifact. A pure-v2 magnet stores its exact
+authenticated raw info and full identity while sparse piece/leaf proofs stay
+volatile. Incomplete restart withdraws candidate have until hashes are
+refetched and bytes reverify; complete selected files may reconstruct their
+tree locally against the durable file root. Info-only completed magnets can
+therefore restore incoming metadata/hash/payload service without pretending a
+complete outer source exists. No migration is needed for the unreleased
+catalog.
+
 ## Terms And Ownership
 
 RSTorrent uses these terms to keep "client" from collapsing several different

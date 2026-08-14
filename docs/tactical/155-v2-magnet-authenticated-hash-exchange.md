@@ -1,10 +1,11 @@
 # Tactical 155: V2 Magnet And Authenticated Hash Exchange
 
-Status: **Implementation in progress and authoritative Now on 2026-08-14.**
-Stages 0--2 are complete. Pure-v2 magnet identity, persistence, export,
-exact SHA-256 BEP 9 metadata admission, content/hash separation, and strict
-hash-message framing are live; piece payload remains fail-closed until the
-Stage 3 authenticated-hash scheduler lands.
+Status: **Complete on 2026-08-14.** The bounded pure-v2 magnet subset now
+passes exact `btmh` intake/export, SHA-256 BEP 9 metadata, authenticated BEP
+52 hash acquisition and service, hash-first payload, selective recovery,
+restart, first-party platform, and pinned-libtorrent evidence in both roles.
+Mixed identities, hybrid runtime behavior, durable sparse hash persistence,
+and torrent creation remain deliberate deferrals.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `peer-lifecycle`,
@@ -1026,11 +1027,66 @@ unless a bounded artifact is explicitly retained and linked.
   opt-in tests ignored; warning-denying workspace clippy passes after the
   Stage 2 commit gate.
 
-Stage 3 begins with the torrent-owned logical-need and attempt scheduler,
-payload gating, candidate verification, and complete-file reconstruction. Do
-not infer payload download support from wire decoding alone.
+### 2026-08-14 Stage 3 hash scheduling and candidate recovery
 
-### 2026-08-14 Stage 6 controlled interoperability checkpoint
+- The torrent coordinator now owns bounded logical hash needs independently
+  of peers. It correlates exact request tuples, coalesces duplicate needs,
+  limits attempts per peer and torrent, delays duplicate work, releases
+  rejected, timed-out, disconnected, late, mismatched, and cancelled work,
+  and inserts only proofs that reach the authenticated file root.
+- New v2 payload requests remain outside the picker until the expected piece
+  root is authenticated. Scripted peers prove metadata, piece-layer response,
+  and payload ordering; malformed, unsolicited, bad-proof, and generation-
+  stale results cannot establish authority.
+- Restarted have without retained sparse hashes becomes candidate data, not
+  advertised have. Incomplete candidates refetch hashes and stream-verify
+  before promotion; complete selected files can reconstruct their piece and
+  leaf trees locally and become authoritative only when the file root matches.
+  Live selection changes rebuild hash needs without replacing protocol truth.
+- Focused warning-denying engine Clippy and the complete engine suite passed
+  after both the scheduler and candidate-recovery commit gates.
+
+### 2026-08-14 Stage 4 leaf diagnosis and hash service
+
+- A failed v2 piece now requests one bounded base-zero leaf proof, streams
+  local 16-KiB leaf hashes, and retains authenticated good blocks plus their
+  contributors while resetting only exact bad blocks. Reject or stall uses
+  the bounded whole-piece fallback instead of creating an integrity stall.
+- Initiated and accepted v2 peers share one authenticated hash service.
+  Complete catalogs answer piece-layer requests directly; applicable leaf
+  requests may use one bounded on-demand read/hash job under the existing
+  upload and storage budgets. Unknown, inapplicable, or unavailable requests
+  receive hash reject without acquiring authority.
+- The pinned-libtorrent corruption gate injects one exact 16-KiB bad block,
+  observes a base-zero request and valid response, fetches every good block
+  once, refetches only the diagnosed block, compares exact selected payload,
+  and joins both proxies and peers. Focused protocol/engine tests also cover
+  reject, stall, cancellation, active upload, and completed seeding.
+
+### 2026-08-14 Stage 5 application and first-party platforms
+
+- The ordinary application service accepts, persists, exports, selects,
+  publishes, rechecks, removes, and restarts info-only pure-v2 magnets without
+  a v2-specific client DTO. Completed info-only magnets reconstruct their
+  seeding descriptor from authenticated durable info and serve metadata,
+  hashes, and verified payload after application restart.
+- The production-browser harness adds `btmh`, one `x.pe`, and `so=0-1`,
+  observes BEP 9 plus BEP 52 before selected payload, leaves `skip.bin`
+  absent, exports a canonical magnet, restarts with no further peer traffic,
+  and removes the exact managed tree. Both generations use one application
+  WebSocket, zero semantic HTTP calls, zero binary frames for magnet intake,
+  and zero serious or critical accessibility findings.
+- Both Android native ABIs, UniFFI generation, the debug APK, and JVM tests
+  pass. The owned API 34 no-window AVD stops after wire pieces 0 and 1 of nine
+  selected pieces, sees hash requests increase from one to two across restart,
+  completes selection, promotes the skipped file, serves 229,525 bytes to a
+  magnet-only pinned-libtorrent leecher, and removes exact SAF state. SAF
+  high-water is two owned handles of 40 and two pending requests of 16.
+- All five direct Tauri adapter tests and its build pass without a visible
+  window. The unchanged Swift boundary regenerates cleanly and an unsigned
+  iOS archive succeeds; the temporary archive is removed.
+
+### 2026-08-14 Stage 6 controlled interoperability and closure
 
 - The pinned libtorrent `2.0.13.0` Python/native oracle now completes direct
   plaintext TCP `btmh` plus `x.pe` magnet downloads in both roles without a
@@ -1051,5 +1107,22 @@ not infer payload download support from wire decoding alone.
   peer, session, process, and temporary-tree cleanup is joined and asserted.
 - The existing controlled matrix remains green for forced-RC4 TCP and both
   accepted and initiated uTP roles, including UDP-tracker-only and DHT-only
-  discovery. Same-session selection promotion and first-party platform gates
-  remain before Stage 6 closure.
+  discovery. Same-session application selection starts with three verified
+  pieces, promotes the skipped multi-piece file with exactly one new hash
+  range, reaches five verified pieces, and restarts through complete-file
+  local reconstruction with no new peer traffic.
+- The final locked matrix reports two fixtures, both peer roles, restart,
+  tracker, DHT, accepted/initiated uTP, forced RC4 in both initiated roles,
+  and joined cleanup. Oracle RSS peaks at 51,904,512 bytes and the child
+  process peak is 26,492,928 bytes; the aligned v2 payload window peaks at
+  99,035 bytes under the 256-MiB request ceiling and 66,267 bytes under the
+  256-KiB resident-payload ceiling.
+- Final repository closure passes `cargo fmt --all -- --check`, warning-
+  denying workspace Clippy, the complete workspace suite, generated web
+  contract with no drift, TypeScript checking, 248 web unit tests, and 33
+  deterministic Playwright tests. The production browser magnet lifecycle,
+  Tauri tests/build, Android ABI/build/JVM gates, API 34 AVD profile, Swift
+  regeneration, and unsigned iOS archive also pass.
+- No public swarm, physical device, release, publish, tag, or push was used or
+  required. The stopping condition is met only for the recorded pure-v2
+  magnet subset; hybrid dual-swarm behavior and creation remain unclaimed.

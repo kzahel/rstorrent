@@ -309,9 +309,12 @@ single-file and aligned multi-file fixtures, then transfers each one in both
 RSTorrent/libtorrent roles over loopback TCP. It repeats application-owned
 seeding after restart, covers selective file download, forces RC4 MSE in both
 initiated roles, and proves tracker- and DHT-discovered default-uTP download.
-It also accepts a uTP-only libtorrent leecher through the shared session UDP
-owner. The harness verifies exact payload and versioned identities, enforces
-resource high-water bounds, and removes all temporary state:
+It also exercises `btmh` plus direct-peer-hint magnets in both roles, captures
+BEP 52 hash exchange, promotes selected files, reconstructs complete trees
+after restart, repairs one corrupt leaf, and accepts a uTP-only libtorrent
+leecher through the shared session UDP owner. The harness verifies exact
+payload and versioned identities, enforces resource high-water bounds, and
+removes all temporary state:
 
 ```bash
 uv run --project tests/interop --locked \
@@ -321,7 +324,10 @@ uv run --project tests/interop --locked \
 The authenticated production-browser lifecycle keeps one v1 control paused,
 adds a complete pure-v2 source through the binary WebSocket operation, changes
 file selection, completes exact wanted bytes over uTP, forces a recheck, and
-restarts without uploading the source again. It also checks accessibility,
+restarts without uploading the source again. A second phase adds a pure-v2
+`btmh` magnet with one peer hint and select-only intent, captures metadata/hash
+wire use, checks skipped output and canonical export, restarts from local
+verified content, and removes exact managed data. It also checks accessibility,
 semantic transport use, gateway resource bounds, part-artifact absence, and
 temporary cleanup:
 

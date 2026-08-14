@@ -55,6 +55,17 @@ back into those modules. The existing protocol-to-engine dependency direction
 and workspace crate graph remain appropriate.
 
 Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) preserves
+that dependency direction by separating immutable `V2ContentDescriptor`
+geometry from task-free mutable `V2HashCatalog` authority in the protocol
+crate. The existing engine torrent coordinator owns logical hash scheduling;
+existing peer generations carry correlation and messages 21--23; existing
+storage/upload budgets serve on-demand leaf work; and the session remains the
+sole persistence/application owner. No second metadata downloader, hash
+daemon, peer registry, filesystem owner, platform policy fork, generated DTO,
+or crate split was introduced.
+
+Completed Tactical
 [`134`](../tactical/134-hierarchical-transfer-rate-enforcement.md) adds one
 task-free bandwidth core inside the engine and one joined upload/download
 service under the existing session-network owner. A fixed registration on

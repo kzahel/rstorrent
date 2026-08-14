@@ -13,12 +13,13 @@ piece layers, and hybrid structural validator. Completed Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) carries
 strict complete local pure-v2 `.torrent` content through product intake,
 aligned storage, Merkle verification, restart/recheck, publication, standard
-peer transfer, discovery, streaming, and seeding. The BEP 52 claim is now
-**Partial**. Decision-complete Tactical
-[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) is the
-authoritative implementation plan for pure-v2 magnets and authenticated hash
-exchange. Those capabilities, hybrid product behavior, and creation remain
-unsupported until their implementation evidence lands.
+peer transfer, discovery, streaming, and seeding. Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) adds the
+bounded pure-v2 magnet vertical: exact `btmh`, SHA-256 BEP 9 metadata,
+authenticated hash messages 21--23, sparse hash scheduling, candidate
+recovery, selective payload, corruption repair, restart, and hash/payload
+service. The BEP 52 claim remains **Partial** because hybrid product behavior,
+dual-swarm verification, creation, and broader BEP 52 behavior remain absent.
 
 ## Scope And Owning Role
 
@@ -52,11 +53,11 @@ the existing v1 behavior:
 
 - Product-facing [`Metainfo`](../../crates/rstorrent-protocol/src/metainfo.rs)
   remains the v1 projection. `TorrentContent` is the runtime-owned v1/pure-v2
-  sum; its v2 constructor accepts only a strict `ParsedOuterMetainfo` whose
-  exact retained source supplies every required piece layer. Hybrid and
-  info-only v2 input still cannot enter runtime ownership.
+  sum; pure v2 may enter from a strict complete outer source or from exact
+  SHA-256-authenticated info-only metadata. Hybrid content remains rejected.
 - [`magnet.rs`](../../crates/rstorrent-protocol/src/magnet.rs) accepts bounded
-  `btih` identity and explicitly rejects `btmh` or mixed v1/v2 identity.
+  `btih` or exact hexadecimal `btmh:1220` identity, canonicalizes by protocol,
+  and fails closed on conflicting, malformed, or mixed v1/v2 identity.
 - [`TorrentLayout`](../../crates/rstorrent-protocol/src/storage_layout.rs)
   remains the contiguous v1 layout. `ContentLayout` projects either that shape
   or v2's aligned file-local logical space through one checked runtime
@@ -67,7 +68,9 @@ the existing v1 behavior:
   uploadable ranges.
 - The task-free SHA-256 Merkle owner builds block, piece, and file roots with
   at most 36 retained hashes, validates exact proofs with at most 35 siblings,
-  and reconstructs strict complete outer piece layers.
+  and reconstructs strict complete outer piece layers. A separate bounded
+  sparse catalog retains only roots and proof nodes authenticated to the file
+  roots named by exact info; sparse knowledge is volatile across restart.
 - The engine integrity plan explicitly selects v1 SHA-1 or streamed v2
   SHA-256 Merkle verification. V2 uses fixed 16-KiB leaves and distinguishes
   one-piece file roots from multi-piece layer roots before durable have state.
@@ -81,10 +84,14 @@ the existing v1 behavior:
 - Trackers, DHT, plaintext handshakes, MSE routing, TCP, and uTP use the tagged
   20-byte v2 truncation while the full 32-byte identity remains authoritative.
   Standard bitfield/have/request/piece/cancel exchange serves active verified
-  pieces and completed content.
+  pieces and completed content. Negotiated v2 peers additionally exchange
+  bounded request/hashes/reject messages 21--23; payload scheduling waits for
+  an authenticated expected root, and upload serves required piece or leaf
+  proofs under existing storage budgets.
 - The [protocol ledger](protocol-support.md) reports BEP 52 as **Partial** for
-  that exact complete-source subset. It does not claim v2 magnet acquisition,
-  messages 21--23, sparse hash state, hybrid swarms, or creation.
+  the demonstrated complete-source and pure-v2 magnet subsets. It does not
+  claim mixed identity, hybrid swarms, dual verification, durable sparse hash
+  state, arbitrary Merkle-base behavior, or creation.
 
 This is not a SHA-1-to-SHA-256 substitution. BEP 52 changes the identity
 cardinality, file-to-piece geometry, expected-hash source, verification unit,
@@ -423,8 +430,8 @@ runtime design.
 
 ## Tactical Campaign
 
-The first three stages are complete. Stage 4 is assigned to Tactical `155`;
-Stage 5 remains unassigned. Adjacent stages may be combined only
+The first four stages are complete. Stage 5 remains unassigned. Adjacent
+stages may be combined only
 when the resulting scope remains bounded and its stopping condition becomes
 clearer.
 
@@ -466,20 +473,21 @@ multi-file transfers pass against pinned libtorrent in both roles, including
 selective files, recovery, restart, TCP, default uTP, forced RC4 MSE, tracker,
 DHT, browser, platform storage, Android AVD, iOS archive, and bounded-resource
 evidence. V1 remains green and the resulting BEP 52 claim is intentionally
-Partial because v2 magnet hash acquisition is absent.
+Partial; at that checkpoint v2 magnet hash acquisition was still absent and
+was subsequently supplied by Stage 4.
 
-### 4. V2 magnets and authenticated hash exchange
+### 4. [V2 magnets and authenticated hash exchange](../tactical/155-v2-magnet-authenticated-hash-exchange.md)
 
-Add full `btmh` intake/export, SHA-256 BEP 9 metadata validation, missing-hash
-state, sparse Merkle persistence or explicit refetch policy, messages 21--23,
-hash request scheduling, proof validation, rejection/retry behavior, upload
-service, and peer attribution.
+Completed on 2026-08-14. Exact `btmh` intake/export, SHA-256 BEP 9 metadata
+validation, explicit missing-hash state, volatile sparse Merkle knowledge,
+messages 21--23, bounded hash scheduling, proof validation, rejection/retry,
+leaf-level repair, upload service, and peer attribution now pass.
 
-The stopping condition includes v2 magnet-to-content transfer in both oracle
-roles, data-present-before-hash recovery, malformed and unsolicited messages,
-bad proofs, rejected and stalled requests, reconnect/restart, request and tree
-high-water marks, terminal cancellation, and proportional first-party client
-and Android evidence.
+The stopping condition passed with v2 magnet-to-content transfer in both
+oracle roles, data-present-before-hash recovery, malformed and unsolicited
+messages, bad proofs, rejected and stalled requests, reconnect/restart,
+request and tree high-water marks, terminal cancellation, production browser,
+Tauri/iOS build, both Android ABIs, and API 34 SAF evidence.
 
 ### 5. Hybrid dual-swarm closure
 
@@ -525,9 +533,9 @@ outstanding-request, resident-hash, task, descriptor, and storage high-water
 marks. Temporary torrents, payloads, captures, logs, and oracle processes must
 be bounded and cleaned.
 
-Parsing a v2 file is not a support claim. A pure-v2 `.torrent` transfer may
-graduate only the exact local-source subset it proves. V2 magnet support
-requires authenticated hash acquisition, and hybrid support requires one
+Parsing a v2 file is not a support claim. The complete-source and magnet
+subsets graduate only the exact paths their evidence proves. Hybrid support
+still requires one
 content owner to participate through both identities while verifying both
 schemes. [`protocol-support.md`](protocol-support.md) owns the final claim
 language and evidence links.
@@ -561,12 +569,11 @@ cross-product.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records execution of
-decision-complete Tactical
-[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) as the sole
-**Now**. Tactical
-[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) completed
-the exact complete-local-source Stage 3 subset. Tactical `155` now resolves
-authenticated missing-hash ownership, restart refetch/reconstruction, wire
-scheduling, hostile-input bounds, and the required evidence before Stage 4
-code changes begin.
+[`capability-readiness.md`](capability-readiness.md) records planning the
+bounded Stage 5 hybrid dual-swarm tactical as the sole **Now**. Completed
+Tacticals
+[`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) and
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) own the exact
+complete-source and magnet pure-v2 subsets. No Stage 5 implementation is
+authorized until its tactical fixes identity reconciliation, dual
+verification, ownership, resource bounds, and controlled evidence.

@@ -12,8 +12,13 @@ the view protocol version. Completed Tactical
 strict complete-source pure-v2 rows through the same torrent, progress, Files,
 tracker, command, and event projections. No v2-specific DTO or API version
 change was necessary; the optional v2 identity and opaque route remain the
-only format-specific client facts. The bounded leased view-set, authenticated
-JSON polling adapter, pure reducer, and lifecycle controller are implemented by
+only format-specific client facts. Completed Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) carries
+pure-v2 magnet metadata, hash waiting/recovery, selected progress, restart,
+export, and completed seeding through those same commands and views, again
+without a v2-only DTO or protocol-version change. The bounded leased view-set,
+authenticated JSON polling adapter, pure reducer, and lifecycle controller are
+implemented by
 [`033-headless-view-set-foundation.md`](../tactical/033-headless-view-set-foundation.md).
 Tactical `034` implements the per-application Zustand store and React
 inspection model against a deterministic adapter. Tactical `035` adds stable
