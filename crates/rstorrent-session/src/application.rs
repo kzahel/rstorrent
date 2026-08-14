@@ -8843,6 +8843,33 @@ mod tests {
             read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending,).await,
             PeerMessage::Bitfield(vec![0x80])
         );
+        upgraded
+            .write_all(&encode_message(&PeerMessage::Interested).unwrap())
+            .await
+            .expect("interest upgraded hybrid seed");
+        assert_eq!(
+            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending).await,
+            PeerMessage::Unchoke
+        );
+        upgraded
+            .write_all(
+                &encode_message(&PeerMessage::Request(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 5,
+                }))
+                .unwrap(),
+            )
+            .await
+            .expect("request upgraded hybrid payload and padding");
+        assert_eq!(
+            read_peer_message(&mut upgraded, &mut upgraded_decoder, &mut upgraded_pending).await,
+            PeerMessage::Piece {
+                index: 0,
+                begin: 0,
+                block: vec![1, 0, 0, 0, 0],
+            }
+        );
         drop(upgraded);
 
         let (mut legacy, mut legacy_decoder, mut legacy_pending) =

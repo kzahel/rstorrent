@@ -416,6 +416,7 @@ async fn connect_tcp_with_progress(
                 if let Some(ciphers) = negotiated.complete.ciphers {
                     io.attach_ciphers(ciphers);
                 }
+                io.set_protocol(negotiated.protocol);
                 io.push_decrypted(&negotiated.carried)?;
                 (
                     negotiated.handshake,
@@ -509,6 +510,8 @@ async fn connect_tcp_with_progress(
             None,
         )
     };
+    let mut io = io;
+    io.set_protocol(protocol);
     let capabilities = NegotiatedPeerCapabilities::negotiate(
         advertised_reserved_bits(advertise_extensions),
         &handshake,
@@ -557,7 +560,7 @@ async fn connect_utp_with_progress(
             })
             .await;
     }
-    let (io, handshake, protocol) = handshake_over_utp_with_sink(
+    let (mut io, handshake, protocol) = handshake_over_utp_with_sink(
         stream,
         info_hash,
         hybrid_v2_hash,
@@ -566,6 +569,7 @@ async fn connect_utp_with_progress(
         byte_metric_sink,
     )
     .await?;
+    io.set_protocol(protocol);
     let capabilities = NegotiatedPeerCapabilities::negotiate(
         advertised_reserved_bits(advertise_extensions),
         &handshake,

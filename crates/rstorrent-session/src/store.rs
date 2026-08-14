@@ -5921,6 +5921,36 @@ mod tests {
     }
 
     #[test]
+    fn v2_only_hybrid_metadata_expands_aliases_for_same_owner() {
+        let root = test_root("hybrid-v2-owner-expansion");
+        let configured = configured_root(&root);
+        let raw_info = hybrid_raw_info();
+        let v2 = super::encode_hex(&Sha256::digest(&raw_info));
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let added = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-v2-hybrid-owner".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: format!("magnet:?xt=urn:btmh:1220{v2}&so=0"),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add v2 provisional owner");
+        let torrent_id = added_torrent_id(&added);
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("expand authenticated hybrid aliases");
+        let resume = store.load_resume(&torrent_id).expect("load hybrid owner");
+        assert!(resume.info_hashes.is_hybrid());
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.skip_files, vec![1]);
+    }
+
+    #[test]
     fn tracker_only_magnet_survives_catalog_reopen() {
         let root = test_root("tracker-magnet");
         let configured = configured_root(&root);

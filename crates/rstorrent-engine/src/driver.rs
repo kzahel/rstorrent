@@ -3927,6 +3927,7 @@ async fn run_magnet_download_with_peers(
     let content = runtime_content_from_acquired(&raw_info, metainfo)?;
     peers.set_content_identities(content.content.info_hashes());
     peers.ensure_tracker_lanes()?;
+    reconnect_v1_metadata_peer_for_hybrid_hashes(peers, &content.content)?;
     let skip_files = effective_magnet_skip_files(&magnet, &content.content, config.skip_files)?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
@@ -3943,6 +3944,21 @@ async fn run_magnet_download_with_peers(
         materialize_files: config.materialize_files,
     };
     run_content_download(content_config, content, control, None, peers, None).await
+}
+
+fn reconnect_v1_metadata_peer_for_hybrid_hashes(
+    peers: &mut TorrentPeerCoordinator,
+    content: &TorrentContent,
+) -> Result<(), DownloadError> {
+    if content.info_hashes().is_hybrid()
+        && peers
+            .connection
+            .as_ref()
+            .is_some_and(|connection| connection.protocol() == PeerProtocol::V1)
+    {
+        peers.close_current(None)?;
+    }
+    Ok(())
 }
 
 fn effective_magnet_skip_files(
@@ -4189,6 +4205,7 @@ async fn run_resumable_magnet_download(
         let runtime_content = runtime_content_from_acquired(&raw_info, metainfo)?;
         peers.set_content_identities(runtime_content.content.info_hashes());
         peers.ensure_tracker_lanes()?;
+        reconnect_v1_metadata_peer_for_hybrid_hashes(&mut peers, &runtime_content.content)?;
         validate_publication_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
@@ -4731,6 +4748,7 @@ struct V2LeafDiagnosis {
 
 struct IncomingContentPeer {
     attachment: IncomingPeerAttachment,
+    protocol: PeerProtocol,
     commands: mpsc::Sender<IncomingContentCommand>,
 }
 
@@ -4743,7 +4761,7 @@ enum ContentContributor {
 struct OutgoingUploadPeer {
     state: UploadPeerState,
     piece_lengths: Arc<[u32]>,
-    hybrid_v1_padding: Option<Arc<HybridPaddingMap>>,
+    hybrid_padding: Option<Arc<HybridPaddingMap>>,
     cursor: AvailabilityCursor,
     pending_initial_haves: Option<(AvailabilitySnapshot, usize)>,
     membership: Option<SessionUploadMembership>,
@@ -4976,8 +4994,25 @@ impl<'a> ContentSwarmDownload<'a> {
             && self.candidate_verifications.is_empty()
     }
 
-    fn schedule_hashes(&mut self, now: Duration) -> Vec<crate::v2_hash_scheduler::HashAssignment> {
+    fn schedule_hashes(
+        &mut self,
+        sockets: &PeerSocketSet,
+        now: Duration,
+    ) -> Vec<crate::v2_hash_scheduler::HashAssignment> {
         let state = &self.state;
+        let incoming_content = &self.incoming_content;
+        let v2_connections_with_any_piece = |pieces: &[u32]| {
+            state
+                .connections_with_any_piece(pieces)
+                .into_iter()
+                .filter(|connection| {
+                    sockets.protocol(*connection) == Some(PeerProtocol::V2)
+                        || incoming_content
+                            .get(connection)
+                            .is_some_and(|peer| peer.protocol == PeerProtocol::V2)
+                })
+                .collect()
+        };
         let leaf_active = self
             .leaf_diagnosis
             .as_ref()
@@ -4989,7 +5024,7 @@ impl<'a> ContentSwarmDownload<'a> {
         let mut assignments = self.hash_scheduler.schedule_with_reservations(
             now,
             crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT.saturating_sub(leaf_active),
-            |pieces| state.connections_with_any_piece(pieces),
+            &v2_connections_with_any_piece,
             |connection| {
                 leaf_scheduler.map_or(0, |scheduler| scheduler.peer_attempt_count(connection))
             },
@@ -5001,7 +5036,7 @@ impl<'a> ContentSwarmDownload<'a> {
                     now,
                     crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT
                         .saturating_sub(primary_active),
-                    |pieces| state.connections_with_any_piece(pieces),
+                    &v2_connections_with_any_piece,
                     |connection| self.hash_scheduler.peer_attempt_count(connection),
                 ),
             );
@@ -5370,7 +5405,7 @@ impl<'a> ContentSwarmDownload<'a> {
         .ok_or(DownloadError::Swarm(SwarmError::Invariant(
             "outgoing upload protocol has no matching torrent identity",
         )))?;
-        let hybrid_v1_padding = (protocol == PeerProtocol::V1 && hashes.is_hybrid()).then(|| {
+        let hybrid_padding = hashes.is_hybrid().then(|| {
             Arc::new(
                 self.content
                     .hybrid_padding()
@@ -5379,7 +5414,7 @@ impl<'a> ContentSwarmDownload<'a> {
             )
         });
         let piece_lengths: Arc<[u32]> =
-            if hybrid_v1_padding.is_some() {
+            if hybrid_padding.is_some() {
                 (0..self.layout.piece_count())
                     .map(|piece| {
                         self.content
@@ -5441,7 +5476,7 @@ impl<'a> ContentSwarmDownload<'a> {
             OutgoingUploadPeer {
                 state,
                 piece_lengths,
-                hybrid_v1_padding,
+                hybrid_padding,
                 cursor: snapshot.cursor(),
                 pending_initial_haves,
                 membership,
@@ -5527,7 +5562,7 @@ impl<'a> ContentSwarmDownload<'a> {
                                 "outgoing upload piece index is out of bounds".to_owned(),
                             )
                         })?;
-                    let hybrid_v1_padding = peer.hybrid_v1_padding.clone();
+                    let hybrid_padding = peer.hybrid_padding.clone();
                     let content = self.active_content.clone();
                     let handle = self.control.incoming_peer_handle();
                     peer.read = Some(OutgoingUploadRead {
@@ -5537,9 +5572,9 @@ impl<'a> ContentSwarmDownload<'a> {
                                 Some(handle) => Some(handle.acquire_upload_read().await.ok_or(())?),
                                 None => None,
                             };
-                            match hybrid_v1_padding {
+                            match hybrid_padding {
                                 Some(padding) => content
-                                    .read_hybrid_v1_block(read.request, piece_length, &padding)
+                                    .read_hybrid_aligned_block(read.request, piece_length, &padding)
                                     .await
                                     .map_err(|_| ()),
                                 None => content.read_block(read.request).await.map_err(|_| ()),
@@ -7522,7 +7557,7 @@ async fn run_selective_swarm_loop(
             apply_content_disposition(peers, sockets, download, None, disposition).await?;
         }
 
-        let hash_assignments = download.schedule_hashes(now);
+        let hash_assignments = download.schedule_hashes(sockets, now);
         let mut failed_connections = BTreeSet::new();
         for assignment in hash_assignments {
             if download
@@ -7756,6 +7791,7 @@ async fn run_selective_swarm_loop(
                     id,
                     IncomingContentPeer {
                         attachment,
+                        protocol: capabilities.protocol,
                         commands,
                     },
                 );

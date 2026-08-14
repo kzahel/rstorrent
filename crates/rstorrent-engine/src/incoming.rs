@@ -388,13 +388,7 @@ impl V2SeedHashService {
         seed: &RegisteredSeedContent,
         piece: u32,
     ) -> Result<Vec<[u8; 32]>, ()> {
-        let descriptor = self.content.v2().ok_or(())?;
-        let length = descriptor
-            .metainfo
-            .layout
-            .piece(piece)
-            .map_err(|_| ())?
-            .payload_length;
+        let length = self.content.v2_piece(piece).map_err(|_| ())?.payload_length;
         let mut leaves = Vec::with_capacity(
             usize::try_from(u64::from(length).div_ceil(MERKLE_BLOCK_SIZE as u64))
                 .map_err(|_| ())?,
@@ -480,24 +474,21 @@ impl SeedRegistration {
         MetadataUpload::new(&raw_info).map_err(|_| {
             IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
         })?;
-        let piece_lengths = if matches!(swarm_key, SwarmKey::V1(_)) {
-            if let Some(runtime) = &runtime {
-                (0..runtime.content.piece_count())
-                    .map(|piece| {
-                        runtime
-                            .content
-                            .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
-                            .map_err(|_| ())
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|_| {
-                        IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
-                    })?
-            } else {
-                content.piece_lengths().map_err(|_| {
-                    IncomingPeerError::InvalidRegistration("invalid seed piece geometry")
+        let piece_lengths = if let Some(runtime) = runtime
+            .as_ref()
+            .filter(|runtime| runtime.content.hybrid_padding().is_some())
+        {
+            (0..runtime.content.piece_count())
+                .map(|piece| {
+                    runtime
+                        .content
+                        .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
+                        .map_err(|_| ())
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| {
+                    IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
                 })?
-            }
         } else {
             content.piece_lengths().map_err(|_| {
                 IncomingPeerError::InvalidRegistration("invalid seed piece geometry")
@@ -580,23 +571,22 @@ impl SeedRegistration {
         MetadataUpload::new(&raw_info).map_err(|_| {
             IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
         })?;
-        let piece_lengths = if matches!(swarm_key, SwarmKey::V1(_)) {
-            if let Some(runtime) = &runtime {
-                (0..runtime.content.piece_count())
-                    .map(|piece| {
-                        runtime
-                            .content
-                            .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
-                            .map_err(|_| ())
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Arc::from)
-                    .map_err(|_| {
-                        IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
-                    })?
-            } else {
-                content.piece_lengths()
-            }
+        let piece_lengths = if let Some(runtime) = runtime
+            .as_ref()
+            .filter(|runtime| runtime.content.hybrid_padding().is_some())
+        {
+            (0..runtime.content.piece_count())
+                .map(|piece| {
+                    runtime
+                        .content
+                        .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
+                        .map_err(|_| ())
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Arc::from)
+                .map_err(|_| {
+                    IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
+                })?
         } else {
             content.piece_lengths()
         };
@@ -631,11 +621,7 @@ impl SeedRegistration {
     }
 
     async fn read_block(&self, request: BlockRequest) -> Result<Vec<u8>, ()> {
-        let Some(padding) = self
-            .hybrid_padding
-            .as_ref()
-            .filter(|_| matches!(self.swarm_key, SwarmKey::V1(_)))
-        else {
+        let Some(padding) = self.hybrid_padding.as_ref() else {
             return self.content.read_block(request).await;
         };
         let piece_length = self
@@ -3032,6 +3018,7 @@ impl IncomingContentBridge {
         registration: &SeedRegistration,
         attachment: IncomingPeerAttachment,
         capabilities: IncomingPeerCapabilities,
+        protocol: PeerProtocol,
     ) -> Option<Self> {
         let events = registration.torrent_peers.incoming_content_route()?;
         let (commands, command_receiver) =
@@ -3041,6 +3028,7 @@ impl IncomingContentBridge {
                 attachment,
                 capabilities: IncomingContentCapabilities {
                     fast: capabilities.fast,
+                    protocol,
                 },
                 commands,
             })
@@ -3212,9 +3200,13 @@ async fn run_incoming_peer(
         Ok(io) => io,
         Err(_) => return (PeerTermination::Protocol, peer_attachment),
     };
-    let content_bridge =
-        IncomingContentBridge::attach(&registration, peer_attachment.attachment, capabilities)
-            .await;
+    let content_bridge = IncomingContentBridge::attach(
+        &registration,
+        peer_attachment.attachment,
+        capabilities,
+        protocol,
+    )
+    .await;
     let mut runtime = IncomingPeerConnectionRuntime {
         shared,
         attachment: peer_attachment,
@@ -4135,8 +4127,11 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use rstorrent_protocol::content::TorrentContent;
     use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
-    use rstorrent_protocol::merkle::file_root_from_data;
+    use rstorrent_protocol::merkle::{
+        MERKLE_BLOCK_SIZE, MerkleAccumulator, file_root_from_data, hash_block,
+    };
     use rstorrent_protocol::metadata::{
         MetadataExtensionUpdate, MetadataMessage, MetadataUpload,
         encode_extension_handshake_with_id, encode_metadata_request, parse_extension_handshake,
@@ -4151,6 +4146,7 @@ mod tests {
         encode_handshake_with_reserved, encode_message,
     };
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
+    use rstorrent_protocol::v2_hashes::{HashRequest, HashResponse};
     use sha1::{Digest, Sha1};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
@@ -5692,6 +5688,95 @@ mod tests {
         tokio::fs::remove_dir_all(root)
             .await
             .expect("remove v2 hash root");
+    }
+
+    #[tokio::test]
+    async fn hybrid_v2_seed_hash_service_reconstructs_piece_layer_on_demand() {
+        fn bstr(output: &mut Vec<u8>, value: &[u8]) {
+            output.extend_from_slice(value.len().to_string().as_bytes());
+            output.push(b':');
+            output.extend_from_slice(value);
+        }
+
+        let data = (0..32 * 1024 + 731)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        let mut piece_roots = Vec::new();
+        for piece in data.chunks(32 * 1024) {
+            let mut accumulator = MerkleAccumulator::new(0).expect("piece accumulator");
+            for block in piece.chunks(MERKLE_BLOCK_SIZE) {
+                accumulator
+                    .push(hash_block(block).expect("block hash"))
+                    .expect("append block hash");
+            }
+            piece_roots.push(
+                accumulator
+                    .finish_padded_to(1)
+                    .expect("padded hybrid piece root"),
+            );
+        }
+        let file_root = rstorrent_protocol::merkle::hash_pair(&piece_roots[0], &piece_roots[1]);
+        let mut v1_pieces = Vec::new();
+        for piece in data.chunks(32 * 1024) {
+            v1_pieces.extend_from_slice(&Sha1::digest(piece));
+        }
+        let mut raw_info = b"d9:file treed5:a.bind0:d6:lengthi33499e11:pieces root32:".to_vec();
+        raw_info.extend_from_slice(&file_root);
+        raw_info.extend_from_slice(b"eee5:filesld6:lengthi33499e4:pathl5:a.bineee12:meta versioni2e4:name4:root12:piece lengthi32768e6:pieces");
+        bstr(&mut raw_info, &v1_pieces);
+        raw_info.push(b'e');
+        let runtime =
+            TorrentContent::from_hybrid_info_bytes_with_limits(&raw_info, BEP9_METAINFO_LIMITS)
+                .expect("hybrid seed descriptor");
+        let root = root("hybrid-v2-hash-service");
+        tokio::fs::create_dir_all(root.join("root"))
+            .await
+            .expect("create hybrid hash root");
+        tokio::fs::write(root.join("root/a.bin"), &data)
+            .await
+            .expect("write hybrid payload");
+        let pool =
+            crate::StorageFilePool::new(crate::storage_file_pool::DEFAULT_STORAGE_FILE_LIMIT, None)
+                .expect("hybrid hash file pool");
+        let seed = SeedContent::open_published_content_with_pool(
+            &root,
+            crate::TorrentId::new([0x74; 16]).expect("nonzero hybrid hash owner"),
+            &runtime.content,
+            &[true, true],
+            &[],
+            pool,
+        )
+        .await
+        .expect("open hybrid hash seed");
+        let peers = TorrentPeerHandle::new(Arc::new(TestPeerActivity::default()))
+            .expect("hybrid hash peer state");
+        let v2_key = runtime
+            .content
+            .swarm_keys()
+            .find(|key| matches!(key, SwarmKey::V2Truncated(_)))
+            .expect("hybrid v2 key");
+        let registration = SeedRegistration::new_with_swarm_key(raw_info, v2_key, seed, peers)
+            .expect("hybrid v2 registration");
+        let request = HashRequest {
+            pieces_root: file_root,
+            base_layer: 1,
+            index: 0,
+            count: 2,
+            proof_layers: 0,
+        };
+        assert_eq!(
+            registration
+                .hash_response(request)
+                .await
+                .expect("hybrid piece-layer response"),
+            HashResponse {
+                request,
+                hashes: piece_roots,
+            }
+        );
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove hybrid hash root");
     }
 
     #[tokio::test]

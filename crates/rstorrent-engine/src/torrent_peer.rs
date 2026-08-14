@@ -33,6 +33,7 @@ pub(crate) const INCOMING_CONTENT_COMMAND_CAPACITY: usize = 16;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct IncomingContentCapabilities {
     pub(crate) fast: bool,
+    pub(crate) protocol: rstorrent_protocol::peer_wire::PeerProtocol,
 }
 
 #[derive(Debug)]

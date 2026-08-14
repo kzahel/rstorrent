@@ -116,10 +116,11 @@ async fn run() -> Result<(), SeedHarnessError> {
         config.peer_transport_policy = PeerTransportPolicy::TcpOnly;
     }
     let mut service = ApplicationService::open(config).await?;
+    let expected_registrations = content.info_hashes().identity_count();
     let ready = timeout(READY_TIMEOUT, async {
         loop {
             if let Some(snapshot) = service.incoming_peer_snapshot()
-                && snapshot.registrations == 1
+                && snapshot.registrations == expected_registrations
             {
                 break snapshot;
             }

@@ -90,6 +90,9 @@ class PlaintextBep52Proxy:
         self._hash_rejects = 0
         self._piece_frames = 0
         self._piece_messages: list[tuple[int, int, int]] = []
+        self._handshakes: list[dict[str, object]] = []
+        self._message_ids: list[tuple[str, int, int]] = []
+        self._requests: list[tuple[str, int, int, int]] = []
         self._corrupted: tuple[int, int, int] | None = None
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -179,6 +182,14 @@ class PlaintextBep52Proxy:
             if len(buffer) < 68:
                 return b""
             handshake = bytearray(buffer[:68])
+            with self._lock:
+                self._handshakes.append(
+                    {
+                        "direction": direction,
+                        "info_hash": bytes(handshake[28:48]).hex(),
+                        "hybrid_v2": bool(handshake[27] & 0x10),
+                    }
+                )
             if self._peer_id_salt:
                 handshake[67] ^= self._peer_id_salt
             output.extend(handshake)
@@ -202,6 +213,17 @@ class PlaintextBep52Proxy:
         if len(frame) < 5:
             return frame
         message_id = frame[4]
+        with self._lock:
+            self._message_ids.append((direction, message_id, len(frame) - 4))
+            if message_id == 6 and len(frame) == 17:
+                self._requests.append(
+                    (
+                        direction,
+                        int.from_bytes(frame[5:9], "big"),
+                        int.from_bytes(frame[9:13], "big"),
+                        int.from_bytes(frame[13:17], "big"),
+                    )
+                )
         if (
             direction == "upstream"
             and message_id == 1
@@ -284,6 +306,9 @@ class PlaintextBep52Proxy:
                 "hash_rejects": self._hash_rejects,
                 "piece_frames": self._piece_frames,
                 "piece_messages": list(self._piece_messages),
+                "handshakes": [row.copy() for row in self._handshakes],
+                "message_ids": list(self._message_ids),
+                "requests": list(self._requests),
                 "corrupted": self._corrupted,
             }
 

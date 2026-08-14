@@ -291,7 +291,7 @@ impl ActiveSeedContent {
         }
     }
 
-    pub(crate) async fn read_hybrid_v1_block(
+    pub(crate) async fn read_hybrid_aligned_block(
         &self,
         request: BlockRequest,
         piece_length: u32,
