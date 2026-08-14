@@ -1,7 +1,9 @@
 # Tactical 156: Hybrid Dual-Swarm Runtime Closure
 
-Status: **Planned.** This tactical is decision-complete but implementation has
-not started. It closes the bounded BEP 52 hybrid consumption and seeding
+Status: **In progress.** Stage 0 reconfirmed the normative and source-oracle
+pins and recorded green focused baselines. Implementation is proceeding from
+the runtime-free hybrid content and integrity foundation. This tactical closes
+the bounded BEP 52 hybrid consumption and seeding
 subset through one torrent owner, two protocol identities, two swarm lanes,
 mandatory SHA-1 plus SHA-256 verification, safe metadata-time reconciliation,
 and proportional first-party evidence. Torrent creation remains separate.
@@ -992,5 +994,21 @@ unless one bounded artifact is explicitly retained and linked.
 
 ## Execution Record
 
-Not started. Implementation begins with Stage 0 source reconfirmation,
-focused baselines, and maximum-shape resource tests.
+### 2026-08-14: Stage 0 activation and source reconfirmation
+
+- Reconfirmed the BEP checkout at
+  `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06`, pinned libtorrent 2.0.13 at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d`, and the read-only JSTorrent
+  history checkout at `9895410beeed6aff554053769bd006a3fbd373ef`.
+- Re-read the normative BEP 52 hybrid upgrade, BEP 4 reserved-bit, BEP 9
+  mixed-topic, and BEP 47 padding requirements and the exact libtorrent
+  source and tests named above. The source review did not change the accepted
+  runtime, integrity, reconciliation, or compatibility decisions.
+- `cargo test -p rstorrent-protocol`: 257 passed, 4 ignored, including the
+  existing strict hybrid structure and maximum metainfo work/allocation
+  bounds.
+- `cargo test -p rstorrent-engine`: 564 passed, 9 ignored.
+- `cargo test -p rstorrent-session`: 244 passed, 2 ignored.
+- Maximum runtime descriptor, padding-map, dual-check, reconciliation, and
+  lane accounting cases land with their owning stages so each bound is tested
+  at the mutation boundary it protects.
