@@ -1115,16 +1115,22 @@ impl ApplicationService {
                 .unwrap_or(true),
             _ => false,
         };
-        let download_files_requires_restart = match &command {
+        let download_files_fence = match &command {
             Command::DownloadFiles { torrent_id, .. } if file_priority_changed => {
                 let torrent_id = torrent_id.to_ascii_lowercase();
-                self.active_download_for(&torrent_id).is_some()
-                    && self
-                        .store_mut()?
-                        .load_resume(&torrent_id)
-                        .is_ok_and(|resume| resume.state == TorrentState::Paused)
+                let active = self.active_download_for(&torrent_id).is_some();
+                let state = self
+                    .store_mut()?
+                    .load_resume(&torrent_id)
+                    .ok()
+                    .map(|resume| resume.state);
+                (active
+                    && state.is_some_and(|state| {
+                        matches!(state, TorrentState::Paused | TorrentState::Complete)
+                    }))
+                .then_some(torrent_id)
             }
-            _ => false,
+            _ => None,
         };
         let add_magnet_owner = match &command {
             Command::AddMagnet { magnet, .. } => {
@@ -1216,6 +1222,9 @@ impl ApplicationService {
         if let Some(torrent_id) = force_recheck_fence.as_deref() {
             self.join_active_content(torrent_id).await?;
         }
+        if let Some(torrent_id) = download_files_fence.as_deref() {
+            self.join_active_content(torrent_id).await?;
+        }
         let revision_before = self.store_mut()?.revision()?;
         let durable_result = {
             let mut store = self.store_mut()?;
@@ -1241,6 +1250,9 @@ impl ApplicationService {
                 if let Some(torrent_id) = force_recheck_fence.as_deref() {
                     self.start_if_possible(torrent_id).await?;
                 }
+                if let Some(torrent_id) = download_files_fence.as_deref() {
+                    self.start_if_possible(torrent_id).await?;
+                }
                 return Err(error.into());
             }
         };
@@ -1251,6 +1263,9 @@ impl ApplicationService {
                 self.reconcile_discovery_torrent(torrent_id).await?;
             }
             if let Some(torrent_id) = force_recheck_fence.as_deref() {
+                self.start_if_possible(torrent_id).await?;
+            }
+            if let Some(torrent_id) = download_files_fence.as_deref() {
                 self.start_if_possible(torrent_id).await?;
             }
             return Ok(response);
@@ -1411,9 +1426,6 @@ impl ApplicationService {
                     "Torrent files requested for download",
                     &[],
                 )?;
-                if download_files_requires_restart {
-                    self.join_active_content(&torrent_id).await?;
-                }
                 let (resume, revision, eligible) = {
                     let store = self.store_mut()?;
                     let resume = store.load_resume(&torrent_id)?;
@@ -3043,11 +3055,6 @@ impl ApplicationService {
                 let task_control = control.clone();
                 let magnet = resume.magnet.clone();
                 let continue_downloading = resume.desired_running;
-                let skip_files = resume
-                    .skip_files
-                    .iter()
-                    .map(|index| *index as usize)
-                    .collect::<Vec<_>>();
                 let root_id = resume.storage_root.clone();
                 let storage_id = torrent_id.to_owned();
                 let storage_pool = self.storage_file_pool.clone();
@@ -3078,6 +3085,22 @@ impl ApplicationService {
                     if !continue_downloading {
                         return Ok(ApplicationTaskReport::Metadata);
                     }
+                    let skip_files = {
+                        let store = checkpoints.store().map_err(DownloadError::Checkpoint)?;
+                        store
+                            .load_resume(&checkpoints.torrent_id)
+                            .map_err(|error| DownloadError::Checkpoint(error.to_string()))?
+                            .skip_files
+                            .into_iter()
+                            .map(|index| {
+                                usize::try_from(index).map_err(|_| {
+                                    DownloadError::Checkpoint(
+                                        "file selection index overflow".to_owned(),
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                    };
                     let content = if pure_v2 {
                         TorrentContent::from_v2_info_bytes_with_limits(
                             &raw_info,

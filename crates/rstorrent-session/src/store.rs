@@ -1818,10 +1818,6 @@ impl SessionStore {
         let updated = transaction.execute(
             "UPDATE torrents
              SET payload_state = ?2,
-                 download_queue_position = CASE
-                    WHEN ?2 = 'final_owned' THEN NULL
-                    ELSE download_queue_position
-                 END,
                  updated_revision = ?3
              WHERE torrent_id = ?1",
             params![torrent_id.as_bytes(), payload_state.as_str(), revision_sql],
@@ -7973,7 +7969,18 @@ mod tests {
         let resume = store.load_resume(&torrent_id).expect("load resume");
         assert_eq!(resume.storage_state, StorageState::Published);
         assert_eq!(resume.managed_artifacts, ManagedArtifactState::Published);
+        assert!(resume.download_queue_position.is_some());
         assert_eq!(resume.have.expect("have state").pieces(), &[true]);
+        store
+            .mark_complete(&torrent_id)
+            .expect("confirm completion");
+        assert!(
+            store
+                .load_resume(&torrent_id)
+                .expect("load completed resume")
+                .download_queue_position
+                .is_none()
+        );
         drop(store);
         fs::remove_dir_all(root).expect("remove test profile");
     }

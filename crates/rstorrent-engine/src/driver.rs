@@ -3935,8 +3935,10 @@ async fn run_resumable_magnet_download(
         } else {
             config.storage_root.join(runtime_content.content.name())
         };
-        let skip_files =
-            effective_magnet_skip_files(&magnet, &runtime_content.content, config.skip_files)?;
+        // Once metadata is durable, the caller's selection is authoritative.
+        // Reapplying the magnet's original `so` parameter here would undo a
+        // later file-priority promotion on resume.
+        let skip_files = config.skip_files;
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
                 torrent_id: config.identity.torrent_id(),

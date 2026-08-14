@@ -23,8 +23,10 @@ import libtorrent as lt
 
 from bep52_metainfo_oracle import BLOCK, SourceFile, pure_v2_fixture
 from first_verified_piece import DEFAULT_PAYLOAD_ALLOWANCE, ScenarioFailure
+from application_surface_harness import start_gateway, stop_gateway
 from incoming_seeding import (
     assert_resource_bounds,
+    gateway_json,
     integer_field,
     parse_address,
     read_json_line,
@@ -302,11 +304,11 @@ class PlaintextBep52Proxy:
                 stream.close()
             except OSError:
                 pass
-        self._acceptor.join(timeout=2)
+        self._acceptor.join(timeout=5)
         with self._lock:
             workers = list(self._workers)
         for worker in workers:
-            worker.join(timeout=2)
+            worker.join(timeout=5)
         if self._acceptor.is_alive() or any(worker.is_alive() for worker in workers):
             raise ScenarioFailure("BEP 52 proxy did not join every forwarding task")
 
@@ -398,7 +400,7 @@ def fixtures(root: Path) -> tuple[RuntimeFixture, ...]:
     )
 
 
-def build_binaries(repository: Path) -> tuple[Path, Path]:
+def build_binaries(repository: Path) -> tuple[Path, Path, Path]:
     completed = subprocess.run(
         [
             "cargo",
@@ -411,6 +413,8 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
             "rstorrent-engine",
             "--bin",
             "rstorrent-download-piece",
+            "-p",
+            "rstorrent-gateway",
         ],
         cwd=repository,
         capture_output=True,
@@ -425,9 +429,10 @@ def build_binaries(repository: Path) -> tuple[Path, Path]:
         )
     seed = repository / "target/debug/rstorrent-incoming-seed"
     download = repository / "target/debug/rstorrent-download-piece"
-    if not seed.is_file() or not download.is_file():
+    gateway = repository / "target/debug/rstorrent-gateway"
+    if not seed.is_file() or not download.is_file() or not gateway.is_file():
         raise ScenarioFailure("pure-v2 runtime diagnostics were not created")
-    return seed, download
+    return seed, download, gateway
 
 
 def start_rstorrent_seed(
@@ -1008,6 +1013,238 @@ def corrupt_payload_recovery_with_rstorrent(
         gc.collect()
 
 
+def application_command(
+    address: str, request_id: str, command: dict[str, object]
+) -> dict[str, object]:
+    response = gateway_json(
+        address,
+        "POST",
+        "/api/v1/commands",
+        {
+            "version": 1,
+            "request_id": request_id,
+            "command": command,
+        },
+    )
+    if response.get("status") != "success":
+        raise ScenarioFailure(f"application command {request_id} failed: {response}")
+    return response
+
+
+def added_torrent_id(response: dict[str, object]) -> str:
+    result = response.get("result")
+    added = (
+        result.get("result")
+        if isinstance(result, dict) and result.get("type") == "add_torrent"
+        else None
+    )
+    torrent_id = added.get("torrent_id") if isinstance(added, dict) else None
+    if not isinstance(torrent_id, str) or not torrent_id.startswith("t1-"):
+        raise ScenarioFailure(f"application add lacks a torrent ID: {response}")
+    return torrent_id
+
+
+def wait_application_complete(
+    address: str,
+    torrent_id: str,
+    phase: str,
+    *,
+    minimum_verified: int,
+) -> dict[str, object]:
+    deadline = time.monotonic() + TRANSFER_TIMEOUT_SECONDS
+    ordinal = 0
+    last = None
+    last_response = None
+    while time.monotonic() < deadline:
+        response = application_command(
+            address, f"snapshot-{phase}-{ordinal}", {"type": "snapshot"}
+        )
+        last_response = response
+        snapshot = response.get("snapshot")
+        torrents = snapshot.get("torrents") if isinstance(snapshot, dict) else None
+        if not isinstance(torrents, list):
+            raise ScenarioFailure(f"application snapshot lacks torrents: {response}")
+        last = next(
+            (
+                row
+                for row in torrents
+                if isinstance(row, dict) and row.get("torrent_id") == torrent_id
+            ),
+            None,
+        )
+        if (
+            isinstance(last, dict)
+            and last.get("state") == "complete"
+            and isinstance(last.get("verified_piece_count"), int)
+            and int(last["verified_piece_count"]) >= minimum_verified
+        ):
+            return last
+        if isinstance(last, dict) and last.get("state") == "needs_repair":
+            raise ScenarioFailure(f"application v2 torrent needs repair: {last}")
+        ordinal += 1
+        time.sleep(0.05)
+    raise ScenarioFailure(
+        f"application v2 torrent did not complete {phase}: {last}; "
+        f"snapshot={last_response}"
+    )
+
+
+def application_selection_promotion_and_restart(
+    gateway_binary: Path,
+    fixture: RuntimeFixture,
+    root: Path,
+) -> dict[str, object]:
+    profile = root / "profile"
+    storage = root / "storage"
+    session: lt.session | None = None
+    handle: lt.torrent_handle | None = None
+    proxy: PlaintextBep52Proxy | None = None
+    gateway: subprocess.Popen[str] | None = None
+    failure: BaseException | None = None
+    try:
+        session, handle, _ = start_libtorrent_seed(
+            fixture, listen_port=available_tcp_port()
+        )
+        proxy = PlaintextBep52Proxy(("127.0.0.1", session.listen_port()))
+        gateway, address = start_gateway(gateway_binary, profile, storage)
+        magnet = (
+            "magnet:?xt=urn:btmh:1220"
+            f"{fixture.full_info_hash}"
+            f"&x.pe={proxy.endpoint[0]}:{proxy.endpoint[1]}&so=0-3"
+        )
+        added = application_command(
+            address,
+            "add-selective-v2-magnet",
+            {
+                "type": "add_magnet",
+                "magnet": magnet,
+                "storage_root": "downloads",
+                "start_content": True,
+                "skip_files": [],
+            },
+        )
+        torrent_id = added_torrent_id(added)
+        initial = wait_application_complete(
+            address,
+            torrent_id,
+            "initial-selection",
+            minimum_verified=3,
+        )
+        compare_files(fixture, storage, skipped=frozenset({4}))
+        before_promotion = proxy.snapshot()
+        if any(
+            message[0] in (3, 4)
+            for message in before_promotion["piece_messages"]
+        ):
+            raise ScenarioFailure(
+                "skipped multi-piece file received payload before promotion: "
+                f"{before_promotion}"
+            )
+
+        promoted = application_command(
+            address,
+            "promote-v2-multi-piece-file",
+            {
+                "type": "download_files",
+                "torrent_id": torrent_id,
+                "file_indices": [4],
+            },
+        )
+        promoted_revision = promoted.get("revision")
+        try:
+            completed = wait_application_complete(
+                address,
+                torrent_id,
+                "promoted-selection",
+                minimum_verified=5,
+            )
+        except ScenarioFailure as error:
+            gateway_diagnostics = stop_gateway(gateway)
+            gateway = None
+            raise ScenarioFailure(
+                f"{error}; BEP 52 wire={proxy.snapshot()}; "
+                f"gateway diagnostics={gateway_diagnostics}"
+            ) from error
+        compare_files(fixture, storage)
+        after_promotion = proxy.snapshot()
+        if (
+            len(after_promotion["hash_requests"])
+            <= len(before_promotion["hash_requests"])
+            or not {3, 4}.issubset(
+                {message[0] for message in after_promotion["piece_messages"]}
+            )
+        ):
+            raise ScenarioFailure(
+                "promoted v2 file lacked newly required hashes or payload: "
+                f"before={before_promotion} after={after_promotion}"
+            )
+
+        stop_gateway(gateway)
+        gateway = None
+        before_restart = proxy.snapshot()
+        gateway, restarted_address = start_gateway(gateway_binary, profile, storage)
+        restarted = wait_application_complete(
+            restarted_address,
+            torrent_id,
+            "candidate-restart",
+            minimum_verified=5,
+        )
+        compare_files(fixture, storage)
+        after_restart = proxy.snapshot()
+        if after_restart["hash_requests"] != before_restart["hash_requests"]:
+            raise ScenarioFailure(
+                "complete v2 file restart failed to reconstruct hashes locally: "
+                f"before={before_restart} after={after_restart}"
+            )
+        if after_restart["piece_frames"] != before_restart["piece_frames"]:
+            raise ScenarioFailure(
+                "v2 candidate restart redownloaded payload after hash refetch: "
+                f"before={before_restart} after={after_restart}"
+            )
+        return {
+            "torrent_id": torrent_id,
+            "promoted_revision": promoted_revision,
+            "initial_verified": initial.get("verified_piece_count"),
+            "promoted_verified": completed.get("verified_piece_count"),
+            "restarted_verified": restarted.get("verified_piece_count"),
+            "before_promotion": before_promotion,
+            "after_promotion": after_promotion,
+            "before_restart": before_restart,
+            "after_restart": after_restart,
+            "restart_recovery": "complete_file_local_reconstruction",
+            "cleanup": True,
+        }
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        if gateway is not None:
+            try:
+                stop_gateway(gateway)
+            except BaseException as cleanup_error:
+                if failure is None:
+                    raise
+                print(
+                    f"v2 application gateway cleanup failed: {cleanup_error}",
+                    file=sys.stderr,
+                )
+        if proxy is not None:
+            try:
+                proxy.close()
+            except BaseException as cleanup_error:
+                if failure is None:
+                    raise
+                print(
+                    f"v2 application proxy cleanup failed: {cleanup_error}",
+                    file=sys.stderr,
+                )
+        if session is not None and handle is not None and handle.is_valid():
+            session.remove_torrent(handle)
+        if session is not None:
+            session.pause()
+        gc.collect()
+
+
 def discovery_fixture(
     fixture: RuntimeFixture,
     root: Path,
@@ -1293,9 +1530,14 @@ def run(repository: Path, *, no_build: bool) -> None:
     try:
         seed_binary = repository / "target/debug/rstorrent-incoming-seed"
         download_binary = repository / "target/debug/rstorrent-download-piece"
+        gateway_binary = repository / "target/debug/rstorrent-gateway"
         if not no_build:
-            seed_binary, download_binary = build_binaries(repository)
-        if not seed_binary.is_file() or not download_binary.is_file():
+            seed_binary, download_binary, gateway_binary = build_binaries(repository)
+        if (
+            not seed_binary.is_file()
+            or not download_binary.is_file()
+            or not gateway_binary.is_file()
+        ):
             raise ScenarioFailure("pure-v2 runtime binaries are unavailable")
         for fixture in fixtures(run_root):
             seed_process, seed_ready = start_rstorrent_seed(seed_binary, fixture)
@@ -1358,11 +1600,17 @@ def run(repository: Path, *, no_build: bool) -> None:
                     magnet_only=True,
                 )
             corruption_evidence = None
+            application_evidence = None
             if fixture.name == "pure-v2-aligned-multi":
                 corruption_evidence = corrupt_payload_recovery_with_rstorrent(
                     download_binary,
                     fixture,
                     fixture.torrent_path.parent / "rstorrent-corrupt-recovery",
+                )
+                application_evidence = application_selection_promotion_and_restart(
+                    gateway_binary,
+                    fixture,
+                    fixture.torrent_path.parent / "application-selection-restart",
                 )
             mse_evidence = None
             discovery_evidence = None
@@ -1436,6 +1684,7 @@ def run(repository: Path, *, no_build: bool) -> None:
                         "rstorrent_leech": full_fields,
                         "rstorrent_selective_leech": selective_fields,
                         "corrupt_payload_recovery": corruption_evidence,
+                        "application_selection_restart": application_evidence,
                         "mse": mse_evidence,
                         "discovery": discovery_evidence,
                         "libtorrent_seed_alerts": reverse_alerts,
