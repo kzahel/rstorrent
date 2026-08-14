@@ -118,11 +118,7 @@ fn runtime_identity(
     let swarm_key = match (info_hashes.v1_hash(), info_hashes.v2_hash()) {
         (Some(v1), None) => SwarmKey::V1(v1),
         (None, Some(v2)) => v2.swarm_key(),
-        (Some(_), Some(_)) => {
-            return Err(ApplicationError::Configuration(format!(
-                "torrent {torrent_id} is hybrid and has no selected runtime protocol"
-            )));
-        }
+        (Some(v1), Some(_)) => SwarmKey::V1(v1),
         (None, None) => {
             return Err(ApplicationError::Configuration(format!(
                 "torrent {torrent_id} has no runtime identity"

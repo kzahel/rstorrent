@@ -10,14 +10,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstorrent_protocol::extension::{ExtensionHandshake, ExtensionMap};
+use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
 use rstorrent_protocol::mse::{
     DH_PRIVATE_EXPONENT_LEN, MSE_KNOWN_METHODS, MSE_MAX_PADDING_LEN, MSE_METHOD_RC4, MseAction,
     MseHandshake, MseHandshakeComplete, MseMethod, MsePadding, MseResume, MseRole, MseStep,
 };
 use rstorrent_protocol::peer_wire::{
     EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-    FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH, Handshake,
-    NegotiatedPeerCapabilities, PeerMessage, PeerProtocol, decode_handshake,
+    FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, HANDSHAKE_LENGTH,
+    HYBRID_V2_RESERVED_BIT, HYBRID_V2_RESERVED_INDEX, Handshake, NegotiatedPeerCapabilities,
+    PeerMessage, PeerProtocol, decode_handshake, decode_hybrid_response,
     encode_handshake_with_reserved,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -52,6 +54,37 @@ pub(crate) fn advertised_reserved_bits(advertise_extensions: bool) -> [u8; 8] {
     reserved
 }
 
+fn advertised_reserved_bits_with_hybrid(
+    advertise_extensions: bool,
+    hybrid_v2_hash: Option<[u8; 20]>,
+) -> [u8; 8] {
+    let mut reserved = advertised_reserved_bits(advertise_extensions);
+    if hybrid_v2_hash.is_some() {
+        reserved[HYBRID_V2_RESERVED_INDEX] |= HYBRID_V2_RESERVED_BIT;
+    }
+    reserved
+}
+
+fn decode_outgoing_handshake(
+    bytes: &[u8],
+    info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
+) -> Result<(Handshake, PeerProtocol), PeerSocketError> {
+    match hybrid_v2_hash {
+        Some(v2_hash) => decode_hybrid_response(
+            bytes,
+            SwarmKey::V1(V1InfoHash::new(info_hash)),
+            SwarmKey::V2Truncated(v2_hash),
+            true,
+        )
+        .map(|selection| (selection.handshake, selection.protocol))
+        .map_err(PeerSocketError::Handshake),
+        None => decode_handshake(bytes, info_hash)
+            .map(|handshake| (handshake, PeerProtocol::V1))
+            .map_err(PeerSocketError::Handshake),
+    }
+}
+
 pub(crate) const PEER_COMMAND_QUEUE: usize = 16;
 pub(crate) const PEER_EVENT_QUEUE: usize = 64;
 
@@ -65,12 +98,18 @@ pub(crate) struct PeerConnection {
     mse_method: Option<MseMethod>,
     mse_endpoint_update: Option<MseEndpointState>,
     transport: PeerTransport,
+    protocol: PeerProtocol,
     _budget_permit: Option<Box<PeerBudgetPermit>>,
 }
 
 impl PeerConnection {
     pub(crate) fn set_protocol(&mut self, protocol: PeerProtocol) {
         self.io.set_protocol(protocol);
+        self.protocol = protocol;
+    }
+
+    pub(crate) const fn protocol(&self) -> PeerProtocol {
+        self.protocol
     }
 
     pub(crate) const fn attempt(&self) -> DialAttempt {
@@ -138,6 +177,7 @@ impl PeerConnection {
             mse_method: None,
             mse_endpoint_update: None,
             transport: PeerTransport::Tcp,
+            protocol: PeerProtocol::V1,
             _budget_permit: None,
         }
     }
@@ -200,6 +240,7 @@ pub(crate) async fn connect(
     let result = connect_with_progress(
         attempt,
         info_hash,
+        None,
         advertise_extensions,
         network,
         None,
@@ -220,6 +261,7 @@ pub(crate) async fn connect(
 async fn connect_with_progress(
     attempt: DialAttempt,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
     utp: Option<UtpHandle>,
@@ -258,6 +300,7 @@ async fn connect_with_progress(
                 stream,
                 attempt,
                 info_hash,
+                hybrid_v2_hash,
                 advertise_extensions,
                 network,
                 resources,
@@ -266,7 +309,15 @@ async fn connect_with_progress(
         }
         *utp_outcome = Some(UtpConnectOutcome::Failed);
     }
-    connect_tcp_with_progress(attempt, info_hash, advertise_extensions, network, resources).await
+    connect_tcp_with_progress(
+        attempt,
+        info_hash,
+        hybrid_v2_hash,
+        advertise_extensions,
+        network,
+        resources,
+    )
+    .await
 }
 
 fn utp_dial_eligible(address: std::net::SocketAddr, encryption: PeerEncryptionPolicy) -> bool {
@@ -296,6 +347,7 @@ pub(crate) fn preferred_transport(
 async fn connect_tcp_with_progress(
     attempt: DialAttempt,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
     resources: ConnectResources<'_>,
@@ -329,17 +381,18 @@ async fn connect_tcp_with_progress(
     let local_handshake = encode_handshake_with_reserved(
         info_hash,
         network.peer_id,
-        advertised_reserved_bits(advertise_extensions),
+        advertised_reserved_bits_with_hybrid(advertise_extensions, hybrid_v2_hash),
     );
     let try_mse = match network.encryption {
         PeerEncryptionPolicy::Disabled | PeerEncryptionPolicy::Allow => false,
         PeerEncryptionPolicy::Prefer => attempt.mse_endpoint() != MseEndpointState::PlainPreferred,
         PeerEncryptionPolicy::Required => true,
     };
-    let (handshake, io, mse_method, mse_endpoint_update) = if try_mse {
+    let (handshake, protocol, io, mse_method, mse_endpoint_update) = if try_mse {
         let attempt = run_outgoing_mse(
             &mut stream,
             info_hash,
+            hybrid_v2_hash,
             local_handshake,
             OutgoingMseConfig {
                 io_timeout: network.peer_io_timeout,
@@ -366,6 +419,7 @@ async fn connect_tcp_with_progress(
                 io.push_decrypted(&negotiated.carried)?;
                 (
                     negotiated.handshake,
+                    negotiated.protocol,
                     io,
                     Some(negotiated.complete.method),
                     Some(MseEndpointState::MseCapable),
@@ -398,9 +452,10 @@ async fn connect_tcp_with_progress(
                     .map_err(|error| {
                         error.with_mse_endpoint_update(MseEndpointState::PlainPreferred)
                     })?;
-                let handshake = run_outgoing_plain(
+                let (handshake, protocol) = run_outgoing_plain(
                     &mut stream,
                     info_hash,
+                    hybrid_v2_hash,
                     &local_handshake,
                     network.peer_io_timeout,
                     byte_metric_sink.as_ref(),
@@ -409,6 +464,7 @@ async fn connect_tcp_with_progress(
                 .map_err(|error| error.with_mse_endpoint_update(MseEndpointState::Unknown))?;
                 (
                     handshake,
+                    protocol,
                     PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink.clone()),
                     None,
                     Some(MseEndpointState::PlainPreferred),
@@ -429,12 +485,13 @@ async fn connect_tcp_with_progress(
         let plain = run_outgoing_plain(
             &mut stream,
             info_hash,
+            hybrid_v2_hash,
             &local_handshake,
             network.peer_io_timeout,
             byte_metric_sink.as_ref(),
         )
         .await;
-        let handshake = match plain {
+        let (handshake, protocol) = match plain {
             Ok(handshake) => handshake,
             Err(error)
                 if network.encryption == PeerEncryptionPolicy::Prefer
@@ -446,6 +503,7 @@ async fn connect_tcp_with_progress(
         };
         (
             handshake,
+            protocol,
             PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink.clone()),
             None,
             None,
@@ -468,6 +526,7 @@ async fn connect_tcp_with_progress(
             mse_method,
             mse_endpoint_update,
             transport: PeerTransport::Tcp,
+            protocol,
             _budget_permit: budget_permit.map(Box::new),
         },
         handshake,
@@ -478,6 +537,7 @@ async fn connect_utp_with_progress(
     stream: UtpStream,
     attempt: DialAttempt,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
     resources: ConnectResources<'_>,
@@ -497,9 +557,10 @@ async fn connect_utp_with_progress(
             })
             .await;
     }
-    let (io, handshake) = handshake_over_utp_with_sink(
+    let (io, handshake, protocol) = handshake_over_utp_with_sink(
         stream,
         info_hash,
+        hybrid_v2_hash,
         advertise_extensions,
         network,
         byte_metric_sink,
@@ -522,6 +583,7 @@ async fn connect_utp_with_progress(
             mse_method: None,
             mse_endpoint_update: None,
             transport: PeerTransport::Utp,
+            protocol,
             _budget_permit: budget_permit.map(Box::new),
         },
         handshake,
@@ -534,16 +596,19 @@ pub(crate) async fn handshake_over_utp(
     advertise_extensions: bool,
     network: NetworkConfig,
 ) -> Result<(PeerIo, Handshake), PeerSocketError> {
-    handshake_over_utp_with_sink(stream, info_hash, advertise_extensions, network, None).await
+    handshake_over_utp_with_sink(stream, info_hash, None, advertise_extensions, network, None)
+        .await
+        .map(|(io, handshake, _)| (io, handshake))
 }
 
 async fn handshake_over_utp_with_sink(
     mut stream: UtpStream,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     advertise_extensions: bool,
     network: NetworkConfig,
     byte_metric_sink: Option<Arc<dyn ByteMetricSink>>,
-) -> Result<(PeerIo, Handshake), PeerSocketError> {
+) -> Result<(PeerIo, Handshake, PeerProtocol), PeerSocketError> {
     let address = stream.peer_addr();
     if !network.policy.allows(address) || !network.address_families.permits(address.ip()) {
         return Err(PeerSocketError::NetworkPolicyDenied {
@@ -557,18 +622,19 @@ async fn handshake_over_utp_with_sink(
     let local_handshake = encode_handshake_with_reserved(
         info_hash,
         network.peer_id,
-        advertised_reserved_bits(advertise_extensions),
+        advertised_reserved_bits_with_hybrid(advertise_extensions, hybrid_v2_hash),
     );
-    let handshake = run_outgoing_plain(
+    let (handshake, protocol) = run_outgoing_plain(
         &mut stream,
         info_hash,
+        hybrid_v2_hash,
         &local_handshake,
         network.peer_io_timeout,
         byte_metric_sink.as_ref(),
     )
     .await?;
     let io = PeerIo::new(stream, network.peer_io_timeout, byte_metric_sink);
-    Ok((io, handshake))
+    Ok((io, handshake, protocol))
 }
 
 struct ConnectResources<'a> {
@@ -588,6 +654,7 @@ pub(crate) struct PeerDialServices {
 
 struct OutgoingMse {
     handshake: Handshake,
+    protocol: PeerProtocol,
     complete: MseHandshakeComplete,
     carried: Vec<u8>,
 }
@@ -614,10 +681,11 @@ struct OutgoingMseConfig<'a> {
 async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     local_handshake: &[u8; HANDSHAKE_LENGTH],
     io_timeout: Duration,
     byte_metric_sink: Option<&Arc<dyn ByteMetricSink>>,
-) -> Result<Handshake, PeerSocketError> {
+) -> Result<(Handshake, PeerProtocol), PeerSocketError> {
     write_all_recorded(
         stream,
         local_handshake,
@@ -641,24 +709,33 @@ async fn run_outgoing_plain<S: AsyncRead + AsyncWrite + Unpin>(
         None,
     )
     .await?;
-    decode_handshake(&remote_handshake, info_hash).map_err(PeerSocketError::Handshake)
+    decode_outgoing_handshake(&remote_handshake, info_hash, hybrid_v2_hash)
 }
 
 async fn run_outgoing_mse(
     stream: &mut TcpStream,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     local_handshake: [u8; HANDSHAKE_LENGTH],
     config: OutgoingMseConfig<'_>,
 ) -> OutgoingMseAttempt {
     let mut accounting = MseHandshakeAccounting::new(MseRole::Initiator, config.policy);
-    let result =
-        run_outgoing_mse_inner(stream, info_hash, local_handshake, config, &mut accounting).await;
+    let result = run_outgoing_mse_inner(
+        stream,
+        info_hash,
+        hybrid_v2_hash,
+        local_handshake,
+        config,
+        &mut accounting,
+    )
+    .await;
     OutgoingMseAttempt { result, accounting }
 }
 
 async fn run_outgoing_mse_inner(
     stream: &mut TcpStream,
     info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
     local_handshake: [u8; HANDSHAKE_LENGTH],
     config: OutgoingMseConfig<'_>,
     accounting: &mut MseHandshakeAccounting,
@@ -817,12 +894,12 @@ async fn run_outgoing_mse_inner(
                         ),
                         downgrade_eligible: false,
                     })?;
-                let decoded = decode_handshake(&remote_handshake, info_hash).map_err(|error| {
-                    OutgoingMseFailure {
-                        error: PeerSocketError::Handshake(error),
-                        downgrade_eligible: false,
-                    }
-                })?;
+                let (decoded, protocol) =
+                    decode_outgoing_handshake(&remote_handshake, info_hash, hybrid_v2_hash)
+                        .map_err(|error| OutgoingMseFailure {
+                            error,
+                            downgrade_eligible: false,
+                        })?;
                 let mut post_handshake = carried[HANDSHAKE_LENGTH..].to_vec();
                 if consumed < buffered {
                     let unread = &mut network_buffer[consumed..buffered];
@@ -846,6 +923,7 @@ async fn run_outgoing_mse_inner(
                 accounting.protocol_received(HANDSHAKE_LENGTH);
                 return Ok(OutgoingMse {
                     handshake: decoded,
+                    protocol,
                     complete,
                     carried: post_handshake,
                 });
@@ -1241,6 +1319,44 @@ impl PeerSocketSet {
         network: NetworkConfig,
         services: PeerDialServices,
     ) -> Result<(), PeerSetError> {
+        self.begin_dial_with_hybrid(
+            attempt,
+            info_hash,
+            None,
+            advertise_extensions,
+            network,
+            services,
+        )
+    }
+
+    pub(crate) fn begin_hybrid_dial(
+        &mut self,
+        attempt: DialAttempt,
+        v1_info_hash: [u8; 20],
+        v2_info_hash: [u8; 20],
+        advertise_extensions: bool,
+        network: NetworkConfig,
+        services: PeerDialServices,
+    ) -> Result<(), PeerSetError> {
+        self.begin_dial_with_hybrid(
+            attempt,
+            v1_info_hash,
+            Some(v2_info_hash),
+            advertise_extensions,
+            network,
+            services,
+        )
+    }
+
+    fn begin_dial_with_hybrid(
+        &mut self,
+        attempt: DialAttempt,
+        info_hash: [u8; 20],
+        hybrid_v2_hash: Option<[u8; 20]>,
+        advertise_extensions: bool,
+        network: NetworkConfig,
+        services: PeerDialServices,
+    ) -> Result<(), PeerSetError> {
         let PeerDialServices {
             byte_metric_sink,
             mse_handshake_sink,
@@ -1270,6 +1386,7 @@ impl PeerSocketSet {
                 result = connect_with_progress(
                     attempt,
                     info_hash,
+                    hybrid_v2_hash,
                     advertise_extensions,
                     network,
                     utp,
@@ -1285,7 +1402,9 @@ impl PeerSocketSet {
             };
             if let Ok((connection, _)) = &mut result {
                 connection.io.attach_bandwidth(bandwidth);
-                connection.set_protocol(protocol);
+                if protocol == PeerProtocol::V2 && connection.protocol() == PeerProtocol::V1 {
+                    connection.set_protocol(protocol);
+                }
             }
             (attempt, utp_outcome, result)
         });
@@ -1575,7 +1694,8 @@ mod tests {
         compute_shared_secret, req2_hash,
     };
     use rstorrent_protocol::peer_wire::{
-        HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake, encode_message,
+        HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake, encode_handshake,
+        encode_message,
     };
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -1641,6 +1761,38 @@ mod tests {
         let result = connect_with_progress(
             attempt,
             info_hash,
+            None,
+            advertise_extensions,
+            network,
+            None,
+            &mut utp_outcome,
+            ConnectResources {
+                progress: None,
+                byte_metric_sink: Some(sink.clone()),
+                mse_handshake_sink: Some(sink),
+                budget_permit: None,
+                mse_dh: mse_dh.clone(),
+            },
+        )
+        .await;
+        mse_dh.shutdown().await;
+        result
+    }
+
+    async fn connect_hybrid_observed(
+        attempt: DialAttempt,
+        v1_info_hash: [u8; 20],
+        v2_info_hash: [u8; 20],
+        advertise_extensions: bool,
+        network: NetworkConfig,
+        sink: Arc<RecordingMseSink>,
+    ) -> Result<(PeerConnection, rstorrent_protocol::peer_wire::Handshake), PeerSocketError> {
+        let mse_dh = MseDhWorkOwner::new();
+        let mut utp_outcome = None;
+        let result = connect_with_progress(
+            attempt,
+            v1_info_hash,
+            Some(v2_info_hash),
             advertise_extensions,
             network,
             None,
@@ -1687,6 +1839,50 @@ mod tests {
             PeerConnection::for_test(test_attempt(), client, io_timeout),
             server,
         )
+    }
+
+    #[tokio::test]
+    async fn outgoing_plain_hybrid_offer_accepts_upgrade_or_v1_decline() {
+        const V1_HASH: [u8; 20] = [0x31; 20];
+        const V2_HASH: [u8; 20] = [0x32; 20];
+        for (response_hash, expected_protocol) in
+            [(V2_HASH, PeerProtocol::V2), (V1_HASH, PeerProtocol::V1)]
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let address = listener.local_addr().expect("address");
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.expect("accept");
+                let mut request = [0; HANDSHAKE_LENGTH];
+                stream
+                    .read_exact(&mut request)
+                    .await
+                    .expect("read handshake");
+                let request = decode_handshake(&request, V1_HASH).expect("v1 request");
+                assert!(request.supports_hybrid_v2());
+                stream
+                    .write_all(&encode_handshake(response_hash, [0x33; 20]))
+                    .await
+                    .expect("write handshake");
+            });
+            let attempt = test_attempt_for(address);
+            let network = NetworkConfig::new(
+                NetworkPolicy::LoopbackOnly,
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+            );
+            let (connection, _) = connect_hybrid_observed(
+                attempt,
+                V1_HASH,
+                V2_HASH,
+                false,
+                network,
+                Arc::new(RecordingMseSink::default()),
+            )
+            .await
+            .expect("hybrid connection");
+            assert_eq!(connection.protocol(), expected_protocol);
+            server.await.expect("server task");
+        }
     }
 
     #[tokio::test]
@@ -1754,6 +1950,47 @@ mod tests {
                 .expect("encrypted framed send");
             server.await.expect("server join");
         }
+    }
+
+    #[tokio::test]
+    async fn outgoing_mse_hybrid_offer_upgrades_inside_encrypted_payload() {
+        const V1_HASH: [u8; 20] = [0x54; 20];
+        const V2_HASH: [u8; 20] = [0x55; 20];
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            run_test_mse_hybrid_responder(stream, MseMethod::PlaintextPayload, V1_HASH, V2_HASH)
+                .await;
+        });
+        let network = NetworkConfig::new(
+            NetworkPolicy::LoopbackOnly,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .with_encryption(PeerEncryptionPolicy::Required);
+        let (mut connection, _) = connect_hybrid_observed(
+            test_attempt_for(address),
+            V1_HASH,
+            V2_HASH,
+            false,
+            network,
+            Arc::new(RecordingMseSink::default()),
+        )
+        .await
+        .expect("hybrid MSE connection");
+        assert_eq!(connection.protocol(), PeerProtocol::V2);
+        assert_eq!(connection.mse_method(), Some(MseMethod::PlaintextPayload));
+        assert_eq!(
+            next_message(&mut connection)
+                .await
+                .expect("carried message"),
+            PeerMessage::Unchoke
+        );
+        send_message(&mut connection, &PeerMessage::Interested)
+            .await
+            .expect("encrypted framed send");
+        server.await.expect("server task");
     }
 
     #[tokio::test]
@@ -1888,7 +2125,26 @@ mod tests {
         server.await.expect("server join");
     }
 
-    async fn run_test_mse_responder(mut stream: TcpStream, method: MseMethod, info_hash: [u8; 20]) {
+    async fn run_test_mse_responder(stream: TcpStream, method: MseMethod, info_hash: [u8; 20]) {
+        run_test_mse_responder_inner(stream, method, info_hash, info_hash, false).await;
+    }
+
+    async fn run_test_mse_hybrid_responder(
+        stream: TcpStream,
+        method: MseMethod,
+        v1_info_hash: [u8; 20],
+        v2_info_hash: [u8; 20],
+    ) {
+        run_test_mse_responder_inner(stream, method, v1_info_hash, v2_info_hash, true).await;
+    }
+
+    async fn run_test_mse_responder_inner(
+        mut stream: TcpStream,
+        method: MseMethod,
+        request_info_hash: [u8; 20],
+        response_info_hash: [u8; 20],
+        expect_hybrid_offer: bool,
+    ) {
         let mut handshake = MseHandshake::new_responder(
             [0x91; 20],
             MsePadding::new(&[0x41; 17]).expect("PadB"),
@@ -1927,9 +2183,9 @@ mod tests {
                 MseStep::Action(MseAction::IdentifyTorrent {
                     req2_hash: candidate,
                 }) => {
-                    assert_eq!(candidate, req2_hash(&info_hash));
+                    assert_eq!(candidate, req2_hash(&request_info_hash));
                     handshake
-                        .resume(MseResume::TorrentIdentified(Some(info_hash)))
+                        .resume(MseResume::TorrentIdentified(Some(request_info_hash)))
                         .expect("resume torrent lookup")
                 }
                 MseStep::Action(MseAction::Send(bytes)) => {
@@ -1940,9 +2196,13 @@ mod tests {
                     handshake.resume(MseResume::Sent).expect("resume send")
                 }
                 MseStep::Complete(mut complete) => {
-                    decode_handshake(&complete.carried.as_slice()[..HANDSHAKE_LENGTH], info_hash)
-                        .expect("initiator handshake");
-                    let response_handshake = encode_handshake(info_hash, [0x66; 20]);
+                    let request = decode_handshake(
+                        &complete.carried.as_slice()[..HANDSHAKE_LENGTH],
+                        request_info_hash,
+                    )
+                    .expect("initiator handshake");
+                    assert_eq!(request.supports_hybrid_v2(), expect_hybrid_offer);
+                    let response_handshake = encode_handshake(response_info_hash, [0x66; 20]);
                     let response_message =
                         encode_message(&PeerMessage::Unchoke).expect("encode carried response");
                     let mut response =
@@ -2211,6 +2471,94 @@ mod tests {
         let server_terminal = server_utp.shutdown().await.expect("server uTP shutdown");
         assert_eq!(client_terminal.active_connections, 0);
         assert_eq!(server_terminal.active_connections, 0);
+        client_udp.shutdown().await.expect("client UDP shutdown");
+        server_udp.shutdown().await.expect("server UDP shutdown");
+    }
+
+    #[tokio::test]
+    async fn socket_set_hybrid_offer_upgrades_over_utp() {
+        const V1_HASH: [u8; 20] = [0xa3; 20];
+        const V2_HASH: [u8; 20] = [0xa4; 20];
+        let client_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind client UDP");
+        let server_socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind server UDP");
+        let server_address = server_socket.local_addr().expect("server address");
+        let (mut client_udp, _) = SessionUdpService::start(client_socket).expect("client UDP");
+        let (mut server_udp, _) = SessionUdpService::start(server_socket).expect("server UDP");
+        let client_utp = UtpService::start(&mut client_udp).expect("client uTP");
+        let mut server_utp = UtpService::start(&mut server_udp).expect("server uTP");
+        let server = tokio::spawn(async move {
+            let mut stream = timeout(Duration::from_secs(2), server_utp.accept())
+                .await
+                .expect("uTP accept deadline")
+                .expect("uTP stream");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read uTP handshake");
+            let request = decode_handshake(&handshake, V1_HASH).expect("decode uTP handshake");
+            assert!(request.supports_hybrid_v2());
+            stream
+                .write_all(&encode_handshake(V2_HASH, [0xa5; 20]))
+                .await
+                .expect("write uTP handshake");
+            stream.flush().await.expect("flush uTP handshake");
+            server_utp
+        });
+        let attempt = test_attempt_for(server_address);
+        let mut sockets = PeerSocketSet::new();
+        sockets
+            .begin_hybrid_dial(
+                attempt,
+                V1_HASH,
+                V2_HASH,
+                false,
+                NetworkConfig::new(
+                    NetworkPolicy::LoopbackOnly,
+                    Duration::from_secs(2),
+                    Duration::from_secs(2),
+                ),
+                PeerDialServices {
+                    utp: Some(client_utp.handle()),
+                    ..PeerDialServices::default()
+                },
+            )
+            .expect("begin hybrid uTP dial");
+        assert!(matches!(
+            timeout(Duration::from_secs(2), sockets.next_event())
+                .await
+                .expect("uTP phase deadline")
+                .expect("uTP phase"),
+            PeerSetEvent::DialPhase {
+                transport: PeerTransport::Utp,
+                ..
+            }
+        ));
+        let connection = match timeout(Duration::from_secs(2), sockets.next_event())
+            .await
+            .expect("uTP handshake deadline")
+            .expect("uTP handshake event")
+        {
+            PeerSetEvent::DialCompleted { result, .. } => result.expect("uTP dial succeeds").0,
+            event => panic!("unexpected uTP event {event:?}"),
+        };
+        assert_eq!(connection.transport(), PeerTransport::Utp);
+        assert_eq!(connection.protocol(), PeerProtocol::V2);
+        drop(connection);
+        assert!(
+            sockets
+                .shutdown()
+                .await
+                .expect("socket shutdown")
+                .is_empty()
+        );
+        let server_utp = server.await.expect("server task");
+        client_utp.shutdown().await.expect("client uTP shutdown");
+        server_utp.shutdown().await.expect("server uTP shutdown");
         client_udp.shutdown().await.expect("client UDP shutdown");
         server_udp.shutdown().await.expect("server UDP shutdown");
     }

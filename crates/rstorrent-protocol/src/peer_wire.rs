@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::identity::{InfoHashes, SwarmKey};
 use crate::metainfo::MAX_METAINFO_PIECES;
 use crate::v2_hashes::{
     HASH_REQUEST_PAYLOAD_LENGTH, HashRequest, HashResponse, MAX_HASH_MESSAGE_LENGTH,
@@ -18,6 +19,8 @@ pub const EXTENSION_PROTOCOL_RESERVED_INDEX: usize = 5;
 pub const EXTENSION_PROTOCOL_RESERVED_BIT: u8 = 0x10;
 pub const FAST_EXTENSION_RESERVED_INDEX: usize = 7;
 pub const FAST_EXTENSION_RESERVED_BIT: u8 = 0x04;
+pub const HYBRID_V2_RESERVED_INDEX: usize = 7;
+pub const HYBRID_V2_RESERVED_BIT: u8 = 0x10;
 const MAX_MESSAGES_PER_PUSH: usize = 1024;
 const PROTOCOL_NAME: &[u8; 19] = b"BitTorrent protocol";
 
@@ -42,6 +45,17 @@ impl Handshake {
     pub fn supports_fast_extension(&self) -> bool {
         self.reserved[FAST_EXTENSION_RESERVED_INDEX] & FAST_EXTENSION_RESERVED_BIT != 0
     }
+
+    pub fn supports_hybrid_v2(&self) -> bool {
+        self.reserved[HYBRID_V2_RESERVED_INDEX] & HYBRID_V2_RESERVED_BIT != 0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HybridHandshakeSelection {
+    pub handshake: Handshake,
+    pub protocol: PeerProtocol,
+    pub swarm_key: SwarmKey,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -129,6 +143,69 @@ pub fn decode_handshake(
         .try_into()
         .expect("handshake reserved bytes have a statically checked length");
     Ok(Handshake { peer_id, reserved })
+}
+
+pub fn decode_hybrid_response(
+    bytes: &[u8],
+    v1_key: SwarmKey,
+    v2_key: SwarmKey,
+    upgrade_offered: bool,
+) -> Result<HybridHandshakeSelection, HandshakeError> {
+    let (handshake, wire_hash) = decode_handshake_fields(bytes)?;
+    if wire_hash == v1_key.into_bytes() {
+        return Ok(HybridHandshakeSelection {
+            handshake,
+            protocol: PeerProtocol::V1,
+            swarm_key: v1_key,
+        });
+    }
+    if upgrade_offered && wire_hash == v2_key.into_bytes() {
+        return Ok(HybridHandshakeSelection {
+            handshake,
+            protocol: PeerProtocol::V2,
+            swarm_key: v2_key,
+        });
+    }
+    Err(HandshakeError::InfoHashMismatch)
+}
+
+pub fn hybrid_response_key(
+    request_key: SwarmKey,
+    request: &Handshake,
+    hashes: InfoHashes,
+) -> Result<SwarmKey, HandshakeError> {
+    if matches!(request_key, SwarmKey::V1(_))
+        && request.supports_hybrid_v2()
+        && let Some(v2) = hashes.v2_hash()
+    {
+        return Ok(v2.swarm_key());
+    }
+    let mut known = false;
+    hashes.for_each(|identity| known |= identity.swarm_key() == request_key);
+    known
+        .then_some(request_key)
+        .ok_or(HandshakeError::InfoHashMismatch)
+}
+
+fn decode_handshake_fields(bytes: &[u8]) -> Result<(Handshake, [u8; 20]), HandshakeError> {
+    if bytes.len() != HANDSHAKE_LENGTH {
+        return Err(HandshakeError::InvalidLength {
+            actual: bytes.len(),
+        });
+    }
+    if bytes[0] != PROTOCOL_NAME.len() as u8 || &bytes[1..20] != PROTOCOL_NAME {
+        return Err(HandshakeError::InvalidProtocol);
+    }
+    let wire_hash = bytes[28..48]
+        .try_into()
+        .expect("handshake info hash has a statically checked length");
+    let peer_id = bytes[48..68]
+        .try_into()
+        .expect("handshake peer ID has a statically checked length");
+    let reserved = bytes[20..28]
+        .try_into()
+        .expect("handshake reserved bytes have a statically checked length");
+    Ok((Handshake { peer_id, reserved }, wire_hash))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -638,14 +715,17 @@ fn validate_request_length(length: u32) -> Result<(), FrameError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::identity::{InfoHashes, SwarmKey, V1InfoHash, V2InfoHash};
     use crate::v2_hashes::{HashRequest, HashResponse};
 
     use super::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
         FAST_EXTENSION_RESERVED_BIT, FAST_EXTENSION_RESERVED_INDEX, FrameDecoder, FrameError,
-        HandshakeError, MAX_BITFIELD_PAYLOAD_LENGTH, MAX_EXTENSION_PAYLOAD_LENGTH,
-        MAX_FRAME_LENGTH, NegotiatedPeerCapabilities, PeerMessage, decode_handshake,
-        encode_handshake, encode_handshake_with_reserved, encode_message,
+        HYBRID_V2_RESERVED_BIT, HYBRID_V2_RESERVED_INDEX, HandshakeError,
+        MAX_BITFIELD_PAYLOAD_LENGTH, MAX_EXTENSION_PAYLOAD_LENGTH, MAX_FRAME_LENGTH,
+        NegotiatedPeerCapabilities, PeerMessage, PeerProtocol, decode_handshake,
+        decode_hybrid_response, encode_handshake, encode_handshake_with_reserved, encode_message,
+        hybrid_response_key,
     };
 
     #[test]
@@ -701,6 +781,62 @@ mod tests {
         assert!(remote_with_fast.supports_fast_extension());
         assert!(NegotiatedPeerCapabilities::negotiate(local, &remote_with_fast).fast_extension);
         assert!(!NegotiatedPeerCapabilities::negotiate([0; 8], &remote_with_fast).fast_extension);
+    }
+
+    #[test]
+    fn hybrid_offer_selects_exact_returned_protocol_and_rejects_wrong_hash() {
+        let v1 = V1InfoHash::new([1; 20]);
+        let v2 = V2InfoHash::new([2; 32]);
+        let v1_key = SwarmKey::V1(v1);
+        let v2_key = v2.swarm_key();
+        let mut reserved = [0; 8];
+        reserved[HYBRID_V2_RESERVED_INDEX] |= HYBRID_V2_RESERVED_BIT;
+        let request = decode_handshake(
+            &encode_handshake_with_reserved(v1.into_bytes(), [3; 20], reserved),
+            v1.into_bytes(),
+        )
+        .expect("hybrid offer");
+        assert!(request.supports_hybrid_v2());
+        assert_eq!(
+            hybrid_response_key(v1_key, &request, InfoHashes::hybrid(v1, v2)),
+            Ok(v2_key)
+        );
+        let upgraded = decode_hybrid_response(
+            &encode_handshake(v2_key.into_bytes(), [4; 20]),
+            v1_key,
+            v2_key,
+            true,
+        )
+        .expect("returned v2 key selects v2");
+        assert_eq!(
+            (upgraded.protocol, upgraded.swarm_key),
+            (PeerProtocol::V2, v2_key)
+        );
+
+        let declined = decode_hybrid_response(
+            &encode_handshake(v1_key.into_bytes(), [4; 20]),
+            v1_key,
+            v2_key,
+            true,
+        )
+        .expect("returned v1 key declines upgrade");
+        assert_eq!(
+            (declined.protocol, declined.swarm_key),
+            (PeerProtocol::V1, v1_key)
+        );
+        assert_eq!(
+            decode_hybrid_response(&encode_handshake([9; 20], [4; 20]), v1_key, v2_key, true,),
+            Err(HandshakeError::InfoHashMismatch)
+        );
+        assert_eq!(
+            decode_hybrid_response(
+                &encode_handshake(v2_key.into_bytes(), [4; 20]),
+                v1_key,
+                v2_key,
+                false,
+            ),
+            Err(HandshakeError::InfoHashMismatch)
+        );
     }
 
     #[test]

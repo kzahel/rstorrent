@@ -2148,6 +2148,8 @@ struct TorrentPeerCoordinator {
     connection: Option<PeerConnection>,
     last_error: Option<DownloadError>,
     next_dht_lookup: Instant,
+    hybrid_upgrade_hash: Option<[u8; 20]>,
+    swarm_key: Option<SwarmKey>,
 }
 
 struct TorrentPeerResources {
@@ -2408,7 +2410,16 @@ impl TorrentPeerCoordinator {
             connection: None,
             last_error: None,
             next_dht_lookup: Instant::now(),
+            hybrid_upgrade_hash: None,
+            swarm_key: None,
         })
+    }
+
+    fn set_content_identities(&mut self, hashes: InfoHashes) {
+        self.hybrid_upgrade_hash = match (hashes.v1_hash(), hashes.v2_hash()) {
+            (Some(_), Some(v2)) => Some(v2.swarm_key().into_bytes()),
+            _ => None,
+        };
     }
 
     fn begin_dial(
@@ -2867,6 +2878,8 @@ impl TorrentPeerCoordinator {
             resources.mse_dh,
             resources.encryption,
         )?;
+        peers.set_content_identities(magnet.identities);
+        peers.swarm_key = Some(magnet.identity.swarm_key());
         peers.publish_peer_registry(true);
         peers.dht = dht;
         if peers.control.is_cancelled() {
@@ -2903,7 +2916,8 @@ impl TorrentPeerCoordinator {
     }
 
     fn from_complete_content(
-        info_hash: [u8; 20],
+        swarm_key: SwarmKey,
+        info_hashes: InfoHashes,
         trackers: Vec<TrackerConfig>,
         network: NetworkConfig,
         control: DownloadControl,
@@ -2918,6 +2932,8 @@ impl TorrentPeerCoordinator {
             resources.mse_dh,
             resources.encryption,
         )?;
+        peers.set_content_identities(info_hashes);
+        peers.swarm_key = Some(swarm_key);
         peers.publish_peer_registry(true);
         peers.dht = dht;
         if peers.control.is_cancelled() {
@@ -2926,7 +2942,7 @@ impl TorrentPeerCoordinator {
         if !trackers.is_empty() {
             peers.tracker = Some(TrackerManager::start_with_configs(
                 trackers,
-                info_hash,
+                swarm_key.into_bytes(),
                 network,
                 peers.control.clone(),
             )?);
@@ -3248,17 +3264,30 @@ impl TorrentPeerCoordinator {
                 });
                 let attempt = self.begin_dial(candidate, PeerConnectionRole::Metadata)?;
                 self.control.metadata_dial_started(attempt);
-                if let Err(error) = sockets.begin_dial(
-                    attempt,
-                    info_hash,
-                    true,
-                    self.connection_network(),
-                    PeerDialServices {
-                        byte_metric_sink: self.control.byte_metric_sink(),
-                        mse_handshake_sink: self.control.mse_handshake_sink(),
-                        utp: self.control.utp_handle(),
-                    },
-                ) {
+                let services = PeerDialServices {
+                    byte_metric_sink: self.control.byte_metric_sink(),
+                    mse_handshake_sink: self.control.mse_handshake_sink(),
+                    utp: self.control.utp_handle(),
+                };
+                let dial = match self.hybrid_upgrade_hash {
+                    Some(v2_hash) if matches!(identity, FullInfoHash::V1(_)) => sockets
+                        .begin_hybrid_dial(
+                            attempt,
+                            info_hash,
+                            v2_hash,
+                            true,
+                            self.connection_network(),
+                            services,
+                        ),
+                    _ => sockets.begin_dial(
+                        attempt,
+                        info_hash,
+                        true,
+                        self.connection_network(),
+                        services,
+                    ),
+                };
+                if let Err(error) = dial {
                     self.dial_cancelled(attempt)?;
                     if matches!(error, PeerSetError::ConnectionLimit(_)) {
                         break;
@@ -3773,6 +3802,7 @@ async fn run_magnet_download_with_peers(
 ) -> Result<DownloadReport, DownloadError> {
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
     let content = runtime_content_from_acquired(&raw_info, metainfo)?;
+    peers.set_content_identities(content.content.info_hashes());
     let skip_files = effective_magnet_skip_files(&magnet, &content.content, config.skip_files)?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
@@ -4033,6 +4063,7 @@ async fn run_resumable_magnet_download(
             ));
         }
         let runtime_content = runtime_content_from_acquired(&raw_info, metainfo)?;
+        peers.set_content_identities(runtime_content.content.info_hashes());
         validate_publication_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
@@ -4095,7 +4126,7 @@ async fn run_resumable_metainfo_download(
             .to_vec()
             .into_boxed_slice(),
     );
-    let info_hash = content.swarm_key().into_bytes();
+    let swarm_key = config.identity.swarm_key();
     let content_dht = if content.private() {
         control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
         None
@@ -4104,7 +4135,8 @@ async fn run_resumable_metainfo_download(
     };
     let trackers = config.trackers.clone().unwrap_or_default();
     let mut peers = TorrentPeerCoordinator::from_complete_content(
-        info_hash,
+        swarm_key,
+        content.info_hashes(),
         trackers,
         config.network,
         control.clone(),
@@ -6695,17 +6727,35 @@ fn fill_content_dials(
             peers.dial_cancelled(attempt)?;
             return Err(DownloadError::Swarm(error));
         }
-        if let Err(error) = sockets.begin_dial(
-            attempt,
-            info_hash,
-            true,
-            peers.connection_network(),
-            PeerDialServices {
-                byte_metric_sink: peers.control.byte_metric_sink(),
-                mse_handshake_sink: peers.control.mse_handshake_sink(),
-                utp: peers.control.utp_handle(),
-            },
-        ) {
+        let services = PeerDialServices {
+            byte_metric_sink: peers.control.byte_metric_sink(),
+            mse_handshake_sink: peers.control.mse_handshake_sink(),
+            utp: peers.control.utp_handle(),
+        };
+        let dial = match peers.hybrid_upgrade_hash {
+            Some(v2_hash)
+                if peers.swarm_key.is_some_and(|key| {
+                    key.protocol() == rstorrent_protocol::identity::ProtocolVersion::V1
+                }) =>
+            {
+                sockets.begin_hybrid_dial(
+                    attempt,
+                    info_hash,
+                    v2_hash,
+                    true,
+                    peers.connection_network(),
+                    services,
+                )
+            }
+            _ => sockets.begin_dial(
+                attempt,
+                info_hash,
+                true,
+                peers.connection_network(),
+                services,
+            ),
+        };
+        if let Err(error) = dial {
             state
                 .finish_dial(pending_dial_id(attempt))
                 .map_err(DownloadError::Swarm)?;
@@ -7382,7 +7432,10 @@ async fn run_selective_swarm_loop(
                 peers,
                 sockets,
                 &mut download.state,
-                download.content.swarm_key().into_bytes(),
+                peers
+                    .swarm_key
+                    .unwrap_or_else(|| download.content.swarm_key())
+                    .into_bytes(),
                 download.incoming_content.len(),
             )?;
         }
@@ -7768,14 +7821,17 @@ async fn download_content_swarm<'a>(
     peers: &mut TorrentPeerCoordinator,
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
+    let swarm_key = peers
+        .swarm_key
+        .unwrap_or_else(|| download.content.swarm_key());
     let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone())
         .with_bandwidth(peers.peers.bandwidth());
-    if matches!(download.content, TorrentContent::V2(_)) {
+    if swarm_key.protocol() == rstorrent_protocol::identity::ProtocolVersion::V2 {
         sockets.set_protocol(PeerProtocol::V2);
     }
     let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
     let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
-    let mut discovery = ContentDiscovery::start(peers, download.content.swarm_key().into_bytes());
+    let mut discovery = ContentDiscovery::start(peers, swarm_key.into_bytes());
     let result = match download.register_active_route(peers.peers.clone()).await {
         Ok(()) => {
             run_selective_swarm_loop(

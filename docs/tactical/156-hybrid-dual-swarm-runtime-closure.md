@@ -1068,3 +1068,20 @@ unless one bounded artifact is explicitly retained and linked.
   stale loser rejection, exact one-row/two-alias state, winner selection
   retention, bounded discovery union, and the runtime cleanup compile path.
   `cargo check --workspace` remained green.
+
+### 2026-08-14: Negotiated outgoing hybrid handshakes
+
+- A v1 hybrid entry now advertises the BEP 52 reserved bit and accepts only
+  the exact v1 identity (decline) or exact truncated v2 identity (upgrade) in
+  the response. The returned identity selects the connection protocol before
+  peer-wire decoding; an unrelated response remains a typed handshake error.
+- The same selection is carried through plain TCP, default uTP, and both MSE
+  payload modes. MSE continues to identify the torrent by the initiating v1
+  hash while the encrypted BitTorrent response may select v2.
+- Magnet metadata and content dials retain their selected entry key and offer
+  the upgrade only from v1 once authenticated hybrid metadata supplies the v2
+  alias. Direct v2 connections continue through the existing v2 decoder.
+- `cargo test -p rstorrent-protocol` passed with 259 tests and 4 ignored.
+  `cargo test -p rstorrent-engine` passed with 568 tests and 9 ignored,
+  including deterministic v2 accept and v1 decline over plain TCP, v2 accept
+  inside MSE, v2 accept over uTP, and wrong-response rejection.
