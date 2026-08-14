@@ -90,6 +90,12 @@ The tactical stops only when all of the following are true:
 
 - a pure-v2 `btmh` magnet reaches exact selected content through the ordinary
   application service, including multi-file and one-piece-file shapes;
+- the first controlled magnet gate uses only `btmh`, one `x.pe` peer hint,
+  and BEP 53 `so` selection against a pinned-libtorrent seed, with tracker and
+  DHT discovery disabled. Wire evidence must show SHA-256 metadata, required
+  hash exchange before selected payload requests, no payload or piece-layer
+  request for a skipped multi-piece file, and no unnecessary piece-layer
+  request for a selected one-piece file;
 - SHA-256 BEP 9 metadata succeeds across peers and rejects wrong hashes,
   malformed info, v1 metadata, and hybrid metadata before storage authority
   changes;
@@ -111,7 +117,8 @@ The tactical stops only when all of the following are true:
   advertised have, while a complete file can reconstruct and validate its
   tree locally without another peer;
 - RSTorrent and pinned libtorrent each complete as leecher from the other's
-  pure-v2 magnet-capable seed, with independent payload comparison;
+  pure-v2 `btmh` plus `x.pe` magnet-capable seed, with independent payload
+  comparison and no discovery path masking the direct peer hint;
 - selected TCP, default-uTP, MSE, tracker, DHT, initiated, and accepted paths
   receive the proportional matrix below without an unnecessary cross-product;
 - v1 and complete-source pure-v2 regressions remain green;
@@ -800,13 +807,21 @@ pure-v2 magnet subset.
 
 The minimum independent matrix is:
 
-1. TCP tracker-introduced RSTorrent magnet leecher from libtorrent, single and
-   aligned multi-file selective fixtures;
-2. TCP libtorrent magnet leecher from RSTorrent, proving BEP 9, messages
-   21--23, payload, and accepted-peer service;
-3. one default-uTP DHT-only RSTorrent magnet download using the existing
+1. direct-TCP RSTorrent leecher from a pinned-libtorrent seed using only a
+   `btmh` magnet, one `x.pe` hint, and `so` for an aligned multi-file fixture;
+   tracker and DHT discovery are disabled, a selected multi-piece file
+   requires messages 21--22 before payload, a selected one-piece file uses
+   its authenticated file root directly, and a skipped multi-piece file
+   receives neither piece-layer nor payload requests;
+2. promote that skipped file in the same session, acquire only its newly
+   required hash ranges and payload, then restart once with candidate data and
+   prove selection persistence plus conservative hash refetch;
+3. direct-TCP pinned-libtorrent leecher from RSTorrent using only the same
+   `btmh` plus `x.pe`, proving RSTorrent's BEP 9, messages 21--23, payload,
+   accepted-peer service, and no tracker/DHT masking;
+4. one default-uTP DHT-only RSTorrent magnet download using the existing
    tagged v2 routing; and
-4. one forced-RC4 TCP RSTorrent magnet download to preserve versioned MSE
+5. one forced-RC4 TCP RSTorrent magnet download to preserve versioned MSE
    routing.
 
 At least one run includes a rejected/stalled hash peer before successful
