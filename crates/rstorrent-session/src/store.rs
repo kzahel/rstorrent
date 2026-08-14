@@ -1200,16 +1200,6 @@ impl SessionStore {
             .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
 
         let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
-        let identity = match (info_hashes.v1_hash(), info_hashes.v2_hash()) {
-            (Some(hash), None) => FullInfoHash::V1(hash),
-            (None, Some(hash)) => FullInfoHash::V2(hash),
-            _ => {
-                return Err(StoreError::DurableState(
-                    "magnet export requires one supported full identity".to_owned(),
-                ));
-            }
-        };
-
         let source = self
             .connection
             .query_row(
@@ -1231,7 +1221,7 @@ impl SessionStore {
             && kind == "magnet"
             && usize::try_from(byte_length).ok() == Some(magnet.len())
             && digest == Sha256::digest(magnet.as_bytes()).as_slice()
-            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.identity == identity)
+            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.identities == info_hashes)
             && let Some(source) = match fidelity.as_str() {
                 "verbatim" => Some(MagnetExportSource::Verbatim),
                 "canonicalized" => Some(MagnetExportSource::Canonicalized),
@@ -1246,7 +1236,7 @@ impl SessionStore {
         }
 
         Ok(synthesize_magnet_export(
-            identity,
+            info_hashes,
             publication_name.as_deref(),
             &read_trackers(&self.connection, &torrent_id)?,
         ))
@@ -1424,7 +1414,11 @@ impl SessionStore {
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(map_durable_metainfo_error)?;
-        if parsed.info_hashes() != read_info_hashes(&self.connection, &owner)? {
+        let known_hashes = read_info_hashes(&self.connection, &owner)?;
+        let parsed_hashes = parsed.info_hashes();
+        let mut known_matches = true;
+        known_hashes.for_each(|identity| known_matches &= parsed_hashes.contains(identity));
+        if !known_matches {
             return Err(StoreError::DurableState(
                 "verified metadata does not match torrent identity".to_owned(),
             ));
@@ -1448,11 +1442,12 @@ impl SessionStore {
                 metainfo.files.len(),
                 None,
             ),
-            ParsedInfoKind::Hybrid(_) => {
-                return Err(StoreError::DurableState(
-                    "hybrid metadata is outside the supported magnet subset".to_owned(),
-                ));
-            }
+            ParsedInfoKind::Hybrid(metainfo) => (
+                metainfo.v2.name.as_str(),
+                metainfo.v2.layout.piece_count(),
+                metainfo.v2.files.len(),
+                None,
+            ),
         };
         validate_publication_name(name)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
@@ -1460,6 +1455,28 @@ impl SessionStore {
         let have = HaveState::empty(owner, fingerprint, piece_count)?.encode();
         validate_have_state_length(&have)?;
         let transaction = self.connection.transaction()?;
+        let mut alias_error = None;
+        parsed_hashes.for_each(|identity| {
+            if alias_error.is_some() || known_hashes.contains(identity) {
+                return;
+            }
+            alias_error = transaction
+                .execute(
+                    "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                     VALUES (?1, ?2, ?3)",
+                    params![
+                        owner.as_bytes().as_slice(),
+                        identity.protocol().as_str(),
+                        identity.as_bytes()
+                    ],
+                )
+                .err();
+        });
+        if alias_error.is_some() {
+            return Err(StoreError::DurableState(
+                "authenticated metadata identity collides with another torrent owner".to_owned(),
+            ));
+        }
         let selection_default: String = transaction
             .query_row(
                 "SELECT selection_default FROM torrents WHERE torrent_id = ?1",
@@ -3167,10 +3184,19 @@ fn add_torrent_bytes(
     let selection_default = prepared.selection_default;
     let selection_exceptions = &prepared.selection_exceptions;
     let content = &projection.content;
-    let identity = prepared.full_identity();
-    if let Some(existing) =
-        find_torrent_id_by_full_hash(transaction, identity).map_err(AddTorrentBytesError::Store)?
-    {
+    let mut identities = Vec::with_capacity(content.info_hashes().identity_count());
+    content
+        .info_hashes()
+        .for_each(|identity| identities.push(identity));
+    let mut existing = None;
+    for identity in &identities {
+        if let Some(owner) = find_torrent_id_by_full_hash(transaction, *identity)
+            .map_err(AddTorrentBytesError::Store)?
+        {
+            existing.get_or_insert(owner);
+        }
+    }
+    if let Some(existing) = existing {
         return Ok((
             current_revision,
             add_result(
@@ -3251,17 +3277,19 @@ fn add_torrent_bytes(
             ],
         )
         .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
-    let (protocol, full_hash): (&str, &[u8]) = match &identity {
-        FullInfoHash::V1(hash) => ("v1", hash.as_bytes()),
-        FullInfoHash::V2(hash) => ("v2", hash.as_bytes()),
-    };
-    transaction
-        .execute(
-            "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
-             VALUES (?1, ?2, ?3)",
-            params![torrent_id.as_bytes().as_slice(), protocol, full_hash],
-        )
-        .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
+    for identity in identities {
+        transaction
+            .execute(
+                "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    torrent_id.as_bytes().as_slice(),
+                    identity.protocol().as_str(),
+                    identity.as_bytes()
+                ],
+            )
+            .map_err(|error| AddTorrentBytesError::Store(StoreError::Sqlite(error)))?;
+    }
     if request.start_content {
         download_queue::append(transaction, &torrent_id).map_err(AddTorrentBytesError::Store)?;
     }
@@ -3772,17 +3800,26 @@ fn add_magnet(
             ],
         )
         .map_err(internal_error)?;
-    let (protocol, full_hash): (&str, &[u8]) = match &magnet.identity {
-        FullInfoHash::V1(hash) => ("v1", hash.as_bytes()),
-        FullInfoHash::V2(hash) => ("v2", hash.as_bytes()),
-    };
-    transaction
-        .execute(
-            "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
-             VALUES (?1, ?2, ?3)",
-            params![torrent_id.as_bytes().as_slice(), protocol, full_hash],
-        )
-        .map_err(internal_error)?;
+    let mut identity_error = None;
+    magnet.identities.for_each(|identity| {
+        if identity_error.is_some() {
+            return;
+        }
+        identity_error = transaction
+            .execute(
+                "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    torrent_id.as_bytes().as_slice(),
+                    identity.protocol().as_str(),
+                    identity.as_bytes()
+                ],
+            )
+            .err();
+    });
+    if let Some(error) = identity_error {
+        return Err(internal_error(error));
+    }
     download_queue::append(transaction, &torrent_id)
         .map_err(|error| internal_message(&error.to_string()))?;
     let source_digest = Sha256::digest(source.as_bytes());
@@ -5120,11 +5157,23 @@ fn parse_durable_content_descriptor(
                         )
                         .collect(),
                 },
-                ParsedInfoKind::Hybrid(_) => {
-                    return Err(StoreError::DurableState(
-                        "hybrid metadata is outside the supported magnet subset".to_owned(),
-                    ));
-                }
+                ParsedInfoKind::Hybrid(metainfo) => ContentLayout::Hybrid {
+                    layout: metainfo.v2.layout.clone(),
+                    files: metainfo
+                        .v2
+                        .files
+                        .iter()
+                        .zip(metainfo.v2.layout.files())
+                        .map(
+                            |(file, geometry)| rstorrent_protocol::metainfo::MetainfoFile {
+                                path: file.path.clone(),
+                                length: file.length,
+                                offset: geometry.logical_offset(),
+                                padding: false,
+                            },
+                        )
+                        .collect(),
+                },
             };
             Ok(DurableContentDescriptor {
                 info_hashes: parsed.info_hashes(),
@@ -5184,7 +5233,8 @@ fn wanted_piece_evidence(
 }
 
 fn canonical_magnet(magnet: &Magnet) -> String {
-    let mut output = format!("magnet:?xt={}", encode_magnet_identity(magnet.identity));
+    let mut output = String::from("magnet:?");
+    append_magnet_identities(&mut output, magnet.identities);
     for hint in &magnet.peer_hints {
         output.push_str("&x.pe=");
         if hint.host.contains(':') {
@@ -5209,12 +5259,13 @@ fn canonical_magnet(magnet: &Magnet) -> String {
 }
 
 fn synthesize_magnet_export(
-    identity: impl Into<FullInfoHash>,
+    identities: impl Into<InfoHashes>,
     publication_name: Option<&str>,
     trackers: &[StoredTracker],
 ) -> MagnetExportResult {
-    let identity = identity.into();
-    let mut magnet = format!("magnet:?xt={}", encode_magnet_identity(identity));
+    let identities = identities.into();
+    let mut magnet = String::from("magnet:?");
+    append_magnet_identities(&mut magnet, identities);
     if let Some(publication_name) = publication_name {
         let mut parameter = String::from("&dn=");
         percent_encode_query_value(&mut parameter, publication_name.as_bytes());
@@ -5246,6 +5297,18 @@ fn synthesize_magnet_export(
         source: MagnetExportSource::Synthesized,
         omitted_tracker_count: u32::try_from(omitted_trackers).unwrap_or(u32::MAX),
     }
+}
+
+fn append_magnet_identities(output: &mut String, identities: InfoHashes) {
+    let mut first = true;
+    identities.for_each(|identity| {
+        if !first {
+            output.push('&');
+        }
+        first = false;
+        output.push_str("xt=");
+        output.push_str(&encode_magnet_identity(identity));
+    });
 }
 
 fn encode_magnet_identity(identity: FullInfoHash) -> String {
@@ -5315,6 +5378,7 @@ mod tests {
     use rstorrent_engine::PreparedFileHash;
     use rstorrent_engine::dht::{DHT_SNAPSHOT_VERSION, DhtIdentity, DhtSnapshot};
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
+    use rstorrent_protocol::identity::V2InfoHash;
     use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet};
     use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
     use rusqlite::Connection;
@@ -5411,6 +5475,50 @@ mod tests {
              &tr=udp%3A%2F%2F%5B2001%3Adb8%3A%3A1%5D%3A80\
              &tr=https%3A%2F%2Ftracker.example%2Fsecret%3Fpasskey%3Dabc%26x%3D1"
         );
+
+        let dual = rstorrent_protocol::magnet::Magnet::parse(&format!(
+            "magnet:?xt=urn:btmh:1220{}&xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213",
+            "aa".repeat(32)
+        ))
+        .expect("dual-topic magnet");
+        assert_eq!(
+            super::canonical_magnet(&dual),
+            format!(
+                "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&xt=urn:btmh:1220{}",
+                "aa".repeat(32)
+            )
+        );
+    }
+
+    #[test]
+    fn dual_topic_magnet_reserves_both_full_aliases_for_one_owner() {
+        let root = test_root("dual-topic-aliases");
+        let configured = configured_root(&root);
+        let source = format!(
+            "magnet:?xt=urn:btih:000102030405060708090a0b0c0d0e0f10111213&xt=urn:btmh:1220{}",
+            "aa".repeat(32)
+        );
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let added = store
+            .handle_durable(&RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-dual-topic".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: source.clone(),
+                    storage_root: "downloads".to_owned(),
+                    start_content: false,
+                    skip_files: Vec::new(),
+                },
+            })
+            .expect("add dual-topic magnet");
+        let torrent_id = added_torrent_id(&added);
+        let owner = super::decode_torrent_id(&torrent_id).expect("owner id");
+        let hashes = super::read_info_hashes(&store.connection, &owner).expect("aliases");
+        assert!(hashes.is_hybrid());
+        assert_eq!(hashes.v2_hash(), Some(V2InfoHash::new([0xaa; 32])));
+        let export = store.export_magnet(&torrent_id).expect("hybrid export");
+        assert_eq!(export.magnet, source);
     }
 
     #[test]

@@ -1596,6 +1596,7 @@ fn classify_failure(error: &DownloadError) -> FailureKind {
         | DownloadError::ExtensionProtocolUnsupported
         | DownloadError::MetadataExtensionDisabled
         | DownloadError::InvalidPremetadataState(_)
+        | DownloadError::InconsistentHybridHashes { .. }
         | DownloadError::Piece(_) => FailureKind::Protocol,
         DownloadError::SelectiveStorage(_) | DownloadError::Io { .. } => FailureKind::Storage,
         DownloadError::CleanupAfterFailure { .. } | DownloadError::PeerCleanup { .. } => {

@@ -28,8 +28,8 @@ use rstorrent_protocol::metadata::{
     parse_extension_handshake, parse_metadata_message,
 };
 use rstorrent_protocol::metainfo::{
-    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, MAX_METAINFO_PIECES, Metainfo, MetainfoError,
-    ParsedInfo, ParsedInfoKind, V2Metainfo,
+    BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, HybridMetainfo, MAX_METAINFO_PIECES, Metainfo,
+    MetainfoError, ParsedInfo, ParsedInfoKind, V2Metainfo,
 };
 use rstorrent_protocol::peer_wire::{
     FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage, PeerProtocol,
@@ -1096,11 +1096,7 @@ fn validate_magnet_runtime_identity(
     identity: TorrentIdentityContext,
     expected: FullInfoHash,
 ) -> Result<(), DownloadError> {
-    let expected_hashes = match expected {
-        FullInfoHash::V1(hash) => InfoHashes::v1(hash),
-        FullInfoHash::V2(hash) => InfoHashes::v2(hash),
-    };
-    if identity.info_hashes() != expected_hashes {
+    if !identity.info_hashes().contains(expected) {
         return Err(DownloadError::InvalidTorrentIdentity(
             "full identity does not match the magnet",
         ));
@@ -1113,16 +1109,29 @@ fn validate_magnet_runtime_identity(
     Ok(())
 }
 
+fn metadata_matches_known_identities(parsed: InfoHashes, known: InfoHashes) -> bool {
+    let mut matched = true;
+    known.for_each(|identity| matched &= parsed.contains(identity));
+    matched
+}
+
 fn validate_content_runtime_identity(
     identity: TorrentIdentityContext,
     content: &TorrentContent,
 ) -> Result<(), DownloadError> {
-    if identity.info_hashes() != content.info_hashes() {
+    let mut known_matches = true;
+    identity
+        .info_hashes()
+        .for_each(|hash| known_matches &= content.info_hashes().contains(hash));
+    if !known_matches {
         return Err(DownloadError::InvalidTorrentIdentity(
             "full identity set does not match complete metainfo",
         ));
     }
-    if identity.swarm_key() != content.swarm_key() {
+    if !content
+        .swarm_keys()
+        .any(|swarm_key| swarm_key == identity.swarm_key())
+    {
         return Err(DownloadError::InvalidTorrentIdentity(
             "selected wire key does not match complete metainfo",
         ));
@@ -2179,6 +2188,7 @@ enum MetadataPeerResult {
 enum AcquiredMetainfo {
     V1(Metainfo),
     V2(V2Metainfo),
+    Hybrid(HybridMetainfo),
 }
 
 impl AcquiredMetainfo {
@@ -2186,7 +2196,7 @@ impl AcquiredMetainfo {
     fn v1(&self) -> Option<&Metainfo> {
         match self {
             Self::V1(metainfo) => Some(metainfo),
-            Self::V2(_) => None,
+            Self::V2(_) | Self::Hybrid(_) => None,
         }
     }
 
@@ -2194,6 +2204,7 @@ impl AcquiredMetainfo {
         match self {
             Self::V1(metainfo) => metainfo.private,
             Self::V2(metainfo) => metainfo.private,
+            Self::Hybrid(metainfo) => metainfo.v2.private,
         }
     }
 
@@ -2201,6 +2212,7 @@ impl AcquiredMetainfo {
         match self {
             Self::V1(metainfo) => metainfo.total_length,
             Self::V2(metainfo) => metainfo.total_length,
+            Self::Hybrid(metainfo) => metainfo.v2.total_length,
         }
     }
 
@@ -2208,6 +2220,7 @@ impl AcquiredMetainfo {
         match self {
             Self::V1(metainfo) => metainfo.piece_length,
             Self::V2(metainfo) => metainfo.piece_length,
+            Self::Hybrid(metainfo) => metainfo.v2.piece_length,
         }
     }
 
@@ -2215,6 +2228,7 @@ impl AcquiredMetainfo {
         match self {
             Self::V1(metainfo) => metainfo.piece_count(),
             Self::V2(metainfo) => metainfo.layout.piece_count(),
+            Self::Hybrid(metainfo) => metainfo.v2.layout.piece_count(),
         }
     }
 
@@ -2222,6 +2236,7 @@ impl AcquiredMetainfo {
         match self {
             Self::V1(metainfo) => metainfo.files.len(),
             Self::V2(metainfo) => metainfo.files.len(),
+            Self::Hybrid(metainfo) => metainfo.v2.files.len(),
         }
     }
 }
@@ -2234,6 +2249,10 @@ fn runtime_content_from_acquired(
         AcquiredMetainfo::V1(metainfo) => Ok(TorrentContent::from_v1_metainfo(metainfo).into()),
         AcquiredMetainfo::V2(_) => {
             TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                .map_err(DownloadError::Metainfo)
+        }
+        AcquiredMetainfo::Hybrid(_) => {
+            TorrentContent::from_hybrid_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
                 .map_err(DownloadError::Metainfo)
         }
     }
@@ -3893,11 +3912,7 @@ async fn run_resumable_magnet_download(
     if let Some(raw_info) = resume.raw_info.as_ref() {
         let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(DownloadError::Metainfo)?;
-        let expected = match magnet.identity {
-            FullInfoHash::V1(hash) => InfoHashes::v1(hash),
-            FullInfoHash::V2(hash) => InfoHashes::v2(hash),
-        };
-        if parsed.info_hashes() != expected {
+        if !metadata_matches_known_identities(parsed.info_hashes(), magnet.identities) {
             return Err(DownloadError::Checkpoint(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
@@ -3910,13 +3925,18 @@ async fn run_resumable_magnet_download(
                 TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
                     .map_err(DownloadError::Metainfo)?
             }
-            ParsedInfoKind::Hybrid(_) => {
-                return Err(DownloadError::InvalidPremetadataState(
-                    "hybrid metadata is outside the pure-v2 magnet subset",
-                ));
-            }
+            ParsedInfoKind::Hybrid(_) => TorrentContent::from_hybrid_info_bytes_with_limits(
+                raw_info,
+                DURABLE_METAINFO_LIMITS,
+            )
+            .map_err(DownloadError::Metainfo)?,
         };
-        if descriptors.is_some() && matches!(&runtime_content.content, TorrentContent::V2(_)) {
+        if descriptors.is_some()
+            && matches!(
+                &runtime_content.content,
+                TorrentContent::V2(_) | TorrentContent::Hybrid(_)
+            )
+        {
             return Err(DownloadError::Checkpoint(
                 "descriptor storage does not support v2 content".to_owned(),
             ));
@@ -4004,6 +4024,14 @@ async fn run_resumable_magnet_download(
     .await?;
     let result = async {
         let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
+        let parsed = ParsedInfo::from_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+            .map_err(DownloadError::Metainfo)?;
+        if !metadata_matches_known_identities(parsed.info_hashes(), magnet.identities) {
+            peers.close_current(None)?;
+            return Err(DownloadError::InvalidPremetadataState(
+                "metadata does not match every known magnet identity",
+            ));
+        }
         let runtime_content = runtime_content_from_acquired(&raw_info, metainfo)?;
         validate_publication_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
@@ -4397,11 +4425,7 @@ fn finish_metadata_acquisition(
 ) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
     let parsed = ParsedInfo::from_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
-    let expected = match identity {
-        FullInfoHash::V1(hash) => InfoHashes::v1(hash),
-        FullInfoHash::V2(hash) => InfoHashes::v2(hash),
-    };
-    if parsed.info_hashes() != expected {
+    if !parsed.info_hashes().contains(identity) {
         return Err(DownloadError::InvalidPremetadataState(
             "metadata protocol identity does not match the magnet",
         ));
@@ -4409,11 +4433,7 @@ fn finish_metadata_acquisition(
     let metainfo = match parsed.kind() {
         ParsedInfoKind::V1(metainfo) => AcquiredMetainfo::V1(metainfo.clone()),
         ParsedInfoKind::V2(metainfo) => AcquiredMetainfo::V2(metainfo.clone()),
-        ParsedInfoKind::Hybrid(_) => {
-            return Err(DownloadError::InvalidPremetadataState(
-                "hybrid metadata is outside the pure-v2 magnet subset",
-            ));
-        }
+        ParsedInfoKind::Hybrid(metainfo) => AcquiredMetainfo::Hybrid(metainfo.clone()),
     };
     peer.prepend_messages(peer_state.validated_messages(metainfo.piece_count())?);
     Ok((bytes, metainfo))
@@ -4976,7 +4996,8 @@ impl<'a> ContentSwarmDownload<'a> {
         if !diagnosis.scheduler.is_complete() {
             return Ok(None);
         }
-        let TorrentIntegrity::V2(catalog) = &*self.integrity else {
+        let (TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog)) = &*self.integrity
+        else {
             return Err(DownloadError::StorageTask(
                 "v2 leaf diagnosis lost its hash catalog".to_owned(),
             ));
@@ -5055,7 +5076,8 @@ impl<'a> ContentSwarmDownload<'a> {
     }
 
     fn sync_v2_hash_service(&self) {
-        if let (Some(service), TorrentIntegrity::V2(catalog)) = (&self.v2_hashes, &*self.integrity)
+        if let (Some(service), TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog)) =
+            (&self.v2_hashes, &*self.integrity)
         {
             service.replace_catalog(catalog.clone());
         }
@@ -8086,22 +8108,17 @@ async fn reconstruct_complete_selected_v2_piece_layers(
     storage: &mut SelectiveStorage,
     control: &DownloadControl,
 ) -> Result<usize, DownloadError> {
-    let TorrentContent::V2(content) = content else {
+    let Some(metainfo) = content.v2_metainfo() else {
         return Ok(0);
     };
-    let TorrentIntegrity::V2(catalog) = integrity else {
+    let (TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog)) = integrity else {
         return Err(DownloadError::StorageTask(
             "v2 content has non-v2 integrity state".to_owned(),
         ));
     };
 
     let mut reconstructed_files = 0_usize;
-    for (file, file_geometry) in content
-        .metainfo
-        .files
-        .iter()
-        .zip(content.metainfo.layout.files())
-    {
+    for (file, file_geometry) in metainfo.files.iter().zip(metainfo.layout.files()) {
         if file_geometry.piece_count() <= 1 || !selection.is_wanted(file_geometry.file_index()) {
             continue;
         }
@@ -8114,7 +8131,7 @@ async fn reconstruct_complete_selected_v2_piece_layers(
         let geometry = V2FileHashGeometry::new(
             pieces_root,
             file.length,
-            content.metainfo.piece_length,
+            metainfo.piece_length,
             file_geometry.start_piece(),
             file_geometry.piece_count(),
         )
@@ -8132,8 +8149,7 @@ async fn reconstruct_complete_selected_v2_piece_layers(
                 roots.clear();
                 break;
             }
-            let length = content
-                .metainfo
+            let length = metainfo
                 .layout
                 .piece(piece)
                 .map_err(|error| DownloadError::StorageTask(error.to_string()))?
@@ -8146,10 +8162,14 @@ async fn reconstruct_complete_selected_v2_piece_layers(
             let actual = storage.hash_piece_content(piece).await;
             control.storage_command_completed(StorageCommandKind::Hash, started_at, Instant::now());
             let actual = actual.map_err(DownloadError::SelectiveStorage)?;
-            let ComputedPieceHash::Sha256 { root, .. } = actual else {
-                return Err(DownloadError::StorageTask(
-                    "v2 reconstruction used a non-SHA-256 hash".to_owned(),
-                ));
+            let root = match actual {
+                ComputedPieceHash::Sha256 { root, .. } => root,
+                ComputedPieceHash::Hybrid { sha256_root, .. } => sha256_root,
+                ComputedPieceHash::Sha1(_) => {
+                    return Err(DownloadError::StorageTask(
+                        "v2 reconstruction used a non-SHA-256 hash".to_owned(),
+                    ));
+                }
             };
             control.record_bytes(ByteMetric::LogicalHashRead, length as usize);
             roots.push(root);
@@ -8242,7 +8262,7 @@ async fn run_selective_download(
         None => vec![false; layout.piece_count()],
     };
     let mut candidate_pieces = BTreeSet::new();
-    if resume.is_some() && matches!(content, TorrentContent::V2(_)) {
+    if resume.is_some() && matches!(content, TorrentContent::V2(_) | TorrentContent::Hybrid(_)) {
         for &piece in &wanted_pieces {
             let piece_index = usize::try_from(piece)
                 .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
@@ -8642,7 +8662,7 @@ async fn run_selective_download(
     });
     let wanted_piece_set = wanted_pieces.iter().copied().collect::<BTreeSet<_>>();
     candidate_pieces.retain(|piece| wanted_piece_set.contains(piece));
-    if matches!(content, TorrentContent::V2(_)) {
+    if matches!(content, TorrentContent::V2(_) | TorrentContent::Hybrid(_)) {
         for &piece in &wanted_pieces {
             if candidate_pieces.contains(&piece) {
                 continue;

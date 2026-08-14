@@ -230,17 +230,24 @@ impl V2SeedHashService {
         }
         let runtime =
             TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                .or_else(|_| {
+                    TorrentContent::from_hybrid_info_bytes_with_limits(
+                        raw_info,
+                        DURABLE_METAINFO_LIMITS,
+                    )
+                })
                 .map_err(|_| {
                     IncomingPeerError::InvalidRegistration(
-                        "v2 seed metadata is not strict pure-v2 info",
+                        "v2 seed metadata is not strict v2 content",
                     )
                 })?;
-        if runtime.content.swarm_key() != swarm_key {
+        if !runtime.content.swarm_keys().any(|key| key == swarm_key) {
             return Err(IncomingPeerError::InvalidRegistration(
                 "v2 seed metadata and swarm key differ",
             ));
         }
-        let TorrentIntegrity::V2(catalog) = runtime.integrity else {
+        let (TorrentIntegrity::V2(catalog) | TorrentIntegrity::Hybrid(catalog)) = runtime.integrity
+        else {
             return Err(IncomingPeerError::InvalidRegistration(
                 "v2 seed metadata has non-v2 integrity",
             ));

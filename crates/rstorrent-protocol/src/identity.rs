@@ -214,6 +214,19 @@ impl InfoHashes {
         self.v1.is_some() && self.v2.is_some()
     }
 
+    pub fn contains(self, identity: FullInfoHash) -> bool {
+        match identity {
+            FullInfoHash::V1(hash) => match self.v1 {
+                Some(existing) => existing.into_bytes() == hash.into_bytes(),
+                None => false,
+            },
+            FullInfoHash::V2(hash) => match self.v2 {
+                Some(existing) => existing.into_bytes() == hash.into_bytes(),
+                None => false,
+            },
+        }
+    }
+
     pub fn for_each(self, mut visit: impl FnMut(FullInfoHash)) {
         if let Some(hash) = self.v1 {
             visit(FullInfoHash::V1(hash));
@@ -221,6 +234,21 @@ impl InfoHashes {
         if let Some(hash) = self.v2 {
             visit(FullInfoHash::V2(hash));
         }
+    }
+}
+
+impl From<FullInfoHash> for InfoHashes {
+    fn from(value: FullInfoHash) -> Self {
+        match value {
+            FullInfoHash::V1(hash) => Self::v1(hash),
+            FullInfoHash::V2(hash) => Self::v2(hash),
+        }
+    }
+}
+
+impl From<[u8; 20]> for InfoHashes {
+    fn from(value: [u8; 20]) -> Self {
+        Self::v1(V1InfoHash::new(value))
     }
 }
 

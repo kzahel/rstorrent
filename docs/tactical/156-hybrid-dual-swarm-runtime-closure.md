@@ -1030,3 +1030,21 @@ unless one bounded artifact is explicitly retained and linked.
   the hybrid single-read dual-hash storage test, all 13 storage-pipeline tests,
   and compile checks for `rstorrent-protocol`, `rstorrent-engine`, and
   `rstorrent-session` passed.
+
+### 2026-08-14: Hybrid source and dual-topic magnet admission
+
+- Complete outer hybrid sources now enter the ordinary content projection and
+  info-only hybrid metadata enters the magnet/restart path after every known
+  exact identity is checked. A single known topic may authenticate the second
+  alias; a dual-topic source must match both.
+- Magnet parsing retains the bounded full identity set, accepts only the
+  existing exact `btih` and full `btmh:1220` shapes, and canonicalizes dual
+  topics in v1-then-v2 order. New dual-topic owners reserve both unique full
+  aliases atomically and export only a matching dual-topic retained source.
+- Durable hybrid content uses the v2 logical file catalog while retaining the
+  validated v1 padding/hash geometry. Incoming v2 hash service and complete
+  local v2 reconstruction accept the hybrid catalog without weakening pure-v2
+  validation.
+- Focused dual-topic parser, canonicalization, alias reservation, schema-19,
+  and pure-v2 restart tests passed; `cargo check --workspace` passed across
+  Rust engine, session, Android, iOS, gateway, media, and desktop crates.

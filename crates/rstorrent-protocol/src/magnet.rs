@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::identity::{FullInfoHash, V1InfoHash, V2InfoHash};
+use crate::identity::{FullInfoHash, InfoHashes, V1InfoHash, V2InfoHash};
 
 pub const MAX_MAGNET_LENGTH: usize = 16 * 1024;
 pub const MAX_MAGNET_PARAMETERS: usize = 128;
@@ -45,7 +45,10 @@ impl SelectOnly {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Magnet {
+    /// The deterministic entry identity. Dual-topic magnets enter through v1
+    /// and authenticate both values against the exact metadata bytes.
     pub identity: FullInfoHash,
+    pub identities: InfoHashes,
     pub peer_hints: Vec<PeerHint>,
     pub trackers: Vec<TrackerUrl>,
     pub select_only: Option<SelectOnly>,
@@ -292,14 +295,25 @@ impl Magnet {
             }
         }
 
-        let identity = match (v1_info_hash, v2_info_hash) {
-            (Some(_), Some(_)) => return Err(MagnetError::UnsupportedHybrid),
-            (Some(hash), None) => FullInfoHash::V1(V1InfoHash::new(hash)),
-            (None, Some(hash)) => FullInfoHash::V2(V2InfoHash::new(hash)),
+        let (identity, identities) = match (v1_info_hash, v2_info_hash) {
+            (Some(v1), Some(v2)) => {
+                let v1 = V1InfoHash::new(v1);
+                let v2 = V2InfoHash::new(v2);
+                (FullInfoHash::V1(v1), InfoHashes::hybrid(v1, v2))
+            }
+            (Some(hash), None) => {
+                let hash = V1InfoHash::new(hash);
+                (FullInfoHash::V1(hash), InfoHashes::v1(hash))
+            }
+            (None, Some(hash)) => {
+                let hash = V2InfoHash::new(hash);
+                (FullInfoHash::V2(hash), InfoHashes::v2(hash))
+            }
             (None, None) => return Err(MagnetError::MissingInfoHash),
         };
         Ok(Self {
             identity,
+            identities,
             peer_hints,
             trackers,
             select_only: has_select_only.then(|| SelectOnly {
@@ -718,7 +732,7 @@ fn hex_value(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use crate::identity::{FullInfoHash, V2InfoHash};
+    use crate::identity::{FullInfoHash, V1InfoHash, V2InfoHash};
 
     use super::{
         MAX_FILE_INDEX, MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
@@ -810,7 +824,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_exact_v2_and_rejects_bad_or_mixed_identity() {
+    fn accepts_exact_v2_and_dual_topics_and_rejects_bad_identity() {
         for input in [
             "",
             "https:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
@@ -848,12 +862,22 @@ mod tests {
                 "{value}"
             );
         }
+        let hybrid = Magnet::parse(&format!(
+            "magnet:?xt=urn:btih:{HEX_HASH}&xt=urn:btmh:1220{}",
+            "aa".repeat(32)
+        ))
+        .expect("bounded dual-topic magnet");
         assert_eq!(
-            Magnet::parse(&format!(
-                "magnet:?xt=urn:btih:{HEX_HASH}&xt=urn:btmh:1220{}",
-                "aa".repeat(32)
-            )),
-            Err(MagnetError::UnsupportedHybrid)
+            hybrid.identity,
+            FullInfoHash::V1(V1InfoHash::new([
+                0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+                0xcd, 0xef, 0x01, 0x23, 0x45, 0x67
+            ]))
+        );
+        assert!(hybrid.identities.is_hybrid());
+        assert_eq!(
+            hybrid.identities.v2_hash(),
+            Some(V2InfoHash::new([0xaa; 32]))
         );
         assert_eq!(
             Magnet::parse(&format!(
