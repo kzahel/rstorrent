@@ -1227,7 +1227,6 @@ pub(crate) struct PeerSocketSet {
     dial_progress_tx: mpsc::Sender<PeerDialProgress>,
     dial_progress_rx: mpsc::Receiver<PeerDialProgress>,
     bandwidth: Option<TorrentBandwidth>,
-    protocol: PeerProtocol,
 }
 
 impl PeerSocketSet {
@@ -1253,18 +1252,12 @@ impl PeerSocketSet {
             dial_progress_tx,
             dial_progress_rx,
             bandwidth: None,
-            protocol: PeerProtocol::V1,
         }
     }
 
     pub(crate) fn with_bandwidth(mut self, bandwidth: Option<TorrentBandwidth>) -> Self {
         self.bandwidth = bandwidth;
         self
-    }
-
-    pub(crate) fn set_protocol(&mut self, protocol: PeerProtocol) {
-        debug_assert!(self.tasks.is_empty() && self.pending_attempts.is_empty());
-        self.protocol = protocol;
     }
 
     pub(crate) fn established_len(&self) -> usize {
@@ -1323,6 +1316,7 @@ impl PeerSocketSet {
             attempt,
             info_hash,
             None,
+            PeerProtocol::V1,
             advertise_extensions,
             network,
             services,
@@ -1342,6 +1336,26 @@ impl PeerSocketSet {
             attempt,
             v1_info_hash,
             Some(v2_info_hash),
+            PeerProtocol::V1,
+            advertise_extensions,
+            network,
+            services,
+        )
+    }
+
+    pub(crate) fn begin_v2_dial(
+        &mut self,
+        attempt: DialAttempt,
+        info_hash: [u8; 20],
+        advertise_extensions: bool,
+        network: NetworkConfig,
+        services: PeerDialServices,
+    ) -> Result<(), PeerSetError> {
+        self.begin_dial_with_hybrid(
+            attempt,
+            info_hash,
+            None,
+            PeerProtocol::V2,
             advertise_extensions,
             network,
             services,
@@ -1353,6 +1367,7 @@ impl PeerSocketSet {
         attempt: DialAttempt,
         info_hash: [u8; 20],
         hybrid_v2_hash: Option<[u8; 20]>,
+        dial_protocol: PeerProtocol,
         advertise_extensions: bool,
         network: NetworkConfig,
         services: PeerDialServices,
@@ -1374,7 +1389,6 @@ impl PeerSocketSet {
         let progress = self.dial_progress_tx.clone();
         let mse_dh = self.mse_dh.clone();
         let bandwidth = self.bandwidth.clone();
-        let protocol = self.protocol;
         self.pending_attempts
             .insert(attempt.id(), (attempt, cancellation.clone()));
         self.pending.spawn(async move {
@@ -1402,8 +1416,8 @@ impl PeerSocketSet {
             };
             if let Ok((connection, _)) = &mut result {
                 connection.io.attach_bandwidth(bandwidth);
-                if protocol == PeerProtocol::V2 && connection.protocol() == PeerProtocol::V1 {
-                    connection.set_protocol(protocol);
+                if connection.protocol() == PeerProtocol::V1 && dial_protocol == PeerProtocol::V2 {
+                    connection.set_protocol(PeerProtocol::V2);
                 }
             }
             (attempt, utp_outcome, result)

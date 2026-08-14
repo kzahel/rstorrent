@@ -91,7 +91,7 @@ pub(crate) struct ActiveDownload {
 #[derive(Debug, Default)]
 struct SeedRegistrationState {
     transition_generation: u64,
-    token: Option<SeedRegistrationToken>,
+    tokens: Vec<SeedRegistrationToken>,
 }
 
 #[derive(Clone, Debug)]
@@ -132,7 +132,7 @@ impl TorrentRuntimeHandle {
                 catalog_eligible,
                 root,
                 active_download,
-                current,
+                current: current.clone(),
                 torrent_peers: self.peers.clone(),
                 storage_file_pool,
             })
@@ -154,22 +154,20 @@ impl TorrentRuntimeHandle {
         &self,
         incoming: &IncomingSeeding,
     ) -> Result<(), TorrentRuntimeError> {
-        let token = {
+        let tokens = {
             let mut state = self.seed_state();
             state.transition_generation = state
                 .transition_generation
                 .checked_add(1)
                 .ok_or(TorrentRuntimeError::RegistrationGenerationExhausted)?;
-            state.token.take()
+            std::mem::take(&mut state.tokens)
         };
-        if let Some(token) = token {
-            incoming.unregister(token).await?;
-        }
+        incoming.unregister_all(tokens).await?;
         Ok(())
     }
 
     pub(crate) fn has_seed_registration(&self) -> bool {
-        self.seed_state().token.is_some()
+        !self.seed_state().tokens.is_empty()
     }
 
     pub(crate) fn tracker_counters(&self) -> TrackerCounters {
@@ -182,7 +180,7 @@ impl TorrentRuntimeHandle {
             .transition_generation
             .checked_add(1)
             .ok_or(TorrentRuntimeError::RegistrationGenerationExhausted)?;
-        state.token = None;
+        state.tokens.clear();
         Ok(())
     }
 
@@ -193,14 +191,14 @@ impl TorrentRuntimeHandle {
 
     fn begin_seed_transition(
         &self,
-    ) -> Result<(u64, Option<SeedRegistrationToken>), TorrentRuntimeError> {
+    ) -> Result<(u64, Vec<SeedRegistrationToken>), TorrentRuntimeError> {
         let mut state = self.seed_state();
         state.transition_generation = state
             .transition_generation
             .checked_add(1)
             .ok_or(TorrentRuntimeError::RegistrationGenerationExhausted)?;
         let generation = state.transition_generation;
-        Ok((generation, state.token.take()))
+        Ok((generation, std::mem::take(&mut state.tokens)))
     }
 
     async fn finish_seed_transition(
@@ -210,18 +208,20 @@ impl TorrentRuntimeHandle {
         result: SeedReconcileResult,
         active_download: bool,
     ) -> Result<Option<SeedReconcileOutcome>, TorrentRuntimeError> {
-        let (committed, stale_token, active) = {
+        let (committed, stale_tokens, active) = {
             let mut state = self.seed_state();
             if state.transition_generation == generation {
-                state.token = result.token;
-                (true, None, active_download || state.token.is_some())
+                state.tokens = result.tokens;
+                (
+                    true,
+                    Vec::new(),
+                    active_download || !state.tokens.is_empty(),
+                )
             } else {
-                (false, result.token, state.token.is_some())
+                (false, result.tokens, !state.tokens.is_empty())
             }
         };
-        if let Some(token) = stale_token {
-            incoming.unregister(token).await?;
-        }
+        incoming.unregister_all(stale_tokens).await?;
         if committed {
             if active {
                 self.peers.publish_active(true)?;
@@ -238,20 +238,18 @@ impl TorrentRuntimeHandle {
         &self,
         incoming: &IncomingSeeding,
         generation: u64,
-        current: Option<SeedRegistrationToken>,
+        current: Vec<SeedRegistrationToken>,
     ) -> Result<(), TorrentRuntimeError> {
-        let stale_token = {
+        let stale_tokens = {
             let mut state = self.seed_state();
             if state.transition_generation == generation {
-                state.token = current;
-                None
+                state.tokens = current;
+                Vec::new()
             } else {
                 current
             }
         };
-        if let Some(token) = stale_token {
-            incoming.unregister(token).await?;
-        }
+        incoming.unregister_all(stale_tokens).await?;
         Ok(())
     }
 

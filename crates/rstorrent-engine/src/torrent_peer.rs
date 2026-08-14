@@ -388,6 +388,10 @@ pub struct TorrentPeerHandle {
 }
 
 impl TorrentPeerHandle {
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     pub(crate) fn install_incoming_content_route(
         &self,
         sender: mpsc::Sender<IncomingContentEvent>,

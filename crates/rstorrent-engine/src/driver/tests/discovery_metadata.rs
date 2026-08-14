@@ -1,6 +1,7 @@
 use super::*;
 use crate::tracker::{TrackerConfig, TrackerEndpoint, TrackerSource};
 use crate::{PeerBudget, ResumeValidationIntent, TrackerConnectionFamily};
+use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv6Addr};
 
 fn pure_v2_info(payload: &[u8]) -> Vec<u8> {
@@ -3356,6 +3357,44 @@ async fn public_magnet_entry_starts_tracker_and_uses_peer_registry_path() {
     .expect("receive initial tracker connect");
     assert_eq!(tracker_length, 16);
     let _ = tokio::fs::remove_file(output_path).await;
+}
+
+#[tokio::test]
+async fn dual_topic_magnet_constructs_two_fixed_tracker_lanes() {
+    let tracker = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("bind hybrid tracker");
+    let tracker_address = tracker.local_addr().expect("hybrid tracker address");
+    let v1 = [0x41; 20];
+    let v2 = [0x42; 32];
+    let magnet = Magnet::parse(&format!(
+        "magnet:?xt=urn:btih:{}&xt=urn:btmh:1220{}&tr=udp%3A%2F%2F{}",
+        hex(&v1),
+        hex(&v2),
+        tracker_address,
+    ))
+    .expect("dual topic magnet");
+    let mut peers = TorrentPeerCoordinator::from_magnet(
+        &magnet,
+        loopback_network(Duration::from_millis(100)),
+        DownloadControl::new(),
+        None,
+    )
+    .await
+    .expect("hybrid coordinator");
+    assert_eq!(peers.swarm_keys.len(), 2);
+    assert_eq!(peers.trackers.len(), 2);
+    assert_eq!(
+        peers
+            .trackers
+            .iter()
+            .map(|lane| lane.swarm_key)
+            .collect::<BTreeSet<_>>(),
+        peers.swarm_keys.iter().copied().collect()
+    );
+    peers.shutdown_tracker().await.expect("shutdown both lanes");
+    assert!(peers.trackers.is_empty());
+    drop(tracker);
 }
 
 #[tokio::test]

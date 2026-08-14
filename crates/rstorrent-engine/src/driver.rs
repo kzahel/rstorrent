@@ -1510,6 +1510,7 @@ impl TrackerManager {
 #[derive(Debug)]
 enum ContentDiscoveryEvent {
     Peers {
+        swarm_key: SwarmKey,
         source: PeerSource,
         tracker: Option<String>,
         addresses: Vec<SocketAddr>,
@@ -1521,30 +1522,35 @@ enum ContentDiscoveryEvent {
 struct ContentDiscovery {
     receiver: mpsc::Receiver<ContentDiscoveryEvent>,
     cancellation: CancellationToken,
-    tracker_task: Option<JoinHandle<Result<TrackerManager, DownloadError>>>,
+    tracker_tasks: Vec<JoinHandle<Result<SwarmTrackerLane, DownloadError>>>,
     tasks: Vec<JoinHandle<Result<(), DownloadError>>>,
 }
 
 impl ContentDiscovery {
-    fn start(peers: &mut TorrentPeerCoordinator, info_hash: [u8; 20]) -> Self {
+    fn start(peers: &mut TorrentPeerCoordinator) -> Self {
         let (sender, receiver) = mpsc::channel(CONTENT_DISCOVERY_QUEUE);
         let cancellation = CancellationToken::new();
         let mut tasks = Vec::new();
-        let tracker_task = peers.tracker.take().map(|tracker| {
-            tokio::spawn(run_content_tracker_discovery(
-                tracker,
-                sender.clone(),
-                cancellation.clone(),
-            ))
-        });
+        let tracker_tasks = std::mem::take(&mut peers.trackers)
+            .into_iter()
+            .map(|lane| {
+                tokio::spawn(run_content_tracker_discovery(
+                    lane,
+                    sender.clone(),
+                    cancellation.clone(),
+                ))
+            })
+            .collect();
         if let Some(dht) = peers.dht.clone() {
-            tasks.push(tokio::spawn(run_content_dht_discovery(
-                dht,
-                info_hash,
-                peers.control.clone(),
-                sender.clone(),
-                cancellation.clone(),
-            )));
+            for swarm_key in peers.swarm_keys.iter().copied() {
+                tasks.push(tokio::spawn(run_content_dht_discovery(
+                    dht.clone(),
+                    swarm_key,
+                    peers.control.clone(),
+                    sender.clone(),
+                    cancellation.clone(),
+                )));
+            }
         }
         if peers.external_discovery {
             tasks.push(tokio::spawn(keep_content_external_discovery_alive(
@@ -1556,7 +1562,7 @@ impl ContentDiscovery {
         Self {
             receiver,
             cancellation,
-            tracker_task,
+            tracker_tasks,
             tasks,
         }
     }
@@ -1569,21 +1575,21 @@ impl ContentDiscovery {
         self.receiver.recv().await
     }
 
-    async fn shutdown(mut self) -> Result<Option<TrackerManager>, DownloadError> {
+    async fn shutdown(mut self) -> Result<Vec<SwarmTrackerLane>, DownloadError> {
         self.cancellation.cancel();
         self.receiver.close();
-        let tracker = match self.tracker_task.take() {
-            Some(task) => Some(
+        let mut trackers = Vec::with_capacity(self.tracker_tasks.len());
+        for task in self.tracker_tasks {
+            trackers.push(
                 task.await
                     .map_err(|error| DownloadError::PeerTask(error.to_string()))??,
-            ),
-            None => None,
-        };
+            );
+        }
         for task in self.tasks {
             task.await
                 .map_err(|error| DownloadError::PeerTask(error.to_string()))??;
         }
-        Ok(tracker)
+        Ok(trackers)
     }
 }
 
@@ -1596,18 +1602,19 @@ async fn keep_content_external_discovery_alive(
 }
 
 async fn run_content_tracker_discovery(
-    mut tracker: TrackerManager,
+    mut lane: SwarmTrackerLane,
     sender: mpsc::Sender<ContentDiscoveryEvent>,
     cancellation: CancellationToken,
-) -> Result<TrackerManager, DownloadError> {
+) -> Result<SwarmTrackerLane, DownloadError> {
     loop {
         let result = tokio::select! {
             biased;
             _ = cancellation.cancelled() => break,
-            result = tracker.next_peers() => result,
+            result = lane.tracker.next_peers() => result,
         };
         let event = match result {
             Ok((tracker, peers)) => ContentDiscoveryEvent::Peers {
+                swarm_key: lane.swarm_key,
                 source: PeerSource::Tracker,
                 tracker: Some(tracker),
                 addresses: peers,
@@ -1626,16 +1633,17 @@ async fn run_content_tracker_discovery(
             break;
         }
     }
-    Ok(tracker)
+    Ok(lane)
 }
 
 async fn run_content_dht_discovery(
     dht: DhtHandle,
-    info_hash: [u8; 20],
+    swarm_key: SwarmKey,
     control: DownloadControl,
     sender: mpsc::Sender<ContentDiscoveryEvent>,
     cancellation: CancellationToken,
 ) -> Result<(), DownloadError> {
+    let info_hash = swarm_key.into_bytes();
     let mut retry_delay = DHT_RETRY_INITIAL_DELAY;
     loop {
         control.emit(DownloadActivityEvent::DhtLookupStarted);
@@ -1659,6 +1667,7 @@ async fn run_content_dht_discovery(
                 if !send_content_discovery_event(
                     &sender,
                     ContentDiscoveryEvent::Peers {
+                        swarm_key,
                         source: PeerSource::Dht,
                         tracker: None,
                         addresses,
@@ -2142,14 +2151,24 @@ struct TorrentPeerCoordinator {
     peer_budget: PeerBudget,
     mse_dh: MseDhWorkOwner,
     encryption: PeerEncryptionPolicyHandle,
-    tracker: Option<TrackerManager>,
+    trackers: Vec<SwarmTrackerLane>,
+    tracker_configs: Vec<TrackerConfig>,
     dht: Option<DhtHandle>,
     control: DownloadControl,
     connection: Option<PeerConnection>,
     last_error: Option<DownloadError>,
     next_dht_lookup: Instant,
+    next_dht_lane: usize,
     hybrid_upgrade_hash: Option<[u8; 20]>,
     swarm_key: Option<SwarmKey>,
+    swarm_keys: Vec<SwarmKey>,
+    peer_swarm_keys: BTreeMap<SocketAddr, BTreeSet<SwarmKey>>,
+}
+
+#[derive(Debug)]
+struct SwarmTrackerLane {
+    swarm_key: SwarmKey,
+    tracker: TrackerManager,
 }
 
 struct TorrentPeerResources {
@@ -2404,14 +2423,18 @@ impl TorrentPeerCoordinator {
             peer_budget,
             mse_dh,
             encryption,
-            tracker: None,
+            trackers: Vec::new(),
+            tracker_configs: Vec::new(),
             dht: None,
             control,
             connection: None,
             last_error: None,
             next_dht_lookup: Instant::now(),
+            next_dht_lane: 0,
             hybrid_upgrade_hash: None,
             swarm_key: None,
+            swarm_keys: Vec::new(),
+            peer_swarm_keys: BTreeMap::new(),
         })
     }
 
@@ -2420,6 +2443,35 @@ impl TorrentPeerCoordinator {
             (Some(_), Some(v2)) => Some(v2.swarm_key().into_bytes()),
             _ => None,
         };
+        self.swarm_keys.clear();
+        hashes.for_each(|identity| self.swarm_keys.push(identity.swarm_key()));
+    }
+
+    fn configure_trackers(&mut self, configs: Vec<TrackerConfig>) -> Result<(), DownloadError> {
+        self.tracker_configs = configs;
+        self.ensure_tracker_lanes()
+    }
+
+    fn ensure_tracker_lanes(&mut self) -> Result<(), DownloadError> {
+        if self.tracker_configs.is_empty() {
+            return Ok(());
+        }
+        for swarm_key in self.swarm_keys.iter().copied() {
+            if self.trackers.iter().any(|lane| lane.swarm_key == swarm_key) {
+                continue;
+            }
+            self.trackers.push(SwarmTrackerLane {
+                swarm_key,
+                tracker: TrackerManager::start_with_configs(
+                    self.tracker_configs.clone(),
+                    swarm_key.into_bytes(),
+                    self.network,
+                    self.control.clone(),
+                )?,
+            });
+        }
+        debug_assert!(self.trackers.len() <= 2);
+        Ok(())
     }
 
     fn begin_dial(
@@ -2894,16 +2946,9 @@ impl TorrentPeerCoordinator {
         }
         let trackers =
             configured_trackers.unwrap_or_else(|| configured_magnet_trackers(&magnet.trackers));
-        if !trackers.is_empty() {
-            peers.tracker = Some(TrackerManager::start_with_configs(
-                trackers,
-                magnet.identity.swarm_key().into_bytes(),
-                network,
-                peers.control.clone(),
-            )?);
-        }
+        peers.configure_trackers(trackers)?;
         if peers.registry_is_empty()
-            && peers.tracker.is_none()
+            && peers.trackers.is_empty()
             && peers.dht.is_none()
             && !peers.external_discovery
         {
@@ -2939,16 +2984,9 @@ impl TorrentPeerCoordinator {
         if peers.control.is_cancelled() {
             return Err(DownloadError::Cancelled);
         }
-        if !trackers.is_empty() {
-            peers.tracker = Some(TrackerManager::start_with_configs(
-                trackers,
-                swarm_key.into_bytes(),
-                network,
-                peers.control.clone(),
-            )?);
-        }
+        peers.configure_trackers(trackers)?;
         if peers.registry_is_empty()
-            && peers.tracker.is_none()
+            && peers.trackers.is_empty()
             && peers.dht.is_none()
             && !peers.external_discovery
         {
@@ -2980,6 +3018,15 @@ impl TorrentPeerCoordinator {
         address: SocketAddr,
         source: PeerSource,
     ) -> Result<(), DownloadError> {
+        self.observe_address_on_lane(address, source, None)
+    }
+
+    fn observe_address_on_lane(
+        &mut self,
+        address: SocketAddr,
+        source: PeerSource,
+        swarm_key: Option<SwarmKey>,
+    ) -> Result<(), DownloadError> {
         if !self.network.policy.allows(address) {
             return Err(DownloadError::NetworkPolicyDenied {
                 address,
@@ -2998,7 +3045,36 @@ impl TorrentPeerCoordinator {
                     .observe(PeerObservation::dialable(endpoint, source), now)
             })
             .map_err(DownloadError::PeerRegistry)?;
+        if let Some(swarm_key) = swarm_key {
+            self.peer_swarm_keys
+                .entry(address)
+                .or_default()
+                .insert(swarm_key);
+            let retained = self.peers.with_state(|state| {
+                state
+                    .registry
+                    .records()
+                    .map(|record| record.endpoint().address())
+                    .collect::<BTreeSet<_>>()
+            });
+            self.peer_swarm_keys
+                .retain(|address, _| retained.contains(address));
+        }
         self.publish_peer_runtime(true)
+    }
+
+    fn candidate_swarm_key(&self, candidate: DialCandidate) -> SwarmKey {
+        let primary = self
+            .swarm_key
+            .expect("peer coordinator has a selected primary swarm key");
+        let Some(keys) = self.peer_swarm_keys.get(&candidate.endpoint().address()) else {
+            return primary;
+        };
+        if keys.contains(&primary) {
+            primary
+        } else {
+            keys.iter().copied().next().unwrap_or(primary)
+        }
     }
 
     fn elapsed(&self) -> Duration {
@@ -3027,16 +3103,44 @@ impl TorrentPeerCoordinator {
     }
 
     async fn receive_tracker_peers(&mut self) -> Result<(), DownloadError> {
-        let Some(tracker) = self.tracker.as_mut() else {
+        if self.trackers.is_empty() {
             return Err(self
                 .last_error
                 .take()
                 .unwrap_or(DownloadError::NoUsablePeer));
+        }
+        let (swarm_key, tracker, peers) = match self.trackers.len() {
+            1 => {
+                let lane = &mut self.trackers[0];
+                let (tracker, peers) = lane.tracker.next_peers().await?;
+                (lane.swarm_key, tracker, peers)
+            }
+            2 => {
+                let (first, second) = self.trackers.split_at_mut(1);
+                let first = &mut first[0];
+                let second = &mut second[0];
+                tokio::select! {
+                    result = first.tracker.next_peers() => {
+                        let (tracker, peers) = result?;
+                        (first.swarm_key, tracker, peers)
+                    }
+                    result = second.tracker.next_peers() => {
+                        let (tracker, peers) = result?;
+                        (second.swarm_key, tracker, peers)
+                    }
+                }
+            }
+            _ => {
+                return Err(DownloadError::PeerTask(
+                    "torrent discovery exceeded two swarm lanes".to_owned(),
+                ));
+            }
         };
-        let (tracker, peers) = tracker.next_peers().await?;
         let peer_count = peers.len().try_into().unwrap_or(u32::MAX);
         for address in peers {
-            if let Err(error) = self.observe_address(address, PeerSource::Tracker) {
+            if let Err(error) =
+                self.observe_address_on_lane(address, PeerSource::Tracker, Some(swarm_key))
+            {
                 self.last_error = Some(error);
             }
         }
@@ -3055,11 +3159,11 @@ impl TorrentPeerCoordinator {
         Ok(())
     }
 
-    async fn receive_dht_peers(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
+    async fn receive_dht_peers(&mut self, swarm_key: SwarmKey) -> Result<(), DownloadError> {
         let dht = self.dht.clone().ok_or(DownloadError::NoUsablePeer)?;
         let peers = retrying_dht_lookup(
             dht,
-            info_hash,
+            swarm_key.into_bytes(),
             self.control.clone(),
             DhtRetryTiming::PRODUCTION,
             self.dht_requery_wait(),
@@ -3067,70 +3171,70 @@ impl TorrentPeerCoordinator {
         .await?;
         self.next_dht_lookup = Instant::now() + DHT_SUCCESS_REQUERY_DELAY;
         for address in peers {
-            if let Err(error) = self.observe_address(address, PeerSource::Dht) {
+            if let Err(error) =
+                self.observe_address_on_lane(address, PeerSource::Dht, Some(swarm_key))
+            {
                 self.last_error = Some(error);
             }
         }
         Ok(())
     }
 
+    fn next_dht_swarm_key(&mut self, fallback: [u8; 20]) -> SwarmKey {
+        if self.swarm_keys.is_empty() {
+            return SwarmKey::V1(fallback.into());
+        }
+        let key = self.swarm_keys[self.next_dht_lane % self.swarm_keys.len()];
+        self.next_dht_lane = self.next_dht_lane.wrapping_add(1);
+        key
+    }
+
     async fn receive_discovery_peers(&mut self, info_hash: [u8; 20]) -> Result<(), DownloadError> {
-        match (self.tracker.is_some(), self.dht.is_some()) {
+        match (!self.trackers.is_empty(), self.dht.is_some()) {
             (true, true) => {
                 let dht = self.dht.clone().expect("DHT presence checked");
                 let dht_wait = self.dht_requery_wait();
                 let dht_control = self.control.clone();
-                let tracker = self.tracker.as_mut().expect("tracker presence checked");
-                enum Discovery {
-                    Tracker(Result<(String, Vec<SocketAddr>), DownloadError>),
-                    Dht(Result<Vec<SocketAddr>, DownloadError>),
-                }
+                let dht_swarm_key = self.next_dht_swarm_key(info_hash);
+                let dht_info_hash = dht_swarm_key.into_bytes();
                 let dht_lookup = retrying_dht_lookup(
                     dht,
-                    info_hash,
+                    dht_info_hash,
                     dht_control,
                     DhtRetryTiming::PRODUCTION,
                     dht_wait,
                 );
                 let discovered = tokio::select! {
-                    tracker = tracker.next_peers() => Discovery::Tracker(tracker),
-                    dht = dht_lookup => Discovery::Dht(dht),
+                    tracker = self.receive_tracker_peers() => {
+                        return tracker;
+                    }
+                    dht = dht_lookup => (dht_swarm_key, dht),
                 };
                 match discovered {
-                    Discovery::Tracker(result) => {
-                        let (tracker, peers) = result?;
-                        let peer_count = peers.len().try_into().unwrap_or(u32::MAX);
-                        for address in peers {
-                            if let Err(error) = self.observe_address(address, PeerSource::Tracker) {
-                                self.last_error = Some(error);
-                            }
-                        }
-                        if self.registry_is_empty() {
-                            self.control
-                                .emit(DownloadActivityEvent::TrackerPeersUnavailable {
-                                    tracker,
-                                    peer_count,
-                                });
-                        }
-                        Ok(())
-                    }
-                    Discovery::Dht(Ok(peers)) => {
+                    (swarm_key, Ok(peers)) => {
                         self.next_dht_lookup = Instant::now() + DHT_SUCCESS_REQUERY_DELAY;
                         for address in peers {
-                            if let Err(error) = self.observe_address(address, PeerSource::Dht) {
+                            if let Err(error) = self.observe_address_on_lane(
+                                address,
+                                PeerSource::Dht,
+                                Some(swarm_key),
+                            ) {
                                 self.last_error = Some(error);
                             }
                         }
                         Ok(())
                     }
-                    Discovery::Dht(Err(error)) => {
+                    (_, Err(error)) => {
                         self.last_error = Some(error);
                         self.receive_tracker_peers().await
                     }
                 }
             }
             (true, false) => self.receive_tracker_peers().await,
-            (false, true) => self.receive_dht_peers(info_hash).await,
+            (false, true) => {
+                let swarm_key = self.next_dht_swarm_key(info_hash);
+                self.receive_dht_peers(swarm_key).await
+            }
             (false, false) if self.external_discovery => {
                 tokio::select! {
                     _ = self.control.cancelled() => Err(DownloadError::Cancelled),
@@ -3229,9 +3333,6 @@ impl TorrentPeerCoordinator {
         let info_hash = identity.swarm_key().into_bytes();
         let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone())
             .with_bandwidth(self.peers.bandwidth());
-        if matches!(identity, FullInfoHash::V2(_)) {
-            sockets.set_protocol(PeerProtocol::V2);
-        }
         let mut workers = JoinSet::new();
         let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
             BTreeMap::new();
@@ -3262,6 +3363,7 @@ impl TorrentPeerCoordinator {
                 self.control.emit(DownloadActivityEvent::PeerDialStarted {
                     peer: candidate.endpoint().to_string(),
                 });
+                let dial_swarm_key = self.candidate_swarm_key(candidate);
                 let attempt = self.begin_dial(candidate, PeerConnectionRole::Metadata)?;
                 self.control.metadata_dial_started(attempt);
                 let services = PeerDialServices {
@@ -3269,19 +3371,25 @@ impl TorrentPeerCoordinator {
                     mse_handshake_sink: self.control.mse_handshake_sink(),
                     utp: self.control.utp_handle(),
                 };
-                let dial = match self.hybrid_upgrade_hash {
-                    Some(v2_hash) if matches!(identity, FullInfoHash::V1(_)) => sockets
-                        .begin_hybrid_dial(
-                            attempt,
-                            info_hash,
-                            v2_hash,
-                            true,
-                            self.connection_network(),
-                            services,
-                        ),
-                    _ => sockets.begin_dial(
+                let dial = match (dial_swarm_key, self.hybrid_upgrade_hash) {
+                    (SwarmKey::V1(_), Some(v2_hash)) => sockets.begin_hybrid_dial(
                         attempt,
-                        info_hash,
+                        dial_swarm_key.into_bytes(),
+                        v2_hash,
+                        true,
+                        self.connection_network(),
+                        services,
+                    ),
+                    (SwarmKey::V2Truncated(_), _) => sockets.begin_v2_dial(
+                        attempt,
+                        dial_swarm_key.into_bytes(),
+                        true,
+                        self.connection_network(),
+                        services,
+                    ),
+                    (SwarmKey::V1(_), None) => sockets.begin_dial(
+                        attempt,
+                        dial_swarm_key.into_bytes(),
                         true,
                         self.connection_network(),
                         services,
@@ -3319,7 +3427,7 @@ impl TorrentPeerCoordinator {
 
             let can_discover = !discovery_failed_while_active
                 && sockets.pending_len() + workers.len() < MAX_METADATA_PEERS
-                && (self.tracker.is_some() || self.dht.is_some());
+                && (!self.trackers.is_empty() || self.dht.is_some());
             let cancellation = self.control.cancellation_token();
             let event = tokio::select! {
                 biased;
@@ -3509,10 +3617,14 @@ impl TorrentPeerCoordinator {
     }
 
     async fn shutdown_tracker(&mut self) -> Result<(), DownloadError> {
-        let result = match self.tracker.take() {
-            Some(tracker) => tracker.shutdown().await,
-            None => Ok(()),
-        };
+        let mut result = Ok(());
+        for lane in std::mem::take(&mut self.trackers) {
+            if let Err(error) = lane.tracker.shutdown().await
+                && result.is_ok()
+            {
+                result = Err(error);
+            }
+        }
         self.peers
             .publish(!self.owns_peer_sink, true)
             .map_err(map_torrent_peer_error)?;
@@ -3520,10 +3632,14 @@ impl TorrentPeerCoordinator {
     }
 
     async fn finish_tracker(&mut self) -> Result<(), DownloadError> {
-        let result = match self.tracker.take() {
-            Some(tracker) => tracker.finish().await,
-            None => Ok(()),
-        };
+        let mut result = Ok(());
+        for lane in std::mem::take(&mut self.trackers) {
+            if let Err(error) = lane.tracker.finish().await
+                && result.is_ok()
+            {
+                result = Err(error);
+            }
+        }
         self.peers
             .publish(!self.owns_peer_sink, true)
             .map_err(map_torrent_peer_error)?;
@@ -3546,9 +3662,16 @@ impl TorrentPeerCoordinator {
             self.close_current(None)?;
         }
         if let Some(dht) = self.dht.take() {
-            dht.cancel_lookup(info_hash)
-                .await
-                .map_err(DownloadError::Dht)?;
+            let keys = if self.swarm_keys.is_empty() {
+                vec![SwarmKey::V1(info_hash.into())]
+            } else {
+                self.swarm_keys.clone()
+            };
+            for key in keys {
+                dht.cancel_lookup(key.into_bytes())
+                    .await
+                    .map_err(DownloadError::Dht)?;
+            }
         }
         self.peers
             .with_state(|state| state.registry.remove_source(PeerSource::Dht));
@@ -3803,6 +3926,7 @@ async fn run_magnet_download_with_peers(
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
     let content = runtime_content_from_acquired(&raw_info, metainfo)?;
     peers.set_content_identities(content.content.info_hashes());
+    peers.ensure_tracker_lanes()?;
     let skip_files = effective_magnet_skip_files(&magnet, &content.content, config.skip_files)?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
@@ -4064,6 +4188,7 @@ async fn run_resumable_magnet_download(
         }
         let runtime_content = runtime_content_from_acquired(&raw_info, metainfo)?;
         peers.set_content_identities(runtime_content.content.info_hashes());
+        peers.ensure_tracker_lanes()?;
         validate_publication_name(runtime_content.content.name())
             .map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
@@ -4568,7 +4693,7 @@ struct ContentSwarmDownload<'a> {
     availability: PieceAvailability,
     active_content: ActiveSeedContent,
     active_upload_failure: ActiveUploadFailureSignal,
-    active_registration: Option<(IncomingPeerHandle, SeedRegistrationToken)>,
+    active_registration: Option<(IncomingPeerHandle, Vec<SeedRegistrationToken>)>,
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
     content: &'a TorrentContent,
@@ -6507,32 +6632,42 @@ impl<'a> ContentSwarmDownload<'a> {
         let Some(raw_info) = self.resume.and_then(|resume| resume.raw_info.clone()) else {
             return Ok(());
         };
-        let registration = SeedRegistration::new_active_with_swarm_key(
-            raw_info,
-            self.content.swarm_key(),
-            self.active_content.clone(),
-            torrent_peers,
-            self.v2_hashes.clone(),
-        )
-        .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
-        let token = handle
-            .register(registration)
+        let registrations = self
+            .content
+            .swarm_keys()
+            .map(|swarm_key| {
+                SeedRegistration::new_active_with_swarm_key(
+                    raw_info.clone(),
+                    swarm_key,
+                    self.active_content.clone(),
+                    torrent_peers.clone(),
+                    matches!(swarm_key, SwarmKey::V2Truncated(_))
+                        .then(|| self.v2_hashes.clone())
+                        .flatten(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        let tokens = handle
+            .register_all(registrations)
             .await
             .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
-        self.active_registration = Some((handle, token));
+        self.active_registration = Some((handle, tokens));
         self.control.set_incoming_content_routable(true);
         Ok(())
     }
 
     async fn unregister_active_route(&mut self) -> Result<(), DownloadError> {
         self.control.set_incoming_content_routable(false);
-        let Some((handle, token)) = self.active_registration.take() else {
+        let Some((handle, tokens)) = self.active_registration.take() else {
             return Ok(());
         };
-        handle
-            .unregister(token)
-            .await
-            .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        for token in tokens {
+            handle
+                .unregister(token)
+                .await
+                .map_err(|error| DownloadError::PeerTask(error.to_string()))?;
+        }
         Ok(())
     }
 
@@ -6697,7 +6832,7 @@ fn fill_content_dials(
     peers: &mut TorrentPeerCoordinator,
     sockets: &mut PeerSocketSet,
     state: &mut SwarmState,
-    info_hash: [u8; 20],
+    _info_hash: [u8; 20],
     incoming_established: usize,
 ) -> Result<usize, DownloadError> {
     let mut started = 0;
@@ -6722,6 +6857,7 @@ fn fill_content_dials(
         peers.control.emit(DownloadActivityEvent::PeerDialStarted {
             peer: candidate.endpoint().to_string(),
         });
+        let dial_swarm_key = peers.candidate_swarm_key(candidate);
         let attempt = peers.begin_dial(candidate, PeerConnectionRole::Content)?;
         if let Err(error) = state.begin_dial(pending_dial_id(attempt)) {
             peers.dial_cancelled(attempt)?;
@@ -6732,24 +6868,25 @@ fn fill_content_dials(
             mse_handshake_sink: peers.control.mse_handshake_sink(),
             utp: peers.control.utp_handle(),
         };
-        let dial = match peers.hybrid_upgrade_hash {
-            Some(v2_hash)
-                if peers.swarm_key.is_some_and(|key| {
-                    key.protocol() == rstorrent_protocol::identity::ProtocolVersion::V1
-                }) =>
-            {
-                sockets.begin_hybrid_dial(
-                    attempt,
-                    info_hash,
-                    v2_hash,
-                    true,
-                    peers.connection_network(),
-                    services,
-                )
-            }
-            _ => sockets.begin_dial(
+        let dial = match (dial_swarm_key, peers.hybrid_upgrade_hash) {
+            (SwarmKey::V1(_), Some(v2_hash)) => sockets.begin_hybrid_dial(
                 attempt,
-                info_hash,
+                dial_swarm_key.into_bytes(),
+                v2_hash,
+                true,
+                peers.connection_network(),
+                services,
+            ),
+            (SwarmKey::V2Truncated(_), _) => sockets.begin_v2_dial(
+                attempt,
+                dial_swarm_key.into_bytes(),
+                true,
+                peers.connection_network(),
+                services,
+            ),
+            (SwarmKey::V1(_), None) => sockets.begin_dial(
+                attempt,
+                dial_swarm_key.into_bytes(),
                 true,
                 peers.connection_network(),
                 services,
@@ -7499,13 +7636,16 @@ async fn run_selective_swarm_loop(
                 apply_content_disposition(peers, sockets, download, None, disposition).await?;
             }
             ContentSupervisorEvent::Discovery(Some(ContentDiscoveryEvent::Peers {
+                swarm_key,
                 source,
                 tracker,
                 addresses,
             })) => {
                 let peer_count = addresses.len().try_into().unwrap_or(u32::MAX);
                 for address in addresses {
-                    if let Err(error) = peers.observe_address(address, source) {
+                    if let Err(error) =
+                        peers.observe_address_on_lane(address, source, Some(swarm_key))
+                    {
                         peers.last_error = Some(error);
                     }
                 }
@@ -7821,17 +7961,17 @@ async fn download_content_swarm<'a>(
     peers: &mut TorrentPeerCoordinator,
     mut download: ContentSwarmDownload<'a>,
 ) -> Result<ContentSwarmDownload<'a>, DownloadError> {
-    let swarm_key = peers
-        .swarm_key
-        .unwrap_or_else(|| download.content.swarm_key());
-    let mut sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone())
-        .with_bandwidth(peers.peers.bandwidth());
-    if swarm_key.protocol() == rstorrent_protocol::identity::ProtocolVersion::V2 {
-        sockets.set_protocol(PeerProtocol::V2);
+    if peers.swarm_key.is_none() {
+        peers.swarm_key = Some(download.content.swarm_key());
+        peers.set_content_identities(download.content.info_hashes());
+        peers.ensure_tracker_lanes()?;
     }
+    let sockets = PeerSocketSet::with_owners(peers.peer_budget.clone(), peers.mse_dh.clone())
+        .with_bandwidth(peers.peers.bandwidth());
+    let mut sockets = sockets;
     let (incoming_sender, mut incoming_events) = mpsc::channel(INCOMING_CONTENT_EVENT_CAPACITY);
     let incoming_route = peers.peers.install_incoming_content_route(incoming_sender);
-    let mut discovery = ContentDiscovery::start(peers, swarm_key.into_bytes());
+    let mut discovery = ContentDiscovery::start(peers);
     let result = match download.register_active_route(peers.peers.clone()).await {
         Ok(()) => {
             run_selective_swarm_loop(
@@ -7848,8 +7988,8 @@ async fn download_content_swarm<'a>(
     let failure = result.as_ref().err().and_then(content_peer_failure);
     peers.peers.remove_incoming_content_route(incoming_route);
     let registration_cleanup = download.unregister_active_route().await;
-    let discovery_cleanup = discovery.shutdown().await.map(|tracker| {
-        peers.tracker = tracker;
+    let discovery_cleanup = discovery.shutdown().await.map(|trackers| {
+        peers.trackers = trackers;
     });
     let peer_cleanup =
         cleanup_content_connections(peers, sockets, &mut download.state, failure).await;

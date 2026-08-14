@@ -42,7 +42,7 @@ pub(crate) enum SeedReconcileOutcome {
 #[derive(Clone, Debug)]
 pub(crate) struct SeedReconcileResult {
     pub(crate) outcome: SeedReconcileOutcome,
-    pub(crate) token: Option<SeedRegistrationToken>,
+    pub(crate) tokens: Vec<SeedRegistrationToken>,
 }
 
 pub(crate) struct SeedReconcileInput<'a> {
@@ -50,7 +50,7 @@ pub(crate) struct SeedReconcileInput<'a> {
     pub(crate) catalog_eligible: bool,
     pub(crate) root: Option<&'a StorageRootLocation>,
     pub(crate) active_download: bool,
-    pub(crate) current: Option<SeedRegistrationToken>,
+    pub(crate) current: Vec<SeedRegistrationToken>,
     pub(crate) torrent_peers: TorrentPeerHandle,
     pub(crate) storage_file_pool: &'a StorageFilePool,
 }
@@ -85,28 +85,25 @@ impl IncomingSeeding {
         if !self.enabled.load(Ordering::Acquire) {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::Ineligible("incoming peer service is stopping"),
-                token: current,
+                tokens: current,
             });
         }
         let ineligible = eligibility_reason(resume, catalog_eligible, root, active_download);
         if let Some(reason) = ineligible {
-            let removed = match current {
-                Some(token) => self.unregister(token).await?,
-                None => false,
-            };
+            let removed = self.unregister_all(current).await? != 0;
             return Ok(SeedReconcileResult {
                 outcome: if removed {
                     SeedReconcileOutcome::Unregistered
                 } else {
                     SeedReconcileOutcome::Ineligible(reason)
                 },
-                token: None,
+                tokens: Vec::new(),
             });
         }
-        if current.is_some() {
+        if !current.is_empty() {
             return Ok(SeedReconcileResult {
                 outcome: SeedReconcileOutcome::AlreadyRegistered,
-                token: current,
+                tokens: current,
             });
         }
         let raw_info = resume
@@ -118,7 +115,7 @@ impl IncomingSeeding {
             Err(error) => {
                 return Ok(SeedReconcileResult {
                     outcome: SeedReconcileOutcome::Unavailable(error.to_string()),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
         };
@@ -127,7 +124,7 @@ impl IncomingSeeding {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "stored metadata does not match torrent identity".to_owned(),
                 ),
-                token: None,
+                tokens: Vec::new(),
             });
         }
         if resume.publication_name.as_deref() != Some(content.name()) {
@@ -135,7 +132,7 @@ impl IncomingSeeding {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "published name does not match verified metadata".to_owned(),
                 ),
-                token: None,
+                tokens: Vec::new(),
             });
         }
         let have = resume
@@ -147,7 +144,7 @@ impl IncomingSeeding {
                 outcome: SeedReconcileOutcome::Unavailable(
                     "durable have length does not match verified metadata".to_owned(),
                 ),
-                token: None,
+                tokens: Vec::new(),
             });
         }
         let artifact_identity = TorrentArtifactIdentity {
@@ -196,7 +193,7 @@ impl IncomingSeeding {
             Err(error) => {
                 return Ok(SeedReconcileResult {
                     outcome: classify_validation_error(error),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
         };
@@ -211,7 +208,7 @@ impl IncomingSeeding {
                         validation,
                         elapsed_millis,
                     },
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
             ResumeAdmissionOutcome::AwaitingStorage => {
@@ -219,7 +216,7 @@ impl IncomingSeeding {
                     outcome: SeedReconcileOutcome::AwaitingStorage(
                         "published storage is unavailable".to_owned(),
                     ),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
             ResumeAdmissionOutcome::NeedsRepair => {
@@ -227,7 +224,7 @@ impl IncomingSeeding {
                     outcome: SeedReconcileOutcome::NeedsRepair(
                         "published storage structure needs repair".to_owned(),
                     ),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
         }
@@ -253,38 +250,43 @@ impl IncomingSeeding {
                 .await
             }
         };
-        let swarm_key = content.swarm_key();
         let seed_content = match opened {
             Ok(content) => content,
             Err(error) => {
                 return Ok(SeedReconcileResult {
                     outcome: classify_seed_open_error(error),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
         };
-        let registration = match SeedRegistration::new_with_swarm_key(
-            raw_info.clone(),
-            swarm_key,
-            seed_content,
-            torrent_peers,
-        ) {
-            Ok(registration) => registration,
+        let registrations = content
+            .swarm_keys()
+            .map(|swarm_key| {
+                SeedRegistration::new_with_swarm_key(
+                    raw_info.clone(),
+                    swarm_key,
+                    seed_content.clone(),
+                    torrent_peers.clone(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let registrations = match registrations {
+            Ok(registrations) => registrations,
             Err(error) => {
                 return Ok(SeedReconcileResult {
                     outcome: SeedReconcileOutcome::Unavailable(error.to_string()),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
         };
-        let token = match self.handle.register(registration).await {
-            Ok(token) => token,
+        let tokens = match self.handle.register_all(registrations).await {
+            Ok(tokens) => tokens,
             Err(IncomingPeerError::RegistrationLimit { maximum }) => {
                 return Ok(SeedReconcileResult {
                     outcome: SeedReconcileOutcome::Unavailable(format!(
                         "seed registration limit {maximum} reached"
                     )),
-                    token: None,
+                    tokens: Vec::new(),
                 });
             }
             Err(error) => return Err(error.into()),
@@ -294,7 +296,7 @@ impl IncomingSeeding {
                 validation,
                 elapsed_millis,
             },
-            token: Some(token),
+            tokens,
         })
     }
 
@@ -303,6 +305,17 @@ impl IncomingSeeding {
         token: SeedRegistrationToken,
     ) -> Result<bool, IncomingSeedingError> {
         Ok(self.handle.unregister(token).await?)
+    }
+
+    pub(crate) async fn unregister_all(
+        &self,
+        tokens: Vec<SeedRegistrationToken>,
+    ) -> Result<usize, IncomingSeedingError> {
+        let mut removed = 0;
+        for token in tokens {
+            removed += usize::from(self.unregister(token).await?);
+        }
+        Ok(removed)
     }
 
     pub(crate) fn stop(&self) {
@@ -341,7 +354,30 @@ fn parse_resume_content(resume: &ResumeRecord) -> Result<TorrentContent, Metainf
                     .map(|runtime| runtime.content)
             }
         }
-        (Some(_), Some(_)) => Err(MetainfoError::Unsupported("hybrid runtime content")),
+        (Some(_), Some(_)) => {
+            if let Some(source) = resume.metainfo_source.as_deref() {
+                let projection = TorrentContentProjection::from_bytes_with_limits(
+                    source,
+                    DURABLE_METAINFO_LIMITS,
+                )?;
+                if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
+                    return Err(MetainfoError::Unsupported(
+                        "stored hybrid info does not match complete source",
+                    ));
+                }
+                Ok(projection.content)
+            } else {
+                let raw_info = resume
+                    .raw_info
+                    .as_deref()
+                    .ok_or(MetainfoError::Unsupported("missing durable hybrid info"))?;
+                TorrentContent::from_hybrid_info_bytes_with_limits(
+                    raw_info,
+                    DURABLE_METAINFO_LIMITS,
+                )
+                .map(|runtime| runtime.content)
+            }
+        }
         (None, None) => Err(MetainfoError::Unsupported("missing torrent identity")),
     }
 }

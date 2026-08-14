@@ -106,7 +106,30 @@ fn parse_resume_content(resume: &ResumeRecord) -> Result<TorrentContent, Metainf
                     .map(|runtime| runtime.content)
             }
         }
-        (Some(_), Some(_)) => Err(MetainfoError::Unsupported("hybrid runtime content")),
+        (Some(_), Some(_)) => {
+            if let Some(source) = resume.metainfo_source.as_deref() {
+                let projection = TorrentContentProjection::from_bytes_with_limits(
+                    source,
+                    DURABLE_METAINFO_LIMITS,
+                )?;
+                if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
+                    return Err(MetainfoError::Unsupported(
+                        "stored hybrid info does not match complete source",
+                    ));
+                }
+                Ok(projection.content)
+            } else {
+                let raw_info = resume
+                    .raw_info
+                    .as_deref()
+                    .ok_or(MetainfoError::Unsupported("missing durable hybrid info"))?;
+                TorrentContent::from_hybrid_info_bytes_with_limits(
+                    raw_info,
+                    DURABLE_METAINFO_LIMITS,
+                )
+                .map(|runtime| runtime.content)
+            }
+        }
         (None, None) => Err(MetainfoError::Unsupported("missing torrent identity")),
     }
 }

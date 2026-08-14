@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rstorrent_protocol::content::TorrentContent;
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey};
 use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::peer_wire::BlockRequest;
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection, LayoutError};
@@ -413,6 +414,7 @@ pub struct SeedContentSnapshot {
 #[derive(Clone, Debug)]
 pub struct SeedContent {
     info_hash: [u8; 20],
+    info_hashes: InfoHashes,
     private: bool,
     layout: ContentLayout,
     files: Vec<Option<SeedFile>>,
@@ -672,6 +674,7 @@ impl SeedContent {
 
         Ok(Self {
             info_hash: content.swarm_key().into_bytes(),
+            info_hashes: content.info_hashes(),
             private: content.private(),
             layout,
             files,
@@ -689,6 +692,13 @@ impl SeedContent {
 
     pub fn info_hash(&self) -> [u8; 20] {
         self.info_hash
+    }
+
+    pub(crate) fn supports_swarm_key(&self, swarm_key: SwarmKey) -> bool {
+        let mut known = false;
+        self.info_hashes
+            .for_each(|identity| known |= identity.swarm_key() == swarm_key);
+        known
     }
 
     pub fn is_private(&self) -> bool {

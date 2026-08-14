@@ -1085,3 +1085,29 @@ unless one bounded artifact is explicitly retained and linked.
   `cargo test -p rstorrent-engine` passed with 568 tests and 9 ignored,
   including deterministic v2 accept and v1 decline over plain TCP, v2 accept
   inside MSE, v2 accept over uTP, and wrong-response rejection.
+
+### 2026-08-14: Fixed swarm lanes and dual incoming routes
+
+- The torrent coordinator now retains at most two fixed versioned keys.
+  Tracker managers and content-phase DHT lookup tasks run once per known key,
+  while endpoint lane facts stay bounded by the existing peer-registry
+  population. A peer seen only on the v2 lane dials directly with the v2
+  decoder; a v1-lane peer offers the authenticated upgrade; a duplicate seen
+  on both lanes deterministically uses the primary entry path.
+- Both tracker lanes reuse the existing session tracker-operation scheduler,
+  and both peer paths reuse the existing torrent/session peer and outbound-
+  turn budgets. Shutdown joins every lane and returns no additional torrent,
+  registry, socket-set, or filesystem owner.
+- The incoming service can atomically install the v1 and v2 routes for one
+  hybrid owner. A v1 request upgrades only when the exact paired v2 route has
+  identical metadata and the same torrent-peer owner; otherwise the response
+  remains v1. Complete and active seeding register both routes and unregister
+  every generation-fenced token together.
+- Published v1 hybrid upload requests use v1 peer piece lengths and synthesize
+  validated internal padding as zeros. A real aligned two-file fixture proved
+  crossing and padding-only reads, v2 accepted upgrade, and v1 decline after
+  the paired route was removed, without materializing a pad file.
+- `cargo test -p rstorrent-engine --lib` passed with 570 tests and 9 ignored.
+  `cargo test -p rstorrent-session` passed with 247 library tests and 2
+  ignored, plus all binary and documentation targets. The focused dual-topic
+  test also proved exactly two tracker lane owners and joined cleanup.

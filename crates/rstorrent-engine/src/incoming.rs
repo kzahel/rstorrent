@@ -12,13 +12,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use rstorrent_protocol::content::{TorrentContent, TorrentIntegrity};
+use rstorrent_protocol::content::{HybridPaddingMap, TorrentContent, TorrentIntegrity};
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
-use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
 use rstorrent_protocol::merkle::{MERKLE_BLOCK_SIZE, MerkleAccumulator, hash_block, zero_hash};
 use rstorrent_protocol::metadata::{
     MetadataExtensionUpdate, MetadataMessage, MetadataUpload, MetadataUploadAction,
@@ -33,6 +33,7 @@ use rstorrent_protocol::mse::{
 use rstorrent_protocol::peer_wire::{
     BlockRequest, HANDSHAKE_LENGTH, MAX_REQUEST_BLOCK_LENGTH, NegotiatedPeerCapabilities,
     PeerMessage, PeerProtocol, decode_handshake, encode_handshake_with_reserved,
+    hybrid_response_key,
 };
 use rstorrent_protocol::v2_hashes::{HashRequest, HashResponse, V2FileHashGeometry, V2HashCatalog};
 use sha1::{Digest, Sha1};
@@ -164,9 +165,11 @@ pub struct SeedRegistrationToken {
 #[derive(Clone, Debug)]
 pub struct SeedRegistration {
     swarm_key: SwarmKey,
+    info_hashes: InfoHashes,
     raw_info: Arc<[u8]>,
     content: RegisteredSeedContent,
     piece_lengths: Arc<[u32]>,
+    hybrid_padding: Option<HybridPaddingMap>,
     torrent_peers: TorrentPeerHandle,
     private: bool,
     v2_hashes: Option<Arc<V2SeedHashService>>,
@@ -438,7 +441,7 @@ impl SeedRegistration {
         torrent_peers: TorrentPeerHandle,
     ) -> Result<Self, IncomingPeerError> {
         let info_hash = swarm_key.into_bytes();
-        if info_hash != content.info_hash()
+        if !content.supports_swarm_key(swarm_key)
             || matches!(swarm_key, SwarmKey::V1(_))
                 && <[u8; 20]>::from(Sha1::digest(&raw_info)) != info_hash
         {
@@ -446,20 +449,69 @@ impl SeedRegistration {
                 "metadata and seed content identities differ",
             ));
         }
+        let runtime =
+            TorrentContent::from_v2_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+                .or_else(|_| {
+                    TorrentContent::from_hybrid_info_bytes_with_limits(
+                        &raw_info,
+                        DURABLE_METAINFO_LIMITS,
+                    )
+                })
+                .ok();
+        let info_hashes = match &runtime {
+            Some(runtime) => runtime.content.info_hashes(),
+            None => match swarm_key {
+                SwarmKey::V1(hash) => InfoHashes::v1(hash),
+                SwarmKey::V2Truncated(_) => {
+                    return Err(IncomingPeerError::InvalidRegistration(
+                        "v2 seed metadata is not strict v2 content",
+                    ));
+                }
+            },
+        };
+        let mut known = false;
+        info_hashes.for_each(|identity| known |= identity.swarm_key() == swarm_key);
+        if !known {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "metadata and seed swarm key differ",
+            ));
+        }
         let raw_info: Arc<[u8]> = raw_info.into();
         MetadataUpload::new(&raw_info).map_err(|_| {
             IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
         })?;
-        let piece_lengths = content
-            .piece_lengths()
-            .map_err(|_| IncomingPeerError::InvalidRegistration("invalid seed piece geometry"))?;
+        let piece_lengths = if matches!(swarm_key, SwarmKey::V1(_)) {
+            if let Some(runtime) = &runtime {
+                (0..runtime.content.piece_count())
+                    .map(|piece| {
+                        runtime
+                            .content
+                            .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
+                            .map_err(|_| ())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| {
+                        IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
+                    })?
+            } else {
+                content.piece_lengths().map_err(|_| {
+                    IncomingPeerError::InvalidRegistration("invalid seed piece geometry")
+                })?
+            }
+        } else {
+            content.piece_lengths().map_err(|_| {
+                IncomingPeerError::InvalidRegistration("invalid seed piece geometry")
+            })?
+        };
         let private = content.is_private();
         let v2_hashes = V2SeedHashService::from_raw_info(&raw_info, swarm_key)?;
         Ok(Self {
             swarm_key,
+            info_hashes,
             raw_info,
             content: RegisteredSeedContent::Published(content),
             piece_lengths: piece_lengths.into(),
+            hybrid_padding: runtime.and_then(|runtime| runtime.content.hybrid_padding().cloned()),
             torrent_peers,
             private,
             v2_hashes,
@@ -490,7 +542,34 @@ impl SeedRegistration {
         shared_v2_hashes: Option<Arc<V2SeedHashService>>,
     ) -> Result<Self, IncomingPeerError> {
         let info_hash = swarm_key.into_bytes();
-        if info_hash != content.info_hash()
+        let runtime =
+            TorrentContent::from_v2_info_bytes_with_limits(&raw_info, DURABLE_METAINFO_LIMITS)
+                .or_else(|_| {
+                    TorrentContent::from_hybrid_info_bytes_with_limits(
+                        &raw_info,
+                        DURABLE_METAINFO_LIMITS,
+                    )
+                })
+                .ok();
+        let info_hashes = match &runtime {
+            Some(runtime) => runtime.content.info_hashes(),
+            None => match swarm_key {
+                SwarmKey::V1(hash) => InfoHashes::v1(hash),
+                SwarmKey::V2Truncated(_) => {
+                    return Err(IncomingPeerError::InvalidRegistration(
+                        "v2 active seed metadata is not strict v2 content",
+                    ));
+                }
+            },
+        };
+        let mut selected_known = false;
+        info_hashes.for_each(|identity| selected_known |= identity.swarm_key() == swarm_key);
+        let mut content_known = false;
+        info_hashes.for_each(|identity| {
+            content_known |= identity.swarm_key().into_bytes() == content.info_hash()
+        });
+        if !selected_known
+            || !content_known
             || matches!(swarm_key, SwarmKey::V1(_))
                 && <[u8; 20]>::from(Sha1::digest(&raw_info)) != info_hash
         {
@@ -501,7 +580,26 @@ impl SeedRegistration {
         MetadataUpload::new(&raw_info).map_err(|_| {
             IncomingPeerError::InvalidRegistration("metadata exceeds upload limits")
         })?;
-        let piece_lengths = content.piece_lengths();
+        let piece_lengths = if matches!(swarm_key, SwarmKey::V1(_)) {
+            if let Some(runtime) = &runtime {
+                (0..runtime.content.piece_count())
+                    .map(|piece| {
+                        runtime
+                            .content
+                            .hybrid_peer_piece_length_at(piece.try_into().map_err(|_| ())?)
+                            .map_err(|_| ())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Arc::from)
+                    .map_err(|_| {
+                        IncomingPeerError::InvalidRegistration("invalid hybrid peer geometry")
+                    })?
+            } else {
+                content.piece_lengths()
+            }
+        } else {
+            content.piece_lengths()
+        };
         let private = content.is_private();
         let v2_hashes = match (swarm_key, shared_v2_hashes) {
             (SwarmKey::V2Truncated(_), Some(service)) => Some(service),
@@ -517,9 +615,11 @@ impl SeedRegistration {
         };
         Ok(Self {
             swarm_key,
+            info_hashes,
             raw_info,
             content: RegisteredSeedContent::Active(content),
             piece_lengths,
+            hybrid_padding: runtime.and_then(|runtime| runtime.content.hybrid_padding().cloned()),
             torrent_peers,
             private,
             v2_hashes,
@@ -528,6 +628,49 @@ impl SeedRegistration {
 
     pub fn info_hash(&self) -> [u8; 20] {
         self.swarm_key.into_bytes()
+    }
+
+    async fn read_block(&self, request: BlockRequest) -> Result<Vec<u8>, ()> {
+        let Some(padding) = self
+            .hybrid_padding
+            .as_ref()
+            .filter(|_| matches!(self.swarm_key, SwarmKey::V1(_)))
+        else {
+            return self.content.read_block(request).await;
+        };
+        let piece_length = self
+            .piece_lengths
+            .get(usize::try_from(request.index).map_err(|_| ())?)
+            .copied()
+            .ok_or(())?;
+        let request_end = request.begin.checked_add(request.length).ok_or(())?;
+        if request.length == 0 || request_end > piece_length {
+            return Err(());
+        }
+        let padding_begin = padding
+            .piece_spans(request.index)
+            .map(|span| span.begin)
+            .min();
+        let Some(padding_begin) = padding_begin else {
+            return self.content.read_block(request).await;
+        };
+        let mut block = vec![0; request.length as usize];
+        let real_end = request_end.min(padding_begin);
+        if request.begin < real_end {
+            let real_length = real_end - request.begin;
+            let real = self
+                .content
+                .read_block(BlockRequest {
+                    length: real_length,
+                    ..request
+                })
+                .await?;
+            if real.len() != real_length as usize {
+                return Err(());
+            }
+            block[..real.len()].copy_from_slice(&real);
+        }
+        Ok(block)
     }
 
     async fn hash_response(&self, request: HashRequest) -> Option<HashResponse> {
@@ -1242,41 +1385,83 @@ impl IncomingPeerHandle {
         &self,
         registration: SeedRegistration,
     ) -> Result<SeedRegistrationToken, IncomingPeerError> {
+        self.register_all(vec![registration])
+            .await
+            .map(|mut tokens| tokens.pop().expect("one registration returns one token"))
+    }
+
+    pub async fn register_all(
+        &self,
+        registrations: Vec<SeedRegistration>,
+    ) -> Result<Vec<SeedRegistrationToken>, IncomingPeerError> {
         if !self.shared.accepting_registrations.load(Ordering::Acquire) {
             return Err(IncomingPeerError::Closed);
+        }
+        if registrations.is_empty() {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "registration set is empty",
+            ));
+        }
+        let keys = registrations
+            .iter()
+            .map(|registration| registration.swarm_key)
+            .collect::<BTreeSet<_>>();
+        if keys.len() != registrations.len() {
+            return Err(IncomingPeerError::InvalidRegistration(
+                "registration set repeats a swarm key",
+            ));
         }
         let _mutation = self.shared.mutations.lock().await;
         if !self.shared.accepting_registrations.load(Ordering::Acquire) {
             return Err(IncomingPeerError::Closed);
         }
-        let swarm_key = registration.swarm_key;
         let old = {
             let mut registry = self.shared.registry_guard();
-            if !registry.contains_key(&swarm_key) && registry.len() == MAX_SEED_REGISTRATIONS {
+            let retained =
+                registry.len() - keys.iter().filter(|key| registry.contains_key(key)).count();
+            if retained.saturating_add(registrations.len()) > MAX_SEED_REGISTRATIONS {
                 return Err(IncomingPeerError::RegistrationLimit {
                     maximum: MAX_SEED_REGISTRATIONS,
                 });
             }
-            registry.remove(&swarm_key)
+            keys.iter()
+                .filter_map(|key| {
+                    registry
+                        .remove(key)
+                        .map(|registration| (*key, registration))
+                })
+                .collect::<Vec<_>>()
         };
-        if let Some(old) = old {
+        for (swarm_key, old) in old {
             self.shared.remove_mse_registration(swarm_key);
             old.shutdown().await?;
         }
-        let generation = self
-            .shared
-            .next_generation
-            .fetch_add(1, Ordering::AcqRel)
-            .max(1);
-        self.shared.registry_guard().insert(
-            swarm_key,
-            Arc::new(RegistrationRuntime::new(generation, registration)),
-        );
-        self.shared.add_mse_registration(swarm_key);
-        Ok(SeedRegistrationToken {
-            swarm_key,
-            generation,
-        })
+        let mut entries = Vec::with_capacity(registrations.len());
+        for registration in registrations {
+            let swarm_key = registration.swarm_key;
+            let generation = self
+                .shared
+                .next_generation
+                .fetch_add(1, Ordering::AcqRel)
+                .max(1);
+            entries.push((
+                SeedRegistrationToken {
+                    swarm_key,
+                    generation,
+                },
+                Arc::new(RegistrationRuntime::new(generation, registration)),
+            ));
+        }
+        {
+            let mut registry = self.shared.registry_guard();
+            for (token, registration) in &entries {
+                registry.insert(token.swarm_key, registration.clone());
+            }
+        }
+        for (token, _) in &entries {
+            self.shared.add_mse_registration(token.swarm_key);
+        }
+        Ok(entries.into_iter().map(|(token, _)| token).collect())
     }
 
     pub async fn unregister(
@@ -1711,13 +1896,36 @@ impl Shared {
         unique_mse_registration(&index, key)
     }
 
-    fn registration_for_wire_key(&self, info_hash: [u8; 20]) -> Option<Arc<RegistrationRuntime>> {
+    fn registration_for_handshake(
+        &self,
+        info_hash: [u8; 20],
+        handshake: &rstorrent_protocol::peer_wire::Handshake,
+    ) -> Option<(SwarmKey, Arc<RegistrationRuntime>)> {
         let registry = self.registry_guard();
-        let v1 = registry.get(&SwarmKey::V1(V1InfoHash::new(info_hash)));
-        let v2 = registry.get(&SwarmKey::V2Truncated(info_hash));
-        match (v1, v2) {
-            (Some(registration), None) | (None, Some(registration)) => Some(registration.clone()),
-            (Some(_), Some(_)) | (None, None) => None,
+        let v1_key = SwarmKey::V1(V1InfoHash::new(info_hash));
+        let v2_key = SwarmKey::V2Truncated(info_hash);
+        let (request_key, request) = match (registry.get(&v1_key), registry.get(&v2_key)) {
+            (Some(registration), None) => (v1_key, registration),
+            (None, Some(registration)) => (v2_key, registration),
+            (Some(_), Some(_)) | (None, None) => return None,
+        };
+        let response_key = hybrid_response_key(request_key, handshake, request.data.info_hashes)
+            .unwrap_or(request_key);
+        if response_key == request_key {
+            return Some((request_key, request.clone()));
+        }
+        let Some(response) = registry.get(&response_key) else {
+            return Some((request_key, request.clone()));
+        };
+        if request.data.raw_info == response.data.raw_info
+            && request
+                .data
+                .torrent_peers
+                .same_owner(&response.data.torrent_peers)
+        {
+            Some((response_key, response.clone()))
+        } else {
+            Some((request_key, request.clone()))
         }
     }
 
@@ -2545,7 +2753,7 @@ async fn run_handshake(
         }
     };
     let mut mse_accounting = received.mse_accounting;
-    let info_hash = received.info_hash;
+    let request_info_hash = received.info_hash;
     let handshake = received.handshake;
     let mse_method = received.method;
     if handshake.peer_id == shared.peer_id {
@@ -2557,12 +2765,12 @@ async fn run_handshake(
         shared.reject(
             IncomingRejectionReason::SelfConnection,
             Some(remote),
-            Some(info_hash),
+            Some(request_info_hash),
         );
         return;
     }
-    let registration = shared.registration_for_wire_key(info_hash);
-    let Some(registration) = registration else {
+    let registration = shared.registration_for_handshake(request_info_hash, &handshake);
+    let Some((response_key, registration)) = registration else {
         finish_incoming_mse_failure(
             &shared,
             &mut mse_accounting,
@@ -2571,10 +2779,11 @@ async fn run_handshake(
         shared.reject(
             IncomingRejectionReason::UnknownTorrent,
             Some(remote),
-            Some(info_hash),
+            Some(request_info_hash),
         );
         return;
     };
+    let info_hash = response_key.into_bytes();
     if !registration.accepting.load(Ordering::Acquire)
         || !registration.healthy.load(Ordering::Acquire)
     {
@@ -3682,7 +3891,7 @@ async fn apply_upload_actions(
                     join_read(read.take()).await;
                     return Some(PeerTermination::Protocol);
                 }
-                let content = registration.content.clone();
+                let registration = registration.clone();
                 let read_permits = shared.upload_reads.clone();
                 let read_shared = shared.clone();
                 *read = Some((
@@ -3693,7 +3902,7 @@ async fn apply_upload_actions(
                         };
                         let _observation =
                             ObservationGuard::read(&read_shared, pending.request.length as usize);
-                        content.read_block(pending.request).await
+                        registration.read_block(pending.request).await
                     }),
                 ));
             }
@@ -3927,6 +4136,7 @@ mod tests {
     use std::time::Duration;
 
     use rstorrent_protocol::identity::{SwarmKey, V1InfoHash};
+    use rstorrent_protocol::merkle::file_root_from_data;
     use rstorrent_protocol::metadata::{
         MetadataExtensionUpdate, MetadataMessage, MetadataUpload,
         encode_extension_handshake_with_id, encode_metadata_request, parse_extension_handshake,
@@ -3936,7 +4146,8 @@ mod tests {
     use rstorrent_protocol::mse::MseMethod;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake,
+        FrameDecoder, HANDSHAKE_LENGTH, HYBRID_V2_RESERVED_BIT, HYBRID_V2_RESERVED_INDEX,
+        PeerMessage, PeerProtocol, decode_handshake, decode_hybrid_response,
         encode_handshake_with_reserved, encode_message,
     };
     use rstorrent_protocol::storage_layout::{FileSelection, TorrentLayout};
@@ -4211,6 +4422,83 @@ mod tests {
         tokio::fs::remove_dir_all(root).await.expect("remove root");
     }
 
+    #[tokio::test]
+    async fn incoming_hybrid_offer_upgrades_only_with_same_owner_v2_route() {
+        let (root, registrations, v1_key, v2_key) = hybrid_registrations("hybrid-upgrade").await;
+        let v1_registration = registrations
+            .iter()
+            .find(|registration| registration.swarm_key == v1_key)
+            .expect("v1 registration");
+        assert_eq!(
+            v1_registration
+                .read_block(BlockRequest {
+                    index: 0,
+                    begin: 0,
+                    length: 4,
+                })
+                .await
+                .expect("crossing padding read"),
+            vec![1, 0, 0, 0]
+        );
+        assert_eq!(
+            v1_registration
+                .read_block(BlockRequest {
+                    index: 0,
+                    begin: 100,
+                    length: 4,
+                })
+                .await
+                .expect("padding-only read"),
+            vec![0; 4]
+        );
+
+        let service = IncomingPeerService::bind(config(IncomingTcpBootstrap::AutomaticLoopback))
+            .await
+            .expect("bind hybrid listener")
+            .expect("hybrid listener enabled");
+        let handle = service.handle();
+        let tokens = handle
+            .register_all(registrations)
+            .await
+            .expect("register both hybrid routes");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(handle.snapshot().registrations, 2);
+
+        let (upgraded, protocol) = connect_hybrid(
+            service.listen_address(),
+            v1_key,
+            v2_key,
+            *b"-RS-HYB-UP--00000000",
+        )
+        .await;
+        assert_eq!(protocol, PeerProtocol::V2);
+        drop(upgraded);
+
+        let v2_token = tokens
+            .iter()
+            .copied()
+            .find(|token| token.swarm_key == v2_key)
+            .expect("v2 token");
+        assert!(handle.unregister(v2_token).await.expect("remove v2 route"));
+        let (declined, protocol) = connect_hybrid(
+            service.listen_address(),
+            v1_key,
+            v2_key,
+            *b"-RS-HYB-V1--00000000",
+        )
+        .await;
+        assert_eq!(protocol, PeerProtocol::V1);
+        drop(declined);
+
+        for token in tokens.into_iter().filter(|token| *token != v2_token) {
+            assert!(handle.unregister(token).await.expect("remove v1 route"));
+        }
+        service.shutdown().await.expect("shutdown hybrid listener");
+        tokio::fs::remove_dir_all(root)
+            .await
+            .expect("remove hybrid root");
+    }
+
     fn root(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
@@ -4233,6 +4521,95 @@ mod tests {
         info.extend_from_slice(&hashes);
         info.push(b'e');
         info
+    }
+
+    fn hybrid_raw_info() -> Vec<u8> {
+        fn bstr(output: &mut Vec<u8>, value: &[u8]) {
+            output.extend_from_slice(value.len().to_string().as_bytes());
+            output.push(b':');
+            output.extend_from_slice(value);
+        }
+        let roots = [
+            file_root_from_data(&[1]).expect("first root"),
+            file_root_from_data(&[2]).expect("second root"),
+        ];
+        let mut tree = vec![b'd'];
+        for (name, root) in [(b'a', roots[0]), (b'b', roots[1])] {
+            bstr(&mut tree, &[name]);
+            tree.extend_from_slice(b"d0:d6:lengthi1e11:pieces root32:");
+            tree.extend_from_slice(&root);
+            tree.extend_from_slice(b"ee");
+        }
+        tree.push(b'e');
+        let mut info = b"d9:file tree".to_vec();
+        info.extend_from_slice(&tree);
+        info.extend_from_slice(
+            concat!(
+                "5:filesl",
+                "d6:lengthi1e4:pathl1:aee",
+                "d4:attr1:p6:lengthi16383ee",
+                "d6:lengthi1e4:pathl1:bee",
+                "e12:meta versioni2e4:name4:root12:piece lengthi16384e",
+                "6:pieces40:"
+            )
+            .as_bytes(),
+        );
+        info.extend_from_slice(&[7; 40]);
+        info.push(b'e');
+        info
+    }
+
+    async fn hybrid_registrations(
+        label: &str,
+    ) -> (PathBuf, Vec<SeedRegistration>, SwarmKey, SwarmKey) {
+        let raw_info = hybrid_raw_info();
+        let runtime =
+            rstorrent_protocol::content::TorrentContent::from_hybrid_info_bytes_with_limits(
+                &raw_info,
+                BEP9_METAINFO_LIMITS,
+            )
+            .expect("hybrid runtime");
+        let root = root(label);
+        tokio::fs::create_dir_all(root.join("root"))
+            .await
+            .expect("create hybrid root");
+        tokio::fs::write(root.join("root/a"), [1])
+            .await
+            .expect("write first payload");
+        tokio::fs::write(root.join("root/b"), [2])
+            .await
+            .expect("write second payload");
+        let torrent_id = crate::TorrentId::new([0x72; 16]).expect("nonzero hybrid owner");
+        let pool =
+            crate::StorageFilePool::new(crate::storage_file_pool::DEFAULT_STORAGE_FILE_LIMIT, None)
+                .expect("seed file pool");
+        let seed = SeedContent::open_published_content_with_pool(
+            &root,
+            torrent_id,
+            &runtime.content,
+            &[true, true],
+            &[],
+            pool,
+        )
+        .await
+        .expect("open hybrid seed");
+        let peers = TorrentPeerHandle::new(Arc::new(TestPeerActivity::default()))
+            .expect("hybrid torrent peer state");
+        let keys = runtime.content.swarm_keys().collect::<Vec<_>>();
+        let registrations = keys
+            .iter()
+            .copied()
+            .map(|key| {
+                SeedRegistration::new_with_swarm_key(
+                    raw_info.clone(),
+                    key,
+                    seed.clone(),
+                    peers.clone(),
+                )
+                .expect("hybrid seed registration")
+            })
+            .collect();
+        (root, registrations, keys[0], keys[1])
     }
 
     async fn registration(
@@ -4428,6 +4805,33 @@ mod tests {
                 .supports_extensions()
         );
         (stream, FrameDecoder::new(), VecDeque::new())
+    }
+
+    async fn connect_hybrid(
+        address: std::net::SocketAddr,
+        v1: SwarmKey,
+        v2: SwarmKey,
+        peer_id: [u8; 20],
+    ) -> (TcpStream, PeerProtocol) {
+        let mut stream = TcpStream::connect(address).await.expect("connect listener");
+        let mut reserved = [0; 8];
+        reserved[HYBRID_V2_RESERVED_INDEX] = HYBRID_V2_RESERVED_BIT;
+        stream
+            .write_all(&encode_handshake_with_reserved(
+                v1.into_bytes(),
+                peer_id,
+                reserved,
+            ))
+            .await
+            .expect("send hybrid handshake");
+        let mut response = [0; HANDSHAKE_LENGTH];
+        stream
+            .read_exact(&mut response)
+            .await
+            .expect("read server handshake");
+        let selection = decode_hybrid_response(&response, v1, v2, true)
+            .expect("valid hybrid response identity");
+        (stream, selection.protocol)
     }
 
     fn dial_attempt(address: std::net::SocketAddr) -> crate::peer::DialAttempt {
