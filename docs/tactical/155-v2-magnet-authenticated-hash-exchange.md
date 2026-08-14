@@ -1,7 +1,8 @@
 # Tactical 155: V2 Magnet And Authenticated Hash Exchange
 
-Status: **Decision-complete and authoritative Now on 2026-08-14.** No
-implementation has begun.
+Status: **Implementation in progress and authoritative Now on 2026-08-14.**
+Stage 0 source reconfirmation, pre-change regression, and executable resource
+baselines are complete. Runtime behavior remains unchanged.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `peer-lifecycle`,
@@ -930,6 +931,38 @@ unless a bounded artifact is explicitly retained and linked.
 
 ## Execution Record
 
-Implementation has not begun. The first action is Stage 0 source
-reconfirmation, baseline, and maximum-shape resource evidence. Do not infer
-support from this decision-complete plan.
+### 2026-08-14 Stage 0 baseline
+
+- `scripts/references.py status` reconfirmed the BEP checkout at
+  `7b7b41f46d57ff1d1cb1e24ed6e9bacfbf958c06` and pinned libtorrent at
+  `7d7fc38fac61177fa5e02148f791b2f65250b09d`. The local JSTorrent checkout
+  remains at `9895410beeed6aff554053769bd006a3fbd373ef` with pre-existing
+  documentation, attachment, and investigation changes and was treated as
+  read-only. The exact specification, implementation, and test paths above
+  remain correct; no source discovery changed the plan.
+- The owner inventory reconfirmed one existing torrent supervisor and peer
+  generation in `driver.rs`, shared request/durability truth in `swarm.rs`,
+  one session incoming/upload owner in `incoming.rs`, schema-19 opaque
+  identity and exact-source persistence in `store.rs`, and unchanged
+  application/generated-client command boundaries. The concrete task-free
+  protocol seam is `v2_hashes.rs`; it adds no runtime, socket, filesystem,
+  persistence, or platform owner.
+- `cargo test --workspace` passed the clean pre-change baseline: the engine
+  reported 552 passed and 11 opt-in ignored; the session reported 242 passed
+  and two opt-in ignored; every other workspace crate and doc-test passed.
+  This includes the retained v1 and complete-source pure-v2 regressions.
+- The new runtime-free resource model fixes a 547-hash/17,504-byte response
+  payload and 17,553-byte maximum message length. Its maximum catalog
+  projection is 77,873,152 bytes: 2,097,152 chunked piece roots, a compact
+  presence bitmap, chunk pointers, and 131,072 flat proof nodes, below the
+  80-MiB ceiling.
+- The generated maximum-catalog test constructs and inserts every one of the
+  2,097,152 roots, checks final lookup and conflict handling, observes exactly
+  64 MiB of raw root hashes below the allocation ceiling, and releases all raw
+  hash authority. Smaller proof/tail tests cover authenticated insertion,
+  padding, duplicate idempotence, conflict rejection, complete-layer seeding,
+  and hostile request shapes. Full protocol tests and strict all-target
+  protocol clippy pass.
+
+Stage 1 begins with typed `btmh` intake/export and SHA-256 BEP 9 admission.
+Do not infer magnet or wire support from the Stage 0 task-free resource code.

@@ -594,14 +594,14 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: prepare decision-complete Stage 4 Tactical
-`155` for v2 magnets and authenticated hash exchange. Reinspect pinned BEP 52,
-BEP 9, and libtorrent hash-picker/peer-wire implementation and tests, then
-resolve missing-hash ownership, persistence/refetch policy, messages 21--23,
-request/proof/rejection scheduling, hostile-input/resource bounds, restart,
-interop roles, and proportional client/Android evidence. Do not implement the
-stage before that tactical exists. Completed Tacticals `151`, `152`, and `154`
-close the pure-v2 complete-source vertical and intervening iOS repairs.
+Current engine-campaign action: execute decision-complete Stage 4 Tactical
+`155` for v2 magnets and authenticated hash exchange. Its Stage 0 source
+reconfirmation, clean workspace baseline, and executable 80-MiB catalog plus
+17,553-byte frame resource models are complete. Continue with Stage 1 typed
+`btmh` intake/export and SHA-256 BEP 9 admission, then the already bounded
+descriptor/catalog, messages 21--23, scheduling, restart, upload, platform,
+and two-role interoperability stages. Completed Tacticals `151`, `152`, and
+`154` close the pure-v2 complete-source vertical and intervening iOS repairs.
 Completed Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
 stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at
 94.85%--100.74% of the matched libtorrent oracle and at least 98.49% of its
