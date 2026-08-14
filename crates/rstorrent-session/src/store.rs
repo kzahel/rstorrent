@@ -13,8 +13,8 @@ use rstorrent_protocol::content::{ContentFileRef, TorrentContent, TorrentContent
 use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
 use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{
-    FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet, TrackerUrl,
-    TrackerUrlTransport,
+    FileIndexRange as MagnetFileIndexRange, MAX_MAGNET_LENGTH, MAX_PEER_HINTS, MAX_TRACKERS,
+    Magnet, TrackerUrl, TrackerUrlTransport,
 };
 use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
@@ -185,6 +185,13 @@ pub struct SessionStore {
     connection: Connection,
     profile_id: String,
     database_path: Option<PathBuf>,
+    pending_reconciliations: Vec<PendingReconciliation>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingReconciliation {
+    pub(crate) winner: String,
+    pub(crate) loser: String,
 }
 
 pub(crate) struct PreparedTorrentBytes {
@@ -475,6 +482,7 @@ impl SessionStore {
             connection,
             profile_id: profile_id.to_owned(),
             database_path,
+            pending_reconciliations: Vec::new(),
         };
         if ephemeral_maximum_bytes.is_some() {
             let usage = store.page_usage()?;
@@ -487,6 +495,10 @@ impl SessionStore {
 
     pub fn database_path(&self) -> Option<&Path> {
         self.database_path.as_deref()
+    }
+
+    pub(crate) fn take_pending_reconciliations(&mut self) -> Vec<PendingReconciliation> {
+        std::mem::take(&mut self.pending_reconciliations)
     }
 
     pub(crate) fn page_usage(&self) -> Result<DatabasePageUsage, StoreError> {
@@ -1410,11 +1422,11 @@ impl SessionStore {
         raw_info: &[u8],
     ) -> Result<u64, StoreError> {
         validate_raw_info_length(raw_info)?;
-        let owner = decode_torrent_id(torrent_id)
+        let current_owner = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
         let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(map_durable_metainfo_error)?;
-        let known_hashes = read_info_hashes(&self.connection, &owner)?;
+        let known_hashes = read_info_hashes(&self.connection, &current_owner)?;
         let parsed_hashes = parsed.info_hashes();
         let mut known_matches = true;
         known_hashes.for_each(|identity| known_matches &= parsed_hashes.contains(identity));
@@ -1451,18 +1463,63 @@ impl SessionStore {
         };
         validate_publication_name(name)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
+        let authenticated_owners = authenticated_owners(&self.connection, parsed_hashes)?;
+        if !authenticated_owners
+            .iter()
+            .any(|candidate| candidate.torrent_id == current_owner)
+        {
+            return Err(StoreError::UnknownTorrent(torrent_id.to_owned()));
+        }
+        if authenticated_owners.len() > 1
+            && authenticated_owners
+                .iter()
+                .any(|candidate| !candidate.provisional)
+        {
+            return Err(StoreError::DurableState(
+                "authenticated hybrid aliases collide after content authority began".to_owned(),
+            ));
+        }
+        let owner = authenticated_owners
+            .first()
+            .map(|candidate| candidate.torrent_id)
+            .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_owned()))?;
+        let losers = authenticated_owners
+            .iter()
+            .filter(|candidate| candidate.torrent_id != owner)
+            .map(|candidate| candidate.torrent_id)
+            .collect::<Vec<_>>();
+        let reconciled_magnet = (authenticated_owners.len() > 1)
+            .then(|| combined_reconciliation_magnet(&authenticated_owners, parsed_hashes))
+            .transpose()?
+            .flatten();
         let fingerprint = ContentFingerprint::for_info_bytes(raw_info);
         let have = HaveState::empty(owner, fingerprint, piece_count)?.encode();
         validate_have_state_length(&have)?;
         let transaction = self.connection.transaction()?;
+        for loser in &losers {
+            let removed = transaction.execute(
+                "DELETE FROM torrents WHERE torrent_id = ?1",
+                [loser.as_bytes().as_slice()],
+            )?;
+            if removed != 1 {
+                return Err(StoreError::UnknownTorrent(loser.to_string()));
+            }
+        }
+        if let Some(magnet) = reconciled_magnet.as_ref() {
+            transaction.execute(
+                "UPDATE torrents SET magnet = ?2 WHERE torrent_id = ?1",
+                params![owner.as_bytes().as_slice(), canonical_magnet(magnet)],
+            )?;
+            replace_reconciled_discovery(&transaction, &owner, magnet)?;
+        }
         let mut alias_error = None;
         parsed_hashes.for_each(|identity| {
-            if alias_error.is_some() || known_hashes.contains(identity) {
+            if alias_error.is_some() {
                 return;
             }
             alias_error = transaction
                 .execute(
-                    "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
+                    "INSERT OR IGNORE INTO torrent_identities(torrent_id, protocol, full_hash)
                      VALUES (?1, ?2, ?3)",
                     params![
                         owner.as_bytes().as_slice(),
@@ -1475,6 +1532,11 @@ impl SessionStore {
         if alias_error.is_some() {
             return Err(StoreError::DurableState(
                 "authenticated metadata identity collides with another torrent owner".to_owned(),
+            ));
+        }
+        if read_info_hashes(&transaction, &owner)? != parsed_hashes {
+            return Err(StoreError::DurableState(
+                "authenticated aliases were not reserved for the surviving owner".to_owned(),
             ));
         }
         let selection_default: String = transaction
@@ -1560,6 +1622,18 @@ impl SessionStore {
             return Err(StoreError::UnknownTorrent(torrent_id.to_string()));
         }
         transaction.commit()?;
+        for loser in losers {
+            self.pending_reconciliations.push(PendingReconciliation {
+                winner: owner.to_string(),
+                loser: loser.to_string(),
+            });
+        }
+        if current_owner != owner {
+            return Err(StoreError::Reconciled {
+                winner: owner.to_string(),
+                loser: current_owner.to_string(),
+            });
+        }
         Ok(revision)
     }
 
@@ -2304,6 +2378,10 @@ pub enum StoreError {
     RequiredPragma(&'static str),
     Configuration(String),
     UnknownTorrent(String),
+    Reconciled {
+        winner: String,
+        loser: String,
+    },
     DurableState(String),
     ResourceLimit {
         resource: &'static str,
@@ -2338,6 +2416,12 @@ impl fmt::Display for StoreError {
             Self::Configuration(message) => write!(formatter, "session configuration: {message}"),
             Self::UnknownTorrent(torrent_id) => {
                 write!(formatter, "torrent {torrent_id} is not in the profile")
+            }
+            Self::Reconciled { winner, loser } => {
+                write!(
+                    formatter,
+                    "torrent {loser} reconciled into older owner {winner}"
+                )
             }
             Self::DurableState(message) => write!(formatter, "invalid durable state: {message}"),
             Self::ResourceLimit {
@@ -5048,6 +5132,160 @@ fn validate_raw_info_length(raw_info: &[u8]) -> Result<(), StoreError> {
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+struct AuthenticatedOwner {
+    torrent_id: TorrentId,
+    created_revision: u64,
+    provisional: bool,
+    magnet: Option<String>,
+}
+
+fn authenticated_owners(
+    connection: &Connection,
+    hashes: InfoHashes,
+) -> Result<Vec<AuthenticatedOwner>, StoreError> {
+    let mut identities = Vec::with_capacity(hashes.identity_count());
+    hashes.for_each(|identity| identities.push(identity));
+    let mut owners = Vec::with_capacity(identities.len());
+    for identity in identities {
+        let Some(torrent_id) = find_torrent_id_by_full_hash(connection, identity)? else {
+            continue;
+        };
+        if owners
+            .iter()
+            .any(|owner: &AuthenticatedOwner| owner.torrent_id == torrent_id)
+        {
+            continue;
+        }
+        let row = connection.query_row(
+            "SELECT created_revision,
+                    raw_info IS NULL AND payload_state = 'absent' AND
+                    verification_requested = 0 AND quarantine_reason IS NULL AND
+                    archived = 0 AND
+                    NOT EXISTS(SELECT 1 FROM removal_jobs r
+                               WHERE r.torrent_id = torrents.torrent_id),
+                    magnet
+             FROM torrents WHERE torrent_id = ?1",
+            [torrent_id.as_bytes().as_slice()],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )?;
+        owners.push(AuthenticatedOwner {
+            torrent_id,
+            created_revision: u64::try_from(row.0).map_err(|_| {
+                StoreError::DurableState("negative owner creation revision".to_owned())
+            })?,
+            provisional: row.1,
+            magnet: row.2,
+        });
+    }
+    owners.sort_by(|left, right| {
+        (left.created_revision, left.torrent_id.as_bytes())
+            .cmp(&(right.created_revision, right.torrent_id.as_bytes()))
+    });
+    Ok(owners)
+}
+
+fn combined_reconciliation_magnet(
+    owners: &[AuthenticatedOwner],
+    hashes: InfoHashes,
+) -> Result<Option<Magnet>, StoreError> {
+    let mut combined: Option<Magnet> = None;
+    for owner in owners {
+        let Some(source) = owner.magnet.as_deref() else {
+            continue;
+        };
+        let parsed =
+            Magnet::parse(source).map_err(|error| StoreError::DurableState(error.to_string()))?;
+        if let Some(target) = combined.as_mut() {
+            for hint in parsed.peer_hints {
+                if target.peer_hints.len() == MAX_PEER_HINTS {
+                    break;
+                }
+                if !target.peer_hints.contains(&hint) {
+                    target.peer_hints.push(hint);
+                }
+            }
+            for tracker in parsed.trackers {
+                if target.trackers.len() == MAX_TRACKERS {
+                    break;
+                }
+                if !target
+                    .trackers
+                    .iter()
+                    .any(|existing| existing.url() == tracker.url())
+                {
+                    target.trackers.push(tracker);
+                }
+            }
+        } else {
+            combined = Some(parsed);
+        }
+    }
+    if let Some(combined) = combined.as_mut() {
+        combined.identities = hashes;
+        combined.identity = if let Some(hash) = hashes.v1_hash() {
+            FullInfoHash::V1(hash)
+        } else {
+            FullInfoHash::V2(
+                hashes
+                    .v2_hash()
+                    .expect("nonempty identity set has one protocol"),
+            )
+        };
+    }
+    Ok(combined)
+}
+
+fn replace_reconciled_discovery(
+    transaction: &Transaction<'_>,
+    winner: &TorrentId,
+    magnet: &Magnet,
+) -> Result<(), StoreError> {
+    transaction.execute(
+        "DELETE FROM torrent_trackers WHERE torrent_id = ?1",
+        [winner.as_bytes().as_slice()],
+    )?;
+    transaction.execute(
+        "DELETE FROM torrent_peer_hints WHERE torrent_id = ?1",
+        [winner.as_bytes().as_slice()],
+    )?;
+    for (position, tracker) in magnet.trackers.iter().enumerate() {
+        transaction.execute(
+            "INSERT INTO torrent_trackers(
+                torrent_id, tier, position, url, transport, source
+             ) VALUES (?1, 0, ?2, ?3, ?4, 'magnet')",
+            params![
+                winner.as_bytes().as_slice(),
+                i64::try_from(position)
+                    .map_err(|_| StoreError::DurableState("tracker index overflow".to_owned()))?,
+                tracker.url(),
+                tracker_transport_name(tracker.transport()),
+            ],
+        )?;
+    }
+    for (position, hint) in magnet.peer_hints.iter().enumerate() {
+        transaction.execute(
+            "INSERT INTO torrent_peer_hints(torrent_id, position, host, port, source)
+             VALUES (?1, ?2, ?3, ?4, 'magnet')",
+            params![
+                winner.as_bytes().as_slice(),
+                i64::try_from(position).map_err(|_| {
+                    StoreError::DurableState("peer hint index overflow".to_owned())
+                })?,
+                hint.host,
+                i64::from(hint.port),
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 fn validate_have_state_length(bytes: &[u8]) -> Result<(), StoreError> {
     if bytes.len() > MAX_DURABLE_HAVE_STATE_BYTES {
         return Err(StoreError::ResourceLimit {
@@ -5380,15 +5618,16 @@ mod tests {
     use rstorrent_protocol::dht::{DhtEndpoint, DhtIp, NodeContact, NodeId};
     use rstorrent_protocol::identity::V2InfoHash;
     use rstorrent_protocol::magnet::{MAX_MAGNET_LENGTH, MAX_TRACKERS, Magnet};
+    use rstorrent_protocol::merkle::file_root_from_data;
     use rstorrent_protocol::metainfo::{EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoFile};
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
     use sha2::Sha256;
 
     use super::{
-        ConfiguredStorageRoot, ManagedArtifactState, PreparedFileRecord, SCHEMA_VERSION,
-        SessionStore, StoreError, StoredTracker, StoredTrackerSource, StoredTrackerTransport,
-        synthesize_magnet_export,
+        ConfiguredStorageRoot, ManagedArtifactState, PendingReconciliation, PreparedFileRecord,
+        SCHEMA_VERSION, SessionStore, StoreError, StoredTracker, StoredTrackerSource,
+        StoredTrackerTransport, synthesize_magnet_export,
     };
     use crate::ClientSettings;
     use crate::have::{HaveState, MAX_DURABLE_HAVE_STATE_BYTES, MAX_DURABLE_PIECES};
@@ -5406,6 +5645,42 @@ mod tests {
             crate::CommandResult::AddTorrent { result } => result.torrent_id.clone(),
             crate::CommandResult::ExportMagnet { .. } => panic!("unexpected magnet export"),
         }
+    }
+
+    fn hybrid_raw_info() -> Vec<u8> {
+        fn bstr(output: &mut Vec<u8>, value: &[u8]) {
+            output.extend_from_slice(value.len().to_string().as_bytes());
+            output.push(b':');
+            output.extend_from_slice(value);
+        }
+        let roots = [
+            file_root_from_data(&[1]).expect("first root"),
+            file_root_from_data(&[2]).expect("second root"),
+        ];
+        let mut tree = vec![b'd'];
+        for (name, root) in [(b'a', roots[0]), (b'b', roots[1])] {
+            bstr(&mut tree, &[name]);
+            tree.extend_from_slice(b"d0:d6:lengthi1e11:pieces root32:");
+            tree.extend_from_slice(&root);
+            tree.extend_from_slice(b"ee");
+        }
+        tree.push(b'e');
+        let mut info = b"d9:file tree".to_vec();
+        info.extend_from_slice(&tree);
+        info.extend_from_slice(
+            concat!(
+                "5:filesl",
+                "d6:lengthi1e4:pathl1:aee",
+                "d4:attr1:p6:lengthi16383ee",
+                "d6:lengthi1e4:pathl1:bee",
+                "e12:meta versioni2e4:name4:root12:piece lengthi16384e",
+                "6:pieces40:"
+            )
+            .as_bytes(),
+        );
+        info.extend_from_slice(&[7; 40]);
+        info.push(b'e');
+        info
     }
 
     fn only_torrent_id(store: &SessionStore) -> String {
@@ -5519,6 +5794,130 @@ mod tests {
         assert_eq!(hashes.v2_hash(), Some(V2InfoHash::new([0xaa; 32])));
         let export = store.export_magnet(&torrent_id).expect("hybrid export");
         assert_eq!(export.magnet, source);
+    }
+
+    #[test]
+    fn hybrid_metadata_reconciles_provisional_aliases_into_first_owner() {
+        let root = test_root("hybrid-reconciliation");
+        let configured = configured_root(&root);
+        let raw_info = hybrid_raw_info();
+        let v1 = super::encode_hex(&Sha1::digest(&raw_info));
+        let v2 = super::encode_hex(&Sha256::digest(&raw_info));
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let mut add = |request_id: &str, magnet: String| {
+            let response = store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet,
+                        storage_root: "downloads".to_owned(),
+                        start_content: true,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("add provisional magnet");
+            added_torrent_id(&response)
+        };
+        let first = add(
+            "add-v1-provisional",
+            format!(
+                "magnet:?xt=urn:btih:{v1}&x.pe=127.0.0.1:6001&tr=http%3A%2F%2Fone.example%2Fannounce&so=0"
+            ),
+        );
+        let second = add(
+            "add-v2-provisional",
+            format!(
+                "magnet:?xt=urn:btmh:1220{v2}&x.pe=127.0.0.1:6002&tr=http%3A%2F%2Ftwo.example%2Fannounce&so=1"
+            ),
+        );
+        let error = store
+            .record_metadata(&second, &raw_info)
+            .expect_err("later owner stops after committing reconciliation");
+        assert!(matches!(
+            error,
+            StoreError::Reconciled {
+                ref winner,
+                ref loser,
+            } if winner == &first && loser == &second
+        ));
+        let snapshot = store.snapshot().expect("reconciled snapshot");
+        assert_eq!(snapshot.torrents.len(), 1);
+        assert_eq!(snapshot.torrents[0].torrent_id, first);
+        let winner = super::decode_torrent_id(&first).expect("winner id");
+        assert!(
+            super::read_info_hashes(&store.connection, &winner)
+                .expect("winner aliases")
+                .is_hybrid()
+        );
+        let resume = store.load_resume(&first).expect("winner resume");
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.skip_files, vec![1]);
+        let tracker_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM torrent_trackers WHERE torrent_id = ?1",
+                [winner.as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let hint_count: i64 = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM torrent_peer_hints WHERE torrent_id = ?1",
+                [winner.as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!((tracker_count, hint_count), (2, 2));
+        assert_eq!(
+            store.take_pending_reconciliations(),
+            [PendingReconciliation {
+                winner: first,
+                loser: second,
+            }]
+        );
+    }
+
+    #[test]
+    fn first_provisional_owner_can_complete_hybrid_reconciliation() {
+        let root = test_root("hybrid-reconciliation-first-completes");
+        let configured = configured_root(&root);
+        let raw_info = hybrid_raw_info();
+        let v1 = super::encode_hex(&Sha1::digest(&raw_info));
+        let v2 = super::encode_hex(&Sha256::digest(&raw_info));
+        let mut store = SessionStore::open(&root, "default", &[configured]).expect("open");
+        let mut add = |request_id: &str, magnet: String| {
+            let response = store
+                .handle_durable(&RequestEnvelope {
+                    version: CONTROL_VERSION,
+                    request_id: request_id.to_owned(),
+                    expected_revision: None,
+                    command: Command::AddMagnet {
+                        magnet,
+                        storage_root: "downloads".to_owned(),
+                        start_content: true,
+                        skip_files: Vec::new(),
+                    },
+                })
+                .expect("add provisional magnet");
+            added_torrent_id(&response)
+        };
+        let first = add("first-v1", format!("magnet:?xt=urn:btih:{v1}"));
+        let second = add("second-v2", format!("magnet:?xt=urn:btmh:1220{v2}"));
+        store
+            .record_metadata(&first, &raw_info)
+            .expect("first owner records authenticated metadata");
+        assert!(store.record_metadata(&second, &raw_info).is_err());
+        assert_eq!(only_torrent_id(&store), first);
+        assert_eq!(
+            store.take_pending_reconciliations(),
+            [PendingReconciliation {
+                winner: first,
+                loser: second,
+            }]
+        );
     }
 
     #[test]

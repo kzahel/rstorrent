@@ -1048,3 +1048,23 @@ unless one bounded artifact is explicitly retained and linked.
 - Focused dual-topic parser, canonicalization, alias reservation, schema-19,
   and pure-v2 restart tests passed; `cargo check --workspace` passed across
   Rust engine, session, Android, iOS, gateway, media, and desktop crates.
+
+### 2026-08-14: Atomic provisional-owner reconciliation
+
+- Metadata admission now serializes all authenticated aliases, requires every
+  colliding owner to remain strictly pre-content, chooses the oldest durable
+  owner (with a stable torrent-ID tie break), deletes only the later
+  provisional row, and reserves both aliases for the survivor in the same
+  transaction that installs metadata and empty have state.
+- The winner keeps its storage root, selection/default intent, queue identity,
+  and torrent ID. Only bounded trackers and peer hints are combined; losing
+  selection and payload authority are never imported.
+- A later owner that authenticates first commits metadata to the winner and
+  receives a typed reconciliation stop before storage creation. The session
+  application drains the resulting owner event, cancels/joins any losing
+  runtime generation, unregisters incoming service, and removes the stale
+  runtime handle.
+- Deterministic tests cover both metadata completion orders, winner selection,
+  stale loser rejection, exact one-row/two-alias state, winner selection
+  retention, bounded discovery union, and the runtime cleanup compile path.
+  `cargo check --workspace` remained green.

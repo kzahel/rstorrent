@@ -3537,6 +3537,22 @@ impl ApplicationService {
 
     async fn reap_finished(&mut self) -> Result<(), ApplicationError> {
         self.reconcile_platform_root_failures().await?;
+        let reconciliations = self.store_mut()?.take_pending_reconciliations();
+        for reconciliation in reconciliations {
+            self.media.revoke_torrent(&reconciliation.loser);
+            self.stop_discovery_torrent(&reconciliation.loser).await?;
+            self.unregister_incoming(&reconciliation.loser).await?;
+            let _joined = self.join_active_content(&reconciliation.loser).await;
+            self.torrent_runtimes.remove(&reconciliation.loser);
+            self.views.record_diagnostic(
+                DiagnosticSeverity::Info,
+                category::METADATA_EXCHANGE,
+                "hybrid_owner_reconciled",
+                Some(&reconciliation.winner),
+                "Authenticated hybrid aliases reconciled into the older torrent owner",
+                &[],
+            )?;
+        }
         let finished = self
             .torrent_runtimes
             .iter()
