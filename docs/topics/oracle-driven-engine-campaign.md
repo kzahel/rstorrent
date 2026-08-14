@@ -122,8 +122,10 @@ Tactical [`152`](../tactical/152-ios-multifile-selected-root-coordination.md),
 which is now complete. Tactical `151` subsequently completed the strict
 complete-source pure-v2 runtime/product vertical and promoted only that exact
 BEP 52 subset to Partial. Bounded iOS correctness Tactical `154` is complete;
-source-first Stage 4 v2 magnet and authenticated hash-exchange planning has
-resumed as the authoritative Tactical `155` **Now**.
+decision-complete Stage 4
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) now owns v2
+magnet and authenticated hash-exchange implementation as the authoritative
+**Now**.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -490,8 +492,9 @@ repaired after the budget without changing engine behavior; no rate ratio or
 tuning direction follows.**
 
 Engine campaign status: **Tacticals `151` and bounded iOS `154` are complete;
-prepare decision-complete Stage 4 v2 magnet and authenticated hash-exchange
-Tactical `155` before engine implementation.** Tacticals `142`,
+execute decision-complete Stage 4
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) for pure-v2
+magnet and authenticated hash exchange.** Tacticals `142`,
 `145`, and `150` complete the uTP performance campaign at the maintainer-
 selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh

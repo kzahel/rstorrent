@@ -466,11 +466,13 @@ exactly.
 
 ### Now
 
-- **Prepare decision-complete Tactical `155` for Stage 4 v2 magnet and
-  authenticated hash exchange.** Complete the required BEP and pinned-
-  libtorrent source and test review, then bound missing-hash ownership,
-  persistence, hostile message handling, resource limits, and cross-platform
-  evidence before any implementation begins.
+- **Execute decision-complete Tactical
+  [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) for Stage 4
+  pure-v2 magnets and authenticated hash exchange.** The plan selects
+  volatile sparse hash knowledge with conservative restart refetch or
+  complete-file reconstruction, bounded messages 21--23, hash-first payload,
+  leaf-level corruption attribution, two-role pinned-libtorrent interop, and
+  proportional first-party/Android evidence.
 
 ### Next
 

@@ -711,6 +711,12 @@ that scope and its cleanup or compatibility rules explicitly.
   state and opens available files directly in Apple's Quick Look/video
   presentation under the existing scoped lease, with real-swarm playback and
   exact cleanup proven on physical hardware.
+- [`155-v2-magnet-authenticated-hash-exchange.md`](155-v2-magnet-authenticated-hash-exchange.md):
+  decision-complete authoritative Now; owns strict `btmh` intake/export,
+  SHA-256 BEP 9 metadata, volatile authenticated sparse hash knowledge,
+  messages 21--23, conservative restart, corruption attribution, hash upload,
+  controlled two-role interoperability, and proportional client/Android
+  evidence while hybrid and creation remain deferred.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

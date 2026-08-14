@@ -14,8 +14,11 @@ piece layers, and hybrid structural validator. Completed Tactical
 strict complete local pure-v2 `.torrent` content through product intake,
 aligned storage, Merkle verification, restart/recheck, publication, standard
 peer transfer, discovery, streaming, and seeding. The BEP 52 claim is now
-**Partial**. V2 magnets, authenticated hash exchange, hybrid product behavior,
-and creation remain unsupported.
+**Partial**. Decision-complete Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) is the
+authoritative implementation plan for pure-v2 magnets and authenticated hash
+exchange. Those capabilities, hybrid product behavior, and creation remain
+unsupported until their implementation evidence lands.
 
 ## Scope And Owning Role
 
@@ -420,8 +423,8 @@ runtime design.
 
 ## Tactical Campaign
 
-The first three stages are complete. Later stages remain unassigned. Adjacent
-stages may be combined only
+The first three stages are complete. Stage 4 is assigned to Tactical `155`;
+Stage 5 remains unassigned. Adjacent stages may be combined only
 when the resulting scope remains bounded and its stopping condition becomes
 clearer.
 
@@ -531,15 +534,8 @@ language and evidence links.
 
 ## Open Decisions For Later Implementing Tacticals
 
-- Select sparse Merkle persistence granularity versus bounded refetch after
-  restart.
-- Calibrate sparse-tree, hash-message, request, retry, and attribution limits
-  against independent maximum profiles; Tactical `146` now owns the parser,
-  complete-layer, geometry, scratch, and proof ceilings.
 - Define exact duplicate-add behavior when separate v1 and v2 magnets later
   prove to be one hybrid torrent, without unsafe live-owner merging.
-- Select the minimal proportional TCP, default-uTP, MSE, tracker, DHT,
-  incoming, and Android matrix for each vertical slice.
 
 These choices refine the accepted architecture. A decision that introduces a
 new engine dependency, weakens fail-closed integrity, deletes published user
@@ -552,11 +548,25 @@ info-only metadata has a distinct layer-unavailable representation; and
 hybrid comparison accepts only the pinned-libtorrent historical omission of
 the final tail pad, not missing internal padding.
 
+Tactical `155` resolves the Stage 4 questions. Sparse authenticated hashes are
+volatile in the first magnet vertical: incomplete restart refetches them,
+while a complete file may reconstruct its tree locally and must revalidate the
+authenticated file root. Candidate payload is never advertised before that
+authority returns. Hash requests use the BEP 52 power-of-two shape with at
+most 512 base hashes and 35 proofs, two attempts per peer, 16 per torrent, one
+bounded leaf-diagnosis piece, and shared upload/storage limits. Its selected
+TCP, default-uTP, MSE, tracker, DHT, initiated/accepted, web, Android, and
+platform matrix is the proportional Stage 4 gate rather than a transport
+cross-product.
+
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records planning
-decision-complete Tactical `154` for Stage 4 as the sole **Now**. Tactical
+[`capability-readiness.md`](capability-readiness.md) records execution of
+decision-complete Tactical
+[`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) as the sole
+**Now**. Tactical
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) completed
-the exact complete-local-source Stage 3 subset. No Stage 4 implementation is
-authorized until its tactical resolves authenticated missing-hash ownership,
-persistence, wire scheduling, hostile-input bounds, and evidence.
+the exact complete-local-source Stage 3 subset. Tactical `155` now resolves
+authenticated missing-hash ownership, restart refetch/reconstruction, wire
+scheduling, hostile-input bounds, and the required evidence before Stage 4
+code changes begin.
