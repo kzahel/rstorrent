@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use rstorrent_protocol::content::{
     ExpectedPieceIntegrity, TorrentContent, TorrentContentProjection, TorrentContentWithIntegrity,
-    TorrentIntegrity,
+    TorrentIntegrity, V2ExpectedPieceQuery,
 };
 use rstorrent_protocol::extension::{
     ExtensionAdvertisement, ExtensionMap, PexFlags, UT_PEX_LOCAL_ID,
@@ -104,6 +104,10 @@ use crate::upload::{
     UploadRead, generate_allowed_fast_set,
 };
 use crate::upload_scheduler::UploadGrant;
+use crate::v2_hash_scheduler::{
+    AuthenticatedPieces, HashNeedInput, HashRejectDisposition, HashResponseDisposition,
+    V2HashScheduler,
+};
 
 mod control;
 mod storage_pipeline;
@@ -2202,6 +2206,19 @@ impl AcquiredMetainfo {
     }
 }
 
+fn runtime_content_from_acquired(
+    raw_info: &[u8],
+    metainfo: AcquiredMetainfo,
+) -> Result<TorrentContentWithIntegrity, DownloadError> {
+    match metainfo {
+        AcquiredMetainfo::V1(metainfo) => Ok(TorrentContent::from_v1_metainfo(metainfo).into()),
+        AcquiredMetainfo::V2(_) => {
+            TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                .map_err(DownloadError::Metainfo)
+        }
+    }
+}
+
 impl MetadataPeerResult {
     fn attempt(&self) -> DialAttempt {
         match self {
@@ -3716,12 +3733,7 @@ async fn run_magnet_download_with_peers(
     peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
     let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
-    let AcquiredMetainfo::V1(metainfo) = metainfo else {
-        peers.close_current(None)?;
-        return Err(DownloadError::InvalidPremetadataState(
-            "v2 payload requires authenticated piece hashes",
-        ));
-    };
+    let content = runtime_content_from_acquired(&raw_info, metainfo)?;
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
             torrent_id: config.identity.torrent_id(),
@@ -3736,15 +3748,7 @@ async fn run_magnet_download_with_peers(
         skip_files: config.skip_files,
         materialize_files: config.materialize_files,
     };
-    run_content_download(
-        content_config,
-        TorrentContent::from_v1_metainfo(metainfo),
-        control,
-        None,
-        peers,
-        None,
-    )
-    .await
+    run_content_download(content_config, content, control, None, peers, None).await
 }
 
 async fn run_magnet_metadata(
@@ -3837,12 +3841,13 @@ async fn run_resumable_magnet_download(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
-        let metainfo = match parsed.kind() {
-            ParsedInfoKind::V1(metainfo) => metainfo.clone(),
+        let runtime_content = match parsed.kind() {
+            ParsedInfoKind::V1(metainfo) => {
+                TorrentContent::from_v1_metainfo(metainfo.clone()).into()
+            }
             ParsedInfoKind::V2(_) => {
-                return Err(DownloadError::InvalidPremetadataState(
-                    "v2 payload requires authenticated piece hashes",
-                ));
+                TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                    .map_err(DownloadError::Metainfo)?
             }
             ParsedInfoKind::Hybrid(_) => {
                 return Err(DownloadError::InvalidPremetadataState(
@@ -3850,8 +3855,14 @@ async fn run_resumable_magnet_download(
                 ));
             }
         };
-        validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
-        let content_dht = if metainfo.private {
+        if descriptors.is_some() && matches!(&runtime_content.content, TorrentContent::V2(_)) {
+            return Err(DownloadError::Checkpoint(
+                "descriptor storage does not support v2 content".to_owned(),
+            ));
+        }
+        validate_publication_name(runtime_content.content.name())
+            .map_err(DownloadError::SelectiveStorage)?;
+        let content_dht = if runtime_content.content.private() {
             control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
             None
         } else {
@@ -3874,7 +3885,7 @@ async fn run_resumable_magnet_download(
         let output_path = if descriptors.is_some() {
             PathBuf::new()
         } else {
-            config.storage_root.join(&metainfo.name)
+            config.storage_root.join(runtime_content.content.name())
         };
         let content_config = ContentDownloadConfig {
             artifact_identity: TorrentArtifactIdentity {
@@ -3892,7 +3903,7 @@ async fn run_resumable_magnet_download(
         };
         let result = run_content_download(
             content_config,
-            TorrentContent::from_v1_metainfo(metainfo),
+            runtime_content,
             control,
             descriptors,
             &mut peers,
@@ -3928,17 +3939,9 @@ async fn run_resumable_magnet_download(
     .await?;
     let result = async {
         let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
-        let AcquiredMetainfo::V1(metainfo) = metainfo else {
-            if let Err(message) = checkpoints.metadata_verified(&raw_info) {
-                peers.close_current(None)?;
-                return Err(DownloadError::Checkpoint(message));
-            }
-            peers.close_current(None)?;
-            return Err(DownloadError::InvalidPremetadataState(
-                "v2 payload requires authenticated piece hashes",
-            ));
-        };
-        validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
+        let runtime_content = runtime_content_from_acquired(&raw_info, metainfo)?;
+        validate_publication_name(runtime_content.content.name())
+            .map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
             peers.close_current(None)?;
             return Err(DownloadError::Checkpoint(message));
@@ -3950,7 +3953,7 @@ async fn run_resumable_magnet_download(
                 torrent_id: config.identity.torrent_id(),
                 content_fingerprint,
             },
-            output_path: config.storage_root.join(&metainfo.name),
+            output_path: config.storage_root.join(runtime_content.content.name()),
             max_buffered_payload_bytes: config.resource_limits.max_buffered_payload_bytes,
             storage_intake_high_watermark_bytes: config
                 .resource_limits
@@ -3961,7 +3964,7 @@ async fn run_resumable_magnet_download(
         };
         run_content_download(
             content_config,
-            TorrentContent::from_v1_metainfo(metainfo),
+            runtime_content,
             control,
             None,
             &mut peers,
@@ -4450,7 +4453,10 @@ struct ContentSwarmDownload<'a> {
     outgoing_uploads: BTreeMap<ConnectionId, OutgoingUploadPeer>,
     incoming_content: BTreeMap<ConnectionId, IncomingContentPeer>,
     content: &'a TorrentContent,
-    integrity: &'a TorrentIntegrity,
+    integrity: &'a mut TorrentIntegrity,
+    hash_scheduler: V2HashScheduler,
+    candidate_pieces: BTreeSet<u32>,
+    candidate_verifications: BTreeSet<u32>,
     layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
@@ -4498,10 +4504,11 @@ struct AppliedFileSelection {
 
 struct ContentDownloadContext<'a> {
     content: &'a TorrentContent,
-    integrity: &'a TorrentIntegrity,
+    integrity: &'a mut TorrentIntegrity,
     layout: &'a ContentLayout,
     resume: Option<&'a ResumeContext>,
     control: &'a DownloadControl,
+    candidate_pieces: BTreeSet<u32>,
 }
 
 #[cfg(test)]
@@ -4585,12 +4592,39 @@ impl<'a> ContentSwarmDownload<'a> {
             layout,
             resume,
             control,
+            candidate_pieces,
         } = context;
+        let mut requestable_pieces = Vec::new();
+        let mut hash_needs = Vec::new();
+        let mut ready_candidates = Vec::new();
+        for piece in wanted_pieces {
+            let candidate = candidate_pieces.contains(&piece);
+            match content {
+                TorrentContent::V1(_) => requestable_pieces.push(piece),
+                TorrentContent::V2(_) => match content
+                    .v2_expected_piece(&*integrity, piece)
+                    .map_err(|error| DownloadError::StorageTask(error.to_string()))?
+                {
+                    V2ExpectedPieceQuery::Known(_) if candidate => ready_candidates.push(piece),
+                    V2ExpectedPieceQuery::Known(_) => requestable_pieces.push(piece),
+                    V2ExpectedPieceQuery::Missing { geometry, request } => {
+                        hash_needs.push(HashNeedInput {
+                            geometry,
+                            request,
+                            piece,
+                            candidate,
+                        });
+                    }
+                },
+            }
+        }
+        let hash_scheduler = V2HashScheduler::new(hash_needs)
+            .map_err(|error| DownloadError::StorageTask(error.to_owned()))?;
         let maximum_planned_bytes = config.max_active_piece_bytes;
         let mut state = SwarmState::new_with_wanted(
             config,
             layout.piece_count(),
-            wanted_pieces,
+            requestable_pieces,
             Vec::new(),
             picker_seed,
         )
@@ -4632,7 +4666,7 @@ impl<'a> ContentSwarmDownload<'a> {
         control.set_active_content_reader(active_reader);
         let active_upload_failure = active_content.failure_signal();
         let streaming_cursor = StreamingCandidateCursor::new(&control.streaming_demand_snapshot());
-        Ok(Self {
+        let mut download = Self {
             state,
             storage_pipeline: Some(storage_pipeline),
             completed_storage: None,
@@ -4644,6 +4678,9 @@ impl<'a> ContentSwarmDownload<'a> {
             incoming_content: BTreeMap::new(),
             content,
             integrity,
+            hash_scheduler,
+            candidate_pieces,
+            candidate_verifications: BTreeSet::new(),
             layout,
             resume,
             control,
@@ -4658,11 +4695,59 @@ impl<'a> ContentSwarmDownload<'a> {
             maximum_planned_bytes,
             storage_limits,
             selection_revision: selection.revision,
-        })
+        };
+        for piece in ready_candidates {
+            download.enqueue_candidate_verification(piece)?;
+        }
+        Ok(download)
     }
 
     fn is_complete(&self) -> bool {
         self.state.is_complete()
+            && self.hash_scheduler.is_complete()
+            && self.candidate_pieces.is_empty()
+            && self.candidate_verifications.is_empty()
+    }
+
+    fn schedule_hashes(&mut self, now: Duration) -> Vec<crate::v2_hash_scheduler::HashAssignment> {
+        let state = &self.state;
+        self.hash_scheduler
+            .schedule(now, |pieces| state.connections_with_any_piece(pieces))
+    }
+
+    fn enqueue_candidate_verification(&mut self, piece: u32) -> Result<(), DownloadError> {
+        if !self.candidate_pieces.contains(&piece) || !self.candidate_verifications.insert(piece) {
+            return Ok(());
+        }
+        let expected = self
+            .content
+            .expected_piece(self.integrity, piece)
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+        let length = self
+            .layout
+            .piece_length_at(piece)
+            .map_err(DownloadError::Layout)?;
+        let durable = self.resume.is_some();
+        self.storage_pipeline_mut()?
+            .enqueue(ContentStorageCommand::VerifyCandidate {
+                piece,
+                length,
+                expected,
+                durable,
+            })
+    }
+
+    fn adopt_authenticated_pieces(
+        &mut self,
+        authenticated: AuthenticatedPieces,
+    ) -> Result<(), DownloadError> {
+        self.state
+            .add_wanted_pieces(&authenticated.fresh)
+            .map_err(DownloadError::Swarm)?;
+        for piece in authenticated.candidates {
+            self.enqueue_candidate_verification(piece)?;
+        }
+        Ok(())
     }
 
     async fn send_content_message(
@@ -4692,6 +4777,7 @@ impl<'a> ContentSwarmDownload<'a> {
         failure: Option<PeerFailure>,
         removal: ConnectionRemoval,
     ) -> Result<(), DownloadError> {
+        self.hash_scheduler.peer_disconnected(connection);
         if let Some(incoming) = self.incoming_content.remove(&connection) {
             peers.peers.cancel_incoming_content(incoming.attachment);
             self.state
@@ -4715,6 +4801,7 @@ impl<'a> ContentSwarmDownload<'a> {
         let incoming = std::mem::take(&mut self.incoming_content);
         for (connection, peer) in incoming {
             peers.cancel_incoming_content(peer.attachment);
+            self.hash_scheduler.peer_disconnected(connection);
             let _ = self
                 .state
                 .remove_connection(connection, ConnectionRemoval::Disconnected);
@@ -4729,6 +4816,7 @@ impl<'a> ContentSwarmDownload<'a> {
             .collect::<Vec<_>>();
         for connection in closed {
             self.incoming_content.remove(&connection);
+            self.hash_scheduler.peer_disconnected(connection);
             self.state
                 .remove_connection(connection, ConnectionRemoval::Disconnected)
                 .map_err(DownloadError::Swarm)?;
@@ -5414,11 +5502,74 @@ impl<'a> ContentSwarmDownload<'a> {
             | PeerMessage::Cancel(_)
             | PeerMessage::Extended { .. } => {}
             PeerMessage::SuggestPiece(_) | PeerMessage::AllowedFast(_) => {}
-            PeerMessage::HashRequest(_) | PeerMessage::Hashes(_) | PeerMessage::HashReject(_) => {
-                return Ok(ContentMessageDisposition::ClosePeer {
-                    failure: PeerFailure::Protocol,
-                    reason: "v2 hash exchange has no active integrity owner",
-                });
+            PeerMessage::HashRequest(request) => {
+                if !matches!(&*self.integrity, TorrentIntegrity::V2(_)) {
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "v2 hash request arrived on v1 content",
+                    });
+                }
+                if self
+                    .send_content_message(sockets, connection, PeerMessage::HashReject(request))
+                    .await
+                    .is_err()
+                {
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::RemoteClosed,
+                        reason: "v2 hash reject send failed",
+                    });
+                }
+            }
+            PeerMessage::Hashes(response) => {
+                let TorrentIntegrity::V2(catalog) = &mut *self.integrity else {
+                    return Ok(ContentMessageDisposition::ClosePeer {
+                        failure: PeerFailure::Protocol,
+                        reason: "v2 hashes arrived on v1 content",
+                    });
+                };
+                let disposition = self
+                    .hash_scheduler
+                    .receive_response(connection, &response, catalog);
+                match disposition {
+                    HashResponseDisposition::Accepted(authenticated) => {
+                        self.adopt_authenticated_pieces(authenticated)?;
+                    }
+                    HashResponseDisposition::BadProof(_) => {
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "v2 hashes failed authenticated proof validation",
+                        });
+                    }
+                    HashResponseDisposition::Unsolicited => {
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "v2 hashes were unsolicited",
+                        });
+                    }
+                    HashResponseDisposition::Mismatched => {
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "v2 hashes did not match the peer attempt",
+                        });
+                    }
+                }
+            }
+            PeerMessage::HashReject(request) => {
+                match self.hash_scheduler.receive_reject(connection, request) {
+                    HashRejectDisposition::Accepted => {}
+                    HashRejectDisposition::Unsolicited => {
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "v2 hash reject was unsolicited",
+                        });
+                    }
+                    HashRejectDisposition::Mismatched => {
+                        return Ok(ContentMessageDisposition::ClosePeer {
+                            failure: PeerFailure::Protocol,
+                            reason: "v2 hash reject did not match the peer attempt",
+                        });
+                    }
+                }
             }
         }
         Ok(ContentMessageDisposition::Continue)
@@ -5594,6 +5745,59 @@ impl<'a> ContentSwarmDownload<'a> {
                         .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
                     self.advance_plan_window(piece)?;
                     ContentMessageDisposition::PieceVerified(contributors)
+                }
+            }
+            ContentStorageCompletion::VerifyCandidate {
+                piece,
+                length,
+                result,
+            } => {
+                self.candidate_verifications.remove(&piece);
+                let piece_index = usize::try_from(piece)
+                    .map_err(|_| DownloadError::Layout(LayoutError::ArithmeticOverflow))?;
+                match result {
+                    Ok(verification) if verification.matched => {
+                        if self.resume.is_some() {
+                            self.storage_pipeline_mut()?
+                                .enqueue_checkpoint(
+                                    piece_index,
+                                    length,
+                                    verification.durability_targets,
+                                )
+                                .await?;
+                        }
+                        self.candidate_pieces.remove(&piece);
+                        self.availability
+                            .publish(piece_index, self.availability.snapshot().epoch)
+                            .map_err(|error| DownloadError::StorageTask(error.to_string()))?;
+                        self.control.record_streaming_piece_verified(piece);
+                        self.control
+                            .record_bytes(ByteMetric::LogicalHashRead, length as usize);
+                        self.control
+                            .record_bytes(ByteMetric::PayloadVerified, length as usize);
+                        self.control
+                            .emit(DownloadActivityEvent::PieceVerified { piece_index: piece });
+                        ContentMessageDisposition::PieceVerified(Vec::new())
+                    }
+                    Ok(_) | Err(_) => {
+                        self.candidate_pieces.remove(&piece);
+                        self.state
+                            .add_wanted_pieces(&[piece])
+                            .map_err(DownloadError::Swarm)?;
+                        self.control.emit(DownloadActivityEvent::PieceHashFailed {
+                            piece_index: piece,
+                            contributor_count: 0,
+                            failed_bytes: length as usize,
+                        });
+                        self.control
+                            .record_bytes(ByteMetric::PayloadHashFailed, length as usize);
+                        self.control.disk_piece_failed(
+                            piece,
+                            length,
+                            "candidate payload failed verification; retrying",
+                        );
+                        ContentMessageDisposition::Continue
+                    }
                 }
             }
         };
@@ -6426,6 +6630,10 @@ async fn run_selective_swarm_loop(
 
     loop {
         download.prune_closed_incoming_content()?;
+        let state = &download.state;
+        download
+            .hash_scheduler
+            .retain_connections(|connection| state.has_connection(connection));
         let address_families = peers.peers.address_family_policy();
         sockets.cancel_disallowed(address_families);
         peers
@@ -6480,6 +6688,11 @@ async fn run_selective_swarm_loop(
                     .map_err(DownloadError::Swarm)?;
             }
             download.control.observe_swarm(&download.state, now);
+            let hash_snapshot = download.hash_scheduler.snapshot();
+            debug_assert!(
+                hash_snapshot.active_attempts
+                    <= crate::v2_hash_scheduler::MAX_HASH_ATTEMPTS_PER_TORRENT
+            );
             download.control.emit_storage_state();
             peers.observe_content_peers(&download.state)?;
             for connection in send_due_pex(peers, sockets).await? {
@@ -6493,6 +6706,25 @@ async fn run_selective_swarm_loop(
                 .await?;
             }
             next_maintenance_at = now.saturating_add(CONTENT_SWARM_MAINTENANCE_INTERVAL);
+        }
+
+        let hash_assignments = download.schedule_hashes(now);
+        let mut failed_connections = BTreeSet::new();
+        for assignment in hash_assignments {
+            if download
+                .send_content_message(
+                    sockets,
+                    assignment.connection,
+                    PeerMessage::HashRequest(assignment.request),
+                )
+                .await
+                .is_err()
+            {
+                download
+                    .hash_scheduler
+                    .send_failed(assignment.connection, assignment.request);
+                failed_connections.insert(assignment.connection);
+            }
         }
 
         let scheduled = if storage_ready && !storage_backpressured {
@@ -6509,7 +6741,6 @@ async fn run_selective_swarm_loop(
                 )
                 .await;
         }
-        let mut failed_connections = BTreeSet::new();
         for assignment in scheduled.assignments {
             if download
                 .send_content_message(
@@ -7269,7 +7500,10 @@ async fn run_selective_download(
     peers: &mut TorrentPeerCoordinator,
     resume: Option<ResumeContext>,
 ) -> Result<DownloadReport, DownloadError> {
-    let TorrentContentWithIntegrity { content, integrity } = runtime_content;
+    let TorrentContentWithIntegrity {
+        content,
+        mut integrity,
+    } = runtime_content;
     let layout = ContentLayout::from_content(&content);
     let selection =
         FileSelection::new_content(&layout, &config.skip_files).map_err(DownloadError::Layout)?;
@@ -7754,10 +7988,11 @@ async fn run_selective_download(
             ContentStorage(Box::new(storage)),
             ContentDownloadContext {
                 content: &content,
-                integrity: &integrity,
+                integrity: &mut integrity,
                 layout: &layout,
                 resume: resume.as_ref(),
                 control: &control,
+                candidate_pieces: BTreeSet::new(),
             },
         )
         .await?;

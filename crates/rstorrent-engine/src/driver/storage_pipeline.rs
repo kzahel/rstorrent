@@ -66,20 +66,26 @@ pub(super) enum ContentStorageCommand {
         expected: ExpectedPieceIntegrity,
         durable: bool,
     },
+    VerifyCandidate {
+        piece: u32,
+        length: u32,
+        expected: ExpectedPieceIntegrity,
+        durable: bool,
+    },
 }
 
 impl ContentStorageCommand {
     fn kind(&self) -> StorageCommandKind {
         match self {
             Self::Write { .. } => StorageCommandKind::Write,
-            Self::Verify { .. } => StorageCommandKind::Hash,
+            Self::Verify { .. } | Self::VerifyCandidate { .. } => StorageCommandKind::Hash,
         }
     }
 
     pub(super) fn write_bytes(&self) -> Option<usize> {
         match self {
             Self::Write { bytes, .. } => Some(bytes.len()),
-            Self::Verify { .. } => None,
+            Self::Verify { .. } | Self::VerifyCandidate { .. } => None,
         }
     }
 }
@@ -136,7 +142,7 @@ struct ContentHashOperation(SelectiveHashPlan);
 
 struct ContentHashJob {
     piece: u32,
-    generation: PieceGeneration,
+    generation: Option<PieceGeneration>,
     length: u32,
     expected: ExpectedPieceIntegrity,
     durable: bool,
@@ -146,7 +152,7 @@ struct ContentHashJob {
 
 struct ContentHashJobResult {
     piece: u32,
-    generation: PieceGeneration,
+    generation: Option<PieceGeneration>,
     length: u32,
     expected: ExpectedPieceIntegrity,
     durable: bool,
@@ -176,6 +182,11 @@ pub(super) enum ContentStorageCompletion {
     Verify {
         piece: u32,
         generation: PieceGeneration,
+        length: u32,
+        result: Result<ContentVerification, DownloadError>,
+    },
+    VerifyCandidate {
+        piece: u32,
         length: u32,
         result: Result<ContentVerification, DownloadError>,
     },
@@ -856,7 +867,8 @@ async fn run_content_storage_task(
                 .iter()
                 .filter_map(|command| match &command.command {
                     ContentStorageCommand::Write { block, .. } => Some(*block),
-                    ContentStorageCommand::Verify { .. } => None,
+                    ContentStorageCommand::Verify { .. }
+                    | ContentStorageCommand::VerifyCandidate { .. } => None,
                 })
                 .collect::<Vec<_>>();
             let bytes = batch.iter().fold(0_usize, |total, command| {
@@ -895,13 +907,15 @@ async fn run_content_storage_task(
             let command = ready_hashes
                 .pop_front()
                 .expect("nonempty hash-ready queue has a command");
-            let ContentStorageCommand::Verify { piece, length, .. } = &command.command else {
-                unreachable!("hash-ready queue contains only verify commands");
+            let (piece, length) = match &command.command {
+                ContentStorageCommand::Verify { piece, length, .. }
+                | ContentStorageCommand::VerifyCandidate { piece, length, .. } => (*piece, *length),
+                ContentStorageCommand::Write { .. } => {
+                    unreachable!("hash-ready queue contains only verify commands")
+                }
             };
-            control.disk_piece_hashing(*piece, *length);
-            control.emit(DownloadActivityEvent::PieceHashing {
-                piece_index: *piece,
-            });
+            control.disk_piece_hashing(piece, length);
+            control.emit(DownloadActivityEvent::PieceHashing { piece_index: piece });
             let started_at = Instant::now();
             control.storage_command_started(
                 StorageCommandKind::Hash,
@@ -1427,15 +1441,23 @@ fn prepare_content_storage_hash(
     storage: &ContentStorage,
     command: ContentStorageCommand,
 ) -> Result<ContentHashJob, ContentStorageCompletion> {
-    let ContentStorageCommand::Verify {
-        piece,
-        generation,
-        length,
-        expected,
-        durable,
-    } = command
-    else {
-        unreachable!("write commands execute through the bounded batch path");
+    let (piece, generation, length, expected, durable) = match command {
+        ContentStorageCommand::Verify {
+            piece,
+            generation,
+            length,
+            expected,
+            durable,
+        } => (piece, Some(generation), length, expected, durable),
+        ContentStorageCommand::VerifyCandidate {
+            piece,
+            length,
+            expected,
+            durable,
+        } => (piece, None, length, expected, durable),
+        ContentStorageCommand::Write { .. } => {
+            unreachable!("write commands execute through the bounded batch path")
+        }
     };
     let durability_targets = if durable {
         storage
@@ -1462,11 +1484,18 @@ fn prepare_content_storage_hash(
             durability_targets,
             operation,
         }),
-        Err(error) => Err(ContentStorageCompletion::Verify {
-            piece,
-            generation,
-            length,
-            result: Err(error),
+        Err(error) => Err(match generation {
+            Some(generation) => ContentStorageCompletion::Verify {
+                piece,
+                generation,
+                length,
+                result: Err(error),
+            },
+            None => ContentStorageCompletion::VerifyCandidate {
+                piece,
+                length,
+                result: Err(error),
+            },
         }),
     }
 }
@@ -1520,11 +1549,18 @@ fn finish_content_hash_job(
     {
         control.disk_piece_hash_verified(result.piece, result.length, result.durable);
     }
-    ContentStorageCompletion::Verify {
-        piece: result.piece,
-        generation: result.generation,
-        length: result.length,
-        result: verification,
+    match result.generation {
+        Some(generation) => ContentStorageCompletion::Verify {
+            piece: result.piece,
+            generation,
+            length: result.length,
+            result: verification,
+        },
+        None => ContentStorageCompletion::VerifyCandidate {
+            piece: result.piece,
+            length: result.length,
+            result: verification,
+        },
     }
 }
 

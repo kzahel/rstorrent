@@ -1043,11 +1043,6 @@ impl SwarmState {
         if piece_count == 0 {
             return Err(SwarmError::InvalidConfig("piece count must be nonzero"));
         }
-        if wanted.is_empty() {
-            return Err(SwarmError::InvalidConfig(
-                "at least one wanted piece is required",
-            ));
-        }
         let picker = AvailabilityPicker::new(
             piece_count,
             wanted,
@@ -1275,6 +1270,51 @@ impl SwarmState {
         self.last_activated_piece = None;
         self.last_activated_availability = None;
         Ok(cancellations)
+    }
+
+    pub fn add_wanted_pieces(&mut self, wanted: &[u32]) -> Result<usize, SwarmError> {
+        let mut added = 0_usize;
+        for &piece in wanted {
+            if !self
+                .picker
+                .add_wanted(piece)
+                .map_err(SwarmError::Invariant)?
+            {
+                continue;
+            }
+            added = added
+                .checked_add(1)
+                .ok_or(SwarmError::ArithmeticOverflow("added wanted pieces"))?;
+            for connection in self.connections.values_mut() {
+                let index = usize::try_from(piece)
+                    .map_err(|_| SwarmError::ArithmeticOverflow("wanted piece index"))?;
+                if connection.availability.contains(index) {
+                    connection.wanted_piece_count =
+                        connection.wanted_piece_count.checked_add(1).ok_or(
+                            SwarmError::ArithmeticOverflow("connection wanted piece count"),
+                        )?;
+                }
+            }
+        }
+        Ok(added)
+    }
+
+    pub fn connections_with_any_piece(&self, pieces: &[u32]) -> Vec<ConnectionId> {
+        self.connections
+            .iter()
+            .filter(|(_, connection)| {
+                pieces.iter().any(|piece| {
+                    usize::try_from(*piece)
+                        .ok()
+                        .is_some_and(|piece| connection.availability.contains(piece))
+                })
+            })
+            .map(|(connection, _)| *connection)
+            .collect()
+    }
+
+    pub fn has_connection(&self, connection: ConnectionId) -> bool {
+        self.connections.contains_key(&connection)
     }
 
     pub const fn config(&self) -> SwarmConfig {
@@ -5579,6 +5619,26 @@ mod tests {
         assert_eq!(replacement.len(), 1);
         assert_eq!(replacement[0].connection, connection(1));
         assert_eq!(replacement[0].block.piece, 1);
+    }
+
+    #[test]
+    fn empty_hash_gated_picker_admits_piece_without_losing_availability() {
+        let mut state = SwarmState::new_with_wanted(
+            SwarmConfig::for_request_limit(BLOCK as usize),
+            2,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+        .expect("empty hash-gated swarm");
+        add_peer(&mut state, connection(1), &[1], false);
+        assert!(state.schedule(Duration::ZERO).unwrap().is_empty());
+        assert_eq!(state.connections_with_any_piece(&[1]), vec![connection(1)]);
+        assert_eq!(state.add_wanted_pieces(&[1, 1]), Ok(1));
+        state.append_piece_plans(vec![plan(1, 1)]).unwrap();
+        let assignments = state.schedule(Duration::ZERO).unwrap();
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].block.piece, 1);
     }
 
     #[test]

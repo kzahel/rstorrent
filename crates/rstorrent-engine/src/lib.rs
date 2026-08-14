@@ -45,6 +45,7 @@ mod upload;
 mod upload_scheduler;
 mod utp_diagnostic;
 mod utp_runtime;
+mod v2_hash_scheduler;
 
 pub use active_seed_content::{
     ActiveContentReader, ActiveFileError, ActiveFileReader, MAX_STREAMING_AHEAD_BYTES,

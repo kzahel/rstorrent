@@ -15,6 +15,20 @@ fn pure_v2_info(payload: &[u8]) -> Vec<u8> {
     info
 }
 
+fn two_piece_v2_info(first: &[u8], second: &[u8]) -> (Vec<u8>, [[u8; 32]; 2]) {
+    assert_eq!(first.len(), 16 * 1024);
+    assert_eq!(second.len(), 16 * 1024);
+    let piece_roots = [
+        rstorrent_protocol::merkle::hash_block(first).unwrap(),
+        rstorrent_protocol::merkle::hash_block(second).unwrap(),
+    ];
+    let file_root = rstorrent_protocol::merkle::hash_pair(&piece_roots[0], &piece_roots[1]);
+    let mut info = b"d9:file treed1:ad0:d6:lengthi32768e11:pieces root32:".to_vec();
+    info.extend_from_slice(&file_root);
+    info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi16384ee");
+    (info, piece_roots)
+}
+
 async fn serve_info_only_metadata(listener: TcpListener, wire_hash: [u8; 20], info: Vec<u8>) {
     let (mut stream, _) = listener.accept().await.expect("accept metadata client");
     let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
@@ -85,6 +99,127 @@ async fn serve_info_only_metadata(listener: TcpListener, wire_hash: [u8; 20], in
     let _ = timeout(Duration::from_secs(1), next_peer_message(&mut peer)).await;
 }
 
+async fn serve_v2_metadata_hashes_and_payload(
+    listener: TcpListener,
+    wire_hash: [u8; 20],
+    info: Vec<u8>,
+    pieces: [Vec<u8>; 2],
+    piece_roots: [[u8; 32]; 2],
+) {
+    let (mut stream, _) = listener.accept().await.expect("accept v2 client");
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read v2 handshake");
+    let handshake = decode_handshake(&handshake_bytes, wire_hash).expect("v2 wire identity");
+    assert!(handshake.supports_extensions());
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            wire_hash,
+            scripted_peer_id(&listener, *b"-RS-V2DL-00000000000"),
+            reserved,
+        ))
+        .await
+        .expect("send v2 handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(5));
+    peer.set_protocol(rstorrent_protocol::peer_wire::PeerProtocol::V2);
+    assert!(matches!(
+        next_peer_message(&mut peer).await,
+        Ok(PeerMessage::Extended { id: 0, .. })
+    ));
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_extension_handshake(Some(info.len())),
+        },
+    )
+    .await
+    .expect("advertise v2 metadata");
+    let PeerMessage::Extended {
+        id: UT_METADATA_LOCAL_ID,
+        payload,
+    } = next_peer_message(&mut peer)
+        .await
+        .expect("v2 metadata request")
+    else {
+        panic!("expected v2 metadata request");
+    };
+    assert!(matches!(
+        parse_metadata_message(&payload).expect("parse v2 metadata request"),
+        MetadataMessage::Request { piece: 0 }
+    ));
+    send_message(&mut peer, &PeerMessage::Bitfield(vec![0b1100_0000]))
+        .await
+        .expect("send v2 availability");
+    send_message(&mut peer, &PeerMessage::Unchoke)
+        .await
+        .expect("unchoke v2 client");
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: UT_METADATA_LOCAL_ID,
+            payload: encode_metadata_data(0, info.len(), &info).expect("encode v2 metadata"),
+        },
+    )
+    .await
+    .expect("send v2 metadata");
+
+    let mut hash_served = false;
+    let mut payload_requests = 0_usize;
+    while payload_requests != pieces.len() {
+        match next_peer_message(&mut peer)
+            .await
+            .expect("read v2 content message")
+        {
+            PeerMessage::HashRequest(request) => {
+                assert!(!hash_served, "piece layer is requested once");
+                assert_eq!(request.base_layer, 0);
+                assert_eq!(request.index, 0);
+                assert_eq!(request.count, 2);
+                assert_eq!(request.proof_layers, 1);
+                hash_served = true;
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Hashes(rstorrent_protocol::v2_hashes::HashResponse {
+                        request,
+                        hashes: piece_roots.to_vec(),
+                    }),
+                )
+                .await
+                .expect("send authenticated piece layer");
+            }
+            PeerMessage::Request(request) => {
+                assert!(hash_served, "payload must not precede authenticated hashes");
+                let piece = usize::try_from(request.index).expect("bounded piece index");
+                let begin = usize::try_from(request.begin).expect("bounded block begin");
+                let length = usize::try_from(request.length).expect("bounded block length");
+                send_message(
+                    &mut peer,
+                    &PeerMessage::Piece {
+                        index: request.index,
+                        begin: request.begin,
+                        block: pieces[piece][begin..begin + length].to_vec(),
+                    },
+                )
+                .await
+                .expect("send v2 payload");
+                payload_requests += 1;
+            }
+            PeerMessage::KeepAlive
+            | PeerMessage::Interested
+            | PeerMessage::NotInterested
+            | PeerMessage::HaveNone
+            | PeerMessage::Have(_)
+            | PeerMessage::Extended { .. } => {}
+            message => panic!("unexpected v2 client message: {message:?}"),
+        }
+    }
+}
+
 #[tokio::test]
 async fn pure_v2_magnet_metadata_uses_full_sha256_and_strict_format() {
     async fn acquire(info: Vec<u8>) -> Result<Vec<u8>, DownloadError> {
@@ -127,6 +262,51 @@ async fn pure_v2_magnet_metadata_uses_full_sha256_and_strict_format() {
         acquire(b"not bencoded metadata".to_vec()).await,
         Err(DownloadError::Metainfo(_))
     ));
+}
+
+#[tokio::test]
+async fn pure_v2_magnet_authenticates_piece_layer_before_payload() {
+    let pieces = [vec![0x31; 16 * 1024], vec![0x52; 16 * 1024]];
+    let (info, piece_roots) = two_piece_v2_info(&pieces[0], &pieces[1]);
+    let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+    let identity = V2InfoHash::new(full_hash);
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind v2 content peer");
+    let address = listener.local_addr().expect("v2 content address");
+    let peer = tokio::spawn(serve_v2_metadata_hashes_and_payload(
+        listener,
+        identity.swarm_key().into_bytes(),
+        info,
+        pieces.clone(),
+        piece_roots,
+    ));
+    let output = test_path("v2-magnet-output");
+    let report = timeout(
+        Duration::from_secs(10),
+        download_magnet(MagnetDownloadConfig {
+            identity: test_v2_identity(full_hash),
+            magnet: format!("magnet:?xt=urn:btmh:1220{identity}&x.pe={address}"),
+            output_path: output.clone(),
+            network: loopback_network(Duration::from_secs(2)),
+            resource_limits: resource_limits(MIN_PAYLOAD_ALLOWANCE),
+            skip_files: Vec::new(),
+            materialize_files: Vec::new(),
+            dht: None,
+        }),
+    )
+    .await
+    .expect("bounded v2 magnet download")
+    .expect("v2 magnet download");
+    assert_eq!(report.verified_piece_count, 2);
+    assert_eq!(
+        tokio::fs::read(output.join("a"))
+            .await
+            .expect("read v2 selected file"),
+        pieces.concat()
+    );
+    peer.await.expect("join v2 peer");
+    let _ = tokio::fs::remove_dir_all(output).await;
 }
 
 #[tokio::test]

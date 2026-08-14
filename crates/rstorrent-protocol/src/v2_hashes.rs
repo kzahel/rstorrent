@@ -24,7 +24,7 @@ pub const MAX_HASH_CATALOG_BYTES: usize = 80 * 1024 * 1024;
 
 const PIECE_ROOT_CHUNK: usize = 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HashRequest {
     pub pieces_root: Sha256Hash,
     pub base_layer: u32,

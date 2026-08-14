@@ -274,6 +274,24 @@ impl AvailabilityPicker {
         Ok(())
     }
 
+    pub(crate) fn add_wanted(&mut self, piece: u32) -> Result<bool, &'static str> {
+        let index = usize::try_from(piece).map_err(|_| "wanted piece index overflows")?;
+        let position = self
+            .positions
+            .get_mut(index)
+            .ok_or("wanted piece is outside picker geometry")?;
+        if *position != POSITION_UNWANTED {
+            return Ok(false);
+        }
+        *position = POSITION_DETACHED;
+        self.push_detached(piece);
+        self.wanted_remaining = self
+            .wanted_remaining
+            .checked_add(1)
+            .ok_or("wanted piece count overflow")?;
+        Ok(true)
+    }
+
     pub(crate) const fn counters(&self) -> PiecePickerCounters {
         self.counters
     }
