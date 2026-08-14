@@ -18,8 +18,11 @@ peer transfer, discovery, streaming, and seeding. Completed Tactical
 bounded pure-v2 magnet vertical: exact `btmh`, SHA-256 BEP 9 metadata,
 authenticated hash messages 21--23, sparse hash scheduling, candidate
 recovery, selective payload, corruption repair, restart, and hash/payload
-service. The BEP 52 claim remains **Partial** because hybrid product behavior,
-dual-swarm verification, creation, and broader BEP 52 behavior remain absent.
+service. Decision-complete Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) now owns the
+planned hybrid consumption/seeding closure. The BEP 52 claim remains
+**Partial** because Tactical `156` is not implemented and creation and broader
+BEP 52 behavior remain absent.
 
 ## Scope And Owning Role
 
@@ -430,8 +433,8 @@ runtime design.
 
 ## Tactical Campaign
 
-The first four stages are complete. Stage 5 remains unassigned. Adjacent
-stages may be combined only
+The first four stages are complete. Stage 5 is assigned to decision-complete
+Tactical `156` and has not started. Adjacent stages may be combined only
 when the resulting scope remains bounded and its stopping condition becomes
 clearer.
 
@@ -489,12 +492,12 @@ messages, bad proofs, rejected and stalled requests, reconnect/restart,
 request and tree high-water marks, terminal cancellation, production browser,
 Tauri/iOS build, both Android ABIs, and API 34 SAF evidence.
 
-### 5. Hybrid dual-swarm closure
+### 5. [Hybrid dual-swarm runtime closure](../tactical/156-hybrid-dual-swarm-runtime-closure.md)
 
-Add simultaneous v1/v2 identity aliases, per-version tracker and DHT
-participation, hybrid handshake upgrade, shared peer/storage ownership,
-duplicate-add and metadata-time collision behavior, BEP 47 layout comparison,
-and mandatory dual verification.
+Planned Tactical `156` adds simultaneous v1/v2 identity aliases, per-version
+tracker and DHT participation, hybrid handshake upgrade, shared peer/storage
+ownership, duplicate-add and metadata-time collision behavior, BEP 47 layout
+comparison, and mandatory dual verification.
 
 The stopping condition requires controlled pinned-libtorrent transfers through
 both the v1 and v2 swarm identities, both initiated and accepted roles,
@@ -540,10 +543,14 @@ content owner to participate through both identities while verifying both
 schemes. [`protocol-support.md`](protocol-support.md) owns the final claim
 language and evidence links.
 
-## Open Decisions For Later Implementing Tacticals
+## Resolved Decisions For Implementing Tacticals
 
-- Define exact duplicate-add behavior when separate v1 and v2 magnets later
-  prove to be one hybrid torrent, without unsafe live-owner merging.
+Tactical `156` resolves separate-magnet reconciliation. Authenticated
+metadata reserves both aliases before payload authority. The first-created
+provisional owner survives; the later owner is cancelled and joined; only
+bounded discovery facts combine; and destination, selection, queue position,
+payload, candidate/have, and published state never live-merge. A collision
+after the provisional fence fails closed.
 
 These choices refine the accepted architecture. A decision that introduces a
 new engine dependency, weakens fail-closed integrity, deletes published user
@@ -569,11 +576,12 @@ cross-product.
 
 ## Queue And Next Work
 
-[`capability-readiness.md`](capability-readiness.md) records planning the
-bounded Stage 5 hybrid dual-swarm tactical as the sole **Now**. Completed
+[`capability-readiness.md`](capability-readiness.md) records implementing
+decision-complete Tactical `156` as the sole **Now**. Completed
 Tacticals
 [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) and
 [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) own the exact
-complete-source and magnet pure-v2 subsets. No Stage 5 implementation is
-authorized until its tactical fixes identity reconciliation, dual
-verification, ownership, resource bounds, and controlled evidence.
+complete-source and magnet pure-v2 subsets. Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) fixes the Stage 5
+identity reconciliation, dual verification, ownership, resource bounds, and
+controlled evidence contract before code changes begin.

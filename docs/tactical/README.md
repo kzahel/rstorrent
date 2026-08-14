@@ -717,6 +717,12 @@ that scope and its cleanup or compatibility rules explicitly.
   conservative restart, leaf corruption repair, hash upload, controlled
   two-role pinned-libtorrent interoperability, and proportional web, Tauri,
   Android, and iOS evidence while hybrid and creation remain deferred.
+- [`156-hybrid-dual-swarm-runtime-closure.md`](156-hybrid-dual-swarm-runtime-closure.md):
+  planned and decision-complete; owns strict hybrid source/magnet intake,
+  first-owner provisional reconciliation, one owner across v1/v2 discovery
+  and peer lanes, mandatory dual integrity, BEP 47 padding, restart/seeding,
+  both-swarm/both-role pinned-libtorrent evidence, and first-party platforms
+  while creation and single-format fallback remain deferred.
 
 Tactical `015` completed the oracle campaign's headless measurement
 foundation. Current prioritization and the compaction-safe restart

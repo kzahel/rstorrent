@@ -125,8 +125,8 @@ BEP 52 subset to Partial. Bounded iOS correctness Tactical `154` is complete.
 Stage 4 Tactical
 [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) subsequently
 completed the pure-v2 magnet and authenticated hash-exchange vertical. The
-authoritative **Now** is planning the bounded Stage 5 hybrid dual-swarm
-tactical; no Stage 5 implementation is yet authorized.
+authoritative **Now** is implementing decision-complete Stage 5 Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) end to end.
 The completed
 maximum-throughput storage campaign
 remains recorded in
@@ -495,7 +495,8 @@ tuning direction follows.**
 Engine campaign status: **Tacticals `151`, bounded iOS `154`, and pure-v2
 magnet Tactical
 [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) are complete;
-plan the bounded Stage 5 hybrid dual-swarm tactical.** Tacticals `142`,
+implement decision-complete hybrid Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md).** Tacticals `142`,
 `145`, and `150` complete the uTP performance campaign at the maintainer-
 selected evidence stop. Completed Tactical `143` installs the
 v1-preserving opaque torrent owner, typed protocol aliases, schema-19 fresh
@@ -594,15 +595,17 @@ Tactical `113` needs no further action unless different gateway hardware
 becomes available or a
 separate control-transport investigation is explicitly authorized.
 
-Current engine-campaign action: plan the bounded Stage 5 hybrid dual-swarm
-tactical. Completed Tactical `155` closes Stage 4 through hash scheduling,
+Current engine-campaign action: implement decision-complete Tactical
+[`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) end to end.
+Completed Tactical `155` closes Stage 4 through hash scheduling,
 candidate verification, local reconstruction, leaf repair, hash service,
 first-party platforms, and two-role pinned-libtorrent interoperability.
 Completed Tacticals `151`, `152`, and `154` close the pure-v2 complete-source
-vertical and intervening iOS repairs. The new tactical must settle mixed-
-identity reconciliation, one content owner across two swarms, mandatory dual
-verification, padding compatibility, restart and seeding, hostile collisions,
-resource bounds, controlled interop, and Android parity before code begins.
+vertical and intervening iOS repairs. Tactical `156` fixes first-owner
+provisional reconciliation before payload authority, one content owner across
+two swarms, mandatory dual verification, strict padding compatibility,
+restart and seeding, hostile collisions, resource bounds, controlled interop,
+and Android parity. Creation and single-format fallback remain deferred.
 Completed Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
 stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at
 94.85%--100.74% of the matched libtorrent oracle and at least 98.49% of its

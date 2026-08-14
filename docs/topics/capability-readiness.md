@@ -472,14 +472,15 @@ exactly.
 
 ### Now
 
-- **Plan the bounded Stage 5 hybrid dual-swarm tactical.** Tacticals
-  [`151`](../tactical/151-complete-source-pure-v2-runtime-vertical.md) and
-  [`155`](../tactical/155-v2-magnet-authenticated-hash-exchange.md) complete
-  the pure-v2 source and magnet stages. The next document must settle mixed
-  identity reconciliation, one-owner dual swarm participation, mandatory dual
-  verification, padding compatibility, restart/seeding, hostile collision
-  cases, resource ceilings, pinned-libtorrent evidence, and Android parity
-  before implementation is authorized.
+- **Implement decision-complete Tactical
+  [`156`](../tactical/156-hybrid-dual-swarm-runtime-closure.md) end to end.**
+  It owns strict hybrid source and magnet intake, first-owner provisional
+  reconciliation before payload authority, one-owner dual swarm
+  participation, mandatory SHA-1 plus SHA-256 verification, BEP 47 padding,
+  restart/seeding, hostile collision and disagreement cases, bounded
+  resources, both-swarm/both-role pinned-libtorrent evidence, and
+  first-party Android parity. Creation and single-format fallback remain out
+  of scope.
 
 ### Next
 
