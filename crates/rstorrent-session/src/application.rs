@@ -32,7 +32,7 @@ use rstorrent_engine::{
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
 use rstorrent_protocol::identity::{InfoHashes, SwarmKey};
-use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
+use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
 };
@@ -150,6 +150,20 @@ fn runtime_identity(
     };
     TorrentIdentityContext::new(torrent_id, info_hashes, swarm_key)
         .map_err(|error| ApplicationError::Configuration(error.to_string()))
+}
+
+fn magnet_runtime_identity(
+    identity: TorrentIdentityContext,
+    source: &str,
+) -> Result<TorrentIdentityContext, ApplicationError> {
+    let magnet = Magnet::parse(source)
+        .map_err(|error| ApplicationError::Configuration(error.to_string()))?;
+    TorrentIdentityContext::new(
+        identity.torrent_id(),
+        identity.info_hashes(),
+        magnet.identity.swarm_key(),
+    )
+    .map_err(|error| ApplicationError::Configuration(error.to_string()))
 }
 
 fn media_reader_unavailable_reason(error: &VerifiedFileError) -> MediaFileAvailability {
@@ -3063,6 +3077,7 @@ impl ApplicationService {
                 return Ok(());
             }
             if resume.raw_info.is_none() {
+                let identity = magnet_runtime_identity(identity, &resume.magnet)?;
                 let checkpoints = Arc::new(StoreCheckpointSink {
                     store: self.store.clone(),
                     storage_roots: self.storage_roots.clone(),
@@ -3328,6 +3343,7 @@ impl ApplicationService {
                 trackers: Some(Vec::new()),
             })
         } else {
+            let identity = magnet_runtime_identity(identity, &resume.magnet)?;
             ResumableDownloadConfig::Magnet(ResumableMagnetDownloadConfig {
                 identity,
                 magnet: resume.magnet,
@@ -6038,6 +6054,7 @@ mod tests {
         DhtEndpoint, DhtIp, Message as DhtMessage, NodeId, decode_message as decode_dht,
         encode_response as encode_dht_response,
     };
+    use rstorrent_protocol::identity::SwarmKey;
     use rstorrent_protocol::merkle::{file_root_from_data, piece_root_from_data};
     use rstorrent_protocol::metadata::{
         MetadataMessage, encode_extension_handshake, encode_metadata_data, parse_metadata_message,
@@ -6056,7 +6073,7 @@ mod tests {
 
     use super::{
         ApplicationConfig, ApplicationService, ManagedArtifactState, delete_path_artifacts,
-        handle_task_outcome,
+        handle_task_outcome, magnet_runtime_identity, runtime_identity,
     };
     use crate::{
         AddTorrentBytesRequest, ApplicationCall, ApplicationCallResult, CONTROL_VERSION,
@@ -9003,6 +9020,29 @@ mod tests {
             .await
             .expect("shutdown hybrid reconciliation application");
         fs::remove_dir_all(root).expect("remove hybrid reconciliation root");
+    }
+
+    #[test]
+    fn hybrid_magnet_runtime_preserves_its_entry_lane_after_metadata() {
+        let source = hybrid_source();
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("hybrid entry-lane fixture");
+        let hashes = projection.content.info_hashes();
+        let v1 = hashes.v1_hash().expect("hybrid v1 identity");
+        let v2 = hashes.v2_hash().expect("hybrid v2 identity");
+        let owner = TorrentId::new([0x56; 16]).expect("hybrid entry-lane owner");
+        let default = runtime_identity(owner, hashes).expect("default hybrid identity");
+
+        let v1_entry = magnet_runtime_identity(default, &format!("magnet:?xt=urn:btih:{v1}"))
+            .expect("v1 hybrid entry lane");
+        assert_eq!(v1_entry.swarm_key(), SwarmKey::V1(v1));
+        assert_eq!(v1_entry.info_hashes(), hashes);
+
+        let v2_entry = magnet_runtime_identity(default, &format!("magnet:?xt=urn:btmh:1220{v2}"))
+            .expect("v2 hybrid entry lane");
+        assert_eq!(v2_entry.swarm_key(), v2.swarm_key());
+        assert_eq!(v2_entry.info_hashes(), hashes);
     }
 
     #[tokio::test]
