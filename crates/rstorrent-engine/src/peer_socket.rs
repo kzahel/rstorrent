@@ -239,9 +239,7 @@ pub(crate) async fn connect(
     let mut utp_outcome = None;
     let result = connect_with_progress(
         attempt,
-        info_hash,
-        None,
-        advertise_extensions,
+        DialHandshake::v1(info_hash, advertise_extensions),
         network,
         None,
         &mut utp_outcome,
@@ -260,14 +258,18 @@ pub(crate) async fn connect(
 
 async fn connect_with_progress(
     attempt: DialAttempt,
-    info_hash: [u8; 20],
-    hybrid_v2_hash: Option<[u8; 20]>,
-    advertise_extensions: bool,
+    handshake: DialHandshake,
     network: NetworkConfig,
     utp: Option<UtpHandle>,
     utp_outcome: &mut Option<UtpConnectOutcome>,
     resources: ConnectResources<'_>,
 ) -> Result<(PeerConnection, Handshake), PeerSocketError> {
+    let DialHandshake {
+        info_hash,
+        hybrid_v2_hash,
+        advertise_extensions,
+        ..
+    } = handshake;
     let address = attempt.endpoint().address();
     if !network.policy.allows(address) {
         return Err(PeerSocketError::NetworkPolicyDenied {
@@ -647,6 +649,47 @@ struct ConnectResources<'a> {
     mse_handshake_sink: Option<Arc<dyn MseHandshakeSink>>,
     budget_permit: Option<PeerBudgetPermit>,
     mse_dh: MseDhWorkOwner,
+}
+
+#[derive(Clone, Copy)]
+struct DialHandshake {
+    info_hash: [u8; 20],
+    hybrid_v2_hash: Option<[u8; 20]>,
+    protocol: PeerProtocol,
+    advertise_extensions: bool,
+}
+
+impl DialHandshake {
+    const fn v1(info_hash: [u8; 20], advertise_extensions: bool) -> Self {
+        Self {
+            info_hash,
+            hybrid_v2_hash: None,
+            protocol: PeerProtocol::V1,
+            advertise_extensions,
+        }
+    }
+
+    const fn hybrid(
+        v1_info_hash: [u8; 20],
+        v2_info_hash: [u8; 20],
+        advertise_extensions: bool,
+    ) -> Self {
+        Self {
+            info_hash: v1_info_hash,
+            hybrid_v2_hash: Some(v2_info_hash),
+            protocol: PeerProtocol::V1,
+            advertise_extensions,
+        }
+    }
+
+    const fn v2(info_hash: [u8; 20], advertise_extensions: bool) -> Self {
+        Self {
+            info_hash,
+            hybrid_v2_hash: None,
+            protocol: PeerProtocol::V2,
+            advertise_extensions,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1327,12 +1370,9 @@ impl PeerSocketSet {
         network: NetworkConfig,
         services: PeerDialServices,
     ) -> Result<(), PeerSetError> {
-        self.begin_dial_with_hybrid(
+        self.begin_dial_with_handshake(
             attempt,
-            info_hash,
-            None,
-            PeerProtocol::V1,
-            advertise_extensions,
+            DialHandshake::v1(info_hash, advertise_extensions),
             network,
             services,
         )
@@ -1347,12 +1387,9 @@ impl PeerSocketSet {
         network: NetworkConfig,
         services: PeerDialServices,
     ) -> Result<(), PeerSetError> {
-        self.begin_dial_with_hybrid(
+        self.begin_dial_with_handshake(
             attempt,
-            v1_info_hash,
-            Some(v2_info_hash),
-            PeerProtocol::V1,
-            advertise_extensions,
+            DialHandshake::hybrid(v1_info_hash, v2_info_hash, advertise_extensions),
             network,
             services,
         )
@@ -1366,24 +1403,18 @@ impl PeerSocketSet {
         network: NetworkConfig,
         services: PeerDialServices,
     ) -> Result<(), PeerSetError> {
-        self.begin_dial_with_hybrid(
+        self.begin_dial_with_handshake(
             attempt,
-            info_hash,
-            None,
-            PeerProtocol::V2,
-            advertise_extensions,
+            DialHandshake::v2(info_hash, advertise_extensions),
             network,
             services,
         )
     }
 
-    fn begin_dial_with_hybrid(
+    fn begin_dial_with_handshake(
         &mut self,
         attempt: DialAttempt,
-        info_hash: [u8; 20],
-        hybrid_v2_hash: Option<[u8; 20]>,
-        dial_protocol: PeerProtocol,
-        advertise_extensions: bool,
+        handshake: DialHandshake,
         network: NetworkConfig,
         services: PeerDialServices,
     ) -> Result<(), PeerSetError> {
@@ -1414,9 +1445,7 @@ impl PeerSocketSet {
                 _ = budget_cancellation.cancelled() => Err(PeerSocketError::Cancelled),
                 result = connect_with_progress(
                     attempt,
-                    info_hash,
-                    hybrid_v2_hash,
-                    advertise_extensions,
+                    handshake,
                     network,
                     utp,
                     &mut utp_outcome,
@@ -1431,7 +1460,9 @@ impl PeerSocketSet {
             };
             if let Ok((connection, _)) = &mut result {
                 connection.io.attach_bandwidth(bandwidth);
-                if connection.protocol() == PeerProtocol::V1 && dial_protocol == PeerProtocol::V2 {
+                if connection.protocol() == PeerProtocol::V1
+                    && handshake.protocol == PeerProtocol::V2
+                {
                     connection.set_protocol(PeerProtocol::V2);
                 }
             }
@@ -1732,8 +1763,8 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{
-        ConnectResources, PEER_COMMAND_QUEUE, PeerConnection, PeerDialServices, PeerSetEvent,
-        PeerSocketError, PeerSocketSet, PeerSocketTask, PeerTaskEvent, connect,
+        ConnectResources, DialHandshake, PEER_COMMAND_QUEUE, PeerConnection, PeerDialServices,
+        PeerSetEvent, PeerSocketError, PeerSocketSet, PeerSocketTask, PeerTaskEvent, connect,
         connect_with_progress, next_message, preferred_transport, send_message, utp_dial_eligible,
     };
     use crate::metrics::{ByteMetric, ByteMetricSink};
@@ -1789,9 +1820,7 @@ mod tests {
         let mut utp_outcome = None;
         let result = connect_with_progress(
             attempt,
-            info_hash,
-            None,
-            advertise_extensions,
+            DialHandshake::v1(info_hash, advertise_extensions),
             network,
             None,
             &mut utp_outcome,
@@ -1820,9 +1849,7 @@ mod tests {
         let mut utp_outcome = None;
         let result = connect_with_progress(
             attempt,
-            v1_info_hash,
-            Some(v2_info_hash),
-            advertise_extensions,
+            DialHandshake::hybrid(v1_info_hash, v2_info_hash, advertise_extensions),
             network,
             None,
             &mut utp_outcome,

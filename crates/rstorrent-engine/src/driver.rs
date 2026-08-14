@@ -2194,7 +2194,7 @@ enum MetadataPeerResult {
     Complete {
         connection: PeerConnection,
         raw_info: Vec<u8>,
-        metainfo: AcquiredMetainfo,
+        metainfo: Box<AcquiredMetainfo>,
     },
     Failed {
         connection: PeerConnection,
@@ -3557,6 +3557,7 @@ impl TorrentPeerCoordinator {
                         raw_info,
                         metainfo,
                     })) => {
+                        let metainfo = *metainfo;
                         worker_cancellations.remove(&connection.attempt().id());
                         cleanup_metadata_attempts(
                             self,
@@ -3775,7 +3776,7 @@ async fn run_metadata_peer(
         Some(Ok((raw_info, metainfo))) => MetadataPeerResult::Complete {
             connection,
             raw_info,
-            metainfo,
+            metainfo: Box::new(metainfo),
         },
         Some(Err(error)) => MetadataPeerResult::Failed { connection, error },
         None => MetadataPeerResult::Cancelled { connection },
