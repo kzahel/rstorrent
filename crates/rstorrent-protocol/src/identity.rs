@@ -105,6 +105,13 @@ impl FullInfoHash {
             Self::V2(hash) => hash.swarm_key(),
         }
     }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::V1(hash) => hash.as_bytes(),
+            Self::V2(hash) => hash.as_bytes(),
+        }
+    }
 }
 
 impl From<V1InfoHash> for FullInfoHash {
@@ -116,6 +123,12 @@ impl From<V1InfoHash> for FullInfoHash {
 impl From<V2InfoHash> for FullInfoHash {
     fn from(value: V2InfoHash) -> Self {
         Self::V2(value)
+    }
+}
+
+impl From<[u8; 20]> for FullInfoHash {
+    fn from(value: [u8; 20]) -> Self {
+        Self::V1(V1InfoHash::new(value))
     }
 }
 

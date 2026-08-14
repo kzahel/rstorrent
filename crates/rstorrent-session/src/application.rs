@@ -31,7 +31,7 @@ use rstorrent_engine::{
     resume_metainfo_with_control, torrent_storage_paths, verify_prepared_platform_content_files,
 };
 use rstorrent_protocol::content::{TorrentContent, TorrentContentProjection};
-use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash};
+use rstorrent_protocol::identity::{InfoHashes, SwarmKey};
 use rstorrent_protocol::magnet::{MAX_TRACKER_URL_LENGTH, UdpTrackerUrl};
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, Metainfo, MetainfoError,
@@ -1123,11 +1123,11 @@ impl ApplicationService {
             Command::AddMagnet { magnet, .. } => {
                 let target = rstorrent_protocol::magnet::Magnet::parse(magnet)
                     .ok()
-                    .map(|magnet| V1InfoHash::new(magnet.info_hash));
+                    .map(|magnet| magnet.identity);
                 match target {
                     Some(target) => self
                         .store_mut()?
-                        .find_v1_owner(target)?
+                        .find_owner(target)?
                         .map(|owner| owner.to_string()),
                     None => None,
                 }

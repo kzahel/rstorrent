@@ -3,6 +3,9 @@ use std::error::Error;
 use std::fmt;
 
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
+
+use crate::identity::{FullInfoHash, V1InfoHash, V2InfoHash};
 
 use crate::bencode::{DictionaryEntry, Limits, Node, ParseError, Value, parse_prefix_with_limits};
 use crate::extension::{
@@ -320,9 +323,51 @@ pub enum MetadataDownloadAction {
     Complete(Vec<u8>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetadataInfoHash {
+    V1([u8; 20]),
+    V2([u8; 32]),
+}
+
+impl MetadataInfoHash {
+    fn matches(self, bytes: &[u8]) -> bool {
+        match self {
+            Self::V1(expected) => <[u8; 20]>::from(Sha1::digest(bytes)) == expected,
+            Self::V2(expected) => <[u8; 32]>::from(Sha256::digest(bytes)) == expected,
+        }
+    }
+}
+
+impl From<[u8; 20]> for MetadataInfoHash {
+    fn from(value: [u8; 20]) -> Self {
+        Self::V1(value)
+    }
+}
+
+impl From<V1InfoHash> for MetadataInfoHash {
+    fn from(value: V1InfoHash) -> Self {
+        Self::V1(value.into_bytes())
+    }
+}
+
+impl From<V2InfoHash> for MetadataInfoHash {
+    fn from(value: V2InfoHash) -> Self {
+        Self::V2(value.into_bytes())
+    }
+}
+
+impl From<FullInfoHash> for MetadataInfoHash {
+    fn from(value: FullInfoHash) -> Self {
+        match value {
+            FullInfoHash::V1(hash) => hash.into(),
+            FullInfoHash::V2(hash) => hash.into(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MetadataDownload {
-    expected_info_hash: [u8; 20],
+    expected_info_hash: MetadataInfoHash,
     size: Option<usize>,
     bytes: Vec<u8>,
     received: Vec<bool>,
@@ -332,9 +377,9 @@ pub struct MetadataDownload {
 }
 
 impl MetadataDownload {
-    pub fn new(expected_info_hash: [u8; 20]) -> Self {
+    pub fn new(expected_info_hash: impl Into<MetadataInfoHash>) -> Self {
         Self {
-            expected_info_hash,
+            expected_info_hash: expected_info_hash.into(),
             size: None,
             bytes: Vec::new(),
             received: Vec::new(),
@@ -467,7 +512,7 @@ impl MetadataDownload {
         self.received[index] = true;
 
         if self.received.iter().all(|received| *received) {
-            if <[u8; 20]>::from(Sha1::digest(&self.bytes)) != self.expected_info_hash {
+            if !self.expected_info_hash.matches(&self.bytes) {
                 return Err(MetadataError::HashMismatch);
             }
             self.complete = true;
@@ -554,7 +599,7 @@ struct TorrentMetadataPeer {
 
 #[derive(Debug)]
 pub struct TorrentMetadataDownload {
-    expected_info_hash: [u8; 20],
+    expected_info_hash: MetadataInfoHash,
     size: Option<usize>,
     bytes: Vec<u8>,
     blocks: Vec<TorrentMetadataBlock>,
@@ -564,9 +609,9 @@ pub struct TorrentMetadataDownload {
 }
 
 impl TorrentMetadataDownload {
-    pub fn new(expected_info_hash: [u8; 20]) -> Self {
+    pub fn new(expected_info_hash: impl Into<MetadataInfoHash>) -> Self {
         Self {
-            expected_info_hash,
+            expected_info_hash: expected_info_hash.into(),
             size: None,
             bytes: Vec::new(),
             blocks: vec![TorrentMetadataBlock::default()],
@@ -726,7 +771,7 @@ impl TorrentMetadataDownload {
             return Ok(TorrentMetadataEvent::BlockAccepted { piece });
         }
 
-        if <[u8; 20]>::from(Sha1::digest(&self.bytes)) == self.expected_info_hash {
+        if self.expected_info_hash.matches(&self.bytes) {
             self.complete = true;
             let bytes = std::mem::take(&mut self.bytes);
             return Ok(TorrentMetadataEvent::Complete(bytes));
@@ -1087,6 +1132,9 @@ fn push_integer(output: &mut Vec<u8>, value: i64) {
 #[cfg(test)]
 mod tests {
     use sha1::{Digest, Sha1};
+    use sha2::Sha256;
+
+    use crate::identity::V2InfoHash;
 
     use super::{
         ExtensionHandshake, MAX_LOCAL_METADATA_LENGTH, MAX_METADATA_LENGTH,
@@ -1205,7 +1253,7 @@ mod tests {
     fn downloader_limits_requests_and_completes_out_of_order_after_hashing() {
         let mut bytes = vec![3; METADATA_BLOCK_LENGTH + 7];
         bytes[0] = b'd';
-        let hash = Sha1::digest(&bytes).into();
+        let hash = <[u8; 20]>::from(Sha1::digest(&bytes));
         let mut download = MetadataDownload::new(hash);
 
         let actions = download
@@ -1244,9 +1292,59 @@ mod tests {
     }
 
     #[test]
+    fn downloaders_authenticate_exact_v2_metadata_with_sha256() {
+        let bytes = b"d9:file treede12:meta versioni2e4:name1:x12:piece lengthi16384ee";
+        let identity = V2InfoHash::new(<[u8; 32]>::from(Sha256::digest(bytes)));
+
+        let mut single_peer = MetadataDownload::new(identity);
+        assert_eq!(
+            single_peer.start(Some(bytes.len())).expect("start v2"),
+            [MetadataDownloadAction::Request(0)]
+        );
+        assert_eq!(
+            single_peer
+                .on_message(MetadataMessage::Data {
+                    piece: 0,
+                    total_size: bytes.len(),
+                    block: bytes,
+                })
+                .expect("complete exact SHA-256 metadata"),
+            [MetadataDownloadAction::Complete(bytes.to_vec())]
+        );
+
+        let mut cross_peer = TorrentMetadataDownload::new(identity);
+        cross_peer
+            .register_peer(7, Some(bytes.len()))
+            .expect("register v2 peer");
+        assert_eq!(
+            cross_peer
+                .requests_for_peer(7, MetadataInstant::ZERO)
+                .expect("request v2 metadata"),
+            [0]
+        );
+        assert_eq!(
+            cross_peer
+                .on_data(7, 0, bytes.len(), bytes, MetadataInstant::ZERO)
+                .expect("authenticate v2 metadata"),
+            TorrentMetadataEvent::Complete(bytes.to_vec())
+        );
+
+        let mut wrong = MetadataDownload::new(V2InfoHash::new([0; 32]));
+        wrong.start(Some(bytes.len())).expect("start wrong v2");
+        assert_eq!(
+            wrong.on_message(MetadataMessage::Data {
+                piece: 0,
+                total_size: bytes.len(),
+                block: bytes,
+            }),
+            Err(MetadataError::HashMismatch)
+        );
+    }
+
+    #[test]
     fn downloader_defers_allocation_without_size_and_checks_every_transition() {
         let bytes = b"tiny metadata";
-        let mut download = MetadataDownload::new(Sha1::digest(bytes).into());
+        let mut download = MetadataDownload::new(<[u8; 20]>::from(Sha1::digest(bytes)));
         assert_eq!(
             download.start(None).expect("fallback request"),
             [MetadataDownloadAction::Request(0)]
@@ -1357,7 +1455,7 @@ mod tests {
     fn torrent_download_combines_disjoint_peer_blocks() {
         let mut bytes = vec![3; METADATA_BLOCK_LENGTH * 2 + 7];
         bytes[0] = b'd';
-        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        let mut download = TorrentMetadataDownload::new(<[u8; 20]>::from(Sha1::digest(&bytes)));
         download
             .register_peer(1, Some(bytes.len()))
             .expect("register first peer");
@@ -1423,7 +1521,7 @@ mod tests {
     #[test]
     fn torrent_download_expires_assignments_and_accepts_late_duplicates() {
         let bytes = vec![4; METADATA_BLOCK_LENGTH + 3];
-        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        let mut download = TorrentMetadataDownload::new(<[u8; 20]>::from(Sha1::digest(&bytes)));
         for peer in [1, 2] {
             download
                 .register_peer(peer, Some(bytes.len()))
@@ -1500,7 +1598,7 @@ mod tests {
     #[test]
     fn torrent_download_reject_cools_peer_and_releases_all_work() {
         let bytes = vec![5; METADATA_BLOCK_LENGTH + 1];
-        let mut download = TorrentMetadataDownload::new(Sha1::digest(&bytes).into());
+        let mut download = TorrentMetadataDownload::new(<[u8; 20]>::from(Sha1::digest(&bytes)));
         for peer in [1, 2] {
             download
                 .register_peer(peer, Some(bytes.len()))
@@ -1543,7 +1641,7 @@ mod tests {
         correct[0] = b'd';
         let mut corrupt = correct.clone();
         corrupt[METADATA_BLOCK_LENGTH * 2] ^= 0xff;
-        let mut download = TorrentMetadataDownload::new(Sha1::digest(&correct).into());
+        let mut download = TorrentMetadataDownload::new(<[u8; 20]>::from(Sha1::digest(&correct)));
         for peer in [1, 2] {
             download
                 .register_peer(peer, Some(correct.len()))

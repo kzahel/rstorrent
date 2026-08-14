@@ -15,7 +15,7 @@ use rstorrent_protocol::extension::{
     encode_extension_handshake as encode_recognized_extension_handshake,
     parse_extension_handshake as parse_recognized_extension_handshake,
 };
-use rstorrent_protocol::identity::SwarmKey;
+use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, SwarmKey};
 #[cfg(test)]
 use rstorrent_protocol::magnet::UdpTrackerUrl;
 use rstorrent_protocol::magnet::{Magnet, MagnetError, PeerHint, TrackerUrl, TrackerUrlTransport};
@@ -27,6 +27,7 @@ use rstorrent_protocol::metadata::{
 };
 use rstorrent_protocol::metainfo::{
     BEP9_METAINFO_LIMITS, DURABLE_METAINFO_LIMITS, MAX_METAINFO_PIECES, Metainfo, MetainfoError,
+    ParsedInfo, ParsedInfoKind, V2Metainfo,
 };
 use rstorrent_protocol::peer_wire::{
     FrameError, Handshake, HandshakeError, NegotiatedPeerCapabilities, PeerMessage,
@@ -1066,6 +1067,27 @@ fn validate_v1_runtime_identity(
     }
 }
 
+fn validate_magnet_runtime_identity(
+    identity: TorrentIdentityContext,
+    expected: FullInfoHash,
+) -> Result<(), DownloadError> {
+    let expected_hashes = match expected {
+        FullInfoHash::V1(hash) => InfoHashes::v1(hash),
+        FullInfoHash::V2(hash) => InfoHashes::v2(hash),
+    };
+    if identity.info_hashes() != expected_hashes {
+        return Err(DownloadError::InvalidTorrentIdentity(
+            "full identity does not match the magnet",
+        ));
+    }
+    if identity.swarm_key() != expected.swarm_key() {
+        return Err(DownloadError::InvalidTorrentIdentity(
+            "selected wire key does not match the magnet",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_content_runtime_identity(
     identity: TorrentIdentityContext,
     content: &TorrentContent,
@@ -1214,9 +1236,8 @@ impl PremetadataPeerState {
 
     fn validated_messages(
         self,
-        metainfo: &Metainfo,
+        piece_count: usize,
     ) -> Result<VecDeque<PeerMessage>, DownloadError> {
-        let piece_count = metainfo.piece_count();
         let mut messages = VecDeque::new();
         let expected_length = piece_count.div_ceil(8);
         let had_availability =
@@ -2113,7 +2134,7 @@ enum MetadataPeerResult {
     Complete {
         connection: PeerConnection,
         raw_info: Vec<u8>,
-        metainfo: Metainfo,
+        metainfo: AcquiredMetainfo,
     },
     Failed {
         connection: PeerConnection,
@@ -2122,6 +2143,57 @@ enum MetadataPeerResult {
     Cancelled {
         connection: PeerConnection,
     },
+}
+
+#[derive(Clone, Debug)]
+enum AcquiredMetainfo {
+    V1(Metainfo),
+    V2(V2Metainfo),
+}
+
+impl AcquiredMetainfo {
+    #[cfg(test)]
+    fn v1(&self) -> Option<&Metainfo> {
+        match self {
+            Self::V1(metainfo) => Some(metainfo),
+            Self::V2(_) => None,
+        }
+    }
+
+    fn private(&self) -> bool {
+        match self {
+            Self::V1(metainfo) => metainfo.private,
+            Self::V2(metainfo) => metainfo.private,
+        }
+    }
+
+    fn total_length(&self) -> u64 {
+        match self {
+            Self::V1(metainfo) => metainfo.total_length,
+            Self::V2(metainfo) => metainfo.total_length,
+        }
+    }
+
+    fn piece_length(&self) -> u32 {
+        match self {
+            Self::V1(metainfo) => metainfo.piece_length,
+            Self::V2(metainfo) => metainfo.piece_length,
+        }
+    }
+
+    fn piece_count(&self) -> usize {
+        match self {
+            Self::V1(metainfo) => metainfo.piece_count(),
+            Self::V2(metainfo) => metainfo.layout.piece_count(),
+        }
+    }
+
+    fn file_count(&self) -> usize {
+        match self {
+            Self::V1(metainfo) => metainfo.files.len(),
+            Self::V2(metainfo) => metainfo.files.len(),
+        }
+    }
 }
 
 impl MetadataPeerResult {
@@ -2750,7 +2822,7 @@ impl TorrentPeerCoordinator {
         if !trackers.is_empty() {
             peers.tracker = Some(TrackerManager::start_with_configs(
                 trackers,
-                magnet.info_hash,
+                magnet.identity.swarm_key().into_bytes(),
                 network,
                 peers.control.clone(),
             )?);
@@ -3048,10 +3120,11 @@ impl TorrentPeerCoordinator {
 
     async fn acquire_metadata(
         &mut self,
-        info_hash: [u8; 20],
-    ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+        identity: impl Into<FullInfoHash>,
+    ) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
+        let identity = identity.into();
         self.control.metadata_started();
-        let result = self.acquire_metadata_inner(info_hash).await;
+        let result = self.acquire_metadata_inner(identity).await;
         self.control.observe_metadata_supervisor(
             self.registry_snapshot(),
             0,
@@ -3060,10 +3133,10 @@ impl TorrentPeerCoordinator {
         );
         if let Ok((_, metainfo)) = &result {
             self.control.emit(DownloadActivityEvent::MetadataVerified {
-                total_length: metainfo.total_length,
-                piece_length: metainfo.piece_length,
-                piece_count: metainfo.piece_hashes.len(),
-                file_count: metainfo.files.len(),
+                total_length: metainfo.total_length(),
+                piece_length: metainfo.piece_length(),
+                piece_count: metainfo.piece_count(),
+                file_count: metainfo.file_count(),
             });
         }
         self.control.metadata_finished(&result);
@@ -3072,16 +3145,17 @@ impl TorrentPeerCoordinator {
 
     async fn acquire_metadata_inner(
         &mut self,
-        info_hash: [u8; 20],
-    ) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+        identity: FullInfoHash,
+    ) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
         debug_assert!(self.connection.is_none());
+        let info_hash = identity.swarm_key().into_bytes();
         let mut sockets = PeerSocketSet::with_owners(self.peer_budget.clone(), self.mse_dh.clone())
             .with_bandwidth(self.peers.bandwidth());
         let mut workers = JoinSet::new();
         let mut worker_cancellations: BTreeMap<DialAttemptId, (DialAttempt, CancellationToken)> =
             BTreeMap::new();
         let mut discovery_failed_while_active = false;
-        let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(info_hash)));
+        let metadata = Arc::new(Mutex::new(TorrentMetadataDownload::new(identity)));
 
         loop {
             let address_families = self.peers.address_family_policy();
@@ -3220,6 +3294,7 @@ impl TorrentPeerCoordinator {
                                 run_metadata_peer(
                                     connection,
                                     handshake,
+                                    identity,
                                     cancellation,
                                     admission_cancellation,
                                     control,
@@ -3289,7 +3364,7 @@ impl TorrentPeerCoordinator {
                         )
                         .await?;
                         self.connection = Some(connection);
-                        if metainfo.private {
+                        if metainfo.private() {
                             self.disable_dht_for_private(info_hash).await?;
                         }
                         return Ok((raw_info, metainfo));
@@ -3433,6 +3508,7 @@ fn configured_magnet_trackers(trackers: &[TrackerUrl]) -> Vec<TrackerConfig> {
 async fn run_metadata_peer(
     mut connection: PeerConnection,
     handshake: Handshake,
+    identity: FullInfoHash,
     cancellation: CancellationToken,
     admission_cancellation: Option<CancellationToken>,
     control: DownloadControl,
@@ -3450,6 +3526,7 @@ async fn run_metadata_peer(
         result = acquire_metadata_from_connection(
             &mut connection,
             handshake,
+            identity,
             &control,
             &metadata,
         ) => {
@@ -3603,7 +3680,7 @@ async fn run_magnet_download(
     control: DownloadControl,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
-    validate_v1_runtime_identity(config.identity, magnet.info_hash)?;
+    validate_magnet_runtime_identity(config.identity, magnet.identity)?;
     let mut peers = TorrentPeerCoordinator::from_magnet(
         &magnet,
         config.network,
@@ -3626,7 +3703,13 @@ async fn run_magnet_download_with_peers(
     magnet: Magnet,
     peers: &mut TorrentPeerCoordinator,
 ) -> Result<DownloadReport, DownloadError> {
-    let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+    let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
+    let AcquiredMetainfo::V1(metainfo) = metainfo else {
+        peers.close_current(None)?;
+        return Err(DownloadError::InvalidPremetadataState(
+            "v2 payload requires authenticated piece hashes",
+        ));
+    };
     let content_config = ContentDownloadConfig {
         artifact_identity: TorrentArtifactIdentity {
             torrent_id: config.identity.torrent_id(),
@@ -3662,7 +3745,7 @@ async fn run_magnet_metadata(
     resources: TorrentPeerResources,
 ) -> Result<Vec<u8>, DownloadError> {
     let magnet = Magnet::parse(&magnet).map_err(DownloadError::Magnet)?;
-    validate_v1_runtime_identity(identity, magnet.info_hash)?;
+    validate_magnet_runtime_identity(identity, magnet.identity)?;
     let mut peers = TorrentPeerCoordinator::from_magnet_with_trackers(
         &magnet,
         configured_trackers,
@@ -3673,7 +3756,7 @@ async fn run_magnet_metadata(
     )
     .await?;
     let result = async {
-        let (raw_info, _) = peers.acquire_metadata(magnet.info_hash).await?;
+        let (raw_info, _) = peers.acquire_metadata(magnet.identity).await?;
         peers.close_current(None)?;
         Ok(raw_info)
     }
@@ -3713,7 +3796,7 @@ async fn run_resumable_magnet_download(
     descriptors: Option<(DescriptorStorage, bool)>,
 ) -> Result<DownloadReport, DownloadError> {
     let magnet = Magnet::parse(&config.magnet).map_err(DownloadError::Magnet)?;
-    validate_v1_runtime_identity(config.identity, magnet.info_hash)?;
+    validate_magnet_runtime_identity(config.identity, magnet.identity)?;
     let dht = config.dht.clone();
     let configured_trackers = config.trackers.clone();
     let torrent_peers = config.torrent_peers.clone();
@@ -3731,13 +3814,30 @@ async fn run_resumable_magnet_download(
     let descriptors = descriptors.map(|(descriptors, _)| descriptors);
 
     if let Some(raw_info) = resume.raw_info.as_ref() {
-        let metainfo = Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+        let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
             .map_err(DownloadError::Metainfo)?;
-        if metainfo.info_hash != magnet.info_hash {
+        let expected = match magnet.identity {
+            FullInfoHash::V1(hash) => InfoHashes::v1(hash),
+            FullInfoHash::V2(hash) => InfoHashes::v2(hash),
+        };
+        if parsed.info_hashes() != expected {
             return Err(DownloadError::Checkpoint(
                 "stored metadata does not match the magnet identity".to_owned(),
             ));
         }
+        let metainfo = match parsed.kind() {
+            ParsedInfoKind::V1(metainfo) => metainfo.clone(),
+            ParsedInfoKind::V2(_) => {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "v2 payload requires authenticated piece hashes",
+                ));
+            }
+            ParsedInfoKind::Hybrid(_) => {
+                return Err(DownloadError::InvalidPremetadataState(
+                    "hybrid metadata is outside the pure-v2 magnet subset",
+                ));
+            }
+        };
         validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
         let content_dht = if metainfo.private {
             control.emit(DownloadActivityEvent::DhtDisabledForPrivateTorrent);
@@ -3815,7 +3915,17 @@ async fn run_resumable_magnet_download(
     )
     .await?;
     let result = async {
-        let (raw_info, metainfo) = peers.acquire_metadata(magnet.info_hash).await?;
+        let (raw_info, metainfo) = peers.acquire_metadata(magnet.identity).await?;
+        let AcquiredMetainfo::V1(metainfo) = metainfo else {
+            if let Err(message) = checkpoints.metadata_verified(&raw_info) {
+                peers.close_current(None)?;
+                return Err(DownloadError::Checkpoint(message));
+            }
+            peers.close_current(None)?;
+            return Err(DownloadError::InvalidPremetadataState(
+                "v2 payload requires authenticated piece hashes",
+            ));
+        };
         validate_publication_name(&metainfo.name).map_err(DownloadError::SelectiveStorage)?;
         if let Err(message) = checkpoints.metadata_verified(&raw_info) {
             peers.close_current(None)?;
@@ -3938,9 +4048,10 @@ async fn run_resumable_metainfo_download(
 async fn acquire_metadata_from_connection(
     peer: &mut PeerConnection,
     handshake: Handshake,
+    identity: FullInfoHash,
     control: &DownloadControl,
     metadata: &Arc<Mutex<TorrentMetadataDownload>>,
-) -> Result<(Vec<u8>, Metainfo), DownloadError> {
+) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
     if !handshake.supports_extensions() {
         return Err(DownloadError::ExtensionProtocolUnsupported);
     }
@@ -4117,7 +4228,7 @@ async fn acquire_metadata_from_connection(
                                 0,
                             );
                             drop(download);
-                            return finish_metadata_acquisition(bytes, peer_state, peer);
+                            return finish_metadata_acquisition(bytes, identity, peer_state, peer);
                         }
                         let requests_sent = match remote_metadata_id {
                             Some(remote_id) => {
@@ -4197,12 +4308,31 @@ fn metadata_instant(elapsed: Duration) -> MetadataInstant {
 
 fn finish_metadata_acquisition(
     bytes: Vec<u8>,
+    identity: FullInfoHash,
     peer_state: PremetadataPeerState,
     peer: &mut PeerConnection,
-) -> Result<(Vec<u8>, Metainfo), DownloadError> {
-    let metainfo = Metainfo::from_info_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS)
+) -> Result<(Vec<u8>, AcquiredMetainfo), DownloadError> {
+    let parsed = ParsedInfo::from_bytes_with_limits(&bytes, BEP9_METAINFO_LIMITS)
         .map_err(DownloadError::Metainfo)?;
-    peer.prepend_messages(peer_state.validated_messages(&metainfo)?);
+    let expected = match identity {
+        FullInfoHash::V1(hash) => InfoHashes::v1(hash),
+        FullInfoHash::V2(hash) => InfoHashes::v2(hash),
+    };
+    if parsed.info_hashes() != expected {
+        return Err(DownloadError::InvalidPremetadataState(
+            "metadata protocol identity does not match the magnet",
+        ));
+    }
+    let metainfo = match parsed.kind() {
+        ParsedInfoKind::V1(metainfo) => AcquiredMetainfo::V1(metainfo.clone()),
+        ParsedInfoKind::V2(metainfo) => AcquiredMetainfo::V2(metainfo.clone()),
+        ParsedInfoKind::Hybrid(_) => {
+            return Err(DownloadError::InvalidPremetadataState(
+                "hybrid metadata is outside the pure-v2 magnet subset",
+            ));
+        }
+    };
+    peer.prepend_messages(peer_state.validated_messages(metainfo.piece_count())?);
     Ok((bytes, metainfo))
 }
 

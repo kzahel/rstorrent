@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rstorrent_protocol::metadata::TorrentMetadataDownload;
-use rstorrent_protocol::metainfo::Metainfo;
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
@@ -2022,7 +2021,7 @@ impl DownloadControl {
         push_recent_metadata_attempt(&mut state, peer);
     }
 
-    pub(super) fn metadata_finished(&self, result: &Result<(Vec<u8>, Metainfo), DownloadError>) {
+    pub(super) fn metadata_finished<T>(&self, result: &Result<T, DownloadError>) {
         let now = self.diagnostic_elapsed();
         let mut state = self
             .inner

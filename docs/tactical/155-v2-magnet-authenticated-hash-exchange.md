@@ -1,8 +1,9 @@
 # Tactical 155: V2 Magnet And Authenticated Hash Exchange
 
 Status: **Implementation in progress and authoritative Now on 2026-08-14.**
-Stage 0 source reconfirmation, pre-change regression, and executable resource
-baselines are complete. Runtime behavior remains unchanged.
+Stages 0 and 1 are complete. Pure-v2 magnet identity, persistence, export,
+and exact SHA-256 BEP 9 metadata admission are live; piece payload remains
+fail-closed until authenticated hash exchange lands.
 
 Topics: `bittorrent-v2-and-hybrid`, `protocol-support`,
 `download-correctness`, `client-persistence`, `peer-lifecycle`,
@@ -964,5 +965,30 @@ unless a bounded artifact is explicitly retained and linked.
   and hostile request shapes. Full protocol tests and strict all-target
   protocol clippy pass.
 
-Stage 1 begins with typed `btmh` intake/export and SHA-256 BEP 9 admission.
-Do not infer magnet or wire support from the Stage 0 task-free resource code.
+### 2026-08-14 Stage 1 identity and metadata admission
+
+- `Magnet` now owns a typed full v1 or v2 identity. It accepts only exact
+  hexadecimal `1220` SHA-256 multihashes, preserves equal repetitions and
+  lowercase canonical export, and rejects malformed, conflicting, or mixed
+  identities. Existing peer hints, trackers, and BEP 53 selection compose
+  through the same bounded parser.
+- The one existing BEP 9 assembler now selects SHA-1 or SHA-256 from the full
+  identity while preserving its 30-MiB, 16-KiB-block, cross-peer, retry, and
+  cancellation owners. The torrent coordinator strictly parses exact
+  assembled v2 info and rejects v1 or malformed content under a `btmh`
+  identity before content authority changes.
+- Session persistence and duplicate lookup use protocol plus full hash.
+  Source-aware export validates the full identity and synthesizes canonical
+  `btmh` when the retained source is unavailable. Raw info-only v2 restart,
+  file selection, have reset, and prepared-file geometry use a descriptor
+  projection that never invents complete piece layers.
+- Focused tests prove exact SHA-256 assembly, wrong-hash rejection, a scripted
+  `btmh` plus peer-hint metadata exchange, wrong-format/malformed rejection,
+  full-v2 duplicate behavior, selection, source/fallback export, and restart.
+  `cargo fmt --all -- --check`, warning-denying workspace clippy, and the full
+  workspace test suite pass: engine 560 passed/four opt-in ignored, protocol
+  252 passed/four ignored, and session 243 passed/two ignored, with all other
+  crate and doc tests green.
+
+Stage 2 begins with the complete descriptor/catalog split and messages
+21--23. Do not infer payload download support from metadata admission alone.

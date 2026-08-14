@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::identity::{FullInfoHash, V1InfoHash, V2InfoHash};
+
 pub const MAX_MAGNET_LENGTH: usize = 16 * 1024;
 pub const MAX_MAGNET_PARAMETERS: usize = 128;
 pub const MAX_PEER_HINTS: usize = 32;
@@ -43,7 +45,7 @@ impl SelectOnly {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Magnet {
-    pub info_hash: [u8; 20],
+    pub identity: FullInfoHash,
     pub peer_hints: Vec<PeerHint>,
     pub trackers: Vec<TrackerUrl>,
     pub select_only: Option<SelectOnly>,
@@ -162,7 +164,7 @@ pub enum MagnetError {
     MissingInfoHash,
     InvalidInfoHash,
     ConflictingInfoHashes,
-    UnsupportedV2,
+    UnsupportedHybrid,
     TooManyPeerHints { maximum: usize },
     TooManyTrackers { maximum: usize },
     InvalidSelectOnly,
@@ -182,13 +184,13 @@ impl fmt::Display for MagnetError {
             }
             Self::InvalidPercentEscape => write!(formatter, "magnet contains an invalid escape"),
             Self::InvalidUtf8 => write!(formatter, "magnet contains non-UTF-8 query text"),
-            Self::MissingInfoHash => write!(formatter, "magnet has no v1 btih identity"),
-            Self::InvalidInfoHash => write!(formatter, "magnet has an invalid v1 btih identity"),
+            Self::MissingInfoHash => write!(formatter, "magnet has no supported torrent identity"),
+            Self::InvalidInfoHash => write!(formatter, "magnet has an invalid torrent identity"),
             Self::ConflictingInfoHashes => {
-                write!(formatter, "magnet has conflicting v1 btih identities")
+                write!(formatter, "magnet has conflicting torrent identities")
             }
-            Self::UnsupportedV2 => {
-                write!(formatter, "v2 and hybrid magnet identities are unsupported")
+            Self::UnsupportedHybrid => {
+                write!(formatter, "mixed v1/v2 magnet identities are unsupported")
             }
             Self::TooManyPeerHints { maximum } => {
                 write!(formatter, "magnet has more than {maximum} valid peer hints")
@@ -235,8 +237,8 @@ impl Magnet {
             });
         }
 
-        let mut info_hash = None;
-        let mut has_v2_identity = false;
+        let mut v1_info_hash = None;
+        let mut v2_info_hash = None;
         let mut peer_hints = Vec::new();
         let mut trackers = Vec::new();
         let mut select_only_ranges = Vec::new();
@@ -248,15 +250,19 @@ impl Magnet {
             let value = percent_decode(encoded_value)?;
             if name.eq_ignore_ascii_case("xt") {
                 if starts_with_ignore_ascii_case(&value, "urn:btmh:") {
-                    has_v2_identity = true;
+                    let hash = parse_btmh(&value[b"urn:btmh:".len()..])?;
+                    if v2_info_hash.is_some_and(|existing| existing != hash) {
+                        return Err(MagnetError::ConflictingInfoHashes);
+                    }
+                    v2_info_hash = Some(hash);
                     continue;
                 }
                 if starts_with_ignore_ascii_case(&value, "urn:btih:") {
                     let hash = parse_btih(&value[b"urn:btih:".len()..])?;
-                    if info_hash.is_some_and(|existing| existing != hash) {
+                    if v1_info_hash.is_some_and(|existing| existing != hash) {
                         return Err(MagnetError::ConflictingInfoHashes);
                     }
-                    info_hash = Some(hash);
+                    v1_info_hash = Some(hash);
                 }
             } else if name.eq_ignore_ascii_case("x.pe")
                 && let Some(hint) = parse_peer_hint(&value)
@@ -286,11 +292,14 @@ impl Magnet {
             }
         }
 
-        if has_v2_identity {
-            return Err(MagnetError::UnsupportedV2);
-        }
+        let identity = match (v1_info_hash, v2_info_hash) {
+            (Some(_), Some(_)) => return Err(MagnetError::UnsupportedHybrid),
+            (Some(hash), None) => FullInfoHash::V1(V1InfoHash::new(hash)),
+            (None, Some(hash)) => FullInfoHash::V2(V2InfoHash::new(hash)),
+            (None, None) => return Err(MagnetError::MissingInfoHash),
+        };
         Ok(Self {
-            info_hash: info_hash.ok_or(MagnetError::MissingInfoHash)?,
+            identity,
             peer_hints,
             trackers,
             select_only: has_select_only.then(|| SelectOnly {
@@ -410,6 +419,19 @@ fn parse_btih(value: &str) -> Result<[u8; 20], MagnetError> {
         32 => decode_base32(value),
         _ => Err(MagnetError::InvalidInfoHash),
     }
+}
+
+fn parse_btmh(value: &str) -> Result<[u8; 32], MagnetError> {
+    if value.len() != 68 || !starts_with_ignore_ascii_case(value, "1220") {
+        return Err(MagnetError::InvalidInfoHash);
+    }
+    let mut hash = [0; 32];
+    for (index, pair) in value.as_bytes()[4..].chunks_exact(2).enumerate() {
+        let high = hex_value(pair[0]).ok_or(MagnetError::InvalidInfoHash)?;
+        let low = hex_value(pair[1]).ok_or(MagnetError::InvalidInfoHash)?;
+        hash[index] = (high << 4) | low;
+    }
+    Ok(hash)
 }
 
 fn decode_base32(value: &str) -> Result<[u8; 20], MagnetError> {
@@ -696,6 +718,8 @@ fn hex_value(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    use crate::identity::{FullInfoHash, V2InfoHash};
+
     use super::{
         MAX_FILE_INDEX, MAX_HOST_LENGTH, MAX_MAGNET_LENGTH, MAX_MAGNET_PARAMETERS, MAX_PEER_HINTS,
         MAX_SELECT_ONLY_RANGES, MAX_TRACKER_URL_LENGTH, MAX_TRACKERS, Magnet, MagnetError,
@@ -764,7 +788,7 @@ mod tests {
         let base32 =
             Magnet::parse(&format!("MAGNET:?xt=urn:btih:{BASE32_HASH}")).expect("base32 identity");
 
-        assert_eq!(hex.info_hash, base32.info_hash);
+        assert_eq!(hex.identity, base32.identity);
         assert_eq!(
             hex.peer_hints,
             [
@@ -786,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_identity_scheme_escapes_and_v2() {
+    fn accepts_exact_v2_and_rejects_bad_or_mixed_identity() {
         for input in [
             "",
             "https:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
@@ -806,17 +830,30 @@ mod tests {
             Magnet::parse("magnet:?xt=urn:btih:xyz"),
             Err(MagnetError::InvalidInfoHash)
         );
-        assert_eq!(
-            Magnet::parse(
-                "magnet:?xt=urn:btmh:1220aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            ),
-            Err(MagnetError::UnsupportedV2)
-        );
+        let v2 = Magnet::parse(
+            "magnet:?xt=urn:btmh:1220AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&xt=URN:BTMH:1220aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .expect("exact repeated v2 identity");
+        assert_eq!(v2.identity, FullInfoHash::V2(V2InfoHash::new([0xaa; 32])));
+        for value in [
+            "1220aa",
+            "1221aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "1120aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "1220aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaag",
+            "1220aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert_eq!(
+                Magnet::parse(&format!("magnet:?xt=urn:btmh:{value}")),
+                Err(MagnetError::InvalidInfoHash),
+                "{value}"
+            );
+        }
         assert_eq!(
             Magnet::parse(&format!(
-                "magnet:?xt=urn:btih:{HEX_HASH}&xt=urn:btmh:1220aa"
+                "magnet:?xt=urn:btih:{HEX_HASH}&xt=urn:btmh:1220{}",
+                "aa".repeat(32)
             )),
-            Err(MagnetError::UnsupportedV2)
+            Err(MagnetError::UnsupportedHybrid)
         );
         assert_eq!(
             Magnet::parse(&format!(

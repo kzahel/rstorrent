@@ -595,12 +595,12 @@ becomes available or a
 separate control-transport investigation is explicitly authorized.
 
 Current engine-campaign action: execute decision-complete Stage 4 Tactical
-`155` for v2 magnets and authenticated hash exchange. Its Stage 0 source
-reconfirmation, clean workspace baseline, and executable 80-MiB catalog plus
-17,553-byte frame resource models are complete. Continue with Stage 1 typed
-`btmh` intake/export and SHA-256 BEP 9 admission, then the already bounded
-descriptor/catalog, messages 21--23, scheduling, restart, upload, platform,
-and two-role interoperability stages. Completed Tacticals `151`, `152`, and
+`155` for v2 magnets and authenticated hash exchange. Its Stage 0 source and
+resource baseline and Stage 1 typed `btmh` intake/export, full-identity
+persistence, and SHA-256 BEP 9 admission are complete. Continue with Stage 2
+descriptor/catalog separation and messages 21--23, then the already bounded
+scheduling, restart, upload, platform, and two-role interoperability stages.
+Completed Tacticals `151`, `152`, and
 `154` close the pure-v2 complete-source vertical and intervening iOS repairs.
 Completed Tacticals `142`, `145`, and `150` leave uTP at a reconciled checkpoint. The
 stable 24-cell remote-seed 256 MiB cohort places RSTorrent-containing uTP at

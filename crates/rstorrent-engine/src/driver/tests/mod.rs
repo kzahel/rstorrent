@@ -14,7 +14,7 @@ use rstorrent_protocol::extension::{
     ExtensionAdvertisement, PexContact, PexEndpoint, PexFlags, PexMessage,
     encode_extension_handshake as encode_recognized_extension_handshake, encode_pex_message,
 };
-use rstorrent_protocol::identity::{InfoHashes, SwarmKey, V1InfoHash, V2InfoHash};
+use rstorrent_protocol::identity::{FullInfoHash, InfoHashes, SwarmKey, V1InfoHash, V2InfoHash};
 use rstorrent_protocol::magnet::{Magnet, UdpTrackerUrl};
 use rstorrent_protocol::metadata::{
     MetadataMessage, UT_METADATA_LOCAL_ID, encode_extension_handshake, encode_metadata_data,
@@ -32,6 +32,7 @@ use rstorrent_protocol::storage_layout::{
 };
 use rstorrent_protocol::udp_tracker::AnnounceEvent;
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Barrier, Notify, Semaphore, mpsc, oneshot};
@@ -118,6 +119,13 @@ fn test_artifact_identity() -> TorrentArtifactIdentity {
 
 fn test_identity(info_hash: [u8; 20]) -> TorrentIdentityContext {
     TorrentIdentityContext::v1(test_torrent_id(), V1InfoHash::new(info_hash))
+}
+
+fn test_v2_identity(info_hash: [u8; 32]) -> TorrentIdentityContext {
+    TorrentIdentityContext::for_full(
+        test_torrent_id(),
+        FullInfoHash::V2(V2InfoHash::new(info_hash)),
+    )
 }
 
 #[test]

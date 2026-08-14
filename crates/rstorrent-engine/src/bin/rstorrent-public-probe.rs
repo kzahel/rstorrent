@@ -2054,7 +2054,11 @@ fn prepare_input(config: &Config, sink: &ProbeSink) -> Result<PreparedInput, Str
     match &config.input {
         ProbeInput::Magnet(magnet) => {
             let parsed = Magnet::parse(magnet).map_err(|error| format!("parse magnet: {error}"))?;
-            if parsed.info_hash != config.expected_info_hash {
+            if parsed.identity
+                != rstorrent_protocol::identity::FullInfoHash::V1(
+                    rstorrent_protocol::identity::V1InfoHash::new(config.expected_info_hash),
+                )
+            {
                 return Err("magnet identity does not match --expected-info-hash".to_owned());
             }
             Ok(PreparedInput {

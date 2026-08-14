@@ -540,9 +540,9 @@ fn parse_arguments(arguments: Vec<OsString>) -> Result<DownloadCommand, String> 
             let parsed = Magnet::parse(&magnet).map_err(|error| error.to_string())?;
             Ok(DownloadCommand::Magnet {
                 config: MagnetDownloadConfig {
-                    identity: TorrentIdentityContext::v1(
+                    identity: TorrentIdentityContext::for_full(
                         TorrentId::generate().map_err(|error| error.to_string())?,
-                        V1InfoHash::new(parsed.info_hash),
+                        parsed.identity,
                     ),
                     magnet,
                     output_path,

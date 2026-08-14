@@ -18,7 +18,7 @@ use rstorrent_protocol::magnet::{
 };
 use rstorrent_protocol::metainfo::{
     DURABLE_METAINFO_LIMITS, EXPLICIT_IMPORT_METAINFO_LIMITS, Metainfo, MetainfoError,
-    MetainfoTrackerTransport,
+    MetainfoTrackerTransport, ParsedInfo, ParsedInfoKind,
 };
 use rstorrent_protocol::storage_layout::{ContentLayout, FileSelection};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -489,13 +489,6 @@ impl SessionStore {
 
     pub fn revision(&self) -> Result<u64, StoreError> {
         read_revision(&self.connection)
-    }
-
-    pub(crate) fn find_v1_owner(
-        &self,
-        info_hash: V1InfoHash,
-    ) -> Result<Option<TorrentId>, StoreError> {
-        find_torrent_id_by_v1(&self.connection, info_hash.as_bytes())
     }
 
     pub(crate) fn find_owner(
@@ -1116,10 +1109,11 @@ impl SessionStore {
         };
         let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
         let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
-        let operational_magnet = match (row.0, info_hashes.v1_hash()) {
-            (Some(magnet), _) => magnet,
-            (None, Some(v1)) => format!("magnet:?xt=urn:btih:{v1}"),
-            (None, None) => String::new(),
+        let operational_magnet = match (row.0, info_hashes.v1_hash(), info_hashes.v2_hash()) {
+            (Some(magnet), _, _) => magnet,
+            (None, Some(v1), None) => format!("magnet:?xt=urn:btih:{v1}"),
+            (None, None, Some(v2)) => format!("magnet:?xt=urn:btmh:1220{v2}"),
+            (None, _, _) => String::new(),
         };
         let desired_running = match row.7.as_str() {
             "running" => true,
@@ -1199,7 +1193,16 @@ impl SessionStore {
             .optional()?
             .ok_or_else(|| StoreError::UnknownTorrent(torrent_id.to_string()))?;
 
-        let v1_info_hash = read_v1_info_hash(&self.connection, &torrent_id)?;
+        let info_hashes = read_info_hashes(&self.connection, &torrent_id)?;
+        let identity = match (info_hashes.v1_hash(), info_hashes.v2_hash()) {
+            (Some(hash), None) => FullInfoHash::V1(hash),
+            (None, Some(hash)) => FullInfoHash::V2(hash),
+            _ => {
+                return Err(StoreError::DurableState(
+                    "magnet export requires one supported full identity".to_owned(),
+                ));
+            }
+        };
 
         let source = self
             .connection
@@ -1222,7 +1225,7 @@ impl SessionStore {
             && kind == "magnet"
             && usize::try_from(byte_length).ok() == Some(magnet.len())
             && digest == Sha256::digest(magnet.as_bytes()).as_slice()
-            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.info_hash == v1_info_hash)
+            && Magnet::parse(&magnet).is_ok_and(|parsed| parsed.identity == identity)
             && let Some(source) = match fidelity.as_str() {
                 "verbatim" => Some(MagnetExportSource::Verbatim),
                 "canonicalized" => Some(MagnetExportSource::Canonicalized),
@@ -1237,7 +1240,7 @@ impl SessionStore {
         }
 
         Ok(synthesize_magnet_export(
-            v1_info_hash,
+            identity,
             publication_name.as_deref(),
             &read_trackers(&self.connection, &torrent_id)?,
         ))
@@ -1413,16 +1416,42 @@ impl SessionStore {
         validate_raw_info_length(raw_info)?;
         let owner = decode_torrent_id(torrent_id)
             .ok_or_else(|| StoreError::DurableState("invalid torrent identity".to_owned()))?;
-        let metainfo = parse_durable_metainfo(raw_info)?;
-        if metainfo.info_hash != read_v1_info_hash(&self.connection, &owner)? {
+        let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+            .map_err(map_durable_metainfo_error)?;
+        if parsed.info_hashes() != read_info_hashes(&self.connection, &owner)? {
             return Err(StoreError::DurableState(
                 "verified metadata does not match torrent identity".to_owned(),
             ));
         }
-        validate_publication_name(&metainfo.name)
+        let (name, piece_count, file_count, is_padding) = match parsed.kind() {
+            ParsedInfoKind::V1(metainfo) => (
+                metainfo.name.as_str(),
+                metainfo.piece_count(),
+                metainfo.files.len(),
+                Some(
+                    metainfo
+                        .files
+                        .iter()
+                        .map(|file| file.padding)
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            ParsedInfoKind::V2(metainfo) => (
+                metainfo.name.as_str(),
+                metainfo.layout.piece_count(),
+                metainfo.files.len(),
+                None,
+            ),
+            ParsedInfoKind::Hybrid(_) => {
+                return Err(StoreError::DurableState(
+                    "hybrid metadata is outside the supported magnet subset".to_owned(),
+                ));
+            }
+        };
+        validate_publication_name(name)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let fingerprint = ContentFingerprint::for_info_bytes(raw_info);
-        let have = HaveState::empty(owner, fingerprint, metainfo.piece_count())?.encode();
+        let have = HaveState::empty(owner, fingerprint, piece_count)?.encode();
         validate_have_state_length(&have)?;
         let transaction = self.connection.transaction()?;
         let selection_default: String = transaction
@@ -1440,13 +1469,13 @@ impl SessionStore {
             for range in ranges {
                 let end = usize::try_from(range.end)
                     .unwrap_or(usize::MAX)
-                    .min(metainfo.files.len().saturating_sub(1));
+                    .min(file_count.saturating_sub(1));
                 let start = usize::try_from(range.start).unwrap_or(usize::MAX);
                 if start > end {
                     continue;
                 }
                 for index in start..=end {
-                    if metainfo.files[index].padding {
+                    if is_padding.as_ref().is_some_and(|padding| padding[index]) {
                         continue;
                     }
                     selected.push(index);
@@ -1497,8 +1526,8 @@ impl SessionStore {
                 owner.as_bytes().as_slice(),
                 raw_info,
                 fingerprint.as_bytes().as_slice(),
-                metainfo.name,
-                i64::try_from(metainfo.piece_count())
+                name,
+                i64::try_from(piece_count)
                     .map_err(|_| StoreError::DurableState("piece count overflow".to_owned()))?,
                 have,
                 revision_sql,
@@ -1885,12 +1914,12 @@ impl SessionStore {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
         let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
-        let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
+        let content = parse_durable_content_descriptor(&raw_info, metainfo_source.as_deref())?;
         let skip_files = read_selection(&self.connection, &torrent_id)?
             .into_iter()
             .map(|index| index as usize)
             .collect::<Vec<_>>();
-        let layout = ContentLayout::from_content(&content);
+        let layout = content.layout;
         let selection = FileSelection::new_content(&layout, &skip_files)
             .map_err(|error| StoreError::DurableState(error.to_string()))?;
         let wanted = layout
@@ -2119,8 +2148,8 @@ impl SessionStore {
                 StoreError::DurableState("torrent has no verified metadata".to_owned())
             })?;
         let metainfo_source = read_verbatim_metainfo_source(&self.connection, &torrent_id)?;
-        let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
-        if content.info_hashes() != read_info_hashes(&self.connection, &torrent_id)? {
+        let content = parse_durable_content_descriptor(&raw_info, metainfo_source.as_deref())?;
+        if content.info_hashes != read_info_hashes(&self.connection, &torrent_id)? {
             return Err(StoreError::DurableState(
                 "stored metadata does not match torrent identity".to_owned(),
             ));
@@ -2128,7 +2157,7 @@ impl SessionStore {
         let have = HaveState::empty(
             torrent_id,
             ContentFingerprint::for_info_bytes(&raw_info),
-            content.piece_count(),
+            content.layout.piece_count(),
         )?;
         self.replace_have(&torrent_id.to_string(), &have)?;
         Ok(have)
@@ -2417,26 +2446,6 @@ fn decode_stored_torrent_id(bytes: Vec<u8>) -> Result<TorrentId, StoreError> {
         .map_err(|_| StoreError::DurableState("invalid zero torrent ID".to_owned()))
 }
 
-fn read_v1_info_hash(
-    connection: &Connection,
-    torrent_id: &TorrentId,
-) -> Result<[u8; 20], StoreError> {
-    let bytes = connection
-        .query_row(
-            "SELECT full_hash FROM torrent_identities
-             WHERE torrent_id = ?1 AND protocol = 'v1'",
-            [torrent_id.as_bytes().as_slice()],
-            |row| row.get::<_, Vec<u8>>(0),
-        )
-        .optional()?
-        .ok_or_else(|| {
-            StoreError::DurableState(format!("torrent {torrent_id} has no v1 identity"))
-        })?;
-    bytes
-        .try_into()
-        .map_err(|_| StoreError::DurableState("invalid v1 identity length".to_owned()))
-}
-
 fn read_info_hashes(
     connection: &Connection,
     torrent_id: &TorrentId,
@@ -2522,22 +2531,6 @@ fn read_verbatim_metainfo_source(
         ));
     }
     Ok(Some(source))
-}
-
-fn find_torrent_id_by_v1(
-    connection: &Connection,
-    info_hash: &[u8; 20],
-) -> Result<Option<TorrentId>, StoreError> {
-    connection
-        .query_row(
-            "SELECT torrent_id FROM torrent_identities
-             WHERE protocol = 'v1' AND full_hash = ?1",
-            [info_hash.as_slice()],
-            |row| row.get::<_, Vec<u8>>(0),
-        )
-        .optional()?
-        .map(decode_stored_torrent_id)
-        .transpose()
 }
 
 fn find_torrent_id_by_full_hash(
@@ -3591,8 +3584,11 @@ fn add_magnet(
                            WHERE r.torrent_id = t.torrent_id)
              FROM torrents t
              JOIN torrent_identities i ON i.torrent_id = t.torrent_id
-             WHERE i.protocol = 'v1' AND i.full_hash = ?1",
-            [magnet.info_hash.as_slice()],
+             WHERE i.protocol = ?1 AND i.full_hash = ?2",
+            params![
+                magnet.identity.protocol().as_str(),
+                magnet.identity.as_bytes()
+            ],
             |row| {
                 Ok((
                     row.get::<_, Vec<u8>>(0)?,
@@ -3774,14 +3770,15 @@ fn add_magnet(
             ],
         )
         .map_err(internal_error)?;
+    let (protocol, full_hash): (&str, &[u8]) = match &magnet.identity {
+        FullInfoHash::V1(hash) => ("v1", hash.as_bytes()),
+        FullInfoHash::V2(hash) => ("v2", hash.as_bytes()),
+    };
     transaction
         .execute(
             "INSERT INTO torrent_identities(torrent_id, protocol, full_hash)
-             VALUES (?1, 'v1', ?2)",
-            params![
-                torrent_id.as_bytes().as_slice(),
-                magnet.info_hash.as_slice()
-            ],
+             VALUES (?1, ?2, ?3)",
+            params![torrent_id.as_bytes().as_slice(), protocol, full_hash],
         )
         .map_err(internal_error)?;
     download_queue::append(transaction, &torrent_id)
@@ -4078,9 +4075,9 @@ where
     })?;
     let metainfo_source = read_verbatim_metainfo_source(transaction, &torrent_id)
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
-    let content = parse_durable_content(&raw_info, metainfo_source.as_deref())
+    let content = parse_durable_content_descriptor(&raw_info, metainfo_source.as_deref())
         .map_err(|error| (ErrorCode::InvalidDurableState, error.to_string()))?;
-    let files = content.files().collect::<Vec<_>>();
+    let files = content.layout.files();
     for file_index in file_indices.clone() {
         let file_index = usize::try_from(file_index).map_err(|_| {
             (
@@ -4094,7 +4091,7 @@ where
                 format!("file index {file_index} is outside verified metadata"),
             )
         })?;
-        if file.padding() {
+        if file.padding {
             return Err((
                 ErrorCode::InvalidRequest,
                 format!("padding file {file_index} cannot be selected"),
@@ -4750,12 +4747,12 @@ fn read_selection(connection: &Connection, torrent_id: &TorrentId) -> Result<Vec
         return Ok(Vec::new());
     };
     let metainfo_source = read_verbatim_metainfo_source(connection, torrent_id)?;
-    let content = parse_durable_content(&raw_info, metainfo_source.as_deref())?;
+    let content = parse_durable_content_descriptor(&raw_info, metainfo_source.as_deref())?;
     let mut skipped = Vec::new();
-    for (index, file) in content.files().enumerate() {
+    for (index, file) in content.layout.files().iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| StoreError::DurableState("file index overflow".to_owned()))?;
-        if !file.padding() && exceptions.binary_search(&index).is_err() {
+        if !file.padding && exceptions.binary_search(&index).is_err() {
             skipped.push(index);
         }
     }
@@ -5057,44 +5054,81 @@ fn metainfo_intake_error(error: MetainfoError) -> (ErrorCode, String) {
     )
 }
 
-fn parse_durable_metainfo(raw_info: &[u8]) -> Result<Metainfo, StoreError> {
-    validate_raw_info_length(raw_info)?;
-    Metainfo::from_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS).map_err(|error| {
-        match error {
-            MetainfoError::InfoTooLarge { length, maximum } => StoreError::ResourceLimit {
-                resource: "raw_info bytes",
-                actual: length,
-                maximum,
-            },
-            MetainfoError::TooManyPieces { actual, maximum } => StoreError::ResourceLimit {
-                resource: "piece count",
-                actual,
-                maximum,
-            },
-            error => StoreError::DurableState(error.to_string()),
-        }
-    })
+fn map_durable_metainfo_error(error: MetainfoError) -> StoreError {
+    match error {
+        MetainfoError::InfoTooLarge { length, maximum } => StoreError::ResourceLimit {
+            resource: "raw_info bytes",
+            actual: length,
+            maximum,
+        },
+        MetainfoError::TooManyPieces { actual, maximum } => StoreError::ResourceLimit {
+            resource: "piece count",
+            actual,
+            maximum,
+        },
+        error => StoreError::DurableState(error.to_string()),
+    }
 }
 
-fn parse_durable_content(
+struct DurableContentDescriptor {
+    info_hashes: InfoHashes,
+    layout: ContentLayout,
+}
+
+fn parse_durable_content_descriptor(
     raw_info: &[u8],
     metainfo_source: Option<&[u8]>,
-) -> Result<TorrentContent, StoreError> {
+) -> Result<DurableContentDescriptor, StoreError> {
+    validate_raw_info_length(raw_info)?;
     match metainfo_source {
         Some(source) => {
             let projection =
                 TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)
-                    .map_err(|error| StoreError::DurableState(error.to_string()))?;
+                    .map_err(map_durable_metainfo_error)?;
             if &source[projection.info_span.clone()] != raw_info {
                 return Err(StoreError::DurableState(
                     "retained metainfo source does not match raw_info".to_owned(),
                 ));
             }
-            Ok(projection.content)
+            Ok(DurableContentDescriptor {
+                info_hashes: projection.content.info_hashes(),
+                layout: ContentLayout::from_content(&projection.content),
+            })
         }
-        None => Ok(TorrentContent::from_v1_metainfo(parse_durable_metainfo(
-            raw_info,
-        )?)),
+        None => {
+            let parsed = ParsedInfo::from_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                .map_err(map_durable_metainfo_error)?;
+            let layout = match parsed.kind() {
+                ParsedInfoKind::V1(metainfo) => {
+                    ContentLayout::from_content(&TorrentContent::from_v1_metainfo(metainfo.clone()))
+                }
+                ParsedInfoKind::V2(metainfo) => ContentLayout::V2 {
+                    layout: metainfo.layout.clone(),
+                    files: metainfo
+                        .files
+                        .iter()
+                        .zip(metainfo.layout.files())
+                        .map(
+                            |(file, geometry)| rstorrent_protocol::metainfo::MetainfoFile {
+                                path: file.path.clone(),
+                                length: file.length,
+                                offset: geometry.logical_offset(),
+                                padding: false,
+                            },
+                        )
+                        .collect(),
+                },
+                ParsedInfoKind::Hybrid(_) => {
+                    return Err(StoreError::DurableState(
+                        "hybrid metadata is outside the supported magnet subset".to_owned(),
+                    ));
+                }
+            };
+            Ok(DurableContentDescriptor {
+                info_hashes: parsed.info_hashes(),
+                layout,
+            })
+        }
     }
 }
 
@@ -5111,8 +5145,8 @@ fn wanted_piece_evidence(
                 .map_err(|_| StoreError::DurableState("file index overflow".to_owned()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let content = parse_durable_content(raw_info, metainfo_source)?;
-    if content.piece_count() != have.pieces().len() {
+    let content = parse_durable_content_descriptor(raw_info, metainfo_source)?;
+    if content.layout.piece_count() != have.pieces().len() {
         return Err(StoreError::DurableState(
             "runtime content piece count does not match have state".to_owned(),
         ));
@@ -5121,19 +5155,17 @@ fn wanted_piece_evidence(
     for (piece_index, verified) in have.pieces().iter().copied().enumerate() {
         let piece_index = u32::try_from(piece_index)
             .map_err(|_| StoreError::DurableState("piece index overflow".to_owned()))?;
-        let wanted = match &content {
-            TorrentContent::V1(v1) => {
-                let selection = FileSelection::new(&v1.layout, &skipped)
+        let wanted = match &content.layout {
+            ContentLayout::V1(layout) => {
+                let selection = FileSelection::new(layout, &skipped)
                     .map_err(|error| StoreError::DurableState(error.to_string()))?;
-                !v1.layout
+                !layout
                     .request_ranges(piece_index, &selection)
                     .map_err(|error| StoreError::DurableState(error.to_string()))?
                     .is_empty()
             }
-            TorrentContent::V2(v2) => {
-                let piece = v2
-                    .metainfo
-                    .layout
+            ContentLayout::V2 { layout, .. } => {
+                let piece = layout
                     .piece(piece_index)
                     .map_err(|error| StoreError::DurableState(error.to_string()))?;
                 skipped.binary_search(&piece.file_index).is_err()
@@ -5150,7 +5182,7 @@ fn wanted_piece_evidence(
 }
 
 fn canonical_magnet(magnet: &Magnet) -> String {
-    let mut output = format!("magnet:?xt=urn:btih:{}", encode_info_hash(magnet.info_hash));
+    let mut output = format!("magnet:?xt={}", encode_magnet_identity(magnet.identity));
     for hint in &magnet.peer_hints {
         output.push_str("&x.pe=");
         if hint.host.contains(':') {
@@ -5175,11 +5207,12 @@ fn canonical_magnet(magnet: &Magnet) -> String {
 }
 
 fn synthesize_magnet_export(
-    torrent_id: [u8; 20],
+    identity: impl Into<FullInfoHash>,
     publication_name: Option<&str>,
     trackers: &[StoredTracker],
 ) -> MagnetExportResult {
-    let mut magnet = format!("magnet:?xt=urn:btih:{}", encode_info_hash(torrent_id));
+    let identity = identity.into();
+    let mut magnet = format!("magnet:?xt={}", encode_magnet_identity(identity));
     if let Some(publication_name) = publication_name {
         let mut parameter = String::from("&dn=");
         percent_encode_query_value(&mut parameter, publication_name.as_bytes());
@@ -5211,6 +5244,23 @@ fn synthesize_magnet_export(
         source: MagnetExportSource::Synthesized,
         omitted_tracker_count: u32::try_from(omitted_trackers).unwrap_or(u32::MAX),
     }
+}
+
+fn encode_magnet_identity(identity: FullInfoHash) -> String {
+    match identity {
+        FullInfoHash::V1(hash) => format!("urn:btih:{}", encode_info_hash(hash.into_bytes())),
+        FullInfoHash::V2(hash) => format!("urn:btmh:1220{}", encode_hex(hash.as_bytes())),
+    }
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 fn tracker_transport_name(transport: TrackerUrlTransport) -> &'static str {
@@ -6014,6 +6064,116 @@ mod tests {
     }
 
     #[test]
+    fn pure_v2_magnet_metadata_export_and_restart_keep_full_identity() {
+        let root = test_root("pure-v2-magnet");
+        let configured = configured_root(&root);
+        let source = pure_v2_torrent_source();
+        let projection =
+            rstorrent_protocol::content::TorrentContentProjection::from_bytes_with_limits(
+                &source,
+                EXPLICIT_IMPORT_METAINFO_LIMITS,
+            )
+            .expect("fixture pure-v2 metainfo");
+        let raw_info = source[projection.info_span].to_vec();
+        let identity = projection
+            .content
+            .info_hashes()
+            .v2_hash()
+            .expect("pure-v2 identity");
+        let exact_source = format!(
+            "magnet:?dn=Exact&xt=urn:btmh:1220{}&x.pe=127.0.0.1:49001&so=0\
+             &tr=udp%3A%2F%2Ftracker.example%3A6969%2Fannounce",
+            identity.to_string().to_uppercase()
+        );
+        let add = |request_id: &str, magnet: String| RequestEnvelope {
+            version: CONTROL_VERSION,
+            request_id: request_id.to_owned(),
+            expected_revision: None,
+            command: Command::AddMagnet {
+                magnet,
+                storage_root: "downloads".to_owned(),
+                start_content: false,
+                skip_files: Vec::new(),
+            },
+        };
+        let mut store =
+            SessionStore::open(&root, "default", std::slice::from_ref(&configured)).expect("open");
+        let added = store
+            .handle_durable(&add("add-v2-magnet", exact_source.clone()))
+            .expect("add pure-v2 magnet");
+        let torrent_id = added_torrent_id(&added);
+        store
+            .record_metadata(&torrent_id, &raw_info)
+            .expect("record SHA-256 authenticated v2 info");
+
+        let resume = store.load_resume(&torrent_id).expect("load v2 magnet");
+        assert_eq!(resume.info_hashes.v1_hash(), None);
+        assert_eq!(resume.info_hashes.v2_hash(), Some(identity));
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(
+            resume.have.as_ref().map(HaveState::pieces),
+            Some([false].as_slice())
+        );
+        assert_eq!(resume.skip_files, Vec::<u32>::new());
+        assert_eq!(
+            resume.magnet,
+            super::canonical_magnet(&Magnet::parse(&exact_source).unwrap())
+        );
+
+        let revision = store.revision().expect("revision after metadata");
+        let duplicate = store
+            .handle_durable(&add(
+                "duplicate-v2-magnet",
+                format!("magnet:?xt=urn:btmh:1220{identity}"),
+            ))
+            .expect("deduplicate full v2 identity");
+        assert_eq!(added_torrent_id(&duplicate), torrent_id);
+        assert_eq!(store.revision().expect("unchanged revision"), revision);
+
+        let exported = store
+            .handle_durable(&export_request("export-v2-verbatim", &torrent_id))
+            .expect("export v2 source");
+        let result = match exported.result.expect("export result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.magnet, exact_source);
+        assert_eq!(result.source, MagnetExportSource::Verbatim);
+
+        store
+            .connection
+            .execute(
+                "UPDATE torrent_source SET sha256 = zeroblob(32) WHERE torrent_id = ?1",
+                [super::decode_torrent_id(&torrent_id)
+                    .expect("owner")
+                    .as_bytes()
+                    .as_slice()],
+            )
+            .expect("invalidate retained source");
+        let fallback = store
+            .handle_durable(&export_request("export-v2-fallback", &torrent_id))
+            .expect("synthesize v2 magnet");
+        let result = match fallback.result.expect("fallback result") {
+            crate::CommandResult::ExportMagnet { result } => result,
+            crate::CommandResult::AddTorrent { .. } => panic!("unexpected add result"),
+        };
+        assert_eq!(result.source, MagnetExportSource::Synthesized);
+        assert!(
+            result
+                .magnet
+                .starts_with(&format!("magnet:?xt=urn:btmh:1220{identity}&dn=root"))
+        );
+
+        drop(store);
+        let reopened = SessionStore::open(&root, "default", &[configured]).expect("reopen");
+        let resumed = reopened.load_resume(&torrent_id).expect("resume v2 magnet");
+        assert_eq!(resumed.info_hashes.v2_hash(), Some(identity));
+        assert_eq!(resumed.raw_info, Some(raw_info));
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove profile");
+    }
+
+    #[test]
     fn pure_v2_bytes_are_full_identity_deduplicated_and_restartable() {
         let root = test_root("pure-v2-torrent-bytes");
         let configured = configured_root(&root);
@@ -6048,7 +6208,10 @@ mod tests {
             resume.have.as_ref().map(|have| have.pieces()),
             Some([false].as_slice())
         );
-        assert!(resume.magnet.is_empty());
+        assert_eq!(
+            resume.magnet,
+            format!("magnet:?xt=urn:btmh:1220{expected_v2}")
+        );
         assert_eq!(resume.state, TorrentState::Paused);
 
         for (request_id, priority) in [

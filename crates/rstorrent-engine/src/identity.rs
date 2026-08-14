@@ -49,6 +49,17 @@ impl TorrentIdentityContext {
         }
     }
 
+    pub fn for_full(torrent_id: TorrentId, identity: FullInfoHash) -> Self {
+        match identity {
+            FullInfoHash::V1(hash) => Self::v1(torrent_id, hash),
+            FullInfoHash::V2(hash) => Self {
+                torrent_id,
+                info_hashes: InfoHashes::v2(hash),
+                swarm_key: hash.swarm_key(),
+            },
+        }
+    }
+
     pub const fn torrent_id(self) -> TorrentId {
         self.torrent_id
     }

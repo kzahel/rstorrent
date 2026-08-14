@@ -3,6 +3,132 @@ use crate::tracker::{TrackerConfig, TrackerEndpoint, TrackerSource};
 use crate::{PeerBudget, TrackerConnectionFamily};
 use std::net::{IpAddr, Ipv6Addr};
 
+fn pure_v2_info(payload: &[u8]) -> Vec<u8> {
+    let root = <[u8; 32]>::from(Sha256::digest(payload));
+    let mut info = format!(
+        "d9:file treed1:ad0:d6:lengthi{}e11:pieces root32:",
+        payload.len()
+    )
+    .into_bytes();
+    info.extend_from_slice(&root);
+    info.extend_from_slice(b"eee12:meta versioni2e4:name4:root12:piece lengthi16384ee");
+    info
+}
+
+async fn serve_info_only_metadata(listener: TcpListener, wire_hash: [u8; 20], info: Vec<u8>) {
+    let (mut stream, _) = listener.accept().await.expect("accept metadata client");
+    let mut handshake_bytes = [0; HANDSHAKE_LENGTH];
+    stream
+        .read_exact(&mut handshake_bytes)
+        .await
+        .expect("read metadata handshake");
+    let handshake = decode_handshake(&handshake_bytes, wire_hash).expect("wire identity");
+    assert!(handshake.supports_extensions());
+    let mut reserved = [0; 8];
+    reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+    stream
+        .write_all(&encode_handshake_with_reserved(
+            wire_hash,
+            scripted_peer_id(&listener, *b"-RS-V2MD-00000000000"),
+            reserved,
+        ))
+        .await
+        .expect("send metadata handshake");
+    let mut peer = PeerConnection::for_test(test_dial_attempt(), stream, Duration::from_secs(2));
+    assert!(matches!(
+        next_peer_message(&mut peer).await,
+        Ok(PeerMessage::Extended { id: 0, .. })
+    ));
+    send_message(
+        &mut peer,
+        &PeerMessage::Extended {
+            id: 0,
+            payload: encode_extension_handshake(Some(info.len())),
+        },
+    )
+    .await
+    .expect("advertise metadata");
+
+    let block_count = info
+        .len()
+        .div_ceil(rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH);
+    for _ in 0..block_count {
+        let PeerMessage::Extended {
+            id: UT_METADATA_LOCAL_ID,
+            payload,
+        } = next_peer_message(&mut peer)
+            .await
+            .expect("metadata request")
+        else {
+            panic!("expected metadata request");
+        };
+        let MetadataMessage::Request { piece } =
+            parse_metadata_message(&payload).expect("parse metadata request")
+        else {
+            panic!("expected metadata request payload");
+        };
+        let index = usize::try_from(piece).expect("nonnegative metadata piece");
+        let piece = u32::try_from(piece).expect("bounded metadata piece");
+        let start = index * rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH;
+        let end = (start + rstorrent_protocol::metadata::METADATA_BLOCK_LENGTH).min(info.len());
+        send_message(
+            &mut peer,
+            &PeerMessage::Extended {
+                id: UT_METADATA_LOCAL_ID,
+                payload: encode_metadata_data(piece, info.len(), &info[start..end])
+                    .expect("encode metadata"),
+            },
+        )
+        .await
+        .expect("send metadata");
+    }
+    let _ = timeout(Duration::from_secs(1), next_peer_message(&mut peer)).await;
+}
+
+#[tokio::test]
+async fn pure_v2_magnet_metadata_uses_full_sha256_and_strict_format() {
+    async fn acquire(info: Vec<u8>) -> Result<Vec<u8>, DownloadError> {
+        let full_hash = <[u8; 32]>::from(Sha256::digest(&info));
+        let identity = V2InfoHash::new(full_hash);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind v2 metadata peer");
+        let address = listener.local_addr().expect("v2 metadata address");
+        let peer = tokio::spawn(serve_info_only_metadata(
+            listener,
+            identity.swarm_key().into_bytes(),
+            info,
+        ));
+        let result = download_magnet_metadata_with_control(
+            test_v2_identity(full_hash),
+            format!("magnet:?xt=urn:btmh:1220{identity}&x.pe={address}"),
+            loopback_network(Duration::from_secs(2)),
+            DownloadControl::new(),
+        )
+        .await;
+        peer.await.expect("join v2 metadata peer");
+        result
+    }
+
+    let valid = pure_v2_info(b"v2 metadata payload");
+    assert_eq!(
+        acquire(valid.clone())
+            .await
+            .expect("acquire strict pure-v2 info"),
+        valid
+    );
+
+    let v1 = single_file_info(b"v1 shape under a btmh identity");
+    assert!(matches!(
+        acquire(v1).await,
+        Err(DownloadError::InvalidPremetadataState(_))
+    ));
+    assert!(matches!(
+        acquire(b"not bencoded metadata".to_vec()).await,
+        Err(DownloadError::Metainfo(_))
+    ));
+}
+
 #[tokio::test]
 async fn explicit_policies_gate_non_loopback_peers_and_offline_dns() {
     let public = "192.0.2.1:6881".parse().expect("documentation peer");
@@ -140,7 +266,13 @@ async fn live_big_buck_bunny_metadata_probe() {
     control.set_activity_sink(activity.clone());
     let task_control = control.clone();
     let mut task = tokio::spawn(download_magnet_metadata_with_control(
-        test_identity(Magnet::parse(magnet).expect("valid magnet").info_hash),
+        test_identity(
+            Magnet::parse(magnet)
+                .expect("valid magnet")
+                .identity
+                .swarm_key()
+                .into_bytes(),
+        ),
         magnet.to_owned(),
         NetworkConfig::new(
             NetworkPolicy::Online,
@@ -228,7 +360,9 @@ async fn live_big_buck_bunny_trackerless_dht_metadata_probe() {
     let identity = test_identity(
         Magnet::parse(&format!("magnet:?xt=urn:btih:{expected_info_hash}"))
             .expect("valid magnet")
-            .info_hash,
+            .identity
+            .swarm_key()
+            .into_bytes(),
     );
     let mut task = tokio::spawn(async move {
         download_magnet_metadata_with_dht(
@@ -1024,7 +1158,7 @@ async fn concurrent_tracker_cancellation_joins_and_releases_every_socket() {
             .iter()
             .filter_map(|tracker| tracker.udp_endpoint().cloned())
             .collect(),
-        magnet.info_hash,
+        magnet.identity.swarm_key().into_bytes(),
         loopback_network(Duration::from_secs(1)),
         control,
     )
@@ -1511,7 +1645,7 @@ async fn stalled_metadata_peer_does_not_delay_useful_peer() {
         .expect("useful metadata peer supplies verified metadata");
 
     assert_eq!(raw_info, single_file_info(&payload));
-    assert_eq!(metainfo.info_hash, info_hash);
+    assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let stalled = peers
         .peers
         .with_state(|state| {
@@ -1657,7 +1791,7 @@ async fn metadata_blocks_from_multiple_peers_complete_one_dictionary() {
         .expect("multi-source metadata completion bound")
         .expect("combine metadata blocks across peers");
     assert_eq!(raw_info, info);
-    assert_eq!(metainfo.info_hash, info_hash);
+    assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
     assert_eq!(snapshot.total_blocks_received, 3);
     assert!(
@@ -1730,7 +1864,7 @@ async fn corrupt_metadata_generation_resets_before_clean_peer_completes() {
         .expect("corrupt metadata recovery bound")
         .expect("clean source completes after corrupt generation");
     assert_eq!(raw_info, info);
-    assert_eq!(metainfo.info_hash, info_hash);
+    assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
     assert_eq!(snapshot.total_hash_failures, 1);
     assert_eq!(snapshot.last_hash_failure_contributors, 1);
@@ -1779,7 +1913,7 @@ async fn metadata_requests_ramp_for_one_at_a_time_peer() {
         .expect("one-at-a-time metadata completion bound")
         .expect("pace requests until first response");
     assert_eq!(raw_info, info);
-    assert_eq!(metainfo.info_hash, info_hash);
+    assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let snapshot = control.diagnostic_snapshot().metadata;
     assert_eq!(snapshot.total_requests_sent, 2);
     assert_eq!(snapshot.total_blocks_received, 2);
@@ -2103,7 +2237,7 @@ async fn tracker_discovery_continues_while_metadata_peer_stalls() {
         .expect("late tracker peer must be consumed during metadata work")
         .expect("tracker peer supplies metadata");
 
-    assert_eq!(metainfo.info_hash, info_hash);
+    assert_eq!(metainfo.v1().expect("v1 metadata").info_hash, info_hash);
     let discovered = peers
         .peers
         .with_state(|state| {
