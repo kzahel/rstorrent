@@ -5235,6 +5235,140 @@ mod tests {
         (projection.content, projection.integrity)
     }
 
+    fn hybrid_runtime_content() -> (
+        TorrentContent,
+        rstorrent_protocol::content::TorrentIntegrity,
+        Vec<Vec<u8>>,
+    ) {
+        const PIECE_LENGTH: usize = 64 * 1024;
+        let deterministic = |seed: usize, length: usize| {
+            (0..length)
+                .map(|index| (((seed + index) * 37 + index / 11) % 251) as u8)
+                .collect::<Vec<_>>()
+        };
+        let files = vec![
+            Vec::new(),
+            deterministic(7, 137),
+            deterministic(11, PIECE_LENGTH + 731),
+            deterministic(17, PIECE_LENGTH + 911),
+            Vec::new(),
+            deterministic(23, 701),
+        ];
+        let paths: Vec<Vec<&[u8]>> = vec![
+            vec![b"a-empty.bin"],
+            vec![b"b-one-piece.bin"],
+            vec![b"c-nested", b"selected-multi.bin"],
+            vec![b"d-skipped-multi.bin"],
+            vec![b"e-empty.bin"],
+            vec![b"f-short-tail.bin"],
+        ];
+        let logical_offsets = [0_usize, 0, 65_536, 196_608, 263_055, 327_680];
+        let roots = files
+            .iter()
+            .map(|data| (!data.is_empty()).then(|| file_root_from_data(data).unwrap()))
+            .collect::<Vec<_>>();
+        let leaf = |output: &mut Vec<u8>, data: &[u8], root: Option<[u8; 32]>| {
+            output.extend_from_slice(b"d0:d6:lengthi");
+            output.extend_from_slice(data.len().to_string().as_bytes());
+            output.push(b'e');
+            if let Some(root) = root {
+                output.extend_from_slice(b"11:pieces root32:");
+                output.extend_from_slice(&root);
+            }
+            output.extend_from_slice(b"ee");
+        };
+
+        let mut tree = vec![b'd'];
+        for (path, (data, root)) in paths.iter().zip(files.iter().zip(&roots)) {
+            bstr(&mut tree, path[0]);
+            if path.len() == 1 {
+                leaf(&mut tree, data, *root);
+            } else {
+                tree.push(b'd');
+                bstr(&mut tree, path[1]);
+                leaf(&mut tree, data, *root);
+                tree.push(b'e');
+            }
+        }
+        tree.push(b'e');
+
+        let mut v1_files = Vec::new();
+        let mut v1_payload = Vec::new();
+        let mut cursor = 0_usize;
+        for ((path, data), logical_offset) in paths.iter().zip(&files).zip(logical_offsets) {
+            let gap = logical_offset - cursor;
+            if gap != 0 {
+                v1_files.extend_from_slice(b"d4:attr1:p6:lengthi");
+                v1_files.extend_from_slice(gap.to_string().as_bytes());
+                v1_files.extend_from_slice(b"e4:pathl4:.pad");
+                bstr(&mut v1_files, gap.to_string().as_bytes());
+                v1_files.extend_from_slice(b"ee");
+                v1_payload.resize(v1_payload.len() + gap, 0);
+                cursor += gap;
+            }
+            v1_files.extend_from_slice(b"d6:lengthi");
+            v1_files.extend_from_slice(data.len().to_string().as_bytes());
+            v1_files.extend_from_slice(b"e4:pathl");
+            for component in path {
+                bstr(&mut v1_files, component);
+            }
+            v1_files.extend_from_slice(b"ee");
+            v1_payload.extend_from_slice(data);
+            cursor += data.len();
+        }
+        let tail = (PIECE_LENGTH - cursor % PIECE_LENGTH) % PIECE_LENGTH;
+        if tail != 0 {
+            v1_files.extend_from_slice(b"d4:attr1:p6:lengthi");
+            v1_files.extend_from_slice(tail.to_string().as_bytes());
+            v1_files.extend_from_slice(b"e4:pathl4:.pad");
+            bstr(&mut v1_files, tail.to_string().as_bytes());
+            v1_files.extend_from_slice(b"ee");
+            v1_payload.resize(v1_payload.len() + tail, 0);
+        }
+        let piece_hashes = v1_payload
+            .chunks(PIECE_LENGTH)
+            .map(|piece| <[u8; 20]>::from(Sha1::digest(piece)))
+            .collect::<Vec<_>>();
+
+        let mut info = b"d9:file tree".to_vec();
+        info.extend_from_slice(&tree);
+        info.extend_from_slice(b"5:filesl");
+        info.extend_from_slice(&v1_files);
+        info.extend_from_slice(b"e12:meta versioni2e4:name4:root12:piece lengthi65536e6:pieces");
+        bstr(&mut info, &piece_hashes.concat());
+        info.push(b'e');
+
+        let mut layers = roots
+            .iter()
+            .zip(&files)
+            .filter_map(|(root, data)| {
+                let root = (*root)?;
+                (data.len() > PIECE_LENGTH).then(|| {
+                    let piece_roots = data
+                        .chunks(PIECE_LENGTH)
+                        .map(|piece| piece_root_from_data(piece, PIECE_LENGTH as u32).unwrap())
+                        .collect::<Vec<_>>();
+                    (root, piece_roots.concat())
+                })
+            })
+            .collect::<Vec<_>>();
+        layers.sort_unstable_by_key(|(root, _)| *root);
+        let mut source = b"d4:info".to_vec();
+        source.extend_from_slice(&info);
+        source.extend_from_slice(b"12:piece layersd");
+        for (root, hashes) in layers {
+            bstr(&mut source, &root);
+            bstr(&mut source, &hashes);
+        }
+        source.extend_from_slice(b"ee");
+        let projection = TorrentContentProjection::from_bytes_with_limits(
+            &source,
+            EXPLICIT_IMPORT_METAINFO_LIMITS,
+        )
+        .expect("complete hybrid runtime fixture");
+        (projection.content, projection.integrity, files)
+    }
+
     #[tokio::test]
     async fn hybrid_hashes_real_bytes_once_and_synthesizes_v1_padding() {
         let (content, integrity) = hybrid_content();
@@ -6681,6 +6815,141 @@ mod tests {
         assert!(!root.join("root/a").exists());
         assert!(pool.snapshot().owned_high_water <= 4);
         drop(v2_storage);
+
+        std::fs::remove_dir_all(root.join("root")).expect("remove pure-v2 publication");
+        let (hybrid_content, hybrid_integrity, hybrid_files) = hybrid_runtime_content();
+        let hybrid_content = Arc::new(hybrid_content);
+        let hybrid_layout =
+            rstorrent_protocol::storage_layout::ContentLayout::from_content(&hybrid_content);
+        for piece in 0..hybrid_layout.piece_count() as u32 {
+            assert!(matches!(
+                crate::driver::expected_piece_for_recheck(
+                    &hybrid_content,
+                    &hybrid_integrity,
+                    piece,
+                )
+                .expect("hybrid recheck expectation"),
+                Some(ExpectedPieceIntegrity::Hybrid { .. })
+            ));
+        }
+        let hybrid_torrent_id = TorrentId::new([0x63; 16]).expect("hybrid platform owner");
+        let hybrid_identity = TorrentArtifactIdentity {
+            torrent_id: hybrid_torrent_id,
+            content_fingerprint: ContentFingerprint::from_digest([0x64; 32]),
+        };
+        let hybrid_spec = PlatformStorageSpec {
+            pool: pool.clone(),
+            root_id: "downloads".to_owned(),
+            storage_id: storage_instance_id(hybrid_torrent_id),
+            publication_shape: PublicationShape::Tree,
+            publication_name: "root".to_owned(),
+            namespace_generation: 0,
+            managed: false,
+            published: false,
+        };
+        let (mut hybrid_storage, hybrid_created) = SelectiveStorage::create_content_with_platform(
+            hybrid_spec.clone(),
+            hybrid_identity,
+            hybrid_content.clone(),
+            &[],
+            vec![false; hybrid_layout.piece_count()],
+        )
+        .await
+        .expect("create hybrid platform storage");
+        assert_eq!(hybrid_created, ResumedStorage::Created);
+        for (file_index, data) in hybrid_files.iter().enumerate() {
+            let Some(range) = hybrid_layout
+                .file_piece_range(file_index)
+                .expect("hybrid file piece range")
+            else {
+                continue;
+            };
+            for (piece, payload) in range.zip(data.chunks(64 * 1024)) {
+                for (block, bytes) in payload.chunks(16 * 1024).enumerate() {
+                    hybrid_storage
+                        .write_block(piece, (block * 16 * 1024) as u32, bytes.to_vec())
+                        .await
+                        .expect("write hybrid platform block");
+                }
+                let actual = hybrid_storage
+                    .hash_piece_content(piece)
+                    .await
+                    .expect("hash staged hybrid platform piece");
+                let expected = hybrid_content
+                    .expected_piece(&hybrid_integrity, piece)
+                    .expect("expected staged hybrid integrity");
+                assert!(matches!(
+                    (actual, expected),
+                    (
+                        ComputedPieceHash::Hybrid {
+                            sha1,
+                            sha256_root,
+                            ..
+                        },
+                        ExpectedPieceIntegrity::Hybrid {
+                            v1_sha1,
+                            v2_expected_root,
+                            ..
+                        }
+                    ) if sha1 == v1_sha1 && sha256_root == v2_expected_root
+                ));
+                hybrid_storage
+                    .record_verified(piece as usize)
+                    .expect("record staged hybrid platform piece");
+            }
+        }
+        hybrid_storage
+            .prepare_platform()
+            .await
+            .expect("prepare hybrid platform publication");
+        pool.invalidate_storage(&hybrid_spec.storage_id);
+        std::fs::rename(
+            root.join(format!(".{}.rstorrent-staging", hybrid_spec.storage_id)),
+            root.join("root"),
+        )
+        .expect("publish fake hybrid provider tree");
+        drop(hybrid_storage);
+        let hybrid_published = PlatformStorageSpec {
+            namespace_generation: 1,
+            managed: true,
+            published: true,
+            ..hybrid_spec
+        };
+        let (hybrid_reopened, hybrid_resumed) = SelectiveStorage::create_content_with_platform(
+            hybrid_published,
+            hybrid_identity,
+            hybrid_content.clone(),
+            &[],
+            vec![false; hybrid_layout.piece_count()],
+        )
+        .await
+        .expect("reopen hybrid platform publication");
+        assert_eq!(hybrid_resumed, ResumedStorage::Published);
+        for piece in 0..hybrid_layout.piece_count() as u32 {
+            let actual = hybrid_reopened
+                .hash_piece_content(piece)
+                .await
+                .expect("hash reopened hybrid platform piece");
+            let expected = hybrid_content
+                .expected_piece(&hybrid_integrity, piece)
+                .expect("expected reopened hybrid integrity");
+            assert!(matches!(
+                (actual, expected),
+                (
+                    ComputedPieceHash::Hybrid {
+                        sha1,
+                        sha256_root,
+                        ..
+                    },
+                    ExpectedPieceIntegrity::Hybrid {
+                        v1_sha1,
+                        v2_expected_root,
+                        ..
+                    }
+                ) if sha1 == v1_sha1 && sha256_root == v2_expected_root
+            ));
+        }
+        drop(hybrid_reopened);
 
         pool.shutdown().await.expect("shutdown pool");
         drop(pool);

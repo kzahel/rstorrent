@@ -1689,14 +1689,7 @@ fn finish_content_hash_job(
     }
 }
 
-pub(super) fn content_hash_matches(
-    actual: ComputedPieceHash,
-    expected: ExpectedPieceIntegrity,
-) -> bool {
-    content_hash_outcome(actual, expected).0
-}
-
-fn content_hash_outcome(
+pub(super) fn content_hash_outcome(
     actual: ComputedPieceHash,
     expected: ExpectedPieceIntegrity,
 ) -> (bool, Option<HybridVerificationOutcome>) {

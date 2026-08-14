@@ -4700,7 +4700,7 @@ use storage_pipeline::{
 };
 use storage_pipeline::{
     ContentStorage, ContentStorageCommand, ContentStorageCompletion, ContentStoragePipeline,
-    content_hash_matches,
+    content_hash_outcome,
 };
 
 struct ContentSwarmDownload<'a> {
@@ -8134,7 +8134,7 @@ struct FullRecheckResult {
     candidates: BTreeSet<u32>,
 }
 
-fn expected_piece_for_recheck(
+pub(crate) fn expected_piece_for_recheck(
     content: &TorrentContent,
     integrity: &TorrentIntegrity,
     piece: u32,
@@ -8144,13 +8144,23 @@ fn expected_piece_for_recheck(
             .expected_piece(integrity, piece)
             .map(Some)
             .map_err(|error| DownloadError::StorageTask(error.to_string())),
-        TorrentContent::V2(_) | TorrentContent::Hybrid(_) => content
+        TorrentContent::V2(_) => content
             .v2_expected_piece(integrity, piece)
             .map(|expected| match expected {
                 V2ExpectedPieceQuery::Known(expected) => Some(expected),
                 V2ExpectedPieceQuery::Missing { .. } => None,
             })
             .map_err(|error| DownloadError::StorageTask(error.to_string())),
+        TorrentContent::Hybrid(_) => content
+            .v2_expected_piece(integrity, piece)
+            .map_err(|error| DownloadError::StorageTask(error.to_string()))
+            .and_then(|expected| match expected {
+                V2ExpectedPieceQuery::Known(_) => content
+                    .expected_piece(integrity, piece)
+                    .map(Some)
+                    .map_err(|error| DownloadError::StorageTask(error.to_string())),
+                V2ExpectedPieceQuery::Missing { .. } => Ok(None),
+            }),
     }
 }
 
@@ -8348,10 +8358,26 @@ async fn full_recheck_managed_storage(
                     }
                 };
                 let outcome = match result {
-                    Ok(actual) if content_hash_matches(actual, expected) => {
-                        CheckerPieceOutcome::Matched
-                    }
-                    Ok(_) => CheckerPieceOutcome::Mismatched,
+                    Ok(actual) => match content_hash_outcome(actual, expected) {
+                        (true, _) => CheckerPieceOutcome::Matched,
+                        (
+                            false,
+                            Some(
+                                rstorrent_protocol::content::HybridVerificationOutcome::Inconsistent {
+                                    v1_matched,
+                                    v2_matched,
+                                },
+                            ),
+                        ) => {
+                            first_error.get_or_insert(DownloadError::InconsistentHybridHashes {
+                                piece: piece_index,
+                                v1_matched,
+                                v2_matched,
+                            });
+                            continue;
+                        }
+                        (false, _) => CheckerPieceOutcome::Mismatched,
+                    },
                     Err(error) if error.is_missing_or_short_source() => CheckerPieceOutcome::Absent,
                     Err(error) => {
                         control.disk_piece_failed(piece_index, piece_length, &error.to_string());
