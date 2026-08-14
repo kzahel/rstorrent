@@ -86,18 +86,25 @@ fn parse_resume_content(resume: &ResumeRecord) -> Result<TorrentContent, Metainf
             .and_then(parse_durable_metainfo)
             .map(TorrentContent::from_v1_metainfo),
         (None, Some(_)) => {
-            let source = resume
-                .metainfo_source
-                .as_deref()
-                .ok_or(MetainfoError::Unsupported("missing complete v2 source"))?;
-            let projection =
-                TorrentContentProjection::from_bytes_with_limits(source, DURABLE_METAINFO_LIMITS)?;
-            if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
-                return Err(MetainfoError::Unsupported(
-                    "stored v2 info does not match complete source",
-                ));
+            if let Some(source) = resume.metainfo_source.as_deref() {
+                let projection = TorrentContentProjection::from_bytes_with_limits(
+                    source,
+                    DURABLE_METAINFO_LIMITS,
+                )?;
+                if resume.raw_info.as_deref() != Some(&source[projection.info_span.clone()]) {
+                    return Err(MetainfoError::Unsupported(
+                        "stored v2 info does not match complete source",
+                    ));
+                }
+                Ok(projection.content)
+            } else {
+                let raw_info = resume
+                    .raw_info
+                    .as_deref()
+                    .ok_or(MetainfoError::Unsupported("missing durable v2 info"))?;
+                TorrentContent::from_v2_info_bytes_with_limits(raw_info, DURABLE_METAINFO_LIMITS)
+                    .map(|runtime| runtime.content)
             }
-            Ok(projection.content)
         }
         (Some(_), Some(_)) => Err(MetainfoError::Unsupported("hybrid runtime content")),
         (None, None) => Err(MetainfoError::Unsupported("missing torrent identity")),
@@ -3049,6 +3056,8 @@ impl ApplicationService {
                 let peer_budget = self.session_network().peer_budget();
                 let mse_dh = self.session_network().mse_dh();
                 let encryption = self.session_network().encryption();
+                let pure_v2 = resume.info_hashes.v1_hash().is_none()
+                    && resume.info_hashes.v2_hash().is_some();
                 let operation = async move {
                     let raw_info = download_magnet_metadata_with_external_discovery(
                         ExternalMagnetMetadataDownloadConfig {
@@ -3069,14 +3078,24 @@ impl ApplicationService {
                     if !continue_downloading {
                         return Ok(ApplicationTaskReport::Metadata);
                     }
-                    let metainfo =
-                        parse_peer_metainfo(&raw_info).map_err(DownloadError::Metainfo)?;
+                    let content = if pure_v2 {
+                        TorrentContent::from_v2_info_bytes_with_limits(
+                            &raw_info,
+                            BEP9_METAINFO_LIMITS,
+                        )
+                        .map_err(DownloadError::Metainfo)?
+                        .content
+                    } else {
+                        TorrentContent::from_v1_metainfo(
+                            parse_peer_metainfo(&raw_info).map_err(DownloadError::Metainfo)?,
+                        )
+                    };
                     task_control.set_platform_storage(PlatformStorageSpec {
                         pool: storage_pool,
                         root_id,
                         storage_id,
-                        publication_shape: PublicationShape::from_metainfo(&metainfo),
-                        publication_name: metainfo.name,
+                        publication_shape: PublicationShape::from_content(&content),
+                        publication_name: content.name().to_owned(),
                         namespace_generation: 0,
                         managed: false,
                         published: false,
@@ -3243,7 +3262,7 @@ impl ApplicationService {
         let common_encryption = self.session_network().encryption();
         let is_pure_v2 =
             resume.info_hashes.v1_hash().is_none() && resume.info_hashes.v2_hash().is_some();
-        let config = if is_pure_v2 {
+        let config = if is_pure_v2 && resume.metainfo_source.is_some() {
             ResumableDownloadConfig::Metainfo(ResumableMetainfoDownloadConfig {
                 identity,
                 metainfo_source: resume.metainfo_source.ok_or_else(|| {
@@ -5964,8 +5983,8 @@ mod tests {
     use rstorrent_protocol::metainfo::DURABLE_METAINFO_LIMITS;
     use rstorrent_protocol::peer_wire::{
         BlockRequest, EXTENSION_PROTOCOL_RESERVED_BIT, EXTENSION_PROTOCOL_RESERVED_INDEX,
-        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, decode_handshake, encode_handshake,
-        encode_handshake_with_reserved, encode_message,
+        FrameDecoder, HANDSHAKE_LENGTH, PeerMessage, PeerProtocol, decode_handshake,
+        encode_handshake, encode_handshake_with_reserved, encode_message,
     };
     use rusqlite::Connection;
     use sha1::{Digest, Sha1};
@@ -8539,6 +8558,216 @@ mod tests {
         reopened.shutdown().await.expect("shutdown reopened");
         drop(reopened);
         fs::remove_dir_all(root).expect("remove pure-v2 application root");
+    }
+
+    #[tokio::test]
+    async fn pure_v2_magnet_download_restarts_from_info_only_metadata() {
+        let root = test_root("pure-v2-magnet-download");
+        let configuration = config(&root);
+        let piece_length = 32 * 1024_u32;
+        let payload = (0..2 * piece_length as usize)
+            .map(|index| ((index * 19 + 7) % 251) as u8)
+            .collect::<Vec<_>>();
+        let source = pure_v2_source_for_payload(&payload, piece_length);
+        let projection =
+            TorrentContentProjection::from_bytes_with_limits(&source, DURABLE_METAINFO_LIMITS)
+                .expect("pure-v2 magnet application fixture");
+        let raw_info = source[projection.info_span.clone()].to_vec();
+        let identity = projection
+            .content
+            .info_hashes()
+            .v2_hash()
+            .expect("pure-v2 magnet identity");
+        let wire_hash = projection.content.swarm_key().into_bytes();
+        let piece_roots = payload
+            .chunks(piece_length as usize)
+            .map(|piece| piece_root_from_data(piece, piece_length).expect("v2 magnet piece root"))
+            .collect::<Vec<_>>();
+        assert_eq!(piece_roots.len(), 2);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind pure-v2 magnet application peer");
+        let address = listener.local_addr().expect("v2 magnet peer address");
+        let peer_payload = payload.clone();
+        let peer_info = raw_info.clone();
+        let peer_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept v2 magnet peer");
+            let mut handshake = [0; HANDSHAKE_LENGTH];
+            stream
+                .read_exact(&mut handshake)
+                .await
+                .expect("read v2 magnet handshake");
+            decode_handshake(&handshake, wire_hash).expect("v2 magnet wire identity");
+            let mut reserved = [0; 8];
+            reserved[EXTENSION_PROTOCOL_RESERVED_INDEX] = EXTENSION_PROTOCOL_RESERVED_BIT;
+            stream
+                .write_all(&encode_handshake_with_reserved(
+                    wire_hash,
+                    *b"-RS-APP-MAG-V2-00000",
+                    reserved,
+                ))
+                .await
+                .expect("send v2 magnet handshake");
+            stream
+                .write_all(
+                    &encode_message(&PeerMessage::Extended {
+                        id: 0,
+                        payload: encode_extension_handshake(Some(peer_info.len())),
+                    })
+                    .expect("encode v2 metadata handshake"),
+                )
+                .await
+                .expect("advertise v2 metadata");
+            let mut decoder = FrameDecoder::new();
+            decoder.set_protocol(PeerProtocol::V2);
+            let mut pending = std::collections::VecDeque::new();
+            loop {
+                match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                    PeerMessage::Extended { id: 0, .. } => {}
+                    PeerMessage::Extended { id: 1, payload } => {
+                        assert!(matches!(
+                            parse_metadata_message(&payload).expect("parse v2 metadata request"),
+                            MetadataMessage::Request { piece: 0 }
+                        ));
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Extended {
+                                    id: 1,
+                                    payload: encode_metadata_data(0, peer_info.len(), &peer_info)
+                                        .expect("encode v2 metadata"),
+                                })
+                                .expect("encode v2 metadata response"),
+                            )
+                            .await
+                            .expect("send v2 metadata");
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Bitfield(vec![0xc0]))
+                                    .expect("encode v2 magnet availability"),
+                            )
+                            .await
+                            .expect("send v2 magnet availability");
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Unchoke)
+                                    .expect("encode v2 magnet unchoke"),
+                            )
+                            .await
+                            .expect("unchoke v2 magnet client");
+                        break;
+                    }
+                    message => panic!("unexpected v2 metadata message {message:?}"),
+                }
+            }
+            let mut authenticated_hashes = false;
+            let mut completed = BTreeSet::new();
+            while completed.len() != 2 {
+                match read_peer_message(&mut stream, &mut decoder, &mut pending).await {
+                    PeerMessage::HashRequest(request) => {
+                        assert_eq!(request.base_layer, 1);
+                        assert_eq!((request.index, request.count), (0, 2));
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Hashes(
+                                    rstorrent_protocol::v2_hashes::HashResponse {
+                                        request,
+                                        hashes: piece_roots.clone(),
+                                    },
+                                ))
+                                .expect("encode v2 piece roots"),
+                            )
+                            .await
+                            .expect("send authenticated v2 piece roots");
+                        authenticated_hashes = true;
+                    }
+                    PeerMessage::Request(request) => {
+                        assert!(
+                            authenticated_hashes,
+                            "application payload must wait for authenticated piece roots"
+                        );
+                        let start =
+                            request.index as usize * piece_length as usize + request.begin as usize;
+                        let end = start + request.length as usize;
+                        stream
+                            .write_all(
+                                &encode_message(&PeerMessage::Piece {
+                                    index: request.index,
+                                    begin: request.begin,
+                                    block: peer_payload[start..end].to_vec(),
+                                })
+                                .expect("encode v2 magnet payload"),
+                            )
+                            .await
+                            .expect("send v2 magnet payload");
+                    }
+                    PeerMessage::Have(piece) => {
+                        completed.insert(piece);
+                    }
+                    PeerMessage::Interested
+                    | PeerMessage::KeepAlive
+                    | PeerMessage::Extended { id: 0, .. } => {}
+                    message => panic!("unexpected v2 magnet content message {message:?}"),
+                }
+            }
+        });
+        let magnet = format!("magnet:?xt=urn:btmh:1220{identity}&x.pe={address}");
+        let mut service = ApplicationService::open(configuration.clone())
+            .await
+            .expect("open v2 magnet application");
+        let response = service
+            .dispatch(RequestEnvelope {
+                version: CONTROL_VERSION,
+                request_id: "add-pure-v2-magnet".to_owned(),
+                expected_revision: None,
+                command: Command::AddMagnet {
+                    magnet: magnet.clone(),
+                    storage_root: "downloads".to_owned(),
+                    start_content: true,
+                    skip_files: Vec::new(),
+                },
+            })
+            .await
+            .expect("add pure-v2 magnet");
+        let torrent_id = match response.result {
+            Some(CommandResult::AddTorrent { result }) => result.torrent_id,
+            _ => panic!("pure-v2 magnet add result"),
+        };
+        wait_for_torrent_state(
+            &mut service,
+            &torrent_id,
+            TorrentState::Complete,
+            "pure-v2-magnet-complete",
+        )
+        .await;
+        peer_task.await.expect("pure-v2 magnet peer task");
+        let resume = service
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("load completed v2 magnet");
+        assert_eq!(resume.raw_info.as_deref(), Some(raw_info.as_slice()));
+        assert_eq!(resume.metainfo_source, None);
+        assert_eq!(resume.magnet, magnet);
+        service.shutdown().await.expect("shutdown v2 magnet app");
+        drop(service);
+
+        let mut reopened = ApplicationService::open(configuration)
+            .await
+            .expect("reopen v2 magnet application");
+        let resumed = reopened
+            .store_mut()
+            .expect("store")
+            .load_resume(&torrent_id)
+            .expect("restart info-only v2 magnet");
+        assert_eq!(resumed.state, TorrentState::Complete);
+        assert_eq!(resumed.raw_info, Some(raw_info));
+        assert_eq!(resumed.metainfo_source, None);
+        reopened
+            .shutdown()
+            .await
+            .expect("shutdown reopened v2 magnet");
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove pure-v2 magnet application root");
     }
 
     #[tokio::test]
